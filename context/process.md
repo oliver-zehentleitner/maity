@@ -136,12 +136,13 @@ night's merges deployed before the maintainer is back was stated.
 
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
 **Type:** decision
-**Type:** incident
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Evidence:** confirmed
-**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit
+**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit; superseded on 2026-11-04: the maintainer accepted the lead's recommendation "Ersetzt" (superseded) for req-whk2ez4r56f3 (seq 67806, relayed by the lead in seq 68775), after answering req-whk2ez4r56f3 itself with a question for a recommendation (2026-11-04); the lead's reason for the recommendation: there are no substitute reviewers any more. Its successors: the review lead hands out every review (since 2026-11-02), and no reviewer of another vendor stands in for an absent one (req-g5z43w1n2fkj, 2026-11-03)
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
 **See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
+**See:** process.md#an-absent-reviewer-vendor-gets-no-substitute-from-another-vendor-the-maintainer-is-told-and-the-review-waits — d9edf24e-9c27-4a2e-8c14-f4076a864c6d — as of 2026-11-04
 
 While the reviewer was stopped by a usage limit, the coordinator covered
 its reviews. When the reviewer came back it asked for an exact split, so
@@ -230,30 +231,37 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
-**Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
+**Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator; the maintainer's decision of 2026-11-04 to keep it beside the hub's requirement (req-3vww792gvj9q)
+**Verification:** corroborated — re-checked 2026-11-04 after the hub began to require a why on code reports (§6.23): under `required` a code report without `why` is refused (`hub/src/maity_hub/routes/tasks.py`, `_check_why`), and a why is one of two forms: a reference to an entry, of which the hub checks only the shape, or `none` with a stated reason of at least ten characters; the hub never checks that the entry exists or that `ktw-lint` is clean
+**See:** projects.md#keep-the-why-is-guaranteed-by-the-hub-a-commitment-at-resume-a-reminder-the-owners-notification-and-a-why-on-every-code-report — 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90 — as of 2026-11-04
+**Revisit when:** the hub checks that a report's why names an entry that exists and that `ktw-lint` is clean
 
 Every agent building Maity works with Keep the Why. An implementer
 writes a `context/` entry for each decision a pull request makes, in
 that same pull request, with `ktw-lint` clean (one commit per entry
 until 2026-10-27, see the entry on squash merges below). A reviewer
 approves only after a Keep the Why gate: the entry is there and the
-linter is clean. An agent that writes
+linter is clean, or, for a why of `none`, the stated reason holds. An
+agent that writes
 neither code nor reviews — one that rules on a question, for instance —
 has its rulings recorded by the implementer of the change they decide,
 not in a pull request of its own.
 
 **Reason:** Keep the Why is part of the project, so every agent building
-it uses it. The team rule is the interim: it holds until the hub
-guarantees the same as a system.
+it uses it. The rule was first meant as the interim until the hub
+guaranteed the same. Both stay now: the hub refuses a code report
+without a why, and a why is either a reference to an entry, of which the
+hub checks only the shape, or `none` with a stated reason (at least ten
+characters). That the entry is there and the linter is clean, or that
+the stated reason holds, is what the reviewer's gate checks.
 
 **Alternatives:**
 - The hub enforces it — a why reference required on code reports, set
-  by policy per project. Chosen as the follow-up, not instead: its
-  contract is still a proposal with the maintainer, and until it is
-  built the rule and the review gate carry it.
+  by policy per project. Chosen as the follow-up, not instead, and built
+  since (the entry linked above); it stands beside the team rule, not in
+  its place.
 
 ## The CLI is published to PyPI as `maity` from a `cli-v*` tag, through trusted publishing
 
@@ -971,7 +979,8 @@ in-tree source definitions prevents subtle discrepancies for newcomers reading t
 
 **Id:** 297a0ea7-ebd0-4007-8b12-f839d005d205
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** c73e26c4-60b2-49e7-9df8-278fca4fcb2e
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the hub chat, 2026-10-29 ("then let's rather have everything checked twice, by one Grok and one Antigravity"); the coordinator's merge practice since then
 **Revisit when:** a reviewer family is unavailable for long, the ChatGPT-based reviewers return and could stand in for one side, or two approvals turn out to miss what one more careful review would catch
@@ -999,6 +1008,80 @@ second review alone.
 - Merging when no check is red — the hub and end-to-end jobs report only
   after the change detection, so a pull request can look clean with only
   the quick checks run.
+
+## Every pull request needs an approval from all three reviewer vendors, Antigravity, Grok and ChatGPT, on the exact head, and a green `ci-ok`
+
+**Id:** c73e26c4-60b2-49e7-9df8-278fca4fcb2e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision at the jour fixe of 2026-11-03, relayed by the lead on 2026-11-04; it follows the rule of the same morning, two of three vendors, set when every Antigravity instance ran out of quota at once
+**Revisit when:** a reviewer vendor is unavailable for long, or a fourth vendor joins
+**See:** process.md#every-pull-request-needs-two-approvals-one-from-a-grok-reviewer-and-one-from-an-antigravity-reviewer-and-a-green-ci-ok-on-the-exact-head — 297a0ea7-ebd0-4007-8b12-f839d005d205 — as of 2026-11-04
+
+Before a pull request is merged, one reviewer of each vendor, Antigravity,
+Grok and ChatGPT, has approved exactly the head that is merged, each in a
+fresh context of its own. After rework the three review the delta, and a
+fix is pushed once all three results for the current head are in, not
+after the first. The merge waits for `ci-ok` on that head, and a sample
+of each review's claims is still compared with the diff before it counts
+(the entry linked above).
+
+**Reason:** the maintainer's: quality before speed. Two of three was the
+interim of one morning, while one vendor was out of quota.
+
+**Rejected alternatives:**
+- Two of three vendors, the third awaited when it can be: the morning's
+  interim, replaced at the jour fixe the same day.
+- One Grok and one Antigravity reviewer (297a0ea7): the ChatGPT
+  reviewers are back, and a third vendor's view is wanted on every pull
+  request.
+
+## The review lead's team hands out every review
+
+**Id:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04
+**Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
+
+A coder sends a review request, with the base and head SHAs in full, to
+the review lead and to nobody else. The review lead's team picks the
+reviewer of each vendor, orders the reviews and delta reviews, checks
+the results, and collects the minor findings (P3) for the area's
+collection card. Merges, deploys and cards stay with the lead.
+
+The rule itself is confirmed by these sources; its reason is not, so
+the entry's Evidence is the weaker grade.
+
+**Reason:** unknown — not recorded with the rule.
+
+**Alternatives:** none recorded. Before 2026-11-02 the coordinator
+gave the order of the reviews (8ba32bfa, for a returning reviewer); why
+that changed was not recorded.
+
+## An absent reviewer vendor gets no substitute from another vendor; the maintainer is told and the review waits
+
+**Id:** d9edf24e-9c27-4a2e-8c14-f4076a864c6d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer of 2026-11-03 (req-g5z43w1n2fkj) to the question whether a reviewer of another vendor may stand in while one is out
+**Revisit when:** the maintainer allows a substitute for a vendor that is out, or a vendor is out for longer than a release can wait
+**See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
+
+When a reviewer vendor is unavailable (out of quota, offline), its review
+is not handed to another vendor's reviewer. The maintainer is told at
+once, through his inbox, and the pull request waits until he restores the
+reviewer or reorganises the reviews.
+
+**Reason:** the maintainer's words: he wants to keep the quality, and
+building well and solidly matters more to him than building very fast.
+
+**Rejected alternative:** a substitute reviewer of another vendor while
+one is out: faster, but it lowers the three-vendor gate the entry above
+sets.
 
 ## The ci runs on main share one group: one runs, the newest waits, none is cancelled
 
@@ -1054,6 +1137,59 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+## hub-postgresql prints every thread's stack when a test runs longer than 300 seconds
+
+**Id:** 32d51f7e-a3dc-4027-9ceb-ce2a0ecdca69
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
+**Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
+when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
+fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
+`-v` nothing else in the log under `pytest-xdist` names the test. The job does not add `-v`: with it the #1255 log grew to
+about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
+
+300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
+costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
+(`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
+an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+
+**Rejected alternatives:**
+- `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
+  it for the queue, and the stack is what the search for a hang needs. `faulthandler_timeout` is part of pytest.
+- `faulthandler_exit_on_timeout` as well (built into the pinned pytest, no new dependency): the worker exits after the
+  dump, `pytest-xdist` reports "worker crashed while running <test>" as failed, which names the test even when a fixture
+  hangs; after 5 minutes the log shows an F and the worker going down; the summary at the end of the run names the test.
+  The job does not end sooner: `pytest-xdist` replaces the crashed worker and the run goes on, so the job goes red only
+  when the rest of the suite is done. Not
+  taken: a slow but finite test past 300 s would then fail, and the value was chosen as a print threshold, not as a
+  limit a green test must stay under. (The author's own reading, not the card's words: the card says only "Kostet
+  nichts, solange nichts hängt", and a setting that fails a slow green test costs something.)
+- In `[tool.pytest.ini_options]` of `hub/pyproject.toml`: every local and SQLite run would print stacks too, past the
+  scope the jour fixe decided; the job's environment keeps it to `hub-postgresql`.
+- On the `make test` line (`PYTEST_ARGS`): repeats the Makefile's `-n auto`, and a later change to that line drops the
+  limit unnoticed.
+
+`hub-mariadb` (`hub-mariadb.yml`) also runs `make test` under 90 minutes, and the cleanup's lock timeout is PostgreSQL
+only, so a leaked lock there is not bounded by the suite. It stays out here: the card and the jour fixe named
+`hub-postgresql`, the job where the hangs were seen; MariaDB runs on main outside `ci-ok`, and a timed-out run already
+counts as red and opens a ci-red issue (the entries on the timeouts and on MariaDB). No hang on MariaDB has been
+reproduced; the same line there is open for a later card. `hub-sqlite` has no server locks between sessions.
+
+Which reasons are confirmed and which inferred: that the setting prints the stack under `pytest-xdist` and the test still
+passes is confirmed (proof run on #1316, and a local counter-check without the setting printing nothing); that a setup
+hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
+without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
+value is the author's weighing, not measured against a real hang beyond #1255.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
@@ -1155,6 +1291,59 @@ each command is checked only once.
   ten pages need.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
+
+## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+
+**Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there)
+**Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
+**See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
+
+The images of the docs pages are files in `docs/img/`, linked from the
+Markdown with a relative path, so they show on GitHub as on the site.
+`tools/site_docs.py` rewrites a relative image the way it rewrites a link:
+one under `docs/` points at its path at the site's root, which exists only
+because `pages.yml` copies `docs/` there; any other at GitHub's raw file.
+Only the path is normalised; a query or fragment stays as written.
+
+The screenshots show the dashboard in fixture mode, never a hub with real
+accounts, so they carry no names, addresses or tokens: `web/index.html`
+opened as a file, at `#/new`, `#/all` and `#/maintainer/maity/board`, in
+Chromium (Playwright) at 1280 px with a device scale of 2, the light
+scheme and the clock in UTC (the inbox shows its times in the browser's
+zone). For all three, the sign-in notice is answered with **This was
+me** first and injected CSS hides the "Fixtures" badge (`.source`). For
+the inbox and the form it also hides any `.flag`; after the answer those
+two pages have none left. The inbox is cut 24 px below its first entry's
+button row, the form just below the Project memory hint. The board, from
+the pull request's first set, is the 1280 × 760 px viewport from the
+top, with no `.flag` hidden, so it shows a card's "Waits for an answer"
+box. Each is scaled to 1600 px
+wide and reduced to 256 colours (libimagequant, then oxipng level 4)
+before it is committed: about 290 KB for three instead of 734 KB, since
+every version stays in the history. The designer's script is not in
+the repository yet.
+
+**Reason:** a page and its pictures come from the same place, like the
+text (the entry linked above), and fixture data is the one dashboard
+state that holds nothing private.
+
+**Rejected:**
+
+- GitHub's raw file for the images under `docs/` too: the site would
+  depend on another host, and so would every fork or copy of it, while
+  `pages.yml` puts `docs/` at the root anyway.
+- A second copy in `docs/_assets/`: the same file twice, at a path other
+  than the `img/…` GitHub shows when it renders the Markdown.
+- Dark variants through `<picture>`: GitHub's Markdown needs raw HTML for
+  it, and the site is light unless the reader's system asks for dark
+  (`tools/site_docs/docs.css`), so the designer judged one light set
+  enough.
+- Screenshots of a real hub: real names and data in the repository; the
+  fixtures exist for this.
 
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 

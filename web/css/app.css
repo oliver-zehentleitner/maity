@@ -91,6 +91,60 @@
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
 
+/* The Keep the Why views (js/ktw-host.js, vendor/keep-the-why/) read their colours, radius
+   and fonts from --ktw-* tokens; here they are Maity's, so both themes carry over. */
+:root {
+  --ktw-bg: var(--bg);
+  --ktw-surface: var(--surface);
+  --ktw-surface2: var(--surface-2);
+  --ktw-fg: var(--text);
+  --ktw-fg2: var(--muted);
+  --ktw-fg3: var(--muted); /* text too (headings, notes): --seat is 2.5:1 on white, --muted passes AA */
+  --ktw-muted: var(--muted);
+  --ktw-line: var(--border);
+  --ktw-accent: var(--accent);
+  /* text in the plan's and the warning's hue, a fifth of the way to --text: 4.95:1 at least
+     on --bg, --surface, --surface-2 and the type pill's accent tint in light, 5.16:1 in dark
+     (axe color-contrast, WCAG AA); --plan and --warn themselves are 3.95:1 and 4.26:1 there */
+  --ktw-accent2: color-mix(in srgb, var(--plan) 80%, var(--text));
+  --ktw-info: var(--accent);
+  --ktw-ok: var(--ok);
+  --ktw-warn: color-mix(in srgb, var(--warn) 80%, var(--text));
+  --ktw-bad: var(--bad);
+  --ktw-confirmed: var(--ok);
+  --ktw-inferred: var(--ktw-warn);
+  --ktw-unknown: var(--muted);
+  --ktw-status-active: var(--ok);
+  --ktw-status-open: var(--accent);
+  --ktw-status-needs-review: var(--ktw-warn);
+  --ktw-status-pending-confirmation: var(--plan);
+  --ktw-status-superseded: var(--muted);
+  --ktw-radius: var(--radius);
+  --ktw-font: var(--font);
+  --ktw-mono: var(--mono);
+}
+/* The library writes #fff on its accent in its selected controls: 3.2:1 on the dark theme's
+   --accent; Maity's own text for its accent passes in both themes (5.32:1 light, 6.0:1 dark).
+   Every such rule of ktw-views.css, so one the views mount later is covered too. */
+.ktw-root .ktw-search-scope a.ktw-on,
+.ktw-root .ktw-mode button.ktw-on,
+.ktw-root.ktw-aside .ktw-mini .ktw-mini-seg button.ktw-on,
+.ktw-root.ktw-aside .ktw-thought-min button.ktw-on,
+.ktw-root.ktw-aside .ktw-pane-width button.ktw-on,
+.ktw-root .ktw-thought-reader .ktw-timeline-bar .ktw-tick,
+.ktw-root .ktw-stage-wrap .ktw-stage-seg button.ktw-on,
+.ktw-root .ktw-stage-card .ktw-stage-card-held:hover { color: var(--accent-text); }
+
+.why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
+.why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }
+.why-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: var(--gap); align-items: start; }
+.why-aside:empty { display: none; }
+.why-graph { height: 70vh; min-height: 360px; }
+.why-graph canvas { width: 100%; height: 100%; display: block; }
+@media (max-width: 900px) {
+  .why-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
 * { box-sizing: border-box; }
 
 /* A member's picture (js/avatar.js). */
@@ -133,8 +187,8 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) { border-color: var(--accent); }
-button:disabled { opacity: 0.55; cursor: default; }
+button:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--accent); }
+button:disabled, button[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 button.danger { color: var(--bad); }
 
 select, textarea, input {
@@ -321,7 +375,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
 /* ---- inbox ---------------------------------------------------------- */
 
-.entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.entries { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 
 .entry {
   background: var(--surface);
@@ -359,7 +413,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-row .project-label { flex: none; padding: 2px 8px 2px 4px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); text-decoration: none; }
 .entry-row .project-label:hover, .entry-row .project-label:focus-visible { border-color: var(--accent); }
 .entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
-.entries-box { display: grid; gap: 8px; }
+.entries-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .entry-group { margin: 6px 0 0; }
 .entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
@@ -672,9 +726,6 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }
-.why-members { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
-.why-members th, .why-members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.why-members tr.failed td:first-child { border-left: 3px solid var(--warn); }
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
 .why-entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -771,6 +822,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .msg p { margin: 0; }
 /* A message as Markdown (js/markdown.js). */
+/* A long link or word wraps anywhere; a code block keeps its lines (`pre`) and scrolls in itself. */
+.md, .about { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 6px; }
@@ -847,6 +900,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .compose-actions { display: flex; align-items: center; gap: 8px; }
 .compose-actions > .send-with-keys, .compose-actions > button[type="submit"] { margin-inline-start: auto; }
 .compose-actions .attach-button[hidden] { display: none; }
+/* "Sending…" and a failure in the row, after the meat-proxy switch: no line appears below it (tsk-j10w2hsm1h90). */
+.compose-actions > .send-status { margin: 0; min-height: 0; flex: 1 1 8rem; min-width: 0; }
 .compose:has(input[type="file"]:focus-visible) .attach-button { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
@@ -1461,9 +1516,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
 /* One style for the panel's section headings. */
 .card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
-.card-note-list, .card-history-list, .card-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.card-note-list, .card-history-list, .card-links { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .card-note-list li p { margin: 0; }
 .card-history-list li { overflow-wrap: anywhere; font-size: 0.9rem; }
+.card-links li { overflow-wrap: anywhere; }
 .history-diff { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; }
 .card-note-form { display: grid; gap: 6px; margin-top: 8px; }
 .card-note-form button { justify-self: start; }
@@ -1490,8 +1546,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .subtask-list li.wanted { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .subtask-status { font-size: 0.8rem; color: var(--muted); display: inline-block; min-width: 4.5em; }
 .card-parent { margin: 4px 0; font-size: 0.85rem; }
-.card-family { display: grid; gap: 8px; margin-top: 8px; }
-.card-family-form { display: grid; gap: 6px; }
+.card-family { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+.card-family-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .card-family-form button[type="submit"] { justify-self: start; }
 
 /* Organisations (js/orgs.js). */

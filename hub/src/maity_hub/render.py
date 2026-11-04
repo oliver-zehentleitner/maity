@@ -13,6 +13,8 @@ fenced code and links whose target passes `landing.safe_target`.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 from collections.abc import Iterable
 from html import escape, unescape
@@ -64,13 +66,35 @@ def choose_language(
     return default if default in offered else (offered[0] if offered else default)
 
 
+# `Accept-Language` is read only this far: the parts wholly within its first characters, at most
+# so many, each tag at most the 35 characters BCP 47 asks every implementation to support. The
+# work per request then depends on these limits, not on the header's size (§16.7): nothing past
+# them is copied, split or converted.
+ACCEPT_CHARS = 1024
+ACCEPT_PARTS = 20
+TAG_MAX = 35
+
+
+def accept_parts(accept_language: str | None) -> list[str]:
+    """The parts of an `Accept-Language` the hub reads: those wholly within its first
+    `ACCEPT_CHARS` characters, at most `ACCEPT_PARTS`. A part the limit cuts is not read."""
+    header = accept_language or ""
+    if len(header) <= ACCEPT_CHARS:
+        return header.split(",", ACCEPT_PARTS)[:ACCEPT_PARTS]
+    # One character more: a comma there means the last part read ends at the limit.
+    return header[: ACCEPT_CHARS + 1].split(",")[:-1][:ACCEPT_PARTS]
+
+
 def best_language(offered: list[str], query: str | None, accept_language: str | None) -> str | None:
-    """`?lang=` if offered, else the best match of `Accept-Language`, else nothing."""
+    """`?lang=` if offered, else the best match among the parts of `Accept-Language` the hub
+    reads (`accept_parts`), else nothing."""
     if query in offered:
         return str(query)
     ranked: list[tuple[float, int, str]] = []
-    for position, part in enumerate((accept_language or "").split(",")):
+    for position, part in enumerate(accept_parts(accept_language)):
         tag, _, rest = part.strip().partition(";")
+        if len(tag.strip()) > TAG_MAX:
+            continue
         weight = 1.0
         if rest.strip().startswith("q="):
             try:
@@ -85,18 +109,41 @@ def best_language(offered: list[str], query: str | None, accept_language: str | 
 
 # --- Markdown ----------------------------------------------------------------------------------
 
+# In a link a failed try gives characters back only to runs that cannot take them: the title starts
+# with a space or a tab, which the target cannot hold, and neither holds the closing `)`; the
+# spaces before the target, which the title's own leading space could also take, are taken whole
+# (`*+`). A link's target and title hold no `[`, stay on their line and are at most LINK_MAX
+# characters each (§16.7), so what one `[` reads ends at the next `[`, and the work grows with the
+# text's length.
+LINK_MAX = 2048
 _INLINE = re.compile(
     r"`(?P<code>[^`\n]+)`"
-    r"|\[(?P<text>[^\[\]\n]*)\]\(\s*(?P<target>[^)\s]*)[^)]*\)"
+    rf"|\[(?P<text>[^\[\]\n]*)\]\([ \t]*+(?P<target>[^)\[\s]{{0,{LINK_MAX}}})(?:[ \t][^)\[\n]{{0,{LINK_MAX}}})?\)"
     r"|(?P<bare>https://[^\s<>()]+)"
     r"|\*\*(?P<strong>[^*\n]+)\*\*"
     r"|\*(?P<em>[^*\n]+)\*"
     r"|(?<![A-Za-z0-9])_(?P<em2>[^_\n]+)_(?![A-Za-z0-9])"
 )
-_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+# A heading's marks; its text is found by string operations (`_heading`), not by a pattern.
+_HEADING = re.compile(r" {0,3}(#{1,6})\s")
 _QUOTE = re.compile(r"^ {0,3}>\s?(.*)$")
 _BULLET = re.compile(r"^ {0,3}[-*+]\s+(.*)$")
 _NUMBER = re.compile(r"^ {0,3}\d{1,9}[.)]\s+(.*)$")
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    """The level and text of an ATX heading line: the marks, at least one space, the text, and
+    any closing run of `#` and the spaces around it dropped."""
+    found = _HEADING.match(line)
+    if found is None:
+        return None
+    text = line[found.end(1) :].strip().rstrip("#").rstrip()
+    return len(found.group(1)), text
+
+
+# Quotes nest at most this deep, as in the dashboard (web/js/markdown.js): the lines of a ninth
+# quote are a paragraph in the eighth, without their own `>`; any deeper `>` stays text.
+QUOTE_DEPTH = 8
 
 
 def _link(text: str, target: str, *, me: bool = False, ugc: bool = False) -> str:
@@ -132,9 +179,10 @@ def inline(text: str, *, ugc: bool = False) -> str:
     return "".join(out)
 
 
-def markdown(source: str, *, ugc: bool = False) -> str:
+def markdown(source: str, *, ugc: bool = False, depth: int = 0) -> str:
     """The HTML of a Markdown text; fenced code is text, a block is one element. With `ugc`
-    every link is `rel="nofollow ugc"`, as on the public pages (§16.9)."""
+    every link is `rel="nofollow ugc"`, as on the public pages (§16.9). `depth` is the number of
+    quotes around the text."""
     lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
     paragraph: list[str] = []
@@ -164,11 +212,11 @@ def markdown(source: str, *, ugc: bool = False) -> str:
             flush()
             index += 1
             continue
-        heading = _HEADING.match(line)
+        heading = _heading(line)
         if heading:
             flush()
-            level = len(heading.group(1))
-            out.append(f"<h{level}>{inline(heading.group(2), ugc=ugc)}</h{level}>")
+            level, text = heading
+            out.append(f"<h{level}>{inline(text, ugc=ugc)}</h{level}>")
             index += 1
             continue
         if _QUOTE.match(line):
@@ -177,7 +225,12 @@ def markdown(source: str, *, ugc: bool = False) -> str:
             while index < len(lines) and (quote := _QUOTE.match(lines[index])):
                 quoted.append(quote.group(1))
                 index += 1
-            out.append("<blockquote>" + markdown("\n".join(quoted), ugc=ugc) + "</blockquote>")
+            if depth < QUOTE_DEPTH:
+                inner = markdown("\n".join(quoted), ugc=ugc, depth=depth + 1)
+                out.append("<blockquote>" + inner + "</blockquote>")
+            else:
+                written = "\n".join(part.strip() for part in quoted)
+                out.append("<p>" + inline(written, ugc=ugc).replace("\n", "<br>") + "</p>")
             continue
         for pattern, tag in ((_BULLET, "ul"), (_NUMBER, "ol")):
             if pattern.match(line):
@@ -922,6 +975,71 @@ def legal_document(
         head=head,
         body=body,
         languages=languages,
+        style="" if all(sheets) else STYLE,
+    )
+
+
+# A door page (below) has no script and no inline style but the fallback when the landing
+# page's stylesheets are missing; its policy allows exactly that fallback by its hash. The
+# token of a mail link is in the address, so the page posts only to itself and is never framed.
+DOOR_CSP = (
+    "default-src 'none'; style-src 'self' 'sha256-"
+    + base64.b64encode(hashlib.sha256(STYLE.encode()).digest()).decode()
+    + "'; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+def door_document(
+    *,
+    lang: str,
+    title: str,
+    content: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """A page a mail link opens, in the frame of the pages without a session (§16.7.5): the
+    landing page's header and footer, between them the door of `public-pages.css` (the dark
+    panel with its art, the form's column with `content`), as the dashboard draws `/login`.
+    No product line: the frame's footer stands in its place, as on the framed `/login`
+    (req-5k1gvfsmcg9k). The footer has no language switch, since the page's language is the
+    person's, not the address's. `content` is HTML of escaped text and elements."""
+    model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    nav = "".join(
+        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
+        for item in model["header"]["nav"]
+    )
+    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
+    # The mark without its style attributes, which the policy would block: public-pages.css
+    # colours it (`.site-header .mark rect`, …), as on the dashboard's framed pages.
+    mark = landing_files.svg("mark.svg")
+    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
+    if model["language"] != lang:  # the frame's words are in a language the landing page has
+        header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
+        footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    # The panel without a pitch, as the dashboard draws it for its own pages of this kind
+    # (web/js/auth-pages.js, door()): public-pages.css shows the art large, and hides the panel
+    # at phone width.
+    body = (
+        header + '<main><div class="door-page">'
+        '<aside class="door-panel" aria-hidden="true"></aside>'
+        f'<section class="door-form"><div>{content}</div></section></div></main>' + footer
+    )
+    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
+    head = "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
+    )
+    return _document(
+        lang=lang,
+        title=title,
+        description="",
+        head=head,
+        body=body,
+        languages=[],
         style="" if all(sheets) else STYLE,
     )
 

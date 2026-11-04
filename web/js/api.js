@@ -1486,6 +1486,7 @@ window.Maity = window.Maity || {};
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
+    max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
   };
 
   // §16.12 The fixture hub's maintenance window: none at first; ?maintenance=upcoming or
@@ -2334,9 +2335,9 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5 };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10 };
       Object.entries(body).forEach(([k, v]) => {
-        if (k === "humans_at_limit" || k === "humans_at_org_limit") fields[k] = "read_only";
+        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit"].includes(k)) fields[k] = "read_only";
         else if (!(k in defaults)) fields[k] = "extra_forbidden";
         else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
         else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= 1 && v <= 10000))) fields[k] = "invalid";
@@ -3853,7 +3854,51 @@ window.Maity = window.Maity || {};
       card.watching = false;
       return card;
     }],
-    ["GET", /^\/projects\/([^/]+)\/messages$/, () => ({ items: [], next_cursor: null })],
+    // §8.8: the project's messages but chats, newest first from the log,
+    // a removed one as its tombstone; `after` reads oldest first.
+    ["GET", /^\/projects\/([^/]+)\/messages$/, (m, body, path, query) => {
+      project(m[1], path);
+      const LISTED = ["interface_change", "blocker", "go_request", "review_result", "handover", "notice", "update"];
+      const errors = {};
+      const types = query.getAll("type").flatMap((x) => x.split(","));
+      if (types.some((x) => !LISTED.includes(x))) errors.type = "unknown";
+      const limit = query.get("limit") === null ? 50 : Number(query.get("limit"));
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) errors.limit = "invalid";
+      const bound = (k) => { const v = query.get(k); if (v !== null && !/^\d+$/.test(v)) errors[k] = "invalid"; return v === null ? null : Number(v); };
+      const after = bound("after");
+      const before = bound("before");
+      if (after !== null && before !== null) errors.after = "invalid";
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid query", path, { fields: errors });
+      const filter = types.length ? [...new Set(types)].sort() : null;
+      const filterKey = [query.get("after") || "", query.get("before") || "", (filter || []).join(",")].join("|");
+      const item = (e) => {
+        const tomb = e.redacted || !e.payload || e.payload.redacted;
+        const x = { id: "evt-" + e.seq, seq: e.seq, from: e.actor.member_id, from_instance: e.actor.instance || null, sent_at: e.at };
+        if (tomb) {
+          const p = e.payload || {};
+          return Object.assign(x, { type: null, to: null, task_id: null, body: null, mentions: [], attachments: [], review: null,
+            redacted: true, redaction: { at: p.at || null, by: p.by || null, reason: p.reason || null } });
+        }
+        const p = e.payload;
+        return withTombstones(m[1], Object.assign(x, { type: p.type, to: p.to === undefined ? null : p.to, task_id: p.task_id || null, body: p.body,
+          mentions: p.mentions || [], attachments: p.attachments || [], review: p.type === "review_result" ? p.review || null : null, redacted: false, redaction: null }));
+      };
+      let items = eventsOf(m[1]).filter((e) => e.kind === "message" && !e._conversation && !(e.payload && e.payload.type === "chat") && readable(m[1], e))
+        .map(item).filter((x) => (filter ? !x.redacted && filter.includes(x.type) : true));
+      const upward = after !== null;
+      items = upward ? items.filter((x) => x.seq > after).sort((a, b) => a.seq - b.seq)
+        : items.filter((x) => before === null || x.seq < before).sort((a, b) => b.seq - a.seq);
+      const cursor = query.get("cursor");
+      if (cursor !== null) {
+        // Opaque to the page: "<seq>~<the query it was made for>".
+        const at = cursor.indexOf("~");
+        const seqOf = Number(cursor.slice(0, at));
+        if (at < 1 || !Number.isInteger(seqOf) || cursor.slice(at + 1) !== filterKey) fail(400, "invalid", "a cursor for other filters", path, { fields: { cursor: "invalid" } });
+        items = items.filter((x) => (upward ? x.seq > seqOf : x.seq < seqOf));
+      }
+      const page = items.slice(0, limit);
+      return { items: page, next_cursor: items.length > limit ? page[page.length - 1].seq + "~" + filterKey : null };
+    }],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
     ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
@@ -3998,6 +4043,25 @@ window.Maity = window.Maity || {};
       if (!item) fail(404, "not_found", "no such checklist item", path);
       Object.assign(item, body.done ? { done: true, by: me().member.id, at: nowIso() } : { done: false, by: null, at: null });
       return card;
+    }],
+    // §11.5: the project's own export whole (the root only; a member, a named repository and
+    // a lean export's bodies are the real hub's to show).
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/export$/, (m, body, path, query) => {
+      if (!project(m[1], path).keep_the_why_export) {
+        fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);
+      }
+      if (query.get("canonical") || query.get("root")) {
+        fail(404, "not_found", "not a repository of this project's family", path, { reason: "not_in_family" });
+      }
+      const answer = JSON.parse(JSON.stringify(file(m[1], "keep-the-why-export.json", path)));
+      if (fixtureKtw === "unavailable") {
+        fail(503, "ktw_unavailable", "the Keep the Why export could not be read", path,
+          { reason: "forge_unavailable", last: Object.assign(answer, { fresh: false }) });
+      }
+      return answer;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/bodies$/, (m, body, path) => {
+      fail(404, "not_found", "this export carries its bodies inline", path, { reason: "no_bodies_file" });
     }],
     ["GET", /^\/projects\/([^/]+)\/keep-the-why$/, (m, body, path, query) => {
       if (!project(m[1], path).keep_the_why_export) {

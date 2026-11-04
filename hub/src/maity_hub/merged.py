@@ -4,9 +4,12 @@ When the probe first observes a report's pull request merged, with `mismatch` fa
 on a card in `review`, the hub emits `task_merged` once per report: it wakes the done
 authority, and under `merged_closes: auto` with `done_authority` `holder` or `admin`
 the hub moves the card to `done` itself, unless a dependency or child is open or a
-takeover of it is objected or escalated. A merge observed while the card is elsewhere is remembered
-with its report (`merge_report`) and told when the card returns to `review`, only if
-that report is still the card's current one.
+takeover of it is objected or escalated. A card `blocked` from `review` (a waiting request
+of its holder is open, §7) counts as in `review`, except under `reviewer_and_tester`: its
+report is what waits, so the merge is told at once and `auto` may close it, which ends
+the block. A merge observed while the
+card is elsewhere is remembered with its report (`merge_report`) and told when the card
+returns to `review`, only if that report is still the card's current one.
 """
 
 from __future__ import annotations
@@ -51,6 +54,18 @@ def merged(report: dict[str, Any] | None) -> bool:
     ) is False
 
 
+def waits_in_review(conn: Connection, card: Any) -> bool:
+    """In `review`, or `blocked` from it under a policy that closes with one move: the
+    card's report is what waits (§6.6). Two signatures need `review` itself (§6.4), so
+    there a blocked card remembers the merge and tells it when it returns to `review`."""
+    if card.status == "review":
+        return True
+    if card.status != "blocked" or card.status_before_block != "review":
+        return False
+    project = conn.execute(select(t.project).where(t.project.c.id == card.project_id)).one()
+    return not cards.two_signatures(project)
+
+
 def observed(conn: Connection, card_id: str, merge_sha: str | None) -> None:
     """The probe stored a report's observation, under the project's lock."""
     card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
@@ -63,7 +78,7 @@ def observed(conn: Connection, card_id: str, merge_sha: str | None) -> None:
         conn.execute(
             update(t.card).where(t.card.c.id == card_id).values(merge_report=key, merge_told=False)
         )
-    if card.status == "review":
+    if waits_in_review(conn, card):
         _tell(conn, card_id, merge_sha)
 
 

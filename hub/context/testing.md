@@ -170,3 +170,75 @@ Which reasons are confirmed and which inferred: the hang, its cause and the seco
 weakness are confirmed (reproduced in review, stacks from CI, counter-checks in
 `test_test_database.py`); the weighing of the first and third alternatives is the author's
 reasoning, not measured.
+
+## `NOT_ROUTED` lists one entry per line, sorted, its reason on the line
+
+**Id:** 3b8a32d7-5bde-4c3a-abcb-49bd22750c7f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6jwjdwftq6cm (option 1, lotse's go, 2026-11-04); implementation session, 2026-11-04 (merge reproduction in scratch repositories)
+**Revisit when:** `NOT_ROUTED` moves out of `hub/tests/test_contract_routes.py`, or the contract index is checked another way
+
+`NOT_ROUTED` in `hub/tests/test_contract_routes.py` holds one `(method, path)` per line, sorted
+by method and then path, each with its reason as a comment on the same line (the card that brings
+the route, where there is one). An entry is added at its sorted place and removed with its line.
+The set is the same as before the change; the test's behaviour is unchanged.
+
+**Reason:** every card that adds a contract route without a route yet, or the route for one,
+changes this set, and several run at once. With entries grouped under shared comments and new
+ones added at the end, two such pull requests changed the same lines and conflicted: reproduced
+by two branches each adding one entry to the old form (conflict) and the same two entries to
+the new form (clean merge). Two pull requests still conflict when they change neighbouring
+lines (reproduced as well); sorting only makes that rare.
+
+**Rejected alternatives:**
+- Keep the grouped form — every parallel entry conflicts at the end of the set.
+- Move the entries to a data file next to the test — the same conflicts in another file, and the
+  reasons leave the code that checks them.
+
+## Pytest keeps a test's temporary directory only when the test failed
+
+**Id:** a986378a-5387-4cc0-88ef-88e8b7cd1bb3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-eyw44pwjx03d; CI run 41875042289, job hub-sqlite 126732121254, 2026-11-04
+**Verification:** corroborated — that job's log, the measurement step after `make check`
+**Revisit when:** the suite stops copying a database file into `tmp_path`, or pytest changes what `failed` retains
+**See:** testing.md#the-suite-runs-in-parallel-one-database-per-worker-and-the-wheel-job-runs-a-marked-subset — 081792e2-758e-4202-84f7-c2957459665e — as of 2026-11-04
+
+`hub/pyproject.toml` sets `tmp_path_retention_policy = "failed"` (pytest 9.1.1; the
+option exists since pytest 7.3, whose default is `all`). A passing test's
+`tmp_path` is removed, and a green session removes its basetemp. The directory
+stays only when the test itself fails. A failure in fixture setup or teardown,
+such as copying the template, loses it. `-o tmp_path_retention_policy=all`
+keeps everything for local debugging.
+
+A green `hub-sqlite` run on a GitHub-hosted runner left the copies in place.
+Counting rule, from that job's own log after `make check`: `du -sh` of
+`/tmp/pytest-of-runner`; `find` of `hub.db` under it, and the same find limited
+to a `template` path; `ls -lh` of one template file; `df -h /tmp`. Job
+126732121254 (run 41875042289, 4 xdist workers, 5732 passed and 107 skipped)
+reported the directory at 6.4G, 4642 `hub.db` files of which 4 are the workers'
+templates and the rest copies of that 1.4M file (`du -ch` of every `hub.db` was
+6.3G). The runner disk was 145G with 81G free afterwards. The `hub-sqlite` job
+still prints `du -sh /tmp/pytest-of-*` after the suite (the command tolerates
+no match) so that size stays visible.
+
+**Reason:** `failed` drops the passing tests' copies, about 6.4G on that run,
+and keeps the directory only when the test itself fails. A failure in fixture
+setup or teardown, such as copying the template, loses it. The earlier
+`OSError: [Errno 122] Disk quota exceeded` while copying the template, and the
+following `sqlite3.OperationalError: disk I/O error`, on pull requests #1324
+(run 41819769733 attempt 1, job hub-sqlite 126539773241) and #1320
+(run 41839052855 attempt 1, job hub-sqlite 126605831245) were not reproduced on this run.
+The measurement does not show that those failures were this retention, and this
+decision does not claim to fix them.
+
+**Rejected alternative:** `tmp_path_retention_policy = "none"`. A red run then has no
+directory left to debug from.
+
+**Rejected alternative:** leave the default `all` and delete `/tmp/pytest-of-*`
+from the workflow only. The copies still exist for the whole suite, which is
+the disk the measurement found, and a local run keeps them too.
