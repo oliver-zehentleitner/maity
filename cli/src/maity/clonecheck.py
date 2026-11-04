@@ -226,8 +226,8 @@ def config_entries(data: bytes, git: str | None = None) -> list[tuple[str, str |
             "GIT_CEILING_DIRECTORIES": str(Path(empty).parent),
             "HOME": empty,
         }
-        if os.name == "nt":
-            env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", "")
+        if _windows():
+            env["SYSTEMROOT"] = _windows_directory()  # the system's, not maity's environment's
             env["NoDefaultCurrentDirectoryInExePath"] = "1"
         git = git or proc.program(proc.GIT[0])
         if git is None:
@@ -594,13 +594,17 @@ def git_path_env(program: str) -> dict[str, str]:
     """PATH for git under the runner: git's own directory and the system's, never the PATH
     of maity's command line, so a program git starts by name is not one placed there."""
     parts = [os.path.dirname(program)]
-    if os.name == "nt":
+    if _windows():
         system = _windows_directory()
         parts += [os.path.join(system, "System32"), system]
         path = os.pathsep.join(dict.fromkeys(p for p in parts if p))
         return {"PATH": path, "SYSTEMROOT": system}  # not maity's SYSTEMROOT either
     parts += os.defpath.split(os.pathsep)
     return {"PATH": os.pathsep.join(dict.fromkeys(p for p in parts if p))}
+
+
+def _windows() -> bool:
+    return os.name == "nt"
 
 
 def _windows_directory() -> str:

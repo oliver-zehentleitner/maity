@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -363,10 +364,10 @@ def test_git_under_the_runner_is_the_one_it_recorded_not_paths(
     assert not marker.exists()
 
 
-def test_git_under_the_runner_reads_no_ignore_file_of_homes(
+def test_git_under_the_runner_reads_no_ignore_or_attributes_file_of_homes(
     placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """HOME's own ignore file does not change what maity sees in the clone."""
+    """HOME's own ignore and attributes files do not change what maity sees in the clone."""
     from maity import proc
 
     home = tmp_path / "home"
@@ -374,9 +375,12 @@ def test_git_under_the_runner_reads_no_ignore_file_of_homes(
     (home / ".config" / "git" / "ignore").write_text("*.secret\n")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    (home / ".config" / "git" / "attributes").write_text("*.secret probeattr=yes\n")
     (placed / "a.secret").write_text("x\n")
     status = proc.run([*proc.GIT, "status", "--porcelain"], placed)
     assert "a.secret" in status.stdout, status.stderr
+    attr = proc.run([*proc.GIT, "check-attr", "probeattr", "--", "a.secret"], placed)
+    assert attr.stdout.strip().endswith("unspecified"), attr.stdout + attr.stderr
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no execute bit")
@@ -406,6 +410,29 @@ def test_a_partial_clone_is_named_so(
     with pytest.raises(gitfacts.FactsError, match="Partial clones are not supported") as refused:
         gitfacts.collect(partial)
     assert "unset" not in str(refused.value)
+
+
+def test_on_windows_git_gets_the_systems_systemroot_not_maitys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both git runs under the runner, the configuration parse and git itself: SYSTEMROOT and
+    the PATH built from it are the system's, whatever maity's environment says."""
+    seen: list[dict[str, str]] = []
+
+    def recording(cmd: list[str], **kwargs: Any) -> Any:
+        seen.append(kwargs["env"])
+        raise OSError("not started")
+
+    monkeypatch.setenv("SYSTEMROOT", "/chosen/by/the/command/line")
+    monkeypatch.setattr(clonecheck, "_windows_directory", lambda: "/the/system")
+    monkeypatch.setattr(clonecheck, "_windows", lambda: True, raising=False)
+    monkeypatch.setattr(subprocess, "run", recording)
+    assert clonecheck.config_entries(b"", "/opt/git/cmd/git") is None
+    pinned = clonecheck.git_path_env("/opt/git/cmd/git")
+    monkeypatch.undo()
+    assert seen[0]["SYSTEMROOT"] == "/the/system"
+    assert pinned["SYSTEMROOT"] == "/the/system"
+    assert "/chosen" not in pinned["PATH"] and "/chosen" not in seen[0]["PATH"]
 
 
 def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> None:
