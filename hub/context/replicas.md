@@ -320,8 +320,12 @@ rolled back either. Inside a request's transaction (a wrong second-factor code i
 connection for the moment of the count. Counts and forge budgets share a dedicated PostgreSQL
 engine per process, with two pooled connections and no overflow. The request pool can therefore
 be entirely occupied without making a request retain its transaction's locks while waiting for
-its own second serving connection. The app disposes the extra engine after its workers stop;
-SQLite and MariaDB still create no extra engine. The extra two connections per process count
+its own second serving connection. There is one such engine per process, database and timeouts
+(`db.make_shared_engine`), shared by every app the process builds: the counters hold only the
+engine configured last, so an engine per app left each earlier app's two connections open until
+that app stopped, and the tests, which build an app per client, ran PostgreSQL out of connection
+slots (`test_device_codes`, 60 clients). The app disposes it after its workers stop, which only
+closes its idle connections; SQLite and MariaDB still create no extra engine. The extra two connections per process count
 in the deployment's connection budget. Rejected: the count on the request's own connection, which a
 refused request's rollback would undo, a wrong code included. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
 changes nothing of an account, and taking the human's shared `account_lock` there would wait for

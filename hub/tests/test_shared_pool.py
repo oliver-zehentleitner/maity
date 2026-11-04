@@ -54,3 +54,23 @@ def test_counters_progress_while_a_request_holds_the_entire_pool(
             extra.dispose()
         app.state.health_engine.dispose()
         serving.dispose()
+
+
+def test_the_apps_of_one_process_share_one_counter_engine(
+    migrated: Engine, settings: Settings
+) -> None:
+    """The counters hold only the engine configured last: an engine per app would leave every
+    earlier app's pool holding connections, and many apps in one process (one per test
+    client) would use up the database's connection slots."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("shared counters run on PostgreSQL")
+    first, second = create_app(settings, migrated), create_app(settings, migrated)
+    other = create_app(replace(settings, db_statement_timeout=7), migrated)
+    try:
+        assert first.state.shared_engine is second.state.shared_engine
+        assert other.state.shared_engine is not first.state.shared_engine  # its own timeouts
+    finally:
+        shared_counts.configure(None)
+        shared_budget.configure(None)
+        for app in (first, second, other):
+            app.state.health_engine.dispose()
