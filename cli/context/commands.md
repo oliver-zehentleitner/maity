@@ -865,7 +865,7 @@ so that a route such as `/api/v1/events` is not refused.
 **Status:** active
 **Evidence:** inferred
 **Source:** the card tsk-6s087f17bvd7 (decided by the maintainer in req-02c4xjbn1sep); contract `docs/api.md` §8.4 ("A review's text names only what stands at its head", form 4)
-**Revisit when:** reviewers report a quote refused that was no quotation, or a misquote passes because its file and line stood a few words away
+**Revisit when:** reviewers report a quote refused that was no quotation (a delta review quoting removed text next to its line is the known case), or a misquote passes because its file and line stood a few words away
 
 A review had sent two quoted sentences that the reviewed head did not hold; the cites in its JSON
 were right, and the text check read only code spans. The maintainer decided that quotes are
@@ -878,10 +878,16 @@ without backticks, since prose wraps and reviewers drop code marks.
 
 Run over 124 saved review results of this project against their heads, the first draft, which
 tied every quote in a paragraph to every file and line the paragraph named, refused 60 of 194
-quotes, nearly all of them proposals and claims followed by their evidence. With the tie
-right next to the quote, 5 of 120 were refused: one a real misquote ("every existing account
-was switched on" for "every account existing at the upgrade is switched on"), three a mutation,
-an output and a rendered text, each fixed by putting it in a code span, and one ambiguous.
+quotes, nearly all of them proposals and claims followed by their evidence. With the tie right
+next to the quote, 5 of 120 were refused, none of them a misquote: a mutation, an output, a
+rendered text, one ambiguous, and a delta review's correct quote of the text its change removed,
+set next to the line that replaced it. A reviewer's own run over 138 of its results found 7 of
+231 tied quotes refused, again no misquote: outputs and a rendered text, a removed text as
+above, and two correct quotes of a comment and of a string literal wrapped over lines. A wrapped
+comment now matches the file without its comment markers; the others are written in a code
+span. Neither sample holds a misquote, so the check rests on the incident (a quoted sentence the
+head never held) and the maintainer's decision, not on misquotes found in old reviews, and its
+cost is that rule for reviewers.
 
 A quote tied by a file and line has to stand at the head, as the line refers to the head
 (form 1). A quote tied only by its section may also stand on the default branch, so that a
@@ -895,6 +901,9 @@ review can quote what the change removed.
 - Checking every quote of four words or more against the whole head: proposals and outputs
   would all be refused.
 - `„…“` left out: German reviews use it, and its closing `“` would otherwise open a quote.
+- Letting a quote tied by a file and line also stand at the review's base, for a delta review
+  that quotes what it replaced: the review result carries no base, and `origin/HEAD` is not the
+  delta's base either.
 
 ## `proc.run` reads git and gh as UTF-8, whatever the machine's locale
 

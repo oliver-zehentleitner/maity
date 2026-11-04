@@ -2,7 +2,7 @@
 names only what stands at its head", §13)
 
 The cites are checked by `citecheck`; reviews still passed with prose that named tests, keys or
-files that were not there. This reads the message's text in the same clone and looks for three
+files that were not there. This reads the message's text in the same clone and looks for four
 forms: a file and line, a name in a code span, an object hash, and a quotation from a file that
 the text ties to that file. It catches names and quotes that are not there, not wrong claims.
 """
@@ -32,7 +32,10 @@ _CORE = re.compile(r"[A-Za-z_][A-Za-z0-9_./-]{2,}")
 _SKIP_CHARS = set("#@{}<>")
 # Form 4: a quotation, between "…" or “…”, of four words or more.
 _QUOTE = re.compile(r'"[^"]*"|“[^“”]*”|„[^„“”]*[“”]')
-_GAP_STOPS = set('.;!?"“”„')
+_GAP_STOPS = set('.;!?|"“”„')  # `|`: a table's cell is no sentence of its own
+_ESCAPED_QUOTE = re.compile(r'\\"')
+# A comment marker at a line's start, so that a quote of a wrapped comment matches.
+_COMMENT = re.compile(r"^[ \t]*(?:#+|//+|/?\*+/?|--|;+)[ \t]?", re.MULTILINE)
 _AFTER_GAP = re.compile(r"[ \t]*\([ \t]*`?")  # "…" (path:n): the place in brackets
 _QUOTE_WORDS = 4
 _CUT = re.compile(r"…|\.\.\.")
@@ -138,7 +141,7 @@ class _Repo:
         if default.returncode == 0 and default.stdout.strip() != head:
             self.revs.append(default.stdout.strip())
         self._files: dict[str, list[str]] = {}
-        self._flat: dict[str, str | None] = {}
+        self._flat: dict[str, tuple[str, ...]] = {}
 
     def _git(self, *args: str) -> subprocess.CompletedProcess[str]:
         return proc.run([*proc.GIT, "--literal-pathspecs", *args], self.cwd)
@@ -178,13 +181,17 @@ class _Repo:
     def has_object(self, word: str) -> bool:
         return self._git("cat-file", "-e", word).returncode == 0
 
-    def flat_text(self, rev: str, path: str) -> str | None:
+    def flat_text(self, rev: str, path: str) -> tuple[str, ...]:
         """The file with every run of whitespace as one space, so that a quote of wrapped
-        prose matches."""
+        prose matches, once as it is and once without the comment markers at the lines'
+        starts, so that a quote of a wrapped comment does too; nothing for a missing file."""
         key = f"{rev}:{path}"
         if key not in self._flat:
             shown = self._git("show", key)
-            self._flat[key] = _flat(shown.stdout) if shown.returncode == 0 else None
+            text = shown.stdout
+            self._flat[key] = (
+                (_flat(text), _flat(_COMMENT.sub("", text))) if shown.returncode == 0 else ()
+            )
         return self._flat[key]
 
 
@@ -266,18 +273,20 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
     or `”`, within one paragraph and outside code spans, and has four words or more. It is
     tied to a file by a file and line (form 1) right before it (`path:n says "…"`) or right
     after it in brackets (`"…" (path:n)`), and failing that to the file of the section it sits
-    in: the nearest heading above that names exactly one file at the head."""
+    in: the nearest heading above that names a file at the head, when it names exactly one.
+    A `\\"` closes no quote."""
     quotes: list[Quotation] = []
-    section: list[tuple[int, str | None]] = []  # (level, file) of the headings above
+    section: list[tuple[int, list[str]]] = []  # (level, files at the head) of the headings
     paragraph: list[str] = []
 
     def flush() -> None:
         if not paragraph:
             return
         para = "\n".join(paragraph)
-        blanked = _blank_spans(para)
+        blanked = _ESCAPED_QUOTE.sub("  ", _blank_spans(para))
         lines = [m for m in _FILE_LINE.finditer(para) if m.group(1) in files]
-        here = next((f for _, f in reversed(section) if f is not None), None)
+        nearest = next((named for _, named in reversed(section) if named), [])
+        here = nearest[0] if len(nearest) == 1 else None
         for match in _QUOTE.finditer(blanked):
             quote = para[match.start() + 1 : match.end() - 1]
             if len(quote.split()) < _QUOTE_WORDS:
@@ -303,8 +312,7 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
             while section and section[-1][0] >= level:
                 section.pop()
             named = {m.group(1) for m in _PATH_IN_HEADING.finditer(heading.group(2))}
-            in_head = [f for f in named if f in files]
-            section.append((level, in_head[0] if len(in_head) == 1 else None))
+            section.append((level, sorted(f for f in named if f in files)))
         elif line.strip():
             paragraph.append(line)
         else:
@@ -314,12 +322,14 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
 
 
 def _quote_stands(repo: _Repo, revs: list[str], quote: str, path: str) -> bool:
-    parts = [part.strip() for part in _CUT.split(quote)]
-    parts[-1] = parts[-1].rstrip(".,;:!?")
-    for rev in revs:
-        flat = repo.flat_text(rev, path)
-        if flat is not None and all(part in flat for part in parts if part):
-            return True
+    """`\\"` in the quote may be Markdown's escape of `"` or the file's own text: both count."""
+    for text in dict.fromkeys([quote, quote.replace('\\"', '"')]):
+        parts = [part.strip() for part in _CUT.split(text)]
+        parts[-1] = parts[-1].rstrip(".,;:!?")
+        for rev in revs:
+            for flat in repo.flat_text(rev, path):
+                if all(part in flat for part in parts if part):
+                    return True
     return False
 
 

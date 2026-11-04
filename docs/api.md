@@ -10314,25 +10314,31 @@ is not there is not sent:
 4. **A quotation from a file**: what stands between `"` and the next
    `"`, `“` and the next `”`, or `„` and the next `“` or `”`, within one
    paragraph and outside code spans, with four words or more (a short
-   word or a term in quotes is prose). It is a quotation when the text
-   ties it to one file at `head`: a file and line (form 1) stands right
-   before it, with nothing between that ends a sentence or quotes and at
-   most two words in 24 characters (`docs/how/connected.md:3 says "…"`),
-   or right after it in brackets (`"…" (docs/how/connected.md:3)`);
-   failing that, the section it sits in is about one file, the nearest
-   heading above it that names exactly one file at `head`. A quotation
-   stands verbatim in that file, compared with each run of whitespace as
-   one space and without backticks, so that wrapped prose and dropped
-   code marks match; a `…` or `...` cuts it into parts that must each
-   stand there, and the marks `.`, `,`, `;`, `:`, `!` and `?` at its end
-   are left out. One tied by a file and line stands there at `head`, as
-   the line refers to `head`; one tied by its section may also stand in
-   that file at `origin/HEAD`, so that a section can quote what the
-   change removed. A quote not tied to a file is prose and passes. A
-   wording the review proposes, a command's output, a mutation it
-   applied or a text the code renders is therefore written in a code
-   span (a span with whitespace in it is skipped, form 2) or without
-   double quotes.
+   word or a term in quotes is prose); a `\"` closes no quote. It is a
+   quotation when the text ties it to one file at `head`: a file and
+   line (form 1) stands right before it, with nothing between that ends
+   a sentence, quotes or ends a table's cell (`|`) and at most two words
+   in 24 characters (`docs/how/connected.md:3 says "…"`), or right after
+   it in brackets (`"…" (docs/how/connected.md:3)`); failing that, the
+   section it sits in is about one file: the nearest heading above it
+   that names a file at `head` names exactly that one, and a heading
+   that names two or more ties nothing. A quotation stands verbatim in
+   that file, compared with each run of whitespace as one space and
+   without backticks, so that wrapped prose and dropped code marks
+   match; a quote of a comment wrapped over lines matches the file
+   without the comment markers (`#`, `//`, `*`, `--`, `;`) at the lines'
+   starts, and a `\"` in the quote matches the file's `\"` or its `"`. A
+   `…` or `...` cuts it into parts that must each stand there, and the
+   marks `.`, `,`, `;`, `:`, `!` and `?` at its end are left out. One
+   tied by a file and line stands there at `head`, as the line refers to
+   `head`; one tied by its section may also stand in that file at
+   `origin/HEAD`, so that a section can quote what the change removed. A
+   quote not tied to a file is prose and passes. A wording the review
+   proposes, a command's output, a mutation it applied, a text the code
+   renders, a string literal wrapped over lines, or a text the change
+   removed next to the line that replaced it is therefore written in a
+   code span (a span with whitespace in it is skipped, form 2) or
+   without double quotes.
 
 Not checked: a fenced code block; everything under a heading `Ran` up
 to the next heading of the same or a higher level, where the reviewer

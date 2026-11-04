@@ -230,6 +230,12 @@ PAGE = {
         "An agent that asks a question goes back to the card it asked about,\n"
         "and the card is marked blocked, so everyone can see why it is not moving.\n"
         "The `.flag` box stays until the answer.\n"
+        'Its label reads "waiting for an answer" until then.\n'
+    ),
+    "web/js/wake.js": (
+        "// The wait returns at once with every new event\n"
+        "// addressed to this agent, then the harness wakes it.\n"
+        'const LABEL = "a \\"quoted\\" word in the label";\n'
     ),
 }
 
@@ -326,5 +332,33 @@ def test_say_refuses_a_quote_that_is_not_at_the_head(
     assert _send(tmp_path, head, text) == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert '"the agent closes the card when it is done": not in docs/how/connected.md' in err
-    assert "a proposed wording, an output or a mutation in backticks" in err
+    assert "a proposed wording, an output, a mutation or a removed text" in err
     assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
+
+
+def test_a_quote_of_a_wrapped_comment_or_with_an_escaped_quote_stands(clone: Path) -> None:
+    body = (
+        'web/js/wake.js:1 says "every new event addressed to this agent, then the harness".\n\n'
+        'web/js/wake.js:3 holds "a \\"quoted\\" word in the label".\n\n'
+        'docs/how/connected.md:6 says "Its label reads \\"waiting for an answer\\" until".\n\n'
+        'docs/how/connected.md:3 has no "agent \\"waits\\" for the owner here".\n'
+    )
+    found = quoted(clone, body)
+    assert len(found) == 1 and 'agent \\"waits\\" for the owner here' in found[0], found
+
+
+def test_a_heading_with_two_files_ends_the_section_of_one_above(clone: Path) -> None:
+    body = (
+        "## docs/how/connected.md\n\n"
+        "### docs/how/connected.md and web/js/wake.js\n\n"
+        '"every new event addressed to this agent" is from the script.\n'
+    )
+    assert quoted(clone, body) == []
+
+
+def test_a_table_cell_ties_no_quote_in_the_next_cell(clone: Path) -> None:
+    body = (
+        "| Where | Proposal |\n|---|---|\n"
+        '| docs/how/connected.md:3 | "an agent goes back to its own card" |\n'
+    )
+    assert quoted(clone, body) == []
