@@ -188,7 +188,11 @@ turn. Two runner paths run git without `proc.run` and keep their own
 settings: `gc`'s read of a clone (`operate.unsaved_work`, pinned
 `protocol.allow=never` and a cleaned environment) and a workspace clone
 made as the agents' user (`as_user.run`, the `-c` list of `https` and
-`ssh`).
+`ssh`). Outside the runner, settings in the clone that name a program for
+a remote (`remote.<name>.uploadpack`, `core.sshCommand`) still apply to
+`ls-remote`, as they do to the person's own git in that clone; under the
+runner, maity's git runs only in a plain clone, whose configuration
+carries no such key.
 `gh pr view` is asked only about an `https` URL on github.com or
 `GH_HOST`, the same hosts `report` already asks gh about.
 

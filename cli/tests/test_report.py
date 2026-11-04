@@ -141,6 +141,9 @@ def test_remote_off_github_is_unknown_without_asking_gh(clone: Path, bin_dir: Pa
         ("git@github.com:a/b.git", "github.com"),
         ("ssh://git@gitlab.example:2222/a/b", "gitlab.example"),
         ("/srv/git/b.git", None),
+        ("C:\\Users\\a\\b.git", None),
+        ("C:/Users/a/b.git", None),
+        ("host-alias:b.git", "host-alias"),
     ],
 )
 def test_remote_host(url: str, host: str | None) -> None:

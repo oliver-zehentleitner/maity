@@ -134,6 +134,8 @@ def remote_host(url: str) -> str | None:
     """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path."""
     if "://" in url:
         return urllib.parse.urlsplit(url).hostname
+    if re.match(r"^[A-Za-z]:[\\/]", url):  # a Windows drive path, not host `C`
+        return None
     match = re.match(r"^(?:[^@/]+@)?([^:/]+):", url)
     return match.group(1) if match else None
 
