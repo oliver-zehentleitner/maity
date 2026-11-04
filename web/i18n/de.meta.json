@@ -3827,6 +3827,10 @@
     "en": "bcaa5d6cec3e2285",
     "text": "7c49187270a19440"
   },
+  "error.project_limit": {
+    "en": "8860ca6b483b92dc",
+    "text": "1e83f190e054fdaa"
+  },
   "error.rate_limited": {
     "en": "eb225fd04f71a530",
     "text": "a3fea6582157a34d"
@@ -8063,6 +8067,18 @@
     "en": "77aadfc309105cd0",
     "text": "5c00bebc9c21bde3"
   },
+  "limits.projects.at": {
+    "en": "4a63e8a7c5eb7629",
+    "text": "b1dad6819f06ab06"
+  },
+  "limits.projects.hint": {
+    "en": "67bab4d8e9be36a0",
+    "text": "322452ffbeb38ff7"
+  },
+  "limits.projects.label": {
+    "en": "b6d4cb1fd0f9af75",
+    "text": "97edf0e87e2d0f91"
+  },
   "limits.save": {
     "en": "91afeacb7d1aa481",
     "text": "e3fb66a9cbfcebbb"
@@ -8802,6 +8818,10 @@
   "memberpage.actions.label": {
     "en": "e06a7f4657ebee9b",
     "text": "55170940acaae436"
+  },
+  "memberpage.activity.cursor_stuck": {
+    "en": "a7e1f024331f6c1d",
+    "text": "27f7c47ab585ba9f"
   },
   "memberpage.activity.failed": {
     "en": "129ded00b9230026",
@@ -9959,14 +9979,6 @@
     "en": "888560be416ca928",
     "text": "888560be416ca928"
   },
-  "messages.cursor_stuck": {
-    "en": "a7e1f024331f6c1d",
-    "text": "27f7c47ab585ba9f"
-  },
-  "messages.cut": {
-    "en": "8ab4866b3f0358bf",
-    "text": "71b1af279fba1091"
-  },
   "messages.filter.every_type": {
     "en": "e07a1390aa248806",
     "text": "6b87ad04c54be93d"
@@ -9987,6 +9999,10 @@
     "en": "c67dde4187c1b692",
     "text": "43cfa78d872f9228"
   },
+  "messages.new_failed": {
+    "en": "e4d19a856d0d36dc",
+    "text": "68135e077217f87b"
+  },
   "messages.none": {
     "en": "1e7936a3a804e102",
     "text": "75fda6547b82ca33"
@@ -9994,6 +10010,18 @@
   "messages.none_of_type": {
     "en": "6c5ee8a820df13be",
     "text": "6db921b1611a75ec"
+  },
+  "messages.not_read_yet": {
+    "en": "dd53c10be9be8cac",
+    "text": "8f0fcdbb8938f297"
+  },
+  "messages.older": {
+    "en": "9d767fc1f68dfc65",
+    "text": "5e886e864a89e369"
+  },
+  "messages.read_failed": {
+    "en": "3a29780ed7868ab6",
+    "text": "a6721fa4794831e3"
   },
   "messages.remove": {
     "en": "9469a102f04ea196",
@@ -10018,6 +10046,10 @@
   "messages.remove.label": {
     "en": "4ffa3b8abbf19914",
     "text": "efa94e7fef8ab077"
+  },
+  "messages.removed": {
+    "en": "a1b61b3fcf61b9da",
+    "text": "5cbdddce981ea18a"
   },
   "messages.review.more": {
     "en": "4533d2647946c19c",

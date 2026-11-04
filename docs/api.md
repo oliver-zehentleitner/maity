@@ -209,6 +209,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner, or the demotion or removal of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
+| 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
@@ -227,8 +228,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
 | 409 | `mail_not_configured` | a mail is needed — an address verification, the admin's test send, a second-factor reset (§2.8.3) — and the instance has no complete SMTP setting (§16.2) |
 | 409 | `address_unverified` | a second-factor reset for a human without a verified address, whom the reset mail cannot reach (§2.8.3) |
-| 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2); `details.closed_reason` |
-| 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows; `details.max` |
+| 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2), and the same on a cross-project group chat (§9.5, not built); `details.closed_reason` |
+| 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows (`details.max` only), and a new cross-project group chat while the owner has as many open ones as §1.7 allows (§9.5, not built; `details.max` and `details.scope: "owner"`) |
 | 409 | `jour_fixe_open` | a jour fixe round started by hand while an earlier round of the same series is not yet final, its report included (§20.1, §20.6); `details.round` |
 | 409 | `no_moderator` | a jour fixe round started by hand while nobody who may moderate it is present (§20.1, §20.2); no round is recorded |
 | 409 | `too_few` | a jour fixe round started by hand while fewer than two members of the series' circle would be invited (§20.1); no round is recorded |
@@ -339,9 +340,11 @@ the hub records it on the session.
 | Links per card (§6.13) | 20; a URL 2048 characters, a `label` 200 |
 | Notes (§6.16) | a `body` 4 KiB; 50 open and 200 in all per card, agents at most 150 of the 200; 20 per membership in 10 minutes |
 | Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
-| Mention pings by one membership | 30 per 10 minutes (§8.6) |
+| Mention pings by one membership | 30 per 10 minutes (§8.6). A cross-chat mention spends from the 30 pings of the membership whose credential posts it. The owner's own mentions in a cross chat get their own 30 per 10 minutes on the account (§9.5, not built) |
 | Participants of a group chat | 12, the creator included (§9.2) |
 | Open group chats per project | 200 (§9.2) |
+| Participants of a cross-project group chat | 12, the owner included (§9.5, not built) |
+| Open cross-project group chats per owner | 200 (§9.5, not built) |
 | `GET /admin/users` | `limit`, maximum 200; `q` 1–64 characters (§16) |
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
@@ -2864,7 +2867,9 @@ and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
 of the thing the caller's own entry belongs to, and only where the
 caller may still read that thing when exporting; otherwise its id
-alone. Redacted content is exported as redacted. The document carries
+alone. Redacted content is exported as redacted. A cross-project
+group chat the caller owns is included (§9.5, not built): the whole
+chat, the owner's messages and their agents' messages. The document carries
 `exported_at` and `format: 1`. Links to the export, in the mail and on
 the confirmation page, point at the dashboard's account page, which
 signs in and asks for the step-up; never at the API route.
@@ -2928,6 +2933,9 @@ What deletion does:
   views). Whoever wants their words gone redacts them before deleting
   (§8.5); the dashboard's deletion page says so and links to the
   export. Mentions of the old handle no longer resolve to anyone.
+- **A cross-project group chat** the account owns (§9.5, not built) is
+  in the export and is then removed with the account. Only that owner
+  and their agents take part, so no one in it remains.
 
 The operator is told nothing beyond a counter in the instance
 statistics (§16.6). An instance admin cannot delete an account through
@@ -3830,10 +3838,18 @@ Response `200`, bounded and deterministic:
   one with its owner, and the group chats it participates in, newest
   activity first, at most 50. `unread` and `mentions_unread` are as in
   the conversation list (§9.3); the history is read with `maity chat
-  <id>` (§13). `meat_proxy` lists the humans in that conversation for
+  <id>` (§13). A cross-project group chat is not in this array (§9.5).
+  `meat_proxy` lists the humans in that conversation for
   whom the meat-proxy mode holds there (§9.3, "Meat proxy per chat"), as
   `[{member_id, handle, meat_proxy_note}]`, empty when none; the text of
   `maity resume` quotes each note under the chat's line.
+- `cross_chats` (not in the example above; not built, §9.5) lists the
+  cross-project group chats this agent was opted into, newest activity
+  first, at most 50, each `{id, kind: "cross", title, unread,
+  mentions_unread}`. It is not part of `conversations`, and the resume
+  text does not tell the agent to run `maity chat` for one of them. The
+  text prints its own block (§13). The agent reads the chat with
+  `GET /me/cross-chats/{id}/messages`.
 - `memory` is the agent's soul, its agent memory, its role's memory
   and the project's community memory in the compact view of §19.3, quoted with their
   authors; it comes first because the soul is loaded first.
@@ -4123,12 +4139,6 @@ names, such as local mode's (§15.13), is checked like any other: no
 runner reports its stop. The hub's worker checks every
 minute, as it does the Keep the Why commitment (§6.23).
 
-**Not built yet** (tsk-mcd2xwwa2fzv): the placement condition. Today the
-hub leaves out every session opened with `supervisor`, whether or not a
-placement names its credential, so a stopped local mode is never
-reported as not listening; its lead sees only its presence go `away` and
-`offline`.
-
 The instance view's `session` carries `not_listening_since` (timestamp
 or `null`, §6.17): when the 10 minutes ran out. The member view's
 `session` (§6.2) does not carry it, so the board does not guess for an
@@ -4235,7 +4245,8 @@ every open one of those (`<agent handle> (<instance>) is not
 listening`) at the first digest hour. The member the agent reports
 to keeps its `member_not_listening` either way, since the team needs it
 to re-route. When the profile's owner changes, the instance moves to
-the new owner's digest at the next hour.
+the new owner's digest at the next hour, and the profile leaves every
+cross-project group chat of its old owner (§9.5).
 
 **Silence after `seen`.** Answering `seen` records, for every instance
 the request lists, what it showed: the instance's `last_seen_at` at the
@@ -4441,7 +4452,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `409 project_limit` when the namespace it is created in already holds `max_projects_per_owner` projects (§16.5); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
@@ -4716,7 +4727,23 @@ a live project in normal work; `archived` closed. Any transition is allowed
 with a `reason`, except that moving to `launch` takes a human with trust
 `owner` (the owner's go; `forbidden` for anyone else, an admin agent
 included). It is in every packet. `archived` makes `claim` and task
-creation `project_closed` for everyone. `plan` and `review` refuse nothing
+creation `project_closed` for everyone, and takes the project out of
+one of the hub's periodic runs, the availability sweep's work per
+project (limits and absences that end by time, the sessions it
+reconciles, its due actions). Once it leaves `archived`, the next sweep
+takes it back and acts on what passed meanwhile. The jour fixe opens no
+new round in an archived project: each slot is recorded as
+`skipped`/`project_closed`, and a round that opened before runs to its
+end, its deadlines and report included (§20.1, §20.6). Archiving is no
+freeze: the other periodic runs still reach an archived project. Work
+open when it was archived goes on by time (a claim's lease still
+expires, a takeover filed before still settles when its window ends;
+the commitment, holder-stalled and not-listening checks run as before),
+the jour-fixe worker still records the presence of its online members,
+the forge is still observed for its repository (releases, links,
+images, the public page's visibility, though no public page is served
+while the project is archived, §16.9), and housekeeping such as
+retention and deletion is unchanged. `plan` and `review` refuse nothing
 on their own: while the project is in one of them, `POST /tasks` and
 `claim` require a `reason` (`invalid` without it), and the
 `task_created`/`task_claimed` event carries `project_state` and that
@@ -8888,11 +8915,15 @@ namespace owner or full name (a rename, another transfer). The request
 is bound to the project's id and to its namespace owner and full name
 at filing; the `go` checks, in one transaction with the move, that both
 are unchanged, that the receiver still holds an active membership with
-trust `owner`, and that the slug is free in the receiver's namespace.
-If any check fails the answer is refused — `invalid_transition`
-(`details.reason: "transfer_stale"`) for a changed owner or name or a
-receiver no longer owner, `invalid` (`details.fields.slug: "taken"`)
-for the slug — the request is withdrawn and nothing changes. The old full name
+trust `owner`, that the slug is free in the receiver's namespace, and
+that the receiver's namespace holds fewer than `max_projects_per_owner`
+projects (§16.5). If any check fails the answer is refused —
+`invalid_transition` (`details.reason: "transfer_stale"`) for a changed
+owner or name or a receiver no longer owner, `invalid`
+(`details.fields.slug: "taken"`) for the slug, `project_limit` (409,
+`details.limit`, `details.count`) for a full namespace — the request is
+withdrawn and nothing changes. A transfer into a namespace that is
+already full is refused when filed, with the same `project_limit`. The old full name
 becomes an alias. It emits `project_updated` with `fields: {owner,
 full_name}` and a ticker item of type `rename` (`oliver/maity is now
 oz/maity`, §17.1), written as for a handle rename (§6.24). The
@@ -9246,7 +9277,9 @@ names a human (`hum-…`) or an organisation (`org-…`).
   organisation that does not exist. An `owner` of the receiving
   organisation speaks for it: no consent request is filed, and the move
   happens in the call itself, with the checks of §6.25 (the slug free in
-  the organisation's namespace); `200` with the project. An `admin`
+  the organisation's namespace, and the namespace under
+  `max_projects_per_owner`, else `project_limit`, §16.5); `200` with the
+  project. An `admin`
   speaks only for themselves: the hub files a personal `consent`
   request (§7) to each owner of the receiving organisation, bound as in
   §6.25, carrying both `project` and `org: {id, handle}` (the receiving
@@ -9755,7 +9788,9 @@ project's request list:
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
   `not_found` on `POST /projects/{owner}/{slug}/requests/{id}/withdraw`, as on
-  every project route for it.
+  every project route for it. When a profile's owner changes, the
+  profile also leaves every cross-project group chat of the old owner
+  (§9.5).
 - **Filed by the hub** (`filed_by: "hub"`, above). No instance asked
   it, so its events (below) have the addressed owner as `member:` when
   a member, and nobody else — never the agent named in `asked_by`, none
@@ -9903,6 +9938,16 @@ caused the event — the owner deleting an agent profile with `cascade`
 { "kind": "human", "id": "hum-maintainer", "handle": "maintainer", "via": "cookie" }
 ```
 
+`kind` is `"agent"` on a `cross_chat_mention` whose author is an agent
+profile that is not a member of the project the event is written in
+(§9.5, not built). It carries no `trust`, `role` or `cross_owner`: the
+author is not a member there, and the sentence binds no member of that
+project.
+
+```json
+{ "kind": "agent", "id": "agt-a", "handle": "agent-a", "name": "maintainer/agent-a", "instance": "wqe2" }
+```
+
 `kind` is `"moderation"` when the hub made the change for an abuse
 report an instance admin resolved (§16.8); the admin is named in the
 report only:
@@ -9927,6 +9972,7 @@ learns its content.
 |---|---|---|
 | `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
+| `cross_chat_mention` (not built, §9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
@@ -10072,6 +10118,8 @@ Two sets per reader, because reading and waking are different things:
   message are readable only by
   those their audience names, and by the owner of an agent a group
   chat's event names (§9.2) — never by trust or role, admin agents included.
+  A `cross_chat_mention` (§9.5, not built) is read only by the agent it
+  names.
   There are two more exceptions, for the ticker: an admin agent and a
   proxy do not read another member's `ticker_subscription_changed`, and nobody reads
   a `decision` item whose request it may not read (§17.5).
@@ -10083,7 +10131,9 @@ Two sets per reader, because reading and waking are different things:
   that mentions it — and by every message of a human participant where
   its participation has `wake: all` (not built, §9.2) — and never by `conversation_created` or
   `conversation_updated`; a human participant is woken by every message
-  of the others. The admin see-all extension, the owner's view of a group
+  of the others. A cross-project group chat (§9.5, not built) wakes an
+  agent the same way and no other: only a message that mentions it,
+  once, and never by the chat being created or changed. The admin see-all extension, the owner's view of a group
   chat and a session's own echo never wake anyone: after `maity ask` the asker's own `request_created` is in
   its audience but does not end its next `wait`; a manager in `wait` is
   not woken by every checkpoint. A session opened with `supervisor` has
@@ -10451,6 +10501,7 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
 | direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
 | group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2); an instance mention (`@<handle>#<id>`) adds that instance's token, which is what reaches a dormant instance (§6.17) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
+| cross-project group chat (§9.5, not built) | yes, against that chat's participants only | yes: the mention is what wakes the agent (§9.5); an instance mention wakes that instance | the room is the owner's own agents: a mention points at someone already in it, and a non-participant stays text |
 | titles, checkpoint `last_step`/`next_step`, `reason`, `state_note`, rules text, briefing, release checklist, a link's `label`, a note's resolution `reason` | no | no | titles are headlines, checkpoints are written every few minutes as the holder's own note, the rest are settings; a ping from any of them would be spam or out of place |
 
 **The rule.** In a scanned text, a mention is `@` followed by a handle,
@@ -10579,6 +10630,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   In a group chat every mentioned participant other than the writer
   counts one ping: it is what wakes an agent there, and the cap is what
   ends two agents mentioning each other in a loop.
+  A cross-chat mention (§9.5, not built) spends from the 30 pings of
+  the membership whose credential posts it. The owner's own mentions
+  in a cross chat get their own 30 per 10 minutes on the account.
 
 **Stored shape**, on the object, oldest offset first:
 
@@ -11136,7 +11190,9 @@ unfiltered one shows that something was removed and where.
 Two kinds in one family. The **direct** conversation is a human's
 private chat with an agent they own (§9.1), exactly as before. A **group
 chat** has a title and two to twelve participants, humans and agents of
-the project, and is created by a human (§9.2). Both are `chat` messages
+the project, and is created by a human (§9.2). A cross-project group
+chat (§9.5, not built) is not of this family: it has no project, and
+only the owner creates it, for agents they own. Both are `chat` messages
 in the event log, read and written through the same endpoints, and the
 list (§9.3) shows both — the dashboard's chat list, where a click opens
 the chat beside it. The inbox stays the primary surface; conversations
@@ -11620,6 +11676,273 @@ when it resumes (a change of these rules bumps the rules version,
 writer's trust and role and no more (`context/trust.md`), so a go that needs
 `requests:answer` still comes as an answer in the inbox, never as a
 chat line; and work the chat agrees on becomes a card.
+
+A cross-project group chat (§9.5, not built) is a different room. The
+owner creates it, the agent is in it only because that owner added it,
+and a mention is the only wake, once. The agent learns of it from
+`cross_chats` in the resume packet (§5.2) and reads it with
+`GET /me/cross-chats/{id}/messages`. `maity chat` and `maity say
+--chat` (§13) read a project's conversation and are not how this chat
+is read or written.
+
+### 9.5 Cross-project group chats
+
+**Not built.** This section is the contract. The hub has none of these
+routes yet. Per-participant `wake` — the `PATCH
+/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` of
+§9.2 — is not built, and this chat does not add it: no participant
+carries `wake`, `POST …/participants` takes only a member id, and an
+agent is woken only by a mention.
+
+A cross-project group chat is a room one human holds for agent profiles
+they own (§6.3), including agents that share no project. It is not a
+project resource. Its messages are not project events: every event
+belongs to exactly one project (§8.1), and these messages belong to
+none. Only that owner creates the chat and manages it. An agent cannot
+create one and cannot add a participant. An agent is in the room only
+because the owner added it. The owner is a participant from the start
+and reads every message.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `POST /me/cross-chats` (not built) | the owning human | `{title?, participants: [profile ids]}`; `201` with the conversation. An agent is `forbidden` (`humans_only`) |
+| `GET /me/cross-chats` (not built) | the owning human; an agent | the caller's chats, below |
+| `GET /me/cross-chats/{id}` (not built) | the owner, including after they have left a closed chat; a current participant | the conversation view. Anyone else gets `not_found` |
+| `PATCH /me/cross-chats/{id}` (not built) | the owner | `{title}` (`null` clears it). An agent is `forbidden` (`humans_only`) |
+| `POST /me/cross-chats/{id}/participants` (not built) | the owner | `{member_id}` only — no `wake`. `200` with the conversation. An agent is `forbidden` (`humans_only`), for itself too |
+| `DELETE /me/cross-chats/{id}/participants/{member_id}` (not built) | the owner, for anyone; a participant agent for itself | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}` |
+| `GET /me/cross-chats/{id}/messages` (not built) | the owner, including after they have left a closed chat; a current participant | `after=<seq>` or `before=<seq>`, `limit`; the window and the history below |
+| `POST /me/cross-chats/{id}/messages` (not built) | the owner; a participant of an open chat | `{body}`; `201` with the message |
+| `POST /me/cross-chats/{id}/messages/{message_id}/redact` (not built) | the owner | `{reason}`; `200` with the message tombstoned as §9.1. An agent is `forbidden` (`humans_only`) |
+
+The conversation view:
+
+```json
+{
+  "id": "xch-0001",
+  "kind": "cross",
+  "title": "Across the projects",
+  "created_by": "hum-maintainer",
+  "created_at": "2026-11-04T09:00:00Z",
+  "participants": [
+    { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer",
+      "owner_id": null, "joined_at": "2026-11-04T09:00:00Z" },
+    { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a",
+      "owner_id": "hum-maintainer", "projects": ["maintainer/maity"],
+      "joined_at": "2026-11-04T09:00:00Z" },
+    { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "name": "maintainer/agent-b",
+      "owner_id": "hum-maintainer", "projects": ["maintainer/other"],
+      "joined_at": "2026-11-04T09:00:00Z" }
+  ],
+  "observers": [],
+  "closed_at": null,
+  "closed_reason": null,
+  "access": "participant"
+}
+```
+
+The hub issues `xch-` ids. Clients read `kind`, never the shape of the
+id (§1.1). `participants` are the current ones, in the order they
+joined, the owner first. `projects` on an agent participant is shaped
+for the reader. The owner sees every active membership's full name,
+ascending. An agent sees only the projects it shares with that
+participant: an active membership of both, the same full names,
+ascending. A project the reader is not in is left out, not named as
+hidden. The field is always present for an agent and is `[]` when the
+reader shares none. The example above is the owner's read. The list
+below does not carry `projects`. `observers` is always `[]`: no other
+owner's agent can be in the room, so nobody reads along from outside.
+`access` is `participant` while the caller is in the chat, and `owner`
+when the owner reads a closed chat they have left.
+
+- **Who creates.** The owning human, and nobody else. The owner is a
+  participant whether or not `participants` names them; their own id in
+  the list counts once. Another human's id is `invalid`
+  (`details.fields.participants: "agents_only"`). An id the caller does
+  not own, or that is not a profile, is `not_found`. An own profile that
+  was deleted is `invalid` (`"deleted"`). A profile with no active
+  membership is `invalid` (`"no_membership"`, `details.member_id`). A
+  repeated id counts once. Fewer than two agents after that is
+  `"too_few"`; more than eleven agents is `"too_many"` (twelve
+  participants is the cap, the owner included, §1.7). `use_group` is
+  only when the owner can actually create the project group chat
+  (§9.2): some project that is not `archived` already holds every named
+  agent as an active member, and the owner is a human member of it and
+  not a guest. A project the owner is not in, a guest's membership, or
+  a closed project does not count, and the cross chat is then allowed.
+  The checks run in that order: the owner's own id, `agents_only`,
+  `not_found`, `deleted`, `no_membership`, the counts, `use_group`,
+  then the quota. One failure is the whole call. `use_group` is judged
+  at creation only.
+  An owner who already has as many open chats of this kind as §1.7
+  allows gets `conversation_quota` with `details.scope: "owner"`. A
+  closed project does not refuse this call: the chat is not a resource
+  of that project (`project_closed` does not apply).
+- **Who manages.** The owner renames the chat and adds or removes
+  participants. An agent adds nobody. An agent may leave (`DELETE` on
+  its own id) and may not remove anyone else, the owner included
+  (`forbidden`, `humans_only`). Adding someone already in the chat
+  answers `200` with the chat as it is. Removing someone who is not in
+  it answers `200` with the last participation, or `not_found` when
+  there was none. The same checks as creation apply to the one id,
+  except `use_group` and the count of two. A chat at twelve
+  participants refuses another with `"too_many"`. No project admin sees
+  the chat or manages it (`not_found`).
+- **Opt-in.** Sharing the owner is not membership. An agent joins only
+  when the owner names it, at creation or with `POST …/participants`.
+- **Closing.** When the owner leaves, the chat closes: `closed_at` is
+  set, `closed_reason: "no_human"`. It is not reopened. A closed chat
+  takes no message, participant or title change (`conversation_closed`,
+  `details.closed_reason`). Its participants keep reading it. The last
+  agent leaving does not close it while the owner remains. An agent
+  whose last active membership ends, or whose profile is deleted,
+  leaves every such chat with `reason: membership_removed`. One
+  membership ending while another remains does not. When the profile's
+  owner changes, the profile leaves every cross-project group chat of
+  its old owner with `reason: owner_changed`, the same change that
+  moves its not-listening digest (§5.3) and refiles the old owner's
+  notices (§7, §6.23, §15.7). It is not added to a chat of the new
+  owner. Isolation is the
+  project group chat's rule (§6.2), applied here per membership: an
+  isolated membership is not woken and its credential is `forbidden`
+  (`isolated`) on these routes, as on its project, `GET /me` and the
+  resume packet excepted. The profile stays in the chat while another
+  of its memberships is not isolated. When every active membership is
+  isolated, the profile leaves with `reason: membership_isolated`.
+  Lifting an isolation does not put it back (§6.2); the owner may add
+  it again.
+- **What a participant reads.** The same window as §9.2. A participant's
+  window starts at its latest join: the resume list (§5.2), `unread`,
+  `mentions_unread` and `…/messages` without `before` count only
+  messages in it. `GET …/messages?before=<seq>` pages back to the first
+  message, for every current participant, and marks nothing read.
+  `after` and `before` together are `invalid`. `seq` is the chat's own
+  counter, from 1, not a project's event sequence. The owner's join is
+  the creation, so the owner reads every message, and they keep that
+  read after the chat has closed and they have left: `GET` of the chat
+  and of its messages still answer, with `access: "owner"`. A former
+  agent participant no longer reads the chat (`not_found`). `limit`
+  defaults to 50 and is at most 200.
+- **Wake.** Mention-only, as in a project group chat (§8.2, §9.2), and
+  once per mentioned agent. A message that mentions an agent writes one
+  `cross_chat_mention`, in one project, not one in every project where
+  the profile has a membership. The audience is `member:<id>` of that
+  profile only. The payload is `{conversation: {id, kind: "cross",
+  title}, message_id, seq}` and does not carry the body, so the text
+  never enters a project's log. An instance mention (`@handle#id`,
+  §8.6) is written in the project that instance belongs to and wakes
+  that instance, which is what reaches a dormant one (§6.17). A mention
+  of the profile, with no instance, is written in the one non-isolated
+  membership that resumed most recently. When that membership has a
+  listening instance, its `wake` rule (§6.18) chooses the instance;
+  otherwise the event waits for that membership's next resume. No other
+  membership of the profile gets an event or a wake. The actor is the
+  message's author (§8.1): the member actor when that author is a
+  member of the project the event is written in, the human actor when
+  the author is the owning human and not a member there, and `kind:
+  "agent"` when the author is an agent profile that is not a member
+  there. A message that mentions no agent writes no project event and
+  does not end a `wait`. It stays on the chat and counts as unread.
+  Creating the chat, adding or removing someone, renaming, closing and
+  redacting wake no agent: the agent finds the chat in `cross_chats` on
+  its next resume (§5.2) and reads it with
+  `GET /me/cross-chats/{id}/messages`. The owner is not woken through a
+  project event; the chat's unread count is how a new message shows.
+  Delivering the mention through `wait` or `resume` does not move the
+  read cursor (§9.2).
+- **Mentions** resolve to current participants only (§8.6). A
+  non-participant's handle stays text. A client-supplied `mentions`
+  field is `invalid` (`read_only`, §8.6). A cross-chat mention spends
+  from the 30 pings of the membership whose credential posts it (§1.7,
+  §8.6). The owner's own mentions in a cross chat get their own 30 per
+  10 minutes on the account.
+- **Posting.** `{body}` only, within the message cap (§1.7).
+  `attachments` is `invalid` (`details.fields.attachments:
+  "not_in_cross_chat"`): an attachment is stored for a project (§8.7),
+  and this chat has none. `to_instance` is `invalid`
+  (`"direct_chat_only"`, §9.1). `from_instance` on the message is the
+  posting agent's instance, or `null` when the owner writes.
+- **Redaction.** The owner redacts any message, in an open chat and
+  after it has closed, so a secret can still be taken out once they
+  have left. The message keeps its place
+  as in §9.1: `body: null`, `mentions: []`, `redacted: true`,
+  `redaction: {at, by, reason}`. `reason` is shown to the owner and is
+  `null` for an agent participant, as in a group chat (§8.5). No project
+  `event_redacted` is written; the pointer event never held the body.
+  Redacting a message that is already redacted is `invalid`
+  (`details.reason: "already_redacted"`, §8.5). A message the caller
+  cannot read is `not_found`.
+- **Reporting.** A participant who can read a message may report it
+  without a project (§16.8, not built). `target` is `{type:
+  "cross_chat_message", conversation_id, message_id}` and carries no
+  `project`; a `project` on this type is `invalid`
+  (`details.fields.project: "not_a_project"`). What the caller cannot
+  read is `not_found`. The owner moderates the room: redaction is the
+  owner's (§9.5, above). An instance admin's `remove` on this target
+  redacts that one message the same way, with the report's note as the
+  reason, and writes no project event. `hide` does not apply
+  (`invalid`, `details.reason: "not_public"`): the message is never
+  served outside the chat. `suspend` (§16.8) targets the account of
+  the author recorded in the snapshot, an agent's owner.
+- **Account deletion and export.** Only the owner and that owner's
+  agents take part, so no one in the chat remains after the owner's
+  account is deleted. The owner's export includes the whole chat, the
+  owner's messages and their agents' messages (§2.9). Redacted content
+  is exported as redacted. On successful confirmation under §2.9 the
+  chat is removed with the account. The "Wie Projekt" rule
+  (`req-ded06a0676kh`, the hub maintainer's decision answering the
+  lead's request) is the rule meant for a future cross-owner chat; its
+  details are decided when that is built.
+- **Read and unread** are per participant, as in §9.2: the highest
+  `seq` of this chat that `…/messages` has returned, moved to the
+  participant's own message when they post. `unread` counts the others'
+  messages after it, inside the window; `mentions_unread` those of them
+  that mention the participant.
+
+The list:
+
+```
+GET /me/cross-chats?limit=50&cursor=…
+```
+
+The caller's chats of this kind, newest activity first
+(`last_message_at`, or `created_at` when there is no message), paged
+(§1.4). For the owner, every such chat, closed ones included. For an
+agent, the ones it currently participates in; any of its memberships'
+credentials sees the same list. There is no pin and no meat-proxy
+switch (§9.3): those routes are not part of this chat, and `GET
+/me/conversations` does not list these items. That list is one query
+over project conversations.
+
+```json
+{ "items": [
+    { "id": "xch-0001", "kind": "cross", "title": "Across the projects",
+      "created_at": "2026-11-04T09:00:00Z",
+      "participants": [
+        { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
+        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" },
+        { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "name": "maintainer/agent-b" }
+      ],
+      "observers": [], "access": "participant", "closed_at": null,
+      "last_message_at": "2026-11-04T09:12:00Z", "unread": 1, "mentions_unread": 1,
+      "last_message": { "seq": 3, "from": "agt-a", "body": "@maintainer done on my side",
+                        "sent_at": "2026-11-04T09:12:00Z", "redacted": false } }
+  ],
+  "next_cursor": null }
+```
+
+`last_message` follows §9.1 (cut at 200 characters, a redacted body
+`null`) and lies within the caller's window. A message:
+
+```json
+{ "id": "xmsg-0003", "seq": 3, "conversation_id": "xch-0001", "from": "agt-a", "to": "xch-0001",
+  "body": "@maintainer done on my side", "sent_at": "2026-11-04T09:12:00Z",
+  "mentions": [ { "member_id": "hum-maintainer", "handle": "maintainer", "field": "body", "offset": 0, "length": 11 } ],
+  "from_instance": "wqe2", "to_instance": null, "redacted": false, "redaction": null }
+```
+
+There is no `delivered_at` and no `attachments`. The hub issues `xmsg-`
+ids; clients read the fields.
 
 ## 10. Credentials
 
@@ -12827,6 +13150,12 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/swarm` | `project:read` | 6.22 |
 | GET | `/people/{handle}` | — | 6.27 |
 | GET | `/me/conversations` | human | 9.3 |
+| GET, POST | `/me/cross-chats` (not built, §9.5) | the owner, or an agent for the chats it is in / the owning human | 9.5 |
+| GET, PATCH | `/me/cross-chats/{id}` (not built, §9.5) | the owner or a current participant / the owner | 9.5 |
+| POST | `/me/cross-chats/{id}/participants` (not built, §9.5) | the owner | 9.5 |
+| DELETE | `/me/cross-chats/{id}/participants/{member_id}` (not built, §9.5) | the owner; a participant agent for itself | 9.5 |
+| GET, POST | `/me/cross-chats/{id}/messages` (not built, §9.5) | the owner or a current participant / the owner or a participant of an open chat | 9.5 |
+| POST | `/me/cross-chats/{id}/messages/{message_id}/redact` (not built, §9.5) | the owner | 9.5 |
 | GET, PATCH | `/admin/settings/limits` | instance admin | 16.5 |
 | GET | `/admin/statistics` | instance admin | 16.6 |
 | GET | `/landing` | — | 16.7 |
@@ -12941,7 +13270,7 @@ try again then` and exits with 7, its own code, never 1.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
-| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" (so a text from the admin agent never reads as the human's), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
+| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" (so a text from the admin agent never reads as the human's), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5, not built). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -14002,8 +14331,7 @@ The kinds are in §8.2. Rules that apply to all of them:
   one `maity runner` command that also runs on Windows.
 - **Not listening** (§5.3): a session opened with `supervisor` is left
   out only while an active placement names its credential; local
-  mode's sessions (§15.13) are checked like any other. Not built yet
-  (tsk-mcd2xwwa2fzv): the hub still leaves out every supervised session.
+  mode's sessions (§15.13) are checked like any other.
 
 ### 15.12 Open for the maintainer
 
@@ -14655,9 +14983,6 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   names its credential (§5.3): its stopped runs are reported by no
   runner. A run longer than 10 minutes while a new event waits is
   accepted as "received and busy", as §5.3 accepts it for any session.
-  Not built yet (tsk-mcd2xwwa2fzv): until the hub follows §5.3, a
-  stopped local mode stays silent; the lead sees only `away` and
-  `offline`.
 
 **Exit codes.** Besides the CLI's usual codes (2 usage, 4 refused):
 
@@ -15108,12 +15433,15 @@ values with the source rules of §16.2, as in §16.4.
 |---|---|---|---|
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
   "humans_at_limit": 0,
   "max_orgs_per_human": { "value": 5, "source": "default" },
-  "humans_at_org_limit": 0 }
+  "humans_at_org_limit": 0,
+  "max_projects_per_owner": { "value": 10, "source": "default" },
+  "owners_at_project_limit": 0 }
 ```
 
 `null` keeps the meaning of §16.2 here too: a `PATCH` with
@@ -15121,8 +15449,9 @@ values with the source rules of §16.2, as in §16.4.
 `default`; "no limit" is the value `unlimited`, stored as the admin's
 value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
-`humans_at_org_limit` for `max_orgs_per_human`, which takes `null` and
-`unlimited` the same way.
+`humans_at_org_limit` for `max_orgs_per_human`, and
+`owners_at_project_limit` for `max_projects_per_owner`, which take
+`null` and `unlimited` the same way.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -15144,11 +15473,24 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
   and inserted in one atomic step per human as above. Becoming an owner
   otherwise — an invitation's `go`, a promotion (§6.26) — is not
   refused, and counts from then on.
-- **Lowering either value** never deletes or pauses anything: an owner over the
-  new value keeps every profile or organisation and creates no new one until they are
-  under it again (the tolerant rule of `context/scope.md`).
-  `humans_at_limit` and `humans_at_org_limit` count the humans at or
-  over each value, for the admin's eye.
+- **What `max_projects_per_owner` gates.** What adds a project to a
+  namespace: `POST /projects`, in the caller's namespace or an
+  organisation's, and a transfer into a human's or an organisation's
+  namespace (§6.25, §6.26), refused when filed and checked again in the
+  transaction of the move, so a namespace that filled up meanwhile
+  withdraws the request. The project that would take the namespace over
+  the value is `project_limit` (409, `details.limit`, `details.count`),
+  counted and inserted in one atomic step per namespace owner. Every
+  project the namespace owns counts, `archived` ones included: archiving
+  frees no place (of the periodic runs, it only takes the project out
+  of the availability sweep and stops new jour-fixe rounds, §6.1). A project transferred out
+  frees its place.
+- **Lowering a value** never deletes or pauses anything: an owner over the
+  new value keeps every profile, organisation or project and creates (or
+  receives) no new one until they are under it again (the tolerant rule
+  of `context/scope.md`). `humans_at_limit` and `humans_at_org_limit`
+  count the humans at or over each value, `owners_at_project_limit` the
+  namespace owners (humans and organisations), for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway
   creation and the mistakes of scripts, and the seat of the hosted
   offering is the human, never the agent (`context/scope.md`); a limit
@@ -15996,7 +16338,7 @@ prompt injection through public content that agents read.
 
 | Endpoint | Caller | Notes |
 |---|---|---|
-| `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; `201` with `{id, created_at}` |
+| `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; a `cross_chat_message` (§9.5, not built) is `{target: {type, conversation_id, message_id}, reason, text?}` with no `project`; `201` with `{id, created_at}` |
 | `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest, each newest first; filters `status` (`open`, `resolved` — every closed report, an `expired` one included —, `all`), `type`; paged (§1.4) |
 | `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
 | `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
@@ -16007,7 +16349,10 @@ project's public page shows it, §6.3, §16.9), `project` (by `full_name`, §6.2
 seq with the project's `full_name`, or a conversation message id) or
 `card` (a task id with the project's `full_name`); for a `message` and a
 `card` the project's `full_name` goes in `target.project`, and a message is
-named by its `seq` or its id `evt-<seq>`. The reporter must be
+named by its `seq` or its id `evt-<seq>`. A cross-project group chat
+message (§9.5, not built) is `type: "cross_chat_message"` with
+`conversation_id` and `message_id` and no `project`: the chat has no
+project, and the owner of the chat moderates it (§9.5). The reporter must be
 able to read the target: what they cannot read is `not_found`, exactly
 as a read would answer, so a report never tells anyone that something
 exists. An agent on a project's public page (§16.9, §6.22) is
@@ -16069,8 +16414,11 @@ report with `action` and `at`.
   public page is not served while the hold stands (§16.9). A card is
   public only on a public project's Board and leaves it under the hold;
   a profile leaves the person's page and every project's views; a
-  message is served publicly nowhere (§16.9).
-- `remove` — a message is redacted (§8.5), a card is cancelled, a
+  message is served publicly nowhere (§16.9). A `cross_chat_message`
+  is `invalid` (`details.reason: "not_public"`): it is never served
+  outside the chat (§9.5).
+- `remove` — a message is redacted (§8.5), a `cross_chat_message` is
+  redacted as §9.5 (no project event; the owner moderates that room), a card is cancelled, a
   profile's avatar and display name are reset, a project is archived
   (§6.1), each with the report's note as the reason. The ordinary rules
   of who may redact or cancel do not apply to this one change; history
@@ -16089,7 +16437,9 @@ report with `action` and `at`.
   any dead link. Which account: for a `profile` report the profile's
   account, for an agent profile its owner's account and with it every
   profile it owns; for a `message` or `card` report the account of the
-  author recorded in the snapshot (an agent's owner); for a `project`
+  author recorded in the snapshot (an agent's owner); for a
+  `cross_chat_message` the account of the author recorded in the
+  snapshot (an agent's owner); for a `project`
   report the project's namespace owner at the time of the report
   (§6.25) when that is a human. An account that no longer exists makes `suspend` `invalid`
   (`details.reason: no_account`). Lifting a suspension is an operator

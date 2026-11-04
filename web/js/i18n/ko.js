@@ -1062,6 +1062,7 @@ window.MAITY_I18N["ko"] = {
   "error.probe_unavailable": "포지가 응답하지 않았습니다.",
   "error.profile_in_use": "이 에이전트는 아직 프로젝트에서 활동 중입니다.",
   "error.project_closed": "이 프로젝트는 보관되었습니다.",
+  "error.project_limit": "이 네임스페이스에는 이 허브가 허용하는 만큼의 프로젝트가 이미 있습니다.",
   "error.rate_limited": "지금 요청이 너무 많습니다. 나중에 다시 시도하세요.",
   "error.reason.humans_only": "사람만 할 수 있습니다.",
   "error.reason.method_disabled": "이 로그인 방법은 꺼져 있습니다.",
@@ -2148,6 +2149,11 @@ window.MAITY_I18N["ko"] = {
   },
   "limits.orgs.hint": "한 사람이 소유자인 조직 수입니다. 하나 더 만드는 것은 거부됩니다.",
   "limits.orgs.label": "사람당 소유 조직",
+  "limits.projects.at": {
+    "other": "소유자 {count}명이 이 한도에 이르렀거나 넘었습니다."
+  },
+  "limits.projects.hint": "한 사람 또는 한 조직의 네임스페이스에 있는 프로젝트 수이며, 보관된 프로젝트도 포함됩니다. 하나 더 만들거나 이전해 오는 것은 거부됩니다.",
+  "limits.projects.label": "소유자당 프로젝트",
   "limits.save": "한도 저장",
   "limits.saved": "저장했어요.",
   "limits.saving": "저장 중…",
@@ -2357,6 +2363,7 @@ window.MAITY_I18N["ko"] = {
   "member.silent_unknown": "응답 없음 · 마지막 호출을 알 수 없음",
   "memberpage.actions": "작업",
   "memberpage.actions.label": "{name}에 대한 작업",
+  "memberpage.activity.cursor_stuck": "허브의 이벤트 커서가 {after}을(를) 넘어가지 않았어요",
   "memberpage.activity.failed": "활동을 읽지 못했어요: {reason}",
   "memberpage.activity.hint": "이 프로젝트에서 한 일, 최신순.",
   "memberpage.activity.hint_cut": {
@@ -2662,8 +2669,6 @@ window.MAITY_I18N["ko"] = {
   "menu.sign_in_device": "다른 기기에서 로그인",
   "menu.sign_out": "로그아웃",
   "menu.theme": "테마",
-  "messages.cursor_stuck": "허브의 이벤트 커서가 {after}을(를) 넘어가지 않았어요",
-  "messages.cut": "허브의 최근 이벤트 {window}개(모든 프로젝트 포함) 안에 있는 메시지만 표시돼요. 그보다 오래된 메시지는 여기서 읽지 않아요.",
   "messages.filter.every_type": "모든 유형",
   "messages.filter.type": "유형",
   "messages.from_to": "{from} → {to}",
@@ -2671,14 +2676,19 @@ window.MAITY_I18N["ko"] = {
   "messages.new": {
     "other": "새 메시지 {count}개."
   },
+  "messages.new_failed": "새 메시지를 읽지 못했어요: ",
   "messages.none": "아직 프로젝트 메시지가 없어요.",
   "messages.none_of_type": "이 유형의 메시지가 없어요.",
+  "messages.not_read_yet": "지금까지 읽은 페이지에는 없습니다. 이전 메시지는 아직 읽지 않았습니다.",
+  "messages.older": "이전 메시지",
+  "messages.read_failed": "메시지를 읽지 못했어요: ",
   "messages.remove": "제거",
   "messages.remove.ask": "이 메시지를 읽을 수 있는 모두에게서 제거할까요? 텍스트와 파일은 안내 문구로 바뀌어요. 이유를 입력하세요:",
   "messages.remove.busy": "제거하는 중…",
   "messages.remove.done": "제거했어요.",
   "messages.remove.failed": "제거하지 못했어요: ",
   "messages.remove.label": "모두에게서 이 메시지 제거",
+  "messages.removed": "이 메시지는 삭제되었어요.",
   "messages.review.more": {
     "other": "{count}곳 더"
   },

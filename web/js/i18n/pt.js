@@ -992,6 +992,7 @@ window.MAITY_I18N["pt"] = {
   "error.probe_unavailable": "O forge não respondeu.",
   "error.profile_in_use": "Este agente ainda está ativo em um projeto.",
   "error.project_closed": "Este projeto está arquivado.",
+  "error.project_limit": "Este espaço de nomes já tem tantos projetos quanto este hub permite.",
   "error.rate_limited": "Requisições demais agora. Tente de novo mais tarde.",
   "error.reason.humans_only": "Só uma pessoa pode fazer isto.",
   "error.reason.method_disabled": "Esta forma de entrar está desativada.",
@@ -2089,6 +2090,12 @@ window.MAITY_I18N["pt"] = {
   },
   "limits.orgs.hint": "Organizações das quais uma pessoa é proprietária; criar mais uma é recusado.",
   "limits.orgs.label": "Organizações possuídas por pessoa",
+  "limits.projects.at": {
+    "one": "{count} proprietário está no limite ou acima dele.",
+    "other": "{count} proprietários estão no limite ou acima dele."
+  },
+  "limits.projects.hint": "Projetos no espaço de nomes de uma pessoa ou organização, incluindo os arquivados; criar ou transferir mais um é recusado.",
+  "limits.projects.label": "Projetos por proprietário",
   "limits.save": "Salvar os limites",
   "limits.saved": "Salvo.",
   "limits.saving": "Salvando…",
@@ -2221,6 +2228,7 @@ window.MAITY_I18N["pt"] = {
   "member.silent_unknown": "em silêncio · última chamada desconhecida",
   "memberpage.actions": "Ações",
   "memberpage.actions.label": "Ações para {name}",
+  "memberpage.activity.cursor_stuck": "o cursor de eventos do hub não passou de {after}",
   "memberpage.activity.failed": "Não foi possível ler a atividade: {reason}",
   "memberpage.activity.hint": "O que o membro fez neste projeto, do mais recente ao mais antigo.",
   "memberpage.activity.hint_cut": {
@@ -2534,8 +2542,6 @@ window.MAITY_I18N["pt"] = {
   "menu.sign_in_device": "Entrar em outro dispositivo",
   "menu.sign_out": "Sair",
   "menu.theme": "Tema",
-  "messages.cursor_stuck": "o cursor de eventos do hub não passou de {after}",
-  "messages.cut": "Somente as mensagens dentro dos últimos {window} eventos do hub (contando todos os projetos) são exibidas; as mais antigas não são lidas aqui.",
   "messages.filter.every_type": "todos os tipos",
   "messages.filter.type": "Tipo",
   "messages.from_to": "{from} a {to}",
@@ -2544,14 +2550,19 @@ window.MAITY_I18N["pt"] = {
     "one": "{count} nova mensagem.",
     "other": "{count} novas mensagens."
   },
+  "messages.new_failed": "Não foi possível ler as mensagens novas: ",
   "messages.none": "Ainda não há mensagens do projeto.",
   "messages.none_of_type": "Nenhuma mensagem deste tipo.",
+  "messages.not_read_yet": "Nenhuma nas páginas lidas até agora; as mensagens mais antigas ainda não foram lidas.",
+  "messages.older": "Mensagens mais antigas",
+  "messages.read_failed": "Não foi possível ler as mensagens: ",
   "messages.remove": "Remover",
   "messages.remove.ask": "Remover esta mensagem para todos que podem lê-la? O texto e os arquivos dela são substituídos por um aviso. Diga por quê:",
   "messages.remove.busy": "Removendo…",
   "messages.remove.done": "Removida.",
   "messages.remove.failed": "Não removida: ",
   "messages.remove.label": "Remover esta mensagem para todos",
+  "messages.removed": "Esta mensagem foi removida.",
   "messages.review.more": {
     "one": "mais {count} lugar",
     "other": "mais {count} lugares"

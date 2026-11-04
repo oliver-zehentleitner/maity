@@ -71,6 +71,7 @@ window.Maity = window.Maity || {};
     not_holder: () => M.tOwn("error.not_holder"),
     org_last_owner: () => M.tOwn("error.org_last_owner"),
     org_limit: () => M.tOwn("error.org_limit"),
+    project_limit: () => M.tOwn("error.project_limit"),
     paused: () => M.tOwn("error.paused"),
     payload_too_large: () => M.tOwn("error.payload_too_large"),
     pickup_not_allowed: () => M.tOwn("error.pickup_not_allowed"),

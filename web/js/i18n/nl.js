@@ -992,6 +992,7 @@ window.MAITY_I18N["nl"] = {
   "error.probe_unavailable": "De forge antwoordde niet.",
   "error.profile_in_use": "Deze agent is nog actief in een project.",
   "error.project_closed": "Dit project is gearchiveerd.",
+  "error.project_limit": "Deze namespace bevat al evenveel projecten als deze hub toestaat.",
   "error.rate_limited": "Te veel verzoeken zojuist. Probeer het later opnieuw.",
   "error.reason.humans_only": "Alleen een mens kan dit doen.",
   "error.reason.method_disabled": "Deze manier van inloggen is uitgeschakeld.",
@@ -2089,6 +2090,12 @@ window.MAITY_I18N["nl"] = {
   },
   "limits.orgs.hint": "Organisaties waarvan één gebruiker eigenaar is; er nog een aanmaken wordt geweigerd.",
   "limits.orgs.label": "Eigen organisaties per gebruiker",
+  "limits.projects.at": {
+    "one": "{count} eigenaar zit op of boven deze limiet.",
+    "other": "{count} eigenaren zitten op of boven deze limiet."
+  },
+  "limits.projects.hint": "Projecten in de namespace van één gebruiker of organisatie, gearchiveerde meegeteld; er nog een aanmaken of naartoe overdragen wordt geweigerd.",
+  "limits.projects.label": "Projecten per eigenaar",
   "limits.save": "De limieten opslaan",
   "limits.saved": "Opgeslagen.",
   "limits.saving": "Opslaan…",
@@ -2221,6 +2228,7 @@ window.MAITY_I18N["nl"] = {
   "member.silent_unknown": "stil · laatste aanroep onbekend",
   "memberpage.actions": "Acties",
   "memberpage.actions.label": "Acties voor {name}",
+  "memberpage.activity.cursor_stuck": "de gebeurteniscursor van de hub is niet voorbij {after} gekomen",
   "memberpage.activity.failed": "De activiteit kon niet worden gelezen: {reason}",
   "memberpage.activity.hint": "Wat ze in dit project deden, nieuwste eerst.",
   "memberpage.activity.hint_cut": {
@@ -2534,8 +2542,6 @@ window.MAITY_I18N["nl"] = {
   "menu.sign_in_device": "Op een ander apparaat inloggen",
   "menu.sign_out": "Uitloggen",
   "menu.theme": "Thema",
-  "messages.cursor_stuck": "de gebeurteniscursor van de hub is niet voorbij {after} gekomen",
-  "messages.cut": "Alleen berichten binnen de laatste {window} gebeurtenissen van de hub (alle projecten meegeteld) worden getoond; oudere worden hier niet gelezen.",
   "messages.filter.every_type": "elk type",
   "messages.filter.type": "Type",
   "messages.from_to": "{from} tot {to}",
@@ -2544,14 +2550,19 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} nieuw bericht.",
     "other": "{count} nieuwe berichten."
   },
+  "messages.new_failed": "De nieuwe berichten konden niet worden gelezen: ",
   "messages.none": "Nog geen projectberichten.",
   "messages.none_of_type": "Geen bericht van dit type.",
+  "messages.not_read_yet": "Geen op de tot nu toe gelezen pagina's; oudere berichten zijn nog niet gelezen.",
+  "messages.older": "Oudere berichten",
+  "messages.read_failed": "De berichten konden niet worden gelezen: ",
   "messages.remove": "Verwijderen",
   "messages.remove.ask": "Dit bericht weghalen voor iedereen die het kan lezen? De tekst en bestanden worden vervangen door een notitie. Geef de reden:",
   "messages.remove.busy": "Verwijderen…",
   "messages.remove.done": "Verwijderd.",
   "messages.remove.failed": "Niet weggehaald: ",
   "messages.remove.label": "Dit bericht voor iedereen weghalen",
+  "messages.removed": "Dit bericht is verwijderd.",
   "messages.review.more": {
     "one": "nog {count} plek",
     "other": "nog {count} plekken"

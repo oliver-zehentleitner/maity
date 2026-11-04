@@ -429,43 +429,59 @@ one's own. They would promise inbox, board and members, none of which
 the hub answers. A removal form inside the closed chat: the admin cannot
 open that chat.
 
-## The project's messages are read from the project's events until the hub has the message listing
+## The project's messages are read from the hub's message listing, a page at a time
 
 **Id:** 8e483bb1-53be-4ce2-a139-561989db21af
 **Type:** decision
 **Status:** needs-review
-**Evidence:** inferred
-**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
-**Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
-**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
+**Evidence:** confirmed
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with lotse that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
+**Revisit when:** §8.8 gains a `wait` of its own, or the listing's page or scan budget no longer fits one opening
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-04
 
-The Messages tab reads the project's events within the hub's latest
-5000 (the `seq` counts all projects, 4c3f8949)
-(`wait=0`, 200 per page, from the head that `after=latest` names) and
-keeps every message that is not a chat and not removed. When the log is
-longer, the view says that older messages are not read. A cursor that
-does not move stops the read with an error. The view shows the messages
-newest first and filters them by type in the page. New messages, removals
-and deleted files arrive through the project's feed and change the list
-in place. A removed message leaves the list and is never shown as a
-tombstone. Tombstones come with §8.8 once the hub serves it.
+The Messages tab reads `GET /projects/{owner}/{slug}/messages` (§8.8):
+its newest page of 50 when opened or when the type filter changes (the
+filter is the hub's `type=`), and the next older page with the
+listing's `next_cursor` behind **Older messages**. There is no window:
+however far a message lies behind the hub's head, paging back reaches
+it, at one request per page. The project's feed is only the signal, as
+on the Ticker: a message event there reads the listing forward with
+`after=` from the newest message shown (or from just below the first
+that arrived, when none is shown), oldest first, following the
+listing's `next_cursor` on that same `after=` and type until it is
+`null`, at most 20 pages per round (a round out of pages leaves its
+cursor to the next signal's round), and puts what is new at the top. Removals (`event_redacted`)
+put the listing's tombstone in place of the message, or drop it from a
+list filtered by type, since §8.8 lists tombstones only unfiltered;
+deleted files are marked in place, and the listing says `deleted_at` on
+a later read. A removed project message shows as a tombstone without
+its reason; a removed chat message is never listed, as §8.8 says.
 
-**Reason:** §8.3 is the only read the hub answers that returns project
-messages, and its audience filter already decides what this reader may
-see. It is not §8.8's set, though: §8.5 replaces a removed message's
-whole payload, so a removed chat message looks like a removed project
-message there, and §8.8 never lists the former. Showing no tombstone is
-the one way the scan never lists a chat's. A stated window bounds the
-requests per opening without hiding that something is missing.
+A page of the listing examines at most the hub's scan budget (2000
+project messages, `hub/src/maity_hub/routes/project_messages.py`), so it
+may be short or empty while `next_cursor` is set. The live read follows
+`next_cursor` on the same `after=` until it is `null`, and an empty page
+with a cursor is not shown as no messages: the list says older messages
+have not been read yet. Reason: §8.8 makes `null` the only end of the
+history. On #1348's head, a live read that stopped on a short page left
+a new blocker unseen behind 2100 notices until reload (reviews seq
+69640 and 69731). Rejected alternative: stopping on a page shorter than
+`limit`, which misses what lies past the budget.
 
-**Rejected alternative:** waiting for the hub's message listing before
-building the view: it would leave project messages unreadable in the
-dashboard, the gap noted on the attachments change. Reading the whole log
-from the start: one request per 200 events on every opening, with no
-bound. Keeping tombstones whose audience is `all` or a role: it still
-hides the removal of a message sent to one member, and guesses at what
-the hub knows. Having the hub mark a conversation's message after
-redaction: a contract change that §8.8 already makes unnecessary.
+**Reason:** the scan of `/events` within the hub's latest 5000 `seq`
+(4c3f8949) lost every message behind that window in a busy hub and read
+up to 26 pages on every opening. §8.8 is the read for exactly this
+view: the hub's audience rules, its type filter and its tombstones, at
+a cost of one page per request whatever the history. The feed stays the
+live signal because §8.8 has no `wait`.
+
+**Rejected alternative:** keeping the window scan beside the listing:
+two reads that disagree on tombstones and on what a filter shows.
+Reading new messages from the feed's own payloads: the feed's
+audience and shape are §8.3's, not the listing's, and a filter would
+have to be applied in the page again. Hiding tombstones as before: the
+scan hid them only because it could not tell a chat's from a project's;
+the listing can.
 
 ## Sessions say what this session may not do before it is tried, and This was me is the only way a sign-in is confirmed
 
@@ -2113,7 +2129,7 @@ panel above the columns, as before: the length of the page.
 **Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
-**Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
+**Revisit when:** the hub can read the newest page and mark it read in one request (the Messages view pages through the project messages listing, §8.8, since 2026-11-04: 8e483bb1)
 
 Direct and group chats read the newest 50: back with `before=` (the
 list's last message, else the largest integer), then forward from the
@@ -3341,34 +3357,43 @@ up the state, so the mark belongs there as well as in the header.
   move back to build, which the maintainer's decision rules out.
 - The mark in the header alone: the overview is where the state is read.
 
-## A member's Activity and the project's Messages read the hub's latest 5000 events and say so
+## A member's Activity reads the hub's latest 5000 events and says so
 
 **Id:** 4c3f8949-c8df-4c99-bb0c-08dc47205eed
 **Type:** workaround
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history
-**Revisit when:** §8.3 takes `actor=`, or the hub serves the project messages listing (§8.8)
+**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor) and §8.8 (the listing holds messages only, with no filter by sender); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history; the card tsk-0m6qx612y5px and lotse's agreement, 2026-11-04 (project message seq 69405): the Messages view moves to §8.8, the Activity keeps the window
+**Revisit when:** §8.3 takes `actor=` (`GET /events?actor=`)
 
 The hub cannot be asked for one member's events, nor for a project's
 latest events counted in that project. The member page's Activity
 therefore pages through the project's feed from the hub's latest 5000
-`seq` forward, as the Messages view always did (one shared scan,
-`M.recentEvents`), keeps the member's own events that are not redacted,
-and shows the newest 50; each opening of the page reads up to 26 pages
-of 200, a cost bounded by the window, not by history. Where the window
-cut something, both views say
-it counts the hub's latest 5000 events, all projects counted, so a quiet
-member in a busy hub reads as cut, not as idle.
+`seq` forward (its own scan in js/member-page.js), keeps the member's
+own events that are not redacted, and shows the newest 50; each opening
+of the page reads up to 26 pages of 200, a cost bounded by the window,
+not by history. Where the window cut something, it says it counts the
+hub's latest 5000 events, all projects counted, so a quiet member in a
+busy hub reads as cut, not as idle. A cursor that does not move stops
+the read with an error. The Messages view no longer shares this scan:
+it pages through the message listing (§8.8, 8e483bb1) since 2026-11-04.
 
 **Reason:** what the client can afford to read is bounded by the hub's
 numbering, not the project's; a sentence that names the project's events
-would promise what the window cannot see.
+would promise what the window cannot see. The Activity stays on the
+window when the Messages view leaves it: it lists every kind of a
+member's events (cards claimed, requests answered, members joined, and
+messages), while §8.8 lists messages only and cannot be asked for one
+sender, so it would show a fraction of the Activity and still need the
+scan for the rest. Settled with lotse on 2026-11-04 (seq 69405).
 
 **Rejected alternative:** reading the whole feed from the first event:
 its cost grows with the hub's history, which the 2026-10-26 rule rules
 out. A window of 200 for the Activity: in a busy hub it held few or none
-of the project's events and said nothing about it.
+of the project's events and said nothing about it. The Activity from
+§8.8 alone, filtered to the member in the page: it would drop every
+event that is not a message and page through every sender's messages to
+find one member's.
 
 ## The swarm statistics are the Overview's Swarm tab, read on their own; no project tab, no public page, no switch
 

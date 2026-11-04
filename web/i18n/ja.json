@@ -943,6 +943,7 @@
   "error.not_member": "あなたはプロジェクト {slug} のメンバーではありません",
   "error.org_last_owner": "組織には、少なくとも 1 人のオーナーが必要です。",
   "error.org_limit": "このハブが許可する数の組織を、すでに所有しています。",
+  "error.project_limit": "この名前空間には、このハブが許可する数のプロジェクトがすでにあります。",
   "error.paused": "このエージェントは一時停止中です。",
   "error.payload_too_large": "大きすぎます。",
   "error.pickup_not_allowed": "この配置では、その引き取りは許可されていません。",
@@ -2038,6 +2039,11 @@
   },
   "limits.orgs.hint": "1 人がオーナーを務める組織の数です。これ以上作ろうとすると拒否されます。",
   "limits.orgs.label": "1 人あたりが所有する組織数",
+  "limits.projects.at": {
+    "other": "{count} 件のオーナーがこの上限に達しているか、超えています。"
+  },
+  "limits.projects.hint": "1 人または 1 つの組織の名前空間にあるプロジェクトの数です（アーカイブ済みも含む）。これ以上作成または移管しようとすると拒否されます。",
+  "limits.projects.label": "オーナーあたりのプロジェクト数",
   "limits.save": "上限を保存",
   "limits.saved": "保存しました。",
   "limits.saving": "保存中…",
@@ -2174,6 +2180,7 @@
   "member.silent_unknown": "応答なし · 最終呼び出しは不明",
   "memberpage.actions": "操作",
   "memberpage.actions.label": "{name} の操作",
+  "memberpage.activity.cursor_stuck": "ハブのイベントカーソルが {after} を越えて進みませんでした",
   "memberpage.activity.failed": "アクティビティを読み込めませんでした: {reason}",
   "memberpage.activity.hint": "このプロジェクトでの活動を、新しい順に表示します。",
   "memberpage.activity.hint_cut": {
@@ -2479,8 +2486,6 @@
   "menu.sign_in_device": "別のデバイスにサインイン",
   "menu.sign_out": "サインアウト",
   "menu.theme": "テーマ",
-  "messages.cursor_stuck": "ハブのイベントカーソルが {after} を越えて進みませんでした",
-  "messages.cut": "ハブの直近 {window} 件のイベント (全プロジェクトを合わせた数) に含まれるメッセージだけを表示しています。それより古いものは、ここでは読み取られません。",
   "messages.filter.every_type": "すべての種類",
   "messages.filter.type": "種類",
   "messages.from_to": "{from} から {to}",
@@ -2488,14 +2493,19 @@
   "messages.new": {
     "other": "新しいメッセージが {count} 件あります。"
   },
+  "messages.new_failed": "新しいメッセージを読み取れませんでした: ",
   "messages.none": "プロジェクトのメッセージはまだありません。",
   "messages.none_of_type": "この種類のメッセージはありません。",
+  "messages.not_read_yet": "これまでに読んだページにはありません。古いメッセージはまだ読み込まれていません。",
+  "messages.older": "以前のメッセージ",
+  "messages.read_failed": "メッセージを読み取れませんでした: ",
   "messages.remove": "取り除く",
   "messages.remove.ask": "このメッセージを、読めるすべての人から取り除きますか? 本文とファイルは通知文に置き換えられます。理由を入力してください:",
   "messages.remove.busy": "取り除いています…",
   "messages.remove.done": "取り除きました。",
   "messages.remove.failed": "取り除けませんでした: ",
   "messages.remove.label": "このメッセージを全員から取り除く",
+  "messages.removed": "このメッセージは削除されました。",
   "messages.review.more": {
     "other": "ほか {count} 箇所"
   },
