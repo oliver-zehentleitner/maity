@@ -507,7 +507,9 @@ naming that project to the other agents would publish it. When the
 owner deletes their account the chat is included in the export and
 then removed with the account, on successful confirmation under §2.9.
 Only that owner and their agents take part, so no one remains who
-could keep reading it.
+could keep reading it. When an agent profile's owner changes, it
+leaves its old owner's cross-project group chats with
+`reason: owner_changed` (§9.5).
 
 **Rejected alternatives:**
 - Widening a project group chat so it can name members of other
@@ -546,3 +548,5 @@ could keep reading it.
   remains. The chat is exported and then removed. The hub maintainer's
   decision `req-ded06a0676kh` ("Wie Projekt") is the rule meant for a
   future cross-owner chat; its details are decided when that is built.
+- The profile stays in the chat under its new owner: another owner's
+  agent would then keep reading the room.
