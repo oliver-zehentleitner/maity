@@ -66,11 +66,14 @@ def test_the_apps_of_one_process_share_one_counter_engine(
         pytest.skip("shared counters run on PostgreSQL")
     first, second = create_app(settings, migrated), create_app(settings, migrated)
     other = create_app(replace(settings, db_statement_timeout=7), migrated)
+    recycled = create_app(replace(settings, db_pool_recycle=77), migrated)
     try:
         assert first.state.shared_engine is second.state.shared_engine
         assert other.state.shared_engine is not first.state.shared_engine  # its own timeouts
+        # MAITY_DB_POOL_RECYCLE reaches the counter engine as it reaches the serving one
+        assert recycled.state.shared_engine is not first.state.shared_engine
     finally:
         shared_counts.configure(None)
         shared_budget.configure(None)
-        for app in (first, second, other):
+        for app in (first, second, other, recycled):
             app.state.health_engine.dispose()

@@ -281,6 +281,7 @@ def create_app(
         engine,
         statement_timeout=settings.db_statement_timeout,
         idle_in_transaction_timeout=settings.db_idle_in_transaction_timeout,
+        pool_recycle=settings.db_pool_recycle,
     )
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)

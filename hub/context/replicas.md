@@ -268,8 +268,8 @@ is the cheapest shared check there is.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30); built in `shared_counts` and migration `20261031011834_rate_counts` (card tsk-j4k2gc4efnz6), 2026-10-31; review findings of #822 (the window of a give-back, `blocked`, a count over the limit, the second connection, the sweep) built in card tsk-kckyhv9vdrrp
-**Revisit when:** the counter writes or the sweep show in the load test, the dedicated counter pool becomes a bottleneck, or a limit needs exact sliding-window semantics across pods
+**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30); built in `shared_counts` and migration `20261031011834_rate_counts` (card tsk-j4k2gc4efnz6), 2026-10-31; review findings of #822 (the window of a give-back, `blocked`, a count over the limit, the second connection, the sweep) built in card tsk-kckyhv9vdrrp; the dedicated counter engine, one per process, in #1320 (card tsk-4467sdqe3xt9, 2026-11-04), with its round-1 review (the 30 s queue measured there) and the `test_device_codes` slot exhaustion
+**Revisit when:** the counter writes or the sweep show in the load test, a `Limiter` raises a pool `TimeoutError` or a forge read falls back after the counter pool's 30 s wait (the dedicated counter pool became a bottleneck), or a limit needs exact sliding-window semantics across pods
 
 `ratelimit.Limiter` keeps its interface (`hit`, `take`, `place`/`release`, `blocked`,
 `reset`; `give_back` gave way to `place` with a count, below) and gets a shared backend on PostgreSQL (`shared_counts`): an `UNLOGGED`
@@ -325,7 +325,13 @@ its own second serving connection. There is one such engine per process, databas
 engine configured last, so an engine per app left each earlier app's two connections open until
 that app stopped, and the tests, which build an app per client, ran PostgreSQL out of connection
 slots (`test_device_codes`, 60 clients). The app disposes it after its workers stop, which only
-closes its idle connections; SQLite and MariaDB still create no extra engine. The extra two connections per process count
+closes its idle connections; SQLite and MariaDB still create no extra engine. When both of its
+connections are taken, the next count waits SQLAlchemy's default pool timeout of 30 s: a
+`Limiter` then raises the pool's `TimeoutError` and the request ends with an error, holding its
+serving connection and locks while it waits; a forge budget read returns nothing and the
+process's own budget answers. No deadlock comes of it, as the holders of the counter
+connections never wait for a request's locks; it is a queue. Why two connections and the
+default timeout, rather than a short one, is not recorded (alternatives: unknown). The extra two connections per process count
 in the deployment's connection budget. Rejected: the count on the request's own connection, which a
 refused request's rollback would undo, a wrong code included. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
 changes nothing of an account, and taking the human's shared `account_lock` there would wait for
@@ -457,7 +463,8 @@ reserve of 250 that takes more parallel reads than a hub has. And each forge rea
 the row before and one upsert after, each on a second connection, often from a request that holds
 one already. These transactions now use the dedicated two-connection pool shared with the
 limits (entry on limits above), so a full serving pool does not delay them. An unavailable
-database or an exhausted dedicated pool still falls back to the process's budget.
+database still falls back to the process's budget, and so does an exhausted dedicated pool,
+after its 30 s pool timeout.
 
 The notice on `maity_forget` (`wakeups.forget_token_everywhere`, `forget_repository_everywhere`)
 carries only ids, in the writing transaction. This process forgets at once, as before, not at
@@ -890,11 +897,12 @@ only about processes.
 
 - **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
   meaning for the operator; each process holds its share, rounded down, so raising the workers
-  never adds to the connections asked of the database (entry on connections above). A share
-  below two pooled connections is refused at the start: a request may hold its transaction's
-  connection while a shared count or the forge budget takes a second from the same pool (entry
-  2bd65fec), and a process with one waits on itself until the pool's timeout. The listener
-  connections (one per process) and the readiness probe's come on top.
+  never adds to the pool connections asked of the database (entry on connections above). A
+  share below two pooled connections is refused at the start. The minimum dates from when a
+  shared count or the forge budget took a second connection from the same pool (entry
+  2bd65fec), so that a process with one waited on itself until the pool's timeout; since #1320
+  they have their own engine, that reason is gone, and whether the minimum can go is open. The shared-counter connections (two per process), the listener connections
+  (one per process) and the readiness probe's come on top.
 - **The checks and the one-time work of a start run in the parent** before any worker is
   spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
   directory), then `app.start_once` (the generated text, the public pages, the sign-in

@@ -49,14 +49,15 @@ def refusal(settings: Settings) -> str | None:
         return (
             f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
             f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
-            f"process holds its share and needs {MIN_POOL_PER_WORKER}, since a request may hold "
-            "connections for concurrent requests and background work"
+            f"process holds its share of the pool and needs at least {MIN_POOL_PER_WORKER}"
         )
     return None
 
 
-# Keep the existing minimum for concurrent requests and background work. Shared counters
-# have their own pool; they no longer consume a second serving connection.
+# The minimum share of the pool per process. It was set for a shared count, which took a second
+# connection from the request's pool (pmwg, #1276); since #1320 the counts have their own engine,
+# so that reason is gone. The minimum is kept as it was, and whether it can go is open
+# (hub/context/replicas.md, entry 4e24abd8).
 MIN_POOL_PER_WORKER = 2
 
 
@@ -91,11 +92,16 @@ def budget_warning(settings: Settings, max_connections: int, reserved: int) -> s
     if asked <= room:
         return None
     share = per_worker(settings)
+    shared = (
+        f" + {SHARED_POOL_SIZE} shared"
+        if make_url(settings.database_url).get_backend_name() == "postgresql"
+        else ""
+    )
     return (
         f"the hub may ask {asked} database connections ({pods_at_most(settings)} pod(s) at once "
         f"× ({settings.workers} process(es) × (pool {share.db_pool_size} + overflow "
-        f"{share.db_max_overflow} + 1 listener) + 1 health)), the database takes {room}; lower "
-        "MAITY_DB_POOL_SIZE / MAITY_DB_MAX_OVERFLOW or the replicas"
+        f"{share.db_max_overflow}{shared} + 1 listener) + 1 health)), the database takes {room}; "
+        "lower MAITY_DB_POOL_SIZE / MAITY_DB_MAX_OVERFLOW or the replicas"
     )
 
 
