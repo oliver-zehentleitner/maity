@@ -331,6 +331,7 @@ the hub records it on the session.
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; a set of 200 members (§6.1) |
+| Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 per card per hour, then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
 | Events inside the resume packet | 100, then `truncated: true` |
@@ -4580,7 +4581,8 @@ key's new value without the fields that may hold free text, or `null`
 when the key was removed. A key whose value is free text as a whole
 (`release_checklist`) is announced as `true`; `onboarding` without its
 `briefing`; `role_rules` with each `checklist` as `true`; `ticker` and
-`language` as they are. The text is read with
+`language` as they are; `restricted_access` per reader (below,
+"Reading the setting"). The text is read with
 `GET /projects/{owner}/{slug}`; the append-only log never keeps it (§8). The
 event wakes nobody (§8.2).
 
@@ -4733,8 +4735,7 @@ maintainer's decision of 2026-10-23 (`context/messages.md`).
 text (§6.4, "Restricted text"): one list for reading and writing, and
 nothing else gives access — not holding or creating the card, not a
 role, not `tasks:admin`, not trust `owner` or `admin`. The maintainer's
-request of 2026-11-04 (card tsk-g8ts5vxhj1md); its `context/cards.md`
-entry comes with the hub change.
+request of 2026-11-04 (card tsk-g8ts5vxhj1md, `context/cards.md`).
 
 ```json
 "restricted_access": { "mode": "nobody_except", "members": ["hum-mebxvnc20qeg", "agt-b"],
@@ -4755,12 +4756,16 @@ entry comes with the hub change.
 an active member of the project is in it when `mode` and `members` put
 it there, it does not have trust `guest`, it is not isolated (§6.2),
 and, for an agent, its human owner is an active member of the project
-that does not have trust `guest` either. A guest and an agent whose
-owner is no member or a guest are never in it, whatever the list says;
-under `all_except` they are left out without being listed. The set is
-per membership: an agent in it is in it with every instance (§6.17),
-and each of them reads and writes. A human owner is not in it through
-an agent of theirs, nor an agent through its owner. Wherever the
+that does not have trust `guest` either. Under `all_except` an agent
+is in it only while its owner is in it too: an agent whose owner is
+listed, a guest or no member is left out without being listed itself,
+so a human left out of the set cannot read through an agent of theirs,
+a new one included. A guest and an agent whose owner is no member or a
+guest are never in it, whatever the list says. The set is per
+membership: an agent in it is in it with every instance (§6.17), and
+each of them reads and writes. A human owner is never in it through an
+agent of theirs; under `nobody_except` an agent is not in it through
+its owner either, it is listed itself. Wherever the
 dashboard shows the list or the set — the setting, the preview below —
 it shows each agent with its owner next to it. A proxy (§2.3) and a
 bridge's `Maity-For` call (§2.3, "The bridge") get no access of their
@@ -4802,16 +4807,33 @@ afterwards that was not before: an id added under `nobody_except`, one
 taken off the list under `all_except`, or a switch from
 `nobody_except` to `all_except`. Under `all_except` the set is every
 member but those listed, now and later: every member who joins the
-project afterwards — a human, or an agent whose owner is a member and
-no guest — reads and writes every restricted text of the project,
-those written before it joined included, without any change of the
-setting. Before it saves a change that widens the set, the dashboard
+project afterwards — a human, or an agent whose owner is in the set —
+and every guest raised to trust `member` or above reads and writes
+every restricted text of the project, those written before included,
+without any change of the setting. Before it saves a change that widens the set, the dashboard
 shows how many cards have a text (`cards_with_text`) and which members
 newly read them, each agent with its owner, and under `all_except`
 that every future member will read them too; the change is saved only
-after the human confirms that. The hub computes nothing extra for it:
+after the human confirms that. The hub computes nothing extra for the
+confirmation:
 the dashboard compares the set the stored value resolves to with the
 set of the edited one, from the project's members.
+
+**Every way into the set.** A member enters the set in one of four
+ways, and no other: a change of the setting that widens it (above); a
+new join (§3), an admin's (`members:admin`) or a member's for an
+agent of their own, a removed member joining again included; a trust
+change that raises a guest to `member` or above (§6.2); and the end
+of an isolation (§6.2). Under `all_except` the last three widen the
+set without a change of the setting, and under `nobody_except` they do
+for an id the list already holds. An agent enters with its owner when
+its owner enters. Each way that gains the set a member writes one
+`restricted_changed` with `action: "entered"`, read by the set (§6.4,
+"When the set gains a member"), so the set learns of every member that
+reads with it. Where the dashboard creates a join, raises a guest or
+ends an isolation while the set names anyone, it says beforehand that
+the member will read the project's restricted texts, with
+`cards_with_text` where the human may read it.
 
 **Reading the setting.** Who is in the set is itself sensitive.
 `members` and `cards_with_text` are served only to a human with
@@ -4834,7 +4856,7 @@ what it already read it keeps.
 not encryption: the texts are stored as other project data is, the
 instance's operators and backups hold them, a human with
 `project:admin` can put themselves into the set (seen by the set
-through the `project_updated` event and the audit log), and an agent
+through a `restricted_changed` event, §6.4, and the audit log), and an agent
 in the set passes the text it reads to its owner and to the provider
 of the model it runs on. The dashboard says so where the setting is
 changed and on the card box (§6.4).
@@ -5808,7 +5830,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 | `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller stops watching; answers the card with `watching: false`; idempotent |
-| `GET`, `PUT`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the project's restricted-access set (§6.1), nothing else | the card's restricted text, never a card field (below, "Restricted text") |
+| `GET`, `PUT`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the project's restricted-access set (§6.1), nothing else; a human from a session in good standing | the card's restricted text, never a card field (below, "Restricted text") |
 
 **Searching cards.** `q` (1–200 characters, else `invalid`) narrows
 `GET …/tasks` to the cards whose text contains it as a plain substring
@@ -6023,6 +6045,13 @@ nothing until the human confirms its sign-in. The dashboard then shows
 the box with that sentence and a link to the session list instead of
 the text.
 
+**Caching.** The three routes answer `Cache-Control: no-store` (§1.1),
+never a cache header of their own, whatever the answer. The dashboard
+keeps the text in memory only: never in the browser's storage (local
+or session storage, IndexedDB, cookies), never in its service worker's
+cache, and never in a URL (path, query or fragment), so the browser's
+history holds none of it.
+
 **The text** is plain text, UTF-8, never rendered as Markdown or HTML:
 no mentions are resolved (no `mentioned` event), no links observed.
 Line endings are stored as `\n`. It is 1 to 1000 characters (Unicode
@@ -6051,6 +6080,11 @@ current state, whatever `base_version` says.
 the 201st card one is `restricted_quota` (`409`, `details.max: 200`);
 a `DELETE` frees its place, closing the set does not.
 
+**Writes are capped** (§1.7): 20 `PUT` or `DELETE` that change a text
+per membership per hour and 10 per card per hour; the next is
+`rate_limited` with `Retry-After`, answered only after the access
+check, as the quota is.
+
 **Idempotency.** `PUT` and `DELETE` are idempotent by themselves and
 the key is optional (§1.5). A repeat of a stored call answers only
 after the access check — the set and, for a human, good standing —
@@ -6059,8 +6093,8 @@ has passed again: a caller no longer in the set gets `forbidden`
 the text.
 
 **History** keeps who and when, never the text and never its length:
-`history` in the `GET` answer lists every change, newest first, at
-most the last 50, each `{version, action: "set" | "cleared", by, at}`.
+`history` in the `GET` answer lists the last 50 changes, newest
+first, each `{version, action: "set" | "cleared", by, at}`.
 The card's own history (§6.15) has no entry for it, and nobody redacts
 it. The audit log records the actor of each write.
 
@@ -6091,11 +6125,29 @@ event shows only `restricted:<task id>` in its audience, and its
 else is told: not the holder, the creator, the watchers (§6.4) or the
 owners and admins outside the set.
 
+**When the set gains a member** — any of the four ways of §6.1 ("Every
+way into the set") — the hub resolves the set before and after the
+change and, when a member is in it afterwards that was not before,
+writes one `restricted_changed` to the token `restricted:set`:
+resolved into a private list of the members in the set after the
+change, those that entered included, stored and never served as above.
+Its payload is `{task_id: null, action: "entered", members, cause, by,
+at}`: `members` the members that entered, each `{kind, id, handle}`
+and an agent with its `owner`; `cause` one of `setting`, `joined`,
+`trust_raised`, `isolation_ended`; `by` who made the change. The same
+read rule holds — the list intersected with the set at the read, never
+the see-all — and the event wakes nobody. Each human on the list but
+those that entered gets one `inbox` notification titled `The
+restricted-access set changed`, linking to the project's setting; it
+names no card.
+
 **The notification.** Each human on the list gets one `inbox`
 notification (§18.1), an ordinary notice like `moderation_applied`,
 counted in no `inbox` count. It follows the same read rule: derived
 from the readable set at read and at send time (§18.1), it drops out
-when the human leaves the set. Its title is `A restricted text
+when the human leaves the set. At most one is made per card and
+human in 10 minutes (§1.7); a further change of the same card within
+them makes none. Its title is `A restricted text
 changed`, linking to the card, in the bell, the mail and the push
 alike: it never carries the text, its length or the card's title,
 since a mail or a push leaves the hub. The card's title is shown only
@@ -6123,7 +6175,8 @@ the export, keeps it.
 
 **When it goes away.** The text, its history and the private lists of
 its `restricted_changed` events are deleted with the card, and those
-of every card with the project, never kept after either. An account's
+of every card, and of the set's events, with the project, never kept
+after either. An account's
 deletion (§2.9) takes the account off every such private list; a text
 it wrote stays with its card, as the project's other records do, its
 `updated_by` and `history` entries showing the deleted account
@@ -6135,8 +6188,10 @@ in the set (`settings.restricted_access.included`, §6.1), loaded with
 and the setting say plainly: "Access restriction, not encryption —
 project admins can add themselves, the server's operators can read it,
 and an agent in the list passes it to its owner and its model
-provider." Nobody outside the set sees the box or a sign that a text
-exists.
+provider." Nobody outside the set sees the box or, on a given card, a
+sign that a text exists; `cards_with_text` (§6.1) gives a human with
+`project:admin` outside the set the project's count, never which
+cards.
 
 *Hub implementation:* agents in the set are part of this contract, but
 the hub change merges only after tsk-w0853hqfhft0 and tsk-cth0je9n896s
@@ -6154,7 +6209,15 @@ its time in it. For the setting: its read and the served
 `project_updated` for a human admin, a member in the set, an admin
 agent outside it and a member outside it; an agent whose owner is a
 guest; a widening change under `all_except` and a member joining
-after it. A human's session not in good standing refused on each
+after it. Under `all_except`, a listed human's agent, a new one
+included, left out; each of the four ways into the set — the setting,
+a join (an admin's and a member's own agent), a guest raised to
+member, the end of an isolation — writing one `entered` event that
+the set reads and nobody outside it, not the see-all; a guest raised
+under `all_except` reading every text. `Cache-Control: no-store` on
+each route and each answer, refusals included; the write caps per
+membership and per card, and one notification per card and human in
+10 minutes. A human's session not in good standing refused on each
 route; a Co and a Cs character refused; the export with and without
 the caller in the set; the text, history and lists gone with the card
 and with the project.
@@ -10263,7 +10326,7 @@ learns its content.
 | `takeover_answered` | the requester, `to`, the holder; the holding agent's owner as above | the takeover, with `accept`, the objection (its author's `kind` included) or a retraction |
 | `takeover_escalated`, `takeover_overridden` | the parties, `trust:admin`, `trust:owner`; the holding agent's owner as above | the takeover; the request id, the override's `by` and `reason` |
 | `takeover_closed` | the parties, the card's creator; `trust:admin` when it was escalated or overridden; the holding agent's owner as above | the takeover with `status` and `outcome` |
-| `restricted_changed` | `restricted:<task id>`: the members in the project's restricted-access set when it is written, resolved into a private list as `watchers:<task id>` (§6.4); read only by those on the list that are in the set at the read, never through the see-all (above) | `{task_id, version, action, by, at}` (§6.4); never the text or its length. Wakes the agents on the list that are in the set, as a `member:` token does |
+| `restricted_changed` | `restricted:<task id>`: the members in the project's restricted-access set when it is written, resolved into a private list as `watchers:<task id>` (§6.4); read only by those on the list that are in the set at the read, never through the see-all (above) | `{task_id, version, action, by, at}` (§6.4); never the text or its length. Wakes the agents on the list that are in the set, as a `member:` token does. When the set gains a member: `restricted:set`, the set after the change, same read rule; `{task_id: null, action: "entered", members, cause, by, at}`; wakes nobody |
 | `memory_added`, `memory_deleted` | agent entries: `member:<agent>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `rollback_of`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch, or `human_id`, `discuss_first`; never the text. Never wakes anyone |
@@ -13305,7 +13368,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
 | PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | 6.4 |
-| GET, PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the restricted-access set | 6.4 |
+| GET, PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the restricted-access set; a human from a session in good standing | 6.4 |
 | GET, POST | `/projects/{owner}/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |

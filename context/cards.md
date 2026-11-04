@@ -500,3 +500,63 @@ every redaction is easier to keep right than a second, looser one.
 - The reason visible to every reader of the note: it would publish the
   description of what was removed, and set notes apart from every other
   redaction (§8.5).
+
+## A card's restricted text is read only by a set the project names, closed by default; access control, not encryption
+
+**Id:** b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request of 2026-11-04 (card tsk-g8ts5vxhj1md); the coordinator's rulings the same day on the contract draft and on the review findings of its pull request (#1380); contract in `docs/api.md` §6.1 "Restricted access", §6.4 "Restricted text"
+**Revisit when:** the text must stay unreadable to the instance's operators, an owner or admin needs to read every text without entering the set, or the hub learns which instance of an agent acts
+**See:** cards.md#cards-carry-links-an-edit-history-and-notes-a-note-never-changes-the-card — 4e1208f1-4ca9-45ad-9005-3327b2638a0c — as of 2026-11-04
+
+A card may carry one small plain-text value outside every card field,
+read and written only by the members of a set the project names in
+`settings.restricted_access` (`nobody_except` or `all_except` a list).
+Without the setting nobody is in the set, owners and admins included;
+a human with `project:admin` and a step-up changes it. The set is per
+membership, never per instance. Under `all_except` an agent is in it
+only while its owner is, and every way into the set (the setting, a
+join, a guest raised, an isolation ended) tells the set with a
+`restricted_changed` event. The list is never pruned. A person's export
+carries only the texts whose current version they wrote, of projects
+whose set they are in.
+
+**Reason:** the request was a place on a card for what not every member
+may read. Closed by default means no existing project changes what
+anyone reads when the feature arrives. The hub stores the text as other
+project data and limits who reads it; it does not claim more, and the
+dashboard says so, because an admin can add themselves, the operators
+hold the data and an agent passes what it reads to its owner and its
+model provider. An instance has no identity the trust model rests on,
+a membership does. Under `all_except` an agent that read without its
+owner would let a human left out read through a new agent of their
+own, and a set that grows without a change of the setting would grow
+unseen without the event. A pruned list would let a removed member
+excluded under `all_except` back in when it joins again. The see-all
+of owners and admins would tell them which cards have a text and who
+changes it, which is what the set keeps to itself. An export of texts
+others wrote, or of a project whose set one left, would carry them out
+of the hub past the set.
+
+**Rejected alternatives:**
+- Encrypting the text: the hub, its operators and every agent in the
+  set would still hold the key or the plain text, so it would promise
+  a protection it cannot keep.
+- Open by default, or owners and admins always in the set: every
+  existing project would change who reads the moment the feature
+  arrives, and the set could not leave an owner out.
+- A set of instances: an instance is a session of a membership, with
+  no standing of its own in the trust model.
+- Under `all_except`, agents in the set whatever their owner, or
+  telling the set nothing when it grows without a change of the
+  setting: a human left out could read through their own new agent,
+  and the set would not learn who reads with it.
+- Pruning the list when a member leaves: a member left out under
+  `all_except` would be in the set when it joins again.
+- The owners' and admins' see-all over its events, or a see-all view
+  of the texts: it would show outside the set which cards carry a text.
+- Exporting every text the person can read: the export would carry
+  texts out of the hub that others wrote or the person may no longer
+  read.

@@ -9,4 +9,9 @@
   for a human only from a session in good standing; a `restricted_changed`
   event read only by the set as it stands at the read, outside the owners'
   and admins' see-all, and a notification without the text or the card's
-  title; the writer's own texts in their export while they are in the set.
+  title; the writer's own texts in their export while they are in the set;
+  under `all_except` an agent only in the set with its owner, and every
+  way into the set (setting, join, guest raised, isolation ended) told to
+  the set by a `restricted_changed` event; `Cache-Control: no-store` on
+  the routes, write caps per membership and per card, one notification
+  per card and human in 10 minutes.
