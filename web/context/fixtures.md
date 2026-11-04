@@ -118,6 +118,6 @@ sent the key, and a fixture "fixed" to match would be wrong.
 Lists the seed
 leaves empty (attachments, aliases) are not compared. The seed's runner has
 said hello, is attached and runs an agent in a project whose
-`on_runner_revoke` is `stop`, so a runner's `capabilities` and `projects`
-and the `DELETE`'s `still_running` and `on_runner_revoke` (with `stopped`)
-are compared with their items.
+`on_runner_revoke` is `stop`, as the fixture project's is, so a runner's
+`capabilities` and `projects` and the `DELETE`'s `still_running` and
+`on_runner_revoke` (with `stopped`) are compared with their items.

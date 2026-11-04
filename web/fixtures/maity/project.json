@@ -54,7 +54,8 @@
     "keep_the_why": "required",
     "keep_the_why_defaults": "adopt",
     "member_agents": "on",
-    "member_agents_max": 3
+    "member_agents_max": 3,
+    "on_runner_revoke": "stop"
   },
   "absence": null,
   "settings": {

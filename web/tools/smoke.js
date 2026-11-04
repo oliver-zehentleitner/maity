@@ -1763,12 +1763,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(card("slow-box"), "runners: a slow periodic read still draws once it answers");
   win.Maity.api.getAll = rAll1;
   await fireIntervals(); await tick(); await tick();
+  const rDelNow = win.Maity.api.del;
+  let rFirst = null;
+  win.Maity.api.del = (p, b) => rDelNow(p, b).then((a) => { if (p === "/runners/rnr-0002") rFirst = a; return a; });
   btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
+  win.Maity.api.del = rDelNow;
   expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("plc-0003")
     && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");
   win.Maity.api.post = rPost; win.Maity.api.patch = rPatch; win.Maity.api.del = rDel;
   const rAgain = await win.Maity.api.del("/runners/rnr-0002");
-  expect(JSON.stringify(rAgain.on_runner_revoke) === JSON.stringify([{ project: "maintainer/maity", rule: "keep", stopped: [] }]),
+  const rApplied = rFirst && rFirst.on_runner_revoke;
+  expect(rApplied && rApplied.length === 1 && rApplied[0].project === "maintainer/maity" && rApplied[0].rule === "stop" && rApplied[0].stopped.length > 0
+    && JSON.stringify(rAgain.on_runner_revoke) === JSON.stringify(rApplied),
     "runners: a second DELETE answers again what the removal applied (§15.3)");
   const realAll2 = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/runners" || p === "/runners/enrollments" ? Promise.resolve({ items: [], next_cursor: null }) : realAll2(p));

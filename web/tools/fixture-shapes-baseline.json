@@ -34,7 +34,6 @@
   ".policy.coordinator_substitute: the fixture leaves it out",
   ".policy.max_placements: the fixture leaves it out",
   ".policy.merged_closes: the fixture leaves it out",
-  ".policy.on_runner_revoke: the fixture leaves it out",
   ".policy.spawn_consent_by: the fixture leaves it out",
   ".policy.spawn_requests: the fixture leaves it out",
   ".policy.subtasks: the fixture leaves it out",
