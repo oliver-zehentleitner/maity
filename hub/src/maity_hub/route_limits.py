@@ -56,7 +56,7 @@ def resolve(app_routes: Iterable[Any], limits: tuple[RouteLimit, ...]) -> Table:
         if not getattr(route, "include_in_schema", False) or not route.methods:
             continue
         if route.path is None or route.path_format is None:
-            continue  # a mount, which the document does not list
+            continue  # for the type checker: a route with methods always has both
         pattern = compile_path(route.path)[0]
         for method in _METHODS:
             if method in route.methods:

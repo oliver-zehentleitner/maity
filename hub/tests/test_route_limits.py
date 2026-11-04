@@ -181,7 +181,7 @@ def test_a_route_with_a_path_converter_counts_every_address_it_serves(make_clien
         client.get("/api/v1/public/pages/owner/slug/board").status_code,
         client.get("/api/v1/public/pages/owner/slug").status_code,
     ]
-    assert codes[:2] != [429, 429] and codes[2] == 429, codes
+    assert 429 not in codes[:2] and codes[2] == 429, codes
 
 
 def test_configure_reads_no_database(monkeypatch: pytest.MonkeyPatch) -> None:
