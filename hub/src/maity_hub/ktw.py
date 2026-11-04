@@ -143,8 +143,9 @@ def children(source: str) -> list[tuple[str, str]]:
 
 
 # A list line is read in string steps, each one pass over the line, so the work grows with the
-# line's length: the patterns they replace tried every split of a run of whitespace between
-# the name and the colon, which grew with the cube of the run.
+# line's length: the patterns they replace tried every split of a run of whitespace: the child's
+# before its colon, which grew with the cube of the run, and the setting's after its value, with
+# the square.
 
 
 def _item(line: str) -> str | None:
