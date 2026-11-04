@@ -623,9 +623,9 @@ runner that refuses the harness by configuration.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
-**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, or git learns another file in `.git` that redirects where it reads configuration
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration, or a harness version other than the one in `capabilities.CHECKED` is in use
 
 Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
 environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
@@ -649,6 +649,17 @@ against the pattern typed, not the path searched. maity and the runner
 run git only through `proc.GIT`, a clone into a missing directory, and
 `gc`'s pinned read; a test pins that.
 
+A repository's grant may only add plain commands: a rule that starts
+with a variable assignment or `env`, or that names `maity`, is refused
+when the configuration is read, and an adapter skips it as well.
+`maity` stays the runner's own rule. Claude Code's `.git` write deny is
+one `Edit(…)` rule, which covers its file-editing tools; it does not
+check a `Write(…)` deny rule. That a call with something in front of
+`maity` stays inside Claude Code's sandbox was checked with one version,
+2.1.318 (`capabilities.CHECKED`); with another version the runner still
+starts the agent, and `runner check` and the supervisor log say that it
+was not checked for it.
+
 **Reason:** git creates lock files, `ORIG_HEAD` and `COMMIT_EDITMSG` in
 `.git`, so the directory has to stay writable, and an agent that can
 write there can write `commondir`. Read-only `config` and `hooks` meant
@@ -665,6 +676,12 @@ without a model run. Denying each other clone's credential by name at
 the start avoids the question, at the cost of clones made later. The
 home list is a list: the README says that any other secret in the
 agents' home stays readable.
+A grant rule is matched as written, so one with a prefix would be
+allowed outside the rules the runner checked; refusing it in the
+configuration says so to the operator before an agent starts. The
+version check is a warning that does not block the start, as the
+hardening task asked: what was checked is the harness's behaviour with
+one version, not a contract.
 
 **Rejected alternatives:**
 - A read-only `.git` with write access to `objects`, `refs` and the
@@ -680,6 +697,15 @@ agents' home stays readable.
   a newly staged submodule, so `report` would miss a change. The
   configuration setting keeps git out of the submodule and still shows
   the staged gitlink.
+- Only a warning for a grant rule with something in front or naming
+  `maity`, keeping the rule: the harness would still allow it as
+  written, and a configuration the runner accepted today then means
+  more than the runner checked. Refusing it changes what a valid
+  configuration is, and says so by name when `check` or `serve` reads
+  it.
+- Keeping the `Write(…)` deny next to `Edit(…)`: Claude Code warns at
+  start that it ignores it, and a rule that does nothing reads as a
+  boundary.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 

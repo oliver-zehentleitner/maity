@@ -317,6 +317,9 @@ def _check_harness(
         report.error(f"harness {harness.id}: `{found.path} --version` failed")
         return
     report.ok(f"harness {harness.id}: {found.path} ({found.version})")
+    warning = capabilities.unchecked(harness.id, found.version)
+    if warning is not None:
+        report.warn(warning)
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
@@ -429,6 +432,9 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
         else:
             report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
+            warning = capabilities.unchecked(harness.id, probe.version)
+            if warning is not None:
+                report.warn(f"{name}: {warning}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
                 line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
                 (report.error if harness.require_sandbox else report.warn)(line)

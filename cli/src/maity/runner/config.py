@@ -208,6 +208,29 @@ def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
 
 
+# A command allowed by a repository's grant: nothing set in front of it (`NAME=…`, `env …`),
+# and not maity, which runs outside the harness's sandbox and is granted on its own.
+_PREFIXED = re.compile(r"^\s*(?:env(?:\s|$)|[A-Za-z_][A-Za-z0-9_]*=)")
+_NAMES_MAITY = re.compile(r"(?:^|[\s;&|(/])maity(?:\s|$|[;&|)])")
+
+
+def plain_command(rule: str) -> bool:
+    """Whether a grant's allow rule is a plain command: no variable or `env` in front, and
+    not a maity call."""
+    return not _PREFIXED.match(rule) and not _NAMES_MAITY.search(rule)
+
+
+def _commands(values: Any) -> str | None:
+    problem = _strings()(values)
+    if problem is not None:
+        return problem
+    bad = [v for v in values if not plain_command(v)]
+    if bad:
+        return ("not a plain command (no variable or `env` in front, not maity): "
+                + ", ".join(repr(v) for v in bad))  # fmt: skip
+    return None
+
+
 def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable[[Any], str | None]:
     def check(values: Any) -> str | None:
         if not all(isinstance(v, str) and v for v in values):
@@ -367,7 +390,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             if table is None:
                 continue
             grants[normalise_repository(name)] = RepositoryGrant(
-                allow=tuple(table.get("allow", list, [], check=_strings())),
+                allow=tuple(table.get("allow", list, [], check=_commands)),
                 network=tuple(table.get("network", list, [], check=_strings())),
             )
             table.done()

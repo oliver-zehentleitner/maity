@@ -144,6 +144,29 @@ def test_only_the_owner_wide_glob_is_accepted(entry: str) -> None:
     assert any(p.startswith("limits.repositories:") for p in found), found
 
 
+@pytest.mark.parametrize(
+    "rule", ["FOO=1 make test", "env make test", "make test && maity report *", "maity *"]
+)
+def test_a_repository_grant_allows_only_plain_commands(rule: str) -> None:
+    """Nothing set in front of a granted command, and not maity, which is granted on its own
+    and runs outside the harness's sandbox."""
+    grant = f'\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = ["{rule}"]\n'
+    found = problems(minimal(grant=grant))
+    assert any("not a plain command" in p and rule in p for p in found), found
+
+
+def test_a_plain_repository_grant_is_kept() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test", "uv run pytest *"]\n'
+    )
+    cfg = parse(minimal(grant=grant))
+    assert cfg.repositories["github.com/oliver-zehentleitner/maity"].allow == (
+        "make test",
+        "uv run pytest *",
+    )
+
+
 def test_harness_without_allowlist_is_refused() -> None:
     found = problems(minimal(pi="\n[harness.pi]\n"))
     assert any(p.startswith("harness.pi: has no command allowlist") for p in found)
@@ -457,7 +480,7 @@ def test_check_warns_about_inherited_claude_settings(
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.308 (Claude Code)")
+    fake_tool(bin_dir, "claude", "2.1.318 (Claude Code)")  # the checked one: no warning for it
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
     (home / ".claude").mkdir()
@@ -469,6 +492,23 @@ def test_check_warns_about_inherited_claude_settings(
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     warnings = [line for line in lines(capsys) if line.startswith("warn")]
     assert len(warnings) == 2, warnings
+
+
+@pytest.mark.parametrize(("version", "warned"), [("2.1.318", False), ("2.1.330", True)])
+def test_check_warns_when_claude_code_is_not_the_checked_version(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
+) -> None:
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    fake_tool(bin_dir, "bwrap")
+    fake_tool(bin_dir, "socat")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
+    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.318" in line]
+    assert bool(found) is warned, found
+    assert all(line.startswith("warn") for line in found)
 
 
 def test_check_requires_the_sandbox_when_configured(

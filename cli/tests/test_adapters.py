@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import re
 import shutil
 import tomllib
 from pathlib import Path
@@ -47,6 +49,21 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     }  # fmt: skip
 
 
+def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) -> None:
+    """A grant that reached the adapters without the configuration's check: the settings hold
+    no allowed command with a variable or `env` in front, and no maity call of the grant's."""
+    ctx = context(tmp_path)
+    ctx = dataclasses.replace(ctx, grant=config.RepositoryGrant(
+        allow=("make test", "FOO=1 make test", "env make test", "make test; maity *"),
+    ))  # fmt: skip
+    claude = adapters.claude_settings(ctx)["permissions"]["allow"]
+    opencode = list(adapters.opencode_config(ctx)["permission"]["bash"])
+    for rules in (claude, opencode):
+        assert any("make test" in rule for rule in rules)
+        assert not any(re.search(r"(?:^|\()\s*(?:env\s|[A-Za-z_]\w*=)", r) for r in rules)
+        assert not any("; maity" in rule for rule in rules)
+
+
 def test_claude_code_grant(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     settings = adapters.claude_settings(ctx)
@@ -59,7 +76,8 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny
-    assert f"Edit(/{ws}/.git/**)" in deny and f"Write(/{ws}/.git/**)" in deny  # config, hooks
+    assert f"Edit(/{ws}/.git/**)" in deny  # config, hooks; Edit covers every file tool
+    assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
     assert "sandbox" not in settings
