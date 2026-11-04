@@ -10408,8 +10408,8 @@
     "text": "4eb2987b54fa03a1"
   },
   "names.refused.step_up": {
-    "en": "d83b553c1ec2c2f0",
-    "text": "ac1f1f3f45c19e27"
+    "en": "ede2e2af3b0541e9",
+    "text": "d6f2ff22e351d1b8"
   },
   "names.refused.taken": {
     "en": "f75c10f4797ab8bc",
@@ -17771,53 +17771,9 @@
     "en": "90e38ea91c09727b",
     "text": "23c9017557691642"
   },
-  "why.intro": {
-    "en": "41317daaeede1c23",
-    "text": "0e2fef91b7d1c5f6"
-  },
   "why.no_read": {
     "en": "f5124f350b2f5ae8",
     "text": "44c5eacfe7cea04c"
-  },
-  "why.parts.attention": {
-    "en": "e3d6fb4893f7a468",
-    "text": "79d781c70d9a24f9"
-  },
-  "why.parts.entries": {
-    "en": "624b7cc419e8a076",
-    "text": "cd85de0b9b13f5f4"
-  },
-  "why.parts.exported": {
-    "en": "21358db2a7cfb07e",
-    "text": "5c970f071a16ddee"
-  },
-  "why.parts.failed": {
-    "en": "32b5e6e294d19d2f",
-    "text": "423af2709a6ae736"
-  },
-  "why.parts.failed_last": {
-    "en": "dfa0709c52d24e3a",
-    "text": "402407c55e10495b"
-  },
-  "why.parts.label": {
-    "en": "6c36892f420ae550",
-    "text": "b2c182df1a1c61e7"
-  },
-  "why.parts.linter": {
-    "en": "1001dd9ba957f69a",
-    "text": "91c7ef70108ec0f8"
-  },
-  "why.parts.part": {
-    "en": "0c247e29568efc7a",
-    "text": "aac19a2cb3e9e1d9"
-  },
-  "why.parts.title": {
-    "en": "cef99ea7cc43a7e8",
-    "text": "aac19a2cb3e9e1d9"
-  },
-  "why.read_again": {
-    "en": "74de2bec5fe97008",
-    "text": "d0e8fa1eda1bfa83"
   },
   "why.reason.address_refused": {
     "en": "08b4f2457f53cf79",

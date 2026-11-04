@@ -128,6 +128,9 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
     simple = {("proposed", "open"), ("open", "proposed")}
     if (current, wanted) in simple:
         return
+    if (current, wanted) == ("blocked", "done") and merged_in_review(mine.project, card):
+        # A merged report waits behind a request: the merge is what review asked for (§6.6).
+        current = "review"
     if (current, wanted) in {("review", "done"), ("review", "in_progress")}:
         if has_done_authority(mine, card):
             refuse_same_team_review(mine, card)
@@ -140,6 +143,18 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
             return
         raise ApiError(409, "not_holder", "only the holder moves this card to done")
     raise invalid_transition(current, wanted)
+
+
+def merged_in_review(project: Any, card: Any) -> bool:
+    """`blocked` from `review` with the report's pull request observed merged, under a
+    policy that closes with one move (two signatures stay a `review→done`, §6.4)."""
+    from maity_hub import merged  # merged reads cards
+
+    return (
+        card.status_before_block == "review"
+        and merged.merged(card.report)
+        and not two_signatures(project)
+    )
 
 
 def refuse_same_team_review(mine: Membership, card: Any) -> None:

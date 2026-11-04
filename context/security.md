@@ -161,7 +161,7 @@ Keeping the projects' record keeps other members' history readable.
 **See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-03
 
 The hub's pages under its default policy `default-src 'self'` (the mail
-link pages, the sign-in link page, the join page in a browser, the
+link pages, the join page in a browser, the
 `503` maintenance page) carry one fixed `<style>` block for the product
 line and answer with `default-src 'self'; style-src 'sha256-…'`, the
 hash of exactly that block. A test checks that the hash in the header

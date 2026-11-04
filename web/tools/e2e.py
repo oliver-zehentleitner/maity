@@ -768,6 +768,7 @@ def main() -> int:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
+                    chat_height_views(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -1126,7 +1127,7 @@ def scenario(run: Run, page: Page) -> None:
         lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
         assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
         run.shot(page, f"phone-{view}")
-        run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+        run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     # The create form: its preset select has long option labels.
     page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
     expect(page.locator("main section.view-new")).to_be_visible()
@@ -2171,7 +2172,7 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
 def fixture_views(run: Run, browser) -> None:
     """Views whose richer states the hub here cannot reach, in fixture mode (file://):
     the Why view with the published maity.dev family, one part failing, the root unreadable."""
-    run.step("fixtures: the Why view as the published family shows it, and its failure states")
+    run.step("fixtures: the Why view mounts the Keep the Why views, and says when the export is unreadable")
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
     errors: list[str] = []
@@ -2179,32 +2180,179 @@ def fixture_views(run: Run, browser) -> None:
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     index = (WEB / "index.html").as_uri()
     try:
-        for query, name, says in (
-            ("", "why", "1 entry needs attention · 71 entries in 4 parts of the project"),
-            (
-                "?ktw=member_failed",
-                "why-part-failed",
-                "Could not be read: its state.json did not answer in time",
-            ),
-            ("?ktw=unavailable", "why-root-unreadable", "Shown is its last good read"),
-        ):
-            page.goto(f"{index}{query}#/maintainer/maity/why")
-            expect(page.locator("main section.view-why")).to_contain_text(says)
-            assert not errors, errors  # the page's own errors, before axe runs
-            run.shot(page, f"fixtures-{name}")
-            run.a11y(page, f"fixtures: {name}")
-            # axe reads stylesheets by XHR, which file:// refuses; that is axe's, not the page's.
-            errors.clear()
-        # The family at phone width: the summary, the entries, the table that scrolls.
+        # The library itself, loaded on the first visit (js/ktw-host.js): the overview, the graph
+        # on its canvas, a topic with its entries, all in mounts marked translate="no".
+        page.goto(f"{index}#/maintainer/maity/why")
+        main = page.locator("main .why-main.ktw-root")
+        expect(main).to_be_visible()
+        expect(main).to_have_attribute("translate", "no")
+        expect(main).not_to_be_empty()
+        assert page.evaluate("!!(window.KeepTheWhy && window.KeepTheWhy.views.pages)")
+        assert not errors, errors
+        run.shot(page, "fixtures-why")
+        run.a11y(page, "fixtures: why")
+        errors.clear()
+        page.goto(f"{index}#/maintainer/maity/why/graph")
+        expect(page.locator("main .why-main canvas")).to_have_count(1)
+        page.goto(f"{index}#/maintainer/maity/why/topic/api.md")
+        expect(page.locator("main .why-main")).to_contain_text("The API is versioned in the path")
+        assert not errors, errors
+        run.shot(page, "fixtures-why-topic")
+        errors.clear()
+        # The timeline's selected controls are the library's white on the accent, which Maity
+        # writes in its own text for the accent (css/app.css); axe checks them in both themes.
+        page.goto(f"{index}#/maintainer/maity/why/timeline")
+        expect(page.locator("main .why-main .ktw-stage-seg button.ktw-on").first).to_be_visible()
+        assert not errors, errors
+        run.shot(page, "fixtures-why-timeline")
+        run.a11y(page, "fixtures: why timeline")
+        errors.clear()
+        page.goto(f"{index}?ktw=unavailable#/maintainer/maity/why")
+        expect(page.locator("main")).to_contain_text("shown is its last good read")
+        expect(page.locator("main .why-main")).not_to_be_empty()
+        run.shot(page, "fixtures-why-last-good")
+        errors.clear()
+        # The view at phone width: nothing wider than the screen.
         page.set_viewport_size({"width": 390, "height": 844})
         page.goto(f"{index}#/maintainer/maity/why")
-        expect(page.locator("main section.view-why")).to_contain_text("1 entry needs attention")
+        expect(page.locator("main .why-main")).not_to_be_empty()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
         assert not errors, errors
         run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
+
+
+CHAT_MEASURE = """() => {
+  const box = (sel) => { const el = document.querySelector(sel); if (!el) return null;
+    const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, height: b.height }; };
+  return { overflow: document.scrollingElement.scrollHeight - window.innerHeight,
+    history: box('.chat-layout.open .chat-pane .messages'), compose: box('.chat-layout.open .chat-pane .compose'),
+    footer: box('#product-line'), errors: window.__errors.slice() };
+}"""
+
+
+def chat_height_views(run: Run, browser) -> None:
+    """The open chat against the window (tsk-j10w2hsm1h90), in fixture mode: on a project's Chat
+    tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and after the pane
+    grew or shrank inside (the composer folded, shown, three times its rows, a group's Manage opened). Without the sign-in banner the
+    page ends at the window's bottom edge; with it (a phone has no room then) the page scrolls, but
+    the history keeps some height and the composer never runs under the product line. A
+    ResizeObserver loop is reported on window only, so a collector there counts it as an error."""
+    run.step("fixtures: the open chat ends at the window's bottom edge, the composer above the product line")
+    index = (WEB / "index.html").as_uri()
+    # 375 x 667 is too small for a composer and 60 px of history: there the page scrolls, never overlaps.
+    for width, height, fits in ((1280, 800, True), (390, 844, True), (375, 667, False)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        context.add_init_script(
+            "window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));"
+        )
+        # The elements the chat's fitting observer (the one on the body) watches, connected or not.
+        context.add_init_script("""(() => { const R = window.ResizeObserver; if (!R) return; const all = [];
+          window.ResizeObserver = class extends R {
+            constructor(cb) { super(cb); this.__t = new Set(); all.push(this); }
+            observe(t, o) { this.__t.add(t); super.observe(t, o); }
+            unobserve(t) { this.__t.delete(t); super.unobserve(t); }
+            disconnect() { this.__t.clear(); super.disconnect(); } };
+          window.__fitTargets = () => all.filter((o) => o.__t.has(document.body))
+            .map((o) => ({ all: o.__t.size, gone: Array.from(o.__t).filter((t) => !t.isConnected).length })); })();""")
+        page = context.new_page()
+        errors: list[str] = []
+        # Page errors only: on file:// Chromium refuses the pictures the page loads (CORS) and says so on the console.
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for route in (
+                "#/maintainer/maity/chat/agt-a",
+                "#/maintainer/maity/chat/cnv-0007",
+                "#/chats/maintainer/maity/agt-a",
+                "#/chats/maintainer/maity/cnv-0007",
+            ):
+                for banner in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en{route}")
+                    page.locator(".chat-layout.open .chat-pane .compose").wait_for()
+                    page.wait_for_timeout(800)
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        page.wait_for_timeout(300)
+                    m = page.evaluate(CHAT_MEASURE)
+                    where = f"{route} at {width}x{height}" + (" with the sign-in banner" if banner else "")
+                    assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
+                    assert m["history"]["height"] >= 56, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
+                        f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
+                    )
+                    if fits and not banner:
+                        assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
+                    toggle = page.locator(".chat-layout.open .chat-pane .compose-toggle")
+                    if toggle.is_visible():
+                        # Folding the composer changes the pane's fixed part, not the body: measured again.
+                        toggle.click()
+                        page.wait_for_timeout(300)
+                        folded = page.evaluate(CHAT_MEASURE)
+                        toggle.click()  # kept by the browser for every chat: open again for the next case
+                        page.wait_for_timeout(300)
+                        assert folded["overflow"] <= max(1, m["overflow"] - 100), (
+                            f"{where}, composer folded: the page scrolls {folded['overflow']} px past the window"
+                        )
+                        unfolded = page.evaluate(CHAT_MEASURE)
+                        assert unfolded["history"]["height"] >= 56 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
+                            f"{where}, composer folded and shown again: {unfolded}"
+                        )
+                    # What grows inside the pane after it was fitted: the composer three times its
+                    # rows (a wide screen), a group's "Manage or leave" opened.
+                    grown = []
+                    three = page.locator(".chat-layout.open .chat-pane .compose-size button[data-size='3']")
+                    if three.is_visible():
+                        three.click()
+                        grown.append(("composer 3x", lambda: page.locator(".chat-layout.open .chat-pane .compose-size button[data-size='1']").click()))
+                    manage = page.locator(".chat-layout.open .chat-pane details.group-manage > summary")
+                    if manage.count() and manage.first.is_visible():
+                        manage.first.click()
+                        grown.append(("Manage or leave opened", lambda: manage.first.click()))
+                    if grown:
+                        page.wait_for_timeout(300)
+                        g = page.evaluate(CHAT_MEASURE)
+                        for _, undo in grown:
+                            undo()
+                        page.wait_for_timeout(300)
+                        back = page.evaluate(CHAT_MEASURE)
+                        what = ", ".join(n for n, _ in grown)
+                        assert g["history"]["height"] >= 56 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
+                        # And back: the pane shrinks again by itself, as a fresh fit (a window resize) would size it.
+                        page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+                        page.wait_for_timeout(300)
+                        fresh = page.evaluate(CHAT_MEASURE)
+                        assert abs(back["overflow"] - fresh["overflow"]) <= 1, (
+                            f"{where}, {what} undone: the page scrolls {back['overflow']} px, a fresh fit {fresh['overflow']}"
+                        )
+            # On Chats a group chat takes the place of a direct one in the same layout.
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/chats/maintainer/maity/agt-a")
+            page.locator(".chat-layout.open .chat-pane .compose").wait_for()
+            page.wait_for_timeout(500)
+            page.evaluate("() => { location.hash = '#/chats/maintainer/maity/cnv-0007'; }")
+            page.locator(".chat-layout.open .chat-pane.group-chat .compose").wait_for()
+            page.wait_for_timeout(800)
+            m = page.evaluate(CHAT_MEASURE)
+            where = f"Chats with the sign-in banner, agt-a then cnv-0007, at {width}x{height}"
+            assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
+            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+            page.wait_for_timeout(300)
+            fresh = page.evaluate(CHAT_MEASURE)
+            assert abs(m["overflow"] - fresh["overflow"]) <= 1, f"{where}: the page scrolls {m['overflow']} px, a fresh fit {fresh['overflow']}"
+            # Switching back and forth: the observer watches the current pane's parts, not every pane's.
+            for chat in ("agt-a", "cnv-0007") * 5:
+                page.evaluate(f"() => {{ location.hash = '#/chats/maintainer/maity/{chat}'; }}")
+                page.wait_for_timeout(250)
+            page.wait_for_timeout(500)
+            targets = page.evaluate("() => window.__fitTargets()")
+            assert len(targets) == 1 and targets[0]["gone"] == 0 and targets[0]["all"] <= 16, f"{where}, ten switches: {targets}"
+            run.shot(page, f"fixtures-chat-{width}")
+        finally:
+            context.close()
 
 
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
@@ -2895,7 +3043,7 @@ def notifications_step(run: Run, page: Page) -> None:
         run.a11y(page, "all projects, " + name)
     # These projects have no Keep the Why export: the hub says so with a 409, and the page says it too.
     expect(page.locator("main section.view-all-why")).to_contain_text("publishes no Keep the Why export")
-    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     page.locator("header nav.views a").nth(0).click()
     expect(page).to_have_url(re.compile(r"/all$"))
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
@@ -2927,7 +3075,7 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     )
     expect(page.locator("main")).to_contain_text("It needs a repository first")
     # The hub's 409 ktw_not_configured is the expected answer here.
-    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     run.shot(page, "why-not-configured")
     run.a11y(page, "why, not configured")
     no_problems(run, "why")
