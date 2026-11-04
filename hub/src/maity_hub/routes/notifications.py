@@ -166,8 +166,21 @@ async def list_notifications(
                 ).scalars()
             )
 
+    def a_session_record_past_after() -> bool:
+        """A sign-in or end recorded past `after` before the wait began: it lists no item, so
+        `first` has none, but it answers at once, as an item past `after` does (§18.2)."""
+        assert after is not None  # a wait needs `after` (above)
+        with engine_of(request).connect() as conn:
+            rev = records.sessions_rev(conn, human_id)
+            if rev is None:
+                return False
+            return (
+                int(rev.removeprefix("acr-"))
+                > _open(conn, request, human_id, after, "after").account
+            )
+
     first, seen = await _limited(request, answer)
-    if not wait or first["items"]:
+    if not wait or first["items"] or await run_in_threadpool(a_session_record_past_after):
         return JSONResponse(first)
 
     def moved(again: dict[str, Any]) -> bool:

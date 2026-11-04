@@ -512,4 +512,5 @@ and lets the bell mark alerts read without touching it.
   marked read on an ended session (shown on PostgreSQL in review).
 - Refusing to mark the alert of a session whose row is gone (the old behaviour): such an alert
   could then never be cleared until its record expired, the very thing the bell change set out to
-  end.
+  end. Moot since card tsk-0baaez2895sb: a sign-in is no bell item, so there is no such
+  alert to mark.
