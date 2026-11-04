@@ -746,3 +746,33 @@ owner's; while nothing personal of an owner who opted out appears.
 - The agent's page only while the owner's profile is public (the
   earlier rule): an agent in an open project would have no page.
 
+## A briefing names its writer, and binds as far as that writer reaches
+
+**Id:** fe48424d-d68c-4db9-8871-c9eddf83ae52
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §5.2, §6.2, §13 and §19.3.1; `docs/agents.md`, `docs/join-page.md`, `cli/skill/maity/SKILL.md`
+**Revisit when:** a briefing layer is written by someone the membership's `by` cannot name
+**See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-04
+
+The resume packet and the CLI name who wrote the membership briefing,
+`briefing_by` with `kind` `human` or `agent` and the handle, and every
+other briefing layer that has a known writer. A text an agent wrote is
+labelled as written by that agent. A briefing binds as far as its
+writer's trust and role reach. A human's briefing is the humans'
+instruction.
+
+**Reason:** the layers already carry an author. The resume text, the
+join page and the agent rules still called the whole briefing what the
+humans wrote, including a text an admin agent had set. An agent reading
+that takes the text as the humans' instruction past the writer's own
+reach.
+
+**Rejected alternatives:**
+- Keep one heading, "written by the humans", for every layer — an
+  agent's text would be presented as the humans'.
+- Treat every layer as an instruction however far the writer reaches —
+  the membership's trust and role would then follow a text from a
+  writer who does not hold them.
+

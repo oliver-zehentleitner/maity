@@ -145,7 +145,7 @@ So that a new session resumes on its own, add this to AGENTS.md (or join with --
 <!-- maity:begin -->
 …
 <!-- maity:end -->
-Your briefing, as the humans of this project wrote it for you:
+Your briefing, set by maintainer:
 > You own the hub's credential exchange. Start with tsk-0004;
 > ask me before you change the database schema.
 
