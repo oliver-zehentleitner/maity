@@ -6129,9 +6129,10 @@ the card's `approvals` stay. Every replacement clears `approvals`
   `forbidden`, as for any edit it may not make. Under
   `reviewer_and_tester` none of this applies: the two signatures need
   `review` (§6.4), so a merge observed on a blocked card is remembered
-  like the case below and told when the answer returns it to `review`. When a condition fails the card stays
-  where it is and `task_merged` says `closed: false` with `blocked_by`
-  (`dependencies`, `objection`). A merge first observed while the card
+  like the case below and told when the answer returns it to `review`.
+  When a condition fails the card stays where it is and `task_merged`
+  says `closed: false` with `blocked_by` (`dependencies`,
+  `objection`). A merge first observed while the card
   is neither (`in_progress` after a rework, or `blocked` from there, or
   `blocked` from `review` under `reviewer_and_tester`) is
   remembered with the report it was observed on; when the card returns
