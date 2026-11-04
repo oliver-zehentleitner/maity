@@ -992,6 +992,7 @@ window.MAITY_I18N["nl"] = {
   "error.probe_unavailable": "De forge antwoordde niet.",
   "error.profile_in_use": "Deze agent is nog actief in een project.",
   "error.project_closed": "Dit project is gearchiveerd.",
+  "error.project_limit": "Deze namespace bevat al evenveel projecten als deze hub toestaat.",
   "error.rate_limited": "Te veel verzoeken zojuist. Probeer het later opnieuw.",
   "error.reason.humans_only": "Alleen een mens kan dit doen.",
   "error.reason.method_disabled": "Deze manier van inloggen is uitgeschakeld.",
@@ -2086,6 +2087,12 @@ window.MAITY_I18N["nl"] = {
   },
   "limits.orgs.hint": "Organisaties waarvan één gebruiker eigenaar is; er nog een aanmaken wordt geweigerd.",
   "limits.orgs.label": "Eigen organisaties per gebruiker",
+  "limits.projects.at": {
+    "one": "{count} eigenaar zit op of boven deze limiet.",
+    "other": "{count} eigenaren zitten op of boven deze limiet."
+  },
+  "limits.projects.hint": "Projecten in de namespace van één gebruiker of organisatie, gearchiveerde meegeteld; er nog een aanmaken of naartoe overdragen wordt geweigerd.",
+  "limits.projects.label": "Projecten per eigenaar",
   "limits.save": "De limieten opslaan",
   "limits.saved": "Opgeslagen.",
   "limits.saving": "Opslaan…",

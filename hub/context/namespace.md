@@ -276,3 +276,58 @@ human's owner membership ends or drops in two places, the demotion by
 `namespace_owner_of` after the last-owner checks. A route added later that
 deletes a human account, or ends a membership any other way, has to call it
 too. Otherwise a project keeps a namespace owner who is no longer in it.
+
+## A namespace holds at most `max_projects_per_owner` projects, archived ones counted, and an archived project leaves the availability sweep
+
+**Id:** d4151a3a-29ff-48fd-8901-2389727444c7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision req-00cc32g6kbcs; the card tsk-6q1z2z9t334e and the coordinator's answers on it; `docs/api.md` §16.5, §6.1, §6.25, §6.26, §20.1, §20.6
+**Revisit when:** plans (§2.7, part two) set the caps per plan, or archived projects should free their place
+
+`limits.py` holds a third cap, `max_projects_per_owner` (default 10), with the same source rules as
+the other two, and one value for humans and organisations alike. `limits.refuse_project_over` locks
+the namespace owner's row (`human` or `org`) and counts every project with that `owner_id`,
+`archived` included; `POST /projects` calls it after `_creation_owner`, a transfer when it is filed
+(both paths of `project_names.transfer`) and again in `project_names.settle` before `move_to`, where
+a refusal becomes `proposals.Stale`: the request is withdrawn and nothing moves. `settle` reads the
+cap from `Settlement.hub`, which the two answer routes of `routes/requests.py` pass; `close_request`
+passes none, and no transfer is settled there. The availability sweep selects only projects that
+are not `archived` for its work per project. The jour-fixe worker still goes over every project:
+`rounds.open_round` refuses an archived one with `project_closed`, so `handle_schedule` records each
+slot as `skipped`/`project_closed` (§20.1), and `handle_deadlines` finishes a round that opened before
+the archiving (§20.6). The other periodic runs are unchanged and still reach an archived project:
+work open when it was archived goes on by time (a lease's `claim_expired`, a takeover filed before
+archiving that settles with `window_elapsed`; `commitment.py`, `holder_stalled.py`,
+`not_listening.py`), the forge runs (`probe.py`, `images.py`) select projects by their repository,
+not their state, and housekeeping (retention, deletion) must run whatever the state. Revoking a
+runner is no periodic run either: the request revokes the runner's credential at once
+(`routes/runners.py`), and under the owner's `agents: "stop"` override its agents' credentials too
+(`runner_revoke.py`); only an agent credential revoked after `stop_grace_seconds` is written when it
+is next used.
+
+**Reason:** plain hardening of the hosted instance against runaway creation, and the maintainer's
+decision of the cap; counting archived projects keeps the cap a cap (archiving and creating would
+otherwise lift it), and leaving archived projects out of the availability sweep spares them a run
+that goes over every project each round. The jour fixe keeps its contract instead of a filter of its
+own: §20.1 records a slot of an archived project as `skipped`/`project_closed` and §20.6 lets an
+opened round finish, a closing project included; dropping archived projects from the jour-fixe
+worker left an open round standing still (in `reporting`, for one) and turned the slots into
+`missed`/`hub_down` after unarchiving (the lead's decision on review round 2 of the card). The owner row is the lock because the
+organisation's row is already taken before any project row (`lock_project`), and creation takes no
+project row at all.
+
+**Rejected alternatives:**
+- Counting only live projects: archive, create, archive again would have no ceiling.
+- A cap per human across every organisation they own: the decision names the namespace, and an
+  organisation's projects are not one member's.
+- Checking the transfer only when it is filed: a namespace that filled up before the `go` would be
+  taken over the cap by the move.
+- Removing archived projects from every periodic run (a freeze): work open at archiving would stop
+  midway (a lease that never expires, a takeover never settled), housekeeping must run anyway, and
+  each run would need its own rule for what passed meanwhile. Such a freeze would be a change of
+  its own, specified first; the card asked for the cap.
+- A jour-fixe filter of its own for archived projects: it broke §20.1 and §20.6, a round open at
+  archiving stood still (in `reporting`, for one) and the slots turned into `missed`/`hub_down`
+  after unarchiving (review round 2 of the card).

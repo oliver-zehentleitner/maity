@@ -966,6 +966,7 @@ window.MAITY_I18N["ja"] = {
   "error.probe_unavailable": "フォージが応答しませんでした。",
   "error.profile_in_use": "このエージェントは、まだプロジェクトで稼働中です。",
   "error.project_closed": "このプロジェクトはアーカイブされています。",
+  "error.project_limit": "この名前空間には、このハブが許可する数のプロジェクトがすでにあります。",
   "error.rate_limited": "リクエストが多すぎます。しばらくしてからもう一度お試しください。",
   "error.reason.humans_only": "これができるのは人間だけです。",
   "error.reason.method_disabled": "このサインイン方法はオフになっています。",
@@ -2048,6 +2049,11 @@ window.MAITY_I18N["ja"] = {
   },
   "limits.orgs.hint": "1 人がオーナーを務める組織の数です。これ以上作ろうとすると拒否されます。",
   "limits.orgs.label": "1 人あたりが所有する組織数",
+  "limits.projects.at": {
+    "other": "{count} 件のオーナーがこの上限に達しているか、超えています。"
+  },
+  "limits.projects.hint": "1 人または 1 つの組織の名前空間にあるプロジェクトの数です（アーカイブ済みも含む）。これ以上作成または移管しようとすると拒否されます。",
+  "limits.projects.label": "オーナーあたりのプロジェクト数",
   "limits.save": "上限を保存",
   "limits.saved": "保存しました。",
   "limits.saving": "保存中…",

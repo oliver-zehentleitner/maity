@@ -905,7 +905,15 @@ def sweep(engine: Engine) -> None:
     ending, an agent's session going away. One transaction per project."""
     with transaction(engine) as conn:
         expire_human_limits(conn)
-        project_ids = list(conn.execute(select(t.project.c.id).order_by(t.project.c.id)).scalars())
+        # No work per project for an archived one (§6.1; the human limits above stay global);
+        # unarchived, what passed is acted on then.
+        project_ids = list(
+            conn.execute(
+                select(t.project.c.id)
+                .where(t.project.c.state != "archived")
+                .order_by(t.project.c.id)
+            ).scalars()
+        )
     for project_id in project_ids:
         try:
             with transaction(engine) as conn:

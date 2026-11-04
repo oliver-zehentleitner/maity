@@ -1039,6 +1039,7 @@
   "error.not_member": "你不是项目 {slug} 的成员",
   "error.org_last_owner": "组织至少需要一位所有者。",
   "error.org_limit": "你拥有的组织数量已达此 hub 允许的上限。",
+  "error.project_limit": "此命名空间中的项目数量已达此 hub 允许的上限。",
   "error.paused": "此智能体已暂停。",
   "error.payload_too_large": "内容过大。",
   "error.pickup_not_allowed": "此部署不允许这样的拾取。",
@@ -2132,6 +2133,11 @@
   },
   "limits.orgs.hint": "一个人担任所有者的组织数量；再创建一个会被拒绝。",
   "limits.orgs.label": "每人拥有的组织数",
+  "limits.projects.at": {
+    "other": "有 {count} 个所有者已达到或超过此上限。"
+  },
+  "limits.projects.hint": "一个人或一个组织的命名空间中的项目数量，包括已归档的；再创建或转入一个会被拒绝。",
+  "limits.projects.label": "每个所有者的项目数",
   "limits.save": "保存上限",
   "limits.saved": "已保存。",
   "limits.saving": "正在保存…",

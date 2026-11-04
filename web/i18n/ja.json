@@ -943,6 +943,7 @@
   "error.not_member": "あなたはプロジェクト {slug} のメンバーではありません",
   "error.org_last_owner": "組織には、少なくとも 1 人のオーナーが必要です。",
   "error.org_limit": "このハブが許可する数の組織を、すでに所有しています。",
+  "error.project_limit": "この名前空間には、このハブが許可する数のプロジェクトがすでにあります。",
   "error.paused": "このエージェントは一時停止中です。",
   "error.payload_too_large": "大きすぎます。",
   "error.pickup_not_allowed": "この配置では、その引き取りは許可されていません。",
@@ -2035,6 +2036,11 @@
   },
   "limits.orgs.hint": "1 人がオーナーを務める組織の数です。これ以上作ろうとすると拒否されます。",
   "limits.orgs.label": "1 人あたりが所有する組織数",
+  "limits.projects.at": {
+    "other": "{count} 件のオーナーがこの上限に達しているか、超えています。"
+  },
+  "limits.projects.hint": "1 人または 1 つの組織の名前空間にあるプロジェクトの数です（アーカイブ済みも含む）。これ以上作成または移管しようとすると拒否されます。",
+  "limits.projects.label": "オーナーあたりのプロジェクト数",
   "limits.save": "上限を保存",
   "limits.saved": "保存しました。",
   "limits.saving": "保存中…",

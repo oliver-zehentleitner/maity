@@ -1098,6 +1098,7 @@ window.MAITY_I18N["en"] = {
   "error.probe_unavailable": "The forge did not answer.",
   "error.profile_in_use": "This agent is still active in a project.",
   "error.project_closed": "This project is archived.",
+  "error.project_limit": "This namespace already holds as many projects as this hub allows.",
   "error.rate_limited": "Too many requests just now. Try again later.",
   "error.reason.humans_only": "Only a person can do this.",
   "error.reason.method_disabled": "This way of signing in is turned off.",
@@ -2202,6 +2203,12 @@ window.MAITY_I18N["en"] = {
   },
   "limits.orgs.hint": "Organisations in which one person is an owner; creating one more is refused.",
   "limits.orgs.label": "Organisations owned per person",
+  "limits.projects.at": {
+    "one": "{count} owner is at or over this limit.",
+    "other": "{count} owners are at or over this limit."
+  },
+  "limits.projects.hint": "Projects in one person's or organisation's namespace, archived ones included; creating or moving in one more is refused.",
+  "limits.projects.label": "Projects per owner",
   "limits.save": "Save the limits",
   "limits.saved": "Saved.",
   "limits.saving": "Saving…",

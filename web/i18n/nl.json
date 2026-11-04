@@ -969,6 +969,7 @@
   "error.not_member": "Je bent geen lid van het project {slug}",
   "error.org_last_owner": "Een organisatie heeft minstens één eigenaar nodig.",
   "error.org_limit": "Je bent al eigenaar van evenveel organisaties als deze hub toestaat.",
+  "error.project_limit": "Deze namespace bevat al evenveel projecten als deze hub toestaat.",
   "error.paused": "Deze agent is gepauzeerd.",
   "error.payload_too_large": "Dit is te groot.",
   "error.pickup_not_allowed": "Deze plaatsing staat dat oppikken niet toe.",
@@ -2073,6 +2074,12 @@
   },
   "limits.orgs.hint": "Organisaties waarvan één gebruiker eigenaar is; er nog een aanmaken wordt geweigerd.",
   "limits.orgs.label": "Eigen organisaties per gebruiker",
+  "limits.projects.at": {
+    "one": "{count} eigenaar zit op of boven deze limiet.",
+    "other": "{count} eigenaren zitten op of boven deze limiet."
+  },
+  "limits.projects.hint": "Projecten in de namespace van één gebruiker of organisatie, gearchiveerde meegeteld; er nog een aanmaken of naartoe overdragen wordt geweigerd.",
+  "limits.projects.label": "Projecten per eigenaar",
   "limits.save": "De limieten opslaan",
   "limits.saved": "Opgeslagen.",
   "limits.saving": "Opslaan…",

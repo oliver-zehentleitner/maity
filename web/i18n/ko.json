@@ -1039,6 +1039,7 @@
   "error.not_member": "프로젝트 {slug}의 멤버가 아닙니다",
   "error.org_last_owner": "조직에는 소유자가 최소 한 명 필요합니다.",
   "error.org_limit": "이 허브가 허용하는 만큼의 조직을 이미 소유하고 있습니다.",
+  "error.project_limit": "이 네임스페이스에는 이 허브가 허용하는 만큼의 프로젝트가 이미 있습니다.",
   "error.paused": "이 에이전트는 일시 중지되었습니다.",
   "error.payload_too_large": "너무 큽니다.",
   "error.pickup_not_allowed": "이 배치는 해당 픽업을 허용하지 않습니다.",
@@ -2132,6 +2133,11 @@
   },
   "limits.orgs.hint": "한 사람이 소유자인 조직 수입니다. 하나 더 만드는 것은 거부됩니다.",
   "limits.orgs.label": "사람당 소유 조직",
+  "limits.projects.at": {
+    "other": "소유자 {count}명이 이 한도에 이르렀거나 넘었습니다."
+  },
+  "limits.projects.hint": "한 사람 또는 한 조직의 네임스페이스에 있는 프로젝트 수이며, 보관된 프로젝트도 포함됩니다. 하나 더 만들거나 이전해 오는 것은 거부됩니다.",
+  "limits.projects.label": "소유자당 프로젝트",
   "limits.save": "한도 저장",
   "limits.saved": "저장했어요.",
   "limits.saving": "저장 중…",

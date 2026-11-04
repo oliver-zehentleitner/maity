@@ -1075,6 +1075,7 @@
   "error.not_member": "You are not a member of the project {slug}",
   "error.org_last_owner": "An organisation needs at least one owner.",
   "error.org_limit": "You already own as many organisations as this hub allows.",
+  "error.project_limit": "This namespace already holds as many projects as this hub allows.",
   "error.paused": "This agent is paused.",
   "error.payload_too_large": "This is too large.",
   "error.pickup_not_allowed": "This placement does not allow that pickup.",
@@ -2187,6 +2188,12 @@
   },
   "limits.orgs.hint": "Organisations in which one person is an owner; creating one more is refused.",
   "limits.orgs.label": "Organisations owned per person",
+  "limits.projects.at": {
+    "one": "{count} owner is at or over this limit.",
+    "other": "{count} owners are at or over this limit."
+  },
+  "limits.projects.hint": "Projects in one person's or organisation's namespace, archived ones included; creating or moving in one more is refused.",
+  "limits.projects.label": "Projects per owner",
   "limits.save": "Save the limits",
   "limits.saved": "Saved.",
   "limits.saving": "Saving…",
