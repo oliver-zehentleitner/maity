@@ -370,3 +370,12 @@ def test_a_dangling_login_link_is_replaced(tmp_path: Path, monkeypatch: pytest.M
     (home / "auth.json").symlink_to(tmp_path / "gone" / "auth.json")
     adapters.launch(ctx)
     assert (home / "auth.json").resolve() == login.resolve()
+
+
+@pytest.mark.parametrize("harness_id", ["claude-code", "codex", "stub"])
+def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) -> None:
+    """maity refuses its git in a marked clone whose session variables are gone."""
+    ctx = context(tmp_path, harness_id)
+    (ctx.clone / ".git").mkdir(parents=True)
+    adapters.launch(ctx)
+    assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"

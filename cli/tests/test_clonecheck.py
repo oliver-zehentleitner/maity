@@ -3,6 +3,7 @@ that clone is a plain one."""
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -293,3 +294,66 @@ def test_the_copy_by_path_reads_the_same_refs_and_refuses_links(
     (again / "refs").mkdir(parents=True)
     with pytest.raises(clonecheck.Refused, match="elsewhere"):
         clonecheck._copy_refs_by_path(placed / ".git", again)
+
+
+def test_git_under_the_runner_gets_none_of_maitys_own_git_variables(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A variable set for maity, as an agent's command line can, does not reach git."""
+    from maity import proc
+
+    marker = placed.parent / "ran"
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "remote.origin.uploadpack")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", _marking(marker))
+    monkeypatch.setenv("GIT_EXTERNAL_DIFF", _marking(marker))
+    listed = proc.run([*proc.GIT, "ls-remote", "--heads", "--", "origin", "work"], placed)
+    assert not marker.exists()
+    assert listed.returncode == 0, listed.stderr
+    assert "refs/heads/work" in listed.stdout
+
+
+def test_a_clone_the_runner_marked_runs_no_git_without_the_session(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity import proc
+
+    marker = placed / ".git" / "maity" / "placement"  # as adapters.launch writes it
+    marker.write_text("plc-0003\n")
+    monkeypatch.delenv("MAITY_PLACEMENT")
+    monkeypatch.delenv("GIT_COMMON_DIR")
+    with pytest.raises(proc.ToolError, match="the runner set up"):
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+    marker.unlink()
+    assert proc.run([*proc.GIT, "rev-parse", "HEAD"], placed).returncode == 0
+
+
+def test_a_git_dir_with_too_many_entries_is_refused_without_listing_them_all(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(clonecheck, "TREE_MAX", 20, raising=False)
+    listed = clonecheck.Local().tree(placed / ".git")
+    total = sum(len(d) + len(f) for _, d, f in os.walk(placed / ".git"))
+    assert 20 < len(listed) < total
+    with pytest.raises(gitfacts.FactsError, match="more than 20 entries"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize(
+    ("change", "feature"),
+    [
+        (lambda c: (c / ".git" / "modules").mkdir(), "Submodules are"),
+        (lambda c: git(c, "config", "submodule.lib.url", "../lib.git"), "Submodules are"),
+        (lambda c: (c / ".git" / "lfs").mkdir(), "Git LFS is"),
+        (lambda c: git(c, "config", "filter.lfs.required", "true"), "Git LFS is"),
+        (lambda c: (c / ".git" / "worktrees").mkdir(), "Worktrees are"),
+        (lambda c: git(c, "config", "core.sparseCheckout", "true"), "Sparse checkout is"),
+    ],
+)
+def test_what_the_runner_does_not_support_yet_is_named_so(
+    placed: Path, change: Any, feature: str
+) -> None:
+    change(placed)
+    with pytest.raises(gitfacts.FactsError, match=f"{feature} not supported") as refused:
+        gitfacts.collect(placed)
+    assert "unset" not in str(refused.value)

@@ -1001,8 +1001,12 @@ variables for its own commands, but those stay in its sandbox. In a
 session, maity's own git runs only once the clone passes the plain-clone
 check `gc` uses, and on a repository maity writes for that run under
 `.git/maity`, so what git reads as configuration is maity's, not the
-clone's. The git of the harness, and of other programs run in the clone,
-is not protected by maity's checks. The cost:
+clone's; git gets a fixed environment, not maity's own. A clone the
+runner set up holds a marker in `.git/maity`; there maity runs no git
+without the session's variables. Submodules, Git LFS, worktrees and
+sparse checkout are not supported under the runner yet. The git of the
+harness, and of other programs run in the clone, is not protected by
+maity's checks. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
 and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
 submodule moved to another commit does not show in `git status` or

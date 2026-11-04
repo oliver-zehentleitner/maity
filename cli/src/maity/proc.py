@@ -85,7 +85,11 @@ def run(
 
     try:
         with clonecheck.placement_git(cwd) as pinned:
-            return _start(cmd, cwd, timeout, {**env, **(pinned or {})})
+            if pinned is None:
+                return _start(cmd, cwd, timeout, env)
+            kept = {**clonecheck.kept_env(os.environ), **NO_PROMPT}
+            return _start(cmd, cwd, timeout, {**kept, "GIT_ALLOW_PROTOCOL": allowed(transports),
+                                              **pinned})  # fmt: skip
     except clonecheck.Refused as exc:
         raise ToolError(f"maity runs no git here: {exc}") from None
 

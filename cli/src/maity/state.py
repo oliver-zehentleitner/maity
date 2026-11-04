@@ -78,7 +78,7 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     from maity import clonecheck  # imports onboarding, which imports this module
 
     try:
-        placed = clonecheck.placement_root()
+        placed = clonecheck.placement_root(cwd)
     except clonecheck.Refused as exc:
         raise StateError(f"the runner's clone is unknown: {exc}") from None
     if placed is not None:  # without git: the check may refuse the clone, and git under the

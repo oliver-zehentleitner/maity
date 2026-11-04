@@ -1372,7 +1372,7 @@ message says are no boundary.
 **Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, or clones under the runner get worktrees
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees or sparse checkout under the runner, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, or clones under the runner get worktrees
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity itself starts first checks the clone the same way `gc` does
@@ -1387,22 +1387,35 @@ parent of `GIT_COMMON_DIR`, which the runner sets. Without it, or when
 it does not resolve, maity runs no git; it never falls back to the
 current directory. The current directory must lie inside that clone.
 git then does not read the clone's `.git` for its configuration, HEAD or
-refs: each run gets a repository maity writes under `.git/maity` (the
-clone's directory the sandbox denies the agent), with a configuration of
-maity's own. The clone's entries the check accepted reach git through
+refs: each run gets a repository maity writes under `.git/maity`, with
+a configuration of maity's own. For Claude Code, whose sandbox maity
+runs outside of, the sandbox denies the agent that directory. For
+Codex, maity runs inside the sandbox, where `.git/maity` is writable
+and `.git/config` read-only: maity's git there has the agent's own
+rights, so nothing is gained by racing it. The clone's entries the check accepted reach git through
 `GIT_CONFIG_*`, from the same reading the check made; HEAD and the refs
 are copied as regular files only. Objects, the index and the work tree
 are the clone's (`GIT_OBJECT_DIRECTORY`, `GIT_INDEX_FILE`,
 `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES`), and `GIT_OPTIONAL_LOCKS=0`
-keeps `status` from writing into the clone. The directory is removed
-after the run. On Windows (local mode), where a directory cannot be
+keeps `status` from writing into the clone. git gets a fixed
+environment: PATH, HOME, LANG, TMPDIR (on Windows what a program needs
+to start), the prompt switches and the `GIT_*` values maity sets itself;
+nothing else from maity's own environment, which the command line that
+started maity sets. The directory is removed after the run. On Windows (local mode), where a directory cannot be
 opened and read from, each ref is checked with `lstat` before it is
 read. A refused clone gets the way back: undo the change, a setting
-with `git config --unset`. The state directory under the runner is the
+with `git config --unset-all`. Submodules, Git LFS, worktrees and sparse
+checkout are refused under the runner for the alpha, and the refusal
+says so instead of offering a way back. The runner writes a marker,
+`.git/maity/placement`, into each clone it starts an agent in; a marked
+clone without `MAITY_PLACEMENT` runs no maity git, since the variables
+were removed, not never set. A `.git` of more than 20 000 entries is
+refused before it is all listed. The state directory under the runner is the
 clone's `.git/maity`, taken from `GIT_COMMON_DIR`, not from git, so a
 refused clone still reaches its credential. The check lists `.git` on
 every run (about a quarter of a second at 10 000 entries); it is not
-cached, since the clone may change between two runs. git that gh starts
+cached, since the clone may change between two runs, and the cap keeps
+it bounded. git that gh starts
 is not maity's and is not checked. Outside a placement nothing changes.
 
 **Reason:** under the runner, maity's git runs outside the agent's
@@ -1418,6 +1431,11 @@ what maity wrote closes it. maity's own git under the runner only
 reads, so every call can run that way.
 
 **Rejected alternatives:**
+- Passing maity's own environment on to git: a variable set on the
+  command line that starts maity names programs for git as well as the
+  configuration does.
+- Trusting a missing `MAITY_PLACEMENT`: removing it is all an agent
+  needs to reach git without the check.
 - Checking the clone, then pinning git to its own `.git`: the
   configuration can change between the check and git's read of it.
 - The private repository in a temporary directory: the sandboxed agent

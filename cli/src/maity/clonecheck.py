@@ -17,14 +17,24 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from maity import onboarding, proc
 from maity.redact import without_userinfo
 
 PLACEMENT_ENV = "MAITY_PLACEMENT"
+# Written by the runner into every clone it starts an agent in (adapters.launch), in the
+# directory Claude Code's sandbox keeps the agent from writing.
+MARKER_PATH = Path(".git", "maity", "placement")
+# What git under the runner gets from maity's own environment; nothing else, so no
+# variable set for maity (`GIT_SSH_COMMAND=… maity report`) reaches git.
+ENV_KEPT = ("PATH", "HOME", "LANG", "TMPDIR")
+ENV_KEPT_WINDOWS = (
+    "SYSTEMROOT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP",
+    "TMP", "PATHEXT", "COMSPEC",
+)  # fmt: skip
 # The keys a plain clone's configuration holds: (section, key) without a subsection, or with
 # one for `remote` and `branch`, whose subsection is any remote or branch name (`v1.0` too).
 GIT_ALLOWED = {
@@ -52,6 +62,17 @@ INFO_FILES = frozenset({"exclude", "refs"})
 # Other object stores git would read from (and, over http, fetch from).
 ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
 CONFIG_MAX = 64 * 1024
+# More entries than this in `.git` are refused rather than listed on every git run.
+TREE_MAX = 20_000
+# What the runner leaves a plain clone without, and maity under the runner does not support
+# yet: (an entry in `.git`, or a configuration section or key prefix) -> what it is.
+UNSUPPORTED = {
+    "modules": "Submodules are", "submodule.": "Submodules are",
+    "lfs": "Git LFS is", "lfs.": "Git LFS is", "filter.lfs.": "Git LFS is",
+    "worktrees": "Worktrees are", "config.worktree": "Worktrees are",
+    "extensions.": "Worktrees are",
+    "info/sparse-checkout": "Sparse checkout is", "core.sparsecheckout": "Sparse checkout is",
+}  # fmt: skip
 
 
 class Files(Protocol):
@@ -75,6 +96,8 @@ class Local:
     def tree(self, path: Path) -> list[tuple[str, str, int]]:
         found: list[tuple[str, str, int]] = []
         for root, dirs, files in os.walk(path):  # does not descend into links
+            if len(found) > TREE_MAX:  # enough to refuse; the rest is not listed
+                break
             for name in dirs + files:
                 full = Path(root) / name
                 mode = full.lstat()
@@ -94,32 +117,54 @@ LOCAL = Local()
 
 def not_inspectable(path: Path, files: Files = LOCAL) -> str | None:
     """Why git must not run in this clone, or None."""
-    return _inspect(path, files)[0]
+    finding = _inspect(path, files)[0]
+    return None if finding is None else finding.reason
 
 
-def _inspect(path: Path, files: Files) -> tuple[str | None, list[tuple[str, str | None]]]:
+class Finding(NamedTuple):
+    """Why git must not run in a clone: the reason, and what it names (an entry in `.git`,
+    a configuration key) when it names one."""
+
+    reason: str
+    item: str = ""
+    setting: bool = False  # a configuration key, which `git config --unset` takes back
+
+
+def _inspect(path: Path, files: Files) -> tuple[Finding | None, list[tuple[str, str | None]]]:
     """Why git must not run in this clone (or None), and the configuration's entries as git
-    reads them: the ones that reason was decided on, read once."""
+    reads them: the ones that finding was decided on, read once."""
     dot_git = path / ".git"
     if files.exists(dot_git, "-L") or not files.exists(dot_git, "-d"):
-        return "its .git is not a plain directory", []
+        return Finding("its .git is not a plain directory"), []
     try:
-        reason = _not_a_plain_git_dir(files.tree(dot_git))
-        if reason is not None:
-            return reason, []
+        finding = _not_a_plain_git_dir(files.tree(dot_git))
+        if finding is not None:
+            return finding, []
         data = files.read(dot_git / "config")
     except OSError:
-        return "its .git/config cannot be read", []
+        return Finding("its .git/config cannot be read"), []
     entries = config_entries(data)
     if entries is None:
-        return "its .git/config cannot be parsed", []
+        return Finding("its .git/config cannot be parsed"), []
     for name, _ in entries:
         section, _, rest = name.partition(".")
         subsection, _, key = rest.rpartition(".")
         if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
-            return f"its .git/config sets {onboarding.inline(without_userinfo(name))}", []
+            shown = onboarding.inline(without_userinfo(name))
+            return Finding(f"its .git/config sets {shown}", name, setting=True), []
     return None, entries
+
+
+def unsupported(finding: Finding) -> str | None:
+    """The feature a finding stands for that the runner does not support yet ("Git LFS is"),
+    or None."""
+    for prefix, feature in UNSUPPORTED.items():
+        if finding.item == prefix or finding.item.startswith(
+            prefix if prefix.endswith(".") else prefix + "/"
+        ):
+            return feature
+    return None
 
 
 def config_names(data: bytes) -> list[str] | None:
@@ -171,23 +216,26 @@ def config_entries(data: bytes) -> list[tuple[str, str | None]] | None:
     return found
 
 
-def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> str | None:
+def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
     """Why a `.git` with these entries (path inside it, type, size) is not laid out like a
     plain clone's, or None: an entry git does not create, an entry of the wrong type,
     another object store, a configuration over CONFIG_MAX, or a symlink anywhere (git
     follows them, so a link would put any file in the place of one that was checked)."""
+    if len(entries) > TREE_MAX:
+        return Finding(f"its .git holds more than {TREE_MAX} entries (`git gc` packs them)")
     for where, kind, size in sorted(entries):
         top, _, rest = where.partition("/")
+        shown = onboarding.inline(where)
         if kind == "l":
-            return f".git/{onboarding.inline(where)} is a symlink"
+            return Finding(f".git/{shown} is a symlink", where)
         if not rest and kind != ("f" if top in GIT_FILES else "d" if top in GIT_DIRS else "?"):
-            return f".git/{onboarding.inline(where)} is not a plain clone's"
+            return Finding(f".git/{shown} is not a plain clone's", where)
         if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
-            return f".git/{onboarding.inline(where)} is not a plain clone's"
+            return Finding(f".git/{shown} is not a plain clone's", where)
         if where in ALTERNATES:
-            return f".git/{where} exists"
+            return Finding(f".git/{where} exists", where)
         if where == "config" and size > CONFIG_MAX:
-            return f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"
+            return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB")
     return None
 
 
@@ -195,11 +243,20 @@ class Refused(Exception):
     """maity runs no git here; the message says why."""
 
 
-def placement_root() -> Path | None:
+def placement_root(cwd: Path | None = None) -> Path | None:
     """In a session the runner started: the runner's clone, the parent of `GIT_COMMON_DIR`
     as the runner set it, resolved; None outside such a session. Never the current
-    directory, which could be any repository the agent made."""
+    directory, which could be any repository the agent made. Without `MAITY_PLACEMENT`,
+    a clone above `cwd` that holds the runner's marker is refused: the variables were
+    removed from the environment, not never set."""
     if not os.environ.get(PLACEMENT_ENV):
+        marked = _runner_marked(cwd or Path.cwd())
+        if marked is not None:
+            raise Refused(
+                f"{marked} is a clone the runner set up ({MARKER_PATH} is there), but"
+                f" {PLACEMENT_ENV} is not set; maity's git runs there only in the session the"
+                " runner started"
+            )
         return None
     common = os.environ.get("GIT_COMMON_DIR")
     if not common:
@@ -213,6 +270,22 @@ def placement_root() -> Path | None:
         return named.parent.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise Refused(f"the clone named by GIT_COMMON_DIR cannot be resolved ({exc})") from None
+
+
+def _runner_marked(cwd: Path) -> Path | None:
+    """The nearest directory at or above `cwd` whose `.git` holds the runner's marker, or
+    None. Plain file checks, no git: git is what is not yet trusted here."""
+    try:
+        here = cwd.resolve()
+    except (OSError, RuntimeError):
+        return None
+    for directory in (here, *here.parents):
+        try:
+            if (directory / MARKER_PATH).is_file():
+                return directory
+        except OSError:
+            continue
+    return None
 
 
 def _within(path: Path, directory: Path) -> bool:
@@ -238,12 +311,13 @@ def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
     clone, after checking that clone and that `cwd` lies in it; None outside such a session.
 
     git does not read the clone's `.git` for its configuration, HEAD or refs: it reads a
-    repository maity writes for this run under `.git/maity`, the clone's directory the
-    sandbox keeps the agent from writing. Its configuration is maity's own, with the
+    repository maity writes for this run under `.git/maity`: for Claude Code a directory
+    its sandbox keeps the agent from writing; Codex runs maity inside its sandbox, with the
+    agent's own rights. Its configuration is maity's own, with the
     clone's entries maity checked passed on through the environment, so a configuration
     changed after the check is never read. Objects, the index and the work tree are the
     clone's: data git reads, nothing it runs. The directory is removed after the run."""
-    root = placement_root()
+    root = placement_root(cwd)
     if root is None:
         yield None
         return
@@ -253,13 +327,9 @@ def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
         raise Refused(f"the working directory cannot be resolved ({exc})") from None
     if not _within(here, root):
         raise Refused(f"{onboarding.inline(str(here))} is outside the clone {root}")
-    reason, entries = _inspect(root, LOCAL)
-    if reason is not None:
-        raise Refused(
-            f"the clone {root} is not a plain clone: {reason}. Under the runner maity's git runs"
-            " only in a clone laid out and configured as `git clone` leaves it; undo that"
-            " change (for a setting, `git config --unset`) and run the command again"
-        )
+    finding, entries = _inspect(root, LOCAL)
+    if finding is not None:
+        raise Refused(_refusal(root, finding))
     dot_git = root / ".git"
     own = dot_git / "maity"
     if own.is_symlink() or not own.is_dir():
@@ -282,20 +352,32 @@ def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
         shutil.rmtree(private, ignore_errors=True)
 
 
+def _refusal(root: Path, finding: Finding) -> str:
+    """Why maity runs no git in the runner's clone, and how to go on, where there is a way."""
+    said = f"the clone {root} is not a plain clone: {finding.reason}."
+    feature = unsupported(finding)
+    if feature is not None:
+        return (f"{said} {feature} not supported under the runner yet, so maity runs no git"
+                " in this clone while that is set up")  # fmt: skip
+    if finding.setting:
+        key = onboarding.inline(without_userinfo(finding.item))
+        return (f"{said} Under the runner maity's git runs only in a clone configured as"
+                f" `git clone` leaves it: `git config --unset-all {key}`, then run the command"
+                " again")  # fmt: skip
+    return (f"{said} Under the runner maity's git runs only in a clone laid out as `git clone`"
+            " leaves it; undo that change and run the command again")  # fmt: skip
+
+
 def _passed_on(entries: list[tuple[str, str | None]]) -> dict[str, str]:
-    """The checked entries git should see, as `GIT_CONFIG_*` after the ones the environment
-    already carries (the runner pins some there)."""
+    """The checked entries git should see, as `GIT_CONFIG_*`. The environment's own are not
+    kept (`kept_env`); the pins the runner sets there are on maity's command line too."""
     kept = [
         (name, "true" if value is None else value)
         for name, value in entries
         if not name.startswith("core.") or name.removeprefix("core.") in PASSED_ON
     ]
-    try:
-        start = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
-    except ValueError:
-        raise Refused("GIT_CONFIG_COUNT in the environment is not a number") from None
-    env = {"GIT_CONFIG_COUNT": str(start + len(kept))}
-    for i, (name, value) in enumerate(kept, start):
+    env = {"GIT_CONFIG_COUNT": str(len(kept))}
+    for i, (name, value) in enumerate(kept):
         env[f"GIT_CONFIG_KEY_{i}"] = name
         env[f"GIT_CONFIG_VALUE_{i}"] = value
     return env
@@ -382,3 +464,10 @@ def _copy_refs_by_path(dot_git: Path, private: Path) -> None:
                 (where / name).write_bytes(_plain_file(Path(here) / name, REF_MAX))
     except OSError as exc:
         raise Refused(f"the clone's refs cannot be copied ({exc})") from None
+
+
+def kept_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """What git under the runner gets from `environ`: ENV_KEPT, and on Windows what a
+    program needs to start there."""
+    names = ENV_KEPT + (ENV_KEPT_WINDOWS if os.name == "nt" else ())
+    return {name: environ[name] for name in names if name in environ}
