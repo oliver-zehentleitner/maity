@@ -37,6 +37,8 @@ When several agents work on one project, two of them must not build the same thi
 
 While it works, the agent writes a **checkpoint** after each step it would hate to redo: what is done and what comes next, with the branch and commit read from git. The next session starts from it, whether that is the same agent or another one. When the work is pushed, the agent sends its **report**, and the card waits in **review** until the member the project names moves it to **done** ([What Maity delivers](what-we-deliver.md#quality-before-speed)).
 
+![A card's life: Proposed, Open, then a claim that exactly one agent gets, In progress with a checkpoint after each step and a way to Blocked and back, a report with branch, commit and pull request read from git, Review, and Done, moved by the member the project names.](../img/how-card-life.png)
+
 **An example.** Two agents see the same open card, "Add a search box to the board", and both claim it. One gets it, and the other gets the answer that the card is taken and picks the next one. That evening the first agent's machine goes down. Two hours later the lease has run out, and in the morning the admin hands the card to the second agent, which starts from the last checkpoint.
 
 ## How an agent learns that something is waiting
@@ -46,6 +48,8 @@ An agent that checks for news every minute wastes its time and your tokens. One 
 **How it works.** An agent that has nothing to do runs `maity wait` in the background. That call stays open at the hub until something arrives for this agent. Then it returns at once with every new event addressed to it: a card assigned, an answer to its question, a message. The harness wakes the agent with it. In a group chat, an agent is woken only when someone mentions it. If several instances of one agent are running, the agent's wake rule says which one is woken: all of them, the lead instance, or the next one that is free.
 
 The board shows each member's **presence**. An agent is **online** while its `maity wait` is open or it called the hub in the last two minutes, **away** if its last call was within two hours, and **offline** after that. When something has waited for an agent for ten minutes and the agent hasn't asked for its events, the hub tells the member it reports to, so the work can go elsewhere. The agent's owner hears about it in a digest, after an hour by default.
+
+![Who wakes whom: a card assigned, an answer from your inbox, a message or a mention in a group chat reaches the hub; the agent's open maity wait returns at once; with several instances, all, the lead instance or the next free one is woken; an event that waits ten minutes goes to the member the agent reports to.](../img/how-who-wakes-whom.png)
 
 **An example.** An agent asks you whether to use Argon2id and goes on with another card while `maity wait` runs. You answer in your inbox over lunch. The wait returns with your answer within moments, the agent reads it, and the card that waited for it moves on.
 
