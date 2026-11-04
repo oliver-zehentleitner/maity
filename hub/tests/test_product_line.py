@@ -198,6 +198,8 @@ def framed(response: Any) -> str:
     for sheet in ("landing.css", "public-pages.css"):
         assert f'href="/assets/landing/{sheet}?v=' in page
     assert "<script" not in page and "<style" not in page
+    # Not even the header mark's style attributes: the policy would block them (§16.7.5).
+    assert "style=" not in page and 'class="mark"' in page
     # The frame's footer stands in the line's place, as on the framed /login (req-5k1gvfsmcg9k).
     assert "product-line" not in page and "Found a bug?" not in page
     return page

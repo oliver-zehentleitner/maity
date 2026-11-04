@@ -963,6 +963,10 @@ def door_document(
     )
     cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
     header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
+    # The mark without its style attributes, which the policy would block: public-pages.css
+    # colours it (`.site-header .mark rect`, …), as on the dashboard's framed pages.
+    mark = landing_files.svg("mark.svg")
+    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
     if model["language"] != lang:  # the frame's words are in a language the landing page has
         header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
         footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)

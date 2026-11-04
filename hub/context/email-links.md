@@ -64,7 +64,7 @@ existing second-factor flow.
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-qez5k81hnkjc (the maintainer found the page bare, 2026-11-03) and lotse#wtwy's answers on it (2026-11-04): the frame's footer instead of the product line, as on the framed `/login` (req-5k1gvfsmcg9k); `render.door_document`, `routes/email_sign_in.py`. The policy's shape is this entry's reading of the legal pages' entry (landing.md, dde46a41)
-**Revisit when:** the page needs a script, the dashboard takes the link over, the dashboard's `/login` gets the product line back, or anything a user stores can be answered under the public host's origin as a stylesheet or a font
+**Revisit when:** the page needs a script, the dashboard takes the link over, the dashboard's `/login` gets the product line back, anything a user stores can be answered under the public host's origin as a stylesheet or a font, or `public-pages.css` stops colouring the header's mark
 
 `GET /mail/sign-in/{token}` and every dead link of it (`404`, never which reason) are drawn by
 `render.door_document`: the landing page's header and footer from the frame's model (§16.7.5),
@@ -78,9 +78,12 @@ behaviour is as before: the `GET` changes nothing but the form cookie, one expli
 
 The answers carry `default-src 'none'; style-src 'self' '<hash of the fallback style>';
 font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
-and `Referrer-Policy: no-referrer`. There is no script and no `'unsafe-inline'`: the only
-inline style is the legal pages' old `STYLE`, drawn when the landing stylesheets are missing,
-and the policy allows exactly that block by its hash.
+and `Referrer-Policy: no-referrer`. There is no script and no `'unsafe-inline'`. The header's
+mark is inlined without its `style` attributes, which the landing and legal pages allow with
+`'unsafe-inline'` (landing.md, 7c22ec9b); `public-pages.css` colours it, as on the dashboard's
+framed pages (`web/js/site-chrome.js`). So the only inline style is the legal pages' old
+`STYLE`, drawn when the landing stylesheets are missing, and the policy allows exactly that
+block by its hash; a browser logs no violation.
 
 **Reason:** the page is the step after the mail on the way into `/login`'s design, so it should
 look like the pages around it. The landing page's files carry no risk for a page with a token in

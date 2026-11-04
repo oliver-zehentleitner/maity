@@ -100,10 +100,11 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`; a page the hub renders whole with the product
   line in its head (§16.13: the join page, the mail link pages, the
-  sign-in link page, the `503` page) adds
+  `503` page) adds
   `style-src 'sha256-…'`, the hash of that line's one `<style>` block
   and of no other. The dashboard draws the line with its own stylesheet
-  and sends no hash. The one exception to `no-store` is the images —
+  and sends no hash. The sign-in link page answers with its own policy
+  (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
   by `ETag`, and the project
@@ -15914,7 +15915,8 @@ from the hub's catalogue in `language`.
   language switch (`languages` is `[]`): the page's language is the
   person's, not the address's, and the address holds the token. The page
   has no script; its policy is `default-src 'none'`, the hub's own
-  stylesheets, fonts and images, `form-action 'self'`, `base-uri 'none'`
+  stylesheets, fonts and images and the fallback style by its hash,
+  `form-action 'self'`, `base-uri 'none'`
   and `frame-ancestors 'none'`, with `Referrer-Policy: no-referrer`.
   Registration's link page (§2.7.1) and the other `/mail/…` pages
   (§18.6) stay outside the frame, with the product line (§16.13).
