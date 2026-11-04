@@ -224,6 +224,8 @@ jobs:
           python-version: "3.12"
       - run: make install
       - run: make check
+      - if: always()
+        run: du -sh /tmp/pytest-of-* || true
 
   # The contract tests: the test files that read docs/api.md (the endpoint index against the
   # routes, the reserved paths, the guide texts), on SQLite. A change of the contract alone does not start the
