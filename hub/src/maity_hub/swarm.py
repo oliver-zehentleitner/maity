@@ -128,9 +128,9 @@ def _whole(conn: Connection, project_id: str, since: datetime, found: Window) ->
         ).scalars()
     ]
     # No index holds `at`; `seq` is in ix_event_project_kind_seq, and `at` never runs
-    # backwards against it within a project (§18.2). So the window starts after the last
-    # message before `since`, found reading back from the newest: only the window's
-    # messages are read, not the project's whole log.
+    # backwards against it within a project (events.emit writes none before the project's
+    # last). So the window starts after the last message before `since`, found reading back
+    # from the newest: only the window's messages are read, not the project's whole log.
     before = conn.execute(
         select(t.event.c.seq)
         .where(

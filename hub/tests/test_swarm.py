@@ -513,7 +513,7 @@ def test_cards_created_and_merges_per_day_count_in_the_window(
 def test_messages_count_by_type_and_review_results_per_merged_pr(
     owner: flow.Human, migrated: Engine, project_id: str
 ) -> None:
-    # In the order the hub writes them: `at` never runs backwards against `seq` (§18.2).
+    # In the order the hub writes them: `at` never runs backwards against `seq` (events.emit).
     event(migrated, project_id, "message", NOW - timedelta(days=40), None, {"type": "chat"})
     kinds = ["chat", "chat", "notice", "review_result", "review_result", "update", "blocker"]
     for kind in kinds:

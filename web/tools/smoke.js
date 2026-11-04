@@ -2958,8 +2958,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(swLine("swarm-created")).startsWith("61 cards created") && swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 30
     && text(swLine("swarm-merged")).startsWith("23 PRs merged")
     && text(swBox().querySelector(".swarm-messages")) === "Messages: 420 chat · 310 notices · 56 review results · 55 other"
-    // A formatted number as this machine's locale writes it: 2.4 in English, 2,4 in German.
-    && text(swBox().querySelector(".swarm-reviews-per-pr")) === "Review results per merged PR: " + win.Maity.fmt.number(2.4, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    && text(swBox().querySelector(".swarm-reviews-per-pr")) === "Review results per merged PR: 2.4",
     "swarm: cards created and PRs merged per day, the messages by type, review results per merged PR " + text(swLine("swarm-created")));
   const swBefore = swBox();
   let swFeed = [];
