@@ -188,3 +188,36 @@ the other dashboard views: the badge link, the one place a stranger is
 sent into a project, would end on the login. Mapping the swarm tab to
 the overview for a visitor too: the login there is what lets a member
 who follows a mail link go on to the swarm after signing in.
+
+## `/` is the hub's start page: a click on a link to it is a page load, never a route change
+
+**Id:** 4f5c757a-98f6-44d1-adad-08fbe61b3d33
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7 (the root shows the landing page to a visitor without a session while it is enabled, the shell otherwise), §16.7.5 (the frame's mark and section links); hub/src/maity_hub/routes/pages.py `root`; web/js/route.js `listen`; the card tsk-fmdn6vb2zs19 (the logo on the sign-in page showed the sign-in form at `/`) and the lead's approval of the plan, 2026-11-04
+**Revisit when:** the dashboard draws a view of its own at `/`, or the hub stops deciding per request what `/` shows
+
+The click handler of `M.route.listen` leaves every link whose path is
+`/` to the browser, with or without a query or a fragment
+(`/`, `/?lang=de`, `/?lang=de#s3`): the browser loads the page, and
+the hub answers it. `M.route.go("/")` is unchanged: the sign-in calls it
+once the session exists (`web/js/app.js` `renderStep`), and for someone
+signed in the hub's answer to `/` is the shell anyway.
+
+**Reason:** what `/` shows is the hub's decision, taken per request
+from the session cookie: the landing page for a visitor without a
+session while it is enabled, the bare sign-in otherwise, the shell for
+someone signed in. The dashboard cannot draw the landing page; it is
+the hub's own HTML. A route change to `/` kept the dashboard and drew
+its own view for a visitor, which is the sign-in form, while the
+address bar named the landing page. The frame's logo, its section links
+and the app's own logo signed out all pointed there. Fixture mode has no
+click handler, so only a served page showed it; the e2e step
+`start_page_step` covers it.
+
+**Rejected alternative:** a marker on each link that must be a page
+load (`data-…` set by `js/site-chrome.js`): every link to `/` would have
+to remember it, and the app's own logo already lacked one. A dashboard
+view at `/` that reloads the page: two loads, and the hub's rule
+written a second time in the dashboard.

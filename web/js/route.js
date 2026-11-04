@@ -99,6 +99,10 @@ window.Maity = window.Maity || {};
       const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
       if (!a || (a.getAttribute("target") && a.getAttribute("target") !== "_self") || a.hasAttribute("download")) return;
       const to = a.getAttribute("href");
+      // The start page is the hub's (§16.7): what `/` shows, the landing page, the bare sign-in or
+      // the shell, the hub decides per request by the session, so a link there is a page load, with
+      // or without a query or a place (the frame's mark and sections, the logo signed out).
+      if (startPage(to)) return;
       const anchored = splitAnchor(to);
       if (anchored) {
         e.preventDefault();
@@ -130,6 +134,9 @@ window.Maity = window.Maity || {};
   function dropFragment() {
     if (!fixture && window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
+
+  // `/`, `/?…` or `/#…`: the instance's start page, which only the hub can answer (§16.7).
+  const startPage = (value) => typeof value === "string" && /^\/(?:[?#]|$)/.test(value);
 
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
