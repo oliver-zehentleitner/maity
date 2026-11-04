@@ -3999,6 +3999,25 @@ window.Maity = window.Maity || {};
       Object.assign(item, body.done ? { done: true, by: me().member.id, at: nowIso() } : { done: false, by: null, at: null });
       return card;
     }],
+    // §11.5: the project's own export whole (the root only; a member, a named repository and
+    // a lean export's bodies are the real hub's to show).
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/export$/, (m, body, path, query) => {
+      if (!project(m[1], path).keep_the_why_export) {
+        fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);
+      }
+      if (query.get("canonical") || query.get("root")) {
+        fail(404, "not_found", "not a repository of this project's family", path, { reason: "not_in_family" });
+      }
+      const answer = JSON.parse(JSON.stringify(file(m[1], "keep-the-why-export.json", path)));
+      if (fixtureKtw === "unavailable") {
+        fail(503, "ktw_unavailable", "the Keep the Why export could not be read", path,
+          { reason: "forge_unavailable", last: Object.assign(answer, { fresh: false }) });
+      }
+      return answer;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/bodies$/, (m, body, path) => {
+      fail(404, "not_found", "this export carries its bodies inline", path, { reason: "no_bodies_file" });
+    }],
     ["GET", /^\/projects\/([^/]+)\/keep-the-why$/, (m, body, path, query) => {
       if (!project(m[1], path).keep_the_why_export) {
         fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);

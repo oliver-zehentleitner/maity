@@ -1127,7 +1127,7 @@ def scenario(run: Run, page: Page) -> None:
         lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
         assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
         run.shot(page, f"phone-{view}")
-        run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+        run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     # The create form: its preset select has long option labels.
     page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
     expect(page.locator("main section.view-new")).to_be_visible()
@@ -2172,7 +2172,7 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
 def fixture_views(run: Run, browser) -> None:
     """Views whose richer states the hub here cannot reach, in fixture mode (file://):
     the Why view with the published maity.dev family, one part failing, the root unreadable."""
-    run.step("fixtures: the Why view as the published family shows it, and its failure states")
+    run.step("fixtures: the Why view mounts the Keep the Why views, and says when the export is unreadable")
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
     errors: list[str] = []
@@ -2180,26 +2180,42 @@ def fixture_views(run: Run, browser) -> None:
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     index = (WEB / "index.html").as_uri()
     try:
-        for query, name, says in (
-            ("", "why", "1 entry needs attention · 71 entries in 4 parts of the project"),
-            (
-                "?ktw=member_failed",
-                "why-part-failed",
-                "Could not be read: its state.json did not answer in time",
-            ),
-            ("?ktw=unavailable", "why-root-unreadable", "Shown is its last good read"),
-        ):
-            page.goto(f"{index}{query}#/maintainer/maity/why")
-            expect(page.locator("main section.view-why")).to_contain_text(says)
-            assert not errors, errors  # the page's own errors, before axe runs
-            run.shot(page, f"fixtures-{name}")
-            run.a11y(page, f"fixtures: {name}")
-            # axe reads stylesheets by XHR, which file:// refuses; that is axe's, not the page's.
-            errors.clear()
-        # The family at phone width: the summary, the entries, the table that scrolls.
+        # The library itself, loaded on the first visit (js/ktw-host.js): the overview, the graph
+        # on its canvas, a topic with its entries, all in mounts marked translate="no".
+        page.goto(f"{index}#/maintainer/maity/why")
+        main = page.locator("main .why-main.ktw-root")
+        expect(main).to_be_visible()
+        expect(main).to_have_attribute("translate", "no")
+        expect(main).not_to_be_empty()
+        assert page.evaluate("!!(window.KeepTheWhy && window.KeepTheWhy.views.pages)")
+        assert not errors, errors
+        run.shot(page, "fixtures-why")
+        run.a11y(page, "fixtures: why")
+        errors.clear()
+        page.goto(f"{index}#/maintainer/maity/why/graph")
+        expect(page.locator("main .why-main canvas")).to_have_count(1)
+        page.goto(f"{index}#/maintainer/maity/why/topic/api.md")
+        expect(page.locator("main .why-main")).to_contain_text("The API is versioned in the path")
+        assert not errors, errors
+        run.shot(page, "fixtures-why-topic")
+        errors.clear()
+        # The timeline's selected controls are the library's white on the accent, which Maity
+        # writes in its own text for the accent (css/app.css); axe checks them in both themes.
+        page.goto(f"{index}#/maintainer/maity/why/timeline")
+        expect(page.locator("main .why-main .ktw-stage-seg button.ktw-on").first).to_be_visible()
+        assert not errors, errors
+        run.shot(page, "fixtures-why-timeline")
+        run.a11y(page, "fixtures: why timeline")
+        errors.clear()
+        page.goto(f"{index}?ktw=unavailable#/maintainer/maity/why")
+        expect(page.locator("main")).to_contain_text("shown is its last good read")
+        expect(page.locator("main .why-main")).not_to_be_empty()
+        run.shot(page, "fixtures-why-last-good")
+        errors.clear()
+        # The view at phone width: nothing wider than the screen.
         page.set_viewport_size({"width": 390, "height": 844})
         page.goto(f"{index}#/maintainer/maity/why")
-        expect(page.locator("main section.view-why")).to_contain_text("1 entry needs attention")
+        expect(page.locator("main .why-main")).not_to_be_empty()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
         assert not errors, errors
@@ -3027,7 +3043,7 @@ def notifications_step(run: Run, page: Page) -> None:
         run.a11y(page, "all projects, " + name)
     # These projects have no Keep the Why export: the hub says so with a 409, and the page says it too.
     expect(page.locator("main section.view-all-why")).to_contain_text("publishes no Keep the Why export")
-    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     page.locator("header nav.views a").nth(0).click()
     expect(page).to_have_url(re.compile(r"/all$"))
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
@@ -3059,7 +3075,7 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     )
     expect(page.locator("main")).to_contain_text("It needs a repository first")
     # The hub's 409 ktw_not_configured is the expected answer here.
-    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     run.shot(page, "why-not-configured")
     run.a11y(page, "why, not configured")
     no_problems(run, "why")
