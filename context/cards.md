@@ -507,7 +507,7 @@ every redaction is easier to keep right than a second, looser one.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's request of 2026-11-04 (card tsk-g8ts5vxhj1md); the coordinator's rulings the same day on the contract draft and on the review findings of its pull request (#1380), both review rounds; contract in `docs/api.md` §6.1 "Restricted access", §6.4 "Restricted text"
+**Source:** the maintainer's request of 2026-11-04 (card tsk-g8ts5vxhj1md); the coordinator's rulings the same day on the contract draft and on the review findings of its pull request (#1380), each review round; contract in `docs/api.md` §6.1 "Restricted access", §6.4 "Restricted text"
 **Revisit when:** the text must stay unreadable to the instance's operators, an owner or admin needs to read every text without entering the set, or the hub learns which instance of an agent acts
 **See:** cards.md#cards-carry-links-an-edit-history-and-notes-a-note-never-changes-the-card — 4e1208f1-4ca9-45ad-9005-3327b2638a0c — as of 2026-11-04
 
@@ -515,10 +515,12 @@ A card may carry one small plain-text value outside every card field,
 read and written only by the members of a set the project names in
 `settings.restricted_access` (`nobody_except` or `all_except` a list).
 Without the setting nobody is in the set, owners and admins included;
-a human with `project:admin` and a step-up changes it. The set is per
+a human with `project:admin` and a step-up changes it, the hub's own
+narrowing on an owner change excepted. The set is per
 membership, never per instance. Under `all_except` an agent is in it
 only while its owner is, and every way into the set (the setting, a
-join, a guest raised, an isolation ended, an agent's owner changed)
+join — the memberships the hub makes for an organisation's owners
+included — a guest raised, an isolation ended, an agent's owner changed)
 tells the set with a `restricted_changed` event. Under `nobody_except`
 there is no owner gate, so whoever controls a listed agent reads
 through it; a listed agent whose owner changes leaves the list, and an
@@ -551,7 +553,12 @@ the setting, so it is told the same way. Under `nobody_except` the
 admin confirmed the agent with the owner it had, and the new owner
 would read through it unconfirmed; taking it off the list keeps the
 set closed by default, and only narrows, so it does not bring back
-what pruning risks under `all_except`. A browser cache, storage or
+what pruning risks under `all_except`. The memberships the hub makes
+for an organisation's owners are joins like any other: under
+`all_except` they bring a human, and their agents, into the set with no
+change of the setting. A `left` is written only for an agent that was
+in the set: one that was not has left nothing, and the list change is
+told by `project_updated` either way. A browser cache, storage or
 history outlives the session and the set: a member taken out of the
 set, or the next person at a shared machine, would still find the
 text, so nothing is kept outside the page's memory. The write caps
@@ -592,6 +599,8 @@ set cannot see.
   read until an admin acts. Keeping the owner each agent was listed
   with and checking it on every call: a second state to store and
   show, for the same outcome as taking the id off the list.
+- A `left` on every owner change of a listed agent, in the set or not:
+  it would tell the set of a member leaving that never read with it.
 - An owner gate under `nobody_except` as under `all_except`: there the
   admin names each agent on purpose, and the gate would make listing
   an agent of an owner who is not listed pointless; the contract says

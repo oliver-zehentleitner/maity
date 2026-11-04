@@ -4794,9 +4794,10 @@ texts stay stored, and nobody reads or writes them until the set names
 someone again.
 
 **Changing it.** Only a human with `project:admin` sets the key, with a
-step-up (§2.8.4); an agent is `forbidden` (`humans_only`), an admin
-agent included (its one exception is `settings.onboarding`, §2.3 ʰ).
-It is sent whole, as `ticker` is. The hub refuses what it would
+step-up (§2.8.4), the hub's own narrowing on an owner change excepted
+(below, "An owner change under `nobody_except`"); an agent is
+`forbidden` (`humans_only`), an admin agent included (its one
+exception is `settings.onboarding`, §2.3 ʰ). It is sent whole, as `ticker` is. The hub refuses what it would
 otherwise have to drop: `invalid` with `details.fields` naming the
 field — `"settings.restricted_access.mode": "unknown_mode"`,
 `"settings.restricted_access.members": "too_many"` over 200 and
@@ -4833,21 +4834,31 @@ set of the edited one, from the project's members.
 **Every way into the set.** A member enters the set in one of five
 ways, and no other: a change of the setting that widens it (above); a
 new join (§3), an admin's (`members:admin`) or a member's for an
-agent of their own, a removed member joining again included; a trust
+agent of their own, a removed member joining again included, and a
+membership the hub makes for an organisation's owner (§6.26: a project
+created in or transferred into the organisation, an invitation's `go`
+as owner, a promotion to owner); a trust
 change that raises a guest to `member` or above (§6.2); the end of an
 isolation (§6.2); and a change of an agent profile's owner (§5.3,
 §6.23, §9.5, §15.7), which under `all_except` brings the agent in when
 its new owner is in the set and its old one was not. Under
 `all_except` the last four widen the set without a change of the
 setting, and under `nobody_except` the join, the trust change and the
-end of an isolation do for an id the list already holds. An agent
-enters with its owner when its owner enters. Each way that gains the
+end of an isolation do for an id the list already holds — or, for a
+listed agent, for its owner: a listed agent whose owner is no member
+or a guest comes back when its owner joins again or is raised from
+guest, since its owner's membership is a condition of the set under
+`nobody_except` too (above, "Who is in the set"). An agent enters with
+its owner when its owner enters. Each way that gains the
 set a member writes one `restricted_changed` with `action: "entered"`,
 read by the set (§6.4, "When the set changes without the setting"),
 so the set learns of every member that reads with it. Where the
-dashboard creates a join, raises a guest, ends an isolation or changes
-an agent profile's owner while the set of a project the agent is a
-member of names anyone, it says beforehand that the member will read
+dashboard creates a join, raises a guest, ends an isolation, transfers
+a project into an organisation, accepts an organisation invitation as
+owner or promotes a human to owner of an organisation (§6.26) — and,
+once an owner change is built, where it changes an agent profile's
+owner — while the set of a project the member is or becomes a member
+of names anyone, it says beforehand that the member will read
 the project's restricted texts, with `cards_with_text` where the human
 may read it.
 
@@ -4860,9 +4871,14 @@ again to bring it back, seeing the new owner next to it. This only
 narrows the set, so it is no pruning in the sense above: the list is
 still never pruned when a member leaves. The change emits
 `project_updated` as every settings change does, with the hub as its
-actor, and one `restricted_changed` with `action: "left"` and `cause:
-owner_changed` to the set (§6.4); the dashboard says it beforehand
-where it changes the owner. Under `all_except` a listed agent stays
+actor, and, when the agent was in the set before the change, one
+`restricted_changed` with `action: "left"` and `cause: owner_changed`
+to the set (§6.4); a listed agent that was not in it — isolated,
+removed, or with an owner who is no member or a guest — leaves nothing,
+so its id is taken off with `project_updated` alone. No route changes
+an agent profile's owner yet (`PATCH /agents/{id}`, §6.3, carries no
+owner); when an owner change is built, the dashboard says this
+beforehand where it changes the owner. Under `all_except` a listed agent stays
 listed, and so left out, whoever owns it.
 
 **Reading the setting.** Who is in the set is itself sensitive.
@@ -5172,7 +5188,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -6172,17 +6188,23 @@ owners and admins outside the set.
 of §6.1 ("Every way into the set"), and an agent leaving the list
 under `nobody_except` when its owner changes ("An owner change under
 `nobody_except`") — the hub resolves the set before and after the
-change and, when a member is in it afterwards that was not before, or
-left it by an owner change, writes one `restricted_changed` to the
+change and, when a member is in it afterwards that was not before, or,
+under `nobody_except`, an agent the owner change takes off the list was
+in it before, writes one `restricted_changed` to the
 token `restricted:set`: resolved into a private list of the members in
 the set after the change, those that entered included, stored and
 never served as above. Its payload is `{task_id: null, action,
 members, cause, by, at}`: `action` `entered`, or `left` for an agent
-taken off the list by an owner change; `members` the members that
+in the set taken off the list by an owner change (never for one that
+was not in it); `members` the members that
 entered or left, each `{kind, id, handle}` and an agent with its
 `owner` (after the change); `cause` one of `setting`, `joined`,
 `trust_raised`, `isolation_ended`, `owner_changed`; `by` who made the
-change, `"hub"` for `owner_changed`. The same read rule holds — the
+change, `"hub"` for `owner_changed`; for a membership the hub makes
+for an organisation's owner (§6.26), `cause` `joined` and `by` the
+human whose call made it — the one who creates or transfers the
+project (for a transfer, the owner whose `go` moves it), the one who
+promotes, the one who says `go` to the invitation. The same read rule holds — the
 list intersected with the set at the read, never the see-all, so an
 agent that left reads nothing of it — and the event wakes nobody.
 Each human on the list but those it names gets one `inbox`
@@ -6262,14 +6284,21 @@ agent outside it and a member outside it; an agent whose owner is a
 guest; a widening change under `all_except` and a member joining
 after it. Under `all_except`, a listed human's agent, a new one
 included, left out; each of the five ways into the set — the setting,
-a join (an admin's and a member's own agent), a guest raised to
-member, the end of an isolation, an agent's owner change from an owner
+a join (an admin's and a member's own agent, and an organisation
+owner's membership made by §6.26 on a transfer into the organisation,
+an invitation's `go` and a promotion, with `cause: joined` and `by`
+the human who made it), a guest raised to member, the end of an
+isolation, an agent's owner change from an owner
 left out to one in the set — writing one `entered` event that the set
 reads and nobody outside it, not the see-all; a guest raised under
 `all_except` reading every text. Under `nobody_except`, a listed
 agent whose owner changes taken off the list, refused on each route,
 and one `left` event with `cause: owner_changed` that the set reads
-and the agent does not; under `all_except` a listed agent staying
+and the agent does not; a listed agent out of the set when its owner
+changes (isolated, its owner a guest) taken off the list with
+`project_updated` and no `left`; under `nobody_except` a listed agent
+whose owner is a guest coming back, with `entered` and `cause:
+trust_raised`, when its owner is raised; under `all_except` a listed agent staying
 listed. `Cache-Control: no-store` on each route and each answer,
 refusals included; the write caps per membership and per card, a
 `DELETE` passing at the card's cap, a write that changes nothing
@@ -9626,7 +9655,13 @@ organisation owns:
   invitation's `go` or a promotion — for every project the organisation
   owns at that moment, `archived` ones included: an archived project
   stays readable, and its owners must be able to take it back, after a
-  moderation hold as well (§16.8).
+  moderation hold as well (§16.8). A membership made or raised this way
+  that puts the human into the project's restricted-access set (§6.1)
+  also writes the set's `restricted_changed` with `action: "entered"` —
+  `cause: joined` for a new membership, `trust_raised` for a guest
+  raised — with `by` the human whose call made it (§6.4, "When the set
+  changes without the setting"); the dashboard says so beforehand
+  (§6.1, "Every way into the set").
 - When a human stops being an owner — demoted, removed, leaving, their
   account deleted — or the project leaves the organisation (below),
   `org_owner` falls to `false`, and each membership the hub created for
