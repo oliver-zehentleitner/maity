@@ -869,9 +869,14 @@ allow = ["make test", "python -m pytest *"]   # commands the agent may run
 network = ["pypi.org"]                        # hosts the sandbox may reach
 ```
 
-Each `allow` entry is a plain command. An entry that starts with a
-variable assignment (`FOO=1 make`) or `env`, or that names `maity`, is
-refused when the configuration is read: `maity` is the runner's own rule.
+Each `allow` entry is a plain command: a program (a name or a path),
+then arguments of letters, digits and `_ . / = : @ % + , -`, separated
+by single spaces, with `*` allowed in an argument. Anything else is
+refused when the configuration is read: a variable assignment in front
+(`FOO=1 make`, `FOO+=1 make`), `env` under any path, quotes, `$`,
+backticks, backslashes and shell operators, a `:` in the program
+(Claude Code's `prog:*` form: write `prog *`), and `maity` as the program or an argument, whatever its path,
+case or Windows extension. `maity` is the runner's own rule.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
@@ -1054,8 +1059,9 @@ it, and past them it runs inside). This is the harness's behaviour, not
 a contract: with another Claude Code version the runner still starts the
 agent, and `maity runner check` and the runner's log say that the
 version was not checked. A repository's grant may only add plain
-commands; a rule that starts with a variable or `env`, or that names
-`maity`, is refused when the configuration is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
+commands (below, under the configuration); a rule with a variable or
+`env` in front, or that names `maity`, is refused when the configuration
+is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
 operator's account in the `single` layout, as the agents' user's account
 in `agent_user`. Run agents that read untrusted text (issues, pull
 requests, web pages) in the `agent_user` layout, which keeps your own

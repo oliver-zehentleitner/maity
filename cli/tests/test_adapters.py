@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
-import re
 import shutil
 import tomllib
 from pathlib import Path
@@ -50,18 +49,19 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
 
 
 def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) -> None:
-    """A grant that reached the adapters without the configuration's check: the settings hold
-    no allowed command with a variable or `env` in front, and no maity call of the grant's."""
-    ctx = context(tmp_path)
-    ctx = dataclasses.replace(ctx, grant=config.RepositoryGrant(
-        allow=("make test", "FOO=1 make test", "env make test", "make test; maity *"),
-    ))  # fmt: skip
+    """A grant that reached the adapters without the configuration's check: of its rules,
+    only the plain command reaches either harness's settings."""
+    refused = ("FOO=1 make test", "FOO+=1 make test", "env make test",
+               "/usr/bin/env FOO=1 make test", "make test; maity *", '"maity" *', "maity:*",
+               "maity.exe *")  # fmt: skip
+    plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
+    ctx = dataclasses.replace(plain, grant=config.RepositoryGrant(allow=("make test", *refused)))
     claude = adapters.claude_settings(ctx)["permissions"]["allow"]
-    opencode = list(adapters.opencode_config(ctx)["permission"]["bash"])
-    for rules in (claude, opencode):
-        assert any("make test" in rule for rule in rules)
-        assert not any(re.search(r"(?:^|\()\s*(?:env\s|[A-Za-z_]\w*=)", r) for r in rules)
-        assert not any("; maity" in rule for rule in rules)
+    claude_base = adapters.claude_settings(plain)["permissions"]["allow"]
+    opencode = adapters.opencode_config(ctx)["permission"]["bash"]
+    opencode_base = adapters.opencode_config(plain)["permission"]["bash"]
+    assert [r for r in claude if r not in claude_base] == ["Bash(make test)"]
+    assert [r for r in opencode if r not in opencode_base] == ["make test", "make test *"]
 
 
 def test_claude_code_grant(tmp_path: Path) -> None:

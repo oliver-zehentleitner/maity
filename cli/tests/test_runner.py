@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
@@ -145,25 +146,51 @@ def test_only_the_owner_wide_glob_is_accepted(entry: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "rule", ["FOO=1 make test", "env make test", "make test && maity report *", "maity *"]
+    "rule",
+    [
+        "FOO=1 make test",
+        "FOO+=1 make test",
+        "env make test",
+        "/usr/bin/env FOO=1 make test",
+        "make test && maity report *",
+        "make test; ./maity report",
+        "maity *",
+        "maity:*",
+        "maity.exe *",
+        "MAITY.CMD report",
+        "/home/a/.local/bin/maity report",
+        "xargs maity",
+        "make $TARGET",
+        "make `id`",
+        "make test | tee out",
+        "make\ttest",
+        "* make",
+        '"maity" *',
+        "'maity' report",
+        'make "a b"',
+    ],
 )
 def test_a_repository_grant_allows_only_plain_commands(rule: str) -> None:
-    """Nothing set in front of a granted command, and not maity, which is granted on its own
-    and runs outside the harness's sandbox."""
-    grant = f'\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = ["{rule}"]\n'
+    """A program and plain arguments only: nothing set in front of it, no quotes, variables
+    or shell operators, and not maity in any spelling, which is granted on its own and runs
+    outside the harness's sandbox."""
+    allow = json.dumps(rule)  # a JSON string is a TOML basic string
+    grant = f'\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = [{allow}]\n'
     found = problems(minimal(grant=grant))
-    assert any("not a plain command" in p and rule in p for p in found), found
+    assert any("not a plain command" in p and repr(rule) in p for p in found), found
 
 
 def test_a_plain_repository_grant_is_kept() -> None:
     grant = (
         '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
-        'allow = ["make test", "uv run pytest *"]\n'
+        'allow = ["make test", "uv run pytest *", "./gradlew build --info", "pip show maity-hub"]\n'
     )
     cfg = parse(minimal(grant=grant))
     assert cfg.repositories["github.com/oliver-zehentleitner/maity"].allow == (
         "make test",
         "uv run pytest *",
+        "./gradlew build --info",
+        "pip show maity-hub",
     )
 
 

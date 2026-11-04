@@ -649,9 +649,15 @@ against the pattern typed, not the path searched. maity and the runner
 run git only through `proc.GIT`, a clone into a missing directory, and
 `gc`'s pinned read; a test pins that.
 
-A repository's grant may only add plain commands: a rule that starts
-with a variable assignment or `env`, or that names `maity`, is refused
-when the configuration is read, and an adapter skips it as well.
+A repository's grant may only add plain commands, a grammar rather
+than a list of bad spellings: a program name or path, then arguments of
+plain characters (the CLI README names them), `*` only in an argument.
+The program is never `env` or `maity`, under any path, case or Windows
+extension, and no argument is `maity`. Assignments, quotes, variables,
+escapes, shell operators and a `:` in the program (Claude Code's
+`prog:*` form) are refused
+when the configuration is read, and an adapter skips such a rule as
+well.
 `maity` stays the runner's own rule. Claude Code's `.git` write deny is
 one `Edit(…)` rule, which covers its file-editing tools; it does not
 check a `Write(…)` deny rule. That a call with something in front of
@@ -697,6 +703,10 @@ one version, not a contract.
   a newly staged submodule, so `report` would miss a change. The
   configuration setting keeps git out of the submodule and still shows
   the staged gitlink.
+- Refusing a list of bad spellings (`NAME=` and `env` in front, `maity`
+  after an operator): `NAME+=`, `/usr/bin/env`, a quoted `maity`,
+  `maity:*` and `maity.exe` still passed, found in review. A grammar
+  refuses what it does not name.
 - Only a warning for a grant rule with something in front or naming
   `maity`, keeping the rule: the harness would still allow it as
   written, and a configuration the runner accepted today then means

@@ -208,16 +208,38 @@ def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
 
 
-# A command allowed by a repository's grant: nothing set in front of it (`NAME=…`, `env …`),
-# and not maity, which runs outside the harness's sandbox and is granted on its own.
-_PREFIXED = re.compile(r"^\s*(?:env(?:\s|$)|[A-Za-z_][A-Za-z0-9_]*=)")
-_NAMES_MAITY = re.compile(r"(?:^|[\s;&|(/])maity(?:\s|$|[;&|)])")
+# A command allowed by a repository's grant: a program, then plain arguments, nothing else.
+# The program is a name or a path, never an assignment (`NAME=…`, `NAME+=…`), quoted, `env`
+# or maity (which runs outside the harness's sandbox and is granted on its own), whatever
+# its path, case or Windows extension; no argument names maity either. No quotes,
+# variables, escapes or shell operators anywhere, and `*` only in an argument.
+_PROGRAM = re.compile(r"[A-Za-z0-9_./+-]+")
+_ARGUMENT = re.compile(r"[A-Za-z0-9_./=:@%+,*-]+")
+_REFUSED_PROGRAMS = frozenset({"env", "maity"})
+_WINDOWS_EXTENSIONS = (".exe", ".cmd", ".bat", ".com", ".ps1")
+
+
+def _program_name(word: str) -> str:
+    """`word` as the name a program is found by: its last path part, lowercased, without a
+    Windows extension."""
+    name = word.rsplit("/", 1)[-1].lower()
+    for ext in _WINDOWS_EXTENSIONS:
+        if name.endswith(ext):
+            return name[: -len(ext)]
+    return name
 
 
 def plain_command(rule: str) -> bool:
-    """Whether a grant's allow rule is a plain command: no variable or `env` in front, and
-    not a maity call."""
-    return not _PREFIXED.match(rule) and not _NAMES_MAITY.search(rule)
+    """Whether a grant's allow rule is a plain command: a program that is not `env` or maity,
+    then arguments of plain characters, none of them maity."""
+    words = rule.split(" ")
+    if not words or not _PROGRAM.fullmatch(words[0]):
+        return False
+    if _program_name(words[0]) in _REFUSED_PROGRAMS:
+        return False
+    return all(
+        _ARGUMENT.fullmatch(w) and _program_name(w.split(":", 1)[0]) != "maity" for w in words[1:]
+    )
 
 
 def _commands(values: Any) -> str | None:
@@ -226,7 +248,8 @@ def _commands(values: Any) -> str | None:
         return problem
     bad = [v for v in values if not plain_command(v)]
     if bad:
-        return ("not a plain command (no variable or `env` in front, not maity): "
+        return ("not a plain command (a program and plain arguments: no variable, `env`,"
+                " quotes or shell operators, not maity): "
                 + ", ".join(repr(v) for v in bad))  # fmt: skip
     return None
 
