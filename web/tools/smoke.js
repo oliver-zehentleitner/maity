@@ -351,12 +351,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · member · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
   expect(btn(c2, "go").className === "reply primary" && btn(c2, "no").className === "reply", "only the hub's go of a consent is primary");
-  expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Talk", "no", "go"]),
-    "the replies at the right edge: Later and Talk first, the primary one last; no Send beside replies");
+  expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Talk", "no", "go", "Send"]),
+    "the replies at the right edge: Later and Talk first, the hub's replies, Send last");
+  // A consent takes no words alone (a proposal's would be read as No, §15.6): Send stays, disabled, and says why.
+  const c2Send = btn(c2, "Send"), c2Hint = c2.querySelector(".reply-hint");
+  expect(c2Send.disabled && c2Hint && c2Send.getAttribute("aria-describedby") === c2Hint.id && text(c2Hint).includes("Choose one of the answers")
+    && !btn(c2, "Talk").disabled && !btn(c2, "Talk").getAttribute("aria-describedby"),
+    "a consent: Send disabled, described by the hint; Talk for the agent's owner, no reason to give");
   // The one text field stands above the buttons, always writable (§7).
   const fieldAbove = c2.querySelector(".free-text");
   expect(fieldAbove && fieldAbove.querySelector("textarea") && !fieldAbove.querySelector("textarea").disabled
-    && fieldAbove.parentNode.childNodes.indexOf(fieldAbove) < fieldAbove.parentNode.childNodes.indexOf(c2.querySelector(".replies")) && !btn(c2, "Send"),
+    && fieldAbove.parentNode.childNodes.indexOf(fieldAbove) < fieldAbove.parentNode.childNodes.indexOf(c2.querySelector(".replies")),
     "inbox: one free-text field above the reply buttons");
   // A request's stored mention links to the member; the @ picker in its free text.
   const hashHead = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Name of the CLI binary"));
@@ -397,12 +402,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   };
   const freeText = hashEntry.querySelector(".free-text textarea");
   {
-    // Ctrl+Enter sends; with the list open it does not also pick.
+    // Ctrl+Enter sends the words alone, as Send does on a decision with replies; with the list open it
+    // does not also pick. The hub refuses this one here: the request stays, its controls come back.
+    const heldPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (p.endsWith("/answer") ? (ansCalls.push([p, b]), Promise.reject(Object.assign(new Error("held"), { code: "held" }))) : heldPost(p, b));
+    ansCalls.length = 0;
     freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
-    freeText.dispatch("keydown", { key: "Enter", ctrlKey: true }); await tick();
+    const talkBefore = btn(hashEntry, "Talk").disabled;
+    expect(!btn(hashEntry, "Send").disabled, "a decision with replies: Send takes the words alone");
+    freeText.dispatch("keydown", { key: "Enter", ctrlKey: true }); await tick(); await tick();
     const openList = hashEntry.querySelector(".mention-list");
-    expect(freeText.value === "Ask @age" && openList.hidden, "mentions: Ctrl+Enter does not pick, and closes the list " + freeText.value);
+    expect(freeText.value === "Ask @age" && openList.hidden && JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ text: "Ask @age" }]),
+      "mentions: Ctrl+Enter does not pick, closes the list and sends the words alone " + freeText.value + " " + JSON.stringify(ansCalls));
+    expect(!freeText.disabled && !btn(hashEntry, "Send").disabled && btn(hashEntry, "Talk").disabled === talkBefore,
+      "a refused answer gives the controls back, Talk as it was " + talkBefore);
+    win.Maity.api.post = heldPost;
     freeText.value = ""; freeText.dispatch("input"); await tick();
+    expect(btn(hashEntry, "Send").disabled, "Send is disabled while the field is empty");
   }
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
@@ -574,7 +590,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && (await ansRefused({ reply_id: "nope" })).includes("not_a_reply"), "fixture hub: refuses an empty answer, talk with a reply, an unknown reply");
   // Talk with text: {talk: true, text}; the text is the answer's, shown on the answered request.
   ansCalls.length = 0;
-  expect(btn(c2, "Talk") && !btn(c2, "Send"), "Talk is one word, and a request with replies has no Send");
+  expect(btn(c2, "Talk") && btn(c2, "Send").disabled, "Talk is one word, and a consent's Send stays disabled");
   c2.querySelector("textarea").value = "let us go over it";
   btn(c2, "Talk").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ talk: true, text: "let us go over it" }]), "answer: Talk takes the text along " + JSON.stringify(ansCalls));
@@ -591,17 +607,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Talk", "Send"]),
     "a request without replies: Later, Talk and Send");
   ansCalls.length = 0;
+  expect(btn(c2, "Send").disabled, "Send is disabled while the field is empty");
   btn(c2, "Send").click(); await tick();
   expect(!ansCalls.length, "Send with an empty field sends nothing");
-  c2.querySelector("textarea").value = "  3.12  ";
+  c2.querySelector("textarea").value = "  3.12  "; c2.querySelector("textarea").dispatch("input");
+  expect(!btn(c2, "Send").disabled, "Send is enabled once the field holds words");
   btn(c2, "Send").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ text: "3.12" }]), "answer: Send is the text alone " + JSON.stringify(ansCalls));
-  // Talk is offered only for an agent of the reader's: not for another owner's agent, a human asker, a request the hub filed itself.
-  const talkAnswer = async (_id, title, why) => {
+  // Talk works only for an agent of the reader's: for another owner's agent, a human asker, a request the hub filed itself it is disabled and says why.
+  const talkAnswer = async (_id, title, why, reason) => {
     const head = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes(title));
     if (head.attrs["aria-expanded"] !== "true") { head.click(); await tick(); }
     const cur = main.querySelector(".current");
-    expect(text(cur).includes(title) && btn(cur, "Yes") && btn(cur, "Later") && !btn(cur, "Talk"), "Talk is absent: " + why);
+    const talk = btn(cur, "Talk"), hint = cur.querySelector(".reply-hint");
+    expect(text(cur).includes(title) && btn(cur, "Yes") && btn(cur, "Later") && talk && talk.disabled && hint && talk.getAttribute("aria-describedby") === hint.id
+      && text(hint).includes(reason), "Talk is disabled and says why: " + why + " " + (hint ? text(hint) : ""));
     btn(cur, "Yes").click(); await tick(); await tick();
   };
   let talkForeign = "accepted";
@@ -610,9 +630,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let talkHub = "accepted";
   try { await ansPost("/projects/maintainer/maity/requests/req-0016/answer", { talk: true }); } catch (e) { talkHub = JSON.stringify(e.details && e.details.fields); }
   expect(talkHub.includes("only_the_owner_of_the_agent"), "fixture hub: Talk for a request the hub filed is refused");
-  await talkAnswer("req-0014", "Foreign agent", "another owner's agent");
-  await talkAnswer("req-0015", "Human asker", "a human asker");
-  await talkAnswer("req-0016", "Hub-filed", "filed by the hub");
+  await talkAnswer("req-0014", "Foreign agent", "another owner's agent", "only for the human who owns the agent that asked");
+  await talkAnswer("req-0015", "Human asker", "a human asker", "only for the human who owns the agent that asked");
+  await talkAnswer("req-0016", "Hub-filed", "filed by the hub", "Maity filed this request itself");
   win.Maity.api.post = ansPost;
   expect(text(main).includes("No open requests."), "inbox empty");
   const show = byId("inbox-show"); show.value = "all"; show.dispatch("change"); await tick();

@@ -728,19 +728,58 @@ Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
 6e357e0c "An inbox answer carries a note with any button", §7) each open
 request has one free-text field **above** its buttons, always writable:
 every reply button sends `{reply_id, text}` when the field has text, and
-**Talk** sends `{talk: true, text}`; a request without replies keeps
-**Send** for the plain text next to Talk. "Talk" is one word in every
-language (a language file leaves `inbox.talk` out rather than translating
-it). Talk is offered only where the asker is an agent the reader owns
-(§7: accepted only from the human who owns the asking agent): inside a
-project from the member list (`owner_id`), across projects and for a
-personal request from the reader's own profiles (`GET /agents`, read once
-per view; their ids are the agents' member ids). Never for a human, for a
-request the hub filed itself (no asking agent reads the answer), or for an
-unreadable personal one, and not when the profiles cannot be read: a
-button that surely ends in `invalid` looks broken. `canTalk()` in
-`js/inbox.js` is the one place to change when the hub computes a field
-for it.
+**Talk** sends `{talk: true, text}`, **Send** the text alone. "Talk" is
+one word in every language (a language file leaves `inbox.talk` out
+rather than translating it). Talk works only where the asker is an agent
+the reader owns (§7: accepted only from the human who owns the asking
+agent): inside a project from the member list (`owner_id`), across
+projects and for a personal request from the reader's own profiles
+(`GET /agents`, read once per view; their ids are the agents' member
+ids). For a human asker, a request the hub filed itself (no asking agent
+reads the answer) and when the profiles cannot be read it is disabled
+with its reason; where Send and Talk stand and when they are disabled is
+the next entry's. `canTalk()` in `js/inbox.js` is the one place to
+change when the hub computes a field for it.
+
+## Send and Talk stand on every request one can answer; where the hub would refuse them they stay, disabled, and say why
+
+**Id:** 3cfa5e18-b709-4d76-a560-ce24ef5eecfc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-nx6hm8qjzm3z (Send and Talk on every inbox item) and the lead's decisions on its plan, 2026-11-04; docs/api.md §7 "The inbox", §15.6 (a consent's text alone read as No); hub/src/maity_hub/takeovers.py (`reply_required` on a takeover's request); web/js/inbox.js; the e2e step `send_talk_step`
+**Revisit when:** the request view says which consent carries a proposal or a placement, or the hub computes per request whether the text alone or `talk` is accepted
+
+Every request with a field has **Send** after its replies, on a request
+with options too: it sends the text alone (`{text}`), Ctrl+Enter the
+same, and is disabled while the field is empty. It stays disabled, with
+its reason below the buttons (`.reply-hint`, its `aria-describedby`),
+on every `consent`, every request with `action` or `placement`, and a
+takeover's (`takeover_id`). **Talk** stands on every request one can
+answer, disabled with its reason where `talk` is not accepted (above).
+Neither stands where no answer is possible at all: a call that only the
+project's owner answers, seen by another member, and a personal request
+not read in full. A refused answer gives the controls back, and what was
+disabled stays disabled.
+
+**Reason:** the hub takes the text alone as an answer to any request
+(§7), so a request with options had no way to answer in one's own words
+although the hub would take it. Where the hub refuses the text alone (a
+takeover's reply is required) or reads it as No (a consent's proposal or
+placement, §15.6), a button that sends it would answer something the
+reader did not mean; one that is missing does not say why. Every
+consent is treated alike, a plain one too: the request as the inbox
+reads it does not say which consent carries a proposal or a placement,
+and a Send that works on one consent and not on another, for a reason
+the reader cannot see, would be the same surprise.
+
+**Rejected alternative:** hiding Send and Talk where they do not apply,
+as before: the reader cannot tell a button that is missing here from one
+that does not exist. Talk for another owner's agent: the hub refuses it
+(`only_the_owner_of_the_agent`), so the button would surely end in
+`invalid`. A field from the hub saying per request whether the text
+alone and `talk` are accepted: a hub change for what the dashboard can
+tell from the request today; the Revisit when names it.
 
 ## A project's unread mentions are a link beside its tabs, to /notifications filtered to the project
 
