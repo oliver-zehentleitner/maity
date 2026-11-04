@@ -168,18 +168,25 @@ as a link there does not: it says nothing about this checkout.
 **Revisit when:** git changes how `GIT_ALLOW_PROTOCOL` ranks against configuration, a forge reached over another transport is supported, or `report` learns a forge other than GitHub
 
 `maity report` reads a branch's upstream from the clone's configuration
-and passes it to `git ls-remote`. Before that, the remote and the merge
-ref are checked: neither may start with `-` or contain `::`, the merge
-ref must lie under `refs/heads/`, and the remote must be a configured
-remote's name or a forge-shaped URL (`https`, `http`, `ssh`, `git`,
-`file`, a path, or `user@host:`). Anything else is refused with the hint
-to set the upstream with `git push -u`. `ls-remote` gets `--` before
-them. Every git maity starts runs with `GIT_ALLOW_PROTOCOL` set to those
-five transports; the runner's clone of a workspace passes its own
-`https:ssh`, because the variable replaces its `-c protocol.*` settings
-as well. git and gh are started by an absolute path found on an
-absolute PATH entry, never the current directory, and on Windows with
-`NoDefaultCurrentDirectoryInExePath` set for what they start in turn.
+and passes it to `git ls-remote`. Before that, the remote, the URL it
+is configured with and the merge ref are checked: none may start with
+`-` or contain `::`, and the merge ref must lie under `refs/heads/`.
+Every other upstream `git push -u` stores still reads: a configured
+remote whatever its name, a URL, a relative path, `host:path`. A refused
+one gets the hint to set the upstream with `git push -u`. `ls-remote`
+gets `--` before them. Every git run through `proc.run` (maity's own
+git: report, checkpoint, the cite and text checks, the state lookup,
+the build identity) gets `GIT_ALLOW_PROTOCOL` with `https`, `http`,
+`ssh`, `git` and `file`; the runner's direct clone of a workspace passes
+its own `https:ssh`, because the variable replaces its `-c protocol.*`
+settings as well. Programs `proc.run` starts come from an absolute path
+on an absolute PATH entry, never the current directory, and on Windows
+with `NoDefaultCurrentDirectoryInExePath` set for what they start in
+turn. Two runner paths run git without `proc.run` and keep their own
+settings: `gc`'s read of a clone (`operate.unsaved_work`, pinned
+`protocol.allow=never` and a cleaned environment) and a workspace clone
+made as the agents' user (`as_user.run`, the `-c` list of `https` and
+`ssh`).
 `gh pr view` is asked only about an `https` URL on github.com or
 `GH_HOST`, the same hosts `report` already asks gh about.
 
@@ -200,4 +207,8 @@ before PATH for a bare program name.
   outranks the default.
 - Only `--` before the operands: covers a leading `-`, not a remote
   helper in the remote's name or URL.
+- Accepting only remote names in ASCII and URLs of a few known shapes:
+  refused upstreams `git push -u` makes (a remote named in another
+  script, `../remote.git`, an ssh alias as `host:path`), and the
+  transports are limited by the environment anyway.
 - `shutil.which`: on Windows it searches the current directory first.

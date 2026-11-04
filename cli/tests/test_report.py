@@ -192,7 +192,6 @@ def test_report_checks_the_join_before_asking_git_and_gh(
     [
         ("remote", "--upload-pack={touch} {marker}"),
         ("remote", "ext::{sh} -c {touch}% {marker}"),
-        ("remote", "no-such-remote"),
         ("merge", "--upload-pack={touch} {marker}"),
         ("merge", "refs/tags/v1"),
     ],
@@ -238,3 +237,24 @@ def test_pull_request_state_asks_gh_only_about_known_hosts(
     assert gitfacts.pull_request_state(clone, "--repo=x") is None
     monkeypatch.setenv("GH_HOST", "git.corp.example")
     assert gitfacts.pull_request_state(clone, "https://git.corp.example/a/b/pull/1") == "open"
+
+
+@pytest.mark.parametrize("form", ["relative path", "host:path", "configured name"])
+def test_every_upstream_git_push_u_stores_still_reads(clone: Path, form: str) -> None:
+    remote = clone.parent / "remote.git"
+    if form == "relative path":
+        git(clone, "config", "branch.work.remote", "../remote.git")
+    elif form == "host:path":
+        git(clone, "config", f"url.{remote}.insteadOf", "forge-alias:widget.git")
+        git(clone, "config", "branch.work.remote", "forge-alias:widget.git")
+    else:
+        git(clone, "remote", "add", "r\u00e9seau", str(remote))
+        git(clone, "config", "branch.work.remote", "r\u00e9seau")
+    facts = gitfacts.collect(clone)
+    assert facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_malformed_pull_request_url_is_not_asked_about(clone: Path, bin_dir: Path) -> None:
+    fake_gh(bin_dir, '{"state": "OPEN"}')
+    assert gitfacts.pull_request_state(clone, "https://[invalid/a/b/pull/1") is None

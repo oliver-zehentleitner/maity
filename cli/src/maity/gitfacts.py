@@ -113,10 +113,10 @@ def gh_hosts() -> set[str]:
 def pull_request_state(cwd: Path, url: str) -> str | None:
     """`open`, `closed` or `merged` as the forge has it now; None when it can't be asked,
     a URL on a host gh does not know included (gh is never sent elsewhere)."""
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme != "https" or (parts.hostname or "").lower() not in gh_hosts():
-        return None
     try:
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme != "https" or (parts.hostname or "").lower() not in gh_hosts():
+            return None
         result = _run(["gh", "pr", "view", url, "--json", "state"], cwd)
         if result.returncode != 0:
             return None
@@ -162,23 +162,18 @@ def position(cwd: Path) -> tuple[str, str | None]:
     return head, _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
 
 
-# A remote as `git push -u` stores it: a remote's name, or the URL the branch was pushed to.
-_REMOTE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]*$")
-_REMOTE_URL = re.compile(r"^(?:(?:https?|ssh|git|file)://|/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)")
 _HEAD_REF = re.compile(r"^refs/heads/[^\s~^:?*\[\\]+$")
 
 
 def _check_upstream(cwd: Path, branch: str, remote: str, merge_ref: str) -> None:
-    """Refuse an upstream maity would not hand to git as it stands: a value that reads as an
-    option or names a remote helper (`<transport>::<address>`), a remote that is neither a
-    configured remote nor a forge URL, or a merge ref outside refs/heads/."""
-    url = (
-        _git(cwd, "config", "--get", f"remote.{remote}.url") if _REMOTE_NAME.match(remote) else None
-    )
+    """Refuse an upstream maity would not hand to git as it stands: a remote, its configured
+    URL or the merge ref that reads as an option or names a remote helper
+    (`<transport>::<address>`), or a merge ref outside refs/heads/. Any other remote
+    `git push -u` stores passes: a configured name in any script, a URL, a path, `host:path`;
+    which transports git may then use is proc.TRANSPORTS."""
+    url = None if remote.startswith("-") else _git(cwd, "config", "--get", f"remote.{remote}.url")
     values = [remote, merge_ref] + ([url] if url else [])
     if any(v.startswith("-") or "::" in v for v in values) or not _HEAD_REF.match(merge_ref):
-        raise FactsError(_unreadable(branch))
-    if url is None and not _REMOTE_URL.match(remote):
         raise FactsError(_unreadable(branch))
 
 
