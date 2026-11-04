@@ -92,9 +92,10 @@ too: they were sent.
 The messages are read from the first one after the last message before the
 window, found by `seq`. No index on `event` holds `at`, but
 `ix_event_project_kind_seq` holds `seq`, and `at` never runs backwards
-against `seq` within a project: `events.emit` writes no `at` before the
-project's last event. Filtering on `at` alone made the database walk every
-message the project ever had, and the log only grows.
+against `seq` within a project: `events.emit` never writes an `at` before
+the project's last event's, even when the clock steps back or replicas'
+clocks differ. Filtering on `at` alone made the database walk every message
+the project ever had, and the log only grows.
 An index on `at` was rejected: it is a migration in a chain other pull
 requests are also extending, and `seq` already gives the same bound (the
 lead, tsk-rtm1y5c8zv97). A fact written after `as_of`, across UTC midnight,
