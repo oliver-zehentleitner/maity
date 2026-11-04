@@ -3712,7 +3712,9 @@ body: a banner above, the product line below). It is never less than what the op
 shrink (its heading, the composer) plus 60 px of history, about three lines: on a screen too small
 for that, the page scrolls and the product line stays below the composer, never over it. The
 observer measures in the next frame, not in its own round, where a new height would resize the
-body again and the browser would report a ResizeObserver loop. A layout not yet in the page,
+body again and the browser would report a ResizeObserver loop. Besides the body it watches the
+pane's fixed parts and the panes the layout holds: folding the composer or making it taller, and on
+Chats a group chat taking a direct chat's place, change the floor without resizing the body. A layout not yet in the page,
 as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
 most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
 at all, Chats measures the layout the pane moves into. While a

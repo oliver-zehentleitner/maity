@@ -437,7 +437,7 @@ window.Maity = window.Maity || {};
   // The lines of history an open chat keeps in view however small the screen.
   const HISTORY_LEAST = 60;
   function fitToScreen(layout) {
-    let watcher = null;
+    let watcher = null, swaps = null;
     // Chats fits its layout while the view is still being drawn, before the
     // router puts it into the page: measured once it is there, a few tries
     // at most. Only a layout that was in the page and left it stops.
@@ -446,6 +446,7 @@ window.Maity = window.Maity || {};
       window.removeEventListener("resize", fit);
       if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
       if (watcher) watcher.disconnect();
+      if (swaps) swaps.disconnect();
     };
     const fit = () => {
       if (layout.isConnected === false && !seen) {
@@ -471,6 +472,10 @@ window.Maity = window.Maity || {};
       // rather than the composer running under the product line.
       const pane = layout.querySelector ? layout.querySelector(".chat-pane") : null;
       const history = pane ? pane.querySelector(".messages") : null;
+      // What the pane cannot shrink changes inside it, not the body: the
+      // composer folded or made taller, an attachment, a hint. Watched part
+      // by part (observing one twice is a no-op), the history aside.
+      if (watcher && pane) Array.from(pane.children || []).forEach((el) => { if (el !== history) watcher.observe(el); });
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
       const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
       const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
@@ -487,8 +492,12 @@ window.Maity = window.Maity || {};
       // ResizeObserver loop.
       let frame = 0;
       const later = window.requestAnimationFrame ? (f) => window.requestAnimationFrame(f) : (f) => window.setTimeout(f, 0);
-      watcher = new window.ResizeObserver(() => { if (!frame) frame = later(() => { frame = 0; fit(); }); });
+      const soon = () => { if (!frame) frame = later(() => { frame = 0; fit(); }); };
+      watcher = new window.ResizeObserver(soon);
       watcher.observe(document.body);
+      // On Chats another conversation replaces the pane in the same layout:
+      // a group chat's fixed part is taller than a direct chat's.
+      if (window.MutationObserver) { swaps = new window.MutationObserver(soon); swaps.observe(layout, { childList: true }); }
     }
     fit();
   }

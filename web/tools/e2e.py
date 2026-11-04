@@ -2249,6 +2249,29 @@ def chat_height_views(run: Run, browser) -> None:
                     )
                     if not banner:
                         assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
+                    toggle = page.locator(".chat-layout.open .chat-pane .compose-toggle")
+                    if toggle.is_visible():
+                        # Folding the composer changes the pane's fixed part, not the body: measured again.
+                        toggle.click()
+                        page.wait_for_timeout(300)
+                        folded = page.evaluate(CHAT_MEASURE)
+                        toggle.click()  # kept by the browser for every chat: open again for the next case
+                        page.wait_for_timeout(300)
+                        assert folded["overflow"] <= max(1, m["overflow"] - 100), (
+                            f"{where}, composer folded: the page scrolls {folded['overflow']} px past the window"
+                        )
+            # On Chats a group chat takes the place of a direct one in the same layout.
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/chats/maintainer/maity/agt-a")
+            page.locator(".chat-layout.open .chat-pane .compose").wait_for()
+            page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+            page.evaluate("() => { location.hash = '#/chats/maintainer/maity/cnv-0007'; }")
+            page.locator(".chat-layout.open .chat-pane.group-chat .compose").wait_for()
+            page.wait_for_timeout(800)
+            m = page.evaluate(CHAT_MEASURE)
+            where = f"Chats, agt-a then cnv-0007, at {width}x{height}"
+            assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
+            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5 and m["overflow"] <= 1, f"{where}: {m}"
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()
