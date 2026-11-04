@@ -39,12 +39,15 @@ class Limiter:
         self._lock = threading.Lock()
 
     def configure(self, limit: int, window_seconds: float) -> None:
-        """A new limit and window from the settings, before the app serves; what was
-        counted under the old ones is forgotten."""
+        """A new limit and window from the settings, when the app is built: what this process
+        counted is forgotten. The shared counts stay, and nothing reads the database here:
+        every worker and replica builds its app, and one starting must not clear what the
+        others count; the shared rows age out with the window."""
         self.limit = limit
         self.window = window_seconds
         self.exact = limit <= EXACT_UP_TO
-        self.reset()
+        with self._lock:
+            self._hits.clear()
 
     def _shared(self) -> bool:
         return not self.local and shared_counts.active()
