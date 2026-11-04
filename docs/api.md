@@ -16735,10 +16735,10 @@ that `/<owner>/<word>` stays free for pages of an owner's own.
 **When the list grows.** A release that reserves a word a handle, an
 alias, a slug or a project alias already holds does not migrate:
 `maity-hub migrate` refuses and names each holder to the operator, who
-renames it first, as the namespace migration did (§6.25). A handle of
-the form `lt-` followed by digits is not such a word: whoever holds one
-already keeps it, and migrate does not name them (above). A hub started
-past it logs the holders and runs.
+renames it first, as the namespace migration did (§6.25). A hub started
+past such a release logs the holders and runs. A handle of the form
+`lt-` followed by digits is not such a word: whoever holds one already
+keeps it, and migrate does not name them (above).
 
 **Every address the hub writes** is a path of this section on
 `MAITY_PUBLIC_URL`, never a fragment: invitation URLs (§3.4), the
