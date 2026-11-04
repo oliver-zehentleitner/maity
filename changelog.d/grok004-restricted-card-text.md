@@ -12,7 +12,8 @@
   title; the writer's own texts in their export while they are in the set;
   under `all_except` an agent only in the set with its owner, and every
   way into the set (setting, join — an organisation owner's membership
-  made by the hub included — guest raised, isolation ended, an agent's
+  made by the hub included — guest raised, by the hub for an organisation
+  owner included, isolation ended, an agent's
   owner changed) told to the set by a `restricted_changed` event; under
   `nobody_except` a listed agent leaving the list when its owner changes,
   with a `left` event when it was in the set; `Cache-Control: no-store`

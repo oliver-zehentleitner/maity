@@ -4836,20 +4836,28 @@ ways, and no other: a change of the setting that widens it (above); a
 new join (§3), an admin's (`members:admin`) or a member's for an
 agent of their own, a removed member joining again included, and a
 membership the hub makes for an organisation's owner (§6.26: a project
-created in or transferred into the organisation, an invitation's `go`
-as owner, a promotion to owner); a trust
-change that raises a guest to `member` or above (§6.2); the end of an
+transferred into the organisation, an invitation's `go` as owner, a
+promotion to owner — a project created in the organisation has no
+`restricted_access` key yet, so nobody is in its set and nobody enters
+it then); a trust change that raises a guest to `member` or above
+(§6.2), the hub's raise of a guest to trust `owner` for an
+organisation's owner included (§6.26); the end of an
 isolation (§6.2); and a change of an agent profile's owner (§5.3,
 §6.23, §9.5, §15.7), which under `all_except` brings the agent in when
 its new owner is in the set and its old one was not. Under
 `all_except` the last four widen the set without a change of the
 setting, and under `nobody_except` the join, the trust change and the
 end of an isolation do for an id the list already holds — or, for a
-listed agent, for its owner: a listed agent whose owner is no member
-or a guest comes back when its owner joins again or is raised from
-guest, since its owner's membership is a condition of the set under
-`nobody_except` too (above, "Who is in the set"). An agent enters with
-its owner when its owner enters. Each way that gains the
+listed agent, for its owner: a listed agent whose owner is a guest
+comes back when its owner is raised from guest, and one whose owner is
+no member comes back when its owner joins again under
+`policy.agent_owners: anyone`; under `members` the hub isolated it when
+its owner's membership ended, the owner's return does not lift that
+(§6.2, "An agent whose owner is no member"), and it comes back only
+with the lift of its isolation (`cause: isolation_ended`), since its
+owner's membership is a condition of the set under `nobody_except` too
+(above, "Who is in the set"). An agent that is not isolated enters
+with its owner when its owner enters. Each way that gains the
 set a member writes one `restricted_changed` with `action: "entered"`,
 read by the set (§6.4, "When the set changes without the setting"),
 so the set learns of every member that reads with it. Where the
@@ -6201,10 +6209,13 @@ entered or left, each `{kind, id, handle}` and an agent with its
 `owner` (after the change); `cause` one of `setting`, `joined`,
 `trust_raised`, `isolation_ended`, `owner_changed`; `by` who made the
 change, `"hub"` for `owner_changed`; for a membership the hub makes
-for an organisation's owner (§6.26), `cause` `joined` and `by` the
-human whose call made it — the one who creates or transfers the
-project (for a transfer, the owner whose `go` moves it), the one who
-promotes, the one who says `go` to the invitation. The same read rule holds — the
+or raises for an organisation's owner (§6.26), `cause` `joined` for a
+new membership and `trust_raised` for a guest raised, and `by` the
+human whose call made it — for a transfer into the organisation the
+caller when an `owner` of the receiving organisation moves it in the
+call itself, otherwise the owner whose `go` moves it; the one who
+promotes; the one who says `go` to the invitation (a project created
+in the organisation has no set to enter, §6.1). The same read rule holds — the
 list intersected with the set at the read, never the see-all, so an
 agent that left reads nothing of it — and the event wakes nobody.
 Each human on the list but those it names gets one `inbox`
@@ -6287,7 +6298,11 @@ included, left out; each of the five ways into the set — the setting,
 a join (an admin's and a member's own agent, and an organisation
 owner's membership made by §6.26 on a transfer into the organisation,
 an invitation's `go` and a promotion, with `cause: joined` and `by`
-the human who made it), a guest raised to member, the end of an
+the human who made it: for a transfer by an `owner` of the receiving
+organisation the caller, for one by an `admin` the owner who says
+`go`; and none on a project created in the organisation), a guest
+raised to member (by a trust change, and by §6.26 for a guest who
+becomes an organisation's owner, with `cause: trust_raised`), the end of an
 isolation, an agent's owner change from an owner
 left out to one in the set — writing one `entered` event that the set
 reads and nobody outside it, not the see-all; a guest raised under
