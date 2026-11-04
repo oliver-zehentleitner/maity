@@ -135,7 +135,7 @@ operator's own projects.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
+**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH, a cleared name); card tsk-trxeyz1n78be (the hub implementation) and the reviews of its PR #1306, 2026-11-03 (whole reads, `details.last`, the baseline, the project lock); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
 **Revisit when:** a deploy needs more than one required check, a second forge kind comes, or the commit links' reads strain a source's budget
 
 "Is the commit we deploy green on its required check, and is it still
@@ -175,9 +175,36 @@ share one cached default-branch read per project and one read per
 linked commit.
 
 A `required_check` that first appears, after the rollout or when a
-project first names its check, or that only changes its name, wakes
-nobody: nothing changed on the forge, and otherwise every holder of an
-open reported card would be woken once.
+project first names its check, that only changes its name, or that is
+cleared to `null`, wakes nobody: nothing changed on the forge, and
+otherwise every holder of an open reported card would be woken once.
+Only a new `status` under the name of the card's last stored
+observation wakes, whatever that observation's audience and also on the
+first observation of a new report: a rename, a rename back to an earlier
+name included, is a silent new baseline (docs/api.md §6.6). Reason: the
+last *told* observation, or the report row, loses its baseline after a
+rename followed by a new report, so a rename back would wake for a
+status nobody saw change, and the first change after it would not.
+
+A commit observation is stored whole or not at all: the commit row is
+written only once the branch read is in too, so a read dropped halfway
+leaves nothing a later round or `details.last` could take for complete.
+The complete answer is kept as it was given (kind `commit_answer` beside
+the commit row), refused-branch nulls included, and `details.last` is
+that answer, not the commit row joined with the branch row: a branch the
+forge refuses leaves the older branch row in place, and the join would
+turn the refusal's `ahead: null` into a definite `ahead`. There is one
+answer row per project and sha, replaced in place, and it goes with the
+project's other observations when the repository changes. A commit
+link's `ahead` that goes to `null` keeps the last known value under
+`_ahead_known`, never shown, so `true`, `null`, `true` wakes once.
+
+The card is read again under the project lock after the forge reads, so
+a card closed or handed over meanwhile is seen: a closed card's commit
+link is skipped, an issue or pull request link on a closed card wakes no
+holder, and the current holder is the one woken. This holds only because
+every path that closes a card or changes its holder takes the project
+lock before writing the card; a new such path must take it too.
 
 **Reason:** a deploy is a moment, not a lifecycle, and it already lives
 on an ordinary card. A link reuses everything a forge link has: the
@@ -210,9 +237,15 @@ not report something false when the forge stops answering.
   predates the field would erase the name with every repository edit.
 - Waking `trust:admin` on `ahead: true`: too many woken for one person's
   decision.
+- Waking on a `required_check` cleared to `null`: the maintainer
+  removed the name on purpose, and every holder of a reported card
+  would be woken for a setting, not for anything on the forge.
 - Keeping the parts of a read that succeeded when the budget ran out
   partway: an `ahead: false` from a stale branch read is false, not
   unknown.
+- Building `details.last` from the separately cached commit and branch
+  rows: after a refused branch read it shows the older branch's head and
+  a definite `ahead` the last complete read could not determine.
 
 ## The Why view's Keep the Why views read whole exports through the hub: the project's family and the repositories it names, one hop, no other fetch path
 
