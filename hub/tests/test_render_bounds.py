@@ -95,6 +95,8 @@ def test_a_link_renders_with_a_title_and_not_past_its_bounds() -> None:
     # A title stays on its line and holds no `[`.
     assert named not in render.markdown('[a](https://e.org/x\n"t")')
     assert named not in render.inline('[a](https://e.org/x "[t]")')
+    # Other white space after the opening spaces: brackets as text, the words kept.
+    assert render.inline("[a]( x\u00a0y)") == "[a]( x\u00a0y)"
 
 
 def test_quotes_nest_eight_deep_and_deeper_lines_are_a_paragraph_as_on_the_dashboard() -> None:

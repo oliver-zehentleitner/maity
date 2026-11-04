@@ -107,11 +107,11 @@ def best_language(offered: list[str], query: str | None, accept_language: str | 
 
 # --- Markdown ----------------------------------------------------------------------------------
 
-# No two adjacent runs below can share a character, so a failed try gives characters back only
-# to fail at the next one: the spaces before a link's target are taken whole (`*+`) and the
-# target holds none, the title starts at the first character the target cannot hold. A link's
-# target and title hold no `[`, stay on their line and are at most LINK_MAX characters each
-# (§16.7), so what one `[` reads ends at the next `[`, and the work grows with the text's length.
+# In a link a failed try gives characters back only to runs that cannot take them: the target,
+# the title and the closing `)` hold different characters, and the spaces before the target,
+# which the title's own leading space could also take, are taken whole (`*+`). A link's target
+# and title hold no `[`, stay on their line and are at most LINK_MAX characters each (§16.7), so
+# what one `[` reads ends at the next `[`, and the work grows with the text's length.
 LINK_MAX = 2048
 _INLINE = re.compile(
     r"`(?P<code>[^`\n]+)`"

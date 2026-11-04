@@ -179,7 +179,7 @@ value, since a row written by an older version or by hand is still shown to the 
 - Giving the landing page the dashboard's `default-src 'self'` and its stylesheet: it would allow
   the page to load files and make the policy depend on what the dashboard ships.
 
-## The Markdown renderer and the language choice do bounded work per input: no two adjacent runs of a pattern share a character, quotes nest 8 deep, `Accept-Language` is read for 1024 characters and 20 parts
+## The Markdown renderer and the language choice do bounded work per input: a link's runs are capped and its opening spaces taken possessively, quotes nest 8 deep, `Accept-Language` is read for 1024 characters and 20 parts
 
 **Id:** 94d7a94f-40a8-46ea-b271-39e6d8f1ed9f
 **Type:** constraint
@@ -191,16 +191,20 @@ value, since a row written by an older version or by hand is still shown to the 
 The renderer above runs on members' words too: the text of a public project, a card's body and its
 notes (§16.9), rendered in the request that writes them and at start-up. So each step's work grows
 with the text's length and never with the ways of splitting it:
-- In `_INLINE` no two adjacent runs can share a character, so a failed try gives characters
-  back only to fail at the next one: the spaces before a link's target are taken whole (a
-  possessive `*+`) and the target holds none; the title starts with a character the target
-  cannot hold. A link's target and title hold no `[`, stay on their line and are at most 2048
+- In `_INLINE` a failed try gives characters back only to runs that cannot take them: the
+  target, the title and the closing `)` hold different characters, and the spaces before the
+  target, which the title's own leading space could also take, are taken whole (a possessive
+  `*+`). A link's target and title hold no `[`, stay on their line and are at most 2048
   characters each, so what one `[` reads ends at the next. Since the title stays on its line,
   it follows a space or a tab, not any `\s`, which holds a newline: a title after a no-break
   space or a form feed, a link before, is now brackets as text and a bare link, an intended
   restriction (§16.7). Before the spaces were taken whole, they could be split between the
-  opening and the title in every way, and a run of 64 KiB took seconds. The output is the old
-  pattern's, checked against it as an oracle on short lines.
+  opening and the title in every way, and a run of 64 KiB took seconds. On lines whose white
+  space inside the parentheses is spaces and tabs, the output is the old pattern's, checked
+  against it as an oracle on short lines. With a no-break space, a form feed or a vertical tab
+  after the opening spaces, the old pattern gave a space back to the title, took an empty
+  target and showed only the link's text, so `[a]( x\u00a0y)` lost its words; now its brackets
+  are text.
 - A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
   it, is cut by string operations. The output is the old pattern's, checked against it as an
   oracle on short lines.

@@ -32,9 +32,8 @@ _LANGUAGE = re.compile(r"^\s*([A-Za-z]{2,3})((?:-[A-Za-z0-9-]+)?)\s*(?:;|,|$)")
 def language_of(accept_language: str | None, words: str = "registration_mail") -> str:
     """The first language of an `Accept-Language` (of the parts the hub reads,
     `render.accept_parts`, a tag at most `render.TAG_MAX` long), or a stored tag, that has these
-    words, else
-    English (§2.7.1). `zh-CN` reads `zh-Hans`, as on the public pages; a language without these
-    words yet is passed over."""
+    words, else English (§2.7.1). `zh-CN` reads `zh-Hans`, as on the public pages; a language
+    without these words yet is passed over."""
     offered = [tag for tag in languages.INTERFACE if catalog.speaks(words, tag)]
     for part in render.accept_parts(accept_language):
         found = _LANGUAGE.match(part)
