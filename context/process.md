@@ -139,7 +139,7 @@ night's merges deployed before the maintainer is back was stated.
 **Status:** superseded
 **Superseded by:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Evidence:** confirmed
-**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit; superseded on 2026-11-04: on req-whk2ez4r56f3 the maintainer first asked for a recommendation, then accepted the lead's recommendation "superseded", given because there are no substitute reviewers any more (seq 67806). Since then the review lead hands out every review, and no reviewer of another vendor stands in for an absent one (req-g5z43w1n2fkj)
+**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit; superseded on 2026-11-04: the maintainer accepted the lead's recommendation "Ersetzt" (superseded) for req-whk2ez4r56f3 (seq 67806, relayed by the lead in seq 68775), after answering req-whk2ez4r56f3 itself with a question for a recommendation (2026-11-04); the lead's reason for the recommendation: there are no substitute reviewers any more. Its successors: the review lead hands out every review (since 2026-11-02), and no reviewer of another vendor stands in for an absent one (req-g5z43w1n2fkj, 2026-11-03)
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
 **See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
 **See:** process.md#an-absent-reviewer-vendor-gets-no-substitute-from-another-vendor-the-maintainer-is-told-and-the-review-waits — d9edf24e-9c27-4a2e-8c14-f4076a864c6d — as of 2026-11-04
@@ -243,7 +243,8 @@ writes a `context/` entry for each decision a pull request makes, in
 that same pull request, with `ktw-lint` clean (one commit per entry
 until 2026-10-27, see the entry on squash merges below). A reviewer
 approves only after a Keep the Why gate: the entry is there and the
-linter is clean. An agent that writes
+linter is clean, or, for a why of `none`, the stated reason holds. An
+agent that writes
 neither code nor reviews — one that rules on a question, for instance —
 has its rulings recorded by the implementer of the change they decide,
 not in a pull request of its own.
