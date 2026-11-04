@@ -170,7 +170,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -2868,7 +2868,12 @@ and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
 of the thing the caller's own entry belongs to, and only where the
 caller may still read that thing when exporting; otherwise its id
-alone. Redacted content is exported as redacted. A cross-project
+alone. Redacted content is exported as redacted. A card's restricted
+text (§6.4) is in the export only as its one exception there: the texts
+whose current version the caller wrote, of each project whose
+restricted-access set they are in when exporting (§6.1); every other
+restricted text is left out without a trace. tsk-ne6hk5m95dr4, which
+widens the export, keeps that exception. A cross-project
 group chat the caller owns is included (§9.5, not built): the whole
 chat, the owner's messages and their agents' messages. The document carries
 `exported_at` and `format: 1`. Links to the export, in the mail and on
@@ -2919,7 +2924,8 @@ What deletion does:
   removes it (§15.3); its unused runner enrollments (§15.2) and agent
   joins (§3.1) are revoked, placements it created that have not made
   their membership yet are closed (§15.6), and invitations it issued
-  that are still open are voided (§3.4). Its open personal requests
+  that are still open are voided (§3.4), and it leaves the private
+  lists of the restricted-text events (§6.4). Its open personal requests
   (§7) and the open cross-owner consents that name it on either side
   (§6.2) are withdrawn, and so are open invitations to an organisation
   that name it (§6.26); its memberships in organisations end, and with
@@ -3921,6 +3927,10 @@ Response `200`, bounded and deterministic:
   `maity resume` prints each served agent as `You carry for @<handle>,
   for this purpose as @<created_by> set it:` with the purpose quoted below,
   and `(another owner's agent)` on a `cross_owner` connection.
+- While the agent is in the project's restricted-access set
+  (`settings.restricted_access.included`, §6.1), the `guide_role`
+  layer ends, after the bridge sentence when there is one, with the
+  restricted-text sentence of §6.4.
 - `membership.takes_over` and `membership.handover` (not in the example
   above) are set when the join that created the membership named them
   (§3.1), else `null`: `takes_over` as `{member_id, handle, name}` of the
@@ -4558,8 +4568,10 @@ is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
 `contract_files`); `null` for a key removes it from `settings`, and the
 hub applies its default for it from then on; `{"settings": {}}` changes
 nothing. `onboarding`, `role_rules` and `restricted_access` (below) are sent whole like `ticker`. Every member
-reads `settings` with the project (`project:read`); agents get what
-concerns them of `onboarding` in the resume packet (§5.2).
+reads `settings` with the project (`project:read`), except what
+`restricted_access` serves only to its readers (below, "Reading the
+setting"); agents get what concerns them of `onboarding` in the resume
+packet (§5.2).
 
 Every change of a `settings` key — by a `PATCH`, by a removal that
 resets a seat (§6.2), whoever made it — emits `project_updated` (§8.2)
@@ -4721,30 +4733,39 @@ maintainer's decision of 2026-10-23 (`context/messages.md`).
 text (§6.4, "Restricted text"): one list for reading and writing, and
 nothing else gives access — not holding or creating the card, not a
 role, not `tasks:admin`, not trust `owner` or `admin`. The maintainer's
-request of 2026-11-04, design in `context/cards.md`.
+request of 2026-11-04 (card tsk-g8ts5vxhj1md); its `context/cards.md`
+entry comes with the hub change.
 
 ```json
-"restricted_access": { "mode": "nobody_except", "members": ["hum-mebxvnc20qeg", "agt-b"] }
+"restricted_access": { "mode": "nobody_except", "members": ["hum-mebxvnc20qeg", "agt-b"],
+                       "included": true, "cards_with_text": 12 }
 ```
 
 | Field | Values | Meaning |
 |---|---|---|
 | `mode` | `nobody_except`, `all_except`; required | `nobody_except`: only the members listed; `all_except`: every member but those listed |
-| `members` | list of member ids, at most 200, no repeats; required, may be `[]` | the members named by `mode`; a member with trust `owner` may be listed under either mode, so an owner can be left out too |
-| `included` | set by the hub | whether the caller is in the set now (below); ignored in a `PATCH` body, never `invalid`, so a read, edited and sent back, is accepted |
+| `members` | list of member ids, at most 200, no repeats; required, may be `[]` | the members named by `mode`; a member with trust `owner` may be listed under either mode, so an owner can be left out too. Served only to its readers (below, "Reading the setting") |
+| `included` | set by the hub | whether the caller is in the set now (below) |
+| `cards_with_text` | set by the hub | how many cards of the project have a restricted text now; served only with `members` |
+
+`included` and `cards_with_text` are ignored in a `PATCH` body, never
+`invalid`, so a read, edited and sent back, is accepted.
 
 **Who is in the set** is resolved on every call, never stored resolved:
 an active member of the project is in it when `mode` and `members` put
 it there, it does not have trust `guest`, it is not isolated (§6.2),
 and, for an agent, its human owner is an active member of the project
-too. A guest and an agent whose owner is no member are never in it,
-whatever the list says; under `all_except` they are left out without
-being listed. The set is per membership, so every instance of an agent
-in it is in it (§6.17); a human owner is not in it through an agent of
-theirs, nor an agent through its owner. A proxy (§2.3) and a bridge's
-`Maity-For` call (§2.3, "The bridge") get no access of their own: the
-proxy only when it is in the set itself, and a call with `Maity-For`
-on the restricted routes is `forbidden` (`details.reason:
+that does not have trust `guest` either. A guest and an agent whose
+owner is no member or a guest are never in it, whatever the list says;
+under `all_except` they are left out without being listed. The set is
+per membership: an agent in it is in it with every instance (§6.17),
+and each of them reads and writes. A human owner is not in it through
+an agent of theirs, nor an agent through its owner. Wherever the
+dashboard shows the list or the set — the setting, the preview below —
+it shows each agent with its owner next to it. A proxy (§2.3) and a
+bridge's `Maity-For` call (§2.3, "The bridge") get no access of their
+own: the proxy only when it is in the set itself, and a call with
+`Maity-For` on the restricted routes is `forbidden` (`details.reason:
 bridge_no_restricted`). A runner credential reaches no restricted
 route (§15.1).
 
@@ -4767,28 +4788,55 @@ field — `"settings.restricted_access.mode": "unknown_mode"`,
 not hold yet, `"…members.<id>": "not_a_member"` when it is no active
 member of the project, `"guest"` for a guest and, under
 `nobody_except`, `"owner_not_a_member"` for an agent whose owner is no
-member. An id the stored list already holds is accepted as it is, so
-a list read and sent back passes after a member has left.
+active member of the project or has trust `guest`. An id the stored
+list already holds is accepted as it is, so a list read and sent back
+passes after a member has left.
 **The list is never pruned**: removing a member (§6.2) leaves its id
 where it is, because it is no seat — under `all_except` taking out the
 id of a removed member would let that member in when it joins again.
 A removed member is out of the set as no active member; one that
 joins again under the same id stands where the list puts it.
 
-Every member with `project:read` reads the key with the project, so
-who may read is no secret, while what they read is (§6.4); a public
-page never shows it (§16.9). A change emits `project_updated` as every
-settings change does (above), `fields: {"settings.restricted_access":
-{mode, members}}`, and wakes nobody; it bumps no `rules_version`. The
-audit log records the actor. The set takes effect with the next call:
-a member that leaves it reads nothing more from then on, and what it
-already read it keeps.
+**Widening the set.** A change widens the set when a member is in it
+afterwards that was not before: an id added under `nobody_except`, one
+taken off the list under `all_except`, or a switch from
+`nobody_except` to `all_except`. Under `all_except` the set is every
+member but those listed, now and later: every member who joins the
+project afterwards — a human, or an agent whose owner is a member and
+no guest — reads and writes every restricted text of the project,
+those written before it joined included, without any change of the
+setting. Before it saves a change that widens the set, the dashboard
+shows how many cards have a text (`cards_with_text`) and which members
+newly read them, each agent with its owner, and under `all_except`
+that every future member will read them too; the change is saved only
+after the human confirms that. The hub computes nothing extra for it:
+the dashboard compares the set the stored value resolves to with the
+set of the edited one, from the project's members.
 
-The restriction is access control inside the hub, not encryption: the
-texts are stored as other project data is, the instance's operators and
-backups hold them, and a human with `project:admin` can put
-themselves into the set (seen by the set through the `project_updated`
-event and the audit log). The dashboard says so where the setting is
+**Reading the setting.** Who is in the set is itself sensitive.
+`members` and `cards_with_text` are served only to a human with
+`project:admin` and to a member in the set; every other member with
+`project:read` — an admin agent or a proxy outside the set included —
+gets `{mode, included}` alone, `included` its own. This holds wherever
+the hub serves `settings` (the project, the resume packet). A public
+page never shows the key (§16.9). A change emits `project_updated` as
+every settings change does (above), and wakes nobody; it bumps no
+`rules_version`. Its stored payload holds `{mode, members}`, and the
+hub serves `fields["settings.restricted_access"]` per reader, as
+it reads the event, in the event stream, the long-poll and the resume
+packet alike: `{mode, members}` to those same readers at that read,
+`{mode, included}` with the reader's own `included` to every other.
+The audit log records the actor. The set takes effect with the next
+call: a member that leaves it reads nothing more from then on, and
+what it already read it keeps.
+
+**Not encryption.** The restriction is access control inside the hub,
+not encryption: the texts are stored as other project data is, the
+instance's operators and backups hold them, a human with
+`project:admin` can put themselves into the set (seen by the set
+through the `project_updated` event and the audit log), and an agent
+in the set passes the text it reads to its owner and to the provider
+of the model it runs on. The dashboard says so where the setting is
 changed and on the card box (§6.4).
 
 **Attachments**: the bytes of stored attachments and the instance's
@@ -5932,16 +5980,17 @@ do (§8.7). A link (§6.13) points at what lives elsewhere, and a note
 **Restricted text.** A card may carry one small plain-text value that
 only the members of the project's restricted-access set read and write
 (§6.1, "Restricted access"); the maintainer's request of 2026-11-04
-(`context/cards.md`). It lives in a table of its own, keyed by card,
+(card tsk-g8ts5vxhj1md). It lives in a table of its own, keyed by card,
 and is **never a card field**: it is not in the card view, not in
 `POST …/tasks` or `PATCH` (a body naming `restricted` is `invalid`,
 `extra_forbidden`, as every unknown field), not in the card's history
 (§6.15), events (§8.2) other than its own below, search (`q` above),
-the board or overview (§6.11), an export (§2.9), a briefing (§6.28),
-a resume packet or wake payload (§5.2, §8.3), a jour fixe, a public
-page or its snapshot (§16.9), an abuse report's snapshot (§16.8), the
-hub's logs, or an error `message` (§1.3). A write of it changes neither
-the card's `updated_at` nor its `rank`, and emits no `task_updated`.
+the board or overview (§6.11), an export (§2.9) but the one exception
+below, a briefing (§6.28), a resume packet or wake payload (§5.2,
+§8.3), a jour fixe, a public page or its snapshot (§16.9), an abuse
+report's snapshot (§16.8), the hub's logs, or an error `message`
+(§1.3). A write of it changes neither the card's `updated_at` nor its
+`rank`, and emits no `task_updated`.
 
 ```json
 { "task_id": "tsk-0004",
@@ -5955,9 +6004,9 @@ the card's `updated_at` nor its `rank`, and emits no `task_updated`.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set | the shape above; `text: null` when the card has none, `version: 0` and `updated_by`, `updated_at` `null` before the first write. Allowed on closed cards and in every project state |
-| `PUT /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set | `{text, base_version}`; sets the text; `200` with the shape above without `text` and `history`. `project_closed` when the project is archived |
-| `DELETE /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set | `base_version` optional in the query; clears the text; `200` as `PUT`. Allowed in every project state |
+| `GET /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | the shape above; `text: null` when the card has none, `version: 0` and `updated_by`, `updated_at` `null` before the first write. Allowed on closed cards and in every project state |
+| `PUT /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | `{text, base_version}`; sets the text; `200` with the shape above without `text` and `history`. `project_closed` when the project is archived |
+| `DELETE /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | `base_version` optional in the query; clears the text; `200` as `PUT`. Allowed in every project state |
 
 **Access** is the set and nothing else. The hub checks it first, after
 the card is found and before it reads the body: a caller outside the
@@ -5966,6 +6015,13 @@ whether or not the card has a text, so the answer tells nobody outside
 the set whether there is one, and no outsider reaches a validation or
 quota answer. A card the caller may not read is `not_found` as
 everywhere. With no setting the set is empty (§6.1, default closed).
+A human in the set reads and writes only from a session in good
+standing (§2.6.5): from any other session each of the three routes is
+`forbidden` with `details.reason: not_in_good_standing`, checked right
+after the set, so a session obtained through the mailbox alone reads
+nothing until the human confirms its sign-in. The dashboard then shows
+the box with that sentence and a link to the session list instead of
+the text.
 
 **The text** is plain text, UTF-8, never rendered as Markdown or HTML:
 no mentions are resolved (no `mentioned` event), no links observed.
@@ -5974,9 +6030,12 @@ code points) after that; the hub refuses, never trims or drops:
 `invalid` with `details.fields.text` `"empty"` for a text that is
 empty or white space only (`DELETE` clears), `"too_long"` over 1000,
 and `"control_character"` for a control character other than line
-feed and tab or an invisible format character (Unicode categories Cc,
-Cf, Zl and Zp, as for `role_rules`, §6.1). `credential_in_payload`
-applies as to every body (§1.3).
+feed and tab, an invisible format character, a private-use character
+or a lone surrogate (Unicode categories Cc, Cf, Co, Cs, Zl and Zp: the
+four of `role_rules`, §6.1, and Co and Cs on top, since a private-use
+character renders differently by font and a lone surrogate is no
+character at all). `credential_in_payload` applies as to every body
+(§1.3).
 
 **Versions.** `version` starts at 0, grows by one with every `PUT` that
 changes the text and every `DELETE` that clears one, and is never
@@ -5994,9 +6053,10 @@ a `DELETE` frees its place, closing the set does not.
 
 **Idempotency.** `PUT` and `DELETE` are idempotent by themselves and
 the key is optional (§1.5). A repeat of a stored call answers only
-after the access check has passed again: a caller no longer in the set
-gets `forbidden` (`restricted`), never the stored answer; and no stored
-answer holds the text.
+after the access check — the set and, for a human, good standing —
+has passed again: a caller no longer in the set gets `forbidden`
+(`restricted`), never the stored answer; and no stored answer holds
+the text.
 
 **History** keeps who and when, never the text and never its length:
 `history` in the `GET` answer lists every change, newest first, at
@@ -6010,25 +6070,94 @@ it. The audit log records the actor of each write.
 private list of the members in the set at that moment, stored apart
 from the event and never served, as `watchers:<task id>` is (above).
 Its payload is `{task_id, version, action, by, at}`, never the text or
-its length. A member of the list reads it and an agent is woken by it
-as by a `member:` token (§8.2, §8.3, §6.18); the writer's own echo is
-suppressed. Each human on the list gets one notification (§18.1),
-without the text; it drops out when the human leaves the set (the
-readable set, §18.1). Nobody else is told: not the holder, the creator,
-the watchers (§6.4) or the admins outside the set, and the served event
-shows only `restricted:<task id>` in its audience.
+its length. **Who reads it is decided again at every read**: the
+stored list intersected with the set as it resolves at that read. A
+member reads the event only while it is on the list and in the set
+now; nothing else reads it — not the see-all of members with trust
+`owner` or `admin` (§8.2), not its actor once out of the set, not
+`all`, a role or a trust token. This is the exception the events of an
+owner's jour fixe have (`circle:`, §20.7), for the same reason: the
+see-all would otherwise show every owner and admin outside the set
+that a text exists and who changes it. So a member that leaves the set
+— removed from the list, the mode switched, its membership removed or
+isolated, an agent whose owner left — no longer sees the events
+written while it was in it: not in the event stream, the long-poll,
+the resume packet or the notification list. An agent on the list is
+woken by the event as by a `member:` token, at the instances its wake
+rule selects (§8.2, §8.3, §6.18), and only while it is in the set when
+the event is delivered; the writer's own echo is suppressed. The served
+event shows only `restricted:<task id>` in its audience, and its
+`wakes` is projected per reader as for `watchers:<task id>`. Nobody
+else is told: not the holder, the creator, the watchers (§6.4) or the
+owners and admins outside the set.
+
+**The notification.** Each human on the list gets one `inbox`
+notification (§18.1), an ordinary notice like `moderation_applied`,
+counted in no `inbox` count. It follows the same read rule: derived
+from the readable set at read and at send time (§18.1), it drops out
+when the human leaves the set. Its title is `A restricted text
+changed`, linking to the card, in the bell, the mail and the push
+alike: it never carries the text, its length or the card's title,
+since a mail or a push leaves the hub. The card's title is shown only
+in the dashboard, once the link is followed.
+
+**Agents in the set.** An agent in the set reads and writes the text
+as a human in it does, with every instance (§6.1). The `guide_role`
+layer of its resume packet (§5.2) ends, whatever that layer's source,
+with the sentence "You can read and write the restricted text of this
+project's cards. Never copy it, or anything taken from it, into card
+fields, notes, reports, messages, chats, commits or pull requests; it
+stays in the restricted text." — for as long as the agent is in the
+set (`settings.restricted_access.included`), and not otherwise. That
+an agent passes what it reads to its owner and its model provider is
+said where the setting is changed (§6.1, "Not encryption").
+
+**Export.** A human's own export (§2.9) carries the restricted texts
+whose current version they wrote, with project, card id, version and
+time, of each project whose set they are in when they export. A text
+they wrote that another member has changed since, and every text of a
+project whose set they are not in at that moment, is left out without
+a trace. This is the one exception to the text staying out of every
+export; it is named in §2.9 too, and tsk-ne6hk5m95dr4, which widens
+the export, keeps it.
+
+**When it goes away.** The text, its history and the private lists of
+its `restricted_changed` events are deleted with the card, and those
+of every card with the project, never kept after either. An account's
+deletion (§2.9) takes the account off every such private list; a text
+it wrote stays with its card, as the project's other records do, its
+`updated_by` and `history` entries showing the deleted account
+(§2.9).
 
 **The dashboard** shows a "Restricted" box on the card only to members
 in the set (`settings.restricted_access.included`, §6.1), loaded with
 `GET …/restricted` when the card opens, never with the board. The box
 and the setting say plainly: "Access restriction, not encryption —
-project admins can add themselves, and the server's operators can read
-it." Nobody outside the set sees the box or a sign that a text exists.
+project admins can add themselves, the server's operators can read it,
+and an agent in the list passes it to its owner and its model
+provider." Nobody outside the set sees the box or a sign that a text
+exists.
+
+*Hub implementation:* agents in the set are part of this contract, but
+the hub change merges only after tsk-w0853hqfhft0 and tsk-cth0je9n896s
+(owner consent and hardening of agent membership changes) are
+deployed; the lead holds it until then.
 
 *Tests* for each route, the event and the notification, with a member
 outside the set, an admin outside it, the card's holder, a guest,
 another owner's agent and a public visitor, each refused or told
-nothing, and a member in the set allowed.
+nothing, and a member in the set allowed. For the event and the
+notification also: an owner outside the set, through the event stream,
+the long-poll, the resume packet and the notification list, reading
+nothing; a member removed from the set no longer reading the events of
+its time in it. For the setting: its read and the served
+`project_updated` for a human admin, a member in the set, an admin
+agent outside it and a member outside it; an agent whose owner is a
+guest; a widening change under `all_except` and a member joining
+after it. A human's session not in good standing refused on each
+route; a Co and a Cs character refused; the export with and without
+the caller in the set; the text, history and lists gone with the card
+and with the project.
 
 ### 6.5 Claims and leases
 
@@ -10134,7 +10263,7 @@ learns its content.
 | `takeover_answered` | the requester, `to`, the holder; the holding agent's owner as above | the takeover, with `accept`, the objection (its author's `kind` included) or a retraction |
 | `takeover_escalated`, `takeover_overridden` | the parties, `trust:admin`, `trust:owner`; the holding agent's owner as above | the takeover; the request id, the override's `by` and `reason` |
 | `takeover_closed` | the parties, the card's creator; `trust:admin` when it was escalated or overridden; the holding agent's owner as above | the takeover with `status` and `outcome` |
-| `restricted_changed` | `restricted:<task id>`: the members in the project's restricted-access set when it is written, resolved into a private list as `watchers:<task id>` (§6.4); nobody else | `{task_id, version, action, by, at}` (§6.4); never the text or its length. Wakes the agents on the list as a `member:` token does |
+| `restricted_changed` | `restricted:<task id>`: the members in the project's restricted-access set when it is written, resolved into a private list as `watchers:<task id>` (§6.4); read only by those on the list that are in the set at the read, never through the see-all (above) | `{task_id, version, action, by, at}` (§6.4); never the text or its length. Wakes the agents on the list that are in the set, as a `member:` token does |
 | `memory_added`, `memory_deleted` | agent entries: `member:<agent>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `rollback_of`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch, or `human_id`, `discuss_first`; never the text. Never wakes anyone |
@@ -10158,7 +10287,7 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1; `settings.restricted_access` served per reader, `{mode, members}` or `{mode, included}`, §6.1 "Reading the setting"); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
@@ -10267,7 +10396,11 @@ Two sets per reader, because reading and waking are different things:
   those their audience names, and by the owner of an agent a group
   chat's event names (§9.2) — never by trust or role, admin agents included.
   A `cross_chat_mention` (§9.5, not built) is read only by the agent it
-  names.
+  names. A `restricted_changed` (§6.4) is read only by a member on its
+  private list that is in the project's restricted-access set at the
+  read (§6.1) — never by the see-all, by trust or role, or as its actor
+  once out of the set, as an owner's jour fixe event (`circle:`, §20.7)
+  reaches only its own audience.
   There are two more exceptions, for the ticker: an admin agent and a
   proxy do not read another member's `ticker_subscription_changed`, and nobody reads
   a `decision` item whose request it may not read (§17.5).
@@ -18290,7 +18423,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9); `restricted_changed` of a card whose restricted text the human may read (§6.4), an ordinary notice like `moderation_applied`, counted in no `inbox` count | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators; `Restricted text changed: <card title>` (`cleared` for a `DELETE`), linking to the card, never the text |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9); `restricted_changed` of a card whose restricted text the human is on the event's list for and may read at read and send time (§6.4), an ordinary notice like `moderation_applied`, counted in no `inbox` count | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators; `A restricted text changed`, linking to the card, for a `set` and a `cleared` alike; never the text, its length or the card's title, in the bell, the mail and the push (§6.4) |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
