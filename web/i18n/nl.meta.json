@@ -3639,6 +3639,10 @@
     "en": "bcaa5d6cec3e2285",
     "text": "9077d2b45e956d54"
   },
+  "error.project_limit": {
+    "en": "8860ca6b483b92dc",
+    "text": "15dcc82e7f41e5c9"
+  },
   "error.rate_limited": {
     "en": "eb225fd04f71a530",
     "text": "70737d895ed772d0"
@@ -7846,6 +7850,18 @@
   "limits.orgs.label": {
     "en": "77aadfc309105cd0",
     "text": "510a1269e1b33d4b"
+  },
+  "limits.projects.at": {
+    "en": "4a63e8a7c5eb7629",
+    "text": "7669d0465fbcea67"
+  },
+  "limits.projects.hint": {
+    "en": "67bab4d8e9be36a0",
+    "text": "ea81d6f19011d1de"
+  },
+  "limits.projects.label": {
+    "en": "b6d4cb1fd0f9af75",
+    "text": "814f7b21077bb049"
   },
   "limits.save": {
     "en": "91afeacb7d1aa481",

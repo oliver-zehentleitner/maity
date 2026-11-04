@@ -992,6 +992,7 @@ window.MAITY_I18N["fr"] = {
   "error.probe_unavailable": "La forge n'a pas répondu.",
   "error.profile_in_use": "Cet agent est encore actif dans un projet.",
   "error.project_closed": "Ce projet est archivé.",
+  "error.project_limit": "Cet espace de noms contient déjà autant de projets que ce hub en autorise.",
   "error.rate_limited": "Trop de requêtes à l'instant. Réessayez plus tard.",
   "error.reason.humans_only": "Seule une personne peut faire cela.",
   "error.reason.method_disabled": "Cette méthode de connexion est désactivée.",
@@ -2086,6 +2087,12 @@ window.MAITY_I18N["fr"] = {
   },
   "limits.orgs.hint": "Organisations dont une personne est propriétaire ; en créer une de plus est refusé.",
   "limits.orgs.label": "Organisations détenues par personne",
+  "limits.projects.at": {
+    "one": "{count} propriétaire atteint ou dépasse cette limite.",
+    "other": "{count} propriétaires atteignent ou dépassent cette limite."
+  },
+  "limits.projects.hint": "Projets dans l'espace de noms d'une personne ou d'une organisation, archivés compris ; en créer ou en transférer un de plus est refusé.",
+  "limits.projects.label": "Projets par propriétaire",
   "limits.save": "Enregistrer les limites",
   "limits.saved": "Enregistré.",
   "limits.saving": "Enregistrement…",

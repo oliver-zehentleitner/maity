@@ -11433,8 +11433,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const lmSubmit = async () => { lmSection().querySelector("form.admin-limits").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
   expect(lmSection() && byId("limits-max_agents_per_human-mode").value === "default" && byId("limits-max_agents_per_human").hidden
     && byId("limits-max_orgs_per_human-mode").getAttribute("disabled") !== null && text(lmSection()).includes("Set by the environment; change it there.")
-    && text(lmSection()).includes("1 person is at or over this limit.") && text(lmSection()).includes("0 people are at or over this limit."),
-    "limits: each value with its source, one set by the environment locked, the people at it counted in words");
+    && text(lmSection()).includes("1 person is at or over this limit.") && text(lmSection()).includes("0 people are at or over this limit.")
+    && byId("limits-max_projects_per_owner-mode").value === "default" && text(lmSection()).includes("Projects per owner")
+    && text(lmSection()).includes("0 owners are at or over this limit."),
+    "limits: each value with its source, one set by the environment locked, the people and owners at it counted in words");
   byId("limits-max_agents_per_human-mode").value = "number"; byId("limits-max_agents_per_human-mode").dispatch("change");
   byId("limits-max_agents_per_human").value = "0";
   await lmSubmit();

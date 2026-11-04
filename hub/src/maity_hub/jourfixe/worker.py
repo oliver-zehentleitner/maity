@@ -21,7 +21,14 @@ INTERVAL = 30.0  # seconds; tests set it out of reach and call `sweep` themselve
 def sweep(engine: Engine) -> None:
     with transaction(engine) as conn:
         rounds.record_presence(conn, clock.now())
-        project_ids = list(conn.execute(select(t.project.c.id).order_by(t.project.c.id)).scalars())
+        # An archived project takes no part (§6.1); unarchived, its passed deadlines are acted on.
+        project_ids = list(
+            conn.execute(
+                select(t.project.c.id)
+                .where(t.project.c.state != "archived")
+                .order_by(t.project.c.id)
+            ).scalars()
+        )
     for project_id in project_ids:
         try:
             with transaction(engine) as conn:

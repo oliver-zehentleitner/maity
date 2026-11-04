@@ -1,8 +1,9 @@
 """The caps on what one account may hold (docs/api.md §16.5): agent profiles and organisations
-owned, each from the environment, else from the instance admin, else its default, by
+owned by a human, and projects in one namespace (a human's or an organisation's), each from
+the environment, else from the instance admin, else its default, by
 `instance_settings.effective`. A value is a whole number from 1 to 10000 or `unlimited`; the
-creations the caps gate read the effective value through `of`, and lowering one never
-deletes anything.
+creations and moves the caps gate read the effective value through `of`, and lowering one
+never deletes anything.
 """
 
 from __future__ import annotations
@@ -17,9 +18,9 @@ from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid
 
 UNLIMITED = "unlimited"
-DEFAULTS = {"max_agents_per_human": 100, "max_orgs_per_human": 5}
+DEFAULTS = {"max_agents_per_human": 100, "max_orgs_per_human": 5, "max_projects_per_owner": 10}
 NAMES = tuple(DEFAULTS)
-READ_ONLY = ("humans_at_limit", "humans_at_org_limit")
+READ_ONLY = ("humans_at_limit", "humans_at_org_limit", "owners_at_project_limit")
 
 
 def _check(value: object) -> object | None:
@@ -54,6 +55,34 @@ def agent_limit(limit: int, count: int) -> ApiError:
     )
 
 
+def project_limit(limit: int, count: int) -> ApiError:
+    return ApiError(
+        409,
+        "project_limit",
+        "the namespace holds as many projects as allowed",
+        {"limit": limit, "count": count},
+    )
+
+
+def refuse_project_over(conn: Connection, owner_id: str, limit: int | None) -> None:
+    """`project_limit` when the namespace owner `owner_id` (a human or an organisation) holds
+    `limit` projects or more, archived ones included; nothing under `unlimited`. The owner's
+    row (the human's or the organisation's) is locked for the count, so that two creations or
+    moves at `limit - 1` give one project and one `project_limit`; a caller that locks an
+    organisation before a project has locked it already (§6.26)."""
+    if limit is None:
+        return
+    table = t.human if owner_id.startswith("hum-") else t.org
+    conn.execute(select(table.c.id).where(table.c.id == owner_id).with_for_update())
+    count = int(
+        conn.execute(
+            select(func.count()).select_from(t.project).where(t.project.c.owner_id == owner_id)
+        ).scalar_one()
+    )
+    if count >= limit:
+        raise project_limit(limit, count)
+
+
 def _humans_at(conn: Connection, per_human: Any, limit: int | None) -> int:
     """The humans with at least `limit` of the rows `per_human` selects (a query of one
     column, the human's id); 0 under `unlimited`."""
@@ -76,6 +105,10 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         "humans_at_limit": _humans_at(conn, agents, of(conn, hub, "max_agents_per_human")),
         "max_orgs_per_human": _answer(values["max_orgs_per_human"]),
         "humans_at_org_limit": _humans_at(conn, owners, of(conn, hub, "max_orgs_per_human")),
+        "max_projects_per_owner": _answer(values["max_projects_per_owner"]),
+        "owners_at_project_limit": _humans_at(
+            conn, select(t.project.c.owner_id), of(conn, hub, "max_projects_per_owner")
+        ),
     }
 
 

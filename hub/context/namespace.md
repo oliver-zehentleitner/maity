@@ -276,3 +276,38 @@ human's owner membership ends or drops in two places, the demotion by
 `namespace_owner_of` after the last-owner checks. A route added later that
 deletes a human account, or ends a membership any other way, has to call it
 too. Otherwise a project keeps a namespace owner who is no longer in it.
+
+## A namespace holds at most `max_projects_per_owner` projects, archived ones counted, and an archived project leaves the periodic runs
+
+**Id:** d4151a3a-29ff-48fd-8901-2389727444c7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision req-00cc32g6kbcs; the card tsk-6q1z2z9t334e and the coordinator's answers on it; `docs/api.md` §16.5, §6.1, §6.25, §6.26
+**Revisit when:** plans (§2.7, part two) set the caps per plan, or archived projects should free their place
+
+`limits.py` holds a third cap, `max_projects_per_owner` (default 10), with the same source rules as
+the other two, and one value for humans and organisations alike. `limits.refuse_project_over` locks
+the namespace owner's row (`human` or `org`) and counts every project with that `owner_id`,
+`archived` included; `POST /projects` calls it after `_creation_owner`, a transfer when it is filed
+(both paths of `project_names.transfer`) and again in `project_names.settle` before `move_to`, where
+a refusal becomes `proposals.Stale`: the request is withdrawn and nothing moves. `settle` reads the
+cap from `Settlement.hub`, which the two answer routes of `routes/requests.py` pass; `close_request`
+passes none, and no transfer is settled there. The jour-fixe worker and the availability sweep select
+only projects that are not `archived`; the other periodic runs start from open work, which an
+archived project does not create.
+
+**Reason:** plain hardening of the hosted instance against runaway creation, and the maintainer's
+decision of the cap; counting archived projects keeps the cap a cap (archiving and creating would
+otherwise lift it), and leaving archived projects out of the sweeps keeps the cost of a full
+namespace bounded by its live projects. The owner row is the lock because the organisation's row is
+already taken before any project row (`lock_project`), and creation takes no project row at all.
+
+**Rejected alternatives:**
+- Counting only live projects: archive, create, archive again would have no ceiling.
+- A cap per human across every organisation they own: the decision names the namespace, and an
+  organisation's projects are not one member's.
+- Checking the transfer only when it is filed: a namespace that filled up before the `go` would be
+  taken over the cap by the move.
+- Removing archived projects from every periodic run: the work-driven runs never reach them anyway,
+  and a filter there would be a second place to keep in step.

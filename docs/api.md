@@ -206,6 +206,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner, or the demotion or removal of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
+| 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
@@ -4433,7 +4434,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `409 project_limit` when the namespace it is created in already holds `max_projects_per_owner` projects (§16.5); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
@@ -4708,7 +4709,11 @@ a live project in normal work; `archived` closed. Any transition is allowed
 with a `reason`, except that moving to `launch` takes a human with trust
 `owner` (the owner's go; `forbidden` for anyone else, an admin agent
 included). It is in every packet. `archived` makes `claim` and task
-creation `project_closed` for everyone. `plan` and `review` refuse nothing
+creation `project_closed` for everyone, and takes the project out of
+the hub's periodic runs (the jour-fixe deadlines and schedule, and the
+availability sweep that ends limits and absences by time): nothing
+happens to it by time alone while it is archived, and once it leaves
+`archived` the next run takes it back and acts on what passed meanwhile. `plan` and `review` refuse nothing
 on their own: while the project is in one of them, `POST /tasks` and
 `claim` require a `reason` (`invalid` without it), and the
 `task_created`/`task_claimed` event carries `project_state` and that
@@ -8860,11 +8865,15 @@ namespace owner or full name (a rename, another transfer). The request
 is bound to the project's id and to its namespace owner and full name
 at filing; the `go` checks, in one transaction with the move, that both
 are unchanged, that the receiver still holds an active membership with
-trust `owner`, and that the slug is free in the receiver's namespace.
-If any check fails the answer is refused — `invalid_transition`
-(`details.reason: "transfer_stale"`) for a changed owner or name or a
-receiver no longer owner, `invalid` (`details.fields.slug: "taken"`)
-for the slug — the request is withdrawn and nothing changes. The old full name
+trust `owner`, that the slug is free in the receiver's namespace, and
+that the receiver's namespace holds fewer than `max_projects_per_owner`
+projects (§16.5). If any check fails the answer is refused —
+`invalid_transition` (`details.reason: "transfer_stale"`) for a changed
+owner or name or a receiver no longer owner, `invalid`
+(`details.fields.slug: "taken"`) for the slug, `project_limit` (409,
+`details.limit`, `details.count`) for a full namespace — the request is
+withdrawn and nothing changes. A transfer into a namespace that is
+already full is refused when filed, with the same `project_limit`. The old full name
 becomes an alias. It emits `project_updated` with `fields: {owner,
 full_name}` and a ticker item of type `rename` (`oliver/maity is now
 oz/maity`, §17.1), written as for a handle rename (§6.24). The
@@ -9212,7 +9221,9 @@ names a human (`hum-…`) or an organisation (`org-…`).
   organisation that does not exist. An `owner` of the receiving
   organisation speaks for it: no consent request is filed, and the move
   happens in the call itself, with the checks of §6.25 (the slug free in
-  the organisation's namespace); `200` with the project. An `admin`
+  the organisation's namespace, and the namespace under
+  `max_projects_per_owner`, else `project_limit`, §16.5); `200` with the
+  project. An `admin`
   speaks only for themselves: the hub files a personal `consent`
   request (§7) to each owner of the receiving organisation, bound as in
   §6.25, carrying both `project` and `org: {id, handle}` (the receiving
@@ -15053,12 +15064,15 @@ values with the source rules of §16.2, as in §16.4.
 |---|---|---|---|
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
   "humans_at_limit": 0,
   "max_orgs_per_human": { "value": 5, "source": "default" },
-  "humans_at_org_limit": 0 }
+  "humans_at_org_limit": 0,
+  "max_projects_per_owner": { "value": 10, "source": "default" },
+  "owners_at_project_limit": 0 }
 ```
 
 `null` keeps the meaning of §16.2 here too: a `PATCH` with
@@ -15066,8 +15080,9 @@ values with the source rules of §16.2, as in §16.4.
 `default`; "no limit" is the value `unlimited`, stored as the admin's
 value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
-`humans_at_org_limit` for `max_orgs_per_human`, which takes `null` and
-`unlimited` the same way.
+`humans_at_org_limit` for `max_orgs_per_human`, and
+`owners_at_project_limit` for `max_projects_per_owner`, which take
+`null` and `unlimited` the same way.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -15089,11 +15104,23 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
   and inserted in one atomic step per human as above. Becoming an owner
   otherwise — an invitation's `go`, a promotion (§6.26) — is not
   refused, and counts from then on.
-- **Lowering either value** never deletes or pauses anything: an owner over the
-  new value keeps every profile or organisation and creates no new one until they are
-  under it again (the tolerant rule of `context/scope.md`).
-  `humans_at_limit` and `humans_at_org_limit` count the humans at or
-  over each value, for the admin's eye.
+- **What `max_projects_per_owner` gates.** What adds a project to a
+  namespace: `POST /projects`, in the caller's namespace or an
+  organisation's, and a transfer into a human's or an organisation's
+  namespace (§6.25, §6.26), refused when filed and checked again in the
+  transaction of the move, so a namespace that filled up meanwhile
+  withdraws the request. The project that would take the namespace over
+  the value is `project_limit` (409, `details.limit`, `details.count`),
+  counted and inserted in one atomic step per namespace owner. Every
+  project the namespace owns counts, `archived` ones included: archiving
+  frees no place (it does take the project out of the periodic runs,
+  §6.1). A project transferred out frees its place.
+- **Lowering a value** never deletes or pauses anything: an owner over the
+  new value keeps every profile, organisation or project and creates (or
+  receives) no new one until they are under it again (the tolerant rule
+  of `context/scope.md`). `humans_at_limit` and `humans_at_org_limit`
+  count the humans at or over each value, `owners_at_project_limit` the
+  namespace owners (humans and organisations), for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway
   creation and the mistakes of scripts, and the seat of the hosted
   offering is the human, never the agent (`context/scope.md`); a limit

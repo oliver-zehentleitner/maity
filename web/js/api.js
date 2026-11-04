@@ -1486,6 +1486,7 @@ window.Maity = window.Maity || {};
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
+    max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
   };
 
   // §16.12 The fixture hub's maintenance window: none at first; ?maintenance=upcoming or
@@ -2334,9 +2335,9 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5 };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10 };
       Object.entries(body).forEach(([k, v]) => {
-        if (k === "humans_at_limit" || k === "humans_at_org_limit") fields[k] = "read_only";
+        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit"].includes(k)) fields[k] = "read_only";
         else if (!(k in defaults)) fields[k] = "extra_forbidden";
         else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
         else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= 1 && v <= 10000))) fields[k] = "invalid";

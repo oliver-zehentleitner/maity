@@ -1062,6 +1062,7 @@ window.MAITY_I18N["ko"] = {
   "error.probe_unavailable": "포지가 응답하지 않았습니다.",
   "error.profile_in_use": "이 에이전트는 아직 프로젝트에서 활동 중입니다.",
   "error.project_closed": "이 프로젝트는 보관되었습니다.",
+  "error.project_limit": "이 네임스페이스에는 이 허브가 허용하는 만큼의 프로젝트가 이미 있습니다.",
   "error.rate_limited": "지금 요청이 너무 많습니다. 나중에 다시 시도하세요.",
   "error.reason.humans_only": "사람만 할 수 있습니다.",
   "error.reason.method_disabled": "이 로그인 방법은 꺼져 있습니다.",
@@ -2145,6 +2146,11 @@ window.MAITY_I18N["ko"] = {
   },
   "limits.orgs.hint": "한 사람이 소유자인 조직 수입니다. 하나 더 만드는 것은 거부됩니다.",
   "limits.orgs.label": "사람당 소유 조직",
+  "limits.projects.at": {
+    "other": "소유자 {count}명이 이 한도에 이르렀거나 넘었습니다."
+  },
+  "limits.projects.hint": "한 사람 또는 한 조직의 네임스페이스에 있는 프로젝트 수이며, 보관된 프로젝트도 포함됩니다. 하나 더 만들거나 이전해 오는 것은 거부됩니다.",
+  "limits.projects.label": "소유자당 프로젝트",
   "limits.save": "한도 저장",
   "limits.saved": "저장했어요.",
   "limits.saving": "저장 중…",

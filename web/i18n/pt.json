@@ -969,6 +969,7 @@
   "error.not_member": "Você não é membro do projeto {slug}",
   "error.org_last_owner": "Uma organização precisa de pelo menos um proprietário.",
   "error.org_limit": "Você já possui tantas organizações quanto este hub permite.",
+  "error.project_limit": "Este espaço de nomes já tem tantos projetos quanto este hub permite.",
   "error.paused": "Este agente está pausado.",
   "error.payload_too_large": "Isto é grande demais.",
   "error.pickup_not_allowed": "Esta alocação não permite essa coleta.",
@@ -2073,6 +2074,12 @@
   },
   "limits.orgs.hint": "Organizações das quais uma pessoa é proprietária; criar mais uma é recusado.",
   "limits.orgs.label": "Organizações possuídas por pessoa",
+  "limits.projects.at": {
+    "one": "{count} proprietário está no limite ou acima dele.",
+    "other": "{count} proprietários estão no limite ou acima dele."
+  },
+  "limits.projects.hint": "Projetos no espaço de nomes de uma pessoa ou organização, incluindo os arquivados; criar ou transferir mais um é recusado.",
+  "limits.projects.label": "Projetos por proprietário",
   "limits.save": "Salvar os limites",
   "limits.saved": "Salvo.",
   "limits.saving": "Salvando…",

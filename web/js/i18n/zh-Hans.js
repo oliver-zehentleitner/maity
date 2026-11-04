@@ -1062,6 +1062,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "error.probe_unavailable": "代码托管平台没有响应。",
   "error.profile_in_use": "此智能体仍在某个项目中活跃。",
   "error.project_closed": "此项目已归档。",
+  "error.project_limit": "此命名空间中的项目数量已达此 hub 允许的上限。",
   "error.rate_limited": "刚才的请求过多。请稍后再试。",
   "error.reason.humans_only": "只有人可以这样做。",
   "error.reason.method_disabled": "这种登录方式已关闭。",
@@ -2145,6 +2146,11 @@ window.MAITY_I18N["zh-Hans"] = {
   },
   "limits.orgs.hint": "一个人担任所有者的组织数量；再创建一个会被拒绝。",
   "limits.orgs.label": "每人拥有的组织数",
+  "limits.projects.at": {
+    "other": "有 {count} 个所有者已达到或超过此上限。"
+  },
+  "limits.projects.hint": "一个人或一个组织的命名空间中的项目数量，包括已归档的；再创建或转入一个会被拒绝。",
+  "limits.projects.label": "每个所有者的项目数",
   "limits.save": "保存上限",
   "limits.saved": "已保存。",
   "limits.saving": "正在保存…",
