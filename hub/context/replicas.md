@@ -320,15 +320,15 @@ rolled back either. Inside a request's transaction (a wrong second-factor code i
 connection for the moment of the count. Counts and forge budgets share a dedicated PostgreSQL
 engine per process, with two pooled connections and no overflow. The request pool can therefore
 be entirely occupied without making a request retain its transaction's locks while waiting for
-its own second serving connection. There is one such engine per process, database and timeouts
-(`db.make_shared_engine`), shared by every app the process builds: the counters hold only the
+its own second serving connection. There is one such engine per process, database, timeouts and recycle age
+(`db.make_shared_engine`, built under a lock), shared by every app the process builds: the counters hold only the
 engine configured last, so an engine per app left each earlier app's two connections open until
 that app stopped, and the tests, which build an app per client, ran PostgreSQL out of connection
 slots (`test_device_codes`, 60 clients). The app disposes it after its workers stop, which only
 closes its idle connections; SQLite and MariaDB still create no extra engine. When both of its
 connections are taken, the next count waits SQLAlchemy's default pool timeout of 30 s: a
-`Limiter` then raises the pool's `TimeoutError` and the request ends with an error, holding its
-serving connection and locks while it waits; a forge budget read returns nothing and the
+`Limiter` then raises the pool's `TimeoutError` and the request ends with an error, and, when it
+counts inside its transaction, holds its serving connection and locks while it waits; a forge budget read returns nothing and the
 process's own budget answers. No deadlock comes of it, as the holders of the counter
 connections never wait for a request's locks; it is a queue. Why two connections and the
 default timeout, rather than a short one, is not recorded (alternatives: unknown). The extra two connections per process count
@@ -634,7 +634,9 @@ bucket is what the hub serves.
 **Source:** `db.postgres_options` (the `options` startup parameter, `db.py:71-112, 144`), `db.make_engine` (`pool_size` and `max_overflow` 16 and 16 by default, `pool_recycle` 1800 s, PostgreSQL `statement_timeout` and `idle_in_transaction_session_timeout`), the maintainer's internal deployment planning (2026-10-30) (a managed PostgreSQL whose connections are limited by its size, with its own pooler port in session, transaction and statement modes); psycopg 3 prepares named statements after a few runs
 **Revisit when:** the load test sets the pool size, or `prepare_threshold=None` is in and tested behind PgBouncer's transaction mode
 
-With N pods the hub asks for N × (pool + overflow + 2 shared-counter connections) + N listener connections + health checks.
+With N pods the hub asks for the connection budget of the entry "Several pods" below (ec91fe03): per
+process its share of pool and overflow, two shared-counter connections and one listener, and
+per pod one for the health check.
 The chart sets `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` per pod so that at the HPA's
 maximum the sum stays under the service's limit with room for migrations and the backup. Behind
 PgBouncer:

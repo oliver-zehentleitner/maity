@@ -72,6 +72,7 @@ def test_the_apps_of_one_process_share_one_counter_engine(
         assert other.state.shared_engine is not first.state.shared_engine  # its own timeouts
         # MAITY_DB_POOL_RECYCLE reaches the counter engine as it reaches the serving one
         assert recycled.state.shared_engine is not first.state.shared_engine
+        assert recycled.state.shared_engine.pool._recycle == 77  # no public accessor
     finally:
         shared_counts.configure(None)
         shared_budget.configure(None)
