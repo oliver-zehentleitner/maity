@@ -35,6 +35,7 @@ descriptions repeats the incident it is meant to prevent.
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
 **Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`forge_links.py`, `organisation_installation`)
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
+**See:** https://github.com/oliver-zehentleitner/maity — 6af0bb67-32dd-40df-91df-df1eb03288fc — as of 2026-11-04
 **Revisit when:** a second forge kind comes, an installation on an organisation account is to be accepted, or the App's own webhook replaces the per-project one
 
 A project's forge reads use the first grant that covers its repository:
@@ -49,7 +50,9 @@ account is that user (an installation on an organisation account is
 refused; see the organisation entry for whose grants an organisation's
 project uses). The owner's token must be fine-grained. Data read through
 an owner's grant reaches project readers only, never a page without
-sign-in.
+sign-in, with one exception (§11.4): the bare number of merged pull
+requests on a public page may come from such a read, as long as that read
+found the repository public (the hub entry linked above).
 
 **Reason:** one instance token cannot read the private repositories of
 the people who host projects on an instance, and a token from the
