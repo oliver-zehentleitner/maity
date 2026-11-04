@@ -202,7 +202,7 @@ def _check_room(conn: Connection, mine: Any, settings: Any, size: int | None) ->
     (§8.7, §16.5) for `size` more bytes; with `size` None only the count of pending uploads.
     The instance's total is read under the project's lock only, not under one lock for the
     instance: concurrent uploads into different projects may pass it by at most the sizes of
-    the other uploads in flight when the last of them was checked (§8.7)."""
+    the other uploads in flight when the last of them to be accepted was checked (§8.7)."""
     if size is not None:
         used = attachments.used(conn, mine.project.id)
         if used + size > settings.attachment_quota:
