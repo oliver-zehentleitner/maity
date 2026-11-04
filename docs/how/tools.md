@@ -10,13 +10,13 @@ An agent that can run a shell command works in a Maity project through one comma
 
 - `maity resume`, at the start of a session, says who the agent is, what is open and what it missed.
 - `maity wait` is for when the agent has nothing to do until something happens. It holds an open request until an event arrives or the time runs out.
-- `maity claim` takes a card. A card is one piece of work on the project's board. The hold has a time limit. When that limit runs out the hub says so, and the card stays with the agent until it is given back or the card is closed.
+- `maity claim` takes a card. A card is one piece of work on the project's board. The hold has a time limit. When that limit runs out the hub, the server the project lives on, says so, and the card stays with the agent until the agent gives it back, an admin hands it on after the limit has run out, or the card is closed.
 - `maity checkpoint` records where the work stands, for the next session. The branch and the latest commit come from git.
-- `maity report` sends the completion report. For code, the head commit comes from git, the remote head from a query of that branch's upstream, and the pull request from the `gh` command when it is installed. The agent does not type them. The report is refused while tracked files are uncommitted, the checkout is not on a branch, the branch has no upstream, the branch is missing on the remote or its head differs, or the pull request's head differs.
+- `maity report` sends the completion report. For code, the head commit comes from git, the remote head from a query of that branch's upstream, and the pull request from the `gh` command when it is installed. The agent does not type them. The report is refused while git and the remote don't agree, for example with uncommitted changes or a commit that isn't pushed.
 - `maity ask` puts a question in a person's inbox, where the questions waiting for them are gathered.
 - `maity say` sends a message.
 
-The same command also covers files, memory and the rest of what the hub offers. The hub is the server. `maity help` prints what it offers.
+The same command also covers files, memory and the rest of what the hub offers. `maity help` prints what it offers.
 
 **An example.** An agent takes the card for a login form, records the step it just finished and the step that comes next, then reports. The branch, the commit and the pull request in that report are the ones git and `gh` found:
 
@@ -38,7 +38,7 @@ The agent should not need the manual pasted in again at the start of every sessi
 
 A chat log is a poor place for a secret. The session's credential stays in a file the CLI reads, so a copy of the chat is not a copy of the access.
 
-**How it works.** On join, the CLI writes the credential to a file in the clone's Git directory and never prints it. For an ordinary clone that file is `.git/maity/credential`, readable only by the account that owns the clone. The code that sends a request is what reads it. The skill tells the agent never to read, print or paste that file, and never to put it on a command line. The one secret the session does see is the join code in the line you paste, and that code works once and does not last. The CLI signs each request, so the secret does not have to appear in the command. The hub refuses a request whose body contains one of its own credentials.
+**How it works.** On join, the CLI writes the credential to a file in the clone's Git directory and never prints it. For an ordinary clone that file is `.git/maity/credential`, readable only by the account that owns the clone. The code that sends a request is what reads it. The skill tells the agent never to read, print or paste that file, and never to put it on a command line. The one secret the session does see is the join code in the line you paste. That code works once, and then it expires: after 15 minutes unless the link was given a longer life, and never after more than an hour. The CLI signs each request, so the secret does not have to appear in the command. The CLI refuses to send a request whose body contains a credential, and the hub refuses one that arrives.
 
 **An example.** You paste `maity join https://…/9fK2… --code …` once. After that the agent runs `maity resume` and `maity wait`. The credential stays in `.git/maity/credential`. Later commands do not print it, and the agent is told not to open the file.
 
@@ -71,7 +71,7 @@ People follow the work and answer questions without a terminal. The dashboard is
 - **Agents**, your agents in this project.
 - **Chat**, a direct chat between each agent and its human, which only the two of them can read, and group chats.
 - **Messages** and **Ticker**, notices posted to the project, and a short list of what changed.
-- **Why**, the reasons recorded for the code. The next section says how those are read.
+- **Why**, what the hub reads of the project's Keep the Why. The next section says what that is.
 - **Memory**, notes the team has written down for later.
 - **Jour fixe**, the team's regular look at how it works.
 - **Settings**, the project's own settings, for its admins.
@@ -86,10 +86,10 @@ What each tab is for, in detail, is [The dashboard](../humans.md).
 
 The next session can read the code and still undo a decision, because the code does not say which alternative lost. [Keep the Why](https://keepthewhy.com) is where a project keeps that reasoning. Maity keeps none of it in its database.
 
-**How it works.** The entries are Markdown files in the repository, under `context/`. Each one says, in plain words, what was chosen, why, the alternative that was rejected, and when to look at the decision again. The agents that make the changes write the entries. The hub never writes to the repository, and it never reads those files.
+**How it works.** The entries are Markdown files in the repository, under `context/`. Each one says, in plain words, what was chosen, why, the alternatives that were rejected, and when to look at the decision again. The agents that make the changes write the entries. The hub never writes to the repository, and it never reads those files.
 
 What the hub reads is the export the repository already publishes. Members who can read the project see it on the **Why** tab. The tab stays empty until the repository publishes that export. A public project can also show a short summary to anyone: counts, the related repositories by name, and the entries marked for attention. The summary never includes the text of an entry. The hub fills that summary in only for a repository the operator of the hub owns, and only while its last look found the repository public.
 
 When an agent joins a project that uses Keep the Why, the hub's resume tells it how to install and load the Keep the Why skill. Unless the project turns the check off, the hub also asks the agent to confirm that it uses the skill. A code report then names the entry that holds its reason, or says why the change has none.
 
-**An example.** This repository records why the hub uses SQLAlchemy Core and no ORM. SQLAlchemy is the Python library the hub uses for the database. Core means the statements are written out, and an ORM (an object-relational mapper) would turn objects into statements on its own. The entry says the hub's writes are single statements that must do the same thing on every database it supports, and that a mapper would sit between the code and those statements. The rejected alternative is named in the same entry: [SQLAlchemy Core with Table definitions, no ORM mapping](../../hub/context/persistence.md#sqlalchemy-core-with-table-definitions-no-orm-mapping). Someone who asks, later, why there is no mapper finds the answer in the repository, and members of the project see it on the Why tab.
+**An example.** This repository records why the hub uses SQLAlchemy Core and no ORM, in [SQLAlchemy Core with Table definitions, no ORM mapping](../../hub/context/persistence.md#sqlalchemy-core-with-table-definitions-no-orm-mapping).
