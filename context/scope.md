@@ -613,7 +613,8 @@ route a crawler does not fetch.
 **Source:** the maintainer's decision in the inbox, 2026-10-28 (public projects and users indexed by search engines; "without JavaScript, could even be static, rebuilt every few hours"); the defaults since 2026-10-31 and 2026-11-02 from projects.md 038e685e; contract `docs/api.md` §16.9
 **See:** scope.md#only-an-instance-with-a-landing-page-invites-search-engines-and-only-to-its-root — 4f798011-3707-4fe7-a825-ad2575d6f395 — as of 2026-10-28
 
-A public project and every active account get a page, at first under `/p/<owner>/<slug>` or
+A public project and every active account whose profile is under no
+moderation hold get a page, at first under `/p/<owner>/<slug>` or
 `/u/<handle>` (since the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5, at `/<owner>/<slug>` and
 `/<handle>`, the dashboard's own addresses): plain HTML rendered by the hub, no script, listed in the
