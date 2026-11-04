@@ -337,8 +337,9 @@ def test_a_merge_seen_in_rework_is_remembered_not_told(
 def test_the_done_authority_closes_a_merged_card_blocked_in_review(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
-    """The dashboard's "close" after `task_merged` works on a blocked card too: a
-    `blocked→done` by the done authority once the report's merge is observed (§6.4, §6.6)."""
+    """Through the API a blocked card closes too: a `blocked→done` by the done authority
+    once the report's merge is observed (§6.4, §6.6). Before that an editor gets
+    `invalid_transition`, a done authority that is no editor `forbidden`."""
     github.pull(7)
     agent, card_id = _reported(owner, make_client)
     _blocked(agent, owner, card_id)
@@ -346,11 +347,14 @@ def test_the_done_authority_closes_a_merged_card_blocked_in_review(
     early = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
     assert early.status_code == 409, early.text
     assert early.json()["error"]["code"] == "invalid_transition"
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    unseen = reviewer.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert unseen.status_code == 403, unseen.text
+    assert unseen.json()["error"]["code"] == "forbidden"
     github.pull(7, merged=True)
     probe.observe_report(migrated, READER, card_id)
     holder = agent.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
     assert holder.status_code == 403, holder.text  # the holder is not the done authority
-    reviewer = flow.agent(make_client, owner, role="reviewer")
     closed = reviewer.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
     assert closed.status_code == 200, closed.text  # not an editor: the done authority
     card = _card(owner, card_id)
@@ -362,16 +366,22 @@ def test_two_signatures_still_need_review_for_a_blocked_card(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
     """Under `reviewer_and_tester` a close is two signatures on a card in review (§6.4);
-    a blocked card waits for the answer that restores review."""
+    a blocked card waits for the answer that restores review. Nobody can sign while it is
+    blocked, so the merge is remembered, not told, and told on the return to review."""
     _policy(owner, done_authority="reviewer_and_tester")
     github.pull(7, merged=True)
     agent, card_id = _reported(owner, make_client)
-    _blocked(agent, owner, card_id)
+    asked = _blocked(agent, owner, card_id)
     probe.observe_report(migrated, READER, card_id)
+    assert _events(migrated, "task_merged") == []
     refused = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "invalid_transition"
     assert _card(owner, card_id)["status"] == "blocked"
+    answered = owner.post(f"{BASE}/requests/{asked}/answer", {"text": "go ahead"})
+    assert answered.status_code == 200, answered.text
+    assert _card(owner, card_id)["status"] == "review"
+    assert len(_events(migrated, "task_merged")) == 1
 
 
 @pytest.mark.parametrize(

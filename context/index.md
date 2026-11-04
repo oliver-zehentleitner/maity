@@ -74,7 +74,7 @@ Why Maity is built the way it is.
 ## Q
 
 ## R
-- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report; a merged pull request wakes the done authority and may close the card
+- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report; a merged pull request wakes the done authority and may close the card, also a card blocked from `review` (the done authority may then move it `blocked→done`), except under `reviewer_and_tester`
 - [routing.md](routing.md) — the dashboard on paths, as on a forge, the hub serving the app shell for every path not its own; public pages at the same canonical address as the dashboard, the app shell for anything not public; handles never a route word, slugs never a project view; alpha, so hash routes, `/app`, `/p/`, `/u/`, `/s/` and `legacy_slug` are removed, rename aliases stay; agents and people get pages of their own, `/invite` gathers person invitations without a route of its own
 
 ## S

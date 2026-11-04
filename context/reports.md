@@ -105,13 +105,15 @@ the merge through the probe; it only has to say so.
 **Source:** jour fixe jfx-1fze3cfeq55h, item t2.i3 and proposal t2.s2 (request req-k1xwkk57y3fn), assigned as card tsk-aq4fjk5tby1b; contract `docs/api.md` §6.6 "A merge closes the loop", §6.4 transitions
 **Revisit when:** a request can block a card without the block meaning "the report waits", or `done` is redefined to mean merged
 
-A card `blocked` from `review` counts as in review for the merge: the
-probe's merge is told at once, `merged_closes: auto` (holder or admin)
+A card `blocked` from `review` counts as in review for the merge
+(except under `reviewer_and_tester`): the probe's merge is told at once, `merged_closes: auto` (holder or admin)
 closes it, and the done authority may move it `blocked→done` once the
 merge is observed. Closing ends the block; the request stays open and
 its answer restores nothing. A card blocked from `in_progress` (rework,
 then a question) still only remembers the merge. Under
-`reviewer_and_tester` the move stays `review→done`, after the answer.
+`reviewer_and_tester` the move stays `review→done`, after the answer:
+there the merge on a blocked card is remembered and told when the
+answer returns it to `review`, since nobody can sign before.
 
 **Reason:** cards waited on `blocked` with a merged pull request and
 the lead could not close them (tsk-9tdn7zxwyad2): `blocked→done` was an
