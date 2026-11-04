@@ -173,7 +173,8 @@ SHARED_POOL_SIZE = 2
 # apps (the tests do, one per client) would run the database out of connection slots. The
 # process id keeps a forked worker from reusing its parent's sockets.
 _shared_engines: dict[tuple[int, str, float, float, int], Engine] = {}
-# Two first calls at once would otherwise each build an engine, and one would be lost unclosed.
+# Two first calls at once would otherwise each build an engine, and the one left out of the
+# cache would hold its own connections until its app stops.
 _shared_engines_lock = threading.Lock()
 
 
