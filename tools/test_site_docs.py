@@ -69,6 +69,20 @@ class SiteDocsTest(unittest.TestCase):
             self.assertIn('href="/docs/api/1-first/"', (site / "docs/api/index.html").read_text())
             self.assertTrue((site / "docs/_assets/search.json").is_file())
 
+    def test_images_point_at_the_deployed_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, site = Path(tmp) / "repo", Path(tmp) / "site"
+            (repo / "docs/install").mkdir(parents=True)
+            (repo / "docs/install/a.md").write_text(
+                "# A\n\n![Inbox](../img/inbox.png) ![Logo](../../web/brand/maity-mark.svg) ![x](https://example.org/x.png)\n"
+            )
+            (repo / "docs/nav.yml").write_text("- group: G\n  pages:\n    - {src: docs/install/a.md, title: A}\n")
+            self.assertEqual(site_docs.main([str(site), "--repo", str(repo)]), 0)
+            page = (site / "docs/install/a/index.html").read_text()
+            self.assertIn('src="/img/inbox.png"', page)
+            self.assertIn('src="https://github.com/oliver-zehentleitner/maity/raw/main/web/brand/maity-mark.svg"', page)
+            self.assertIn('src="https://example.org/x.png"', page)
+
 
     def test_the_real_nav_builds_and_hides_section_14(self):
         repo = Path(__file__).resolve().parent.parent

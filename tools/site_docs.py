@@ -192,7 +192,19 @@ def rewrite_links(page: Page, by_src: dict[str, Page], anchors: dict[tuple[str, 
         kind = "tree" if path.endswith("/") or "." not in posixpath.basename(src) else "blob"
         return f"{GITHUB}/{kind}/main/{src}" + (f"#{frag}" if frag else "")
 
-    return re.sub(r'href="([^"]*)"', lambda m: f'href="{html.escape(target(m.group(1)))}"', page.body)
+    def image(src: str) -> str:
+        """A relative image: one under docs/ is deployed beside the pages (pages.yml copies
+        docs/ to the site's root), anything else is GitHub's raw file."""
+        src = html.unescape(src)
+        if re.match(r"^[a-z][a-z0-9+.-]*:", src) or src.startswith("/"):
+            return src
+        path = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), src))
+        if path.startswith("docs/"):
+            return "/" + path.removeprefix("docs/")
+        return f"{GITHUB}/raw/main/{path}"
+
+    body = re.sub(r'href="([^"]*)"', lambda m: f'href="{html.escape(target(m.group(1)))}"', page.body)
+    return re.sub(r'(<img\b[^>]*?\s)src="([^"]*)"', lambda m: f'{m.group(1)}src="{html.escape(image(m.group(2)))}"', body)
 
 
 def nav_html(nav: list[dict], by_src: dict[str, Page], current: Page) -> str:
