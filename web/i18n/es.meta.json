@@ -17807,6 +17807,70 @@
     "en": "90e38ea91c09727b",
     "text": "42b6a729c25ccefe"
   },
+  "why.lib.error.budget": {
+    "en": "8f3e6f4f9c8105ca",
+    "text": "bba462f7384b9e65"
+  },
+  "why.lib.error.budget_until": {
+    "en": "f6637887e7f67522",
+    "text": "cf9c4e3b3aaf8142"
+  },
+  "why.lib.error.family_cap": {
+    "en": "812c86f2bb605b73",
+    "text": "c66c7cef5cf1691c"
+  },
+  "why.lib.error.no_access": {
+    "en": "63e257fe450a66ff",
+    "text": "2f0f1e2873986db4"
+  },
+  "why.lib.error.not_in_family": {
+    "en": "96069d1a2391a0cd",
+    "text": "bb5468a44ecad6c8"
+  },
+  "why.lib.error.not_public": {
+    "en": "e2d7cbc86ec9f0b1",
+    "text": "c9834cf86bfde035"
+  },
+  "why.lib.loading": {
+    "en": "bca901a7f138c208",
+    "text": "9b759815aceb005e"
+  },
+  "why.lib.not_loaded": {
+    "en": "e3d3d42c668475ae",
+    "text": "25c52c4611473d67"
+  },
+  "why.lib.place.family": {
+    "en": "964a3eccaa090c46",
+    "text": "ae40debb8a54d833"
+  },
+  "why.lib.place.graph": {
+    "en": "cdbcd82d1c3389c7",
+    "text": "29a2a57777b1507d"
+  },
+  "why.lib.place.overview": {
+    "en": "f82745f8413486e5",
+    "text": "23dd63e7309cffa1"
+  },
+  "why.lib.place.thoughts": {
+    "en": "51f2837f7d8a7456",
+    "text": "913aa427dc571650"
+  },
+  "why.lib.place.timeline": {
+    "en": "704ef8cfcddd04e5",
+    "text": "b98a75c2e5bd2f70"
+  },
+  "why.lib.places": {
+    "en": "01a3fcefb376f13c",
+    "text": "f110348e1235c06c"
+  },
+  "why.lib.read_again": {
+    "en": "74de2bec5fe97008",
+    "text": "c82ab61e267fe09b"
+  },
+  "why.lib.stale": {
+    "en": "5fff5c1f76c7a2bd",
+    "text": "630806a45064ec88"
+  },
   "why.no_read": {
     "en": "f5124f350b2f5ae8",
     "text": "9bfb0902397ab930"
