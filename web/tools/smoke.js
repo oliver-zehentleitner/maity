@@ -11650,8 +11650,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && byId("limits-max_agents_per_human-mode").value === "default",
     "limits: no limit is sent as unlimited, the default as null " + JSON.stringify(lmPatches));
   // The attachment storage of the whole hub (§16.5, tsk-qa9r26kb2teq): in GiB here, bytes for the hub, what is stored now said.
-  expect(byId("limits-max_attachment_storage-mode").value === "default" && text(lmSection()).includes("Stored now: 0.68 GiB.")
-    && text(lmSection()).includes("Attachment storage of the hub"), "limits: the hub's attachment storage, unlimited by default, with what is stored now");
+  expect(byId("limits-max_attachment_storage-mode").value === "default" && text(lmSection()).includes("Stored now: 700 MiB.")
+    && text(lmSection()).includes("Attachment storage of the hub"), "limits: the hub's attachment storage, unlimited by default, with what is stored now (below 1 GiB in MiB)");
+  // The script checks the fields: a stored value that is no whole GiB, shown rounded, must not stop the form in the browser.
+  expect(lmSection().querySelector("form.admin-limits").attrs.novalidate !== undefined, "limits: the form leaves the checks to the script (novalidate)");
   byId("limits-max_attachment_storage-mode").value = "number"; byId("limits-max_attachment_storage-mode").dispatch("change");
   byId("limits-max_attachment_storage").value = "0";
   await lmSubmit();

@@ -17,7 +17,11 @@ window.Maity = window.Maity || {};
 
   const PATH = "/admin/settings/limits";
   const GIB = 1024 * 1024 * 1024;
-  const gib = (bytes) => M.fmt.number(bytes / GIB, { maximumFractionDigits: 2 });
+  const MIB = 1024 * 1024;
+  // What is stored: in MiB below 1 GiB, so a hub with a few files does not read as empty.
+  const stored = (bytes) => (bytes < GIB
+    ? M.t("limits.storage.used_mib", { size: M.fmt.number(bytes / MIB, { maximumFractionDigits: 1 }) })
+    : M.t("limits.storage.used", { size: M.fmt.number(bytes / GIB, { maximumFractionDigits: 2 }) }));
   const FIELDS = [
     { key: "max_agents_per_human", at: "humans_at_limit", label: () => M.t("limits.agents.label"), hint: () => M.t("limits.agents.hint"),
       atWords: (n) => M.t("limits.agents.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
@@ -25,7 +29,7 @@ window.Maity = window.Maity || {};
       atWords: (n) => M.t("limits.orgs.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
     // The whole hub's, not a person's (§8.7): in GiB here, bytes for the hub, 1 GiB to 1 PiB.
     { key: "max_attachment_storage", at: "attachment_storage_used", label: () => M.t("limits.storage.label"), hint: () => M.t("limits.storage.hint"),
-      atWords: (n) => M.t("limits.storage.used", { size: gib(n) }), unit: GIB, max: 1024 * 1024, invalid: () => M.t("limits.error.invalid_storage") },
+      atWords: (n) => stored(n), unit: GIB, max: 1024 * 1024, invalid: () => M.t("limits.error.invalid_storage") },
   ];
   const SOURCES = { default: () => M.t("limits.source.default"), admin: () => M.t("limits.source.admin"), env: () => M.t("limits.source.env") };
   const sourceOf = (s) => (Object.hasOwn(SOURCES, s) ? SOURCES[s]() : s);
@@ -73,6 +77,9 @@ window.Maity = window.Maity || {};
       const save = h("button", { type: "submit" }, M.t("limits.save"));
       append(body, h("form", {
         class: "inline-form admin-limits",
+        // The script checks each field itself: a stored storage value that is no whole GiB,
+        // shown rounded, must not let the browser's step check stop the whole form.
+        novalidate: true,
         onsubmit: async (e) => {
           e.preventDefault();
           const patch = {};

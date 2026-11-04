@@ -148,6 +148,17 @@ def test_the_project_quota_and_the_pending_cap_are_checked_first(
     assert over.json()["error"]["details"]["scope"] == "project"
 
 
+def test_the_pending_cap_is_checked_before_the_instance(
+    admin: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(attachments, "PENDING_COUNT", 1)
+    assert put_in(admin, "maity", "a.bin", 100).status_code == 201  # pending: the cap is full
+    assert admin.patch(PATH, {"max_attachment_storage": GIB}).status_code == 200
+    room_of(monkeypatch, 0)  # the instance is full too
+    over = put_in(admin, "maity", "b.bin", 10)
+    assert over.json()["error"]["details"]["scope"] == "pending", over.text
+
+
 def test_lowering_the_limit_deletes_nothing(
     admin: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:
