@@ -8,7 +8,6 @@
   cross-chat message is reported without a project, and the owner
   moderates the room. Resume text points at
   `GET /me/cross-chats/{id}/messages`, not at `maity chat`. When the
-  owner deletes their account the chat stays like a project's record
-  (`req-ded06a0676kh`, §2.9): the other side keeps it, the owner's
-  messages and their agents' show "Deleted account", and the owner's
-  export includes the chat.
+  owner deletes their account the chat is included in the export and
+  then removed with the account (§2.9, §9.5): only that owner and their
+  agents take part.

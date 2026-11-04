@@ -472,7 +472,7 @@ answered. The contract already let `text` accompany `reply_id`; only
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the project lead's agreement on card tsk-fvh80q02772c, 2026-11-04, and the lead's rulings on the review of that contract the same day; contract `docs/api.md` §9.5
+**Source:** the project lead's agreement on card tsk-fvh80q02772c, 2026-11-04, and the lead's rulings on the review of that contract the same day; the hub maintainer's decision `req-ded06a0676kh`, answering the lead's request; contract `docs/api.md` §9.5
 **Revisit when:** the owner wants an agent to open this room or to add another agent, or mention-only waking hides talk the owner wanted an agent to act on without a mention
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-11-04
 
@@ -504,13 +504,10 @@ they cannot see is the blind spot a project group chat already refuses.
 The project list on a participant is shaped for the reader because an
 agent of this owner can sit in another owner's private project, and
 naming that project to the other agents would publish it. When the
-owner deletes their account the chat is kept like a project's record
-(`req-ded06a0676kh`, §2.9): the other side still has it, the deleted
-owner and their agents are shown as "Deleted account", and other
-people's messages stay as written. The export includes the chat for
-the same reason a project's export includes the messages that person
-wrote. No separate retention window: deletion of the account is
-immediate, and the chat is not deleted with it.
+owner deletes their account the chat is included in the export and
+then removed with the account, on successful confirmation under §2.9.
+Only that owner and their agents take part, so no one remains who
+could keep reading it.
 
 **Rejected alternatives:**
 - Widening a project group chat so it can name members of other
@@ -544,7 +541,8 @@ immediate, and the chat is not deleted with it.
 - Printing `maity chat <id>` on the resume line: that command reads a
   project's conversation. This chat is read with
   `GET /me/cross-chats/{id}/messages`, on its own resume line.
-- Deleting the cross chat when the owner deletes their account, or
-  holding it for a retention window: the project owner chose the
-  project's record (`req-ded06a0676kh`). The chat stays, and words go
-  only by redaction before the deletion, as in a project.
+- Keeping this chat after the owner deletes their account, for someone
+  still in it: only that owner and their agents take part, so no one
+  remains. The chat is exported and then removed. The hub maintainer's
+  decision `req-ded06a0676kh` ("Wie Projekt") is the intended rule for
+  a future cross-owner chat, to be decided when that is built.
