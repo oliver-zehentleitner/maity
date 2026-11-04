@@ -98,7 +98,12 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - Every response carries `Cache-Control: no-store`,
   `X-Content-Type-Options: nosniff` and, on documents the hub renders
   (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`. The one exception to `no-store` is the images —
+  default-src 'self'`; a page the hub renders whole with the product
+  line in its head (§16.13: the join page, the mail link pages, the
+  sign-in link page, the `503` page) adds
+  `style-src 'sha256-…'`, the hash of that line's one `<style>` block
+  and of no other. The dashboard draws the line with its own stylesheet
+  and sends no hash. The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
   by `ETag`, and the project
@@ -16501,7 +16506,8 @@ Member ids, session or credential data, presence, instances, models, mail and
 network addresses and everything the section above excludes never appear. The other routes
 stay as they are: without a session they answer `401`, and a caller who is no
 member gets `not_found` (§1.3). A signed-in reader who is no member of the
-project reads the same route.
+project reads the same route. The Overview's addresses read the project's own
+page (`kind` `project`), its swarm tab none (§16.11).
 
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
@@ -16622,9 +16628,15 @@ is therefore no hub path: an unknown variant gets the shell, never
 public page's address with a slash at the end is a `308` to the address
 without it. A dashboard address under a project with a public page stays the
 login page for a visitor, so that a link from a mail goes on after the
-sign-in, and the login page links the public page. A signed-in reader who is
-no member of a project with a public page reads the same read-only view at the
-same address, under the dashboard's own header (§16.9).
+sign-in, and the login page links the public page. The one exception is the
+project's Overview: `/<owner>/<slug>/overview` and `…/overview/project` show
+the project's public overview to a visitor, read-only, because the badge links
+there (§6.20); `…/overview/swarm` is the members' alone and stays the login. A
+signed-in reader who is no member of a project with a public page reads the
+same read-only view at the same address, under the dashboard's own header
+(§16.9); at `…/overview/swarm` they are taken to `…/overview`, the address
+replaced. A project without a public page, and an earlier address of one,
+answers there as at any other address.
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a
@@ -16898,8 +16910,9 @@ SVG. A page whose policy has no `style-src` would drop those, so the
 icons must not need them. The dark variant comes from the page's own
 stylesheet, overriding `fill`, where the page's policy allows one. The
 join page in a browser has none: its policy is `default-src 'self'`
-(§1.1), which allows no inline `<style>`, and the join host serves no
-stylesheet. It shows the light mark in either theme, on either host, so
+(§1.1) with one `style-src 'sha256-…'`, which allows the product line's
+single `<style>` block and no other inline style, and the join host
+serves no stylesheet. It shows the light mark in either theme, on either host, so
 that it looks the same wherever it is opened. The Maity icons are the small mark of
 `web/brand/maity-mark-small.svg` (its dark variant,
 `maity-mark-small-dark.svg`, under a dark theme where a stylesheet can
