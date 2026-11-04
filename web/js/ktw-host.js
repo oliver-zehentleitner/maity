@@ -120,14 +120,22 @@ window.Maity = window.Maity || {};
   }
   // A form control the library names only by its `title` (the timeline's playhead and speed)
   // is named by it for assistive technology too: a title alone is no label (WCAG 4.1.2).
+  // `labels` covers both a `for` and a wrapping label, with no selector built from an id.
+  // A name the host set is marked, so a later title (observed below) refreshes it.
   const CONTROLS = { INPUT: true, SELECT: true, TEXTAREA: true };
+  const OWN = "data-ktw-title-label";
   function name(node) {
     if (!CONTROLS[String(node.tagName || "").toUpperCase()]) return;
+    const own = node.getAttribute(OWN) != null;
+    if (!own && (node.getAttribute("aria-label") || node.getAttribute("aria-labelledby")
+      || (node.labels && node.labels.length))) return;
     const title = node.getAttribute("title");
-    if (!title || node.getAttribute("aria-label") || node.getAttribute("aria-labelledby")) return;
-    if (node.getAttribute("id") && node.ownerDocument && node.ownerDocument.querySelector
-      && node.ownerDocument.querySelector('label[for="' + node.getAttribute("id") + '"]')) return;
-    node.setAttribute("aria-label", title);
+    if (!title) {
+      if (own) { node.removeAttribute("aria-label"); node.removeAttribute(OWN); }
+      return;
+    }
+    if (node.getAttribute("aria-label") !== title) node.setAttribute("aria-label", title);
+    if (!own) node.setAttribute(OWN, "");
   }
   function sweep(node) {
     const href = node.getAttribute ? node.getAttribute("href") : null;

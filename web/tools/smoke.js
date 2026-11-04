@@ -2024,6 +2024,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ktwRange.getAttribute("aria-label") === "the day the page shows" && ktwSpeed.getAttribute("aria-label") === "how fast the days pass"
     && ktwNamed.getAttribute("aria-label") === "its own name",
     "why: a form control named by its title alone is named by it for assistive technology; one with a name keeps it");
+  ktwSpeed.setAttribute("title", "the pace of the days"); kh.sweep(ktwControls);
+  const ktwLabelled = document.createElement("input"); ktwLabelled.setAttribute("title", "a title"); ktwLabelled.setAttribute("id", 'a"b\\c');
+  ktwLabelled.labels = [document.createElement("label")];
+  const ktwAfter = document.createElement("a"); ktwAfter.setAttribute("href", "javascript:alert(1)");
+  const ktwLabelBox = document.createElement("div"); ktwLabelBox.appendChild(ktwLabelled); ktwLabelBox.appendChild(ktwAfter);
+  kh.sweep(ktwLabelBox);
+  expect(ktwSpeed.getAttribute("aria-label") === "the pace of the days" && ktwNamed.getAttribute("aria-label") === "its own name"
+    && ktwLabelled.getAttribute("aria-label") === undefined && ktwAfter.getAttribute("href") === undefined,
+    "why: a later title refreshes the name the host set, not one of the page's own; a labelled control stays as it is, and an id with a quote stops no sweep");
   await go("#/maintainer/maity/why/timeline"); for (let k = 0; k < 6; k++) await tick();
   const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
   expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",
