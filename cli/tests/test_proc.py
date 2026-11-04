@@ -51,3 +51,35 @@ def test_git_refuses_a_remote_helper_the_clone_allows(tmp_path: Path) -> None:
     result = proc.run([*proc.GIT, "ls-remote", f"ext::sh -c touch% {marker}"], tmp_path, timeout=10)
     assert result.returncode != 0
     assert not marker.exists()
+
+
+def test_an_operators_transport_list_narrows_never_widens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GIT_ALLOW_PROTOCOL", raising=False)
+    assert proc.allowed("https:ssh") == "https:ssh"
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "https")
+    assert proc.allowed(proc.TRANSPORTS) == "https"
+    assert proc.allowed("https:ssh") == "https"
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "ext:file")
+    assert proc.allowed("https:ssh") == ""
+
+
+def test_git_keeps_an_operators_narrower_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare = tmp_path / "r.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", str(bare)], check=True)
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "https")
+    assert proc.run([*proc.GIT, "ls-remote", bare.as_uri()], tmp_path).returncode != 0
+    monkeypatch.delenv("GIT_ALLOW_PROTOCOL")
+    assert proc.run([*proc.GIT, "ls-remote", bare.as_uri()], tmp_path).returncode == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a shell script stands in for the tool")
+def test_a_name_with_a_directory_is_a_path_the_caller_chose(tmp_path: Path) -> None:
+    (tmp_path / "sub").mkdir()
+    tool = tmp_path / "sub" / "tool"
+    tool.write_text("#!/bin/sh\necho hi\n")
+    tool.chmod(0o755)
+    assert proc.run(["sub/tool"], tmp_path).stdout == "hi\n"

@@ -274,3 +274,14 @@ def test_an_empty_gh_host_names_no_host(
 def test_a_windows_drive_path_upstream_passes_the_check(clone: Path) -> None:
     gitfacts._check_upstream(clone, "work", "C:\\Users\\a\\remote.git", "refs/heads/work")
     gitfacts._check_upstream(clone, "work", "C:/Users/a/remote.git", "refs/heads/work")
+
+
+@posix
+def test_every_configured_url_of_the_remote_is_checked(clone: Path) -> None:
+    marker = clone.parent / "ran"
+    helper = "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS)
+    git(clone, "config", "remote.origin.url", helper)
+    git(clone, "config", "--add", "remote.origin.url", str(clone.parent / "remote.git"))
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.collect(clone)
+    assert not marker.exists()

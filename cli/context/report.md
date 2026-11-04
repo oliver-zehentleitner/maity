@@ -168,7 +168,7 @@ as a link there does not: it says nothing about this checkout.
 **Revisit when:** git changes how `GIT_ALLOW_PROTOCOL` ranks against configuration, a forge reached over another transport is supported, or `report` learns a forge other than GitHub
 
 `maity report` reads a branch's upstream from the clone's configuration
-and passes it to `git ls-remote`. Before that, the remote, the URL it
+and passes it to `git ls-remote`. Before that, the remote, every URL it
 is configured with and the merge ref are checked: none may start with
 `-` or contain `::`, and the merge ref must lie under `refs/heads/`.
 Every other upstream `git push -u` stores still reads: a configured
@@ -179,8 +179,10 @@ git: report, checkpoint, the cite and text checks, the state lookup,
 the build identity) gets `GIT_ALLOW_PROTOCOL` with `https`, `http`,
 `ssh`, `git` and `file`; the runner's direct clone of a workspace passes
 its own `https:ssh`, because the variable replaces its `-c protocol.*`
-settings as well. Programs `proc.run` starts come from an absolute path
-on an absolute PATH entry, never the current directory, and on Windows
+settings as well. A `GIT_ALLOW_PROTOCOL` already in the environment, the
+operator's own, narrows that list and is never widened by it. Programs `proc.run` starts by name come from an absolute
+PATH entry, never the current directory (a name with a directory in it
+is a path the caller chose and is used as given), and on Windows
 with `NoDefaultCurrentDirectoryInExePath` set for what they start in
 turn. Two runner paths run git without `proc.run` and keep their own
 settings: `gc`'s read of a clone (`operate.unsaved_work`, pinned

@@ -40,11 +40,21 @@ class ToolError(Exception):
     """git or gh is missing, or did not answer in time."""
 
 
+def allowed(transports: str) -> str:
+    """`transports`, less any the environment's own `GIT_ALLOW_PROTOCOL` leaves out."""
+    given = os.environ.get("GIT_ALLOW_PROTOCOL")
+    if given is None:
+        return transports
+    theirs = set(given.split(":"))
+    return ":".join(t for t in transports.split(":") if t in theirs)
+
+
 def program(name: str) -> str | None:
     """The absolute path of `name` on PATH, or None. Only absolute PATH entries count, and
     never the current directory: Windows would otherwise start a `git.exe` lying in the
-    directory maity runs in before the installed one."""
-    if os.path.isabs(name):
+    directory maity runs in before the installed one. A name with a directory in it is a
+    path the caller chose, used as given (relative to the command's cwd)."""
+    if os.path.isabs(name) or os.path.dirname(name):
         return name
     suffixes = [""]
     if os.name == "nt":
@@ -65,8 +75,9 @@ def run(
     cmd: list[str], cwd: Path, timeout: float = TIMEOUT, transports: str = TRANSPORTS
 ) -> subprocess.CompletedProcess[str]:
     """`transports`: what git may use, colon-separated; it replaces every protocol setting,
-    a caller's narrower `-c protocol.*` included, so such a caller passes its own list."""
-    env = {**os.environ, **NO_PROMPT, "GIT_ALLOW_PROTOCOL": transports}
+    a caller's narrower `-c protocol.*` included, so such a caller passes its own list. A
+    `GIT_ALLOW_PROTOCOL` the operator set narrows it further, never the other way round."""
+    env = {**os.environ, **NO_PROMPT, "GIT_ALLOW_PROTOCOL": allowed(transports)}
     if os.name == "nt":
         # git and gh start programs of their own (ssh, credential helpers): not from cwd either.
         env["NoDefaultCurrentDirectoryInExePath"] = "1"

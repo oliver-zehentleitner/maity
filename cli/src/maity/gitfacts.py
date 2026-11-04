@@ -175,8 +175,11 @@ def _check_upstream(cwd: Path, branch: str, remote: str, merge_ref: str) -> None
     (`<transport>::<address>`), or a merge ref outside refs/heads/. Any other remote
     `git push -u` stores passes: a configured name in any script, a URL, a path, `host:path`;
     which transports git may then use is proc.TRANSPORTS."""
-    url = None if remote.startswith("-") else _git(cwd, "config", "--get", f"remote.{remote}.url")
-    values = [remote, merge_ref] + ([url] if url else [])
+    # Every URL configured, not only the last: `ls-remote` takes the first.
+    urls = (
+        None if remote.startswith("-") else _git(cwd, "config", "--get-all", f"remote.{remote}.url")
+    )
+    values = [remote, merge_ref] + (urls.splitlines() if urls else [])
     if any(v.startswith("-") or "::" in v for v in values) or not _HEAD_REF.match(merge_ref):
         raise FactsError(_unreadable(branch))
 
