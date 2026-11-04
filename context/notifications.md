@@ -360,7 +360,8 @@ confirms nothing, so "mark all read" may include security alerts once
 the human has confirmed a dialog that lists them; a session not allowed
 to mark an alert still cannot, and the answer names what it left and
 why. The mail sign-in banner stays until the session is confirmed,
-read or not. The bell shows the unread security alerts of every kind,
+read or not. (Since 2026-11-04 a sign-in is no bell item at all; the
+Notifications page lists the current sessions instead — feb34f93-e450-4c29-abc2-b525f20e7bb7.) The bell shows the unread security alerts of every kind,
 whatever their age, in a pinned block at the top, and has an "unread
 only" filter. Open requests addressed to the human are not pinned.
 
@@ -475,3 +476,49 @@ altogether. Refiling only when a listed last call changes, and rewriting a chang
 kind or `since` in place: fewer inbox items, but two kinds of change again, and a
 page opened before such a rewrite would differ from the one answered; the cost of
 refiling is at most one item per human and hour.
+
+
+## A sign-in is no notification: the Notifications page shows the current sessions instead
+
+**Id:** feb34f93-e450-4c29-abc2-b525f20e7bb7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat, 2026-11-04 ("not too complicated … a small field with the current sessions … not as an unread notification"), card tsk-0baaez2895sb; the lead's plan answers of 2026-11-04 (`sessions_at`, the address change left as it is); contract `docs/api.md` §2.6.5 ("A sign-in is no notification"), §18.1–§18.4, §18.8
+**Revisit when:** an address-change alert is reported as stuck, or a sign-in by password or device code is missed because no bell item showed it
+**See:** notifications.md#reading-a-security-alert-never-confirms-it-mark-all-read-may-include-them-after-a-confirm-and-the-protection-lives-in-the-sessions-confirmation — d01ba62b-7acc-471c-b8d0-65c6d60209cc — as of 2026-11-04
+**See:** sign-in.md#a-sign-in-link-is-only-as-strong-as-the-mailbox--the-hub-says-so-and-makes-a-mail-sign-in-visible-instead-of-claiming-to-stop-it — 7865693c-fe02-4df8-ac9e-ebb1bbf8cf20 — as of 2026-11-04
+**See:** notifications.md#a-notification-is-something-the-human-must-react-to-not-an-activity-log — 1ebd4cc1-6f1b-445f-8c88-98103a4bc3ef — as of 2026-11-04
+
+A new sign-in (`session_created`) is no bell item: it is not listed, not counted, not pinned,
+gives no browser notification and has nothing to mark read. The account record stays, for
+Profile → Sessions, the export and the mail. The Notifications page shows a small "Current
+sessions" box: the active sessions, compact, linking to Profile → Sessions, with no buttons and
+no unread state. Kept as they were: the sign-in mail by the `security` mode, the banner of a mail
+sign-in in every other session with "End this session" and "This was me", "This was me" in the
+session list, and the rule that only an older session in good standing confirms. The long-poll
+returns on a session record too, and `sessions_at` in every answer tells the dashboard to read
+the sessions again for the banner and the box. The read rule of the remaining guarded kind,
+`email_address_changed`, is unchanged, and so is its dead end: once every session older than the
+change has ended, its alert stays unread until its record expires after 90 days.
+
+**Reason:** the sign-in alert could only be marked read from a session older than the sign-in. In
+use, the maintainer found three alerts he could not clear three days later, because every
+session he had then was newer, and over time that is the normal case. A notification nobody may
+clear does not say "react to this" (1ebd4cc1-6f1b-445f-8c88-98103a4bc3ef); the list of
+sessions does what the alert was for, and Profile → Sessions is where the human acts on it. What
+guards against a session obtained through the mailbox never was the unread count: it is the
+banner, which that session cannot remove, the confirm only from an older session, and the
+rules on ending sessions (7865693c, d01ba62b). They all stay. The banner used to be rebuilt when
+`counts.security` moved; without the item that no longer moves on a sign-in, hence
+`sessions_at`. The address change keeps its rule because it is rare and the maintainer spoke
+only of sign-ins.
+
+**Rejected alternatives:**
+- Marking a sign-in alert read once its session, and every session it approved, has ended (the
+  lead's first proposal on the card, also written up as a contract change and withdrawn
+  unreviewed): correct, but the maintainer found it too complicated for what the alert gives.
+- Rebuilding the banner and the box on every long-poll wake: one `GET /auth/sessions` per wake,
+  chat included, is the wrong price for sessions with a busy chat (the lead).
+- Dropping `email_address_changed` from the bell too: the maintainer spoke only of sign-ins,
+  and an address change is rare.
