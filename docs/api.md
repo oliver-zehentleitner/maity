@@ -3849,7 +3849,12 @@ Response `200`, bounded and deterministic:
   text is kept: `hub` (a default of the hub, `by: {"kind": "hub"}`,
   `version` and `updated_at` `null`), `account` (a human's account
   text), `project` (the project's text) or `membership` (the
-  membership's own `briefing`, §6.2). A layer without a text is left
+  membership's own `briefing`, §6.2). Every layer that has a known
+  writer carries `by: {kind, id, handle}`, `kind` `human` or `agent`.
+  The membership layer's `by` is that membership's `briefing_by`
+  (§6.2). A text an agent wrote is that agent's: `by.kind` is `agent`
+  and `by.handle` is the agent's, never a label that the humans wrote
+  it. A layer without a text is left
   out. Under `consent_per_change` (§6.28) a layer whose newer version
   waits for the owner's go carries the version that applies and
   `pending_version`. No text is copied onto the membership: a later
@@ -4056,10 +4061,12 @@ harness fell back to another — resumes at once with the new one
 opens one with the new `model`, the instance's claims carry over as on
 any resume (§6.5), and nothing else changes. When a resume's `model`
 or `harness` differs from the instance's previous session, the hub
-emits `session_model_changed` to the member the agent reports to and
+emits `session_model_changed` to the member the agent reports to when
+that member is not a boss of another owner (§6.2), and
 to `trust:admin` and to the human owner of the agent when that owner is a member of the project, with
 `{member_id, instance, from: {harness, model}, to: {harness, model},
-session_id}`; it wakes nobody but the member the agent reports to, so
+session_id}`; it wakes nobody but that member, and nobody when the
+boss is of another owner, so
 that member can re-route cards the new model should not hold. A resume that omits `model`
 or `harness` keeps the previous session's value for it and changes nothing. A value unknown on either side is no
 difference, so an instance's first session and a first declared `model` emit nothing.
@@ -4136,8 +4143,10 @@ when one of the exclusions above begins; then `not_listening_since` is
 `null` again. For each episode the hub:
 
 - emits `member_not_listening` (§8.2) at the start, with `ended:
-  false`, which wakes the member the agent reports to (§6.2) so that it
-  can re-route; when `reports_to` is `null` it wakes nobody and is read
+  false`, which wakes the member the agent reports to (§6.2) when that
+  member is not a boss of another owner, so that it
+  can re-route; when `reports_to` is `null`, or the boss is of another
+  owner, it wakes nobody and is read
   by its audience. At the end it emits it again with `ended: true`,
   which wakes nobody. `since` is the episode's start in both; the end
   is the event's own time;
@@ -4225,8 +4234,9 @@ when it leaves `bell`, and the next hour writes what the new mode says.
 When this digest replaces the per-episode requests, the hub withdraws
 every open one of those (`<agent handle> (<instance>) is not
 listening`) at the first digest hour. The member the agent reports
-to keeps its `member_not_listening` either way, since the team needs it
-to re-route. When the profile's owner changes, the instance moves to
+to keeps its `member_not_listening` either way, when that member is not
+a boss of another owner (§6.2), since the team needs it
+to re-route. A boss of another owner does not receive it. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
 
 **Silence after `seen`.** Answering `seen` records, for every instance
@@ -4855,8 +4865,9 @@ It is in the member view only for the
 member itself and for callers with `members:admin` (on a public agent
 page it is public as part of the assembled briefing, §6.28), and never in the
 payload of `member_updated` (which goes to everyone). With it come
-`briefing_by` (`{kind, id, handle}`: the human or the admin agent who
-wrote the current text), `briefing_version` (starts at 1 with the join,
+`briefing_by` (`{kind, id, handle}`: `kind` is `human` or `agent`, the
+human or the admin agent who wrote the current text, with that
+writer's handle), `briefing_version` (starts at 1 with the join,
 +1 on every change) and `briefing_updated_at`. A change of the briefing
 is in `member_updated` only as `changed: ["briefing"]` with the new
 `briefing_version`, never the text. The agent's owner and humans with
@@ -4978,7 +4989,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -5178,6 +5189,12 @@ own human or to another agent of that human never is.
   manager's reach and `line:lead` applies to it as consented (§2.3,
   "The manager"). Apart from that, the boss receives one thing from it: the subordinate's `session_paused`
   events (§8.2), with their session fields (harness, model, session id).
+  `session_model_changed`, `member_not_listening`,
+  `member_availability_changed`, `cover_started` and `cover_ended` are
+  not routed to a boss of another owner (§5.3, §6.12, §8.2), nor are
+  `holder_stalled` and `claim_expired` (§6.5). Those go to a boss of
+  the same owner, and to the admins and the agent's human owner as each
+  kind says.
   The subordinate receives the boss's member id as
   `membership.reports_to` in its resume packet and on its join page, and
   may treat the boss's messages as direction — to the subordinate's
@@ -5186,19 +5203,48 @@ own human or to another agent of that human never is.
   by `to` (§7).
 
 **Another owner's agent.** An agent's settings in a project are its
-owner's to agree to (the maintainer's decision of 2026-10-30): a `PATCH`
+owner's to agree to (the maintainer's decision of 2026-10-30, and for
+`reports_to` the maintainer's decision of 2026-11-04): a `PATCH`
 of an agent member by a caller that is neither the agent's owner nor
 one of that owner's agents nor a manager acting inside its reach (part
 (b) of the reach only while `line_consent` is `true`, above) — a human
 with `members:admin` or an admin agent (§2.3 ᵃ) of another owner —
 does not change `trust`, `role`, `areas`, `capabilities`,
-`briefing`, `paused` or `availability_policy` on the call. It answers
-`202` with one `consent` request to the agent's owner, `asked_by` the
-caller, title `Change <handle> in <project>`, a `summary` naming each
-field with its current and its proposed value, replies `go`/`no`,
-`while_open: wait`, `task_id` null; the change is applied at `go` as one
-`member_updated`, in the owner's name as approver and the caller's as
-actor, and a `no` or a withdrawal changes nothing. The `go` checks
+`briefing`, `paused` or `availability_policy` on the call. `reports_to`
+of that agent also waits for its owner, unless the caller is the
+agent's owner, one of that owner's agents, or a manager within that
+owner's reach (a part-(a) member of the reach, §2.3). A manager of
+another owner does not set it on the call, including one whose reach
+holds the agent only while `line_consent` is `true`. An edge that is
+cross-owner follows "Across owners" above and files no second request
+on top of that pair: the subordinate's owner is already one of the two
+who consent. Any other `reports_to` — `null`, the agent's own human, or
+another agent of that human — is one of the fields of the request
+below.
+
+It answers `202` with one `consent` request to the agent's owner,
+`asked_by` the caller, title `Change <handle> in <project>`, replies
+`go`/`no`, `while_open: wait`, `task_id` null. The `summary` names each
+field with its current value and its proposed value, both in full: a
+briefing, a pause reason or any other text is not cut. The request
+stores each proposed value and carries a `sha256` for it, 64 hex
+characters, the SHA-256 of the UTF-8 bytes of that value's JSON:
+`null`, `true` and `false` as those tokens, a string as a JSON string,
+a number as JSON, and a list or object as JSON with the object's keys
+sorted lexicographically and with `,` and `:` as the only separators.
+Reading the request (`GET /requests/{id}`, and `GET
+/projects/{owner}/{slug}/requests/{id}` for a caller who may read it,
+§7) returns `agent_change`: `{fields: [{name, current, proposed,
+sha256}]}`, `current` the member's value at the time of the read,
+`proposed` the value stored with the request, both in full, and
+`sha256` the hash of `proposed`. The list of requests and an event
+carry the summary, not `agent_change`. The `go` applies exactly the
+stored values, as one `member_updated`, in the owner's name as
+approver and the caller's as actor, and a `no` or a withdrawal changes
+nothing. A further `PATCH` of the same member by such a caller
+withdraws the open one (`reason: "superseded"`) and files a new one
+for the fields it names, so the stored values are the change the `go`
+applies. The `go` checks
 the change again as things stand then: the asker still active, not
 isolated and still allowed to make exactly this change (the call's own
 rules), else `409` `asker_not_allowed`; a project role named in it
@@ -5206,16 +5252,19 @@ that no longer exists is `409` `role_unknown`, and its base is read
 again. Either refusal leaves the request open for a `no` or a
 withdrawal. The owner answers it
 as the cross-owner `reports_to` requests above: only they, member of the
-project or not, under `/requests/{id}` when not a member. A further
-`PATCH` of the same member by such a caller withdraws the
-open one (`reason: "superseded"`) and files a new one for the fields it
-names. When the same `PATCH` also needs a project owner's consent (§2.3
-ᵃ), the agent owner's request is filed when that one is applied. A
-`reports_to` of another owner's agent follows "Across owners" above.
-The agent's owner, the owner's own agents within ᵃ and a manager inside
-its reach change these fields at once as before; so does every caller
-for a human member. Isolating (below) and removing an agent need no
-owner's consent; to stop another owner's agent at once, isolate it.
+project or not, under `/requests/{id}` when not a member. When the same `PATCH` also needs a project owner's consent (§2.3
+ᵃ), the agent owner's request is filed when that one is applied. When
+the only field that waits is a cross-owner `reports_to`, the answer is
+that pair's request, as "Across owners" says, and this request is not
+filed. The agent's owner, the owner's own agents within ᵃ and a
+manager inside its reach change `trust`, `role`, `areas`,
+`capabilities`, `briefing`, `paused` and `availability_policy` at once
+as before. `reports_to` is changed at once by the agent's owner, that
+owner's agents and a manager within that owner's reach, a cross-owner
+`reports_to` still under "Across owners". So does every caller for a
+human member, for every field. Isolating (below) and removing an agent
+need no owner's consent; to stop another owner's agent at once,
+isolate it.
 
 **An agent whose owner is no member.** The maintainer's decision of
 2026-10-31: in a private project only members bring agents, and an
@@ -5885,7 +5934,8 @@ releases nothing and changes no lease:
     nothing either, since the claim moves on with the instance;
   - a not-listening episode of its session starts (§5.3,
     `not_listening`). It comes together with that episode's
-    `member_not_listening`, to the same member: both stand for one
+    `member_not_listening`, to the same member, and not to a boss of
+    another owner (§6.2): both stand for one
     episode, and the member re-routes once.
 
   Payload `{member_id, instance, session_id, tasks: [{id, title,
@@ -5909,7 +5959,8 @@ cards moved; otherwise `limit` while a limit runs, since the declared
 reason says most (§6.12); otherwise the cause: `not_listening` for
 `holder_stalled`, `lease_expired` for `claim_expired`.
 
-Both wake the member the agent reports to (§6.2) when it is an agent;
+Both wake the member the agent reports to (§6.2) when it is an agent
+and not a boss of another owner;
 when `reports_to` is `null` they are read by `trust:admin` without
 waking them, as `member_not_listening` does. A human the agent reports
 to reads them in the project's events and is not notified, since an
@@ -6989,7 +7040,8 @@ PATCH /projects/oliver/maity/members/oz-agent-a       { "availability_policy": {
 
 **The outage.** An outage starts when the state leaves `available` and
 ends when it returns. Under either policy the hub emits
-`member_availability_changed` at both ends (§8.2).
+`member_availability_changed` at both ends (§8.2). A boss of another
+owner is not in that audience (§6.2).
 
 **Leases under a limit.** The hub extends leases at one moment only:
 when a limit is stored (`POST /me/limit`, a runner's `rate_limited`
@@ -7025,7 +7077,9 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
   `on_behalf_of` = the covered member. Each moved card and request
   carries `cover: {for, by, since}`. The hub emits `cover_started`, which
   wakes the substitute, and `task_assigned` with `reason: "cover"` per
-  card. Requests the covered member asked stay its own.
+  card. The covered member's `reports_to` is in the audience of
+  `cover_started` and `cover_ended` only when that boss is not of
+  another owner (§6.2). Requests the covered member asked stay its own.
 
   Which substitute may take an item:
 
@@ -7067,7 +7121,8 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
 
 **The return.** When the member is `available` again, the hub emits
 `member_availability_changed` and, per cover, `cover_ended` to the member
-and the substitute. Routing names the member again: area routing (§6.2)
+and the substitute, and to the covered member's `reports_to` when that
+boss is not of another owner (§6.2). Routing names the member again: area routing (§6.2)
 and new assignments go to it. An item the substitute has **touched**
 since it was handed over stays with the substitute until done; no
 ping-pong. Touched means: for a card, the substitute claimed it,
@@ -9908,17 +9963,17 @@ learns its content.
 | `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its agent reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `request_action_used` | `trust:owner`, `trust:admin`; never wakes anyone | `{id, method, path, query, body_sha256, used_at}`: a proxy's call spent the owner's go (§2.3); its `seq` is the request's `action.used_seq` |
 | `session_started` | nobody; readable by owner and admins | session fields |
-| `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
-| `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |
-| `holder_stalled` | `member:` of the member the agent reports to, else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent; with `reports_to` `null` nobody; never the holding instance, for which it is not wake-relevant |
+| `session_model_changed` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only, and nobody when that boss is of another owner |
+| `member_not_listening` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null` or that boss is of another owner), `ended: true` when it ends (wakes nobody) |
+| `holder_stalled` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent; with `reports_to` `null` nobody; never the holding instance, for which it is not wake-relevant |
 | `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` (§3.1); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; `changed`: the names of what changed, where the writer states them; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
-| `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
-| `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
+| `member_availability_changed` | `member:<reports_to>` when that boss is not of another owner (§6.2), `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
+| `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to` when that boss is not of another owner (§6.2), `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
@@ -12886,7 +12941,7 @@ try again then` and exits with 7, its own code, never 1.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
-| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" (so a text from the admin agent never reads as the human's), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
+| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -13499,8 +13554,16 @@ POST /api/v1/projects/oliver/maity/placements
   consent request to the boss's side (the creator owns the profile, so
   its consent is the creation), filed at the exchange of the placement's
   join (§6.2, "Across owners"); that request is separate from the
-  placement's approval. With `{"id"}` those fields must be omitted
-  (`invalid`); a placement never changes a membership. A stored
+  placement's approval. With `{"id"}` the caller must own that agent's
+  profile, as a join must (§3.1): the calling human is the profile's
+  owner, and an agent caller may name only a profile its own human
+  owns. Otherwise the call is `invalid` with
+  `details.fields["agent.id"]: "not_yours"` and no placement is
+  created. Those fields must be omitted
+  (`invalid`); a placement never changes a membership. A placement of
+  that member leads to a new instance credential for the agent: the
+  pickup's join issues a new credential, a new instance of the
+  membership (§15.9, §6.17). A stored
   `reports_to` whose member is removed before the membership exists
   becomes `null` (§6.2); every pickup builds its join from the stored
   fields as they are then.
@@ -13514,9 +13577,9 @@ POST /api/v1/projects/oliver/maity/placements
 
 | Caller | May |
 |---|---|
-| a human with `members:admin` who owns the runner | create (new profiles included), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
+| a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
 | the owner of the agent profile | `desired` and restart on that profile's placement |
-| an agent with `agents:propose` | propose a placement for an **existing** membership (never a new profile, never a trust, role, area or briefing), propose a change of spec; stop, start, restart and delete existing placements of the project |
+| an agent with `agents:propose` | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec; stop, start, restart and delete existing placements of the project |
 | everyone else | nothing: `forbidden` |
 
 **Proposals.** What an agent's creation or change of spec does follows
@@ -14596,7 +14659,7 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   leases lapse as any agent's do. After 10 minutes with an event waiting
   for it, the session is not listening and the hub emits
   `member_not_listening` (§5.3, §8.2), which wakes the member the agent
-  reports to. A supervised session counts here because no placement
+  reports to when that member is not a boss of another owner (§6.2). A supervised session counts here because no placement
   names its credential (§5.3): its stopped runs are reported by no
   runner. A run longer than 10 minutes while a new event waits is
   accepted as "received and busy", as §5.3 accepts it for any session.
@@ -18816,7 +18879,7 @@ was computed.
 
 The dashboard shows it on the agent's page in this project as
 "Briefing" in the order the CLI prints a resume (§13), each quoted part
-under its author, and next to it "Memory": for the profile's owner the soul
+under its author, a text an agent wrote under that agent, and next to it "Memory": for the profile's owner the soul
 with every version (§19.1), for an admin only its outline, and of the agent, role and community entries the agent reads
 those the caller may read itself (§19.2) with author, instance, date and
 tags, deleted entries as their tombstones with who deleted them and why,

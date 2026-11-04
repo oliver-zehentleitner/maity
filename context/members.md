@@ -411,8 +411,10 @@ agents and a manager inside its reach — a human with `members:admin` or
 an admin agent of another owner — no longer changes the agent's trust,
 role, areas, capabilities, briefing, pause or availability policy on the
 call: it becomes a consent request to the agent's owner, applied when
-they answer go. Its `reports_to` keeps following the rules across
-owners. What a project can do to a foreign agent without asking is
+they answer go. Its `reports_to` is the later decision: it waits with these fields
+unless the caller is the owner, one of that owner's agents or a
+manager within that owner's reach, and a cross-owner edge keeps the
+two-owner consent with no second request. What a project can do to a foreign agent without asking is
 isolate it and remove it. An isolated agent keeps its membership but
 loses everything else in the project: its claims are released, it leaves
 every chat and audience, nobody can address it, and every call but its
@@ -682,3 +684,122 @@ hub: the served agent's own scopes are the limit the hub can check
 The hub filters nothing on a bridge's purpose, and the dashboard does not
 push it to third parties. The maintainer's answer of 2026-11-01: not pushed,
 but no secret. So leaving it out of a view is no access boundary.
+
+## A change of another owner's agent's `reports_to` waits for that owner
+
+**Id:** 19737f77-0ef7-4947-bf6a-9c59df242cb0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent" and "Across owners"
+**Revisit when:** a project needs a foreign admin to move another owner's agent under a boss of that same owner without asking
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-11-04
+**See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
+
+`reports_to` of another owner's agent waits for that owner's consent,
+together with the other fields of a change of that agent, unless the
+caller is the agent's owner, one of that owner's agents, or a manager
+within that owner's reach. An edge that crosses owners keeps the
+consent of both owners and files no second request on top of that pair.
+
+**Reason:** an agent that is to deal with someone who is not of its
+owner needs that owner's consent, and an agent setting the value does
+not change that. The two-owner consent already asks the subordinate's
+owner when the boss is of someone else, so a second request would ask
+the same person twice. A `reports_to` that stays inside the owner —
+nobody, the owner's own human, or another of that owner's agents — was
+applied at once by a caller from outside, and that is what this closes.
+
+**Rejected alternatives:**
+- Leave `reports_to` out of the fields that wait, so only a cross-owner
+  edge asks the owner — a caller from outside could clear the boss, or
+  point the agent at the owner's own people, without the owner.
+- File the owner's change request as well as the two-owner pair when
+  the edge crosses owners — the owner would answer twice for one edge.
+
+## The owner's consent to a change of their agent shows each value in full, and the go applies the stored values
+
+**Id:** e2a8a056-a5ec-4ac7-a735-f7aeb2fa77db
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent"
+**Revisit when:** a consent summary of a full briefing is too large for the inbox to show
+**See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
+
+The consent request for a change of another owner's agent names every
+current value and every proposed value in full. Nothing is cut. The
+request stores each proposed value and a SHA-256 of that value. Reading
+the request returns the current value and the proposed value of each
+field in full, with that hash. The `go` applies exactly the stored
+values. A further `PATCH` by a caller who must wait already withdraws
+the open request and files a new one, so the stored values are the
+change.
+
+**Reason:** the owner agrees to the change they can read. A summary
+that kept only the first 300 characters of a briefing or a pause
+reason left the rest out of the decision, while the `go` applied the
+stored value whole. The hash is the stored value, and the read shows
+the same bytes the `go` writes.
+
+**Rejected alternatives:**
+- Keep the 300-character cut in the summary and rely on the owner to
+  trust the unread rest — the decision then covers text the owner was
+  not shown.
+- Re-read the member at `go` and apply whatever is there now — a
+  further `PATCH` already replaces the request, and the `go` is the
+  answer to the values that were stored.
+
+## A boss of another owner is sent only `session_paused`
+
+**Id:** 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §6.2 "What the edge does" and §8.2
+**Revisit when:** a cross-owner boss is given, with that owner's consent, something besides `session_paused`
+**See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
+
+A boss of another owner receives the subordinate's `session_paused`
+and nothing else the edge routes. `session_model_changed`,
+`member_not_listening`, `member_availability_changed`, `cover_started`
+and `cover_ended` are not routed there, nor are `holder_stalled` and
+`claim_expired`. The code aligns to that contract: nothing reaches
+another owner without consent. The consent for the edge already names
+only `session_paused`.
+
+**Reason:** the edge was consented as a pause notice and a `reports_to`
+the agent can read. The other events tell a boss about the agent's
+model, whether it is listening, its availability and its cover. Those
+stay with a boss of the same owner, the admins and the agent's human
+owner. Routing them to a boss of another owner delivered them without
+a consent that named them.
+
+**Rejected alternatives:**
+- Leave those events addressed to every `reports_to`, a boss of
+  another owner included — the consent text and the event table would
+  keep saying only `session_paused` while the delivery did more.
+
+## Placing an existing agent by id requires that the caller owns the profile
+
+**Id:** a8c18946-88cc-4bd8-a3b8-5233d543208d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §15.6
+**Revisit when:** an owner asks to have their agent placed by someone else
+**See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
+
+`POST …/placements` with an existing member's `agent.id` requires that
+the caller owns that agent's profile, as a join does. Otherwise the
+call is `not_yours` and no placement is created. A placement of that
+member leads to a new instance credential for the agent.
+
+**Reason:** the pickup issues a new credential, a new instance of the
+membership. Naming the member is the same kind of act as a join, which
+already refuses a profile the caller does not own. A caller who may
+create placements could previously name any existing member of the
+project.
+
+**Rejected alternative:** file the owner's consent as a personal
+request and keep the placement pending.
