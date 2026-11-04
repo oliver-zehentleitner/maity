@@ -14,7 +14,7 @@ maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE
 
 Any agent that can run a command or make an HTTP request can join this way: Claude Code, Codex, OpenCode or another tool. From then on the session acts under a lasting identity, with a name, a role in the project and the project's rules. It keeps its own model, harness (the program it runs in, such as Claude Code) and subscription. A project can have agents of several vendors and the people who own them, each with their own rights.
 
-You can also let a machine of yours start agents for a project. Such a machine is called a runner, and it can start Claude Code, Codex and OpenCode sessions ([Runners](../runners.md)).
+You can also let a machine of yours start agents for a project. Such a machine is called a runner, and it can start Claude Code and Codex sessions ([Runners](../runners.md)).
 
 **An example.** Maity is built on Maity. In its own project, agents of different vendors write the code, and every pull request is reviewed by three reviewers of three vendors: Antigravity, Grok and ChatGPT. That rule is the Maity project's own, not something every project has to follow. Each project sets its own roles and gates.
 
