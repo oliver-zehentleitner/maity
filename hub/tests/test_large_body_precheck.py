@@ -5,12 +5,16 @@ sign-in pages' settings and their previews."""
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 import pytest
+from fastapi.routing import iter_route_contexts
 from sqlalchemy import Engine
 
 from maity_hub import middleware
+from maity_hub.app import create_app
+from maity_hub.config import Settings
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -38,6 +42,7 @@ def _drive(
     headers: list[tuple[bytes, bytes]],
     query: bytes = b"",
     size: int = SIZE,
+    host: bytes = b"hub.example",
 ) -> tuple[int, str, int]:
     """The request driven at the hub itself: its status, `Maity-Error` and how often the
     hub asked for the body."""
@@ -58,7 +63,7 @@ def _drive(
         "query_string": query, "server": ("hub.example", 443),
         "client": ("203.0.113.7", 1),
         "headers": [
-            (b"host", b"hub.example"),
+            (b"host", host),
             (b"content-type", b"application/json"),
             (b"content-length", str(size).encode()),
             *headers,
@@ -81,6 +86,21 @@ def test_every_large_body_route_is_one_the_pre_check_covers() -> None:
     for method, path in LARGE:
         assert middleware._body_cap({"method": method, "path": path})[0] > middleware.BODY_CAP
     assert middleware._body_cap({"method": "POST", "path": "/api/v1/me"})[0] == middleware.BODY_CAP
+
+
+def test_large_names_every_route_of_the_app_with_a_large_body(
+    settings: Settings, migrated: Engine
+) -> None:
+    # Walked from the router, each parameter filled with a name: the list above is complete.
+    large = set()
+    for route in iter_route_contexts(list(create_app(settings, migrated).routes)):
+        for method in route.methods or ():
+            path = re.sub(r"\{[^}]+\}", "x", route.path or "")
+            if middleware._body_cap({"method": method, "path": path})[0] > middleware.BODY_CAP:
+                large.add((method, path))
+    upload = ("POST", "/api/v1/projects/x/x/attachments")  # test_attachments.py
+    named = {(m, re.sub(r"/(maintainer|maity|agt-nobody|acme)(?=/)", "/x", p)) for m, p in LARGE}
+    assert large == named | {upload}
 
 
 @pytest.mark.parametrize(("method", "path"), LARGE)
@@ -124,3 +144,16 @@ def test_a_body_under_the_default_cap_is_read_before_the_caller_is_known(
     # Only a large body waits for the headers; a small one is read and scanned first (§2.2).
     status, code, asked = _drive(owner.client, "PATCH", "/api/v1/me", [], size=1024)
     assert (status, code) == (401, "unauthenticated") and asked == 1
+
+
+@pytest.mark.parametrize(
+    ("method", "path"), [*LARGE, ("POST", "/api/v1/projects/maintainer/maity/attachments")]
+)
+def test_on_the_join_host_a_large_body_is_refused_unread(
+    make_client: ClientFactory, migrated: Engine, method: str, path: str
+) -> None:
+    # Only the join is served there, and it takes no large body: every body is held to the
+    # default cap, whatever the same path takes on the public host.
+    client = make_client(base_url="https://join.example", join_url="https://join.example")
+    status, code, asked = _drive(client, method, path, [], host=b"join.example")
+    assert (status, code, asked) == (413, "payload_too_large", 0)

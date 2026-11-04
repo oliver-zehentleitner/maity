@@ -354,7 +354,7 @@ operator wrote down.
 - **Python's `is_private`, as first written:** it also counts the
   documentation ranges (203.0.113.0/24 and others) as private.
 
-## An upload's caller is checked from its headers before its body is read
+## A large body's caller is checked from its headers before the body is read
 
 **Id:** ea27e3d7-14b1-40ab-8158-b86ab575583e
 **Type:** decision
@@ -382,9 +382,13 @@ read. A call that passes is authenticated in full by its route as
 before, so a revoked credential, a signature that does not verify and every
 later check keep their order and their answers; the pre-check renews nothing
 and spends no nonce. When the database cannot answer the pre-check, the call
-goes on and fails at its route as any call does.
+goes on and fails at its route as any call does. On the join host, where only
+the join is served and nothing takes a caller, every body is held to the 64 KiB
+default instead: a larger one is refused with `payload_too_large` unread, and the
+rest is answered there as before.
 
-**Reason:** the hub reads a large body only for a caller who can authenticate,
+**Reason:** the hub reads a large body only for a caller who can authenticate
+(on the join host, never),
 and each refusal is the one the full check gives. Every one of these calls
 takes a caller, so the pre-check refuses no one the route would accept. The
 rule follows the cap, not a list of routes, so a call later given a larger cap

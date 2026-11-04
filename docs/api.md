@@ -323,7 +323,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7). A body that may be larger than 64 KiB is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread |
+| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread |
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |

@@ -169,7 +169,9 @@ class HubMiddleware:
             # Nothing here would read it: 404 before the cap, and the body is never read.
             await _not_found(scope, receive, send)
             return
-        cap, refuse = _body_cap(scope)
+        # Only the join is served on the join host, and it takes no large body: there every
+        # body is held to the default cap, so none is read past it for a caller never checked.
+        cap, refuse = (BODY_CAP, _too_large) if on_join_host else _body_cap(scope)
         declared = _content_length(scope)
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
@@ -179,7 +181,7 @@ class HubMiddleware:
         in_query = credentials.find_all(raw_query) + credentials.find_all(
             unquote_to_bytes(raw_query)
         )
-        if not on_join_host and cap > BODY_CAP:
+        if cap > BODY_CAP:
             # A body above the default cap (an attachment, an image, the landing, legal and
             # sign-in pages' settings and their previews) is read only for a caller the
             # headers may authenticate (§1.7, §8.7). Every one of these routes takes a caller.
