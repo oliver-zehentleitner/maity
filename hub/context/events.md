@@ -501,7 +501,7 @@ caller does not say `holder_moves`: a replacement (the claims move to the new in
 member's removal (it releases them in the same transaction, so nobody is left to re-route) say
 so. The removal is the hub's reading of §6.5, which names only the replacement. The replacement
 moves the claims before it revokes (`_move_to_replacement` in
-`hub/src/maity_hub/routes/joins.py`), so the old instance holds nothing by then and its
+`hub/src/maity_hub/routes/joins.py`), so the old instance holds no open card by then and its
 `holder_moves` guards against a reordering; this is why `hub/tests/test_holder_stalled.py` tests
 `leaks.revoke` with the flag directly. The reason text never decides: the revoke route passes
 the human's own words, which can be `replaced` too;
