@@ -610,18 +610,23 @@ route a crawler does not fetch.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision in the inbox, 2026-10-28 (public projects and users indexed by search engines; "without JavaScript, could even be static, rebuilt every few hours"); contract `docs/api.md` §16.9
+**Source:** the maintainer's decision in the inbox, 2026-10-28 (public projects and users indexed by search engines; "without JavaScript, could even be static, rebuilt every few hours"); the defaults since 2026-10-31 and 2026-11-02 from projects.md 038e685e; contract `docs/api.md` §16.9
 **See:** scope.md#only-an-instance-with-a-landing-page-invites-search-engines-and-only-to-its-root — 4f798011-3707-4fe7-a825-ad2575d6f395 — as of 2026-10-28
 
-A project whose namespace owner turns `public_page` on, and a person who
-turns `public_profile` on, get a page under `/p/<owner>/<slug>` or
+A public project and every active account get a page, at first under `/p/<owner>/<slug>` or
 `/u/<handle>` (since the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5, at `/<owner>/<slug>` and
 `/<handle>`, the dashboard's own addresses): plain HTML rendered by the hub, no script, listed in the
 sitemap. The operator chooses whether pages are rendered on every change
 (default) or only on an interval of 1–24 hours (default 6); either way
 anything taken off a page, any edit of a shown text included, is taken
-off at once, and only new entries and counts wait for the interval. The operator switches
+off at once, and only new entries and counts wait for the interval. As decided on 2026-10-28,
+both were opt-in: a project got its page when its namespace owner turned
+`public_page` on, a person when they turned `public_profile` on. Since
+then projects are public by default (2026-10-31) and so are profiles
+(2026-11-02, projects.md 038e685e): a project's owner can still make it
+private, and a person's `public_profile` decides how much their page
+shows, not whether it exists. The operator switches
 the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
 default. This brings part of the later stage "public projects and
 discovery" forward: the pages, not yet a discovery page or join
@@ -631,9 +636,13 @@ requests.
 people on it, and the dashboard cannot be indexed: it is drawn by
 scripts under fragment routes. A static page per public project and
 person is what a crawler reads best and costs the hub one render per
-change. Being public is a choice about one's own data, so it is the
-owner's alone and off until chosen; an operator of a private instance
-must not publish its members by an update.
+change. The original reason for opt-in, that being public is a choice
+about one's own data and so off until chosen, no longer decides the
+default: the maintainer chose the forge model (projects.md 038e685e),
+and the owner's choice remains to make a project private or to show less
+of a profile. An operator of a private instance still must not publish
+its members by an update, so the feature itself stays off until the
+operator switches it on.
 
 **Rejected alternatives:**
 - Public by default with an opt-out: publishes people and projects who
@@ -697,8 +706,9 @@ them: private, friends, colleagues, friends and colleagues, or everyone.
 **Reason:** the maintainer wants a public project to show how it is
 being built, not only that it exists; the board and the team are that.
 What a card says inside, and what people discuss, stays with the team.
-Names follow each person's own choice, so publishing a project does not
-publish its people. Building links from names, instead of taking URLs,
+At first names followed each person's own choice, so publishing a
+project did not publish its people; since 2026-11-02 an open project
+names its members (`hub/context/public-pages.md` 3da2d551). Building links from names, instead of taking URLs,
 keeps a "GitHub" link from pointing anywhere else.
 
 The Board shows the open columns (at most 200 cards each) and only the
