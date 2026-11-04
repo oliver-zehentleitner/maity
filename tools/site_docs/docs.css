@@ -113,6 +113,9 @@ summary{cursor:pointer;font-weight:600}
 .alert-important{border-color:var(--accent)}
 
 .page-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-top:64px;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+.page-foot .follow{display:flex;gap:16px}
+.page-foot a{color:var(--muted)}
+.page-foot a:hover{color:var(--ink)}
 
 /* narrower screens: no rail, then the navigation folds into a menu */
 @media (max-width:1180px){ .layout{grid-template-columns:240px minmax(0,1fr);gap:40px} .rail{display:none} }
