@@ -19,7 +19,8 @@ window.Maity = window.Maity || {};
   const GIB = 1024 * 1024 * 1024;
   const MIB = 1024 * 1024;
   // What is stored: in MiB below 1 GiB, so a hub with a few files does not read as empty.
-  const stored = (bytes) => (bytes < GIB
+  // Rounded to a tenth of a MiB first, so a total just under 1 GiB does not read as 1,024 MiB.
+  const stored = (bytes) => (Math.round((bytes / MIB) * 10) / 10 < 1024
     ? M.t("limits.storage.used_mib", { size: M.fmt.number(bytes / MIB, { maximumFractionDigits: 1 }) })
     : M.t("limits.storage.used", { size: M.fmt.number(bytes / GIB, { maximumFractionDigits: 2 }) }));
   const FIELDS = [
@@ -65,8 +66,11 @@ window.Maity = window.Maity || {};
         const showNumber = () => { number.hidden = mode.value !== "number"; };
         mode.addEventListener("change", showNumber);
         showNumber();
+        // Typed into: then the number counts even when it equals the rounded value shown.
+        let touched = false;
+        number.addEventListener("input", () => { touched = true; });
         const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-        return { f, v, mode, number, shown, error, locked, nodes: h("fieldset", { class: "limits-field field-stack" },
+        return { f, v, mode, number, shown, touched: () => touched, error, locked, nodes: h("fieldset", { class: "limits-field field-stack" },
           h("legend", null, f.label()),
           h("label", { for: id + "-mode" }, M.t("limits.mode")), mode,
           h("label", { for: id, class: "visually-hidden" }, f.label()), number,
@@ -91,7 +95,7 @@ window.Maity = window.Maity || {};
             let want;
             if (p.mode.value === "default") want = null;
             else if (p.mode.value === "unlimited") want = "unlimited";
-            else if (typeof p.v.value === "number" && p.v.source !== "default" && p.number.value === p.shown) return;
+            else if (typeof p.v.value === "number" && p.v.source !== "default" && !p.touched() && p.number.value === p.shown) return;
             else {
               const n = Number(p.number.value);
               if (!Number.isInteger(n) || n < 1 || n > p.f.max) {

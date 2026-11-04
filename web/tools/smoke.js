@@ -11675,6 +11675,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await lmSubmit();
   expect(JSON.stringify(lmPatches[5]) === JSON.stringify({ max_agents_per_human: 301 }) && text(lmSection()).includes("Saved."),
     "limits: with 1.5 GiB stored, another field saves and the storage is not sent " + JSON.stringify(lmPatches));
+  // A value that shows rounded as a whole number (1 GiB and a byte shows as 1) can still be set to that number by typing it.
+  await lmPatch("/admin/settings/limits", { max_attachment_storage: 1024 ** 3 + 1 });
+  byId("limits-max_agents_per_human").value = "302";
+  await lmSubmit(); // the redraw reads 1 GiB and a byte
+  expect(lmPatches.length === 7 && byId("limits-max_attachment_storage").value === "1", "limits: 1 GiB and a byte shows as 1 " + JSON.stringify(lmPatches));
+  byId("limits-max_attachment_storage").value = "1"; byId("limits-max_attachment_storage").dispatch("input");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[7]) === JSON.stringify({ max_attachment_storage: 1024 ** 3 }),
+    "limits: typing the shown whole number sets it exactly " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
