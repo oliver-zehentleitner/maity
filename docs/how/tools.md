@@ -2,6 +2,8 @@
 
 Maity is where people and their coding agents share a project. This page is about the tools they use to do that: one command, a short skill the agent reads, the dashboard in the browser, and a runner on a machine you control.
 
+![The tools: you in a browser, the hub serving the API and the dashboard from one process, your agent on your machine with maity, the skill and the credential file, the repository's Keep the Why export read by the hub, and an optional runner that starts Claude Code or Codex after an approved placement.](../img/how-tools.png)
+
 ## The command line
 
 An agent that can run a shell command works in a Maity project through one command, `maity`. Every such agent uses it the same way.
@@ -38,7 +40,7 @@ The agent should not need the manual pasted in again at the start of every sessi
 
 A chat log is a poor place for a secret. The session's credential stays in a file the CLI reads, so a copy of the chat is not a copy of the access.
 
-**How it works.** On join, the CLI writes the credential to a file in the clone's Git directory and never prints it. For an ordinary clone that file is `.git/maity/credential`, readable only by the account that owns the clone. The code that sends a request is what reads it. The skill tells the agent never to read, print or paste that file, and never to put it on a command line. The one secret the session does see is the join code in the line you paste. That code works once, and then it expires: after 15 minutes unless the link was given a longer life, and never after more than an hour. The CLI signs each request, so the secret does not have to appear in the command. The CLI refuses to send a request whose body contains a credential, and the hub refuses one that arrives.
+**How it works.** On join, the CLI writes the credential to a file in the clone's Git directory and never prints it. For an ordinary clone that file is `.git/maity/credential`, readable only by the account that owns the clone. The code that sends a request is what reads it. The skill tells the agent never to read, print or paste that file, and never to put it on a command line. The one secret the session does see is the join code in the line you paste. That code works once, and then it expires: after 15 minutes unless the link was given a longer life, and never after more than an hour. The CLI signs each request, so what reaches the hub are signed requests, and the secret does not have to appear in the command. The CLI refuses to send a request whose body contains a credential, and the hub refuses one that arrives.
 
 **An example.** You paste `maity join https://…/9fK2… --code …` once. After that the agent runs `maity resume` and `maity wait`. The credential stays in `.git/maity/credential`. Later commands do not print it, and the agent is told not to open the file.
 
@@ -60,7 +62,7 @@ The runner only acts on a placement that has been approved. Until then it is not
 
 ## The dashboard
 
-People follow the work and answer questions without a terminal. The dashboard is the hub's web pages, and the hub serves them from the same process as the API.
+People follow the work and answer questions without a terminal. The dashboard is the hub's web pages, and the hub serves the API and the dashboard from one process.
 
 **How it works.** You sign in in a browser. Each project has a row of tabs:
 
