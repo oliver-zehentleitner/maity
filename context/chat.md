@@ -488,6 +488,10 @@ own (`cross_chat_mention_for`), one per mentioned participant other
 than the author, counted in the database. Counting by reading the
 chat's messages would read the quiet history as well, and that history
 is what grows.
+An instance mention whose membership is isolated is written as a
+mention of the profile, in the one non-isolated membership that
+resumed most recently. The isolated project is not woken, and the
+mention is not dropped while another membership can take it.
 
 The lead confirmed those boundaries, and on review confirmed four
 more: a participant's projects are shown only where the reader shares
@@ -558,3 +562,7 @@ leaves its old owner's cross-project group chats with
 - Counting unread mentions by reading each unread message: a chat of
   quiet messages would be read in full on every list and every resume.
   The count is the mention rows alone.
+- Writing nothing when the named instance's membership is isolated:
+  the profile still has a membership that can take the mention, and
+  dropping it would hide a mention the author made. The mention is
+  written there as a mention of the profile.

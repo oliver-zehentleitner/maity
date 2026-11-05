@@ -12394,9 +12394,12 @@ when the owner reads a closed chat they have left.
   title}, message_id, seq}` and does not carry the body, so the text
   never enters a project's log. An instance mention (`@handle#id`,
   §8.6) is written in the project that instance belongs to and wakes
-  that instance, which is what reaches a dormant one (§6.17). A mention
-  of the profile, with no instance, is written in the one non-isolated
-  membership that resumed most recently. When that membership has a
+  that instance, which is what reaches a dormant one (§6.17), when
+  that membership is not isolated. When it is isolated, the mention is
+  written as a mention of the profile: one event, in the one
+  non-isolated membership that resumed most recently, and that
+  instance is not woken. A mention of the profile, with no instance,
+  is written in that same membership. When that membership has a
   listening instance, its `wake` rule (§6.18) chooses the instance;
   otherwise the event waits for that membership's next resume. No other
   membership of the profile gets an event or a wake. The actor is the

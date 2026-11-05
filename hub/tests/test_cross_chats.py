@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, event, insert, select, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, cross_chats, mentions
 from maity_hub import tables as t
@@ -602,42 +602,82 @@ def _quiet(engine: Engine, chat_id: str, author: str, count: int) -> None:
         )
 
 
+class _CountingCursor:
+    """A cursor SQLAlchemy fetches from. psycopg's and sqlite's own fetch methods are
+    read-only, so the count has to live on a wrapper the dialect is handed."""
+
+    def __init__(self, inner: Any, counted: dict[str, int]) -> None:
+        object.__setattr__(self, "_inner", inner)
+        object.__setattr__(self, "_counted", counted)
+        object.__setattr__(self, "_statement", "")
+
+    def _remember(self, statement: Any) -> None:
+        text = statement if isinstance(statement, str) else str(statement)
+        object.__setattr__(self, "_statement", text)
+
+    def _note(self, rows: int) -> None:
+        if "cross_chat_message" in object.__getattribute__(self, "_statement").lower():
+            object.__getattribute__(self, "_counted")["n"] += rows
+
+    def execute(self, statement: Any, parameters: Any = None, /, **kwargs: Any) -> Any:
+        self._remember(statement)
+        inner = object.__getattribute__(self, "_inner")
+        if parameters is None and not kwargs:
+            return inner.execute(statement)
+        if parameters is None:
+            return inner.execute(statement, **kwargs)
+        return inner.execute(statement, parameters, **kwargs)
+
+    def executemany(self, statement: Any, parameters: Any, /) -> Any:
+        self._remember(statement)
+        return object.__getattribute__(self, "_inner").executemany(statement, parameters)
+
+    def fetchall(self) -> Any:
+        rows = object.__getattribute__(self, "_inner").fetchall()
+        self._note(len(rows))
+        return rows
+
+    def fetchmany(self, size: int | None = None) -> Any:
+        inner = object.__getattribute__(self, "_inner")
+        rows = inner.fetchmany() if size is None else inner.fetchmany(size)
+        self._note(len(rows))
+        return rows
+
+    def fetchone(self) -> Any:
+        row = object.__getattribute__(self, "_inner").fetchone()
+        if row is not None:
+            self._note(1)
+        return row
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(object.__getattribute__(self, "_inner"), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(object.__getattribute__(self, "_inner"), name, value)
+
+
 def _message_rows_fetched(engine: Engine, call: Any) -> int:
-    """Rows a SELECT of `cross_chat_message` returned to the hub during `call`."""
+    """Rows a SELECT of `cross_chat_message` returned to the hub during `call`.
+
+    The call's response has to be 200: an error that returns no rows must not count
+    as a small fetch."""
     counted = {"n": 0}
+    cls = engine.dialect.execution_ctx_cls
+    defined = "create_cursor" in cls.__dict__
+    original = cls.create_cursor
 
-    def before(
-        conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
-    ) -> None:
-        if "cross_chat_message" not in statement.lower():
-            return
-        fetchall, fetchmany, fetchone = cursor.fetchall, cursor.fetchmany, cursor.fetchone
+    def create_cursor(self: Any) -> _CountingCursor:
+        return _CountingCursor(original(self), counted)
 
-        def all_rows() -> Any:
-            rows = fetchall()
-            counted["n"] += len(rows)
-            return rows
-
-        def many_rows(size: int | None = None) -> Any:
-            rows = fetchmany() if size is None else fetchmany(size)
-            counted["n"] += len(rows)
-            return rows
-
-        def one_row() -> Any:
-            row = fetchone()
-            if row is not None:
-                counted["n"] += 1
-            return row
-
-        cursor.fetchall = all_rows
-        cursor.fetchmany = many_rows
-        cursor.fetchone = one_row
-
-    event.listen(engine, "before_cursor_execute", before)
+    cls.create_cursor = create_cursor  # type: ignore[assignment]
     try:
-        call()
+        response = call()
     finally:
-        event.remove(engine, "before_cursor_execute", before)
+        if defined:
+            cls.create_cursor = original  # type: ignore[method-assign]
+        else:
+            del cls.create_cursor
+    assert response.status_code == 200, response.text
     return counted["n"]
 
 
@@ -653,6 +693,7 @@ def test_mention_unread_does_not_read_the_quiet_history(
     small = _message_rows_fetched(migrated, lambda: home.get("/me/cross-chats"))
     _quiet(migrated, chat["id"], owner.id, 9_990)
     large = _message_rows_fetched(migrated, lambda: home.get("/me/cross-chats"))
+    assert small > 0
     assert small == large
     assert large < 20
     listed = home.get("/me/cross-chats").json()["items"][0]

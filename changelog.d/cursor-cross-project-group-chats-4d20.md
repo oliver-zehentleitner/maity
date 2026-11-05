@@ -11,5 +11,6 @@
 - hub: a cross-project group chat drops an agent when the membership just
   removed was the last one that was not isolated, and lifting that isolation
   does not put the agent back. Naming a deleted profile beside an unknown id
-  is `not_found`. An instance mention is not written into an isolated
-  membership's project.
+  is `not_found`. An instance mention of an isolated membership is
+  written in another non-isolated membership of that profile, as a
+  mention of the profile, and not in the isolated project.
