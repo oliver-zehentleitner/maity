@@ -10796,8 +10796,8 @@ messages are read back, without scanning the log, through §8.8.
 sends a `review_result` checks its `body` against `review.head` in its
 local clone before it sends, as it checks the cites (§13); the hub
 reads no repository and checks neither. What the text names is
-checkable in three forms, and a text that names something that is not
-there is not sent:
+checkable in four forms, and a text that names or quotes something that
+is not there is not sent:
 
 1. **A file and line**, anywhere in the text, in a code span or not: a
    path whose last part has an extension, then `:` and a line `n` or a
@@ -10837,18 +10837,54 @@ there is not sent:
    are no hash), and either end of `a..b` alike, is an object in the
    clone: a commit, or a tree or blob such as `git merge-tree` and a
    diff's index line show.
+4. **A quotation from a file**: what stands between `"` and the next
+   `"`, `“` and the next `”`, or `„` and the next `“` or `”`, within one
+   paragraph and outside code spans, with four words or more (a short
+   word or a term in quotes is prose); a `\"` closes no quote, nor does
+   a `"` after any odd number of backslashes, while after an even number
+   (`\\"`) the backslashes are text and the `"` closes it. It is a
+   quotation when the text ties it to one file at `head`: a file and
+   line (form 1) stands right before it, with nothing between that ends
+   a sentence, quotes or ends a table's cell (`|`) and at most two words
+   in 24 characters (`docs/how/connected.md:3 says "…"`), or right after
+   it in brackets, on its line or the paragraph's next one
+   (`"…" (docs/how/connected.md:3)`); when the places before it and in
+   those brackets name more than one file, it is tied to none, and a
+   place in the brackets of one quote is no place before the next. With no
+   file and line next to it, the section it sits in ties it when it is
+   about one file: the nearest heading above it that names a file at
+   `head` names exactly that one, and a heading that names two or more
+   ties nothing. A quotation stands verbatim in
+   that file, compared with each run of whitespace as one space and
+   without backticks, so that wrapped prose and dropped code marks
+   match; a quote of a comment wrapped over lines matches the file
+   without the comment markers (`#`, `//`, `/*`, `*`, `*/`, `--`, `;`)
+   at the lines' starts, and a `\"` in the quote (but not `\\"`, a
+   backslash and then the closing quote) matches the file's `\"` or its
+   `"`. A `…` or `...` cuts it into parts that must each stand there,
+   and the marks `.`, `,`, `;`, `:`, `!` and `?` at its end are left
+   out. One tied by a file and line stands there at `head`, as the line
+   refers to `head`; one tied by its section may also stand in that file
+   at `origin/HEAD`, so that a section can quote what the change
+   removed. A quote not tied to a file is prose and passes. A wording
+   the review proposes, a command's output, a mutation it applied, a
+   text the code renders, a string literal wrapped over lines, or a text
+   the change removed next to the line that replaced it is therefore
+   written in a code span (a span with whitespace in it is skipped, form
+   2) or without double quotes.
 
 Not checked: a fenced code block; everything under a heading `Ran` up
 to the next heading of the same or a higher level, where the reviewer
 lists the commands it ran and what they printed (the review line,
 §6.9) — an ATX heading (`#` to `######`) whose text is `Ran` and
 nothing else, in any case, not a setext heading and not `Ran (head)`;
-a pull request number `#<n>`; and what no form covers, prose above
-all. The check catches names that are not there, not wrong claims: a
-wrong line in a long enough file, a wrong count, or a test said to
-cover what it does not all pass, and reading the review stays the
-lead's work. A client without a clone, or without `head` in it, says
-on standard error that the text was not checked, and sends.
+a pull request number `#<n>`; and what no form covers: prose above
+all, a quote that nothing ties to a file among it. The check catches
+names and quotes that are not there, not wrong claims: a wrong line in
+a long enough file, a wrong count, or a test said to cover what it
+does not all pass, and reading the review stays the lead's work. A
+client without a clone, or without `head` in it, says on standard
+error that the text was not checked, and sends.
 
 **A review result reaches the author and both leads.** The hub adds to a
 `review_result`'s audience, without the reviewer naming them:
@@ -13792,7 +13828,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. It then checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. It then checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
