@@ -253,13 +253,13 @@ window.Maity = window.Maity || {};
     : { label: t.label(), href: t.path, current: ctx.scope === "orgs" ? t.key === "orgs" : null }));
 
   // A row of tabs: links, the current one marked; one to come greyed, with no address. It scrolls
-  // sideways where it is wider than the window, the current tab in sight (M.scrollRow).
+  // sideways where it is wider than the window, the current tab in sight: js/app.js sets that up
+  // once the view is in the page (a row not yet in it has no width).
   function tabRow(list, chosen, label, extra) {
     const nav = h("nav", { class: "view-tabs account-tabs" + (extra ? " " + extra : ""), "aria-label": label },
       list.map((t) => (t.later
         ? h("span", { class: "view-tab later", "aria-disabled": "true", title: M.t("menu.later") }, t.label())
         : h("a", { href: t.path, class: "view-tab", "aria-current": t.key === chosen ? "page" : null }, t.label()))));
-    window.setTimeout(() => { if (M.scrollRow) M.scrollRow(nav); }, 0);
     return nav;
   }
   // What stands on every tab: the page's heading and the tab row.
@@ -392,8 +392,8 @@ window.Maity = window.Maity || {};
     const chosen = SECURITY.find((t) => t.key === sub) || SECURITY[0];
     append(root, tabRow(SECURITY, chosen.key, M.t("account.security.tabs.label"), "security-tabs"));
     if (chosen.key === "device") {
-      if (M.deviceSignIn) await M.deviceSignIn.anotherDevice(ctx, root, wantedHeading === "device");
-      return {};
+      const device = M.deviceSignIn ? await M.deviceSignIn.anotherDevice(ctx, root) : null;
+      return { device: device && device.heading };
     }
     if (chosen.key === "sessions") {
       const sessions = M.sessions ? await M.sessions.section(ctx) : null;
@@ -442,7 +442,8 @@ window.Maity = window.Maity || {};
     else if (chosen === "settings") headings = await settingsTab(ctx, root);
     else if (chosen === "notifications") headings = await notificationsTab(ctx, root);
     else if (chosen === "security") headings = await securityTab(ctx, root, args[1]);
-    // The part a moved address asked for starts in sight, its heading focused.
+    // The part a moved address asked for starts in sight, its heading focused. The view is put in
+    // the page when this returns (js/app.js), before the timeout runs, so the focus holds.
     const wanted = wantedHeading;
     wantedHeading = null;
     const heading = wanted && headings[wanted];

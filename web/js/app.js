@@ -1323,9 +1323,6 @@ window.Maity = window.Maity || {};
     else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
   }
 
-  // A view's own row of tabs that scrolls sideways (the account's, js/account.js): the current
-  // tab in sight, the fade on the side with more.
-  M.scrollRow = (nav) => { showCurrent(nav); scrollCue(nav); };
 
   // The inbox tab says the project's open requests, the chat tab its unread
   // chats (docs/api.md §18.2), once the counts are read.
@@ -2097,6 +2094,9 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
+    // A view's own tab rows that scroll sideways (the account's, js/account.js), set up now that
+    // they are in the page and have a width: the current tab in sight, the fade on the side with more.
+    root.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     renderBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").

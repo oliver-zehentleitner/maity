@@ -252,16 +252,16 @@ window.Maity = window.Maity || {};
 
   // ---- the signed-in device: /account/sign-in-device ----------------------
 
-  // A tab of the account's Security (js/account.js); with focus (the old address
-  // /account/sign-in-device) its heading is focused.
-  async function anotherDevice(ctx, root, focus) {
+  // A tab of the account's Security (js/account.js), which focuses the heading where asked (the
+  // old address /account/sign-in-device): only once the view is in the page.
+  async function anotherDevice(ctx, root) {
     const heading = h("h3", { tabindex: "-1" }, M.t("device.other.title"));
     const stage = h("div", { class: "device-stage" });
     append(root, heading,
       h("p", { class: "muted" }, M.t("device.other.intro")),
       stage);
-    if (focus) window.setTimeout(() => heading.focus(), 0);
     await start(ctx, stage);
+    return { heading };
   }
 
   // The QR of the code's URL; the code and Cancel stand without it.

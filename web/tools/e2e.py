@@ -3125,6 +3125,24 @@ def account_tabs_layout(run: Run, browser) -> None:
             expect(page.locator("main h3", has_text="When mail goes out")).to_be_visible()
             m = page.evaluate(TABS_MEASURE)
             assert not m["problems"] and "*Notifications" in m["tabs"][0], f"the menu's Notifications at {width}: {m}"
+            # Answers that take time, as a hub's do (the fixtures answer at once): the view is put in
+            # the page only once its parts are read, so the rows are measured, the current tab
+            # brought into sight and a heading focused after that, not before (review of #1409).
+            page.goto(f"{index}?lang=en#/all")
+            page.evaluate("""() => { const api = window.Maity.api;
+              for (const name of ["get", "post"]) { const call = api[name];
+                api[name] = (...a) => new Promise((ok) => window.setTimeout(ok, 150)).then(() => call.apply(api, a)); } }""")
+            for path, tab, sub, part in ACCOUNT_TABS:
+                page.evaluate("(p) => { location.hash = '#' + p; }", path)
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors, f"{path} at {width}, slow answers: {m['problems'] + errors}"
+            for old, new, focused in ACCOUNT_MOVED:
+                page.evaluate("(p) => { location.hash = '#' + p; }", old)
+                page.wait_for_function("(p) => location.hash === '#' + p", arg=new)
+                expect(page.locator("main nav.account-tabs").first).to_be_visible()
+                if focused:
+                    expect(page.locator("main h3:focus")).to_have_text(focused)
             # The addresses before the tabs.
             for old, new, focused in ACCOUNT_MOVED:
                 page.goto("about:blank")
