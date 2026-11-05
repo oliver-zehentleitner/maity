@@ -5056,7 +5056,10 @@ the same list as the tabs, followed by Sign out.
 | Organisations | `/account/orgs` | `js/orgs.js`, as before |
 | Linked accounts | none | greyed, to come |
 
-Security and Organisations are a human's alone, as in the menu before.
+Security and Organisations are a human's alone, as in the menu before. On Sign-in the second
+factor stands above the password form: the hub's mail and bell item about a changed or failed
+second factor link to `/account/security` (`hub/src/maity_hub/notifications/mailer.py`,
+`items.py`), and the hub stays unchanged on this card.
 
 The addresses of the single page before the tabs are still reached from mails already sent, the
 bell and the hub's links:

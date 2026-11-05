@@ -3078,6 +3078,9 @@ def account_tabs_layout(run: Run, browser) -> None:
                 page.goto(f"{index}?lang=en#{path}")
                 expect(page.locator("main h3", has_text=part).first).to_be_visible()
                 expect(page.locator("main .signin-banner")).to_be_visible()
+                if path == "/account/security":
+                    # The hub's mail and bell item about the second factor lead here: it comes first.
+                    expect(page.locator("main h3").first).to_have_text("Two-factor sign-in")
                 for banner in (True, False):
                     if not banner:
                         page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
@@ -3091,6 +3094,13 @@ def account_tabs_layout(run: Run, browser) -> None:
                     else:
                         assert len(m["tabs"]) == 1, f"{where}: {len(m['tabs'])} tab rows"
                     run.shot(page, "fixtures-account-tabs" + path.replace("/", "-") + f"-{width}" + ("-banner" if banner else ""))
+                # The focus ring of a tab whole, inside its row, which clips what stands outside it.
+                page.locator("main nav.account-tabs a.view-tab").first.focus()
+                ring = page.evaluate("""() => { const a = document.activeElement, nav = a.closest('nav');
+                  const cs = getComputedStyle(a), out = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
+                  const r = a.getBoundingClientRect(), n = nav.getBoundingClientRect();
+                  return { style: cs.outlineStyle, top: r.top - out - n.top, bottom: n.top + nav.clientHeight - (r.bottom + out) }; }""")
+                assert ring["style"] != "none" and ring["top"] >= -0.5 and ring["bottom"] >= -0.5, f"{path} at {width}: the focus ring is cut by its row {ring}"
                 if width == 1280 and path in ("/account", "/account/security/sessions"):
                     run.a11y(page, f"fixtures: account {path}")
             # Switching: from far down a tab, a click on another shows it from its top, a new entry in the history.
@@ -3138,11 +3148,16 @@ def account_tabs_layout(run: Run, browser) -> None:
                 m = page.evaluate(TABS_MEASURE)
                 assert not m["problems"] and not errors, f"{path} at {width}, slow answers: {m['problems'] + errors}"
             for old, new, focused in ACCOUNT_MOVED:
+                page.evaluate("() => { location.hash = '#/all'; }")
+                expect(page.locator("main nav.account-tabs")).to_have_count(0)
                 page.evaluate("(p) => { location.hash = '#' + p; }", old)
                 page.wait_for_function("(p) => location.hash === '#' + p", arg=new)
                 expect(page.locator("main nav.account-tabs").first).to_be_visible()
                 if focused:
                     expect(page.locator("main h3:focus")).to_have_text(focused)
+                # In place of the old address in the history: Back leads to the page before it.
+                page.go_back()
+                page.wait_for_function("() => location.hash === '#/all'")
             # The addresses before the tabs.
             for old, new, focused in ACCOUNT_MOVED:
                 page.goto("about:blank")

@@ -1724,6 +1724,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .view-tabs.account-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
 .account-tabs .view-tab { white-space: nowrap; flex: 0 0 auto; }
 .account-tabs .view-tab.later { color: var(--muted); cursor: default; }
+/* The row scrolls, so it clips what stands outside it: the focus ring drawn inside the tab. */
+.account-tabs .view-tab:focus-visible { outline-offset: -2px; }
 /* Security's own tabs, under the account's: smaller, no line of their own. */
 .view-tabs.security-tabs { border-bottom: none; margin-top: -4px; font-size: 0.92rem; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }

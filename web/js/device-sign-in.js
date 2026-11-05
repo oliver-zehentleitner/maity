@@ -1,7 +1,7 @@
 // Signing in without a password (docs/api.md §2.6). On the login page, as
 // GET /auth/methods offers them: "Have a code?" for the new device (§2.6.2)
 // and "Email me a sign-in link" (§2.6.3). On a signed-in device, "Sign in
-// another device" (/account/sign-in-device): the code, its QR, a countdown
+// another device" (/account/security/device): the code, its QR, a countdown
 // and then the approval, which leads with what the hub observed, labels
 // what the device claims, and has the human pick the number the device
 // shows; Deny is the default and there is no plain Approve (§2.6.7).

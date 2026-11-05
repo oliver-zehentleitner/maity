@@ -412,9 +412,11 @@ window.Maity = window.Maity || {};
       if (yourData) append(root, yourData.el);
       return { data: yourData && yourData.heading };
     }
+    // The second factor first: the hub's mail and bell item about it link to /account/security
+    // (hub notifications), so it is what that address shows at the top.
     const password = passwordPart();
     const security = M.security ? await M.security.section() : null;
-    append(root, password.el, security ? security.el : null);
+    append(root, security ? security.el : null, password.el);
     return { password: password.heading, security: security && security.heading };
   }
 
