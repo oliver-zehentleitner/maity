@@ -1743,6 +1743,7 @@ web/
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
 ├── js/org.js         (5) the organisation tree, a section of the Overview
+├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat

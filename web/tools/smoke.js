@@ -2211,6 +2211,98 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members").getAttribute("aria-current") === "page"
     && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Organisation"),
     "org tree by areas, policy preset, on the Team page's Organisation tab; the Members tab marked in the header, no tab of its own there");
+  // Paths (js/paths.js, tsk-j9ktmj7e4fxq): each chip's route from the member view alone, as
+  // docs/api.md §8.2 and §8.4 address the event; `usual` only where the rule hangs on the card.
+  {
+    const P = win.Maity.paths;
+    const pm = [
+      { id: "o", kind: "human", display_name: "Owner", trust: "owner", role: "manager" },
+      { id: "ad", kind: "agent", display_name: "Admin agent", trust: "admin", role: "coder", reports_to: "o", owner_id: "o" },
+      { id: "px", kind: "agent", display_name: "Proxy", trust: "admin", role: "proxy", owner_id: "o" },
+      { id: "c1", kind: "agent", display_name: "Coder", trust: "member", role: "coder", reports_to: "ad", owner_id: "o" },
+      { id: "r", kind: "agent", display_name: "Reviewer", trust: "member", role: "reviewer", reports_to: "ad", owner_id: "o" },
+      { id: "f", kind: "agent", display_name: "Foreign", trust: "member", role: "coder", owner_id: "hum-elsewhere" }];
+    const said = (chip) => P.routes(chip, pm).map((e) => e.from + ">" + e.to + (e.usual ? "~" : "")).join(" ");
+    expect(said("review_result") === "r>ad", "paths: a review result from a reviewer to its reports_to " + said("review_result"));
+    expect(said("not_listening") === "ad>o px>ad px>o c1>ad c1>o r>ad r>o f>ad",
+      "paths: not listening to the reports_to, the admins but no proxy, the owner when a member " + said("not_listening"));
+    expect(said("request_human") === "ad>o px>o c1>o r>o", "paths: a request to a human from an agent to its own owner, none outside the project " + said("request_human"));
+    expect(said("card_assigned") === "o>ad~ ad>c1~ ad>o~ ad>r~", "paths: card assigned from the lead, to the assignee and its owner, all usual " + said("card_assigned"));
+    const many = [{ id: "lead", kind: "human", display_name: "Lead", trust: "owner", role: "manager" }]
+      .concat([1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: "c" + n, kind: "agent", display_name: "Coder " + n, trust: "member", role: "coder", reports_to: "lead", owner_id: "lead" })));
+    const folded = P.layout(many, new Set());
+    expect(folded.groups.length === 1 && folded.items.length === 2 && folded.boxOf.c7 === "group:lead:coder"
+      && folded.at["group:lead:coder"].y > folded.at.lead.y && P.onBoxes(P.reportLines(many), folded.boxOf).length === 1,
+      "paths: more than " + P.GROUP_AT + " of one role under one lead are one box below it, their seven lines one line");
+    const opened = P.layout(many, new Set(["coder"]));
+    const lead = opened.at.lead;
+    const firstC = opened.at.c1;
+    const lastC = opened.at.c7;
+    expect(!opened.groups.length && opened.items.length === 8 && JSON.stringify(opened.opened) === JSON.stringify(["coder"])
+      && Math.abs(lead.x + lead.w / 2 - (firstC.x + firstC.w / 2 + lastC.x + lastC.w / 2) / 2) < 1 && firstC.y === lastC.y && firstC.y > lead.y,
+      "paths: an opened role shows each member in the row below, the lead centred over them");
+    const pctx = { members: many, memberById: {}, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id };
+    many.forEach((m) => { pctx.memberById[m.id] = m; });
+    const pstate = { chip: null, selected: null, open: new Set() };
+    const pbox = P.draw(pctx, pstate);
+    const group = pbox.querySelectorAll(".paths-group");
+    expect(group.length === 1 && text(group[0]).includes("Coder · 7 members") && pbox.querySelectorAll(".paths-tile").length === 7
+      && text(pbox.querySelector(".paths-glance")).includes("Lead > Coder × 7"),
+      "paths: the folded box counts its members, and the panel names them as one item " + group.map(text));
+    group[0].click();
+    expect(pbox.querySelectorAll(".paths-node").length === 8 && pbox.querySelectorAll(".paths-fold").length === 1 && pstate.open.has("coder"),
+      "paths: a click opens the column, and a Fold button takes it back");
+    pbox.querySelectorAll(".paths-fold")[0].click();
+    expect(pbox.querySelectorAll(".paths-group").length === 1, "paths: Fold folds the column again");
+    const pcards = pbox.querySelectorAll(".paths-card");
+    expect(pcards.length === 8 && pcards[0].attrs["data-id"] === "lead" && pcards[1].attrs["data-id"] === "c1"
+      && text(pcards[0]).includes("> Coder × 7") && !text(pcards[0]).includes("Coder 1"),
+      "paths: the phone's list in the tree's order, a large group under its lead said once " + (pcards[0] ? text(pcards[0]) : "none"));
+    const canvas = pbox.querySelectorAll(".paths-canvas")[0];
+    expect(canvas && canvas.attrs.style === undefined && /^\d+px$/.test(canvas.style.width)
+      && pbox.querySelectorAll(".paths-node").every((n) => n.attrs.style === undefined && /px$/.test(n.style.left)),
+      "paths: sizes through the style object, no style attribute (CSP)");
+  }
+  await go("#/maintainer/maity/organisation"); for (let k = 0; k < 4; k++) await tick();
+  {
+    const faces = main.querySelectorAll(".org-face");
+    expect(JSON.stringify(faces.map((b) => [text(b), b.attrs["aria-pressed"]])) === JSON.stringify([["Tree", "true"], ["Paths", "false"]]),
+      "paths: the Organisation tab opens on the tree, Paths beside it " + faces.map(text));
+    faces[1].click();
+    expect(!main.querySelector(".org-tree") && main.querySelector(".paths") && main.querySelectorAll(".org-face")[1].attrs["aria-pressed"] === "true",
+      "paths: Paths replaces the tree");
+    const chips = main.querySelectorAll(".paths-chip");
+    const reports = () => main.querySelectorAll("path").filter((p) => /\bpaths-report\b/.test(p.attrs.class));
+    expect(JSON.stringify(chips.map((c) => [text(c), c.attrs["aria-pressed"]])) === JSON.stringify([["Reporting lines", "true"], ["Review result", "false"],
+      ["Not listening", "false"], ["Request to a human", "false"], ["Card assigned", "false"]])
+      && main.querySelectorAll("path").filter((p) => /\bpaths-route\b/.test(p.attrs.class)).length === 0 && reports().length === 4,
+      "paths: the reporting lines on, four event chips off, no route until one is chosen " + reports().length);
+    chips[0].click();
+    expect(reports().length === 0 && main.querySelectorAll(".paths-chip")[0].attrs["aria-pressed"] === "false", "paths: Reporting lines turns the grey lines off");
+    main.querySelectorAll(".paths-chip")[0].click();
+    expect(reports().length === 4, "paths: and on again");
+    main.querySelectorAll(".paths-chip")[2].click();
+    const lines = () => main.querySelectorAll("path").filter((p) => /\bpaths-(route|report)\b/.test(p.attrs.class));
+    const drawn = lines().filter((p) => /\bpaths-route\b/.test(p.attrs.class));
+    const listed = main.querySelectorAll(".paths-route-list li");
+    expect(drawn.length > 0 && drawn.length === listed.length && main.querySelectorAll(".paths-chip")[2].attrs["aria-pressed"] === "true"
+      && text(main.querySelector(".paths-panel")).includes("Route: Not listening") && text(main.querySelector(".paths-panel")).includes("docs/api.md §8.2"),
+      "paths: a chip draws its route, lists it in the panel and names the full rule " + [drawn.length, listed.length]);
+    const reviewer = main.querySelectorAll(".paths-node").find((n) => text(n).includes("Reviewer"));
+    reviewer.click();
+    const dimmed = lines().filter((p) => /\bdim\b/.test(p.attrs.class));
+    const lit = lines().filter((p) => !/\bdim\b/.test(p.attrs.class));
+    expect(lit.length > 0 && dimmed.length > 0 && lit.every((p) => p.attrs["data-from"] === "agt-r" || p.attrs["data-to"] === "agt-r")
+      && reports().filter((p) => /\bon\b/.test(p.attrs.class)).length === 1
+      && main.querySelectorAll(".paths-node").find((n) => text(n).includes("Reviewer")).attrs["aria-pressed"] === "true",
+      "paths: clicking a member keeps only its lines " + lit.map((p) => p.attrs["data-from"] + ">" + p.attrs["data-to"]));
+    const cards = main.querySelectorAll(".paths-card");
+    const agentA = cards.find((c) => c.attrs["data-id"] === "agt-a");
+    expect(cards.length === 6 && agentA && text(agentA).includes("reports to Maintainer") && text(agentA).includes("> Agent B · Agent C · Reviewer")
+      && text(agentA).includes("gets Not listening from"), "paths: the phone's list, one card per member with what reaches it " + (agentA ? text(agentA) : "none"));
+    main.querySelectorAll(".org-face")[0].click();
+    expect(main.querySelector(".org-tree") && !main.querySelector(".paths"), "paths: Tree brings the tree back");
+  }
   await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".org-tree"), "org: no longer in the Overview");
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
