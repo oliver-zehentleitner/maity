@@ -393,8 +393,9 @@ back to no factor.
 `POST /auth/login` takes the account's verified address instead of a
 handle. Only wrong passwords count: 5 in 15 minutes per account. Past
 that, for the rest of the window, the password still signs in from a
-known source, an address where one of the account's sessions started
-in the last 30 days. Every other source gets `unauthenticated`, with
+known source, an address from which the account completed a sign-in in
+the last 30 days; the hub keeps a keyed fingerprint of it, not the
+address. Every other source gets `unauthenticated`, with
 `email_link` where the instance offers the sign-in link, and with
 `password_paused` and the seconds to wait otherwise. The password
 change, the re-authentication and the address change count in buckets
@@ -404,8 +405,16 @@ not removed. A second-factor check takes its place in the count before
 it compares the code.
 
 **Reason:** the maintainer's decision, as hardening of the password
-sign-in. A known source is defined by the account's own sessions, so
-an address the account has never signed in from can never become one.
+sign-in. A known source is defined by the account's own completed
+sign-ins, so an address the account has never signed in from can never
+become one, and a session waiting at the second factor makes none. The
+fingerprint keeps that working after the sessions have ended, which
+erase their addresses (the maintainer's choice of the two options).
+
+**Rejected alternatives (storage):**
+- Only the start addresses of the account's live sessions: no new data,
+  but whoever has a live session in that browser is signed in already;
+  it would have helped another device on the same network only.
 
 **Rejected alternatives:**
 - 3 wrong passwords in 15 minutes, as proposed: the maintainer set 5.

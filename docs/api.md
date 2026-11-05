@@ -432,9 +432,10 @@ and refuses `Sec-Fetch-Site: cross-site` like every cookie request.
 **Wrong passwords** count per account: 5 in 15 minutes, kept per id for
 an account's address and per string for an address of no account. Once 5 are in the window, the password signs in for the rest
 of it only from a **known source** of the account: a source address
-(§2.5) at which one of the account's sessions started in the last 30
-days, ended or not, and which has itself sent fewer than 5 wrong
-passwords for the account in the window — wrong passwords from a known
+(§2.5) from which the account completed a sign-in in the last 30 days
+(any method, with the second factor where one is asked; a session that
+waits at the second step makes none), and which has itself sent fewer
+than 5 wrong passwords for the account in the window — wrong passwords from a known
 source count like any. From every other source the password is not
 checked: each attempt is `unauthenticated` with `details.reason`
 `email_link` while `GET /auth/methods` answers `email_link: true`
@@ -444,6 +445,14 @@ until the window lets the password through again. An address of no
 account is answered the same way, so the answers say
 nothing about whether an account exists. The device code (§2.6.2) is
 never paused by them.
+
+To tell a known source the hub keeps, per account, a keyed fingerprint
+of each source address a sign-in completed from, with the time of the
+last one: an HMAC-SHA-256 of the address under a key derived from
+`MAITY_SECRET_KEY`, or under the hub's stored pepper where none is set
+(as the per-address lock of §18.4), never the address itself. A
+fingerprint goes 30 days after its last sign-in and with the account
+(§2.9); it is not in the export, since nobody can read it.
 
 `POST /auth/password`, `POST /auth/reauthenticate` (§2.8.1) and the
 change of a verified address (§18.4) count their wrong passwords in
@@ -1860,7 +1869,8 @@ address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `second_factor_disabled`, `second_factor_reset`,
 §2.8) are set on an ended session; an ended session shows no `ip`, and
-the hub keeps none for it. A session of another
+the hub keeps none for it — only the keyed fingerprint of §2.1, which
+no one can turn back into the address. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
