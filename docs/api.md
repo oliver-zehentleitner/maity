@@ -449,9 +449,9 @@ never paused by them.
 To tell a known source the hub keeps, per account, a keyed fingerprint
 of each source address a sign-in completed from, with the time of the
 last one: an HMAC-SHA-256 of the address under a key derived from
-`MAITY_SECRET_KEY`, or, where none is set, under a random pepper the hub
-stores in its own database at the migration that adds the fingerprints
-(as it does for the per-address lock, `hub/context/notifications.md`).
+`MAITY_SECRET_KEY`, or, where none is set, from the random pepper the
+hub makes at first use and keeps in its own database (`instance_secret`)
+for the per-address lock (`hub/context/notifications.md`).
 The address itself is never stored. That makes a fingerprint
 pseudonymous, not anonymous: whoever holds the key, or without
 `MAITY_SECRET_KEY` a copy of the whole database, can still test a
@@ -2919,7 +2919,8 @@ and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
 of the thing the caller's own entry belongs to, and only where the
 caller may still read that thing when exporting; otherwise its id
-alone. Redacted content is exported as redacted. A card's restricted
+alone. Redacted content is exported as redacted. The fingerprints of
+the account's known sources (§2.1) are left out. A card's restricted
 text (§6.4) is in the export only as its one exception there: the texts
 whose current version the caller wrote, of each project whose
 restricted-access set they are in when exporting (§6.1); every other
