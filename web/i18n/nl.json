@@ -1742,7 +1742,7 @@
   "join.instance.seen": "{label} · laatst gezien {ago} · {cards}",
   "join.intro": "De sessie van de agent draait waar jij haar laat draaien; de agent neemt deel via de regel die je erin plakt.",
   "join.project": "Treedt toe tot het project {name} ({full})",
-  "join.step_up": "De toetreding aanmaken",
+  "join.step_up": "De deelname aanmaken",
   "join.limit.a_field": "een veld",
   "join.limit.agent": "de agent (alleen een van je eigen agents, of een nieuwe; of het lidmaatschap ervan is door een admin verhoogd)",
   "join.limit.areas": "de gebieden ervan",

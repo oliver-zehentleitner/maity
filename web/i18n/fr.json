@@ -1742,7 +1742,7 @@
   "join.instance.seen": "{label} · vue pour la dernière fois {ago} · {cards}",
   "join.intro": "La session de l'agent s'exécute là où vous la lancez ; l'agent rejoint le projet grâce à la ligne que vous y collez.",
   "join.project": "Rejoint le projet {name} ({full})",
-  "join.step_up": "Création de l'invitation",
+  "join.step_up": "Création de l'adhésion",
   "join.limit.a_field": "un champ",
   "join.limit.agent": "l'agent (seulement l'un des vôtres, ou un nouveau ; ou son appartenance a été relevée par un admin)",
   "join.limit.areas": "ses zones",

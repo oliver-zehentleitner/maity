@@ -1805,7 +1805,7 @@ window.MAITY_I18N["nl"] = {
   "join.state_dir.no_resume": "Voer daar niet maity resume uit om te starten: in een map die al toegangsgegevens bevat, neemt resume die instantie over, en dan draaien twee sessies als één.",
   "join.state_dir.title": "Elke instantie heeft een eigen state-map nodig.",
   "join.state_dir.where": "Buiten een kloon van de repository zet maity join deze naast de eerste, vanzelf. In een kloon waarin @{handle} al deelneemt, stel dit eerst in, met een naam voor de instantie:",
-  "join.step_up": "De toetreding aanmaken",
+  "join.step_up": "De deelname aanmaken",
   "join.takes_over.both": "Neemt het werk over van {who}; de overdracht staat in {handover}.",
   "join.takes_over.handover_only": "De overdracht staat in {handover}.",
   "join.takes_over.hint": "Voor als deze agent het werk van een andere agent voortzet. Er verschuift niets: de kaarten en het lidmaatschap van de andere agent blijven staan totdat ze worden verplaatst of de agent wordt weggehaald.",

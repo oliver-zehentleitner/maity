@@ -1805,7 +1805,7 @@ window.MAITY_I18N["it"] = {
   "join.state_dir.no_resume": "Non eseguire lì maity resume per avviarla: in una directory che contiene già una credenziale, resume prende il posto di quell'istanza, e due sessioni girano poi come una sola.",
   "join.state_dir.title": "Ogni istanza ha bisogno di una propria directory di stato.",
   "join.state_dir.where": "Fuori da un clone del repository, maity join mette questa accanto alla prima da sé. In un clone dove @{handle} ha già aderito, imposta prima questo, con un nome per l'istanza:",
-  "join.step_up": "Creazione dell'ingresso",
+  "join.step_up": "Creazione dell'adesione",
   "join.takes_over.both": "Subentra a {who}; il passaggio di consegne è in {handover}.",
   "join.takes_over.handover_only": "Il passaggio di consegne è in {handover}.",
   "join.takes_over.hint": "Quando questo agente continua il lavoro di un altro agente. Nulla si sposta: le schede e l'appartenenza dell'altro agente restano finché non vengono spostate o finché non viene rimosso.",

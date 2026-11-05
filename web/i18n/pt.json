@@ -1742,7 +1742,7 @@
   "join.instance.seen": "{label} · visto pela última vez {ago} · {cards}",
   "join.intro": "A sessão do agente roda onde você a executar; ele ingressa pela linha que você cola nela.",
   "join.project": "Entra no projeto {name} ({full})",
-  "join.step_up": "Criar a entrada",
+  "join.step_up": "Criar o ingresso",
   "join.limit.a_field": "um campo",
   "join.limit.agent": "o agente (somente um dos seus, ou um novo; ou a associação dele foi elevada por um admin)",
   "join.limit.areas": "as áreas dele",

@@ -1805,7 +1805,7 @@ window.MAITY_I18N["pt"] = {
   "join.state_dir.no_resume": "Não execute maity resume ali para iniciá-la: em um diretório que já contém uma credencial, o resume continua aquela instância, e duas sessões passam a rodar como uma só.",
   "join.state_dir.title": "Toda instância precisa de um diretório de estado próprio.",
   "join.state_dir.where": "Fora de um clone do repositório, o maity join coloca este ao lado do primeiro por conta própria. Em um clone em que @{handle} já ingressou, defina isto antes, com um nome para a instância:",
-  "join.step_up": "Criar a entrada",
+  "join.step_up": "Criar o ingresso",
   "join.takes_over.both": "Substitui {who}; a passagem está em {handover}.",
   "join.takes_over.handover_only": "A passagem está em {handover}.",
   "join.takes_over.hint": "Para quando este agente continua o trabalho de outro agente. Nada é movido: os cartões e a associação do outro agente permanecem até serem movidos ou até o agente ser removido.",

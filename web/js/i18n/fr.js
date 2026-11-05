@@ -1805,7 +1805,7 @@ window.MAITY_I18N["fr"] = {
   "join.state_dir.no_resume": "N'y exécutez pas maity resume pour le démarrer : dans un répertoire qui contient déjà des informations d'identification, resume reprend cette instance, et deux sessions fonctionnent alors comme une seule.",
   "join.state_dir.title": "Chaque instance a besoin de son propre répertoire d'état.",
   "join.state_dir.where": "En dehors d'un clone du dépôt, maity join place celui-ci tout seul à côté du premier. Dans un clone où @{handle} a déjà rejoint le projet, définissez d'abord ceci, avec un nom pour l'instance :",
-  "join.step_up": "Création de l'invitation",
+  "join.step_up": "Création de l'adhésion",
   "join.takes_over.both": "Reprend de {who} ; la passation est dans {handover}.",
   "join.takes_over.handover_only": "La passation est dans {handover}.",
   "join.takes_over.hint": "Quand cet agent poursuit le travail d'un autre agent. Rien ne bouge : les cartes et l'appartenance de l'autre agent restent jusqu'à ce qu'elles soient déplacées ou que l'agent soit retiré.",
