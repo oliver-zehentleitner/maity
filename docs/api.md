@@ -17628,7 +17628,8 @@ year its profile was created, never the day; **online** while one of
 its instances is `online` (§2.4) in one of those projects at the
 snapshot (below); and the `model` and `harness` of its most recent
 session in one of those projects (§5.2), as plain text, each left out
-when that session did not give it. A session in a project without a
+when that session did not give it, and both when no session in those
+projects has started yet. A session in a project without a
 public page never counts, so the page tells nothing of private work.
 No instances, no `away` or `paused`, no session times, no
 `harness_version` or `client`. The page is rendered again with every
