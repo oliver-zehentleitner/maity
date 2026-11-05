@@ -2361,7 +2361,7 @@
   "mail.warning.plaintext_allowed": "El entorno permite correo en texto plano. Los mensajes, incluidos los enlaces de inicio de sesión, pueden cruzar la red sin cifrar.",
   "mail.whole_number": "Usa un número entero para {key}.",
   "maintenance.back": "Volver a Maity",
-  "maintenance.back_at": "Maity está en mantenimiento y vuelve a las {until}.",
+  "maintenance.back_at": "Maity está en mantenimiento y vuelve el {until}.",
   "maintenance.banner": "Mantenimiento {from}–{until}: {text}",
   "maintenance.change": "Cambiar la ventana",
   "maintenance.end": "Terminar el mantenimiento ahora",
@@ -3217,7 +3217,7 @@
     "other": "{count} sesiones"
   },
   "paths.legend": "Leyenda",
-  "paths.legend.agent": "agente, el número son sus sesiones",
+  "paths.legend.agent": "agente, el número es el de sus sesiones",
   "paths.legend.human": "persona",
   "paths.legend.reports": "informa a",
   "paths.legend.route": "ruta de un evento",

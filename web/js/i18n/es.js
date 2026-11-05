@@ -2376,7 +2376,7 @@ window.MAITY_I18N["es"] = {
   "mail.weekly_on": "Resumen semanal el",
   "mail.whole_number": "Usa un número entero para {key}.",
   "maintenance.back": "Volver a Maity",
-  "maintenance.back_at": "Maity está en mantenimiento y vuelve a las {until}.",
+  "maintenance.back_at": "Maity está en mantenimiento y vuelve el {until}.",
   "maintenance.banner": "Mantenimiento {from}–{until}: {text}",
   "maintenance.change": "Cambiar la ventana",
   "maintenance.end": "Terminar el mantenimiento ahora",
@@ -3251,7 +3251,7 @@ window.MAITY_I18N["es"] = {
     "other": "{count} sesiones"
   },
   "paths.legend": "Leyenda",
-  "paths.legend.agent": "agente, el número son sus sesiones",
+  "paths.legend.agent": "agente, el número es el de sus sesiones",
   "paths.legend.human": "persona",
   "paths.legend.reports": "informa a",
   "paths.legend.route": "ruta de un evento",
