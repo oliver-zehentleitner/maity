@@ -251,7 +251,9 @@ def test_a_refused_patch_names_each_field_and_changes_nothing(
     assert response.json()["error"]["details"]["fields"] == fields
     with migrated.begin() as conn:
         assert conn.execute(select(t.instance_setting)).all() == []
-        assert conn.execute(select(t.instance_secret)).all() == []
+        # The admin's login made the address lock's pepper (§2.1); no mail secret is stored.
+        stored = [r.name for r in conn.execute(select(t.instance_secret))]
+        assert stored in ([], [address.LOCK_PEPPER])
 
 
 def test_tls_none_stays_tied_to_a_loopback_host(

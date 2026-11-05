@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import base64
 import re
-from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import Engine, select
@@ -48,19 +47,6 @@ def person(make_client: ClientFactory, migrated: Engine, moment: Clock) -> tuple
     return human, secret
 
 
-def earlier_admin(migrated: Engine) -> str:
-    """A human made before everyone else, so that the one under test is not the instance
-    admin, whose verified address is never removed (§18.4)."""
-    admin_id = factory.human(migrated, "first-admin")
-    with migrated.begin() as conn:
-        conn.execute(
-            t.human.update()
-            .where(t.human.c.id == admin_id)
-            .values(created_at=clock.now() - timedelta(days=1))
-        )
-    return admin_id
-
-
 def given(human: flow.Human, secret: bytes, moment: Clock) -> None:
     assert human.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
 
@@ -88,7 +74,7 @@ def test_changing_the_verified_address_needs_a_recent_factor(
 def test_removing_the_verified_address_needs_a_recent_factor(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
-    earlier_admin(migrated)
+    factory.earlier_admin(migrated)
     human, secret = person(make_client, migrated, moment)
     refused = human.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
     assert refused.status_code == 403

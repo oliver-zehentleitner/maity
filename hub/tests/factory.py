@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from sqlalchemy import Connection, Engine, delete, insert, inspect, select, update
@@ -61,6 +61,19 @@ def sign_in_address(engine: Engine, human_id: str) -> Iterator[str]:
                 conn.execute(
                     update(settings).where(settings.c.human_id == human_id).values(**before)
                 )
+
+
+def earlier_admin(engine: Engine) -> str:
+    """A human made a day before everyone else: the instance admin (§16), so that the human
+    under test may remove its own verified address, which the admin may not (§18.4)."""
+    admin_id = human(engine, "first-admin")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == admin_id)
+            .values(created_at=clock.now() - timedelta(days=1))
+        )
+    return admin_id
 
 
 def login(

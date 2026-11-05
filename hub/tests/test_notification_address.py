@@ -153,6 +153,7 @@ def test_changing_a_verified_address_needs_the_password(
 def test_removing_the_address_voids_unsubscribe_links(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
+    factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
     owner = verified(make_client, migrated, "me@example.org")
     with migrated.begin() as conn:
         epoch = preferences.row_of(conn, owner.id).epoch
@@ -303,7 +304,8 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
         strong = conn.execute(select(t.human_session)).first()
         kwargs: dict[str, Any] = dict(
             signing_key=hub.mail.signing_key, public_url="https://hub.example", mail_ready=True,
-            wrong_password=lambda: None, password_blocked=lambda: 0, step_up=lambda: None,
+            password_attempt=lambda: Attempt(password_limits.ADDRESS_CHANGE, human.id),
+            step_up=lambda: None,
             keeps_factor=lambda: None,
         )  # fmt: skip
         assert preferences.patch(
@@ -354,6 +356,7 @@ def test_only_the_verified_address_in_use_counts_failures(
 
 
 def test_one_account_per_address(make_client: ClientFactory, migrated: Engine) -> None:
+    factory.earlier_admin(migrated)  # `first` removes its address below (§18.4)
     first = with_mail(make_client, migrated)
     second = with_mail(make_client, migrated, "someone")
     first.patch(S, {"email": {"address": "Shared@Example.org"}})

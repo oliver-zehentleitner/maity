@@ -634,6 +634,7 @@ def test_the_second_step_shows_the_address_masked(
 def test_a_human_without_totp_cannot_remove_the_address_under_email(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
+    factory.earlier_admin(migrated)  # the admin's address is never removed at all (§18.4)
     client, human = setup(make_client, migrated)
     login(client)
     _, code, _ = last_mail(migrated)
@@ -710,6 +711,7 @@ def test_approving_a_held_removal_keeps_the_factor(
         called.append(True)
         raise ApiError(403, "forbidden", "kept", {"reason": "second_factor_required"})
 
+    factory.earlier_admin(migrated)  # the admin's address is never removed at all (§18.4)
     _, human = setup(make_client, migrated, stored=True)
     change = {"id": "adc-1", "address": None, "requested_at": "2026-10-31T12:00:00Z"}
     with migrated.begin() as conn:
