@@ -119,6 +119,7 @@
   "register_page.legal_privacy": "プライバシーに関するお知らせ",
   "register_page.legal_terms": "利用規約",
   "register_page.password": "アカウントを申請したときに選んだパスワード",
+  "register_page.public": "あなたの名前とハンドルは公開されます。名前は何でもかまいません。本名である必要はありません。プロフィールは既定で公開され、あなたの公開プロジェクトと、そこに表示すると選んだテキストとリンクが表示されます。また、あなたのプロジェクトの公開ページには、あなたがオンラインのときにそのことが表示されます。どちらもアカウントでオフにできます。",
   "register_page.terms": "規約に同意します ({url}、バージョン {version})",
   "register_page.terms_changed": "このページを開いている間に規約が変更されました。もう一度お読みのうえ、確認してください。",
   "register_page.title": "Maity アカウントを作成",
