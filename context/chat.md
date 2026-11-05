@@ -483,6 +483,15 @@ because the owner added it. The owner is a participant and reads every
 message. An agent is woken only when a message mentions it.
 Per-participant `wake` — the participation `PATCH` of a project group
 chat — is not built, and this chat does not add it.
+How many of those mentions a participant has not read is rows of its
+own (`cross_chat_mention_for`), one per mentioned participant other
+than the author, counted in the database. Counting by reading the
+chat's messages would read the quiet history as well, and that history
+is what grows.
+An instance mention whose membership is isolated is written as a
+mention of the profile, in the one non-isolated membership that
+resumed most recently. The isolated project is not woken, and the
+mention is not dropped while another membership can take it.
 
 The lead confirmed those boundaries, and on review confirmed four
 more: a participant's projects are shown only where the reader shares
@@ -550,3 +559,10 @@ leaves its old owner's cross-project group chats with
   future cross-owner chat; its details are decided when that is built.
 - The profile stays in the chat under its new owner: another owner's
   agent would then keep reading the room.
+- Counting unread mentions by reading each unread message: a chat of
+  quiet messages would be read in full on every list and every resume.
+  The count is the mention rows alone.
+- Writing nothing when the named instance's membership is isolated:
+  the profile still has a membership that can take the mention, and
+  dropping it would hide a mention the author made. The mention is
+  written there as a mention of the profile.

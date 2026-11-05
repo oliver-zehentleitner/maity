@@ -55,7 +55,7 @@ window.Maity = window.Maity || {};
     const box = h("section", { class: "panel current-sessions", "aria-labelledby": "current-sessions-title" },
       h("h3", { id: "current-sessions-title", class: "panel-subtitle" }, M.t("waiting.sessions.title")),
       list, status.el,
-      h("p", { class: "hint" }, h("a", { href: "/account/sessions" }, M.t("waiting.sessions.manage"))));
+      h("p", { class: "hint" }, h("a", { href: "/account/security/sessions" }, M.t("waiting.sessions.manage"))));
     let seen, disposed = false, seq = 0;
     async function read() {
       const mine = ++seq;

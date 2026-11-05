@@ -1,4 +1,4 @@
-// Sessions (docs/api.md §2.6.5, §2.6.7; /account/sessions): where the
+// Sessions (docs/api.md §2.6.5, §2.6.7; /account/security/sessions): where the
 // human is signed in, with "This was me" for a sign-in alert, End per
 // session and End all other sessions, which passed the second factor (§2.8.7),
 // the ended ones of the last 30 days,

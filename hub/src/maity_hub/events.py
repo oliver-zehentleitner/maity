@@ -42,6 +42,9 @@ class Actor:
     runner_id: str | None = None
     human_id: str | None = None  # a human who is no member of the project (§8.1)
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
+    # An agent profile that is no member of the project the event is written in (§8.1, §9.5).
+    agent_id: str | None = None
+    agent_instance: str | None = None
     # The bridge that made the call for the member (§2.3): `{member_id, instance, bridge_id}`.
     bridge: dict[str, str | None] | None = None
 
@@ -290,6 +293,8 @@ def emit(
             actor_runner_id=actor.runner_id if actor else None,
             actor_human_id=actor.human_id if actor else None,
             actor_report_id=actor.report_id if actor else None,
+            actor_agent_id=actor.agent_id if actor else None,
+            actor_instance=actor.agent_instance if actor else None,
             actor_bridge=actor.bridge if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
@@ -659,6 +664,9 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
+    if row.kind == "cross_chat_mention":
+        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5).
+        return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:

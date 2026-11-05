@@ -13,6 +13,9 @@ from maity_hub import commitment
 from maity_hub.config import Settings
 
 SKILL_NAME = "keep-the-why"
+# The skills installer, pinned like the skill's source: a version that changes under the
+# instructions should be a change here (tools/ktw_pin.py checks every copy of both).
+SKILLS_INSTALLER = "skills@1.7.6"
 CONFIG_PATH = ".keep-the-why"
 LOAD = (
     "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read "
@@ -38,7 +41,7 @@ def skill(settings: Settings) -> dict[str, Any]:
         "source": source,
         # -g -y: the skills installer asks for agents and scope otherwise, and an agent
         # without a terminal stalls at that prompt (keepthewhy.com/installation).
-        "install": [f"npx skills add {source} -g -y", clone],
+        "install": [f"npx {SKILLS_INSTALLER} add {source} -g -y", clone],
         "load": LOAD,
         "guide": settings.ktw_skill_guide,
     }
