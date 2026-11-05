@@ -1061,10 +1061,11 @@ never grants or removes trust `admin` or `owner` or the roles `proxy`
 capability`); both are a human's. It never creates, lists or revokes a
 join (§3.1): a new agent comes through a placement proposal (§15.6) or
 a request, so a new identity always passes a human. Removing an agent
-member, and changing the trust, the role, the pause or the
+member, changing the trust, the role, the pause or the
 `availability_policy` of a member who holds the role `reviewer` or
-`tester` or is named in
-`policy.contract_arbiter` or `policy.coordinator`, does not take effect
+`tester` or is named in `policy.contract_arbiter`, and changing the
+`availability_policy` of the member named in `policy.coordinator` (its
+trust, role and pause are not held back), does not take effect
 on the call: it answers `202` with a `consent` request to `owner`
 (title `Remove <handle>`, `Change <handle> to <trust> <role>`, `Pause
 <handle>` or `Change cover for <handle>`), which only a human answers —
@@ -17071,8 +17072,10 @@ and so does `suspend` on an organisation (above):
 `moderation: {action, report_id, at}`, shown in its view to whoever may
 read it. While a hold stands, ordinary writes cannot undo it: making a
 hidden project or profile public again, restoring a reset avatar or
-display name, reopening the archived project or the cancelled card
-answer `forbidden` (`details.reason: moderation_hold`). A hidden target
+display name, reopening the archived project answer `forbidden`
+(`details.reason: moderation_hold`). A status change of a card the hold
+cancelled answers the same: §6.4 has no way out of `cancelled`, and the
+hold is checked before the transition. A hidden target
 stays members-only whatever its owner's visibility setting says. Only an
 instance admin lifts a hold, by resolving the report again with
 `dismiss` (`POST /admin/reports/{id}/resolve` on a resolved report
