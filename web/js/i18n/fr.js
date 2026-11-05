@@ -1005,6 +1005,7 @@ window.MAITY_I18N["fr"] = {
   "error.repository_not_offered": "Ce runner ne propose pas le dépôt de ce projet.",
   "error.request_claimed": "Un autre admin a déjà pris en charge cette demande.",
   "error.request_not_open": "Cette demande n'est plus ouverte.",
+  "error.resolve_the_report": "Cette demande correspond à un signalement d'abus : traitez le signalement pour la clore.",
   "error.role_unknown": "Le rôle nommé n'existe plus.",
   "error.runner_not_attached": "Ce runner n'est pas rattaché à ce projet.",
   "error.runner_revoked": "Ce runner a été révoqué.",

@@ -1075,6 +1075,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "error.repository_not_offered": "该运行器不提供此项目的仓库。",
   "error.request_claimed": "已有另一位管理员接下了此请求。",
   "error.request_not_open": "此请求已不再处于待处理状态。",
+  "error.resolve_the_report": "此请求对应一条滥用举报：处理该举报即可关闭它。",
   "error.role_unknown": "这里指定的角色已不存在。",
   "error.runner_not_attached": "该运行器未连接到此项目。",
   "error.runner_revoked": "该运行器已被撤销。",
