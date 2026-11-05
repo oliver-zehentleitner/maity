@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import urllib.parse
 from dataclasses import dataclass
@@ -106,9 +105,22 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         raise FactsError(f"gh returned something unexpected: {exc}") from exc
 
 
+def gh_hosts() -> set[str]:
+    """The forge hosts gh is asked about: github.com and GH_HOST (an empty one is unset)."""
+    return {"github.com", (os.environ.get("GH_HOST") or "github.com").lower()}
+
+
 def pull_request_state(cwd: Path, url: str) -> str | None:
-    """`open`, `closed` or `merged` as the forge has it now; None when it can't be asked."""
+    """`open`, `closed` or `merged` as the forge has it now; None when it can't be asked,
+    a URL on a host gh does not know included (gh is never sent elsewhere)."""
     try:
+        parts = urllib.parse.urlsplit(url)
+        if (
+            parts.scheme != "https"
+            or not parts.hostname
+            or parts.hostname.lower() not in gh_hosts()
+        ):
+            return None
         result = _run(["gh", "pr", "view", url, "--json", "state"], cwd)
         if result.returncode != 0:
             return None
@@ -119,25 +131,28 @@ def pull_request_state(cwd: Path, url: str) -> str | None:
 
 
 def remote_host(url: str) -> str | None:
-    """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path."""
+    """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path
+    or a URL without a host."""
     if "://" in url:
         return urllib.parse.urlsplit(url).hostname
+    if os.name == "nt" and re.match(r"^[A-Za-z]:[\\/]", url):
+        return None  # a drive path there; elsewhere git reads `C:/…` as host `C`, as here
     match = re.match(r"^(?:[^@/]+@)?([^:/]+):", url)
     return match.group(1) if match else None
 
 
 def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
     """Why gh cannot say anything about this branch, or None when it can be asked."""
-    if shutil.which("gh") is None:
+    if proc.program("gh") is None:
         return "gh is not installed"
     if remote is None:
         return None
     # As written, before insteadOf; a branch pushed with `-u <url>` has the URL as its remote.
     url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
-    known = {"github.com", os.environ.get("GH_HOST", "github.com")}
-    if host not in known:
-        where = host or "a local path"
+    if not host or host.lower() not in gh_hosts():
+        bare = "://" in url and not url.lower().startswith("file:")
+        where = host or ("no host" if bare else "a local path")
         return f"the remote {without_userinfo(remote)} is not on a GitHub host gh knows ({where})"
     return None
 
@@ -155,6 +170,31 @@ def position(cwd: Path) -> tuple[str, str | None]:
     return head, _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
 
 
+_HEAD_REF = re.compile(r"^refs/heads/[^\s~^:?*\[\\]+$")
+
+
+def _check_upstream(cwd: Path, branch: str, remote: str, merge_ref: str) -> None:
+    """Refuse an upstream maity would not hand to git as it stands: a remote, its configured
+    URL or the merge ref that reads as an option or names a remote helper
+    (`<transport>::<address>`), or a merge ref outside refs/heads/. Any other remote
+    `git push -u` stores passes: a configured name in any script, a URL, a path, `host:path`;
+    which transports git may then use is proc.TRANSPORTS."""
+    # Every URL configured, not only the last: `ls-remote` takes the first.
+    urls = (
+        None if remote.startswith("-") else _git(cwd, "config", "--get-all", f"remote.{remote}.url")
+    )
+    values = [remote, merge_ref] + (urls.splitlines() if urls else [])
+    if any(v.startswith("-") or "::" in v for v in values) or not _HEAD_REF.match(merge_ref):
+        raise FactsError(_unreadable(branch))
+
+
+def _unreadable(branch: str) -> str:
+    return (
+        f"branch {branch}'s upstream (branch.{branch}.remote / .merge) is not a remote and a "
+        f"branch maity asks git about; set it with `git push -u origin {branch}`"
+    )
+
+
 def collect(cwd: Path) -> Facts:
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
@@ -170,8 +210,11 @@ def collect(cwd: Path) -> Facts:
             remote = None
         merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
         if remote and merge_ref:
+            _check_upstream(cwd, branch, remote, merge_ref)
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            listing = _git_required(cwd, "ls-remote", "--heads", remote, merge_ref).splitlines()
+            listing = _git_required(
+                cwd, "ls-remote", "--heads", "--", remote, merge_ref
+            ).splitlines()
             remote_head = listing[0].split()[0] if listing else None
 
     unknown = _forge_unknown(cwd, remote)

@@ -67,6 +67,14 @@
     "en": "1d0610cdac8612da",
     "text": "2f8b680ce1abf6fa"
   },
+  "frame.instances": {
+    "en": "468a5f1b13f3feda",
+    "text": "dbd76487526852b6"
+  },
+  "frame.instances_online": {
+    "en": "74a65479137b8f26",
+    "text": "8dc512705d11cbf9"
+  },
   "frame.language": {
     "en": "1fa24b4905737a8d",
     "text": "406f12a0dc0b476d"
@@ -470,6 +478,10 @@
   "register_page.password": {
     "en": "8adcb6a3d0c1f216",
     "text": "29843dcd248c4222"
+  },
+  "register_page.public": {
+    "en": "cadac7d45f2c3f4f",
+    "text": "e917f6ed4d977fd2"
   },
   "register_page.terms": {
     "en": "738f3cd4cd578c5c",

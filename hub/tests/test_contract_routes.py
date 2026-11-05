@@ -15,7 +15,6 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
-    ("DELETE", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
     ("GET", "/avatars/motifs"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
     ("GET", "/avatars/public/{}"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
@@ -24,7 +23,6 @@ NOT_ROUTED = {
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
@@ -32,7 +30,6 @@ NOT_ROUTED = {
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
-    ("PUT", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an
