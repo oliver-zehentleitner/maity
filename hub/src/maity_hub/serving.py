@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from sqlalchemy.engine import make_url
 
 from maity_hub.config import Settings
+from maity_hub.db import SHARED_POOL_SIZE
 
 
 def configure_logging() -> None:
@@ -48,16 +49,17 @@ def refusal(settings: Settings) -> str | None:
         return (
             f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
             f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
-            f"process holds its share and needs {MIN_POOL_PER_WORKER}, since a request may hold "
-            "one connection while a shared count takes another"
+            f"process holds its share of the pool, and a share of 0 would be no limit at all"
         )
     return None
 
 
-# A request may hold its transaction's connection while a shared count or the forge budget takes
-# a second one from the same pool (hub/context/replicas.md, "Rate limits"): a process with fewer
-# waits on itself.
-MIN_POOL_PER_WORKER = 2
+# The minimum share of the pool per process: one connection. In the request handlers of the
+# measured test files no request held two of the serving pool at once (PostgreSQL,
+# tsk-zm2z04ep2cma), so one is enough to be correct; more is throughput, the operator's choice.
+# Background passes take from the same pool and compete for the share. It cannot be 0:
+# SQLAlchemy reads `pool_size=0` as no limit (hub/context/replicas.md, entry 4e24abd8).
+MIN_POOL_PER_WORKER = 1
 
 
 def pods_at_most(settings: Settings) -> int:
@@ -69,10 +71,17 @@ def pods_at_most(settings: Settings) -> int:
 def connections(settings: Settings) -> int:
     """The most connections the whole deployment asks of the database, from what each worker
     holds (`per_worker`, so the two stay one arithmetic): per process its share of the pool and
-    of the overflow and one LISTEN connection (hub/context/replicas.md), per pod one for the
-    readiness probe, which holds none in between; for as many pods as may run at once."""
+    of the overflow, the shared-counter pool and one LISTEN connection (hub/context/replicas.md),
+    per pod one for the readiness probe, which holds none in between. Count every pod that may
+    run at once.
+    """
     share = per_worker(settings)
-    per_pod = settings.workers * (share.db_pool_size + share.db_max_overflow + 1) + 1
+    shared = (
+        SHARED_POOL_SIZE
+        if make_url(settings.database_url).get_backend_name() == "postgresql"
+        else 0
+    )
+    per_pod = settings.workers * (share.db_pool_size + share.db_max_overflow + shared + 1) + 1
     return pods_at_most(settings) * per_pod
 
 
@@ -84,11 +93,16 @@ def budget_warning(settings: Settings, max_connections: int, reserved: int) -> s
     if asked <= room:
         return None
     share = per_worker(settings)
+    shared = (
+        f" + {SHARED_POOL_SIZE} shared"
+        if make_url(settings.database_url).get_backend_name() == "postgresql"
+        else ""
+    )
     return (
         f"the hub may ask {asked} database connections ({pods_at_most(settings)} pod(s) at once "
         f"× ({settings.workers} process(es) × (pool {share.db_pool_size} + overflow "
-        f"{share.db_max_overflow} + 1 listener) + 1 health)), the database takes {room}; lower "
-        "MAITY_DB_POOL_SIZE / MAITY_DB_MAX_OVERFLOW or the replicas"
+        f"{share.db_max_overflow}{shared} + 1 listener) + 1 health)), the database takes {room}; "
+        "lower MAITY_DB_POOL_SIZE / MAITY_DB_MAX_OVERFLOW or the replicas"
     )
 
 

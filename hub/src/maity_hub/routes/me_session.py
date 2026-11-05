@@ -47,7 +47,8 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.auth.caller import CLOSED_STATUSES, Caller
+from maity_hub.auth.caller import Caller
+from maity_hub.cards import open_claims
 from maity_hub.db import retrying
 from maity_hub.deps import AgentCaller, AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
@@ -302,11 +303,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
         conn.execute(
             update(t.card)
-            .where(
-                t.card.c.claim_holder == mine.id,
-                t.card.c.claim_instance == caller.instance,
-                t.card.c.status.notin_(CLOSED_STATUSES),
-            )
+            .where(open_claims(mine.id, instance=caller.instance))
             .values(claim_session_id=session_id)
         )
         session = {
@@ -527,11 +524,7 @@ def _packet(
     # with no instance chosen (§5.2).
     held = conn.execute(
         select(t.card)
-        .where(
-            t.card.c.claim_holder == mine.id,
-            t.card.c.claim_instance == caller.instance,
-            t.card.c.status.notin_(CLOSED_STATUSES),
-        )
+        .where(open_claims(mine.id, instance=caller.instance))
         .order_by(t.card.c.updated_at.desc())
     ).all()
     assigned = conn.execute(

@@ -531,8 +531,13 @@ def test_the_page_wears_the_legal_pages_shell_and_loads_nothing_from_elsewhere(
         assert "prefers-color-scheme:dark" in page.text  # light and dark
         assert 'name="viewport" content="width=device-width, initial-scale=1"' in page.text
         assert "<script" not in page.text and "<link" not in page.text
-        # Nothing loads from elsewhere; the product line's three links are links (§16.13).
-        external = {product_line.ISSUES, product_line.GITHUB, product_line.PROFILE}
+        # Nothing loads from elsewhere; the product line's four links are links (§16.13).
+        external = {
+            product_line.ISSUES,
+            product_line.SECURITY,
+            product_line.GITHUB,
+            product_line.PROFILE,
+        }
         for address in re.findall(r'(?:src|href|action)="([^"]*)"', page.text):
             if address in external:
                 continue
