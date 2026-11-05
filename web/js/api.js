@@ -553,7 +553,7 @@ window.Maity = window.Maity || {};
       asked_by: { member_id: who.id, display_name: who.display_name, role: mine.role || "member", trust: mine.trust || "member",
         instance: null, session_id: null, avatar_url: null },
       action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], jour_fixe: null, ktw_ref: null,
-      mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, takeover_id: null, task: null, task_id: null,
+      mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, report: null, takeover_id: null, task: null, task_id: null,
       tried: null, while_open: "wait", created_at: nowIso() };
   }
   // Changing the role of or pausing a reviewer or the contract arbiter, and

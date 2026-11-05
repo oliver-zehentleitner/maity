@@ -1564,6 +1564,7 @@
      }
     }
    },
+   "report": "null",
    "status": "string",
    "summary": "string",
    "takeover_id": "null",
@@ -1737,6 +1738,7 @@
      }
     }
    },
+   "report": "null",
    "status": "string",
    "summary": "string",
    "takeover_id": "null",
