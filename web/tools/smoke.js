@@ -4486,6 +4486,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "markdown: a link text that looks like another address says where it goes; userinfo and bidi characters are no link");
   expect(MD("```\nif (a\u202e) {}\n```").querySelector(".md-invisible"), "markdown: code with invisible characters is flagged");
   const linear = Date.now(); MD("[".repeat(20000) + "x"); expect(Date.now() - linear < 1000, "markdown: unclosed brackets stay linear");
+  // A contract heading (§6.8) with a long run of spaces, with and without a closing sequence: one
+  // pass over the line, its marks dropped as the hub drops them.
+  const atxRun = " ".repeat(128 * 1024);
+  const atxStarted = Date.now();
+  const atxBox = document.createElement("div");
+  win.Maity.dom.append(atxBox, win.Maity.markdown("## 1 a" + atxRun + "b ##\n### 2 c" + atxRun + "d#\n#### 3 e" + atxRun + "f", null,
+    { anchors: new Map([[1, { level: 2, anchor: "s-1" }], [2, { level: 3, anchor: "s-2" }], [3, { level: 4, anchor: "s-3" }]]) }));
+  const atxTook = Date.now() - atxStarted;
+  const atxHeads = atxBox.querySelectorAll(".md-anchored");
+  expect(atxTook < 1000 && atxHeads.length === 3 && atxHeads.map((x) => x.id).join() === "s-1,s-2,s-3"
+    && text(atxHeads[0]).endsWith("b") && text(atxHeads[1]).endsWith("d#") && text(atxHeads[2]).endsWith("f")
+    && text(atxHeads[0].querySelector(".md-number")) === "1",
+    "markdown: a contract heading with a long run of spaces is read in bounded time, a closing sequence dropped (" + atxTook + " ms)");
 
   // A chat's rows are as tall as their message: the list fills the pane, its rows do not.
   expect(/\.messages \{[^}]*display: grid;[^}]*align-content: start;/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),

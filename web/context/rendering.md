@@ -409,7 +409,7 @@ already turns every piece into a text node.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §6.8 ("The whole contract": `toc` with `anchor` and `line`, `ETag` and `Cache-Control: private, no-cache`, read when the view opens and again only on Refresh, an error shows the path and the hub's reason); web/js/contract.js, web/js/markdown.js `opts.anchors`; the card tsk-6jz07t0080rk
+**Source:** docs/api.md §6.8 ("The whole contract": `toc` with `anchor` and `line`, `ETag` and `Cache-Control: private, no-cache`, read when the view opens and again only on Refresh, an error shows the path and the hub's reason); web/js/contract.js, web/js/markdown.js `opts.anchors` and `atxTitle`; the cards tsk-6jz07t0080rk and tsk-qzvb0c0abm3a
 **Revisit when:** the hub's heading parser and the dashboard's renderer part ways on what a line is, the designer reworks the view, or the dashboard gets its own cache layer
 
 `/<owner>/<slug>/contract` reads `GET …/contract` once when it opens and
@@ -425,6 +425,16 @@ its section number a text of its own. Before rendering, the view turns
 every line separator Python's `str.splitlines` knows into a line break,
 so the hub's `line` and the renderer's count are the same. An error
 replaces the page with the path and the hub's reason.
+
+An anchored line's title is cut as the hub cuts it (`contract_text._atx`):
+up to three spaces, the marks, the title without a closing `#` run after
+a space or a tab. `atxTitle` does it in string steps, one pass over the
+line each, as the hub does since the same card: a file of up to 4 MiB
+may hold one long line, and the patterns before them tried every start
+in a run of spaces, which grew with the square of the run. The title is
+the old pattern's, checked against it as an oracle on short lines, and a
+smoke case reads three headings with 128 KiB of spaces each in bounded
+time.
 
 **Reason:** a file can be a megabyte, so a poll would cost the forge and
 the hub a read every time, and the browser's cache already does what
