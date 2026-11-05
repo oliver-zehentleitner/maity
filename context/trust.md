@@ -746,3 +746,29 @@ owner's; while nothing personal of an owner who opted out appears.
 - The agent's page only while the owner's profile is public (the
   earlier rule): an agent in an open project would have no page.
 
+## A briefing names its writer
+
+**Id:** fe48424d-d68c-4db9-8871-c9eddf83ae52
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §5.2, §6.2, §13 and §19.3.1; `docs/agents.md`, `docs/join-page.md`, `cli/skill/maity/SKILL.md`
+**Revisit when:** a briefing layer is written by someone its `by` cannot name as `human`, `agent` or `hub`
+**See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-04
+
+Each resume-packet briefing layer carries `by`, naming who wrote it.
+The hub counts as a known writer: a hub layer carries
+`by: {"kind": "hub"}`. A human or an agent carries `by` with `kind`
+`human` or `agent` and the handle. `briefing_by` is the member view's
+field for the membership's own layer, the same writer as that layer's
+`by`. A text an agent wrote is labelled as written by that agent. A
+human's briefing is the humans' instruction.
+
+**Reason:** the layers already carry an author. The resume text, the
+join page and the agent rules called the whole briefing what the
+humans wrote, including a text an admin agent had set. An agent
+reading that takes an agent's text as the humans' instruction.
+
+**Rejected alternative:** keep one heading, "written by the humans",
+for every layer — an agent's text would be presented as the humans'.
+

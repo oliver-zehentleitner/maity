@@ -1965,7 +1965,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       family: { create: (o) => { ktwNav = o.nav; return { view: (box) => box.appendChild(document.createTextNode("family view")), bodies: (s) => Promise.resolve(s),
         publicState: (canonical, root) => { ktwCalls.push(["public", canonical, root]); return Promise.resolve(ktwPublic[canonical + "|" + root] || { error: "no export there" }); } }; } },
       search: { create: () => ({ view: (box, scope, q) => box.appendChild(document.createTextNode("search " + q)) }) },
-      thoughts: { create: () => ({ page: (box) => box.appendChild(document.createTextNode("thoughts page")), reader: () => {} }) },
+      // as the library: "Loading…" first, then the graph is read (an await), and a box no longer
+      // in the document is taken as a page left meanwhile and kept as it is
+      thoughts: { create: () => ({
+        // made in the page's realm, as the vendored library is: an await there takes the page's turns
+        page: vm.runInContext(`(async function (box, host) {
+          const p = document.createElement("p"); p.appendChild(document.createTextNode("Loading…")); box.appendChild(p);
+          await host.graph(); if (!p.isConnected) return; p.textContent = "thoughts page"; })`, ctx),
+        reader: async () => { throw new Error("the chain could not be read"); } }) },
       pages: { create: (o) => ({
         overview: (box, H) => { ktwCalls.push(["overview", H.provider()]); box.appendChild(document.createTextNode("overview page")); },
         topic: (box, file) => { ktwCalls.push(["topic", file]); box.appendChild(document.createTextNode("topic " + file)); },
@@ -2114,6 +2121,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
   expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",
     "why: the timeline's speed, named by its title alone in the library, has that name in the mount");
+  // Thoughts reads before it draws and stops when its box is not in the document: the place is
+  // drawn once the app has put the view into the page. The fake DOM knows `isConnected` here only.
+  Object.defineProperty(Node_.prototype, "isConnected", { configurable: true,
+    get() { for (let n = this; n; n = n.parentNode) if (n === body) return true; return false; } });
+  await go("#/maintainer/maity/why/thoughts"); for (let k = 0; k < 6; k++) await tick();
+  const ktwThoughtsText = text(main);
+  expect(ktwThoughtsText.includes("thoughts page") && !ktwThoughtsText.includes("Loading…"),
+    "why: Thoughts reads its graph and draws it, no Loading… for good " + JSON.stringify(ktwThoughtsText.slice(0, 200)));
+  await go("#/maintainer/maity/why/thought/a,b"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("the chain could not be read"),
+    "why: a place that fails after its read shows the failure, not Loading… for good");
+  delete Node_.prototype.isConnected;
   // The routes: a ref's repository from the address, a centre, a topic's file.
   const whyAt = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } });
   const whyAtRoot = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "packages/a" } });
@@ -5586,13 +5605,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Theme", "Security", "Organisations", "Sign in another device", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
-    "header: arrows move through the items; Picture goes to the account's picture");
-  for (let k = 0; k < 7; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[8].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[8],
+  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/settings",
+    "header: arrows move through the items; Settings goes to the account's Settings tab");
+  for (let k = 0; k < 4; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[5].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[5],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -5607,7 +5626,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(accountLink && accountLink.getAttribute("href") === "#/account", "the profile menu links to the account");
   pb.click(); await tick();
   await go("#/account");
-  expect(plainTitle() === "Your account · Maity" && text(main).includes("@maintainer") && byId("password-current"), "the account view");
+  expect(plainTitle() === "Your account · Maity" && text(main).includes("@maintainer") && !byId("password-current")
+    && JSON.stringify(main.querySelector("nav.account-tabs").querySelectorAll("a").map((a) => [text(a), a.getAttribute("href"), a.getAttribute("aria-current")]))
+      === JSON.stringify([["Profile", "#/account", "page"], ["Settings", "#/account/settings", null], ["Notifications", "#/account/notifications", null],
+        ["Security", "#/account/security", null], ["Organisations", "#/account/orgs", null]]),
+    "the account view: its tabs, Profile shown (tsk-3banvfzv3nvs)");
   // Renaming one's own handle (docs/api.md §6.24).
   const hdPatches = [];
   const realPatch6 = win.Maity.api.patch;
@@ -5650,6 +5673,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
   const pwSubmit = () => main.querySelector("form.project-form").dispatch("submit");
+  await go("#/account/security"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("password-current") && text(main.querySelector("nav.security-tabs")) === "Sign-inSessionsAnother deviceForge accessYour data",
+    "the account's Security: the password on Sign-in, its own tabs above");
   byId("password-current").value = "initial-generated"; byId("password-new").value = "short"; byId("password-repeat").value = "short";
   pwSubmit(); await tick();
   expect(!pwPosts.length && text(byId("password-new-error")) === "At least 12 characters.", "password: under 12 characters is refused locally");
@@ -5748,7 +5774,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (p === "/me/deletion" && ydNeed) { const r = ydNeed; return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: r })); }
     return ydPost(p, b);
   };
-  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/account/security/data"); for (let k = 0; k < 4; k++) await tick();
   const ydBox = () => main.querySelector("section.your-data");
   expect(ydBox() && btn(ydBox(), "Export my data") && text(ydBox()).includes("Delete my account"), "your data: the account has the export and the deletion");
   btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
@@ -5865,7 +5891,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Where the hub has no instance key, the section says so and offers nothing.
   const secGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/auth/second-factor" ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "secret_key_missing")) : secGet(p));
-  await go("#/account"); await secPass();
+  await go("#/account/security"); await secPass();
   expect(text(secBox()).includes("no instance key") && !secBtn("Set up two-factor sign-in"), "security: no instance key, nothing offered");
   win.Maity.api.get = secGet; win.Maity.yourData.save = secSave;
   // A required factor has no Turn off, and the hub's refusal is said in words.
@@ -5996,8 +6022,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/settings/forge?error=installation_not_yours"); for (let k = 0; k < 6; k++) await tick();
     const fgBox = () => main.querySelector("section.forge-access");
     expect(fgBox() && text(fgBox()).includes("That installation belongs to another GitHub account") && win.location.hash === "#/settings/forge"
-      && text(main).includes("Your account"),
-      "forge: /settings/forge is the account's Forge access; the hub's ?error= said in words, then dropped from the address");
+      && text(main).includes("Your account") && text(main.querySelector("nav.security-tabs").querySelectorAll("a").find((a) => a.getAttribute("aria-current") === "page")) === "Forge access",
+      "forge: /settings/forge is Security's Forge access; the hub's ?error= said in words, then dropped from the address");
     expect(text(fgBox()).includes("@maintainer") && text(fgBox()).includes("active") && text(fgBox()).includes("2 repositories it covers")
       && text(fgBox()).includes("maintainer/sample") && text(fgBox()).includes("No token is stored.") && !text(fgBox()).includes("ghp_"),
       "forge: the linked installation with its status and repositories; no token stored");
@@ -6021,7 +6047,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
     const fgRepo = () => main.querySelector(".forge-repository");
     expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, which serves only the operator's own namespaces, and only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
-      && fgRepo().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/settings/forge"),
+      && fgRepo().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/account/security/forge"),
       "forge: the project's settings say which grant reads the repository, unconfirmed, with a link to Forge access");
     const fgConfirms = [];
     win.Maity.api.post = (p, b) => { if (p.endsWith("/repository/confirm")) fgConfirms.push(b); return fgPost(p, b); };
@@ -7970,6 +7996,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("q", 409, "/x", "attachment_quota", { scope: "pending" }));
   await atPick("chat-files", [atFile("more.png", PNG, 100, "image/png")]);
   expect(text(main).includes("Not attached: more.png: you have 20 files, or 100 MiB, waiting to be sent"), "attachments: the pending quota in words");
+  win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("q", 409, "/x", "attachment_quota", { scope: "instance" }));
+  await atPick("chat-files", [atFile("full.png", PNG, 100, "image/png")]);
+  expect(text(main).includes("Not attached: full.png: this hub's storage for files is full; ask its operator"), "attachments: the hub's storage full in words, no numbers");
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("d", 400, "/x", "invalid", { fields: { body: "dimensions" } }));
   await atPick("chat-files", [atFile("huge.png", PNG, 100, "image/png")]);
   expect(text(main).includes("the image is larger than 8192 pixels"), "attachments: an image too large in pixels in words");
@@ -9811,7 +9840,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const i18n = win.Maity.i18n;
     win.MAITY_I18N.de = {};
     i18n.available.push("de");
-    await go("#/all"); await go("#/account/notifications");
+    await go("#/all"); await go("#/account/settings");
     const choose = byId("interface-language");
     expect(!!choose, "account language: offered once there are two");
     choose.value = "de";
@@ -9994,7 +10023,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const maBox = () => main.querySelector("section.mail-address");
     expect(maBox() && text(main.querySelector(".mail-address-state")) === "Mail goes to maintainer@example.org."
       && byId("mail-address").value === "maintainer@example.org" && !!byId("mail-address-password")
-      && /\/account\/sessions$/.test(main.querySelector(".mail-address-held a").getAttribute("href")),
+      && /\/account\/security\/sessions$/.test(main.querySelector(".mail-address-held a").getAttribute("href")),
       "mail address: the confirmed address, the password field for a change, a held change led to the sessions");
     byId("mail-address").value = " "; main.querySelector("form.mail-address-form").dispatch("submit"); await tick();
     expect(!maPatches.length && text(byId("mail-address-error")) === "Enter a mail address." && byId("mail-address").getAttribute("aria-invalid") === "true",
@@ -10034,7 +10063,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 403, "/me/notification-settings", "forbidden", { reason: "not_in_good_standing" }));
     byId("mail-address").value = "other@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
     expect(text(maBox()).includes("this session is not confirmed, so it cannot change the address while a change waits. Decide that change in your sessions")
-      && maBox().querySelectorAll("a").some((l) => /\/account\/sessions$/.test(l.getAttribute("href")) && text(l) === "your sessions" && l.parentNode !== main.querySelector(".mail-address-held")),
+      && maBox().querySelectorAll("a").some((l) => /\/account\/security\/sessions$/.test(l.getAttribute("href")) && text(l) === "your sessions" && l.parentNode !== main.querySelector(".mail-address-held")),
       "mail address: a session not in good standing is told why, not only that nothing was saved");
     // Removing is asked first; declined, nothing is sent.
     const maConfirm = win.confirm;
@@ -10111,7 +10140,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const maGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet(p).then((x) => ({ ...x, mail_available: false })) : maGet(p));
     await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
-    expect(!maBox() && !!byId("personal-language"), "mail address: hidden where the instance sends no mail, the language stays");
+    expect(!maBox() && !byId("personal-language") && main.querySelector(".mail-language-link a").getAttribute("href") === "#/account/settings",
+      "mail address: hidden where the instance sends no mail; the line to the language under Settings stays");
+    await go("#/account/settings"); for (let k = 0; k < 4; k++) await tick();
+    expect(!maBox() && !!byId("personal-language"), "mail address: none under Settings either, the language there");
     win.Maity.api.get = maGet;
     win.Maity.api.patch = nlPatch;
   }
@@ -10141,7 +10173,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = dgAll; win.Maity.api.get = dgGet;
 
   // Sessions (docs/api.md §2.6.5, §2.6.7): where one is signed in, This was me, End, a held address change.
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   const sesRow = (id) => main.querySelectorAll("li.session").find((li) => li.getAttribute("data-session") === id);
   const sesBox = () => main.querySelector("section.sessions");
   expect(main.querySelectorAll("li.session").map((li) => li.getAttribute("data-session")).join() === "hss-41d2,hss-41c7,hss-41c0"
@@ -10176,7 +10208,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const weak = { id: "hss-new", current: true, method: "email_code", created_at: new Date(Date.now() - 10 * 60000).toISOString(), last_seen_at: new Date().toISOString(),
     browser: "Chrome", os: "Android", ip: "192.0.2.99", approved_by: null, good_standing: false, created: { record: "acr-9", ip: "192.0.2.99", browser: "Chrome", os: "Android" }, ended_at: null, ended_by: null };
   win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false }))) })) : sesGet(p));
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   expect(btn(sesRow("hss-41c0"), "End").attrs.disabled !== undefined && text(sesRow("hss-41c0")).includes("Confirm this session's sign-in from another session first.")
     && btn(sesRow("hss-41d2"), "End").attrs.disabled !== undefined && text(sesRow("hss-41d2")).includes("This session is too new to end older ones.")
     && btn(sesBox(), "End all other sessions").attrs.disabled !== undefined && !btn(sesRow("hss-41d2"), "This was me"),
@@ -10201,7 +10233,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(sesDels) === JSON.stringify(["/auth/sessions/hss-41e0"]), "sessions: End this session ends the one still active");
   win.Maity.api.del = sesDel;
   // An ended session is confirmed no more: no This was me on it (§2.6.5).
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   const sesEnded = sesBox().querySelector("details.sessions-ended");
   const sesEndedRow = sesEnded.querySelectorAll("li").find((li) => li.getAttribute("data-session") === "hss-41d2");
   expect(sesEnded.attrs.open === undefined && sesEndedRow && !btn(sesEndedRow, "This was me"), "sessions: an ended session has no This was me; the ended ones stay folded");
@@ -10225,7 +10257,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sesLoosePosts = [];
   win.Maity.api.post = (p, b) => (p === "/me/notifications/read"
     ? (sesLoosePosts.push(b), Promise.resolve({ counts: {}, skipped: [{ id: "ntf-acr-8", reason: "not_earlier" }] })) : sesLoosePost(p, b));
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   const sesLoose = sesBox().querySelectorAll(".session-alerts li").find((li) => li.getAttribute("data-alert") === "ntf-acr-8");
   expect(sesLoose && !btn(sesLoose, "This was me") && btn(sesLoose, "Mark read"), "sessions: an alert that reports no session offers Mark read, not This was me");
   btn(sesLoose, "Mark read").click(); for (let k = 0; k < 6; k++) await tick();
@@ -10234,7 +10266,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = sesLoosePost;
   win.Maity.api.get = sesGet;
   // The hub's refusals in words.
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   win.Maity.api.del = () => Promise.reject(new win.Maity.api.ApiError("f", 403, "/x", "forbidden", { reason: "not_in_good_standing" }));
   btn(sesRow("hss-41c7"), "End").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(sesBox()).includes("Not done: this session's own sign-in is not confirmed yet"), "sessions: not in good standing, in words");
@@ -10249,7 +10281,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "sessions: a change replaced meanwhile is not approved; the one that replaced it is shown");
   win.Maity.api.post = sesPost;
   win.Maity.api.get = sesGet;
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   // This was me, from a confirmed older session: the mock confirms the sign-in.
   const sesPosts = [];
   win.Maity.api.post = (p, b) => { sesPosts.push([p, b]); return sesPost(p, b); };
@@ -10274,7 +10306,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sesConfirms = [];
   win.Maity.api.post = (p, b) => (p.endsWith("/confirm")
     ? (sesConfirms.push(p), Promise.reject(new win.Maity.api.ApiError("f", 403, p, "forbidden", { reason: "not_earlier" }))) : sesPostR(p, b));
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   btn(sesRow("hss-41f4"), "This was me").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(sesConfirms) === JSON.stringify(["/auth/sessions/hss-41f4/confirm"]) && text(sesBox()).includes("only a session that signed in before it may do that")
     && !text(sesBox()).includes("Confirmed: Opera"), "sessions: a refused confirm is said with its reason, not claimed");
@@ -10304,7 +10336,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ip: "192.0.2.91", approved_by: null, good_standing: false, created: { record: "acr-10", ip: "192.0.2.91", browser: "Vivaldi", os: "Linux" }, ended_at: null, ended_by: null };
   const sesGetW = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGetW(p).then((r) => ({ items: r.items.concat([unconfirmedOld]) })) : sesGetW(p));
-  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   expect(btn(sesRow("hss-41aa"), "End").attrs.disabled !== undefined, "sessions: an older unconfirmed one is not ended from a session under an hour old");
   const sesNow = win.Maity.api.now;
   win.Maity.api.now = () => sesNow() + 3600 * 1000;
@@ -10314,7 +10346,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = sesGet;
   // A failed read of the session list is said as an error.
   win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {})) : sesGet(p));
-  await go("#/account/sessions"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/account/security/sessions"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("section.sessions .send-status.failed")).includes("Could not read your sessions"), "sessions: a failed read is said as an error");
   win.Maity.api.get = sesGet;
 
@@ -10965,7 +10997,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Earlier cases confirmed and ended some of the fixture's sessions: the two left active stand here.
   expect(csBox() && text(csBox()).includes("Current sessions") && csRows().length === 2
     && text(csRows()[0]).includes("a link by mail") && !text(csRows()[0]).includes("this session") && text(csRows()[1]).includes("this session")
-    && csBox().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/account/sessions"),
+    && csBox().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/account/security/sessions"),
     "notifications: the active sessions stand on the page, newest first, this one marked, linked to Sessions " + (csBox() ? text(csBox()) : ""));
   const csGet = win.Maity.api.get;
   const csGets = [];
@@ -12015,7 +12047,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/sign-in") siPatches.push(b); return siPatch(p, b); };
     const siSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Sign-in methods");
     const siSubmit = async () => { siSection().querySelector("form.admin-sign-in").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
-    const redraw = async () => { await go("#/account/preferences"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick(); };
+    const redraw = async () => { await go("#/account/settings"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick(); };
     const policyOptions = () => byId("admin-sign-in-second_factor").querySelectorAll("option").map((o) => o.getAttribute("value"));
     await redraw();
     expect(siSection() && text(siSection()).includes("Password: always on.") && policyOptions().includes("email"), "sign-in: the section and Mail for everyone with mail ready");
@@ -12063,7 +12095,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await win.Maity.api.patch("/admin/settings/sign-in", { second_factor: null, device_code: null });
     win.Maity.api.patch = siPatch;
     for (let i = adminWrites.length - 1; i >= 0; i--) if (adminWrites[i][0] === "/admin/settings/sign-in") adminWrites.splice(i, 1);
-    await go("#/account/preferences"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick();
+    await go("#/account/settings"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick();
   }
   // Limits per person (§16.5, tsk-d4ppa9jsj0d7): each value with its source, the people at it; only what changed is sent.
   const lmPatches = [];
@@ -12093,6 +12125,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(lmPatches.slice(1)) === JSON.stringify([{ max_agents_per_human: "unlimited" }, { max_agents_per_human: null }])
     && byId("limits-max_agents_per_human-mode").value === "default",
     "limits: no limit is sent as unlimited, the default as null " + JSON.stringify(lmPatches));
+  // The attachment storage of the whole hub (§16.5, tsk-qa9r26kb2teq): in GiB here, bytes for the hub, what is stored now said.
+  expect(byId("limits-max_attachment_storage-mode").value === "default" && text(lmSection()).includes("Stored now: 700 MiB.")
+    && text(lmSection()).includes("Attachment storage of the hub"), "limits: the hub's attachment storage, unlimited by default, with what is stored now (below 1 GiB in MiB)");
+  // The script checks the fields: a stored value that is no whole GiB, shown rounded, must not stop the form in the browser.
+  expect(lmSection().querySelector("form.admin-limits").attrs.novalidate !== undefined, "limits: the form leaves the checks to the script (novalidate)");
+  byId("limits-max_attachment_storage-mode").value = "number"; byId("limits-max_attachment_storage-mode").dispatch("change");
+  byId("limits-max_attachment_storage").value = "0";
+  await lmSubmit();
+  expect(lmPatches.length === 3 && text(byId("limits-max_attachment_storage-error")) === "A whole number of GiB from 1 to 1048576.",
+    "limits: a storage value out of range is said at its field in GiB and nothing is sent");
+  byId("limits-max_attachment_storage").value = "50";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[3]) === JSON.stringify({ max_attachment_storage: 50 * 1024 ** 3 }) && byId("limits-max_attachment_storage").value === "50",
+    "limits: the storage is sent in bytes and shown in GiB " + JSON.stringify(lmPatches));
+  await lmSubmit();
+  expect(lmPatches.length === 4 && text(lmSection()).includes("Nothing changed."), "limits: a number left as it was is not sent again");
+  // A stored storage value that is no whole GiB (set in bytes) is shown rounded and kept: the form still saves another field.
+  await lmPatch("/admin/settings/limits", { max_attachment_storage: 1.5 * 1024 ** 3 });
+  byId("limits-max_agents_per_human-mode").value = "number"; byId("limits-max_agents_per_human-mode").dispatch("change");
+  byId("limits-max_agents_per_human").value = "300";
+  await lmSubmit(); // the redraw reads the 1.5 GiB from the hub's answer
+  expect(lmPatches.length === 5 && byId("limits-max_attachment_storage").value === "1.5", "limits: a storage value of 1.5 GiB is shown rounded " + JSON.stringify(lmPatches));
+  byId("limits-max_agents_per_human").value = "301";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[5]) === JSON.stringify({ max_agents_per_human: 301 }) && text(lmSection()).includes("Saved."),
+    "limits: with 1.5 GiB stored, another field saves and the storage is not sent " + JSON.stringify(lmPatches));
+  // A value that shows rounded as a whole number (1 GiB and a byte shows as 1) can still be set to that number by typing it.
+  await lmPatch("/admin/settings/limits", { max_attachment_storage: 1024 ** 3 + 1 });
+  byId("limits-max_agents_per_human").value = "302";
+  await lmSubmit(); // the redraw reads 1 GiB and a byte
+  expect(lmPatches.length === 7 && byId("limits-max_attachment_storage").value === "1", "limits: 1 GiB and a byte shows as 1 " + JSON.stringify(lmPatches));
+  byId("limits-max_attachment_storage").value = "1"; byId("limits-max_attachment_storage").dispatch("input");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[7]) === JSON.stringify({ max_attachment_storage: 1024 ** 3 }),
+    "limits: typing the shown whole number sets it exactly " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
@@ -12190,7 +12257,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pfPuts = [];
   const pfPut = win.Maity.api.put;
   win.Maity.api.put = (p, b) => { pfPuts.push([p, b]); return pfPut(p, b); };
-  await go("#/maintainer/maity/inbox"); await go("#/account/preferences"); await pfSettle();
+  await go("#/maintainer/maity/inbox"); await go("#/account/settings"); await pfSettle();
   const pfText = () => byId("preferences-text");
   const pfSave = () => main.querySelector(".preferences-form").querySelectorAll("button").find((b) => b.textContent === "Save");
   expect(pfText() && pfText().value.startsWith("Direct and short.") && text(main.querySelector(".preferences-version")).startsWith("Version 2 · written by @maintainer")
@@ -12224,7 +12291,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A failed read is an error.
   const pfGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me/preferences" ? Promise.reject(new win.Maity.api.ApiError("x", 404, p, "not_found", {})) : pfGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/account/preferences"); await pfSettle();
+  await go("#/maintainer/maity/inbox"); await go("#/account/settings"); await pfSettle();
   expect(main.querySelector(".preferences .error"), "preferences: a failed read is an error");
   win.Maity.api.get = pfGet;
 

@@ -57,8 +57,10 @@ window.Maity = window.Maity || {};
       return { message: typeof err.message === "string" && err.message
         ? M.t("attach.too_large.words", { size: sizeOf(size), words: err.message }) : M.t("attach.too_large", { size: sizeOf(size) }) };
     }
-    if (err.code === "attachment_quota") return { message: err.details && err.details.scope === "pending"
-      ? M.t("attach.quota.pending") : M.t("attach.quota.project") };
+    if (err.code === "attachment_quota") {
+      const scope = err.details && err.details.scope;
+      return { message: scope === "pending" ? M.t("attach.quota.pending") : scope === "instance" ? M.t("attach.quota.instance") : M.t("attach.quota.project") };
+    }
     if (err.code === "rate_limited") return { message: M.t("attach.rate_limited") };
     if (err.code === "project_closed") return { message: M.t("attach.project_closed") };
     if (err.code === "attachments_not_configured") return { message: offWords() };

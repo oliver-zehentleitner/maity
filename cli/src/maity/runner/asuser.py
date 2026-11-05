@@ -141,7 +141,7 @@ class AsUser:
                     mode = full.lstat()
                     kind = ("l" if stat.S_ISLNK(mode.st_mode) else "d" if stat.S_ISDIR(mode.st_mode)
                             else "f" if stat.S_ISREG(mode.st_mode) else "?")  # fmt: skip
-                    found.append((str(full.relative_to(path)), kind, mode.st_size))
+                    found.append((full.relative_to(path).as_posix(), kind, mode.st_size))
             return found
         done = self.run(["find", str(path), "-mindepth", "1", "-printf", "%y %s %P\\0"])
         if done.returncode != 0:

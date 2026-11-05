@@ -89,6 +89,7 @@ from maity_hub.routes import (
     briefing_view,
     contract_text,
     conversations,
+    cross_chats,
     device_codes,
     email_sign_in,
     forge_links,
@@ -142,6 +143,7 @@ from maity_hub.routes import people as people_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
+from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
@@ -451,12 +453,14 @@ def create_app(
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(board.router, prefix=prefix)
+    app.include_router(restricted_routes.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
     app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(overview.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(cross_chats.router, prefix=prefix)
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
