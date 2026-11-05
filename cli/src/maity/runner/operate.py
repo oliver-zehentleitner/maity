@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .. import hub, onboarding, state
+from .. import clonecheck, hub, onboarding, state
 from ..redact import without_userinfo
 from . import config, serve, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
@@ -29,28 +29,6 @@ SAFE_GIT = [
     "-c", "core.pager=cat", "-c", "diff.external=", "-c", "protocol.allow=never",
     "-c", "log.showSignature=false", "-c", "gpg.program=false", "-c", "core.attributesFile=",
 ]  # fmt: skip
-GIT_SECTION = re.compile(r'^\[\s*([A-Za-z0-9.-]+)\s*(?:"([^"]*)")?\s*\]$')
-GIT_ALLOWED = re.compile(
-    r"^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase"
-    r"|precomposeunicode)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)"
-    r"|user\.(name|email))$"
-)
-# What a clone's `.git` holds at its top level, and of which type (a file, or a directory).
-# Anything else may change where git reads its configuration from (`commondir`,
-# `config.worktree`) and is refused rather than understood.
-GIT_FILES = frozenset({
-    "AUTO_MERGE", "BISECT_LOG", "CHERRY_PICK_HEAD", "COMMIT_EDITMSG", "FETCH_HEAD", "HEAD",
-    "MERGE_HEAD", "MERGE_MODE", "MERGE_MSG", "ORIG_HEAD", "REVERT_HEAD", "config",
-    "description", "gc.log", "index", "index.lock", "packed-refs", "shallow",
-})  # fmt: skip
-GIT_DIRS = frozenset({
-    "branches", "hooks", "info", "logs", "maity", "objects", "rebase-apply", "rebase-merge",
-    "refs", "sequencer",
-})  # fmt: skip
-INFO_FILES = frozenset({"exclude", "refs"})
-# Other object stores git would read from (and, over http, fetch from).
-ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
-CONFIG_MAX = 64 * 1024
 REVOKED = re.compile(r": credential_revoked:")
 
 
@@ -243,56 +221,8 @@ def credential_revoked(place: workspace.Workspace, as_user: AsUser = RUNNER) -> 
 
 
 def not_inspectable(path: Path, as_user: AsUser = RUNNER) -> str | None:
-    """Why git must not run in this clone, or None. git runs programs named in its
-    configuration (filter drivers, gpg.program, fsmonitor, pagers, aliases) and reads
-    `.git/info/attributes`, submodules' own configuration and wherever `.git/commondir`
-    points; the agent wrote all of them. Only a `.git` made of a plain clone's entries, with a
-    configuration made of a plain clone's keys, is read."""
-    dot_git = path / ".git"
-    if as_user.exists(dot_git, "-L") or not as_user.exists(dot_git, "-d"):
-        return "its .git is not a plain directory"
-    try:
-        reason = _not_a_plain_git_dir(as_user.tree(dot_git))
-        if reason is not None:
-            return reason
-        text = as_user.read(dot_git / "config").decode("utf-8")
-    except (OSError, UnicodeDecodeError):
-        return "its .git/config cannot be read"
-    section = ""
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith(("#", ";")):
-            continue
-        header = GIT_SECTION.match(line)
-        if header:
-            section = header.group(1).lower() + (f".{header.group(2)}" if header.group(2) else "")
-            continue
-        key = line.split("=", 1)[0].strip().lower()
-        if not GIT_ALLOWED.match(f"{section}.{key}"):
-            # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
-            shown = onboarding.inline(without_userinfo(section))
-            return f"its .git/config sets {shown}.{onboarding.inline(key)}"
-    return None
-
-
-def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> str | None:
-    """Why a `.git` with these entries (path inside it, type, size) is not laid out like a
-    plain clone's, or None: an entry git does not create, an entry of the wrong type,
-    another object store, a configuration over CONFIG_MAX, or a symlink anywhere (git
-    follows them, so a link would put any file in the place of one that was checked)."""
-    for where, kind, size in sorted(entries):
-        top, _, rest = where.partition("/")
-        if kind == "l":
-            return f".git/{onboarding.inline(where)} is a symlink"
-        if not rest and kind != ("f" if top in GIT_FILES else "d" if top in GIT_DIRS else "?"):
-            return f".git/{onboarding.inline(where)} is not a plain clone's"
-        if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
-            return f".git/{onboarding.inline(where)} is not a plain clone's"
-        if where in ALTERNATES:
-            return f".git/{where} exists"
-        if where == "config" and size > CONFIG_MAX:
-            return f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"
-    return None
+    """Why git must not run in this clone, or None (clonecheck), read as the agents' user."""
+    return clonecheck.not_inspectable(path, as_user)
 
 
 def unsaved_work(path: Path, as_user: AsUser = RUNNER) -> list[str] | None:
