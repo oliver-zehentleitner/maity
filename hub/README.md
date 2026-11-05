@@ -285,6 +285,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `optional` | Admins may sign in on a password alone. `required_admins` holds them to a second factor and needs `MAITY_SECRET_KEY`, or the hub does not start. `email` needs complete mail. | §2.8.5 |
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `100` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
+| `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
@@ -411,7 +412,7 @@ and the image ships is pinned, with hashes, in `requirements/`:
 
 | File | Holds | Used by |
 |---|---|---|
-| `runtime.txt` | the hub's dependencies | the image, the join smoke in CI |
+| `runtime.txt` | the hub's dependencies | the image, the join smoke and the browser end-to-end test in CI |
 | `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |

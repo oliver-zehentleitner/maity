@@ -166,6 +166,17 @@ def used(conn: Connection, project_id: str) -> int:
     return int(total or 0)
 
 
+def used_total(conn: Connection) -> int:
+    """Bytes stored by the whole instance (§16.5 `max_attachment_storage`), counted as `used`
+    counts one project's."""
+    total = conn.execute(
+        select(func.coalesce(func.sum(t.attachment.c.size), 0)).where(
+            t.attachment.c.deleted_at.is_(None)
+        )
+    ).scalar()
+    return int(total or 0)
+
+
 def pending_of(conn: Connection, membership_id: int) -> tuple[int, int]:
     """(count, bytes) of a membership's pending uploads."""
     count, size = conn.execute(
@@ -178,13 +189,16 @@ def pending_of(conn: Connection, membership_id: int) -> tuple[int, int]:
     return int(count), int(size)
 
 
+QUOTA_OF = {"project": "project", "pending": "membership", "instance": "instance"}
+
+
 def quota_error(scope: str, **details: Any) -> ApiError:
+    """`attachment_quota`; the `instance` scope carries no numbers, since the instance's total
+    is the operator's to see, not the member's (§8.7)."""
     return ApiError(
         409,
         "attachment_quota",
-        "the upload would take the "
-        + ("project" if scope == "project" else "membership")
-        + " over its quota",
+        f"the upload would take the {QUOTA_OF[scope]} over its quota",
         {"scope": scope, **details},
     )
 

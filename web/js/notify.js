@@ -72,7 +72,7 @@ window.Maity = window.Maity || {};
 
   function linkOf(item) {
     const t0 = item.target || {};
-    if (t0.type === "session" || item.kind === "security") return "/account/sessions";
+    if (t0.type === "session" || item.kind === "security") return "/account/security/sessions";
     if (t0.type === "settings") return "/account/notifications";
     // Agent instances not listening (agents_not_listening, §5.3): one's agents.
     if (t0.type === "agents") return "/agents";
