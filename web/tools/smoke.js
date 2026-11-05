@@ -4484,8 +4484,46 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mdTrick.querySelectorAll("a").length === 1 && text(mdTrick).includes("(goes to evil.example)")
     && text(mdTrick).includes("[a](https://bank.example@evil.example)"),
     "markdown: a link text that looks like another address says where it goes; userinfo and bidi characters are no link");
+  // One long line (a contract file may hold 4 MiB, §6.8): backtick runs, links never closed, and
+  // the thousands of nodes they make, each in bounded time and without overflowing the stack.
+  const mdTimed = (line) => {
+    const started = Date.now();
+    let made = null;
+    try { made = MD(line); } catch (e) { made = e; }
+    return [made instanceof Error ? made : null, Date.now() - started];
+  };
+  // Every pair of backtick runs is a code span of its own, so the nodes alone take time: the
+  // check is how it grows, four times the runs in less than eight times the time.
+  const [btError, btShort] = mdTimed("`a".repeat(32 * 1024));
+  const [btError4, btLong] = mdTimed("`a".repeat(128 * 1024));
+  expect(!btError && !btError4 && btLong < 8 * btShort + 100,
+    "markdown: a line of backtick runs renders in time that grows with its length (" + btShort + " ms, four times as long " + btLong + " ms)");
+  const [linkError, linkTook] = mdTimed("[a](https://(".repeat(20000));
+  expect(!linkError && linkTook < 1000, "markdown: a line of unclosed links renders in bounded time (" + linkTook + " ms)");
+  const mdSpans = MD("`a` ``b`` `c ``d`` e`");
+  expect(mdSpans.querySelectorAll("code").map((c) => c.textContent).join("|") === "a|b|c ``d`` e",
+    "markdown: a backtick run closes at the next run of its length");
+  const mdBracket = MD("[a](https://x.example/[y]) [b](https://x.example/z)");
+  const mdBracketLinks = mdBracket.querySelectorAll("a");
+  // As the hub renders it: the brackets as text, the address inside them a link of its own.
+  expect(mdBracketLinks.length === 2 && text(mdBracketLinks[0]) === "https://x.example/[y]"
+    && text(mdBracketLinks[1]) === "b" && mdBracketLinks[1].getAttribute("href") === "https://x.example/z"
+    && text(mdBracket).startsWith("[a](https://x.example/[y])"), "markdown: a link target holds no [, as in the hub's renderer");
   expect(MD("```\nif (a\u202e) {}\n```").querySelector(".md-invisible"), "markdown: code with invisible characters is flagged");
   const linear = Date.now(); MD("[".repeat(20000) + "x"); expect(Date.now() - linear < 1000, "markdown: unclosed brackets stay linear");
+  // A contract heading (§6.8) with a long run of spaces, with and without a closing sequence: one
+  // pass over the line, its marks dropped as the hub drops them.
+  const atxRun = " ".repeat(128 * 1024);
+  const atxStarted = Date.now();
+  const atxBox = document.createElement("div");
+  win.Maity.dom.append(atxBox, win.Maity.markdown("## 1 a" + atxRun + "b ##\n### 2 c" + atxRun + "d#\n#### 3 e" + atxRun + "f", null,
+    { anchors: new Map([[1, { level: 2, anchor: "s-1" }], [2, { level: 3, anchor: "s-2" }], [3, { level: 4, anchor: "s-3" }]]) }));
+  const atxTook = Date.now() - atxStarted;
+  const atxHeads = atxBox.querySelectorAll(".md-anchored");
+  expect(atxTook < 1000 && atxHeads.length === 3 && atxHeads.map((x) => x.id).join() === "s-1,s-2,s-3"
+    && text(atxHeads[0]).endsWith("b") && text(atxHeads[1]).endsWith("d#") && text(atxHeads[2]).endsWith("f")
+    && text(atxHeads[0].querySelector(".md-number")) === "1",
+    "markdown: a contract heading with a long run of spaces is read in bounded time, a closing sequence dropped (" + atxTook + " ms)");
 
   // A chat's rows are as tall as their message: the list fills the pane, its rows do not.
   expect(/\.messages \{[^}]*display: grid;[^}]*align-content: start;/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
@@ -5050,6 +5088,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-new1");
   expect(text(hcState()).startsWith("Taken: your agent Agent New has @agent-new1"), "handle check: after the create it is taken, by the new profile " + JSON.stringify(text(hcState())));
   win.Maity.api.post = hcPost; win.Maity.api.getAll = hcAll;
+  // Creating a join needs the second factor when the hub asks for it (§2.8.4,
+  // tsk-trb99kkhv1rk): the code is asked in the form and the join sent again;
+  // a bare members:admin refusal names the missing right; the project is named.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".join-panel .join-project") && text(main.querySelector(".join-panel .join-project")).includes("maintainer/maity"),
+    "join step-up: the panel names the project the join is for");
+  const suJoins = [];
+  const suVerified = [];
+  let suStepped = false;
+  let suRefuse = "step_up";
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify") { suVerified.push(b); suStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+    if (p !== "/projects/maintainer/maity/joins") return hcPost(p, b);
+    suJoins.push(b);
+    if (suRefuse === "admin") return Promise.reject(new win.Maity.api.ApiError("this needs members:admin", 403, p, "forbidden", { scope: "members:admin" }));
+    if (!suStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+    return Promise.resolve({ id: "join-su", agent_id: "agt-su1", paste_lines: { windows: "maity join su-line", posix: "maity join su-line" }, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-11-05T00:00:00Z" });
+  };
+  const suForm = () => main.querySelector("form.join-form");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-su1"); byId("join-display").value = "Agent SU";
+  suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".join-panel form.step-up") && text(main).includes("needs your second factor") && !text(main).includes("No join created"),
+    "join step-up: the second factor is asked in the form, not said as a refusal");
+  btn(main.querySelector(".join-panel form.step-up"), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector(".join-panel form.step-up") && !text(main).includes("No join created") && suJoins.length === 1, "join step-up: Cancel ends quietly");
+  suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  byId("step-up-step_up_required").value = "123 456"; main.querySelector(".join-panel form.step-up").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+  expect(JSON.stringify(suVerified) === JSON.stringify([{ code: "123456" }]) && suJoins.length === 3 && main.querySelector(".join-result"),
+    "join step-up: after the code the join is sent again and its line shown");
+  btn(main.querySelector(".join-result"), "Join another").click(); await tick();
+  suRefuse = "admin";
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-su2"); byId("join-display").value = "Agent SU2";
+  suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("No join created: you have no admin rights in this project (members:admin)"),
+    "join step-up: a bare members:admin refusal names the missing right " + JSON.stringify(text(main).slice(0, 0)));
+  win.Maity.api.post = hcPost;
   await go("#/maintainer/maity/inbox");
   await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");

@@ -99,7 +99,8 @@ jobs:
 
   # The changelog fragments in changelog.d/ (one per pull request, folded into
   # CHANGELOG.md at release) and the tools' own tests; standard library only, except the
-  # docs renderer's Markdown and YAML, on the oldest Python the tools support.
+  # docs site's lock (tools/requirements/site.txt: the docs renderer's Markdown and YAML and
+  # the Keep the Why dashboard), on the oldest Python the tools support.
   changelog:
     runs-on: ubuntu-latest
     timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
@@ -117,8 +118,16 @@ jobs:
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check
-      # tools/site_docs.py renders Markdown; its tests are skipped without these two.
-      - run: pip install --quiet markdown==3.11.2 PyYAML==6.0.3
+      # The docs site's lock (pages.yml) follows site.in; uv from the hub's hashed tools lock,
+      # in an environment of its own.
+      - run: |
+          python -m venv "$RUNNER_TEMP/uv"
+          "$RUNNER_TEMP/uv/bin/pip" install --quiet --require-hashes --no-deps --only-binary :all: -r hub/requirements/tools.txt
+          make -C tools lock-check UV="$RUNNER_TEMP/uv/bin/uv"
+      # tools/site_docs.py renders Markdown; its tests are skipped without Markdown and YAML,
+      # which come from that lock.
+      - run: |
+          pip install --quiet --require-hashes --no-deps --only-binary :all: -r tools/requirements/site.txt
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
@@ -378,7 +387,7 @@ jobs:
       - run: make test
 
   # The agent-side command: lint, types and tests on the oldest and the newest
-  # Python it supports. Standard library only, so nothing else is installed.
+  # Python it supports, and on 3.11 the release lock checked and the release built.
   cli:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
@@ -392,11 +401,20 @@ jobs:
         working-directory: cli
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[dev]'
       - run: make check
+      # The release build's hashed lock follows release.in, and the build backend's and the
+      # dev extra's setuptools pins match it; it builds (release-cli.yml), so a tag never finds it broken; once, on the release's Python.
+      - if: matrix.python-version == '3.11'
+        run: |
+          pip install --require-hashes -r ../hub/requirements/tools.txt
+          make lock-check
+          make release-build
 
   # About 15 minutes, against about 7 on Linux; only when cli/ changes.
   cli-windows:

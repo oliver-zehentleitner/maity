@@ -224,7 +224,7 @@ members that the contract waives only for this one change.
 `hide` and `remove` write a row in `moderation_hold` (report, target
 type, stable target id, action); resolving the report again replaces
 it and `dismiss` deletes it. Ordinary writes that would undo it ask
-`moderation.refuse_held`: turning a project's badge on, reopening an archived project or a cancelled card, renaming an agent
+`moderation.refuse_held`: turning a project's badge on, reopening an archived project, a status change of a held cancelled card (checked before the transition, which §6.4 refuses anyway), renaming an agent
 or uploading a picture over a reset one. Since the public pages, the hold also decides what they serve: a held project,
 profile or organisation has no page (`moderation.hold` in `public_projects`, `public_people`, `public_orgs`,
 `public_agents`). A message is public nowhere, so its hold changes nothing yet. A suspension is no hold: only the operator's

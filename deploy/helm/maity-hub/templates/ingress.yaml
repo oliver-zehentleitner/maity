@@ -5,7 +5,15 @@ metadata:
   name: {{ include "maity-hub.fullname" . }}
   labels:
     {{- include "maity-hub.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $annotations := deepCopy (default (dict) .Values.ingress.annotations) }}
+  {{- with .Values.ingress.requestLimit }}
+  {{- if .enabled }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-rps" (toString (int .perSecond)) }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-burst-multiplier" (toString (div (add (int .burst) (sub (int .perSecond) 1)) (int .perSecond))) }}
+  {{- $_ := set $annotations "nginx.ingress.kubernetes.io/limit-connections" (toString (int .inFlight)) }}
+  {{- end }}
+  {{- end }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}

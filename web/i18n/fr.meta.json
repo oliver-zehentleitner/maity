@@ -6895,6 +6895,10 @@
     "en": "d4db3dec5f3106ce",
     "text": "b47b267a566fa975"
   },
+  "join.failed.no_admin": {
+    "en": "4641d9d8fbec8dec",
+    "text": "9740c7fa1254bd79"
+  },
   "join.failed.project_not_allowed": {
     "en": "82aad411db255b20",
     "text": "d746069c4e7847e1"
@@ -7091,6 +7095,10 @@
     "en": "34f895fb60829706",
     "text": "8c70e8536cc5ee7e"
   },
+  "join.project": {
+    "en": "0ddd96140a4e9f8d",
+    "text": "6fecf74f12538ad2"
+  },
   "join.quota.active": {
     "en": "ca8fdb9858229298",
     "text": "6c78a468d37488ca"
@@ -7222,6 +7230,10 @@
   "join.state_dir.where": {
     "en": "a54827d5e1fb0ca8",
     "text": "f3896788af8615c7"
+  },
+  "join.step_up": {
+    "en": "0365bc43945f8179",
+    "text": "a015af374cc9afac"
   },
   "join.takes_over.both": {
     "en": "ebfd426a5da19bf1",

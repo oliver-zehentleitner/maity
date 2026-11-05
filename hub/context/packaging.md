@@ -225,3 +225,45 @@ This is not the explanation of the 32 MiB an hour seen in production: that is ab
 - Bounding more caches (LRU or TTL): none of the structures the card names grew in the probe.
 - `jemalloc` in the image: another package in a pinned image for what a setting does.
 - Fewer worker threads: it would cut concurrency for a cost the allocator setting avoids (and the measured throughput did not change).
+
+## The image is published only from main and v* tags, through an environment, and signed keyless
+
+**Id:** dd54e1f8-29a5-434e-abbe-f08d61d293fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04; plan approved by the team lead); `.github/workflows/publish-image.yml`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** the image is pushed with a token that only the `ghcr` environment holds, or the chart starts checking signatures itself
+
+`publish-image.yml` runs on a `v*` tag and by hand. Its build job stops
+unless the ref is a `v*` tag or `main`; the signing job runs only after
+it. Both run in the environment `ghcr`, which the repository's
+settings open to `main` and `v*` tags only; who may create or move those tags is a repository rule. Both
+the `if` and the environment are in the workflow file, so they keep
+this file from running elsewhere, not a changed copy of it on a branch:
+the push uses the run's `GITHUB_TOKEN`, whose `packages: write` the file
+itself asks for. After the push a second job, the only one with
+`id-token: write`, signs the pushed digest with cosign, keyless: the
+certificate names `publish-image.yml` and the ref the run was on.
+The chart README tells operators to check that identity with
+`cosign verify` before they pin a digest.
+
+**Reason:** the image is what every installation runs, so only
+reviewed code, on `main` or a release tag, should become one. What
+holds that is the signature with the tag rule: a run from a branch,
+even with an edited file, gets `refs/heads/<branch>` in its
+certificate, which the README's `cosign verify` refuses, and only
+those the rule allows create `v*` tags. The `if` and the environment
+keep the unchanged file from pushing from elsewhere. The signature
+lets an operator check where a digest came from without trusting the
+registry alone.
+
+**Rejected alternatives:**
+- The `if` alone, without the environment: the environment adds the
+  repository's own list of refs, which a later approval rule can
+  extend. Neither stops an edited copy of the file on a branch (above).
+- Pushing with a token that only the `ghcr` environment holds, which
+  would stop an edited file on a branch from pushing at all: needs a
+  stored long-lived token; kept as a further step if needed.
+- A signing key stored as a secret: a long-lived key that can leak.
+  Keyless needs none, and the identity is the workflow and ref.

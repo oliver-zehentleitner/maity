@@ -15,7 +15,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +27,7 @@ from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
 _AFTER = "maity_after_commit"
+_SCRATCH = "maity_transaction_scratch"
 log = logging.getLogger(__name__)
 
 
@@ -112,17 +113,20 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     pending: list[tuple[str, int]] = []
     undo: list[Callable[[], None]] = []
     after: list[Callable[[], None]] = []
+    scratch: dict[str, Any] = {}
     try:
         with engine.begin() as conn:
             conn.info[_PENDING] = pending
             conn.info[_UNDO] = undo
             conn.info[_AFTER] = after
+            conn.info[_SCRATCH] = scratch
             try:
                 yield conn
             finally:
                 conn.info.pop(_PENDING, None)
                 conn.info.pop(_UNDO, None)
                 conn.info.pop(_AFTER, None)
+                conn.info.pop(_SCRATCH, None)
     except BaseException:
         for step in reversed(undo):
             step()
@@ -134,6 +138,22 @@ def transaction(engine: Engine) -> Iterator[Connection]:
             step()
         except Exception:  # committed already: a failed clean-up is the sweep's to retry
             log.exception("a step after the commit failed")
+
+
+def in_transaction(conn: Connection) -> bool:
+    """Whether `conn` is the connection of an open `transaction`, so `on_commit` and
+    `scratch` may be used."""
+    return _AFTER in conn.info
+
+
+def scratch(conn: Connection) -> dict[str, Any]:
+    """A dict that lives as long as the caller's `transaction`: what a module gathers for its
+    `on_commit` step. Not `conn.info` itself, which belongs to the pooled connection and
+    outlives the transaction."""
+    found = conn.info.get(_SCRATCH)
+    if found is None:
+        raise RuntimeError("events.scratch outside events.transaction()")
+    return cast(dict[str, Any], found)
 
 
 def on_commit(conn: Connection, step: Callable[[], None]) -> None:
