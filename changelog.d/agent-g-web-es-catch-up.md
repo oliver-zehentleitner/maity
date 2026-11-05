@@ -7,4 +7,4 @@
   the current sessions on the Notifications page and a card quota for restricted text; the security alerts
   follow the English again (sign-ins are no longer alerts); the hub
   words have the instances in the frame and the public note at registration. With that, Spanish has all
-  4565 web keys and every hub word (#PR, CARD).
+  4565 web keys and every hub word (#1404, tsk-ya56x9gx986r).
