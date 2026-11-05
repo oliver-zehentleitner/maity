@@ -271,12 +271,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(document.title.startsWith("(11) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
   expect(allChip.getAttribute("aria-label") === "9 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
-  expect(main.querySelectorAll(".project-label").length === 10, "every entry labelled with its project, a personal request as Personal");
+  expect(main.querySelectorAll(".project-label").length === 12, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
     && /^#\/maintainer\/(maity|sample)\/inbox$/.test(firstRow.childNodes[0].getAttribute("href")) && firstRow.childNodes[1].className === "entry-head",
     "inbox: each entry's project badge is a link to the project, before the entry");
-  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Personal, Maity|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
+  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Personal, Maity|Personal|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
     "inbox: the project's name starts each entry's accessible name");
   // Logos (docs/api.md §11.2): Maity has an image, Sample shop a monogram.
   const markOf = (label) => chip(label).querySelector(".project-mark");
@@ -334,7 +334,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
   const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
-  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 9
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 11
     && main.querySelectorAll("section.entry-group").every((sec) => sec.querySelector("ol.entries") && sec.querySelector("ol.entries").childNodes.every((li) => li.className.includes("entry"))),
     "inbox: grouped by project, in the switcher's order, each group its own list " + JSON.stringify(groupHeads));
   // The entry expanded is the first on screen, not the first of the ungrouped order.
@@ -7111,7 +7111,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
   // A personal request reaches its human without a membership (§7): it comes first, the empty state after it.
-  expect(main.querySelectorAll(".project-label.personal").length === 2
+  expect(main.querySelectorAll(".project-label.personal").length === 4
     && text(main).indexOf("proposes a change to its soul") < text(main).indexOf("No projects yet"),
     "no project: a personal request is still shown, before the empty state");
   // A truly empty account: the empty state alone.
@@ -7811,7 +7811,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("proposes a change to its soul"), "personal request: never in a project's inbox");
   await go("#/all"); await hgSettle();
   const psHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("proposes a change to its soul"));
-  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 2
+  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 4
     && !main.querySelectorAll("a.project-label").some((a) => a.getAttribute("href").includes("elsewhere")),
     "personal request: listed as Personal, with no link into its project");
   if (psHead().attrs["aria-expanded"] !== "true") { psHead().click(); await tick(); }
@@ -10934,10 +10934,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Mark all read stays in place, off with nothing left to mark; security alerts said to stay (tsk-bt2p3rem8tbj).
   expect(btn(main, "Mark all read") && btn(main, "Mark all read").disabled && text(main).includes("Mark all read leaves security alerts unread"),
     "notifications: Mark all read stays, off while nothing it marks is unread; security alerts said to stay unread");
-  // Mark read per item, without opening it (tsk-bt2p3rem8tbj): the chat item unread again here, and an open report
-  // (report_open, target report) added.
+  // Mark read per item, without opening it (tsk-bt2p3rem8tbj): the chat item unread again here, and an open matter
+  // (mail_disabled, target settings) added.
   const waitReport = { id: "ntf-acr-90", record: "acr-90", kind: "inbox", at: "2026-10-22T13:19:30Z", project: null, actor: null,
-    title: "A report waits for you", target: { type: "report", id: "rep-0001" }, url: "https://maity.team/admin", read: false, redacted: false };
+    title: "Mail is off for you", target: { type: "settings", id: "hum-maintainer" }, url: "https://maity.team/account/notifications", read: false, redacted: false };
   let waitCurrent = "hss-41c0";
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50") && waitWrites.length === 1
     ? waitGet(p).then((r) => Object.assign({}, r, { items: [waitReport].concat(r.items.map((x) => (x.id === "ntf-4237" ? Object.assign({}, x, { read: false }) : x))) }))
@@ -10948,7 +10948,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const waitMark = (id) => waitRow(id) && waitRow(id).querySelector("button.mark-read");
   expect(waitMark("ntf-4237") && waitMark("ntf-4237").getAttribute("aria-label").startsWith("Mark read: ") && !btn(main, "Mark all read").disabled
     && waitRow("ntf-acr-90") && !waitMark("ntf-acr-90") && !waitMark("ntf-acr-8"),
-    "notifications: Mark read on an unread item; none on an open matter (a report, a registration)");
+    "notifications: Mark read on an unread item; none on an open matter (mail off, a registration)");
   // The chat item marked in place: the row stays, read, its button gone; the pages read so far stay.
   const waitBefore = waitItems().length;
   const wfProto = Object.getPrototypeOf(main), wfFocus = wfProto.focus;
@@ -11887,10 +11887,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(rpItems()) === JSON.stringify(["rpt-0003", "rpt-0001"]) && rpOpen() && btn(rpOpen(), "Resolve again"),
     "reports: the resolved ones listed, one resolved again to replace its action");
   win.Maity.api.post = rpPost; win.confirm = rpConfirm;
-  // A report_open notification leads to /admin/reports/<id>: Reports shown, that report opened (§16.8, §18.2).
-  expect(win.Maity.notify.linkOf({ kind: "inbox", target: { type: "report", id: "rpt-0002" }, project: null }) === "/admin/reports/rpt-0002"
-    && win.Maity.notify.linkOf({ kind: "inbox", target: { type: "registration", id: "hum-x" }, project: null }) === "/admin/registration",
-    "reports: a new report's notification links to it in Admin → Reports, a registration's to Admin → Registration");
+  // A registration's notification leads to Admin → Registration (§16.4, §18.2).
+  expect(win.Maity.notify.linkOf({ kind: "inbox", target: { type: "registration", id: "hum-x" }, project: null }) === "/admin/registration",
+    "admin: a registration's notification links to Admin → Registration");
+  // A new report is the instance admin's personal request (§16.8, §7), in the all-projects inbox: no answer, no
+  // withdrawal, only Open report into Admin → Reports; resolving rpt-0003 above withdrew its request.
+  await go("#/all"); for (let k = 0; k < 10; k++) await tick();
+  const rqHead = (s) => main.querySelectorAll("li.entry").find((li) => text(li).includes(s));
+  expect(rqHead("Report: spam — profile") && !rqHead("Report: prompt_injection — message")
+    && rqHead("Report: spam — profile").querySelector(".visually-hidden").textContent === "Personal: ",
+    "reports: the open report's request is in the all-projects inbox as Personal, the resolved one's withdrawn");
+  rqHead("Report: spam — profile").querySelector("button.entry-head").click(); for (let k = 0; k < 6; k++) await tick();
+  const rqOpen = rqHead("Report: spam — profile").querySelector("a.open-report");
+  expect(rqOpen && rqOpen.getAttribute("href") === "#/admin/reports/rpt-0002" && text(rqOpen) === "Open report"
+    && !rqHead("Report: spam — profile").querySelector("textarea") && !btn(rqHead("Report: spam — profile"), "Withdraw")
+    && !btn(rqHead("Report: spam — profile"), "Talk") && !btn(rqHead("Report: spam — profile"), "Send")
+    && !rqHead("Report: spam — profile").querySelector("a.digest-agents"),
+    "reports: its request offers Open report to /admin/reports/<id>, no answer field, no Talk, no Send, no withdrawal, no digest's agents");
+  for (const verb of ["withdraw", "answer"]) {
+    const rqRefused = await win.Maity.api.post("/requests/req-r002/" + verb, verb === "answer" ? { text: "done" } : {}).then(() => null, (e) => e);
+    expect(rqRefused && rqRefused.code === "resolve_the_report" && rqRefused.details.report === "rpt-0002",
+      "reports: the fixture hub refuses to " + verb + " a report's request as the hub does (resolve_the_report)");
+  }
+  await go(rqOpen.getAttribute("href")); for (let k = 0; k < 10; k++) await tick();
+  expect(rpSection() && !rpSection().hidden && rpOpen() && text(rpOpen()).includes("Spam"),
+    "reports: Open report from the all-projects inbox opens that report in Admin → Reports");
   await go("#/admin/reports/rpt-0002"); for (let k = 0; k < 10; k++) await tick();
   expect(rpSection() && !rpSection().hidden && rpOpen() && text(rpOpen()).includes("Spam")
     && main.querySelectorAll("nav.admin-nav button").find((b) => b.textContent === "Reports").getAttribute("aria-pressed") === "true",

@@ -5127,6 +5127,10 @@
     "en": "09ce28c5fbadb304",
     "text": "6cfb9e4efebd04cf"
   },
+  "inbox.label.personal_alone": {
+    "en": "f872d2297c5f8e77",
+    "text": "ee5ed8783c6b1364"
+  },
   "inbox.label.personal_into": {
     "en": "1ecc511a1fbfc2fb",
     "text": "75ea9252ff867ac1"
@@ -5162,6 +5166,10 @@
   "inbox.note_label": {
     "en": "5aac3b2989bdadeb",
     "text": "9d3459ab0975062f"
+  },
+  "inbox.open_report": {
+    "en": "074964d062492852",
+    "text": "1493a577fba7bc7e"
   },
   "inbox.options": {
     "en": "9c5eb75321da7d07",

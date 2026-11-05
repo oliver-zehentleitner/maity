@@ -2326,6 +2326,9 @@ window.Maity = window.Maity || {};
       if (r.status === "expired") fail(409, "invalid_transition", "the report expired", path, { from: "expired", to: "resolved" });
       // Resolved again, the report keeps when it first closed (§16.8); the answer carries the snapshot, as the hub's.
       Object.assign(r, { status: "resolved", action: body.action, note: body.note || null, resolved_at: nowIso(), closed_at: r.closed_at || nowIso() });
+      // Its request to the instance admin is withdrawn with it (§16.8, §7).
+      personalRequests().filter((x) => x.report && x.report.id === r.id && x.status === "open")
+        .forEach((x) => Object.assign(x, { status: "withdrawn", answered_at: nowIso() }));
       return Object.assign({}, r);
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
@@ -2721,6 +2724,8 @@ window.Maity = window.Maity || {};
       const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      // A report's request closes with the report alone (§16.8): resolved or expired.
+      if (req.report) fail(409, "resolve_the_report", "resolve the report", path, { report: req.report.id });
       if (m[2] === "answer") checkAnswer(req, body, path, null);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
       const edited = "markdown" in body || "base_version" in body;

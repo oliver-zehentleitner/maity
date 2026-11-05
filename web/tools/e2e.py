@@ -4417,7 +4417,8 @@ def legal_json_step(run: Run, page: Page) -> None:
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
-    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    opens it from the request in the all-projects inbox, reads the report and its snapshot as
+    text, and resolves it with hide and a note, which withdraws the request."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     if not me.get("instance_admin"):
         return
@@ -4430,12 +4431,20 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
         {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
     )
     assert filed.get("id"), filed
-    # The admin is told by a personal request without a project (§16.8, §7).
+    # The admin is told by a personal request without a project (§16.8, §7), in the
+    # all-projects inbox: no answer, no withdrawal, only Open report.
     mine = page.request.get(f"{run.base}/api/v1/requests").json()["items"]
     [asked] = [r for r in mine if (r.get("report") or {}).get("id") == filed["id"]]
     assert (asked["personal"], asked["project"], asked["replies"]) == (True, None, []), asked
-    # Where the request leads: the section, that report opened.
-    page.goto(f"{run.base}/admin/reports/{filed['id']}")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+    entry = page.locator("li.entry", has_text="Report: spam — card")
+    entry.locator("button.entry-head").click()
+    expect(entry.locator("textarea")).to_have_count(0)
+    expect(entry.get_by_role("button", name="Withdraw", exact=True)).to_have_count(0)
+    entry.get_by_role("link", name="Open report", exact=True).click()
+    # Where it leads: the section, that report opened.
+    expect(page).to_have_url(re.compile(r"/admin/reports/" + re.escape(filed["id"]) + "$"))
     section = page.locator("section.admin-section[aria-label='Reports']")
     expect(section).to_be_visible()
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_be_visible()

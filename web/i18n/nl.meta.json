@@ -4755,6 +4755,10 @@
     "en": "09ce28c5fbadb304",
     "text": "924763d5c30592bf"
   },
+  "inbox.label.personal_alone": {
+    "en": "f872d2297c5f8e77",
+    "text": "6dde542a09ad38c3"
+  },
   "inbox.label.personal_into": {
     "en": "1ecc511a1fbfc2fb",
     "text": "108b5fc3902be727"
@@ -4790,6 +4794,10 @@
   "inbox.note_label": {
     "en": "5aac3b2989bdadeb",
     "text": "5030725dc7331fc1"
+  },
+  "inbox.open_report": {
+    "en": "074964d062492852",
+    "text": "5c572f85783d91c2"
   },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
