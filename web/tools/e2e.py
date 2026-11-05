@@ -769,6 +769,7 @@ def main() -> int:
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
                     chat_height_views(run, browser)
+                    paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
@@ -2517,6 +2518,122 @@ def fixture_views(run: Run, browser) -> None:
         run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
+
+
+PATHS_TEAM = (
+    [{"id": "o", "kind": "human", "display_name": "oliver", "trust": "owner", "role": "manager"},
+     {"id": "w", "kind": "human", "display_name": "wolfgang", "trust": "member", "role": "manager"},
+     {"id": "l", "kind": "agent", "display_name": "lotse", "trust": "admin", "role": "manager", "reports_to": "o", "owner_id": "o",
+      "instances": [{"id": "a"}, {"id": "b"}]},
+     {"id": "rl", "kind": "agent", "display_name": "review-team-lead", "trust": "admin", "role": "manager", "reports_to": "o", "owner_id": "o"},
+     {"id": "mh", "kind": "agent", "display_name": "marketing-head", "trust": "member", "role": "manager", "reports_to": "o", "owner_id": "o"}]
+    + [{"id": f"c{i}", "kind": "agent", "display_name": f"maity-coder-claude-{i:03d}", "trust": "member", "role": "coder",
+        "reports_to": "l", "owner_id": "o"} for i in range(1, 14)]
+    + [{"id": k, "kind": "agent", "display_name": k, "trust": "member", "role": role, "reports_to": lead, "owner_id": "o"}
+       for k, role, lead in (("ops", "ops", "l"), ("test-team", "tester", "l"), ("grok", "reviewer", "rl"), ("chatgpt", "reviewer", "rl"),
+                             ("antigravity", "reviewer", "rl"), ("designer", "designer", "mh"), ("writer", "writer", "mh"),
+                             # a project's own role whose name is an inherited property of an object
+                             ("x-bridge", "constructor", "mh"))]
+)
+
+# The Paths face against the window: page width, boxes that overlap or leave the canvas, a name
+# wider than its box, the panel under the drawing, the phone's cards.
+PATHS_MEASURE = """() => {
+  const r = (el) => el.getBoundingClientRect();
+  const wide = document.querySelector('main .paths-wide');
+  const narrow = document.querySelector('main .paths-narrow');
+  const out = { page: [document.documentElement.scrollWidth, window.innerWidth], wideShown: !!(wide && wide.offsetParent),
+    narrowShown: !!(narrow && narrow.offsetParent), overlaps: [], outside: [], clipped: [], chipsOut: [], cardsOut: [],
+    reports: document.querySelectorAll('main .paths-lines path.paths-report').length,
+    nodes: document.querySelectorAll('main .paths-canvas .paths-node').length,
+    groups: document.querySelectorAll('main .paths-canvas .paths-group').length };
+  document.querySelectorAll('main .paths-chip').forEach((c) => { if (r(c).right > window.innerWidth + 0.5) out.chipsOut.push(c.textContent); });
+  if (out.wideShown) {
+    const canvas = r(document.querySelector('main .paths-canvas'));
+    const nodes = Array.from(document.querySelectorAll('main .paths-canvas .paths-node'));
+    nodes.forEach((n, i) => {
+      const a = r(n);
+      if (a.left < canvas.left - 0.5 || a.right > canvas.right + 0.5 || a.top < canvas.top - 0.5 || a.bottom > canvas.bottom + 0.5) out.outside.push(n.dataset.id);
+      nodes.slice(i + 1).forEach((m) => { const b = r(m);
+        if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) out.overlaps.push(n.dataset.id + '/' + m.dataset.id); });
+      // Every part meant to stay visible lies inside its box on all four sides (the box clips).
+      n.querySelectorAll('.paths-shape, .paths-count, .paths-name, .paths-sub, .paths-group-label, .paths-tiles').forEach((t) => {
+        const b = r(t);
+        if ((t.matches('.paths-name, .paths-sub, .paths-group-label') && t.scrollWidth > t.clientWidth + 1) || b.left < a.left - 0.5 || b.right > a.right + 0.5 || b.top < a.top - 0.5 || b.bottom > a.bottom + 0.5)
+          out.clipped.push(n.dataset.id + ':' + (t.className || '') + ':' + t.textContent); });
+    });
+    out.panelBelow = r(document.querySelector('main .paths-panel')).top >= r(document.querySelector('main .paths-scroll')).bottom - 0.5;
+    out.scrollFits = r(document.querySelector('main .paths-scroll')).right <= window.innerWidth + 0.5;
+  }
+  if (out.narrowShown) document.querySelectorAll('main .paths-card').forEach((c) => { if (r(c).right > window.innerWidth + 0.5 || r(c).left < -0.5) out.cardsOut.push(c.dataset.id); });
+  return out;
+}"""
+
+
+def paths_views(run: Run, browser) -> None:
+    """The Organisation tab's Paths face (tsk-j9ktmj7e4fxq) in fixture mode, every state the layout
+    has: 2560, 1280 and 390 px wide; with and without the sign-in banner; the fixture team and a
+    team shaped like Maity's (26 members, 13 coders under one lead, one role of its own) folded
+    and opened; the reporting lines on and off. Nothing overlaps, leaves the canvas or the window, no name is wider
+    than its box, and the panel stands under the drawing."""
+    run.step("fixtures: the Paths face fits at every width, with or without the banner, folded and opened")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for team in ("fixture", "maity"):
+                for banner in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en#/maintainer/maity/organisation")
+                    page.locator("main .org-faces").get_by_role("button", name="Paths", exact=True).click()
+                    if team == "maity":
+                        page.evaluate("""(members) => {
+                          const M = window.Maity; const c = { members, memberById: {}, link: (...p) => '/maintainer/maity/' + p.join('/'), nameOf: (id) => id };
+                          members.forEach((m) => { c.memberById[m.id] = m; });
+                          const box = document.querySelector('main .org-box'); while (box.firstChild) box.removeChild(box.firstChild);
+                          box.appendChild(M.paths.draw(c, { chip: null, selected: null, open: new Set(), lines: true }));
+                        }""", PATHS_TEAM)
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                    page.locator("main .paths-chips").get_by_role("button", name="Card assigned", exact=True).click()
+                    states = [("folded", None)]
+                    if team == "maity" and width > 700:
+                        states.append(("opened", "main .paths-canvas .paths-group"))
+                    for state, opener in states:
+                        if opener:
+                            page.locator(opener).click()
+                        for lines in (True, False):
+                            if not lines:
+                                page.locator("main .paths-chips").get_by_role("button", name="Reporting lines", exact=True).click()
+                            m = page.evaluate(PATHS_MEASURE)
+                            where = f"{team} team, {state}, lines {'on' if lines else 'off'}, at {width}x{height}" + (" with the banner" if banner else "")
+                            assert not errors, f"{where}: {errors}"
+                            assert m["page"][0] <= m["page"][1], f"{where}: the page is {m['page'][0]} px wide"
+                            assert not m["chipsOut"], f"{where}: chips past the window {m['chipsOut']}"
+                            if width > 700:
+                                assert m["wideShown"] and not m["narrowShown"], f"{where}: the drawing is not the face shown"
+                                assert not m["overlaps"], f"{where}: boxes overlap {m['overlaps']}"
+                                assert not m["outside"], f"{where}: boxes leave the canvas {m['outside']}"
+                                assert not m["clipped"], f"{where}: parts outside their box or text wider than it {m['clipped']}"
+                                assert m["panelBelow"] and m["scrollFits"], f"{where}: the panel is not under the drawing, or the drawing's frame leaves the window"
+                                assert (m["reports"] > 0) == lines, f"{where}: {m['reports']} reporting lines drawn"
+                                if team == "maity":
+                                    assert (m["groups"], m["nodes"]) == ((1, 14) if state == "folded" else (0, 26)), f"{where}: {m['groups']} boxes, {m['nodes']} in all"
+                            else:
+                                assert m["narrowShown"] and not m["wideShown"], f"{where}: the list is not the face shown"
+                                assert not m["cardsOut"], f"{where}: cards past the window {m['cardsOut']}"
+                            if not lines:
+                                page.locator("main .paths-chips").get_by_role("button", name="Reporting lines", exact=True).click()
+                    run.shot(page, f"fixtures-paths-{team}-{width}" + ("-banner" if banner else ""))
+            if width == 1280:
+                run.a11y(page, "fixtures: organisation paths")
+            page.goto(f"{index}?lang=en#/maintainer/maity/organisation")
+            page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
+        finally:
+            context.close()
 
 
 CHAT_MEASURE = """() => {
@@ -4772,6 +4889,15 @@ def members_step(run: Run, page: Page) -> None:
     expect(page).to_have_url(re.compile(r"/members/agt-[0-9a-z]+/sessions/[0-9a-z]+$"))
     expect(page.locator(".member-instances li.chosen")).to_have_count(1)
     page.go_back()
+    expect(page.locator("main .org-tree")).to_be_visible()
+    # Paths (tsk-j9ktmj7e4fxq): the same members drawn, and one chip's route from the hub's member views.
+    page.locator("main .org-faces").get_by_role("button", name="Paths", exact=True).click()
+    page.locator("main .paths-chips").get_by_role("button", name="Not listening", exact=True).click()
+    expect(page.locator("main .paths-panel .paths-route-list")).to_contain_text("E2E Agent ⇢ Owner")
+    expect(page.locator("main .paths-lines path.paths-route").first).to_be_attached()
+    run.a11y(page, "team page, organisation paths")
+    run.shot(page, "organisation-paths")
+    page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
     expect(page.locator("main .org-tree")).to_be_visible()
     view_tab(page, "Members").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.

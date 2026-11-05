@@ -4989,3 +4989,19 @@ Eight rules of `ktw-views.css` write `#fff` on the library's accent (selected co
 **Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
 
 **Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one. Checking only the export's fields, or only what the library writes: the fields keep a bad link from shaping what the library builds from it, the check of the mounts covers links in entry text and any field a later library adds. An elsewhere view of Maity's own for a `centre`: a second rendering of an entry the library's pages already draw. A centred entry as its `ref` place: the library's `ref` resolves the entry and goes to it at that centre, which was the same address again, so the page never left "Looking for …"; and a child root had no place in it.
+
+## The organisation's Paths face draws only edges the members API gives; an event's usual edges are marked as usual
+
+**Id:** 04ce10bd-5160-46e3-bb6d-7c3f760f4167
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-j9ktmj7e4fxq, 2026-11-05: the lead's answer to the request on the card (req-x3hgj0b7xzy3), choosing the members API as the only source and usual edges marked as such; the designer's approved draft for the layout
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-11-05
+**Revisit when:** the hub names an event's recipients itself (a routing read), or a team's lead has more than one role group too wide for the canvas
+
+The Team page's Organisation tab has two faces, Tree and Paths, the choice kept per browser. Paths (`js/paths.js`) draws the team top-down from `reports_to`, humans first, a lead centred over its members, and more than six members of one role under one lead folded into one box that opens in place. The reporting lines are a chip of their own, on by default; four more chips draw where one event goes, from the routing of docs/api.md §8.2 and §8.4: a review result to the reviewer's lead, not listening to the agent's lead, the admins and the owner (never a meat proxy), a request to a human to the agent's owner, and a card assignment from a lead to the member and the member's owner. Every edge is computed from what `GET /members` returns. Where the hub's routing depends on something the members list does not carry (who assigned the card, who wrote the reviewed PR), the edge is drawn as usual, dotted and named "usual" in the legend, or only said in the chip's note. At phone width the drawing gives way to a list of cards, each naming whom the member reports to and what it gets.
+
+**Reason:** a picture of the routing that the hub does not do is worse than none; the members list is what the dashboard already reads, and the usual edges answer the question readers ask (who hears about this) without claiming the hub computed them.
+
+**Rejected alternatives:** a routing table of the dashboard's own, kept beside §8: a second copy that drifts from the hub. Leaving out the edges the members list cannot settle: card assignment, the most asked about, would show nothing. A force layout: it moves on every redraw and hides who reports to whom; the draft's tidy tree keeps the hierarchy readable.
