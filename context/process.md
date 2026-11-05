@@ -1517,3 +1517,48 @@ HEAD is not the pushed commit or a touched package has uncommitted changes.
   the push is simpler and says so.
 - The CLI's tools from the CLI's own environment: the `cli` CI job installs its dev extra unpinned, so there is no
   lock to compare with yet; until a CLI dev lock exists the hook checks the CLI with the hub lock's versions.
+
+## The Keep the Why skill is pinned to the release the context is on, and a check holds every copy to it
+
+**Id:** ac5eadee-18cd-4250-8384-cae3b4459971
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04); the scope and the rejected pin chosen by the team lead on the plan, 2026-11-04; `tools/ktw_pin.py`, `AGENTS.md`, `hub/src/maity_hub/config.py`, `hub/src/maity_hub/ktw_skill.py`, `.github/workflows/ktw-lint.yml`
+**Revisit when:** a Keep the Why release is adopted (bump every copy with `context-schema`), the skill gains a signed or hashed release format, or the project decides to vendor the skill
+
+The install instructions in `AGENTS.md`, the hub's default
+`MAITY_KTW_SKILL_SOURCE` and the Git fallback it derives name the skill's
+release tree `tree/v<context-schema>`, not the moving `latest`. The skills
+installer is named as `npx skills@<version>`, the version kept once in
+`ktw_skill.py` (`SKILLS_INSTALLER`). The linter action is pinned by commit
+SHA, its tag in a comment. `-g -y` stays: where the skill lands is
+unchanged. `tools/ktw_pin.py`, run in the changelog job of ci.yml, fails
+when any copy names another release than `.keep-the-why`'s
+`context-schema`, another installer version, or the action by tag. It
+reads every form a copy is written in: the full tree URL, a bare
+`tree/<ref>`, the hub README's "`<ref>` release tree", and
+`skills@<version>` with or without `npx`, each with any ref, so a short
+form naming `latest` fails too, as does a `skills` in backticks without a
+version. The `.keep-the-why` files of `hub/`, `cli/` and `web/` must exist
+and name the root's `context-schema`. That the action's SHA is the
+commit of the tag in its comment it cannot check offline: on a bump the
+author and the reviewers check it (`git ls-remote` on the tag).
+
+**Reason:** what these lines install is an instruction set every agent in
+the project follows, and the installer runs code on the agent's machine.
+A moving tag changes both without a change here. `context-schema` already
+says which release the context was migrated to, so tying the pins to it
+keeps the installed skill and the context on one version. Whoever migrates
+the context bumps the pins in the same pull request, and the check names
+every line that was missed.
+
+**Rejected alternatives:**
+- `pinned-version` with `pinned-path` in `.keep-the-why`: the skill
+  supports it only with a vendored copy in the repository. Every agent
+  whose installed version differs would then follow that copy, or stop
+  hard without it, which changes how every agent works.
+- Dropping `-g` to install per project: changes where the skill lands
+  for every agent; the pin is about the version only.
+- Pins without a check: the next release would be bumped in some copies
+  and not others.
