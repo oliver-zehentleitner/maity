@@ -9444,6 +9444,80 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks[6].getAttribute("href") === "#/chats/maintainer/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // Cross-project group chats (§9.5) sit in their own list: no project, no pin,
+  // and the pane takes text only.
+  const xcLinks = () => main.querySelectorAll(".cross-chat-list a.conv");
+  const xcPane = () => main.querySelector("section.cross-chat");
+  expect(xcLinks().length === 1 && xcLinks()[0].getAttribute("href") === "#/chats/cross/xch-0001"
+    && text(xcLinks()[0]).includes("Across the projects") && text(xcLinks()[0]).includes("across your agents")
+    && text(xcLinks()[0]).includes("1 unread") && xcLinks()[0].querySelector(".mention-count")
+    && !xcLinks()[0].querySelector(".conv-project") && !xcLinks()[0].parentNode.querySelector(".pin-toggle")
+    && main.querySelector("a.new-cross").getAttribute("href") === "#/chats/cross/new" && chLinks.length === 7,
+    "cross chat: listed beside the project chats, with its unread and its mention, no project and no pin");
+  await go("#/chats/cross/xch-0001"); for (let k = 0; k < 8; k++) await tick();
+  const xcMarks = () => xcPane().querySelectorAll(".group-people-line .msg-project").map((s) => s.getAttribute("title"));
+  expect(xcPane() && text(xcPane()).includes("Both of you, a look across the projects.")
+    && text(xcPane()).includes("@maintainer done on my side") && text(xcPane()).includes("In this chat:")
+    && xcMarks().includes("Maity") && xcMarks().includes("Sample shop")
+    && !xcPane().querySelector("input[type=\"file\"]") && !xcPane().querySelector(".meat-chat-toggle")
+    && byId("chat-text") && main.querySelector(".chat-back").getAttribute("href") === "#/chats",
+    "cross chat: opens with its messages and the agents' projects, and offers no file and no meat-proxy switch " + JSON.stringify(xcMarks()));
+  const xcPosts = [], xcPatches = [];
+  const xcPost = win.Maity.api.post, xcPatch = win.Maity.api.patch, xcPrompt = win.prompt;
+  win.Maity.api.post = (p, b) => { xcPosts.push([p, b]); return xcPost(p, b); };
+  win.Maity.api.patch = (p, b) => { xcPatches.push([p, b]); return xcPatch(p, b); };
+  byId("chat-text").value = "@agent-a from both sides";
+  main.querySelector("section.cross-chat form.compose").dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  const xcSent = (await win.Maity.api.get("/me/cross-chats/xch-0001/messages?after=2")).items.find((m) => (m.body || "").includes("@agent-a"));
+  expect(xcPosts.length === 1 && xcPosts[0][0] === "/me/cross-chats/xch-0001/messages"
+    && JSON.stringify(xcPosts[0][1]) === JSON.stringify({ body: "@agent-a from both sides" })
+    && xcSent && text(xcPane()).includes("@agent-a from both sides"),
+    "cross chat: a message is sent as text only");
+  win.prompt = () => "a secret";
+  const xcMsg = () => main.querySelectorAll("section.cross-chat li.msg").find((li) => text(li).includes("@agent-a from both sides") || text(li).includes("a secret"));
+  btn(xcMsg(), "Remove").click();
+  for (let k = 0; k < 4; k++) await tick();
+  expect(xcPosts.length === 2 && xcPosts[1][0] === "/me/cross-chats/xch-0001/messages/" + xcSent.id + "/redact"
+    && xcPosts[1][1].reason === "a secret" && text(xcPane()).includes("a secret"),
+    "cross chat: the owner removes a message, with the reason");
+  byId("cross-rename").value = "Both sides";
+  byId("cross-rename").parentNode.dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  expect(xcPatches.length === 1 && xcPatches[0][0] === "/me/cross-chats/xch-0001" && xcPatches[0][1].title === "Both sides"
+    && text(xcPane().querySelector(".group-title")) === "Both sides",
+    "cross chat: the owner renames it");
+  for (let k = 0; k < 8 && !byId("cross-add"); k++) await tick();
+  byId("cross-add").value = "agt-c";
+  byId("cross-add").parentNode.dispatch("submit");
+  for (let k = 0; k < 6; k++) await tick();
+  expect(xcPosts.some((p) => p[0] === "/me/cross-chats/xch-0001/participants" && p[1].member_id === "agt-c")
+    && text(xcPane().querySelector(".group-people-line")).includes("Agent C"),
+    "cross chat: the owner adds an agent");
+  await go("#/chats/cross/new"); for (let k = 0; k < 8; k++) await tick();
+  byId("cross-member-agt-a").checked = true;
+  byId("cross-member-agt-b").checked = true;
+  main.querySelector("section.cross-new form").dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("already share a project") && win.location.hash === "#/chats/cross/new",
+    "cross chat: two agents who already share a project you can open are refused");
+  byId("cross-member-agt-b").checked = false;
+  byId("cross-member-agt-x").checked = true;
+  main.querySelector("section.cross-new form").dispatch("submit");
+  for (let k = 0; k < 4; k++) await tick();
+  // The shim assigns location.hash without hashchange (as a browser would). route.go
+  // relies on that event, so the test fires it, the same as go().
+  win.onhashchange();
+  for (let k = 0; k < 8; k++) await tick();
+  const xcMade = main.querySelector("section.cross-chat");
+  expect(/^#\/chats\/cross\/xch-/.test(win.location.hash) && xcMade
+    && /spare/i.test(text(xcMade)) && text(xcMade).includes("Agent A"),
+    "cross chat: two agents who share no project of yours make a chat " + win.location.hash
+      + " " + (xcMade ? text(xcMade).slice(0, 180) : "no pane"));
+  win.Maity.api.post = xcPost;
+  win.Maity.api.patch = xcPatch;
+  win.prompt = xcPrompt;
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // On a phone the header hides the Lead (tsk-m9ew7v609fq0): the Chats page, where Chat leads, carries it, once.
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   expect(main.querySelectorAll(".chats-lead .lead-button").length === 1 && header.querySelectorAll(".lead-button").length === 1
