@@ -2,10 +2,13 @@
 passwords, only such a source keeps the password.
 
 The hub keeps a keyed fingerprint of each source address, never the address: an HMAC-SHA-256
-under a key derived from `MAITY_SECRET_KEY`, or under the pepper the migration stored where no
-instance key is set. Without an instance key the pepper sits in the same database, so a full
-copy of it lets an address be found by trying them all; with one, it does not. A fingerprint
-goes 30 days after its last sign-in and with the account (§2.9).
+under a key derived (HKDF, purpose `sign_in.known_source`) from `MAITY_SECRET_KEY`, or where no
+instance key is set from the per-address lock's pepper, which the hub makes at first use
+(`addresses.prepare`; the login runs it before its transaction, as every route that locks an
+address does). One pepper serves both, each under its own derived key. Without an instance key
+the pepper sits in the same database, so a full copy of it lets an address be found by trying
+them all; with one, it does not. Until the pepper exists no source is remembered or known. A
+fingerprint goes 30 days after its last sign-in and with the account (§2.9).
 """
 
 from __future__ import annotations
@@ -22,12 +25,10 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import clock
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
+from maity_hub.mail import address as addresses
 
 KEPT_FOR = timedelta(days=30)
 PURPOSE = "sign_in.known_source"
-PEPPER = "sign_in.known_source_pepper"  # made by the migration of `known_source`
-
-store.register_secret(PEPPER)
 
 # The instance key of the app that serves (`configure`, from `create_app`): a session is made
 # far from the settings, in every way of signing in.
@@ -39,18 +40,20 @@ def configure(secret_key: bytes | None) -> None:
 
 
 def _key(conn: Connection) -> bytes | None:
-    secret_key = _secret_key[0]
-    if secret_key is not None:
-        derived: bytes = HKDF(
-            algorithm=hashes.SHA256(), length=32, salt=None, info=PURPOSE.encode()
-        ).derive(secret_key)
-        return derived
-    stored = store.sealed(conn, PEPPER)
-    return stored if stored is not None and len(stored) == 32 else None
+    base = _secret_key[0]
+    if base is None:
+        stored = store.sealed(conn, addresses.LOCK_PEPPER)
+        if stored is None or len(stored) != 32:
+            return None
+        base = stored
+    derived: bytes = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None, info=PURPOSE.encode()
+    ).derive(base)
+    return derived
 
 
 def fingerprint(conn: Connection, source: str) -> str | None:
-    """None without a key (the pepper removed by hand): then no source is known."""
+    """None without a key (no pepper made yet): then no source is known."""
     key = _key(conn)
     if key is None:
         return None

@@ -10,7 +10,6 @@ right (`ratelimit.Attempt`): logins running at the same time never get past the 
 
 from __future__ import annotations
 
-import hashlib
 from types import TracebackType
 
 from sqlalchemy import Connection
@@ -31,12 +30,13 @@ ADDRESS_CHANGE = Limiter(WRONG, WINDOW, name="auth.password_limits.ADDRESS_CHANG
 ALL = (LOGIN, LOGIN_FROM, CHANGE, REAUTHENTICATE, ADDRESS_CHANGE)
 
 
-def account_key(human_id: str | None, normalized_address: str) -> str:
-    """The login's bucket: the account's id, or for an address of no account a digest of the
-    string, so that the count's rows never hold an address."""
+def account_key(conn: Connection, human_id: str | None, normalized_address: str) -> str:
+    """The login's bucket: the account's id, or for an address of no account its keyed
+    fingerprint (`known_sources.fingerprint`), so that the count's rows never hold an address
+    nor a plain hash a guess could be checked against. Without a key, one bucket for them all."""
     if human_id is not None:
         return human_id
-    return "address:" + hashlib.sha256(normalized_address.encode()).hexdigest()
+    return "address:" + (known_sources.fingerprint(conn, normalized_address) or "unkeyed")
 
 
 def paused(conn: Connection, hub: Settings, wait: int) -> ApiError:

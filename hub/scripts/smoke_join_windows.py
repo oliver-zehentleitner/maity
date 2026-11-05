@@ -40,6 +40,7 @@ PORT = 18766
 HUB = f"http://127.0.0.1:{PORT}"
 PROJECT = f"{HUB}/api/v1/projects/owner/smoke"
 PASSWORD = "smoke owner password"
+OWNER_EMAIL = "owner@smoke.example"
 SHELLS = ("powershell", "pwsh")
 CLI = Path(__file__).resolve().parents[2] / "cli"
 GOOD_INSTALL = f"pipx install {CLI}"
@@ -78,7 +79,7 @@ class Smoke:
         return json.loads(text) if text else None
 
     def login(self) -> None:
-        self.human(f"{HUB}/api/v1/auth/login", {"handle": "owner", "password": PASSWORD})
+        self.human(f"{HUB}/api/v1/auth/login", {"email": OWNER_EMAIL, "password": PASSWORD})
         self.csrf = self.human(f"{HUB}/api/v1/auth/session")["csrf_token"]
         self.human(f"{HUB}/api/v1/projects", {"slug": "smoke", "name": "Smoke test"})
 
@@ -227,7 +228,10 @@ def main() -> int:
     hub = [sys.executable, "-c", RUN_HUB]
     subprocess.run([*hub, "migrate"], env=hub_env, check=True, capture_output=True)
     subprocess.run(
-        [*hub, "owner", "create", "--handle", "owner", "--display-name", "Owner"],
+        [
+            *hub, "owner", "create", "--handle", "owner", "--display-name", "Owner",
+            "--email", OWNER_EMAIL,
+        ],  # fmt: skip
         env=hub_env,
         check=True,
         input=f"{PASSWORD}\n",

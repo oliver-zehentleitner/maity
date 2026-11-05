@@ -14,11 +14,13 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.auth import password_limits
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import preferences, tokens
+from maity_hub.ratelimit import Attempt
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
@@ -185,8 +187,7 @@ def test_a_human_without_a_password_needs_an_old_session(
             signing_key=hub.mail.signing_key,
             public_url="https://hub.example",
             mail_ready=True,
-            wrong_password=lambda: None,
-            password_blocked=lambda: 0,
+            password_attempt=lambda: Attempt(password_limits.ADDRESS_CHANGE, owner.id),
         )
         assert status == 202
         change = preferences.view(conn, owner.id, True)["email"]["address_change"]

@@ -149,7 +149,7 @@ def test_a_steady_body_inside_the_deadline_is_read_whole(
 ) -> None:
     monkeypatch.setattr(body_reader, "BODY_SECONDS", 1.0)
     client = make_client()
-    parts = [b'{"handle": "x", ', b'"password": "y"', b"}"]
+    parts = [b'{"email": "x@example.org", ', b'"password": "y"', b"}"]
 
     async def steady() -> dict[str, object]:
         await asyncio.sleep(0.05)

@@ -516,3 +516,41 @@ and lets the bell mark alerts read without touching it.
   could then never be cleared until its record expired, the very thing the bell change set out to
   end. Moot since card tsk-0baaez2895sb: a sign-in is no bell item, so there is no such
   alert to mark.
+
+## A password attempt takes its place in the count before the compare; the known sources' fingerprints are keyed from the lock's first-use pepper
+
+**Id:** d12ec062-8d9e-4357-916a-a2f1a1bc3bd1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.1 and §2.8.6 (count before compare, keyed fingerprint), root `context/sign-in.md` 01029c7f; the review of the contract PR, which pointed at the lock entry below for the pepper
+**See:** notifications.md — 25f27b8d-6405-400f-b2f0-c561a4dce360 — as of 2026-11-05
+
+Every bucket of wrong passwords (`auth/password_limits.py`: the login per account and per
+account and source, the password change, the re-authentication) and the second-factor check go
+through `ratelimit.Attempt`: `place` records the attempt first, the compare runs, and a right
+answer gives its place back (`release`). The login's `LoginAttempt` places in both login buckets
+and refuses with `email_link` or `password_paused` when the account's bucket is full and the
+source is not a known one or has spent its own five. An address of no account counts in a bucket
+keyed by its fingerprint, never the address or a plain hash.
+
+`known_source` holds an HMAC-SHA-256 of the source address per human. Its key is derived by HKDF
+(purpose `sign_in.known_source`) from `MAITY_SECRET_KEY`, or without one from the per-address
+lock's pepper `address.lock_pepper`, which `addresses.prepare` makes at first use; the login
+runs `prepare` before its transaction. Until the pepper exists, no source is remembered or known.
+`sessions._signed_in` remembers the source, so every completed sign-in counts, whatever its
+method.
+
+**Reason:** checked first and counted after a wrong compare, as before, parallel attempts all
+pass the check and the limit is a suggestion: five in the window must mean five. The pepper is
+the lock's because a row a migration makes is gone after the table is emptied and nothing makes
+it again (the lock entry's reason), and the first-use pepper already exists on every hub that
+has locked an address; a derived key per purpose keeps the two uses apart.
+
+**Rejected alternatives:**
+- A pepper of its own made by the migration of `known_source`: written first, it failed the
+  lock entry's reason; the contract review caught it before the hub PR.
+- A pepper of its own made at first use: a second `prepare` before the transaction of every way
+  of signing in, for a value one HKDF step gives from the existing pepper.
+- A plain SHA-256 of an unknown address as its bucket key: guessable, as the lock entry says of
+  lock rows.

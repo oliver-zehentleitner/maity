@@ -129,6 +129,30 @@ def test_a_session_waiting_at_the_second_factor_makes_no_known_source(
     assert all("203.0.113.7" not in row.fingerprint for row in stored)  # a fingerprint only
 
 
+def test_the_fingerprints_take_the_first_use_pepper_and_a_key_change_forgets_them(
+    migrated: Engine, owner: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No migration makes the key: the per-address lock's pepper, made at first use, is its
+    base where no instance key is set; until it exists nothing is remembered (§2.1)."""
+    from maity_hub.auth import known_sources
+    from maity_hub.mail import address as addresses
+
+    monkeypatch.setattr(known_sources, "_secret_key", [None])
+    source = "203.0.113.7"
+    with migrated.begin() as conn:
+        known_sources.remember(conn, owner, source)
+        assert conn.execute(select(t.known_source)).first() is None
+    addresses.prepare(migrated, None)
+    with migrated.begin() as conn:
+        known_sources.remember(conn, owner, source)
+        assert known_sources.known(conn, owner, source) is True
+        fingerprint = known_sources.fingerprint(conn, source)
+        assert fingerprint != addresses.lock_key(conn, None, source)  # a key of its own
+    monkeypatch.setattr(known_sources, "_secret_key", [b"k" * 32])
+    with migrated.begin() as conn:  # an instance key set: every fingerprint stops matching
+        assert known_sources.known(conn, owner, source) is False
+
+
 def test_an_address_of_no_account_is_answered_as_an_account_is(
     make_client: ClientFactory, owner: str
 ) -> None:

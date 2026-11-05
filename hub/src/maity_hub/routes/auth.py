@@ -118,10 +118,12 @@ async def login(body: Login, request: Request) -> JSONResponse:
     next_route = paths.safe_next(body.next)
 
     def run() -> tuple[dict[str, Any], str, str, str | None]:
+        # The known sources' key without an instance key, before the login's transaction (§2.1).
+        addresses.prepare(engine, hub.secret_key)
         with engine.begin() as conn:
             row = account_of(conn, body.email)
             account = password_limits.account_key(
-                row.id if row is not None else None, addresses.normalized(body.email)
+                conn, row.id if row is not None else None, addresses.normalized(body.email)
             )
             with password_limits.LoginAttempt(
                 conn, hub, account, row.id if row is not None else None, origin.address

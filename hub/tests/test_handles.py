@@ -414,7 +414,21 @@ def test_a_handle_that_speaks_for_the_hub_is_refused_on_every_path(
     assert _fields(org) == {"handle": "reserved"}
     with migrated.connect() as conn:
         assert check_names(conn, handle, "Someone")["handle"] == "reserved"
-    assert main(["owner", "create", "--handle", handle, "--display-name", "X"]) == 2
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                handle,
+                "--display-name",
+                "X",
+                "--email",
+                "x@example.org",
+            ]
+        )
+        == 2
+    )
 
 
 def test_an_agent_may_have_a_word_that_is_only_a_path() -> None:
@@ -449,7 +463,21 @@ def test_owner_create_refuses_a_load_test_handle(
     # on its own message, rather than on the prompt.
     monkeypatch.setattr(sys, "stdin", io.StringIO("a long password\n"))
     monkeypatch.setenv("MAITY_DATABASE_URL", "sqlite:////no/such/directory/maity.db")
-    assert main(["owner", "create", "--handle", "lt-7", "--display-name", "Load"]) == 2
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "lt-7",
+                "--display-name",
+                "Load",
+                "--email",
+                "lt-7@example.org",
+            ]
+        )
+        == 2
+    )
     assert "is reserved" in capsys.readouterr().err
 
 

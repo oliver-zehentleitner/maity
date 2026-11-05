@@ -58,6 +58,7 @@ from maity_hub import (
     wakeups,
     write_guard,
 )
+from maity_hub import admin as instance_admin
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import known_sources, mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
@@ -191,6 +192,12 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, a former name: its namespace is "
                 "served only under its current handle (§11.4)",
                 name,
+            )
+        # Not a refusal: a session of theirs may still set one.
+        if instance_admin.without_address(conn):
+            log.warning(
+                "the instance admin has no verified address, so their password signs them in "
+                "nowhere (docs/api.md §2.1); give the account one"
             )
         try:
             mail.check_at_startup(conn, settings.mail, settings.secret_key)

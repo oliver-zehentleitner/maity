@@ -2,20 +2,17 @@
 each source address a sign-in completed from and the time of the last one (docs/api.md §2.1).
 Past the limit of wrong passwords, the password signs in only from such a source. The
 fingerprint is an HMAC of the address, never the address; a row goes 30 days after its last
-sign-in and with the account (§2.9). The key is derived from `MAITY_SECRET_KEY`; where none is
-set, from a random pepper this migration stores (`sign_in.known_source_pepper`), so every hub
-has one before its first sign-in. The downgrade drops the table and the pepper: until a sign-in
-completes again, no source is known, and the password waits out the window from everywhere.
+sign-in and with the account (§2.9). The key is derived from `MAITY_SECRET_KEY`, or where none is
+set from the per-address lock's pepper, which the hub makes at first use (`addresses.prepare`);
+this migration makes no key. The downgrade drops the table: until a sign-in completes again, no
+source is known, and the password waits out the window from everywhere.
 
 Revision ID: 20261105000000_known_source
 Revises: 20261104000000_required_check
 Create Date: 2026-11-05
 """
 
-import base64
-import os
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -27,7 +24,6 @@ down_revision: str | None = "20261104000000_required_check"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-PEPPER = "sign_in.known_source_pepper"
 TIMESTAMP = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
 TABLE_OPTIONS: dict[str, Any] = {
     "mariadb_charset": "utf8mb4",
@@ -50,25 +46,8 @@ def upgrade() -> None:
         **TABLE_OPTIONS,
     )
     op.create_index("ix_known_source_last_at", "known_source", ["last_at"])
-    secret = sa.table(
-        "instance_secret",
-        sa.column("name", sa.String),
-        sa.column("sealed", sa.Text),
-        sa.column("updated_at", TIMESTAMP),
-    )
-    op.bulk_insert(
-        secret,
-        [
-            {
-                "name": PEPPER,
-                "sealed": base64.b64encode(os.urandom(32)).decode(),
-                "updated_at": datetime.now(UTC).replace(tzinfo=None),
-            }
-        ],
-    )
 
 
 def downgrade() -> None:
-    op.execute(sa.text("DELETE FROM instance_secret WHERE name = :name").bindparams(name=PEPPER))
     op.drop_index("ix_known_source_last_at", table_name="known_source")
     op.drop_table("known_source")
