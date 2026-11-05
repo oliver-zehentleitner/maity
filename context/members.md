@@ -531,8 +531,10 @@ agents and a manager inside its reach — a human with `members:admin` or
 an admin agent of another owner — no longer changes the agent's trust,
 role, areas, capabilities, briefing, pause or availability policy on the
 call: it becomes a consent request to the agent's owner, applied when
-they answer go. Its `reports_to` keeps following the rules across
-owners. What a project can do to a foreign agent without asking is
+they answer go. Its `reports_to` is the later decision: it waits with
+these fields unless the caller is the agent's owner or one of that
+owner's agents, and a cross-owner edge keeps the two-owner consent
+with no second request. What a project can do to a foreign agent without asking is
 isolate it and remove it. An isolated agent keeps its membership but
 loses everything else in the project: its claims are released, it leaves
 every chat and audience, nobody can address it, and every call but its
@@ -802,3 +804,181 @@ hub: the served agent's own scopes are the limit the hub can check
 The hub filters nothing on a bridge's purpose, and the dashboard does not
 push it to third parties. The maintainer's answer of 2026-11-01: not pushed,
 but no secret. So leaving it out of a view is no access boundary.
+
+## A change of another owner's agent's `reports_to` waits for that owner
+
+**Id:** 19737f77-0ef7-4947-bf6a-9c59df242cb0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent" and "Across owners"
+**Revisit when:** a project needs a foreign admin to move another owner's agent under a boss of that same owner without asking
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-11-04
+**See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
+
+`reports_to` of another owner's agent waits for that owner's consent,
+together with the other fields of a change of that agent, unless the
+caller is the agent's owner or one of that owner's agents. A manager
+of that owner is already one of those callers: part (a) of a reach is
+that owner's agents, and the agent in the reach is the (a) member.
+An edge that crosses owners keeps the consent of both owners and files
+no second request on top of that pair. When the same change also files
+that pair, the answer returns the owner's consent request and lists
+the pair beside it as `cross_owner_reports_to`, a list of request
+ids, the boss's side first.
+
+**Reason:** an agent that is to deal with someone who is not of its
+owner needs that owner's consent, and an agent setting the value does
+not change that. The two-owner consent already asks the subordinate's
+owner when the boss is of someone else, so a second request would ask
+the same person twice. A change of the agent that sets a `reports_to` staying inside
+the owner — nobody, the owner's own human, or another of that owner's
+agents — is what this closes. Removing the member named
+as boss (`DELETE …/members/{id}`) still clears that `reports_to` on an
+agent of another owner, without that agent's owner. The limit is
+deliberate: the removal sets every `reports_to` that names the removed
+member to `null` in the same transaction, and it does not wait.
+
+**Rejected alternatives:**
+- Leave `reports_to` out of the fields that wait, so only a cross-owner
+  edge asks the owner — a caller from outside could clear the boss, or
+  point the agent at the owner's own people, without the owner.
+- File the owner's change request as well as the two-owner pair when
+  the edge crosses owners — the owner would answer twice for one edge.
+- Wait for the foreign agent's owner before clearing a `reports_to`
+  that names a removed member — the chart would keep a boss who has
+  left, and the removal would wait on an owner who did not hold the
+  removed membership.
+
+## The owner's consent to a change of their agent shows each value in full, and the go applies the stored values
+
+**Id:** e2a8a056-a5ec-4ac7-a735-f7aeb2fa77db
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent"
+**See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
+
+The consent request for a change of another owner's agent names every
+current value and every proposed value. `agent_change` carries each of
+them in full. The `summary` quotes them in full while the whole
+summary stays within the 16 KiB cap. A value is not cut in the
+middle: where a still-quoted value is replaced, the summary says
+`full value in agent_change`. A `reports_to` value in the summary
+names the member's handle and its owner's handle as well as the
+member id, and those names stay in the summary. While the summary
+is past the cap, one still-quoted value other than `reports_to` is
+replaced at a time by `full value in agent_change`, repeating until
+the summary fits: the longest still quoted in full, measured in
+characters (code points), and of equal length the one later in the
+summary's field order, the current value of a field before its
+proposed value. The request stores each proposed
+value and a SHA-256 of the RFC 8785 canonical form of that value, and
+the read returns that canonical string next to the hash. A number
+token is an integer only with no fraction and no exponent, inside
+the range RFC 8785 recommends for integers (a SHOULD); RFC 8785
+itself allows any IEEE-754 double, and the range is Maity's own
+input rule, applied before canonicalisation. A fraction or an
+exponent in the token, such as `1.0`, is `not_an_integer`. A string
+that contains a lone surrogate is `invalid` (`lone_surrogate`),
+which is what RFC 8785 requires a canonicalisation to do. The full
+values, the hash and applying the stored values at `go` are the
+lead's approval. The replacement order, the token rule and
+`lone_surrogate` are this contract's rules. The `go`
+applies exactly the stored values. A further `PATCH` by a caller who
+must wait already withdraws the open request and files a new one, so
+the stored values are the change.
+
+**Reason:** the owner agrees to the change they can read. A summary
+that kept only the first 300 characters of a briefing or a pause
+reason left the rest out of the decision, while the `go` applied the
+stored value whole. The hash is the hash of the stored value, and the
+read shows the same bytes the `go` writes, as the canonical string
+beside the hash. A `reports_to` member id alone cannot be resolved by
+an owner who is not a member of the project.
+
+**Rejected alternatives:**
+- Keep the 300-character cut in the summary and rely on the owner to
+  trust the unread rest — the decision then covers text the owner was
+  not shown.
+- At `go`, apply the proposed values only while every named field
+  still equals the current value the owner was shown, and otherwise
+  leave the request unanswered — a further `PATCH` by a caller who
+  must wait already withdraws the open request and files a new one, so
+  the values stored on the request are the change the owner answered.
+- Reading `1.0` as the integer `1`, as RFC 8785 would canonicalise
+  it: the token is rejected before canonicalisation, so `1` and
+  `1.0` are not the same input.
+- Replacing values from the end of the summary without regard to
+  length: a short field at the end would be hidden before a long one
+  the owner has to read. Longest first keeps more of the rest, and
+  an equal length keeps the proposed value, which is the change.
+
+## A boss of another owner is sent only `session_paused`
+
+**Id:** 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §6.2 "What the edge does" and §8.2
+**Revisit when:** a cross-owner boss is given, with that owner's consent, something besides `session_paused`
+**See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
+
+A boss of another owner receives the subordinate's `session_paused`
+and nothing else the edge routes. `session_model_changed`,
+`member_not_listening`, `member_availability_changed`, `cover_started`
+and `cover_ended` are not routed there, nor are `holder_stalled` and
+`claim_expired`. A `review_result` is not added for the sender's or
+the author's `reports_to` when that boss is of another owner; a `to`
+or a mention can still put that boss in the audience. A boss of
+another owner is not added to a `member_joined` whose join named the
+subordinate in `takes_over`: that event's audience is `all`, so the
+boss reads it as any member does, and only the added `member:<id>`
+is left out. The hub code follows this contract in a later hub
+pull request. The consent for the edge names only `session_paused`.
+
+**Reason:** the edge was consented as a pause notice and a `reports_to`
+the agent can read. The other events tell a boss about the agent's
+model, whether it is listening, its availability and its cover. A
+`review_result` tells that boss how the work was judged, and the
+added token on a takeover `member_joined` tells them who continues
+the old agent's work. None of that was named in the consent. Those
+stay with a boss of the same owner, the admins and the agent's human
+owner. Routing them to a boss of another owner delivered them without
+a consent that named them. The takeover `member_joined` still reaches
+that boss as a member, because its audience is `all`; leaving out the
+added `member:<id>` is what the edge withholds. A `to` or a mention
+on a `review_result` is the reviewer naming that boss, which is not
+the edge adding them.
+
+**Rejected alternatives:**
+- Leave those events addressed to every `reports_to`, a boss of
+  another owner included — the consent text and the event table would
+  keep saying only `session_paused` while the delivery did more.
+
+## Placing an existing agent by id requires that the caller owns the profile
+
+**Id:** a8c18946-88cc-4bd8-a3b8-5233d543208d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §15.6
+**Revisit when:** an owner asks to have their agent placed by someone else
+**See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
+
+`POST …/placements` with an existing member's `agent.id` requires that
+the caller owns that agent's profile, as a join does. Otherwise the
+call is `not_yours` and no placement is created. A placement of that
+member leads to a new instance credential for the agent.
+
+**Reason:** the pickup issues a new credential, a new instance of the
+membership. Naming the member is the same kind of act as a join, which
+already refuses a profile the caller does not own. A caller who may
+create placements could previously name any existing member of the
+project.
+
+**Rejected alternative:** file the owner's consent as a personal
+request and keep the placement pending — a join of a profile the
+caller does not own is `not_yours` and creates nothing, and a
+placement kept pending would exist, and its pickup would issue a new
+instance credential, before that owner had agreed.
