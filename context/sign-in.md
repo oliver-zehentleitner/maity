@@ -386,7 +386,7 @@ back to no factor.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on 2026-11-05 (sign-in hardening), with four values he set; contract in `docs/api.md` §2.1, §2.8.6, §18.4
+**Source:** the maintainer's decision on 2026-11-05 (sign-in hardening), with four values he set; contract in `docs/api.md` §2.1, §2.6.5, §2.7.4, §2.8.6, §2.9, §18.4
 **Revisit when:** passkeys arrive, or the instance admin becomes a flag that several accounts hold (§16)
 **See:** sign-in.md#an-instance-may-make-mail-the-second-factor-for-everyone-then-the-sign-in-link-is-off-as-a-first-factor — 04a233ef-5d92-43f3-a3b6-0421171027f8 — as of 2026-11-05
 

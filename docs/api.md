@@ -449,10 +449,20 @@ never paused by them.
 To tell a known source the hub keeps, per account, a keyed fingerprint
 of each source address a sign-in completed from, with the time of the
 last one: an HMAC-SHA-256 of the address under a key derived from
-`MAITY_SECRET_KEY`, or under the hub's stored pepper where none is set
-(as the per-address lock of §18.4), never the address itself. A
+`MAITY_SECRET_KEY`, or, where none is set, under a random pepper the hub
+stores in its own database at the migration that adds the fingerprints
+(as it does for the per-address lock, `hub/context/notifications.md`).
+The address itself is never stored. That makes a fingerprint
+pseudonymous, not anonymous: whoever holds the key, or without
+`MAITY_SECRET_KEY` a copy of the whole database, can still test a
+guessed address against it, and a source address is easy to guess. A
 fingerprint goes 30 days after its last sign-in and with the account
-(§2.9); it is not in the export, since nobody can read it.
+(§2.9). Setting, changing or removing `MAITY_SECRET_KEY` changes the
+key, so every fingerprint stops matching: each account has no known
+source until its next sign-in. It is not in the export: it is the hub's
+own bookkeeping of a value the human never gave as such, and the
+sessions in the export already show what the human can know of their
+sign-ins.
 
 `POST /auth/password`, `POST /auth/reauthenticate` (§2.8.1) and the
 change of a verified address (§18.4) count their wrong passwords in
@@ -1869,8 +1879,8 @@ address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `second_factor_disabled`, `second_factor_reset`,
 §2.8) are set on an ended session; an ended session shows no `ip`, and
-the hub keeps none for it — only the keyed fingerprint of §2.1, which
-no one can turn back into the address. A session of another
+the hub keeps none for it — only the keyed fingerprint of §2.1, never
+the address itself. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
@@ -2948,7 +2958,8 @@ What deletion does:
 
 - **Ends access at once**: every session and device code of the
   account ends; its second factor, recovery codes, forge links and
-  tokens and pending sign-in links are deleted; the instance's pending
+  tokens, pending sign-in links and the fingerprints of its known
+  sources (§2.1) are deleted; the instance's pending
   mail to the account is dropped (§18.7).
 - **Removes the person**: the addresses, display name, avatar,
   languages, preferences, notification settings, public profile and its
