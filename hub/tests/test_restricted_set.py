@@ -460,3 +460,265 @@ def test_changing_the_setting_asks_for_the_second_factor(
     assert _served(owner) is None
     verified(owner, secret, moment)
     assert _setting(owner, value).status_code == 200
+
+
+# --- counter-tests for review findings (e5zv 79591, spq4 79602) -----------------------------
+
+
+def test_an_admin_agent_outside_the_set_reads_no_members(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """e5zv 79591 / restricted.py reads_members: kind == "human". An admin-trust agent
+    outside the set gets only {mode, included}, never members or cards_with_text (§6.1)."""
+    from types import SimpleNamespace
+
+    anna = _member(make_client, migrated, "anna")
+    admin_agent = flow.agent(make_client, owner, trust="admin", role="coder")
+    card = _card(owner)
+    assert _setting(owner, {"mode": "nobody_except", "members": [anna.id]}).status_code == 200
+    _write(anna, card["id"], MARKER)
+    assert _served(admin_agent) == {"mode": "nobody_except", "included": False}
+    [theirs] = [
+        e
+        for e in _events(admin_agent, "project_updated")
+        if "settings.restricted_access" in e["payload"]["fields"]
+    ]
+    assert theirs["payload"]["fields"]["settings.restricted_access"] == {
+        "mode": "nobody_except",
+        "included": False,
+    }
+    assert anna.id not in json.dumps(_events(admin_agent))
+    # The kind gate itself: a stub that would pass may("project:admin") still fails as an agent.
+    with migrated.connect() as conn:
+        stub = SimpleNamespace(
+            kind="agent",
+            id=_membership(migrated, admin_agent.id),
+            may=lambda scope: scope == "project:admin",
+        )
+        assert restricted.reads_members(conn, _project(migrated), stub) is False
+
+
+def test_restricted_wakes_are_projected_to_the_reader_alone(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """e5zv 79591 / spq4 79602 / views._wakes: the "restricted:" prefix. A multi-instance
+    team in the set populates row.wakes; another reader in the set must not see that team's
+    wakes on the served restricted_changed (§6.4)."""
+    from maity_hub import listening
+
+    anna = _member(make_client, migrated, "anna")
+    lead = flow.agent(make_client, owner)
+    teamed = owner.patch(
+        f"{PROJECT}/members/{lead.id}",
+        {"team": {"max_instances": 2, "wake": "lead", "lead_instance": lead.instance}},
+    )
+    assert teamed.status_code == 200, teamed.text
+    sibling = flow.agent(make_client, owner, agent={"id": lead.id}, new_instance=True)
+    reader = flow.agent(make_client, owner)
+    for agent in (lead, sibling, reader):
+        assert agent.resume().status_code == 200
+    card = _card(owner)
+    _set(migrated, "nobody_except", [anna.id, lead.id, reader.id])
+    session_id = lead.resume().json()["session"]["id"]
+    wait = listening.opened(session_id)
+    try:
+        _write(anna, card["id"], MARKER)
+        with migrated.connect() as conn:
+            row = conn.execute(
+                select(t.event)
+                .where(t.event.c.kind == "restricted_changed")
+                .order_by(t.event.c.seq.desc())
+            ).first()
+        assert row is not None and row.wakes == {lead.id: [lead.instance]}
+        [event] = [
+            e
+            for e in _events(reader, "restricted_changed")
+            if e["payload"].get("task_id") == card["id"]
+        ]
+        assert "wakes" not in event
+        [own] = [
+            e
+            for e in _events(lead, "restricted_changed")
+            if e["payload"].get("task_id") == card["id"]
+        ]
+        assert own.get("wakes") == [f"{lead.id}#{lead.instance}"]
+    finally:
+        listening.closed(session_id, wait)
+
+
+def test_a_set_change_wakes_no_agent_in_the_set(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """e5zv 79591 / spq4 79602 / events.wakes: task_id is None. A widening that emits
+    restricted:set must not wake an agent already in the set (§6.4)."""
+    project = _project(migrated)
+    anna = _member(make_client, migrated, "anna")
+    agent = flow.agent(make_client, owner)
+    assert (
+        _setting(owner, {"mode": "nobody_except", "members": [anna.id, agent.id]}).status_code
+        == 200
+    )
+    assert (
+        _setting(
+            owner, {"mode": "nobody_except", "members": [anna.id, agent.id, owner.id]}
+        ).status_code
+        == 200
+    )
+    entered = _set_events(anna)[-1]
+    assert entered["payload"]["task_id"] is None and entered["payload"]["action"] == "entered"
+
+    def woken() -> list[str]:
+        with migrated.connect() as conn:
+            row = conn.execute(
+                select(t.membership).where(t.membership.c.agent_id == agent.id)
+            ).one()
+            rows, _ = events.read_waking(conn, project.id, row, agent.id, 0, 100)
+        return [r.kind for r in rows if r.kind == "restricted_changed"]
+
+    assert woken() == []
+
+
+def test_a_late_joiner_does_not_see_an_old_restricted_notice(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """spq4 79602 / _RestrictedNotices.reads: restricted_event_list row. A human who joins
+    the set after a change must not see that change's notice, even with a planted record."""
+    from maity_hub.notifications import records
+
+    anna = _member(make_client, migrated, "anna")
+    bert = _member(make_client, migrated, "bert")
+    card = _card(owner)
+    _set(migrated, "nobody_except", [anna.id])
+    _write(anna, card["id"], MARKER)
+    [event] = _events(anna, "restricted_changed")[-1:]
+    project = _project(migrated)
+    with events.transaction(migrated) as conn:
+        records.write(
+            conn,
+            bert.id,
+            "restricted_changed",
+            {"project_id": project.id, "task_id": card["id"], "seq": event["seq"]},
+        )
+    _set(migrated, "nobody_except", [anna.id, bert.id])
+    assert _notices(bert) == []
+    assert _notices(anna) == []  # anna wrote it
+
+
+def test_org_promotion_raises_an_existing_member_into_the_set(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """spq4 79602 / org_projects.keep_owner trust_raised, and routes/orgs set_role's by.
+    Promoting an org member who is already a project member under all_except emits entered
+    with cause trust_raised and by the promoter (§6.4, §6.26)."""
+    from tests.test_org_projects import create, members, owner_joined
+    from tests.test_orgs import team
+
+    org, people = team(make_client, migrated, owner)
+    assert create(owner, "shop").status_code in (200, 201)
+    admin = people["admin"]
+    joined = owner_joined(migrated)
+    with migrated.begin() as conn:
+        pid = conn.execute(select(t.project.c.id).where(t.project.c.slug == "shop")).scalar_one()
+        conn.execute(
+            t.membership.insert().values(
+                project_id=pid,
+                human_id=admin.id,
+                trust="guest",
+                role="coder",
+                role_base="coder",
+                areas=["/"],
+                capabilities=[],
+                joined_at=joined,
+                last_seen_at=joined,
+            )
+        )
+        # all_except: a guest is out of the set; the org raise puts them in as owner.
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == pid)
+            .values(settings={"restricted_access": {"mode": "all_except", "members": []}})
+        )
+    promoted = owner.patch(f"/orgs/oz-team/members/{admin.id}", {"role": "owner"})
+    assert promoted.status_code == 200, promoted.text
+    assert members(owner, "shop")["team-admin"]["trust"] == "owner"
+    response = owner.get("/projects/oz-team/shop/events", params={"after": 0, "limit": 200})
+    assert response.status_code == 200, response.text
+    entered = [
+        e
+        for e in response.json()["items"]
+        if e["kind"] == "restricted_changed" and e["payload"].get("task_id") is None
+    ]
+    assert len(entered) == 1
+    assert entered[0]["payload"]["action"] == "entered"
+    assert entered[0]["payload"]["cause"] == "trust_raised"
+    assert [m["id"] for m in entered[0]["payload"]["members"]] == [admin.id]
+    assert entered[0]["payload"]["by"]["id"] == owner.id
+
+
+def test_a_transfer_into_an_organisation_names_by_on_entered(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """spq4 79602 / project_names.move_to passes by into org_projects.moved. A transfer that
+    lets an organisation owner into the set under all_except names by as the transferrer."""
+    from tests.test_org_transfer import members, transfer
+    from tests.test_orgs import team
+
+    org, people = team(make_client, migrated, owner)
+    flow.project(owner, "shop")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.slug == "shop")
+            .values(settings={"restricted_access": {"mode": "all_except", "members": []}})
+        )
+    moved = transfer(owner, "maintainer/shop", org["id"])
+    assert moved.status_code == 200, moved.text
+    second = people["owner2"]
+    assert members(owner, "oz-team/shop")["team-owner2"]["trust"] == "owner"
+    response = owner.get("/projects/oz-team/shop/events", params={"after": 0, "limit": 200})
+    assert response.status_code == 200, response.text
+    entered = [
+        e
+        for e in response.json()["items"]
+        if e["kind"] == "restricted_changed"
+        and e["payload"].get("task_id") is None
+        and e["payload"].get("action") == "entered"
+        and second.id in [m["id"] for m in e["payload"]["members"]]
+    ]
+    assert len(entered) == 1
+    assert entered[0]["payload"]["cause"] == "joined"
+    assert entered[0]["payload"]["by"]["id"] == owner.id
+
+
+def test_restricted_list_feeds_team_wakes_for_a_narrowed_rule(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """spq4 79602 / events.emit: restricted_list into team_wakes. An agent with a narrowed
+    wake rule in the set gets its instances recorded on a card's restricted_changed."""
+    from maity_hub import listening
+
+    anna = _member(make_client, migrated, "anna")
+    lead = flow.agent(make_client, owner)
+    teamed = owner.patch(
+        f"{PROJECT}/members/{lead.id}",
+        {"team": {"max_instances": 2, "wake": "lead", "lead_instance": lead.instance}},
+    )
+    assert teamed.status_code == 200, teamed.text
+    sibling = flow.agent(make_client, owner, agent={"id": lead.id}, new_instance=True)
+    for agent in (lead, sibling):
+        assert agent.resume().status_code == 200
+    card = _card(owner)
+    _set(migrated, "nobody_except", [anna.id, lead.id])
+    session_id = lead.resume().json()["session"]["id"]
+    wait = listening.opened(session_id)
+    try:
+        _write(anna, card["id"], MARKER)
+        with migrated.connect() as conn:
+            row = conn.execute(
+                select(t.event)
+                .where(t.event.c.kind == "restricted_changed")
+                .order_by(t.event.c.seq.desc())
+            ).first()
+        assert row is not None and row.wakes == {lead.id: [lead.instance]}
+    finally:
+        listening.closed(session_id, wait)
