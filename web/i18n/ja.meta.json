@@ -4755,6 +4755,10 @@
     "en": "09ce28c5fbadb304",
     "text": "eadc61c501955529"
   },
+  "inbox.label.personal_alone": {
+    "en": "f872d2297c5f8e77",
+    "text": "29463462e54f199d"
+  },
   "inbox.label.personal_into": {
     "en": "1ecc511a1fbfc2fb",
     "text": "3f597171315ed1e1"
@@ -4790,6 +4794,10 @@
   "inbox.note_label": {
     "en": "5aac3b2989bdadeb",
     "text": "55530103fc5cdee9"
+  },
+  "inbox.open_report": {
+    "en": "074964d062492852",
+    "text": "2e3007e0a053430e"
   },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
@@ -6447,6 +6455,10 @@
     "en": "d4db3dec5f3106ce",
     "text": "cbf6c39d7a17d512"
   },
+  "join.failed.no_admin": {
+    "en": "4641d9d8fbec8dec",
+    "text": "97cb6c041906daea"
+  },
   "join.failed.project_not_allowed": {
     "en": "82aad411db255b20",
     "text": "c0e086b6bc81f393"
@@ -6643,6 +6655,10 @@
     "en": "34f895fb60829706",
     "text": "25b7cbaef6649f0c"
   },
+  "join.project": {
+    "en": "0ddd96140a4e9f8d",
+    "text": "0002cd16f3797294"
+  },
   "join.quota.active": {
     "en": "ca8fdb9858229298",
     "text": "2692163717fe4f4d"
@@ -6774,6 +6790,10 @@
   "join.state_dir.where": {
     "en": "a54827d5e1fb0ca8",
     "text": "566899255543ac11"
+  },
+  "join.step_up": {
+    "en": "0365bc43945f8179",
+    "text": "1b1454a3e3cf5be3"
   },
   "join.takes_over.both": {
     "en": "ebfd426a5da19bf1",

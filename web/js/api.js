@@ -543,11 +543,33 @@ window.Maity = window.Maity || {};
     if (body && ("capabilities" in body || ("trust" in body && !AGENT_TRUSTS.includes(body.trust))
       || ("role" in body && !AGENT_ROLES.includes(body.role)))) human();
   }
+  // A consent request as the hub answers it with 202 (§7): the whole request view,
+  // so a page reads the same keys here as from the hub (tools/shape-requests.json).
+  // `to` is "owner" for the project's owner, "human:<id>" for one human in person.
+  function consentRequest(slug, who, to, title, summary) {
+    const mine = ((fixtures()[slug + "/members.json"] || { items: [] }).items).find((x) => x.id === who.id) || who;
+    return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to, holder: to, title, summary,
+      personal: to !== "owner", humans_only: true, priority: "normal", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
+      asked_by: { member_id: who.id, display_name: who.display_name, role: mine.role || "member", trust: mine.trust || "member",
+        instance: null, session_id: null, avatar_url: null },
+      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], jour_fixe: null, ktw_ref: null,
+      mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, report: null, takeover_id: null, task: null, task_id: null,
+      tried: null, while_open: "wait", created_at: nowIso() };
+  }
   // Changing the role of or pausing a reviewer or the contract arbiter, and
   // any removal, by an agent waits for a human's go: 202 with the request.
-  function consentFor(who, title) {
+  function consentFor(slug, who, title) {
     if (who.kind !== "agent") return null;
-    return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
+    return consentRequest(slug, who, "owner", title, title);
+  }
+  // Another owner's agent (§6.2): what its owner decides waits for them, a
+  // personal request to that human (to: human:<id>), as the hub files it.
+  const FOREIGN_FIELDS = ["trust", "role", "areas", "capabilities", "briefing", "availability_policy", "dormant", "paused"];
+  const ownerOf = (x) => (x.kind === "agent" ? x.owner_id : x.id);
+  const foreignTo = (who, target) => (target.kind === "agent" && target.owner_id !== ownerOf(who) ? "human:" + target.owner_id : null);
+  function foreignConsent(slug, who, target, summary) {
+    const to = foreignTo(who, target);
+    return to && consentRequest(slug, who, to, "Change " + target.handle + " in " + project(slug, "").name, summary);
   }
   // A security team counts as its base here (§2.3): purple team as reviewer, red team as tester.
   const guarded = (slug, target) => ["reviewer", "tester", "purple-team", "red-team"].includes(target.role)
@@ -2326,6 +2348,9 @@ window.Maity = window.Maity || {};
       if (r.status === "expired") fail(409, "invalid_transition", "the report expired", path, { from: "expired", to: "resolved" });
       // Resolved again, the report keeps when it first closed (§16.8); the answer carries the snapshot, as the hub's.
       Object.assign(r, { status: "resolved", action: body.action, note: body.note || null, resolved_at: nowIso(), closed_at: r.closed_at || nowIso() });
+      // Its request to the instance admin is withdrawn with it (§16.8, §7).
+      personalRequests().filter((x) => x.report && x.report.id === r.id && x.status === "open")
+        .forEach((x) => Object.assign(x, { status: "withdrawn", answered_at: nowIso() }));
       return Object.assign({}, r);
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
@@ -2721,6 +2746,8 @@ window.Maity = window.Maity || {};
       const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      // A report's request closes with the report alone (§16.8): resolved or expired.
+      if (req.report) fail(409, "resolve_the_report", "resolve the report", path, { report: req.report.id });
       if (m[2] === "answer") checkAnswer(req, body, path, null);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
       const edited = "markdown" in body || "base_version" in body;
@@ -4140,7 +4167,7 @@ window.Maity = window.Maity || {};
         if (body.instance && !inst) errors.instance = "not_an_instance";
         if (inst && body.dormant && (target.team || {}).lead_instance === inst.id) errors.dormant = "lead";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
-        if (!own) return consentFor(who.member, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
+        if (!own) return foreignConsent(m[1], who.member, target, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
         inst.dormant = body.dormant ? { since: nowIso(), by: who.member.id } : null;
         // Every active instance at rest: the team is limited (§6.12, source dormant, no until).
         const active = target.instances.filter((i) => !i.revoked_at);
@@ -4231,25 +4258,29 @@ window.Maity = window.Maity || {};
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       if (guarded(m[1], target)) {
         const consent = ("role" in body && body.role !== target.role) || ("trust" in body && body.trust !== target.trust)
-          ? consentFor(who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
-          : body.paused ? consentFor(who.member, "Pause " + target.handle) : null;
+          ? consentFor(m[1], who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
+          : body.paused ? consentFor(m[1], who.member, "Pause " + target.handle) : null;
         if (consent) return consent;
       }
-      if ("trust" in body) target.trust = body.trust;
-      if ("role" in body) target.role = body.role;
+      // Another owner's agent: its owner's fields wait for them, the rest applies at once (§6.2).
+      const held = foreignTo(who.member, target) ? FOREIGN_FIELDS.filter((k) => k in body) : [];
+      const foreign = held.length ? foreignConsent(m[1], who.member, target, who.member.handle + " asks to change " + held.join(", ") + " of " + target.handle + ".") : null;
+      const applies = (k) => k in body && !held.includes(k);
+      if (applies("trust")) target.trust = body.trust;
+      if (applies("role")) target.role = body.role;
       if ("reports_to" in body) target.reports_to = body.reports_to;
-      if ("areas" in body) target.areas = [...new Set(body.areas)];
-      if ("capabilities" in body) target.capabilities = [...new Set(body.capabilities)];
-      if ("briefing" in body) {
+      if (applies("areas")) target.areas = [...new Set(body.areas)];
+      if (applies("capabilities")) target.capabilities = [...new Set(body.capabilities)];
+      if (applies("briefing")) {
         target.briefing = body.briefing || null;
         target.briefing_by = { kind: me().member.kind, id: me().member.id, handle: me().member.handle };
         target.briefing_version = (target.briefing_version || 1) + 1;
       }
-      if ("paused" in body) {
+      if (applies("paused")) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
-      return target;
+      return foreign || target;
     }],
     // §11.4: the namespace owner confirms the repository for their grants, only
     // the URL the project carries now; a changed one is a conflict.
@@ -4340,7 +4371,7 @@ window.Maity = window.Maity || {};
       }
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, null, path);
-      const consent = consentFor(who.member, "Remove " + target.handle);
+      const consent = consentFor(m[1], who.member, "Remove " + target.handle);
       if (consent) return consent;
       if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
         fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
@@ -4672,8 +4703,8 @@ window.Maity = window.Maity || {};
       if (!purpose || purpose.length > 200) fields.purpose = "invalid";
       if (Object.keys(fields).length) fail(400, "invalid", "the connection is not valid", path, { fields });
       if (bridge.owner_id !== served.owner_id) {
-        return { id: "req-bridge" + Date.now().toString(36), class: "consent", to: bridge.owner_id, status: "open",
-          title: "Bridge " + bridge.handle + " for " + served.handle + ": " + purpose };
+        return consentRequest(m[1], who, "human:" + bridge.owner_id, "Bridge " + bridge.handle + " for " + served.handle,
+          who.handle + " asks to connect " + bridge.handle + " for " + served.handle + ": " + purpose);
       }
       const id = "brg-" + Math.random().toString(36).slice(2, 10);
       served.bridges = (served.bridges || []).concat([{ id, member_id: bridge.id, handle: bridge.handle, purpose, cross_owner: false }]);

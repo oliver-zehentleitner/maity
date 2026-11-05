@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77"]  # PEP 639 licence string
+requires = ["setuptools==84.2.1"]  # PEP 639 licence string; the same pin as requirements/release.in
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -22,7 +22,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "black", "mypy", "pytest", "build", "setuptools>=77", "wheel"]
+# setuptools as [build-system] pins it: tests build with --no-isolation against this environment.
+dev = ["ruff", "black", "mypy", "pytest", "build", "setuptools==84.2.1", "wheel"]
 
 [project.scripts]
 maity = "maity.cli:main"

@@ -325,8 +325,10 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
+| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB on a route that takes a caller is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread. The forge webhook takes no caller: it has its own limit and is checked by its signature (§17.4) |
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3) |
+| Requests to one route | none beyond the route's own limits by default; the general limit per client is the ingress's. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
+| Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
@@ -8768,7 +8770,7 @@ the round three times and rests, the trail fades out behind it, about
 headers and the ETag rule are the same for both.
 
 **Rate limit.** The endpoint has a limit of its own, 60 per minute
-per source address, separate from the login and join buckets (§2.1,
+per source address by default (`MAITY_BADGE_LIMIT`, §1.7), separate from the login and join buckets (§2.1,
 §3.3): a forge's image proxy fetching many badges from a few addresses
 must never starve a login from those addresses. Over it the hub
 answers `rate_limited` with `Retry-After` (§1.3). The 60 s public
@@ -17496,8 +17498,8 @@ that changed the input, so the hub serves the app shell at once; caches outside 
 may keep it for up to 60 seconds, as for the badge (§6.20).
 When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
 again before it serves any, so nothing rendered under an earlier state
-is served. The rate limit is a bucket of its own, of the badge's size
-(§6.20), for the static page only. The join host never serves a public
+is served. The rate limit is a bucket of its own, 60 per minute per
+source address by default (`MAITY_PUBLIC_PAGE_LIMIT`, §1.7), for the static page only. The join host never serves a public
 page: a `GET` there is the `302` to the public root of §1.1, and its
 sitemap parts are `not_found`.
 
