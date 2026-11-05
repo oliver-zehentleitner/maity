@@ -8,16 +8,19 @@ window.Maity = window.Maity || {};
 
 (function (M) {
   const REASONS = {
+    email_link: () => M.tOwn("error.reason.email_link"),
     humans_only: () => M.tOwn("error.reason.humans_only"),
     method_disabled: () => M.tOwn("error.reason.method_disabled"),
     not_a_participant: () => M.tOwn("error.reason.not_a_participant"),
     observer: () => M.tOwn("error.reason.observer"),
     owner_only: () => M.tOwn("error.reason.owner_only"),
+    password_paused: () => M.tOwn("error.reason.password_paused"),
     registration_closed: () => M.tOwn("error.reason.registration_closed"),
   };
   const CODES = {
     account_suspended: () => M.tOwn("error.account_suspended"),
     address_unverified: () => M.tOwn("error.address_unverified"),
+    admin_address_required: () => M.tOwn("error.admin_address_required"),
     agent_limit: () => M.tOwn("error.agent_limit"),
     alias_limit: () => M.tOwn("error.alias_limit"),
     already_attached: () => M.tOwn("error.already_attached"),
