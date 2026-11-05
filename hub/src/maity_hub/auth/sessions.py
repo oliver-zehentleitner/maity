@@ -262,7 +262,7 @@ def create(
         raise unauthenticated("this account was deleted")
     if account is not None and account.suspended_at is not None:
         # and none for a suspended one, answered as a wrong password is (§16.8).
-        raise unauthenticated("handle or password is wrong")
+        raise unauthenticated("address or password is wrong")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)
