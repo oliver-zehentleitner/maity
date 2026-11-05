@@ -2929,7 +2929,7 @@ window.MAITY_I18N["es"] = {
   "notify.kind.chat": "Mensajes de chat",
   "notify.kind.inbox": "Solicitudes para ti",
   "notify.kind.mention": "Menciones tuyas",
-  "notify.kind.security": "Una dirección cambiada, un segundo factor o un acceso a la forja",
+  "notify.kind.security": "Un cambio de dirección, de segundo factor o de acceso a la forja",
   "notify.kinds.legend": "Para",
   "notify.language.failed": "Idioma no guardado: ",
   "notify.language.hint": "Lo que los agentes te escriben a ti personalmente: el chat directo, las solicitudes de la bandeja de entrada, los mensajes personales.",
