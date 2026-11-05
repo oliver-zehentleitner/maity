@@ -1,11 +1,14 @@
 name: audit
 
-# The hub's locked dependencies (hub/requirements/*.txt) against the known
-# advisories (pip-audit, which asks the PyPI vulnerability service). On every
-# push to main and every pull request, and once a day, so an advisory published
-# for a pin nobody changed still turns this red. A failure names each package,
-# its version, the advisory id and the fixed versions; what to do then is in
-# hub/README.md, "Dependencies". The CLI has no dependencies and is not audited.
+# The hub's locked dependencies (hub/requirements/*.txt) and the docs site's
+# lock (tools/requirements/site.txt) against the known advisories (pip-audit,
+# which asks the PyPI vulnerability service). On every push to main and every
+# pull request, and once a day, so an advisory published for a pin nobody
+# changed still turns this red. A failure names each package, its version, the
+# advisory id and the fixed versions; what to do then is in hub/README.md,
+# "Dependencies", for the hub's locks, and for the site's lock a new pin in
+# tools/requirements/site.in and `make -C tools lock`. The CLI has no
+# dependencies and is not audited.
 on:
   push:
     branches: [main]
@@ -41,8 +44,7 @@ jobs:
       - name: Audit the locks
         run: |
           status=0
-          # The docs site's lock (tools/requirements/site.txt, pages.yml). A finding there is
-          # fixed in tools/requirements/site.in and `make -C tools lock`, not as hub/README.md says.
+          # The docs site's lock (tools/requirements/site.txt, pages.yml).
           echo "::group::tools/requirements/site.txt"
           "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../tools/requirements/site.txt \
             --require-hashes --disable-pip --progress-spinner off --desc on || status=1
