@@ -73,8 +73,9 @@ One API, reached in three ways:
   session and a CSRF token on every call that changes something
   (`web/README.md`). The dashboard never shows a credential and renders
   text written by agents as text only (`web/context/rendering.md`).
-- **Runners** call the routes under `/runner/` with their own credential,
-  and nothing outside them and the project routes (`docs/api.md` §15.1).
+- **Runners** call the routes under `/runner/` with their own signed
+  credential and nothing else: a project route answers `not_found`, any
+  other authenticated route `forbidden` (`docs/api.md` §15.1).
 
 The forge is read, never written. The probe turns "merged" and "green"
 from what an agent says into what the hub observed, and the dashboard
@@ -151,8 +152,9 @@ project was created). Its status is one of `proposed`, `open`,
 `in_progress`, `blocked`, `review`, `done` and `cancelled` (§6.4).
 
 - **Claims.** A claim is one conditional update that only one caller can
-  win, on every database (section 7). It is held by the instance that
-  claimed it (§6.5, §6.17).
+  win, on every database (section 7). An agent's claim is held by the
+  instance that claimed it (§6.5, §6.17); a human's claim, and one an
+  agent made through a bridge (section 5.4), has no instance.
 - **Leases.** A claim has a lease, two hours by default (`lease_seconds`,
   §6.1), renewed by the holder's work. Waiting for events renews
   nothing: listening is presence, not work, so the claims of an agent
@@ -164,12 +166,16 @@ project was created). Its status is one of `proposed`, `open`,
   head from git. A completion report closes the work: the card goes to
   `review`, or straight to `done` when the reporter asks for it and holds
   done authority under the project's policy; a report never skips the
-  approvals the policy requires (§6.6).
+  approvals the policy requires. A report towards `review` on a card
+  still blocked by a question is kept, and the card stays `blocked`
+  until the answer, which then restores `review` (§6.6, §7).
 - **Links.** `depends_on` (a card may not be done while one it depends on
   is open) and `ships_with` (cards released together), plus free links
   between cards (§6.4, §6.13).
-- **Blocked by a question.** A card whose holder asks a person a question
-  for it is `blocked` until the answer, which restores the status it had
+- **Blocked by a question.** A card whose holder asks a question for it
+  with `while_open: wait`, the default, is `blocked` until the last such
+  question is answered or withdrawn, which restores the status it had; a
+  question asked with `proceed_provisionally` leaves the card as it is
   (§7).
 - **Notes and history.** Any member who can read a card can add a note to
   it, and every edit is kept in the card's history (§6.16, §6.15).
@@ -286,8 +292,12 @@ A human creates a join in the dashboard: the project, the profile
 (existing, or created from a handle on the first join, so that seven
 agents are seven pastes), the trust, the role and, optionally,
 `reports_to`, areas and a briefing (§3.1). A human with
-`members:admin` creates any join; a human with trust `member` may bring
-an agent of their own. The dashboard shows one line:
+`members:admin` creates joins, but only a human with trust `owner` gives
+an agent trust `admin` or the role `proxy`. A human with trust `member`
+may bring an agent of their own while the project's `member_agents`
+policy is on, within its role, trust and number limits. An agent never
+creates a join, so a new identity always passes a human. The dashboard
+shows one line:
 
 ```
 maity join https://<join host or hub>/join/<token> --code <code>
@@ -344,9 +354,12 @@ share one machine and one home, and anything home-keyed collapses them
 into one identity (`cli/context/credentials.md`). One clone, one
 credential; a worktree of that clone shares it, which is why the
 directory is the Git common directory and not `.git/` literally — in a
-worktree `.git` is a file. Outside a clone the CLI refuses unless
-`MAITY_STATE_DIR` names a directory of this agent's own
-(`cli/src/maity/state.py`).
+worktree `.git` is a file. Outside a clone, `maity join` gives the agent
+a directory of its own, `~/.local/state/maity/<hub host>/<handle>`
+(under `XDG_STATE_HOME` when set), and prints the `MAITY_STATE_DIR`
+line that every later command needs; without that variable, any other
+command outside a clone refuses (`cli/src/maity/state.py`,
+`cli/src/maity/cli.py`).
 
 Each credential is one **agent instance** of its membership, with a
 short id of its own (`agt-b#wqe2` in the API, `handle#wqe2` in text;
@@ -419,7 +432,11 @@ read the private repositories of the people who host projects on an
 instance, and it could read the operator's private repositories, which
 no other project should see through the probe. An owner's grant is used
 only for a repository URL that owner confirmed, so a co-admin cannot
-point the project at another of the owner's private repositories. The
+point the project at another of the owner's private repositories. An
+organisation holds no grant of its own: for its projects, the namespace
+owner's grants are those of the organisation owner who confirmed the
+repository, and nobody else's, so a confirmation by another
+organisation owner changes whose access is used. The
 forge API host is fixed per forge kind in the hub's configuration, never
 derived from a project's URL: nothing a member sets makes the hub send a
 grant elsewhere. Tokens are sealed with `MAITY_SECRET_KEY`; the only
@@ -441,8 +458,10 @@ row that changes state records the credential's instance.
 - **Signed** (the CLI): `Authorization: Maity-HMAC <credential_id>` with
   an HMAC-SHA256 over method, raw path, sorted query, timestamp, nonce
   and body hash, plus a line for `Maity-On-Request` or `Maity-For` when
-  either header is sent (§2.2). The window is 300 seconds; a nonce is
-  unique per credential within it. On PostgreSQL the spent nonces live in
+  either header is sent (§2.2). The timestamp may differ from the hub's
+  clock by at most 300 seconds, and a nonce is remembered per credential
+  for 600 seconds (on PostgreSQL at least that long), so it can never be
+  spent twice while its timestamp is still accepted. On PostgreSQL the spent nonces live in
   the database, shared by every replica, with an epoch from the
   database's clock; on SQLite and MariaDB they live in the hub process,
   and a request older than the process's start is refused, so a request
@@ -541,7 +560,11 @@ change takes effect on the next request.
 Rules the server keeps whatever the trust and role: no membership
 answers a request it asked or that was filed on its behalf
 (`self_answer`); `consent` has no default and waits while open; a
-request marked `humans_only` is held and answered by humans only.
+request marked `humans_only` is held and answered by humans only. A
+`decision` request can be forwarded among the admins: once forwarded,
+only its current holder answers it — neither the original addressee nor
+another admin — and while it is open to `trust:admin`, an admin first
+claims it (§7).
 What stays outside Maity's reach: a harness's own safety layer may still
 require the human in the executing session for some actions. A request
 shows that as `needs_in_session` with the member and session rather than
@@ -565,8 +588,11 @@ with `humans_only` before any side effect.
 An agent with trust `admin` is limited further (§2.3 ᵃ and ʰ): it
 manages agent memberships below it, but never grants `admin`, `owner`,
 `proxy` or `manager`, never creates a join (a new identity always passes
-a human), and changes to a reviewer, a tester or a policy seat take
-effect only on a human's `go`. It never edits the scope table it is
+a human). Removing an agent, and changing the trust, the role or the
+pause of a reviewer, a tester or the contract arbiter, or the
+`availability_policy` of one of them or the coordinator, take effect
+only on a human's `go`; its other changes, such as areas or a briefing,
+apply at once. It never edits the scope table it is
 governed by, the rules every agent loads, the owner's absence, or the
 log it is audited by. The one exception is coordination: it may set the
 project's onboarding and the project briefing.
@@ -585,8 +611,10 @@ rule ends").
   lets it assign and release the cards of the members in its reach and
   set their areas and pause — agents with trust `member` or `guest` of
   its own owner, or of another owner who consented to exactly that edge.
-  It is no governance scope: a manager never joins, removes or sets
-  trust or role, and answers no request in a human's place. A chain is
+  It is no governance scope: `line:lead` alone gives no right to join or
+  remove members, set trust or role, or answer a request in a human's
+  place. A manager that also holds trust `admin` has an admin agent's
+  rights besides, as any agent with that trust does. A chain is
   at most 8 members deep.
 - **Proxy.** The role `proxy` is the owner's interface. It holds trust
   `admin` and decides nothing itself: it relays requests to the owner
@@ -597,7 +625,10 @@ rule ends").
 - **Bridge.** A connection, not a role: an agent lends its hands — git,
   a shell, a service — to another agent of the project that cannot reach
   them itself, both keeping their own role and trust. The served agent's
-  owner sets it up, and across owners both owners consent. The bridge
+  owner sets it up. Across owners, the bridge's owner consents, and so
+  does the project through a human with `members:admin` unless the
+  human setting it up holds that scope; the connection exists only
+  after both. The bridge
   acts for the served agent with a signed `Maity-For` header: the hub
   makes the call as the served agent, without the governance scopes,
   and records the bridge in `via`.
