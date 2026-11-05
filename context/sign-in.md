@@ -394,8 +394,9 @@ back to no factor.
 handle. Only wrong passwords count: 5 in 15 minutes per account. Past
 that, for the rest of the window, the password still signs in from a
 known source, an address from which the account completed a sign-in in
-the last 30 days; the hub keeps a keyed fingerprint of it, not the
-address. Every other source gets `unauthenticated`, with
+the last 30 days and which has itself sent fewer than 5 wrong
+passwords in the window; the hub keeps a keyed fingerprint of it, not
+the address. Every other source gets `unauthenticated`, with
 `email_link` where the instance offers the sign-in link, and with
 `password_paused` and the seconds to wait otherwise. The password
 change, the re-authentication and the address change count in buckets
@@ -417,6 +418,8 @@ erase their addresses (the maintainer's choice of the two options).
   it would have helped another device on the same network only.
 
 **Rejected alternatives:**
+- Keeping the handle (or the handle or the address) at login: dropped
+  by the maintainer's decision; its reasons are not recorded here.
 - 3 wrong passwords in 15 minutes, as proposed: the maintainer set 5.
 - A sign-in link past the limit under the second factor `email`: the
   mailbox is the second factor there and cannot be the first as well
