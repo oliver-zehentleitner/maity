@@ -186,6 +186,16 @@ def holder(conn: Connection, scope: str, handle: str) -> str | None:
     return None
 
 
+def _only_the_loadtest_pattern(handle: str) -> bool:
+    """Whether `lt-<digits>` is the only reservation that hits `handle` (§16.11). A word of
+    `RESERVED_FIRST` or a misleading handle is still reserved when it is an own alias."""
+    return (
+        paths.LOADTEST_HANDLE.fullmatch(handle) is not None
+        and handle not in paths.RESERVED_FIRST
+        and handle not in paths.MISLEADING_HANDLES
+    )
+
+
 def ensure_free(
     conn: Connection,
     owner_id: str | None,
@@ -193,13 +203,18 @@ def ensure_free(
     *,
     exclude: str | None = None,
     field: str = "handle",
+    own_alias: bool = False,
 ) -> None:
     """`invalid` / `taken` when `handle` is the handle or an alias of another id in the scope
-    (or a human handle the hub or the dashboard keeps, `reserved`, §16.11). Takes the handle's
-    lock first, so the answer holds until the transaction ends. `exclude`: the id that may have
-    it (itself)."""
+    (or a human or organisation handle the hub or the dashboard keeps, or of the form
+    `lt-<digits>` for the load-test accounts, `reserved`, §16.11). Takes the handle's lock
+    first, so the answer holds until the transaction ends. `exclude`: the id that may have
+    it (itself). `own_alias`: the handle is already that id's alias, so the load-test pattern
+    alone does not refuse taking it back (§6.24)."""
     scope = scope_of(owner_id)
-    if paths.handle_reserved(handle, of_agent=owner_id is not None):
+    if paths.handle_reserved(handle, of_agent=owner_id is not None) and not (
+        own_alias and _only_the_loadtest_pattern(handle)
+    ):
         raise invalid({field: "reserved"})
     if owner_id is None and held_for_instance(conn, handle):
         raise invalid({field: "reserved"})
@@ -245,10 +260,12 @@ def rename(
         raise not_found()
     if row.handle == handle:
         return None
-    ensure_free(conn, owner_id, handle, exclude=subject_id)
+    # The subject's row is already locked, so its aliases cannot move under this read.
+    # The load-test reservation is the one check skipped for an own alias (§6.24, §16.11).
     scope = scope_of(owner_id)
     own = aliases(conn, [subject_id])[subject_id]
     back = handle in own
+    ensure_free(conn, owner_id, handle, exclude=subject_id, own_alias=back)
     if not back and len(own) >= ALIAS_MAX:
         raise AliasLimit(own)
     now = clock.now()

@@ -604,40 +604,55 @@ route a crawler does not fetch.
 - Listing badges: they are per project and belong to the project's
   owner, not to the instance's public face.
 
-## Public pages are static HTML, chosen by their owner, and the instance's operator must allow them
+## Public pages are static HTML, public by default, and the instance's operator must allow them
 
 **Id:** 2571d046-a270-4680-b50a-dc4e9ad60f19
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision in the inbox, 2026-10-28 (public projects and users indexed by search engines; "without JavaScript, could even be static, rebuilt every few hours"); contract `docs/api.md` §16.9
+**Source:** the maintainer's decision in the inbox, 2026-10-28 (public projects and users indexed by search engines; "without JavaScript, could even be static, rebuilt every few hours"); the defaults since 2026-10-31 and 2026-11-02 from projects.md 038e685e; contract `docs/api.md` §16.9
 **See:** scope.md#only-an-instance-with-a-landing-page-invites-search-engines-and-only-to-its-root — 4f798011-3707-4fe7-a825-ad2575d6f395 — as of 2026-10-28
 
-A project whose namespace owner turns `public_page` on, and a person who
-turns `public_profile` on, get a page under `/p/<owner>/<slug>` or
+A public project and every active account whose profile is under no
+moderation hold get a page, at first under `/p/<owner>/<slug>` or
 `/u/<handle>` (since the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5, at `/<owner>/<slug>` and
 `/<handle>`, the dashboard's own addresses): plain HTML rendered by the hub, no script, listed in the
-sitemap. The operator chooses whether pages are rendered on every change
+sitemap; a person's page with `public_profile` off carries `noindex` and stays out of it
+(`hub/context/public-pages.md` 3da2d551). Since 2026-11-02 a visitor gets that page inside the app shell, and
+`?as=public` the bare page (`hub/context/public-pages.md` 70c80e4f). The operator chooses whether pages are rendered on every change
 (default) or only on an interval of 1–24 hours (default 6); either way
 anything taken off a page, any edit of a shown text included, is taken
-off at once, and only new entries and counts wait for the interval. The operator switches
+off at once, and only new entries and counts wait for the interval. As decided on 2026-10-28,
+both were opt-in: a project got its page when its namespace owner turned
+`public_page` on, a person when they turned `public_profile` on. Since
+then a new project is public by default (2026-10-31), while an existing
+one stays private until its owner switches, and profiles are public by
+default (2026-11-02, projects.md 038e685e): a project's owner can still make it
+private, and a person's `public_profile` decides how much their page
+shows, not whether it exists. The operator switches
 the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
 default. This brings part of the later stage "public projects and
-discovery" forward: the pages, not yet a discovery page or join
-requests.
+discovery" forward: at first the pages, without a discovery page;
+since 2026-11-02 `/explore` lists the public projects by name for every
+visitor (`hub/context/public-pages.md` 439a36e9). Join requests are not
+there yet.
 
 **Reason:** the hosted instance should be found by the projects and
-people on it, and the dashboard cannot be indexed: it is drawn by
-scripts under fragment routes. A static page per public project and
+people on it, and the dashboard could not be indexed: it was drawn by
+scripts under fragment routes (paths since 2026-10-29, e34ae588). A static page per public project and
 person is what a crawler reads best and costs the hub one render per
-change. Being public is a choice about one's own data, so it is the
-owner's alone and off until chosen; an operator of a private instance
-must not publish its members by an update.
+change. The original reason for opt-in, that being public is a choice
+about one's own data and so off until chosen, no longer decides the
+default: the maintainer chose the forge model (projects.md 038e685e),
+and the owner's choice remains to make a project private or to show less
+of a profile. An operator of a private instance still must not publish
+its members by an update, so the feature itself stays off until the
+operator switches it on.
 
 **Rejected alternatives:**
 - Public by default with an opt-out: publishes people and projects who
-  never decided to be public. (Overturned by the maintainer: projects are
+  never decided to be public. (Overturned by the maintainer: new projects are
   public by default since 2026-10-31 and profiles since 2026-11-02,
   projects.md 038e685e.)
 - Rendering on every request: the same output at the cost of a render
@@ -645,9 +660,12 @@ must not publish its members by an update.
 - Only rendering on change, without a choice: the maintainer wanted the
   operator to choose, since an interval batches the work on a busy
   instance.
-- Letting the interval delay removals too: a person who makes their
-  profile private would stay on other projects' pages for up to a day,
-  against their decision; removals are always immediate.
+- Letting the interval delay removals too: what a person or a project's
+  owner takes off a page would stay visible for up to a day, against
+  their decision; removals are always immediate. (The example at the
+  time, a person who turns their profile off leaving other projects'
+  pages, no longer applies: since 2026-11-02 they stay named there,
+  `hub/context/public-pages.md` 3da2d551.)
 - A fixed interval with no bound: 1–24 hours keeps a page from going
   stale for days or being rebuilt every minute.
 - Making the dashboard itself crawlable (server-side rendering of the
@@ -671,19 +689,22 @@ must not publish its members by an update.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions of 2026-10-29 (which views are public, agents under the person's page; card tsk-w89mspg3gwx1) and 2026-10-30 (a person's website and social names, who sees them: five values, independent; card tsk-xr6fqx8e0vw5); the details (card fields, links built from names, no single-card page) are the contract owner's; contract `docs/api.md` §16.9
-**Revisit when:** follow exists (the `friends` value starts to mean something), a public card page is wanted, or the Why view should show a private repository's entries by an owner's choice
+**Source:** the maintainer's decisions of 2026-10-29 (which views are public, agents under the person's page; card tsk-w89mspg3gwx1) and 2026-10-30 (a person's website and social names, who sees them: five values, independent; card tsk-xr6fqx8e0vw5); the details (card fields, links built from names, at first no single-card page) are the contract owner's; a card's page and its notes since 2026-11-02 (`hub/context/public-pages.md` e3bcdf82, 9e1bb9f3); contract `docs/api.md` §16.9
+**Revisit when:** follow exists (the `friends` value starts to mean something), or the Why view should show a private repository's entries by an owner's choice
 
 A public project shows five of its views to anyone, each a stored
 page at the view's own address: Overview, Board, Members, Organisation
-and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
-and Settings with the owners. The Board shows each card's id, title,
-status and label, never its body, notes or history, and has no page per
-card. People and agents appeared by name only where the person (or the
+and Why. Inbox, Chat and Messages stay with the members, Runners
+and Settings with the owners. The Ticker did too until 2026-11-02; since
+then the project's page shows a snapshot of it and who is online, never
+live (`hub/context/public-pages.md` 65c0167c). The Board shows each card's id, title,
+status and label, never its body, notes or history; at first there was
+no page per card either. People and agents appeared by name only where the person (or the
 agent's owner) had a public profile, otherwise as "a member"/"an agent"
 or an unnamed box; since 2026-11-02 an open project names every member
-by handle and a card has its own page (`hub/context/public-pages.md`,
-3da2d551 and e3bcdf82). Why shows only what the hub already reads of Keep
+by handle, and a card has its own page with its body and notes, its
+history staying with the team (`hub/context/public-pages.md`, 3da2d551,
+e3bcdf82 and 9e1bb9f3). Why shows only what the hub already reads of Keep
 the Why (summary, dashboards, attention; never `context/`), and only
 while the repository is public, read with the instance's token — so
 only for a project in the operator's own namespaces (ce611bd9 in
@@ -696,9 +717,11 @@ them: private, friends, colleagues, friends and colleagues, or everyone.
 
 **Reason:** the maintainer wants a public project to show how it is
 being built, not only that it exists; the board and the team are that.
-What a card says inside, and what people discuss, stays with the team.
-Names follow each person's own choice, so publishing a project does not
-publish its people. Building links from names, instead of taking URLs,
+What people discuss in messages and chat stays with the team. What a card says inside did
+too at first; since 2026-11-02 an open project's card is public, like an
+issue on a forge (`hub/context/public-pages.md` e3bcdf82). At first names followed each person's own choice, so publishing a
+project did not publish its people; since 2026-11-02 an open project
+names its members (`hub/context/public-pages.md` 3da2d551). Building links from names, instead of taking URLs,
 keeps a "GitHub" link from pointing anywhere else.
 
 The Board shows the open columns (at most 200 cards each) and only the
@@ -712,7 +735,10 @@ DNS host, never an IP address or a port.
 
 **Rejected alternatives:**
 - A public page per card: it would publish card bodies and history, the
-  part that is the team's working text.
+  part that is the team's working text. (Overturned on 2026-11-02: a
+  card of an open project has its own page with its body and notes,
+  while its history stays out, `hub/context/public-pages.md` e3bcdf82
+  and 9e1bb9f3.)
 - Every done card on the Board, and statistics over every project: the
   first makes the page a history, the second counts private work.
 - A moderated card shown as `cancelled`: the title is what was moderated.
@@ -1003,16 +1029,18 @@ page offers an instance nobody has to host.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); contract `docs/api.md` §16.13
+**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); contract `docs/api.md` §16.13
 **See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 
-The dashboard and the hub's own pages (the maintenance page, the pages
-behind links in mails, the join page in a browser) end with one small
-line: the Maity icon, "Maity" and the current year, "Found a bug?" to the
-project's GitHub issues, and "Made with ♥ by Oliver Zehentleitner on"
-two icons: GitHub's, linked to the maintainer's GitHub profile, and
-Maity's, linked to the maintainer's page on maity.team. The name itself
-is no link. It is part of the product and
+The dashboard and the hub's own pages (the maintenance page,
+registration's link page, the join page in a browser) end with one small
+line (the other pages behind links in mails stand in the frame of the
+public pages and end with its footer instead, §16.13): the Maity icon, "Maity" and the current year, "Made with ♥ by
+Oliver Zehentleitner on" two icons (GitHub's, linked to the maintainer's
+GitHub profile, and Maity's, linked to the maintainer's page on
+maity.team), "Found a bug?" to the project's GitHub issues, and "Found a
+vulnerability?" to the project's `SECURITY.md`. The name itself is no
+link. The order is its own entry, below. It is part of the product and
 always shown, with no operator setting. The landing page, the legal
 pages, `/explore` and the public pages of §16.9 do not carry it.
 
@@ -1020,7 +1048,10 @@ pages, `/explore` and the public pages of §16.9 do not carry it.
 content: whoever uses Maity, on any instance, sees where to report a bug
 and who makes it. The landing page and the legal pages are the operator's
 own site with the operator's footer, and the public pages show a
-member's or a project's content, so the product line stays off them. Both
+member's or a project's content, so the product line stays off them.
+The security link stands beside the issues so that a vulnerability is
+reported privately, as `SECURITY.md` describes, and not filed as a
+public issue; alternatives to that link were not recorded. Both
 profile links are absolute: the maintainer's page exists only on
 maity.team, and on any other instance a relative link would be dead or
 name another account.
@@ -1045,3 +1076,26 @@ name another account.
   only (`fill`), never a `style` attribute.
 - Loading the icons as image files: the link pages allow no image source
   at all, so the icons are inline SVG on every page.
+
+## The product line's credit stands right after the year
+
+**Id:** bfad1a5f-26fd-4891-b3c1-d5f7af201214
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the maintainer's decision of 2026-11-05, relayed by the lead on card tsk-76xrz7p1gaw0; contract `docs/api.md` §16.13
+**See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-05
+
+The parts of the product line stand in this order: the Maity icon with
+"Maity" and the year, then "Made with ♥ by Oliver Zehentleitner on
+GitHub & Maity", then "Found a bug?", then "Found a vulnerability?".
+Only the order changed: the words, the links and their accessible names
+stay as the entry above has them.
+
+**Reason:** unknown. The maintainer set the order without giving a
+reason.
+
+**Rejected alternatives:**
+- The credit last, after the two links (the order of 2026-11-03 and
+  2026-11-04): replaced by the maintainer's order; why it lost was not
+  given.

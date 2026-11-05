@@ -150,6 +150,47 @@ delete is the remedy that needs no removal.
 - Refusing uploads from a paused agent: a pause is not meant to stop an
   agent putting its work down, and messages with files are part of that.
 
+## The instance caps all attachments together, checked under the project's lock and without numbers for the member
+
+**Id:** 67adfb38-efa6-4636-986c-33fad578a128
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qa9r26kb2teq; the maintainer's approval of the six proposed points (place, default, counting, refusal without numbers, the check under the project's lock, the wording) through the lead, request req-y4tnqn9grxt5, 2026-11-04; `docs/api.md` §8.7 and §16.5
+**Revisit when:** uploads pass the limit by more than the concurrent uploads explain, the read of the total shows in the upload time (it sums every attachment row not deleted, once before the blob write and once under the project's lock; about 100 ms at two million rows on PostgreSQL, measured in the review of the hub PR), or plans (§2.7) set storage per account
+**See:** attachments.md#pending-uploads-are-capped-per-membership-and-humans-can-clear-them — 5080eb65-475b-487a-9854-80757124ccf0 — as of 2026-11-04
+
+Besides the project's quota, the instance has a limit on the attachments of all
+projects together, `max_attachment_storage` in the admin section Limits (§16.5).
+It is counted as the project quota counts: pending uploads included, after
+re-encoding, deleted ones freed. The default is `unlimited`. An upload over the
+limit is `attachment_quota` with `scope: "instance"` and no numbers; the admin sees
+the total as `attachment_storage_used`. The check runs under the project's lock
+after the project's quota and the pending cap. Lowering the limit deletes nothing.
+
+**Reason:** the per-project quota bounds one project, not the disk: with projects
+uncapped per account (and accounts uncapped even once the project limit landed), the
+total had no ceiling. The disk belongs to the operator, so the limit sits with the
+instance, not the account. The total says how much the whole instance stores, which
+is the operator's business, not a member's. Uploads already serialise per project;
+one lock for the instance would make every upload anywhere wait for every other, for
+a limit where passing it by the stored sizes of the other uploads in flight when the
+last of them to be accepted was checked, at most one per project, does no harm.
+Those can exceed the 10 MiB file cap, which applies before re-encoding: a 4.8 MiB
+JPEG was measured at 13.9 MiB stored. `unlimited` as the default leaves a
+self-hosted instance as it was; the hosted instance sets its own value in the admin
+area.
+
+**Rejected alternatives:**
+- One instance-wide lock for an exact cap: serialises all uploads on the instance.
+- Refusing with `used` and `quota`, as the project scope does: tells every member
+  how much the instance holds.
+- An environment variable alone, like `MAITY_ATTACHMENT_QUOTA`: the card asks for
+  an admin setting, and the Limits section already has the source rules for both.
+- A fixed default such as 50 GiB: offered to the maintainer as the alternative and
+  not chosen; it would refuse uploads on self-hosted instances that never chose a
+  limit.
+
 ## While attachments are off, delete is refused too, and the upload keeps its own checks first
 
 **Id:** de8f3512-27b5-4b88-8751-6d5dc24dbe9c

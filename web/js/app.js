@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
-    // Redrawn in place from the feed (js/messages.js).
+    // The hub's listing (§8.8), new messages from the feed, in place (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
@@ -119,7 +119,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
-    // /settings/forge: the account's forge access (§11.4, §16.11), where the hub's setup redirect lands.
+    // /settings/forge: the account's Forge access (§11.4, §16.11), where the hub's setup redirect lands.
     if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
@@ -457,8 +457,11 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      // Signed out at the same address: nothing changes there, so draw it.
-      if (!M.route.go(after || "/", { replace: true })) render();
+      // The start page is the hub's to answer (§16.7): signed out, `/` may be the landing page, so
+      // it is a page load. A dashboard path is a route change. At the same address (fixture mode,
+      // where the start page is a route too), nothing changes there, so draw it.
+      const left = !after || M.route.startPage(after) ? M.route.load(after || "/") : M.route.go(after, { replace: true });
+      if (!left) render();
     }
   }
 
@@ -1320,6 +1323,7 @@ window.Maity = window.Maity || {};
     else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
   }
 
+
   // The inbox tab says the project's open requests, the chat tab its unread
   // chats (docs/api.md §18.2), once the counts are read.
   function tabCount(ctx, route) {
@@ -1493,15 +1497,8 @@ window.Maity = window.Maity || {};
       class: "profile-menu",
       face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
       items: () => [
-        { label: M.t("menu.profile"), href: "/account" },
-        { label: M.t("menu.picture"), href: "/account/picture" },
-        { label: M.t("menu.preferences"), href: "/account/preferences" },
-        { label: M.t("menu.theme"), href: "/account/theme" },
-        ctx.me.kind === "human" ? { label: M.t("menu.security"), href: "/account/security" } : null,
-        ctx.me.kind === "human" ? { label: M.t("menu.orgs"), href: "/account/orgs", current: ctx.scope === "orgs" } : null,
-        { label: M.t("menu.sign_in_device"), href: "/account/sign-in-device" },
-        { label: M.t("menu.change_password"), href: "/account" },
-        { label: M.t("menu.linked_accounts"), disabled: true, why: M.t("menu.later") },
+        // The account's tabs (js/account.js), then signing out.
+        ...M.accountTabs.menuItems(ctx),
         { separator: true },
         { label: M.t("menu.sign_out"), onSelect: logout },
       ].filter(Boolean),
@@ -1657,10 +1654,10 @@ window.Maity = window.Maity || {};
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
-        // While the banner stands, or when the security count moved (a
-        // sign-in, a confirm elsewhere): the banner is built again, so an
-        // approved session ending elsewhere shows at once (§2.6.5).
-        if (bannerShown || securityCount() !== bannerFor) renderBanner(ctx);
+        // While the banner stands, or when `sessions_rev` moved (a sign-in,
+        // an end elsewhere): the banner is built again, so an approved
+        // session ending elsewhere shows at once (§2.6.5).
+        if (bannerShown || sessionsRev() !== bannerFor) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -1850,17 +1847,17 @@ window.Maity = window.Maity || {};
 
   let renderSeq = 0;
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
-  // page renders, and again while it stands or when the count of unread
-  // security alerts changes. It follows the sessions, read or not.
-  let bannerFor = 0;
+  // page renders, and again while it stands or when `sessions_rev` moves (a
+  // sign-in or an end, §18.2); a sign-in is no bell item to count.
+  let bannerFor = null;
   let bannerShown = false;
   let bannerSeq = 0;
-  const securityCount = () => (M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
+  const sessionsRev = () => M.notify.state.sessionsRev;
   function renderBanner(ctx) {
     if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
-    bannerFor = securityCount();
+    bannerFor = sessionsRev();
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
     M.sessions.banner(ctx, () => render()).then((b) => {
       if (seq !== bannerSeq) return;
@@ -2097,7 +2094,13 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
+    // A view's own tab rows that scroll sideways (the account's, js/account.js), set up now that
+    // they are in the page and have a width: the current tab in sight, the fade on the side with more.
+    root.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     renderBanner(ctx);
+    // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
+    // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
+    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     watch(ctx, where, known ? item : null, main);
     let label = M.t("view.none");
     if (empty) label = M.t("view.no_projects");
@@ -2184,10 +2187,33 @@ window.Maity = window.Maity || {};
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
 
-  // Back, forward, a link of the dashboard, M.route.go: the view follows.
-  M.route.listen(() => { if (!followingRoute || !followingRoute(parseRoute())) render(); });
+  // Back, forward, a link of the dashboard, M.route.go: the view follows. Another view starts
+  // at the top of the page: the window keeps its scroll over a change of the address, so a
+  // long view opened after another one was scrolled down began where that one stood. A card
+  // (…/tasks/<id>) is the board with its panel, the same view: the board stays where it was,
+  // and so does it when the panel closes. Not either when the view follows the change itself
+  // (a chat chosen in /chats) or only the query changed; a place drawn after the view (an
+  // anchor, a section of the account, the board as it was left) is scrolled to by that view.
+  const viewAt = () => {
+    let where;
+    try { where = parseRoute(); } catch { return M.route.current().path; }
+    if (where.scope !== "project") return M.route.current().path;
+    const tab = NAV.find((n) => n.route === where.route);
+    const view = (tab && tab.view) || where.route;
+    return view === "board" ? "board:" + where.slug : M.route.current().path;
+  };
+  let drawnView = viewAt();
+  M.route.listen(() => {
+    const view = viewAt();
+    const moved = view !== drawnView;
+    drawnView = view;
+    if (followingRoute && followingRoute(parseRoute())) return;
+    if (moved && window.scrollTo) window.scrollTo(0, 0);
+    render();
+  });
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
+    document.querySelectorAll("nav.account-tabs").forEach(updateCue);
   });
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);

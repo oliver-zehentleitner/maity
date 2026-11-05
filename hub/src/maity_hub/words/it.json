@@ -99,6 +99,7 @@
   "product.bug": "Hai trovato un bug?",
   "product.love": "amore",
   "product.made_by": "Fatto con {heart} da {name} su {github} & {maity}",
+  "product.security": "Hai trovato una vulnerabilità?",
   "register_page.button": "Crea account",
   "register_page.closed": "La registrazione è chiusa.",
   "register_page.dead": "Questo link non funziona più.",

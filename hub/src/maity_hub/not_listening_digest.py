@@ -35,7 +35,7 @@ from sqlalchemy import Connection, Engine, and_, case, func, insert, select, upd
 
 from maity_hub import clock, maintenance, worker_runs
 from maity_hub import tables as t
-from maity_hub.cards import CLOSED as CLOSED_CARDS
+from maity_hub.cards import SOME_INSTANCE, open_claims
 from maity_hub.events import lock_project, transaction
 from maity_hub.notifications import preferences, records
 
@@ -122,11 +122,7 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         )
         .join(t.membership, t.membership.c.id == c.claim_holder)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-        .where(
-            c.claim_holder.isnot(None),
-            c.claim_instance.isnot(None),
-            c.status.notin_(CLOSED_CARDS),  # a closed card keeps its holder's columns
-        )
+        .where(open_claims(None, instance=SOME_INSTANCE))
         .order_by(c.id)
     )
     if owner_id is not None:
@@ -355,7 +351,7 @@ CHANGED = "what the digest shows changed; a new one follows when something is ne
 
 def _digest_requests(owner_id: str) -> Any:
     """The owner's digest requests: personal, filed by the hub, with neither project nor
-    organisation, which no other request is."""
+    organisation nor report. A report's request (§16.8) has the same shape otherwise."""
     r = t.request.c
     return select(t.request).where(
         r.to_human == owner_id,
@@ -363,6 +359,7 @@ def _digest_requests(owner_id: str) -> Any:
         r.filed_by == "hub",
         r.project_id.is_(None),
         r.org_id.is_(None),
+        r.report_id.is_(None),
     )
 
 
@@ -577,6 +574,7 @@ def run(
                     r.filed_by == "hub",
                     r.project_id.is_(None),
                     r.org_id.is_(None),
+                    r.report_id.is_(None),
                 )
                 .distinct()
             ).scalars()

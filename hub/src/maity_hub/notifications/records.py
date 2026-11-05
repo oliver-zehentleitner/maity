@@ -11,14 +11,19 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, func, insert, select
 
 from maity_hub import clock, wakeups
 from maity_hub import tables as t
 
 KEPT = timedelta(days=90)
+# A new sign-in: no bell item (§2.6.5, "A sign-in is no notification"), but the mail of the
+# `security` kind, the session list and `sessions_rev` read it.
+SIGN_IN = "session_created"
+# The records that move `sessions_rev` (§18.2).
+SESSION_RECORDS = (SIGN_IN, "session_ended")
+# The records that are `security` items in the bell.
 SECURITY = (
-    "session_created",
     "email_address_changed",
     "second_factor_changed",
     "second_factor_failed",
@@ -27,7 +32,7 @@ SECURITY = (
 # The forge access changes that are a `security` item; the others are no notification.
 FORGE_ADDED = ("linked", "token_set")
 # Records that are `inbox` items, open until their matter is closed (§18.1).
-INBOX = ("registration_pending", "mail_disabled", "report_open", "agents_not_listening")
+INBOX = ("registration_pending", "mail_disabled", "agents_not_listening")
 # Records that are `inbox` items read by a read mark, as any notice (§18.1).
 NOTICES = ("moderation_applied",)
 PERSONAL = (
@@ -98,26 +103,11 @@ def forge_access_changed(
 
 
 def session_created(conn: Connection, human_id: str, data: dict[str, Any]) -> int:
-    return write(conn, human_id, "session_created", data)
+    return write(conn, human_id, SIGN_IN, data)
 
 
 def session_ended(conn: Connection, human_id: str, session_id: str, by: str) -> None:
     write(conn, human_id, "session_ended", {"session_id": session_id, "ended_by": by})
-
-
-def mark_sign_in_read(conn: Connection, human_id: str, session_id: str, by: str) -> None:
-    """Mark the `session_created` record of `session_id` read by the session `by`, as "This
-    was me" does (§2.6.5); one read already keeps its mark. The human's held bells look
-    again."""
-    record = sign_in_records(conn, human_id).get(session_id)
-    if record is None or record.read_at is not None:
-        return
-    conn.execute(
-        update(t.account_record)
-        .where(t.account_record.c.n == record.n, t.account_record.c.read_at.is_(None))
-        .values(read_at=clock.now(), read_by=by)
-    )
-    wakeups.ring(conn, "bell", human_id)
 
 
 def sign_in_records(conn: Connection, human_id: str) -> dict[str, Any]:
@@ -126,8 +116,22 @@ def sign_in_records(conn: Connection, human_id: str) -> dict[str, Any]:
     rows = conn.execute(
         select(t.account_record).where(
             t.account_record.c.human_id == human_id,
-            t.account_record.c.type == "session_created",
+            t.account_record.c.type == SIGN_IN,
             t.account_record.c.at >= since,
         )
     ).all()
     return {row.data.get("session_id"): row for row in rows}
+
+
+def sessions_rev(conn: Connection, human_id: str) -> str | None:
+    """`sessions_rev` of `GET /me/notifications` (§18.2): from the number of the human's
+    newest live session record, never its `at`, which two records may share; None when
+    there is none. The number is the one `GET /auth/sessions` names as `created.record`."""
+    newest = conn.execute(
+        select(func.max(t.account_record.c.n)).where(
+            t.account_record.c.human_id == human_id,
+            t.account_record.c.type.in_(SESSION_RECORDS),
+            t.account_record.c.at >= clock.now() - KEPT,
+        )
+    ).scalar()
+    return None if newest is None else f"acr-{newest}"

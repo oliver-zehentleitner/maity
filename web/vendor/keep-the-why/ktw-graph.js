@@ -8,10 +8,12 @@
    globalThis.KeepTheWhy.views.graph, listed in ktw-views.json, tested through the page (canvas-trace.mjs). */
 (function (root) {
 "use strict";
-const { layoutTick, linkExistsAt, hostOf, filterActive, entryMatches, fkey, linkFamily, seeDay, supersededDay, parseSupersededBy, readToken } = root.KeepTheWhy.core;
+const { stepLayout, placeShown, seedLayout, carryNode, LAYOUT, linkExistsAt, hostOf, filterActive, entryMatches, fkey, linkFamily, seeDay, supersededDay, parseSupersededBy, readToken } = root.KeepTheWhy.core;
 
-// One graph view per page: create({ scene, nav, prefs }) — the host's scene, navigation and settings.
-function create({ scene, nav, prefs }) {
+// One graph view per page: create({ scene, nav, prefs, words }) — the host's scene, navigation and settings, and its
+// hook for the UI text (ktw-ui.js words).
+function create({ scene, nav, prefs, words }) {
+const tw = root.KeepTheWhy.ui.words(words);
 const narrow = () => !!root.matchMedia?.("(max-width: 900px)").matches;
 const atClock = (e, ext = false) => scene.atClock(e, ext); // the scene's clock (ktw-scene.js)
 const statusNow = (e) => scene.statusNow(e);
@@ -26,9 +28,11 @@ const labelsOn = (n) => LABELS[labelGroupOf(n)] !== false;
 
 function lightThought(g, t) {
   g.thought = t ? { nodes: new Set(t.steps), pairs: new Set(t.ids.slice(1).map((id, i) => `${id}|${t.ids[i]}`)) } : null;
-  // lighting a thought brings entries into view that may be hidden otherwise, so the layout settles again (and the
-  // small graph refits); letting go only redraws — a refit would move the view the person has set
-  if (t) g.alpha = Math.max(g.alpha, 0.02); g.wake?.(); scene.wake(); // the stage, too, shows what is lit (it follows the scene)
+  // lighting a thought brings entries into view that may be hidden otherwise: those not laid out yet are, as any
+  // node newly shown (the step's placeShown), and the small graph refits; letting go only redraws — a refit would
+  // move the view the person has set
+  if (t && g.miniView) g.miniView.needFit = true;
+  g.wake?.(); scene.wake(); // the stage, too, shows what is lit (it follows the scene)
 }
 
 // the nodes a project hub stands for: its topics and entries, by the ids the layers give them
@@ -46,7 +50,7 @@ function projectNodes(g, hub) {
 function spotIn(G, canonical, root) {
   const same = (n) => n.kind === "project" && n.canonical && fkey(n.canonical) === fkey(canonical) && (root === undefined || (n.root || "") === (root || ""));
   const hub = canonical ? G.nodes.find(same) : null;
-  G.spot = hub ? projectNodes(G, hub) : null; G.alpha = Math.max(G.alpha, 0.02); G.wake?.();
+  G.spot = hub ? projectNodes(G, hub) : null; G.wake?.();
 }
 
 // The graph turns very slowly in its plane — one turn in about six minutes —
@@ -65,8 +69,30 @@ function hostPath(url) {
   if (!HOST_PATHS.has(h.name)) HOST_PATHS.set(h.name, new Path2D(h.path));
   return HOST_PATHS.get(h.name);
 }
+// How long a frame may spend on the layout. A graph not drawn yet with motion off draws nothing while it settles,
+// so it takes a longer slice: the page still answers at about 40 frames a second, and a family of a thousand entries
+// settles in about the time its steps take (some 300 steps of 7 to 8 ms in V8). A graph that moves as it is drawn
+// takes as many steps as fit in half a frame: one for a large graph, dozens for a small one, which then settles in
+// a few frames instead of a few hundred.
+const SETTLE_SLICE_MS = 24, FRAME_LAYOUT_MS = 8;
 const miniView = (g) => (g.miniView ||= { scale: 1, ox: 0, oy: 0, userMoved: false, needFit: true, fitScale: 0 }); // the small graph's own view of a graph the page may show too
 const publishLayout = (g, opts) => scene.publishFrom(g, opts); // the scene's (ktw-scene.js publishFrom)
+// A graph run in a second canvas (the side pane's family graph beside the page's): it reads the graph's data as it
+// is now, through its prototype, so a rebuild of the graph is what it shows; the layout's lifecycle — alpha,
+// placing, relayout and what they leave for the scene — is the graph's own, read and written through, so a placement
+// or a relayout settled in either is settled in both and nothing stale is left for the next rebuild. What the view
+// sets (its switches, what it lights, its loop) is its own. The graph keeps the copy it has now (`runner`); a copy
+// replaced since stops, and the scene takes nothing from it.
+const WAKERS = ["mousemove", "mousedown", "wheel", "dblclick", "touchstart", "touchmove", "mouseleave"]; // what wakes a graph's loop
+const LIFECYCLE = ["alpha", "placing", "relayout", "relaidOut", "placed", "tree"];
+function runnerOf(g, own = {}) {
+  g.runner?.stopLoop?.(); // the copy before is done
+  const r = Object.create(g);
+  for (const k of LIFECYCLE) Object.defineProperty(r, k, { get: () => g[k], set: (v) => { g[k] = v; }, enumerable: true });
+  Object.assign(r, { raf: null, wake: null, stopLoop: null }, own, { of: g }); // its loop's own, not the graph's through the prototype
+  g.runner = r;
+  return r;
+}
 function runGraph(canvas, g, opts = {}) {
   const mini = !!opts.mini;
   const V = mini ? miniView(g) : g; // the view — zoom and offset — belongs to the canvas: the side pane's small graph keeps its own, the page's survives a visit elsewhere
@@ -109,7 +135,10 @@ function runGraph(canvas, g, opts = {}) {
   const walkTo = (n) => (n.self ? null : n.walk ? n.walk() : nav.open(n.href));
   const screenOf = (n) => [W / 2 + g.ox + n.x * g.scale, H / 2 + g.oy + n.y * g.scale];
   const open = (n) => (n.kind === "project" || n.kind === "owner" ? walkTo(n) : n.kind === "entry" && opts.onEntry ? opts.onEntry(n, ...screenOf(n)) : n.kind === "topic" && opts.onTopic ? opts.onTopic(n, ...screenOf(n)) : n.action ? n.action() : nav.open(n.href));
-  window.addEventListener("mouseup", () => { if (nameDown) { const n = nameDown; nameDown = null; walkTo(n); return; } if (drag && !moved) open(drag); else if (pan && !moved) opts.onBlank?.(); drag = null; pan = null; canvas.classList.remove("ktw-grabbing"); });
+  // the end of a drag, a pan or a click on a name: asks first whether its loop is done (a button let go after the
+  // canvas left the page opens nothing); the same function is added and removed
+  const onUp = () => { if (retired()) return retire(); if (nameDown) { const n = nameDown; nameDown = null; walkTo(n); return; } if (drag && !moved) open(drag); else if (pan && !moved) opts.onBlank?.(); drag = null; pan = null; canvas.classList.remove("ktw-grabbing"); };
+  window.addEventListener("mouseup", onUp); // a drag or a pan ends wherever the button comes up
   canvas.onmouseleave = () => { hover = null; hoverName = null; };
   canvas.onwheel = (ev) => { ev.preventDefault(); V.userMoved = true; const r = canvas.getBoundingClientRect(); zoomTo(V.scale * Math.exp(-ev.deltaY * 0.0012), ev.clientX - r.left - W / 2, ev.clientY - r.top - H / 2); };
   canvas.ondblclick = (ev) => { const r = canvas.getBoundingClientRect(); const n = pick(ev.clientX - r.left, ev.clientY - r.top); if (n) { n.fixed = false; g.alpha = 0.4; } };
@@ -143,18 +172,54 @@ function runGraph(canvas, g, opts = {}) {
   });
   const ev = (n) => n.entry.evidence;
   const evColor = { confirmed: color("--ktw-confirmed"), inferred: color("--ktw-inferred"), unknown: color("--ktw-unknown") };
-  let lastT = 0, frame = 0;
+  let lastT = 0, frame = 0, drawn = false; // drawn: this canvas has shown the graph once
+  // a loop whose canvas left the page, or a copy the graph replaced since, stops before it touches anything: a frame
+  // already asked for must not turn, place or step the graph's nodes with this view's switches, nor write to the
+  // lifecycle it shares with the copy that runs now
+  // It lets go of everything it holds once (retire): the observers, the scene's events, the window's and the
+  // canvas's listeners. A loop learns it is done in three ways: the graph runs again elsewhere, or runs another copy
+  // (the next loop retires the one before, runnerOf the copy before); or anything that would wake it — a frame, the
+  // scene, a resize, the pointer — finds it retired, so an idle loop whose canvas left the page lets go at the next
+  // such event instead of holding the canvas and its graph for good.
+  let gone = false;
+  const retired = () => gone || !canvas.isConnected || (g.of && g.of.runner !== g);
+  const retire = () => {
+    if (gone) return; gone = true;
+    ro.disconnect(); ro2.disconnect(); for (const off of listening) off();
+    window.removeEventListener("mouseup", wake); window.removeEventListener("mouseup", onUp); for (const evn of WAKERS) canvas.removeEventListener(evn, wake);
+    if (g.stopLoop === retire) g.stopLoop = null;
+    if (g.wake === wake) g.wake = null; // the graph outlives its canvases: it must not hold this one, nor its page, through the wake
+    if (g.raf) cancelAnimationFrame(g.raf); g.raf = null; // a frame still asked for is not wanted: called off
+  };
+  const live = (fn) => (...a) => (retired() ? retire() : fn(...a)); // a listener that first asks whether its loop is done
   function step(now) {
+    if (retired()) { retire(); return; }
     const dt = lastT && now ? Math.min(100, now - lastT) : 16; lastT = now || 0;
     const drifting = driftOn() && !hover && !drag && !pan && !pinch;
     if (drifting) { const a = DRIFT_RATE * dt, c = Math.cos(a), sn = Math.sin(a); for (const n of g.nodes) { const x = n.x, y = n.y; n.x = x * c - y * sn; n.y = x * sn + y * c; } }
     // settled and only turning: every other frame is enough
-    if (drifting && g.alpha <= 0.003 && (frame++ & 1)) { g.raf = canvas.isConnected ? requestAnimationFrame(step) : null; return; }
+    if (drifting && g.alpha <= LAYOUT.MIN_ALPHA && (frame++ & 1)) { g.raf = canvas.isConnected ? requestAnimationFrame(step) : null; return; }
     const ns = g.nodes.filter(visible);
-    if (g.alpha > 0.003) g.alpha = layoutTick(g.nodes, g.links, g.alpha, { visible, linkOn }); // the forces are ktw-core.js's
+    // a node shown that is not laid out yet — the day, a lit thought or the entries switch brought it into view — is
+    // placed where it hangs now and laid out, alone (core placeShown)
+    if (!g.placing && !g.relayout && g.nodes.some((n) => n.seeded && visible(n))) placeShown(g, { visible });
+    const was = g.alpha;
+    // the forces are ktw-core.js's. With motion off, a graph not shown yet settles first, in slices of a frame's
+    // time, and is drawn once, settled and framed; with motion on, it settles a step a frame, as it is drawn.
+    if (!drawn && !driftOn() && g.alpha > LAYOUT.MIN_ALPHA) {
+      const t0 = performance.now();
+      do stepLayout(g, { visible, linkOn }); while (g.alpha > LAYOUT.MIN_ALPHA && performance.now() - t0 < SETTLE_SLICE_MS);
+      if (g.alpha > LAYOUT.MIN_ALPHA) {
+        // still settling: the canvas says so instead of staying empty
+        publishLayout(g); ctx.clearRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.fillStyle = color("--ktw-fg2"); ctx.font = `13px ${color("--ktw-font") || "sans-serif"}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(tw("graph.layingOut", "laying out {n:node}…", { n: ns.length }), W / 2, H / 2);
+        g.raf = canvas.isConnected ? requestAnimationFrame(step) : null; return;
+      }
+    } else if (g.alpha > LAYOUT.MIN_ALPHA) { const t0 = performance.now(); do stepLayout(g, { visible, linkOn }); while (g.alpha > LAYOUT.MIN_ALPHA && performance.now() - t0 < FRAME_LAYOUT_MS); }
     publishLayout(g);
-    // keep the canvas framed on the nodes while they settle: the small one always, the family graph until the person moves it
-    if ((mini || ((opts.fit || V.needFit) && !V.userMoved)) && (g.alpha > 0.01 || V.needFit) && W && H) {
+    const settledNow = was > LAYOUT.MIN_ALPHA && g.alpha <= LAYOUT.MIN_ALPHA;
+    // keep the canvas framed on the nodes while they settle, and once more where they came to rest: the small one
+    // always, the family graph until the person moves it
+    if ((mini || ((opts.fit || V.needFit) && !V.userMoved)) && (g.alpha > 0.01 || V.needFit || settledNow) && W && H) {
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
       for (const n of ns) { minX = Math.min(minX, n.x - n.r); maxX = Math.max(maxX, n.x + n.r); minY = Math.min(minY, n.y - n.r); maxY = Math.max(maxY, n.y + n.r + 18); }
       const pad = mini || narrow() ? 60 : 140;
@@ -235,9 +300,9 @@ function runGraph(canvas, g, opts = {}) {
         ctx.font = hubName ? `600 ${(mini ? 12 : 13) / V.scale}px ${color("--ktw-font") || "sans-serif"}` : `${(mini ? 11 : 12) / V.scale}px ${color("--ktw-font") || "sans-serif"}`;
         const lbl = n.label.replace(/`/g, ""); const txt = lbl.length > maxLen ? lbl.slice(0, maxLen - 2) + "…" : lbl;
         const mark = hubName ? hostPath(n.canonical) : null; const iw = mark ? (mini ? 12 : 13) / V.scale : 0; const gap = mark ? 4 / V.scale : 0;
-        const tw = ctx.measureText(txt).width; const y = n.y + n.r + 3 / V.scale;
-        const left = n.x - (tw + iw + gap) / 2; const tx = left + iw + gap + tw / 2; // the mark before the name, the pair centred
-        const box = { x0: left - 3 / V.scale, y0: y - 1 / V.scale, x1: tx + tw / 2 + 3 / V.scale, y1: y + 15 / V.scale };
+        const textW = ctx.measureText(txt).width; const y = n.y + n.r + 3 / V.scale;
+        const left = n.x - (textW + iw + gap) / 2; const tx = left + iw + gap + textW / 2; // the mark before the name, the pair centred
+        const box = { x0: left - 3 / V.scale, y0: y - 1 / V.scale, x1: tx + textW / 2 + 3 / V.scale, y1: y + 15 / V.scale };
         if (!must && !free(box)) continue;
         placed.push(box);
         ctx.fillStyle = color("--ktw-bg"); ctx.globalAlpha = faded ? 0.4 : 0.75; ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, 15 / V.scale); ctx.globalAlpha = faded ? 0.5 : 1;
@@ -251,34 +316,37 @@ function runGraph(canvas, g, opts = {}) {
       }
     }
     ctx.restore();
-    if (!canvas.isConnected) { ro.disconnect(); g.raf = null; for (const off of listening) off(); return; }
-    const busy = g.alpha > 0.003 || drag || pan || pinch || hover || driftOn();
+    drawn = true;
+    if (retired()) { retire(); return; } // gone while it drew
+    const busy = g.alpha > LAYOUT.MIN_ALPHA || drag || pan || pinch || hover || driftOn();
     g.raf = busy ? requestAnimationFrame(step) : null; // idle: no frames until something happens
   }
-  const wake = () => { if (!g.raf && canvas.isConnected) g.raf = requestAnimationFrame(step); };
-  // the scene's changes this graph follows, until its canvas leaves the page
+  const wake = live(() => { if (!g.raf) g.raf = requestAnimationFrame(step); });
+  // the scene's changes this graph follows, until its loop is done
   const listening = [
-    scene.on("day", (day, { grew }) => { if (grew && g.alpha < 0.2) g.alpha = 0.2; g.wake?.(); }),
-    scene.on("focus", () => g.wake?.()),
-    scene.on("thought", (t) => lightThought(g, t)),
-    scene.on("spot", (canonical, root) => spotIn(g, canonical, root)),
-    scene.on("wake", () => g.wake?.()),
+    scene.on("day", wake), // what the day brings into view is laid out by the step (placeShown); the rest stays
+    scene.on("focus", wake),
+    scene.on("thought", live((t) => lightThought(g, t))),
+    scene.on("spot", live((canonical, root) => spotIn(g, canonical, root))),
+    scene.on("wake", wake),
   ];
-  for (const evn of ["mousemove", "mousedown", "wheel", "dblclick", "touchstart", "touchmove", "mouseleave"]) canvas.addEventListener(evn, wake, { passive: true });
+  for (const evn of WAKERS) canvas.addEventListener(evn, wake, { passive: true });
   window.addEventListener("mouseup", wake);
   g.wake = wake;
   ro.observe(canvas); // re-observe after the resize handler above; a resize wakes the loop
-  const ro2 = new ResizeObserver(() => { resize(); if (g.alpha < 0.05) g.alpha = 0.05; wake(); }); ro2.observe(canvas);
+  const ro2 = new ResizeObserver(live(() => { resize(); if ((mini || opts.fit) && !V.userMoved) V.needFit = true; wake(); })); ro2.observe(canvas); // reframed, not laid out again
   if (g.raf) cancelAnimationFrame(g.raf);
+  g.stopLoop?.(); g.stopLoop = retire; // this graph's loop before, on another canvas, is done
   g.raf = requestAnimationFrame(step);
 }
 
 // ---- the graph's data: nodes and links from topics and entries, and the neighbourhood of a topic or an entry. Links
-// go through nav; `prev` holds the nodes of a graph drawn before, so a node keeps its place.
+// go through nav; `prev` holds the nodes of a graph drawn before, so a node keeps its place. A node new to the
+// graph starts where ktw-core.js seedLayout puts it, once the links are known.
 function seedNode(n, prev) {
   const p = prev[n.id];
-  if (p) Object.assign(n, { x: p.x, y: p.y, vx: 0, vy: 0, fixed: p.fixed });
-  else { n.x = (Math.random() - 0.5) * 600; n.y = (Math.random() - 0.5) * 400; n.vx = n.vy = 0; }
+  if (p) carryNode(n, p);
+  else { n.x = n.y = undefined; n.vx = n.vy = 0; }
   return n;
 }
 function assemble(topics, entries, prev = {}) {
@@ -304,6 +372,7 @@ function assemble(topics, entries, prev = {}) {
     const ts = index[`t:${a.file}`], tt = index[`t:${b.file}`]; const k = `${ts}|${tt}`;
     if (a.file !== b.file && ts != null && tt != null && !tpairs.has(k)) { tpairs.add(k); links.push({ s: ts, t: tt, kind: "xtopic", len: 200, day }); }
   }
+  seedLayout(nodes, links);
   return { nodes, links, index };
 }
 // the Ids an entry points at, and the entries of `list` that point at it
@@ -329,7 +398,7 @@ function buildSubgraph(e, prev = {}) {
 
 return Object.freeze({
   assemble, buildSubgraph, buildTopicSubgraph,
-  run: runGraph, lightThought, spotIn, projectNodes, miniView, publishLayout, hostPath,
+  run: runGraph, runnerOf, lightThought, spotIn, projectNodes, miniView, publishLayout, hostPath,
   driftOn, setDrift, labels: () => LABELS, setLabels, labelsOn,
 });
 }

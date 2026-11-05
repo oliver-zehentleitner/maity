@@ -24,6 +24,7 @@ from maity_hub import (
 )
 from maity_hub import handles as handle_book
 from maity_hub import tables as t
+from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
@@ -1077,7 +1078,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
         select(t.card.c.parent, t.card.c.status).where(t.card.c.parent.in_(children))
     ):
         children[child.parent]["total"] += 1
-        children[child.parent]["open"] += child.status not in ("done", "cancelled")
+        children[child.parent]["open"] += child.status not in CLOSED
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
@@ -1271,6 +1272,22 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         if human_ids
         else {}
     )
+    agent_ids = {r.actor_agent_id for r in rows if getattr(r, "actor_agent_id", None)}
+    agent_rows = {}
+    if agent_ids:
+        owner = t.human.alias("agent_owner")
+        agent_rows = {
+            r.id: r
+            for r in conn.execute(
+                select(
+                    t.agent_profile.c.id,
+                    t.agent_profile.c.handle,
+                    owner.c.handle.label("owner_handle"),
+                )
+                .join(owner, owner.c.id == t.agent_profile.c.owner_id)
+                .where(t.agent_profile.c.id.in_(agent_ids))
+            ).all()
+        }
     runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
     runner_names = (
         dict(
@@ -1322,6 +1339,17 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
             if who is not None and deleted(who):
                 actor.update(deleted_person())
+        elif getattr(row, "actor_agent_id", None) is not None:  # §8.1, §9.5
+            who = agent_rows.get(row.actor_agent_id)
+            actor = {
+                "kind": "agent",
+                "id": row.actor_agent_id,
+                "handle": who.handle if who is not None else None,
+                "name": (
+                    mentions.global_name(who.owner_handle, who.handle) if who is not None else None
+                ),
+                "instance": row.actor_instance,
+            }
         elif row.actor_report_id is not None:  # §16.8: the admin is named in the report only
             actor = {"kind": "moderation", "report_id": row.actor_report_id}
         elif row.actor_runner_id is not None:  # §15.10

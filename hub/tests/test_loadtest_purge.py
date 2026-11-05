@@ -119,8 +119,8 @@ def test_purge_takes_only_lt_and_a_number(migrated: Engine, make_client: ClientF
 def test_purge_leaves_a_real_account_called_lt_and_a_number(
     migrated: Engine, make_client: ClientFactory
 ) -> None:
-    """`lt-<n>` is no reserved handle: a real person called `lt-7`, with a project of their own,
-    passes every refusal, and only the seed's password marker keeps them out."""
+    """An account made before the reservation, called `lt-7` with a real password hash and a
+    project of its own, is not the seed's: `purge` still requires the password marker."""
     person = flow.human(make_client, migrated, "lt-7")
     flow.project(person)
     before = everything(migrated)

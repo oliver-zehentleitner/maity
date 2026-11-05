@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import catalog, clock, paths, product_line
+from maity_hub import catalog, clock, landing, link_frame, paths, render
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import second_factor, sessions, sign_in_settings
@@ -282,12 +282,18 @@ def _token(hub: Settings, token: str) -> dict[str, Any] | None:
     return payload
 
 
-def _dead() -> HTMLResponse:
-    return HTMLResponse(
-        f"{product_line.HEAD}<h1>This link no longer works.</h1>{product_line.html('en')}",
-        status_code=404,
-        headers=product_line.HEADERS,
+# The link page and the dead-link page stand in the frame of the pages without a session, as
+# the dashboard's `/login` stands, under the mail link pages' one policy (§16.7.5).
+_page = link_frame.page
+
+
+def _dead(conn: Connection, request: Request) -> HTMLResponse:
+    """Never which reason (§2.6.3); nobody is known, so the browser's language."""
+    language = render.choose_language(
+        list(landing.LANGUAGES), "en", None, request.headers.get("accept-language")
     )
+    words = catalog.section("mail_links", language)
+    return _page(conn, request, language, words["dead"], f"<h1>{escape(words['dead'])}</h1>", 404)
 
 
 @page_router.get("/mail/sign-in/{token}")
@@ -297,9 +303,9 @@ def link_page(token: str, request: Request) -> HTMLResponse:
     require_secure_transport(origin_of(request), settings_of(request).allow_plain_http)
     hub = settings_of(request)
     payload = _token(hub, token)
-    if payload is None:
-        return _dead()
     with engine_of(request).begin() as conn:
+        if payload is None:
+            return _dead(conn, request)
         _enabled(conn, hub)
         row = links.live(conn, nonce_hash=links.digest(payload["n"]))
         if (
@@ -307,23 +313,23 @@ def link_page(token: str, request: Request) -> HTMLResponse:
             or row.human_id != payload["h"]
             or _eligible(conn, hub, row.human_id, row.address_epoch) is None
         ):
-            return _dead()
+            return _dead(conn, request)
         human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
         language = preferences.text_language(conn, row.human_id)
         name = f"{human.display_name} ({human.handle})"
-    form = secrets.token_urlsafe(32)
-    words = catalog.section("sign_in", language)
-    title = words["page_title"].format(name=name)
-    button = escape(words["page_button"])
-    response = HTMLResponse(
-        '<!doctype html><html><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width">'
-        f"<title>{escape(title)}</title>{product_line.HEAD}</head><body><h1>{escape(title)}</h1>"
-        f'<form method="post"><input type="hidden" name="form" value="{form}">'
-        f'<button type="submit">{button}</button></form>'
-        f"{product_line.html(language, 'sign_in')}</body></html>",
-        headers=product_line.HEADERS,
-    )
+        form = secrets.token_urlsafe(32)
+        words = catalog.section("sign_in", language)
+        title = words["page_title"].format(name=name)
+        response = _page(
+            conn,
+            request,
+            language,
+            title,
+            f"<h1>{escape(title)}</h1>"
+            f'<form method="post"><input type="hidden" name="form" value="{form}">'
+            f'<button type="submit" class="btn btn-primary">{escape(words["page_button"])}'
+            "</button></form>",
+        )
     response.set_cookie(
         FORM_COOKIE,
         form,
@@ -350,18 +356,18 @@ async def complete_link(token: str, request: Request) -> Response:
         raise forbidden(message="the form does not match")
     hub = settings_of(request)
     payload = _token(hub, token)
-    if payload is None:
-        return _dead()
     with engine_of(request).begin() as conn:
+        if payload is None:
+            return _dead(conn, request)
         _enabled(conn, hub)
         row = links.live(conn, nonce_hash=links.digest(payload["n"]))
         if row is None or row.human_id != payload["h"]:
-            return _dead()
+            return _dead(conn, request)
         links.lock_human(conn, row.human_id)
         if _eligible(conn, hub, row.human_id, row.address_epoch) is None or not links.use(
             conn, row
         ):
-            return _dead()
+            return _dead(conn, request)
         answer, sid, csrf, device = _complete(conn, request, row, "email_link")
     response = RedirectResponse(answer.get("next", "/"), status_code=303)
     _cookies(response, request, sid, csrf, device)
