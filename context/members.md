@@ -160,7 +160,9 @@ that names no account: `GET /avatars/public/{digest}`, the digest of
 the stored image. `GET /avatars/{id}` keeps the reader list of §6.10
 and never answers a stranger. A person's page and an agent's page draw the
 picture at 128 pixels, and a neutral placeholder without an image when
-there is none or the person's `public_profile` is off. An
+there is none or the person's `public_profile` is off; an agent always
+has a picture since entry 11881a0c, so only a person's page draws the
+placeholder. A motif's digest answers at that address at every time. An
 organisation's picture stays private. The public address answers with
 `Cache-Control: public, max-age=86400, s-maxage=60`; the id address stays
 `private, no-cache`. The hub serves 32, 64, 128 and 256 pixels (`?s=`),
