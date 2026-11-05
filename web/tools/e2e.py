@@ -2573,14 +2573,14 @@ def fixture_views(run: Run, browser) -> None:
         page.goto(f"{index}#/maintainer/maity/why/timeline")
         expect(page.locator("main .why-main .ktw-stage-seg button.ktw-on").first).to_be_visible()
         assert not errors, errors
+        run.shot(page, "fixtures-why-timeline")
+        run.a11y(page, "fixtures: why timeline")
+        errors.clear()
         # Thoughts reads its graph before it draws and gave up when its box was not yet in the
         # page (js/ktw-host.js drawWhenShown): its chains show, no "Loading…" for good.
         page.goto(f"{index}#/maintainer/maity/why/thoughts")
         expect(page.locator("main .why-main .ktw-thoughts-page .ktw-stats")).to_be_visible()
         assert not errors, errors
-        run.shot(page, "fixtures-why-timeline")
-        run.a11y(page, "fixtures: why timeline")
-        errors.clear()
         page.goto(f"{index}?ktw=unavailable#/maintainer/maity/why")
         expect(page.locator("main")).to_contain_text("shown is its last good read")
         expect(page.locator("main .why-main")).not_to_be_empty()
