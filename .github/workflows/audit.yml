@@ -1,7 +1,7 @@
 name: audit
 
 # The hub's locked dependencies (hub/requirements/*.txt), the CLI's release
-# build tools (cli/requirements/release.txt), the docs site's lock
+# build tools and dev tools (cli/requirements/release.txt, dev.txt), the docs site's lock
 # (tools/requirements/site.txt) and the browser end-to-end test's Playwright
 # (web/requirements/e2e.txt) against the known advisories (pip-audit, which
 # asks the PyPI vulnerability service). On every push to main and every pull
@@ -11,8 +11,10 @@ name: audit
 # "Dependencies"; for the site's lock it is a new pin in
 # tools/requirements/site.in and `make -C tools lock`; for the e2e lock it is a
 # new pin in web/requirements/e2e.in and `make -C web lock` (a package the hub's
-# runtime lock also holds moves there first). The CLI itself has no
-# dependencies; its release lock holds only what builds and checks the package.
+# runtime lock also holds moves there first); for the CLI's dev lock it is the
+# hub's dev lock first for a tool both name, then `make -C cli lock`. The CLI
+# itself has no dependencies; its release lock holds only what builds and checks
+# the package, its dev lock what lints, types and tests it.
 on:
   push:
     branches: [main]
@@ -59,10 +61,12 @@ jobs:
               --require-hashes --disable-pip --progress-spinner off --desc on || status=1
             echo "::endgroup::"
           done
-          echo "::group::cli/requirements/release.txt"
-          "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../cli/requirements/release.txt \
-            --require-hashes --disable-pip --progress-spinner off --desc on || status=1
-          echo "::endgroup::"
+          for lock in release dev; do
+            echo "::group::cli/requirements/$lock.txt"
+            "$RUNNER_TEMP/audit/bin/pip-audit" --requirement "../cli/requirements/$lock.txt" \
+              --require-hashes --disable-pip --progress-spinner off --desc on || status=1
+            echo "::endgroup::"
+          done
           echo "::group::web/requirements/e2e.txt"
           "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../web/requirements/e2e.txt \
             --require-hashes --disable-pip --progress-spinner off --desc on || status=1
