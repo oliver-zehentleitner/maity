@@ -4947,3 +4947,32 @@ Eight rules of `ktw-views.css` write `#fff` on the library's accent (selected co
 **Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
 
 **Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one. Checking only the export's fields, or only what the library writes: the fields keep a bad link from shaping what the library builds from it, the check of the mounts covers links in entry text and any field a later library adds. An elsewhere view of Maity's own for a `centre`: a second rendering of an entry the library's pages already draw. A centred entry as its `ref` place: the library's `ref` resolves the entry and goes to it at that centre, which was the same address again, so the page never left "Looking for …"; and a child root had no place in it.
+
+## Join an agent asks for the second factor in its form, and names the project and the missing right
+
+**Id:** 2e60e51f-5e0e-4bd0-bc46-365b3c050d13
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's reports on tsk-trb99kkhv1rk (an owner could not create a join and saw only "you lack the rights"; the maintainer saw "this call needs your second factor first" with the second factor set to mail for everyone), 2026-11-05; hub/src/maity_hub/routes/joins.py (`create_join` calls `require_step_up`), docs/api.md §2.8.4; web/js/step-up.js
+**Revisit when:** the hub stops treating join creation as a sensitive call, or the dashboard gets one step-up place for every view
+
+Creating a join goes through `M.stepUp.run`, the same as every other
+sensitive call in the dashboard: on `step_up_required` the form asks for
+the code (by app, or the mailed code under the mail factor) and sends the
+join again; Cancel ends without a refusal. A bare `forbidden` with
+`scope: members:admin` (no admin rights, and members may not bring
+agents) is said in words that name the right. The panel names the project
+the join is for, by name and full name.
+
+**Reason:** the hub has always asked for the second factor on
+`POST …/joins`, but the join form showed it as a refusal: in English
+the hub's own sentence, translated as the generic "you do not have the
+rights for this", so an owner who had done nothing wrong could not add an
+agent at all. With several projects open the target project was only the
+tab's.
+
+**Rejected:** a hub change (the hub's rule is right; a sole owner may not
+make themselves admin either, the maintainer confirmed); a generic words
+entry for `step_up_required` in js/errors.js alone, which would say the
+cause but still leave no way to give the code.
