@@ -53,8 +53,7 @@ _CLOSE = {
     name: re.compile(rf"<!--\s*/keep-the-why:{name}\s*-->") for name in ("config", "children")
 }
 _RFC3339 = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
-_SETTING = re.compile(r"^\s*-\s*([A-Za-z0-9_-]+)\s*:\s*(.*?)\s*$")
-_CHILD = re.compile(r"^\s*-\s*([^:]+?)\s*:\s*(\S+)(?:\s+—\s+.*)?\s*$")
+_KEY = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
 _SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 _CONTROL = re.compile(
     "[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200b-\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ufeff"
@@ -127,9 +126,9 @@ def config(source: str) -> dict[str, str]:
     """The `- key: value` lines of the config block."""
     found: dict[str, str] = {}
     for line in _block(source, "config").splitlines():
-        match = _SETTING.match(line)
-        if match and match.group(1) not in found:
-            found[match.group(1)] = _unquote(match.group(2))
+        setting = _setting(line)
+        if setting and setting[0] not in found:
+            found[setting[0]] = _unquote(setting[1])
     return found
 
 
@@ -137,10 +136,53 @@ def children(source: str) -> list[tuple[str, str]]:
     """(name, location) of each line of the children block, in order."""
     found = []
     for line in _block(source, "children").splitlines():
-        match = _CHILD.match(line)
-        if match:
-            found.append((match.group(1), _unquote(match.group(2))))
+        child = _child(line)
+        if child:
+            found.append((child[0], _unquote(child[1])))
     return found
+
+
+# A list line is read in string steps, each one pass over the line, so the work grows with the
+# line's length: the patterns they replace tried every split of a run of whitespace: the child's
+# before its colon, which grew with the cube of the run, and the setting's after its value, with
+# the square.
+
+
+def _item(line: str) -> str | None:
+    """What follows a list line's `-`, without the whitespace before and after it."""
+    text = line.lstrip()
+    return text[1:].lstrip() if text.startswith("-") else None
+
+
+def _setting(line: str) -> tuple[str, str] | None:
+    """(key, value) of a `- key: value` line; a key of letters, digits, `_` and `-`."""
+    text = _item(line)
+    if text is None:
+        return None
+    end = next((i for i, char in enumerate(text) if char not in _KEY), len(text))
+    after = text[end:].lstrip()
+    if end == 0 or not after.startswith(":"):
+        return None
+    return text[:end], after[1:].strip()
+
+
+def _child(line: str) -> tuple[str, str] | None:
+    """(name, location) of a `- name: location` line, optionally followed by ` — ` and a
+    description."""
+    item = line.lstrip()
+    if not item.startswith("-"):
+        return None
+    name, colon, after = item[1:].partition(":")
+    if not colon or not name:
+        return None
+    # A name of whitespace only is its last character, as the pattern's backtracking found it.
+    name = name.strip() or name[-1]
+    after = after.lstrip()
+    end = next((i for i, char in enumerate(after) if char.isspace()), len(after))
+    rest = after[end:].lstrip()
+    if end == 0 or (rest and not (rest[:1] == "—" and rest[1:2].isspace())):
+        return None
+    return name, after[:end]
 
 
 def child_path(parent: str, location: str) -> str | None:

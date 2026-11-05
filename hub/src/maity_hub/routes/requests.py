@@ -39,6 +39,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.cards import CLOSED
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -270,6 +271,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
         "action": _action_view(row),
+        "report": _report_view(conn, row),  # set by the hub only (§16.8)
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -277,6 +279,31 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
     # A deleted account in the stored mentions or answer is shown as one (§2.9).
     [shaped] = shape_deleted(conn, [view | shown])
     return dict(shaped)
+
+
+def _report_view(conn: Connection, row: Any) -> dict[str, Any] | None:
+    """`{id, reason, type}` of the report a report request stands for (§7, §16.8): ids and
+    kinds, never its content."""
+    if row.report_id is None:
+        return None
+    found = conn.execute(
+        select(t.abuse_report.c.reason, t.abuse_report.c.target_type).where(
+            t.abuse_report.c.id == row.report_id
+        )
+    ).one()
+    return {"id": row.report_id, "reason": found.reason, "type": found.target_type}
+
+
+def _refuse_a_report_request(row: Any) -> None:
+    """Only resolving its report closes the instance admin's report request (§16.8): the
+    admin resolves under `/admin/reports/{id}`, after reading the snapshot."""
+    if row.report_id is not None:
+        raise ApiError(
+            409,
+            "resolve_the_report",
+            "this request closes when its report is resolved under /admin/reports",
+            {"report": row.report_id},
+        )
 
 
 def _holder(conn: Connection, row: Any) -> str:
@@ -553,7 +580,7 @@ def create_request(
             and body.while_open == "wait"
             and holder is not None  # an unheld card is nobody's to block
             and holder in (mine.id, on_behalf)
-            and card.status not in ("blocked", "done", "cancelled")
+            and card.status not in ("blocked", *CLOSED)
         ):
             # The asker waits: the card shows it, and remembers where it was (§6.4).
             conn.execute(
@@ -1197,7 +1224,13 @@ def answer(
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
         proposals.settle(
-            conn, row, outcome, mine.principal_id, caller.actor(mine.id), reply_id=body.reply_id
+            conn,
+            row,
+            outcome,
+            mine.principal_id,
+            caller.actor(mine.id),
+            reply_id=body.reply_id,
+            hub=settings_of(request),
         )
         # An `adopt` of a jour fixe proposal opens its card (§20.6).
         jour_fixe_triage.settle(
@@ -2087,10 +2120,16 @@ def _locked_personal(
         orgs.lock(conn, org_id)
     if row.project_id is not None:
         lock_project(conn, row.project_id)
-    elif row.filed_by == "hub" and row.org_id is None and row.to_human is not None:
-        # The owner's digest (§5.3), found by its shape (hub, no project, no organisation), so a
-        # digest filed before the stored lines counts too: the hourly pass withdraws it under the
-        # owner's row, and an answer takes the same lock first, never the request's row first.
+    elif (
+        row.filed_by == "hub"
+        and row.org_id is None
+        and row.report_id is None
+        and row.to_human is not None
+    ):
+        # The owner's digest (§5.3), found by its shape (hub, no project, no organisation, no
+        # report), so a digest filed before the stored lines counts too: the hourly pass
+        # withdraws it under the owner's row, and an answer takes the same lock first, never the
+        # request's row first. A report's request has the same shape but is refused below.
         records.lock_human(conn, row.to_human)
     return _personal(conn, caller, request_id, asker=asker)
 
@@ -2185,6 +2224,7 @@ def answer_personal(
     def action(conn: Connection) -> idempotency.Outcome:
         row = _locked_personal(conn, caller, request_id)
         _refuse_unless_open(row)
+        _refuse_a_report_request(row)
         proposals.require_known(row)
         _check_answer(row, body)
         _step_up_for_a_transfer(conn, request, caller, row, body)
@@ -2229,7 +2269,13 @@ def answer_personal(
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
         proposals.settle(
-            conn, _row(conn, row.id), outcome, caller.human_id, actor, reply_id=body.reply_id
+            conn,
+            _row(conn, row.id),
+            outcome,
+            caller.human_id,
+            actor,
+            reply_id=body.reply_id,
+            hub=settings_of(request),
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
@@ -2266,6 +2312,7 @@ def withdraw_personal(
     def action(conn: Connection) -> idempotency.Outcome:
         row = _locked_personal(conn, caller, request_id, asker=True)
         _refuse_unless_open(row)
+        _refuse_a_report_request(row)
         member = _member_of(conn, row.project_id, caller.human_id)
         done = conn.execute(
             update(t.request)
@@ -2397,6 +2444,56 @@ def file_hub_digest(
     )
     records.personal_request(conn, _row(conn, request_id))
     return request_id
+
+
+def file_hub_report(conn: Connection, human_id: str, report_id: str, title_text: str) -> str:
+    """The instance admin's request about a new abuse report (§16.8): a personal request to
+    the admin in person, `filed_by: hub`, class `info`, with no options and so no replies, no
+    asker, no project and no organisation. It cannot be answered or withdrawn by the admin
+    (`resolve_the_report`); `withdraw_report_request` closes it with its report. Without a
+    project it has no events; the admin hears of it through its record, mailed by the
+    `inbox` mode."""
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": None,
+                "org_id": None,
+                "class": "info",
+                "title": title_text[: t.TITLE],
+                "summary": None,
+                "options": [],
+                "priority": "normal",
+                "to_kind": "human",
+                "to_human": human_id,
+                "personal": True,
+                "filed_by": "hub",
+                "asked_by": None,
+                "asked_by_human": None,
+                "asked_session_id": None,
+                "while_open": "wait",
+                "status": "open",
+                "report_id": report_id,
+                "humans_only": True,
+                "created_at": clock.now(),
+            }
+        )
+    )
+    records.personal_request(conn, _row(conn, request_id))
+    return request_id
+
+
+def withdraw_report_request(conn: Connection, report_id: str, reason: str) -> None:
+    """Withdraw the open report request of `report_id`, if any (§16.8): `resolved` or
+    `expired`."""
+    found = conn.execute(
+        select(t.request.c.id).where(
+            t.request.c.report_id == report_id, t.request.c.status == "open"
+        )
+    ).scalars()
+    for request_id in list(found):
+        close_request(conn, request_id, "withdrawn", None, reason=reason)
 
 
 def withdraw_hub_notice(conn: Connection, request_id: str | None, reason: str) -> None:

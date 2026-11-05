@@ -48,7 +48,8 @@ window.Maity = window.Maity || {};
   const byHub = (req) => !req.asked_by && req.filed_by === "hub";
   // The not-listening digest (§5.3): the hub's, personal, about no project
   // and no organisation; it leads to one's agents.
-  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org;
+  // A report's request (§16.8) is the hub's too, without project or organisation, but no digest.
+  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org && !req.report;
 
   function asker(req) {
     const by = req.asked_by ? req.asked_by.display_name : byHub(req) ? "Maity" : "—";
@@ -85,7 +86,12 @@ window.Maity = window.Maity || {};
     if (to.startsWith("trust:")) return M.t("inbox.to.trust", { trust: to.slice(6) });
     if (to === ctx.me.id) return M.t("inbox.to.you");
     if (to.startsWith("profile_owner:")) return M.t("inbox.to.profile_owner");
-    return ref(ctx, req, { member_id: to, display_name: ctx.nameOf ? ctx.nameOf(to) : to });
+    // A human in person (`human:<id>`) and one instance of an agent
+    // (`<member>#<instance>`, §6.17) name their member apart from the form.
+    const human = to.startsWith("human:") ? to.slice(6) : null;
+    if (human && human === ctx.me.id) return M.t("inbox.to.you");
+    const [id, instance] = human ? [human, null] : to.split("#");
+    return ref(ctx, req, { member_id: id, display_name: ctx.nameOf ? ctx.nameOf(id) : id, instance: instance || null });
   }
 
   // In the cross-project view: the project's logo or monogram, its name
@@ -112,6 +118,8 @@ window.Maity = window.Maity || {};
   function hiddenLabel(req, names) {
     const name = names.project(req) || (req.org ? "@" + req.org.handle : "");
     if (!req.personal) return M.t("inbox.label.project", { name });
+    // Neither project nor organisation (a report's request, §16.8): Personal alone.
+    if (!name) return M.t("inbox.label.personal_alone");
     return req.project && req.org ? M.t("inbox.label.personal_into", { name, org: req.org.handle }) : M.t("inbox.label.personal", { name });
   }
 
@@ -140,16 +148,20 @@ window.Maity = window.Maity || {};
     return computedGo ? "reply primary" : "reply";
   }
 
-  // A member named in an entry, as a link to them in the request's own
-  // project; a personal request's project may be one the human is not in,
-  // so there they stay text.
-  // A link only to someone this page knows is a member of the request's
-  // project: its own project's member list. Across projects that list is
-  // not read, so there, and for a personal request, they stay text.
+  // A member named in an entry (who asked, on whose behalf, to whom), as a
+  // link to them and their instance in the request's own project (§7): their
+  // page there, Sessions with the instance chosen. Only one that project's
+  // member list names is linked: inside a project from its list, across
+  // projects from the list of each request's project (`membersOf`). One it
+  // does not list stays text, the way the project's inbox shows them: a
+  // member removed since, a human who asks without a membership (§6.26), a
+  // project the reader is not in, a list that could not be read.
   function ref(ctx, req, person) {
     const id = person && (person.member_id || person.id);
-    const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
-    const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
+    const list = ctx.scope === "project" ? ctx.memberById : membersOf[req.slug];
+    const m = id && list ? list[id] : null;
+    const link = (view, ...rest) => ctx.projectLink(req.slug, view, ...rest);
+    const view = { memberById: m ? { [id]: m } : {}, link, nameOf: ctx.nameOf };
     return M.dom.memberRef(view, person, { instance: person && person.instance });
   }
 
@@ -174,6 +186,11 @@ window.Maity = window.Maity || {};
   // The member ids of the reader's own agent profiles (GET /agents), read once
   // per view: who Talk may go to across projects and for personal requests.
   let ownAgents = new Set();
+
+  // Across projects, the members of each request's project by id (GET
+  // …/members), read once per view for the reader's projects the list shows:
+  // whom `ref` links there. A project whose list fails is left out.
+  let membersOf = {};
 
   // Talk ("neither, let's talk") is the human's who owns the asking agent
   // (§7), and the agent must read the answer. The request does not say so, so
@@ -340,11 +357,14 @@ window.Maity = window.Maity || {};
     }
 
     const status = M.statusLine();
+    // What stays disabled once a refused answer gives the controls back (Talk, Send without words).
+    let settle = null;
     const send = (payload, verb) => {
       body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = true; });
       status.busy(M.t("inbox.sending"));
       onAnswer(req, payload, verb).catch((err) => {
         body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = false; });
+        if (settle) settle();
         status.fail(M.t("inbox.not_sent"), err);
       });
     };
@@ -368,24 +388,56 @@ window.Maity = window.Maity || {};
     const text = h("textarea", { id: textId, rows: "3", placeholder: M.t("inbox.reply_placeholder") });
     // The one field above the buttons is always writable: a reply or Talk
     // takes its text along when it holds any (§7); Send is the answer in
-    // words alone, offered where there are no replies to press. A preference
-    // proposal's words go with its Decline, in the review.
+    // words alone, beside the replies too (below). A preference proposal's
+    // words go with its Decline, in the review.
     // Inside a project the trust is known: only the owner answers an action (§2.3).
     const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
     if (notOwner) append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only")));
-    const noField = preference || unread || notOwner;
+    // The instance admin's request about a new abuse report (§16.8) has no answer: it closes
+    // when the report is resolved, under Admin → Reports, after its snapshot was read.
+    const reportReq = !!req.report;
+    const noField = preference || unread || notOwner || reportReq;
     const replies = noField ? [] : req.replies || [];
     const withText = (payload) => {
       const value = text.value.trim();
       return value ? Object.assign({}, payload, { text: value }) : payload;
     };
+    // Send is on every request with a field: the words alone are an answer (§7), Ctrl+Enter
+    // the same. Not where the hub refuses them (a takeover's reply is required) or reads them as
+    // No (a consent's proposal or placement, §15.6): the request view does not say which consent
+    // carries one, so no consent, action or takeover gets the words alone; it stays, disabled,
+    // and says why (web/context/views.md).
+    const wordsAlone = req.class !== "consent" && !req.action && !req.placement && !req.takeover_id;
     const sendWords = () => {
       const value = text.value.trim();
+      if (!wordsAlone) return;
       if (!value) { text.focus(); return; }
       send({ text: value });
     };
-    const sendText = noField || replies.length ? null : h("button", { type: "button", class: "reply", onclick: sendWords }, M.t("inbox.send"));
-    if (sendText) M.dom.sendOnCtrlEnter(text, sendWords, sendText);
+    const hintId = textId + "-hint";
+    // A takeover's request needs one of its replies (§6.19): the hub refuses `talk` as it refuses the words alone.
+    const talkable = canTalk(ctx, req) && !notOwner && !req.takeover_id;
+    // Not where no answer is possible yet: a call for the owner alone, a request not read in full;
+    // nor on a report's request, which has no answer at all (§16.8).
+    const showTalk = !notOwner && !unread && !reportReq;
+    const talkWhy = talkable || !showTalk ? null : req.takeover_id ? M.t("inbox.talk_takeover")
+      : req.filed_by === "hub" ? M.t("inbox.talk_hub") : M.t("inbox.talk_not_yours");
+    // No reason for a Send that is not there (no field: a preference review, an unread or a call for the owner alone).
+    const sendWhy = wordsAlone || noField ? null : M.t("inbox.send_needs_reply");
+    const why = [sendWhy, talkWhy].filter(Boolean);
+    const sendText = noField ? null : h("button", { type: "button", class: "reply send", onclick: sendWords,
+      "aria-describedby": sendWhy ? hintId : null }, M.t("inbox.send"));
+    const empty = () => { if (sendText) sendText.disabled = !wordsAlone || !text.value.trim(); };
+    if (sendText) {
+      empty();
+      text.addEventListener("input", empty);
+      // Ctrl+Enter only where Send can ever send: a Send disabled for good announces no shortcut.
+      if (wordsAlone) M.dom.sendOnCtrlEnter(text, sendWords, sendText);
+    }
+    const talk = h("button", { type: "button", class: "reply talk", "aria-describedby": talkWhy ? hintId : null,
+      onclick: () => { if (talkable) send(withText({ talk: true })); } }, M.t("inbox.talk"));
+    talk.disabled = !talkable;
+    settle = () => { empty(); talk.disabled = !talkable; };
     append(body,
       noField ? null : h("div", { class: "free-text" },
         h("label", { for: textId }, replies.length ? M.t("inbox.note_label") : M.t("inbox.free_text_label", { keys: M.dom.SEND_KEYS })),
@@ -401,9 +453,17 @@ window.Maity = window.Maity || {};
           title: M.t("inbox.later_title"),
           onclick: () => onLater(req),
         }, M.t("inbox.later")),
-        canTalk(ctx, req) && !notOwner ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
-        // Its human may withdraw a personal request, as nobody else can (§7).
-        req.personal ? h("button", {
+        // Talk on every request one can answer; where the hub takes `talk` from nobody here it stays,
+        // disabled, and says why (§7).
+        showTalk ? talk : null,
+        // Its human may withdraw a personal request, as nobody else can (§7); a report
+        // request only closes with its report (§16.8).
+        reportReq ? h("a", {
+          // a.button: a link drawn as the buttons beside it are.
+          class: "button primary reply open-report",
+          href: "/admin/reports/" + encodeURIComponent(req.report.id),
+        }, M.t("inbox.open_report")) : null,
+        req.personal && !reportReq ? h("button", {
           type: "button",
           class: "reply withdraw",
           onclick: () => {
@@ -417,6 +477,7 @@ window.Maity = window.Maity || {};
           ...replies.filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
         sendText),
+      why.length ? h("p", { class: "muted reply-hint", id: hintId }, why.join(" ")) : null,
       status.el);
 
     // Ownership is known inside a project only; across projects the link to
@@ -473,6 +534,12 @@ window.Maity = window.Maity || {};
   M.views.inbox = async function (ctx, root, args) {
     const items = await load(ctx);
     ownAgents = new Set();
+    membersOf = {};
+    if (ctx.scope !== "project") {
+      const slugs = [...new Set(items.map((r) => r.slug))].filter((s) => s && ctx.projects.some((p) => p.full_name === s));
+      await Promise.all(slugs.map((s) => M.api.getAll("/projects/" + M.api.projectPath(s) + "/members")
+        .then((r) => { membersOf[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
+    }
     // Inside a project the member list says whose an agent is; the profiles are needed across projects
     // and for a personal request only.
     if (ctx.scope !== "project" || items.some((r) => r.personal)) {

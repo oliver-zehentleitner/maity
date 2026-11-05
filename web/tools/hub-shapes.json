@@ -333,28 +333,10 @@
    "next_after": "string",
    "next_cursor": "null",
    "pinned": {
-    "array": {
-     "object": {
-      "actor": "null",
-      "at": "string",
-      "id": "string",
-      "kind": "string",
-      "project": "null",
-      "read": "boolean",
-      "record": "string",
-      "redacted": "boolean",
-      "target": {
-       "object": {
-        "id": "string",
-        "type": "string"
-       }
-      },
-      "title": "string",
-      "url": "string"
-     }
-    }
+    "array": null
    },
-   "server_time": "string"
+   "server_time": "string",
+   "sessions_rev": "string"
   }
  },
  "GET /projects/{project}": {
@@ -708,7 +690,7 @@
       "display_name": "string",
       "handle": "string",
       "handover": "null",
-      "harness": "null",
+      "harness": "string",
       "id": "string",
       "instances": {
        "array": {
@@ -718,20 +700,27 @@
          "created_at": "string",
          "credential_id": "string",
          "dormant": "null",
-         "harness": "null",
+         "harness": "string",
          "id": "string",
          "keep_the_why_acknowledge_by": "null",
          "keep_the_why_acknowledged_at": "null",
          "label": "string",
          "last_seen_at": "string",
          "lead": "boolean",
-         "model": "null",
+         "model": "string",
          "name": "string",
          "paused": "null",
          "presence": "string",
          "replaces": "null",
          "revoked_at": "null",
-         "session": "null",
+         "session": {
+          "object": {
+           "id": "string",
+           "listening": "boolean",
+           "not_listening_since": "null",
+           "started_at": "string"
+          }
+         },
          "shared_environment": {
           "array": null
          }
@@ -768,7 +757,7 @@
         }
        }
       },
-      "model": "null",
+      "model": "string",
       "name": "string",
       "org_owner": "boolean",
       "owner": {
@@ -794,7 +783,16 @@
       "reports_to": "null",
       "role": "string",
       "role_base": "string",
-      "session": "null",
+      "session": {
+       "object": {
+        "client": "null",
+        "harness": "string",
+        "id": "string",
+        "listening": "boolean",
+        "model": "string",
+        "started_at": "string"
+       }
+      },
       "shared_environment": {
        "array": null
       },
@@ -901,6 +899,7 @@
         }
        }
       },
+      "report": "null",
       "status": "string",
       "summary": "null",
       "takeover_id": "null",
@@ -1329,6 +1328,7 @@
         }
        }
       },
+      "report": "null",
       "status": "string",
       "summary": "string",
       "takeover_id": "null",
@@ -1515,6 +1515,69 @@
    "version": "string"
   }
  },
+ "PATCH /projects/{foreign_project}/members/{foreign}": {
+  "object": {
+   "action": "null",
+   "answer": "null",
+   "answered_at": "null",
+   "asked_by": {
+    "object": {
+     "avatar_url": "null",
+     "display_name": "string",
+     "instance": "null",
+     "member_id": "string",
+     "role": "string",
+     "session_id": "null",
+     "trust": "string"
+    }
+   },
+   "class": {
+    "form": "consent"
+   },
+   "cover": "null",
+   "created_at": "string",
+   "filed_by": "null",
+   "forwarding": {
+    "array": null
+   },
+   "holder": "string",
+   "humans_only": "boolean",
+   "id": "string",
+   "jour_fixe": "null",
+   "ktw_ref": "null",
+   "mentions": {
+    "array": null
+   },
+   "needs_in_session": "null",
+   "on_behalf_of": "null",
+   "options": {
+    "array": null
+   },
+   "personal": "boolean",
+   "placement": "null",
+   "priority": "string",
+   "replies": {
+    "array": {
+     "object": {
+      "id": "string",
+      "label": "string"
+     }
+    }
+   },
+   "report": "null",
+   "status": "string",
+   "summary": "string",
+   "takeover_id": "null",
+   "task": "null",
+   "task_id": "null",
+   "title": "string",
+   "to": {
+    "form": "human:<id>"
+   },
+   "tried": "null",
+   "while_open": "string"
+  }
+ },
  "PATCH /projects/{project}/members/{agent}": {
   "object": {
    "aliases": {
@@ -1624,6 +1687,69 @@
     }
    },
    "trust": "string"
+  }
+ },
+ "POST /projects/{foreign_project}/members/{mine}/bridges": {
+  "object": {
+   "action": "null",
+   "answer": "null",
+   "answered_at": "null",
+   "asked_by": {
+    "object": {
+     "avatar_url": "null",
+     "display_name": "string",
+     "instance": "null",
+     "member_id": "string",
+     "role": "string",
+     "session_id": "null",
+     "trust": "string"
+    }
+   },
+   "class": {
+    "form": "consent"
+   },
+   "cover": "null",
+   "created_at": "string",
+   "filed_by": "null",
+   "forwarding": {
+    "array": null
+   },
+   "holder": "string",
+   "humans_only": "boolean",
+   "id": "string",
+   "jour_fixe": "null",
+   "ktw_ref": "null",
+   "mentions": {
+    "array": null
+   },
+   "needs_in_session": "null",
+   "on_behalf_of": "null",
+   "options": {
+    "array": null
+   },
+   "personal": "boolean",
+   "placement": "null",
+   "priority": "string",
+   "replies": {
+    "array": {
+     "object": {
+      "id": "string",
+      "label": "string"
+     }
+    }
+   },
+   "report": "null",
+   "status": "string",
+   "summary": "string",
+   "takeover_id": "null",
+   "task": "null",
+   "task_id": "null",
+   "title": "string",
+   "to": {
+    "form": "human:<id>"
+   },
+   "tried": "null",
+   "while_open": "string"
   }
  },
  "POST /projects/{project}/conversations/{agent}/messages": {

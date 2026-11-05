@@ -1,6 +1,7 @@
-# A daily pg_dump into its own volume, keeping the newest 14, and a tar of the attachment volume with the same time stamp. The volume is on
-# the same disk as the database: copy the dumps off the instance as well
-# (docs/install/README.md, "Backups").
+# A daily pg_dump into its own volume, keeping the newest 14, and a tar of the attachment volume with the same time stamp, both encrypted with
+# gpg to the public key in the Secret maity-backup-key (key backup.pub) and written 0600: maity-<ts>.dump.gpg, maity-<ts>.attachments.tar.gpg.
+# The private key is never on the cluster. Without the Secret, or with a private key in it, the Job fails before it writes anything. The
+# volume is on the same disk as the database: copy the backups off the instance too (docs/install/README.md, "Backups on this setup").
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata: {name: maity-backups, namespace: maity}
@@ -31,24 +32,38 @@ spec:
               command: ["/bin/sh", "-ec"]
               args:
                 - |
+                  umask 077
+                  k=/key/backup.pub
+                  # Never a backup without encryption, and never a skipped one: a missing key fails the Job, visibly.
+                  [ -s "$k" ] || { echo "backup failed: no public key: create the Secret maity-backup-key with backup.pub (docs/install/README.md, \"Backups on this setup\")" >&2; exit 1; }
+                  g=$(mktemp -d)
+                  kinds=$(gpg --batch --quiet --homedir "$g" --no-autostart --show-keys --with-colons "$k" | cut -d: -f1)
+                  if echo "$kinds" | grep -qxE 'sec|ssb'; then echo "backup failed: maity-backup-key holds a private key: put only the public key into it, and keep the private key off the cluster" >&2; exit 1; fi
+                  echo "$kinds" | grep -qx pub || { echo "backup failed: maity-backup-key's backup.pub is not an OpenPGP public key" >&2; exit 1; }
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
-                  t=/backups/maity-$ts.attachments.tar
+                  t=/backups/maity-$ts.attachments.tar.gpg
                   trap 'rm -f "$t.part"' EXIT
                   # The backup volume's size is not enforced (local-path): it is the node's disk, which Postgres is on. A tar that would
                   # not fit twice (this night's and room to rotate) fails the Job before it writes, instead of filling the disk.
                   need=$(du -sk /attachments | cut -f1)
                   avail=$(df -Pk /backups | awk 'NR==2 {print $4}')
                   [ "$avail" -gt $((need * 2 + 1048576)) ] || { echo "not enough room for the attachment tar: need about $((need / 1024)) MiB, $((avail / 1024)) MiB free" >&2; exit 1; }
-                  # tar exits 1 when a file changed or vanished while it was read (an upload that finished meanwhile): that is no failure
-                  tar -cf "$t.part" -C /attachments . || [ "$?" = 1 ]
-                  test -s "$t.part"
+                  # tar exits 1 when a file changed or vanished while it was read (an upload that finished meanwhile): that is no failure.
+                  # sh has no pipefail: a failure before gpg leaves a mark, gpg's own failure ends the pipe and the script. dd counts
+                  # the plain bytes, which the encrypted file no longer shows.
+                  { tar -cf - -C /attachments . || [ "$?" = 1 ] || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
+                    | gpg --batch --quiet --homedir "$g" --no-autostart --trust-model always --recipient-file "$k" --compress-algo none --yes --encrypt --output "$t.part"
+                  [ ! -e "$g/failed" ]
+                  plain=$(awk '/ bytes / {print $1}' "$g/count")
+                  [ "${plain:-0}" -gt 0 ]
                   mv "$t.part" "$t"
-                  printf %s "$ts" > /ts/stamp
+                  printf '%s %s\n' "$ts" "$plain" > /ts/stamp
               securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
               volumeMounts:
                 - {name: b, mountPath: /backups}
                 - {name: a, mountPath: /attachments, readOnly: true}
                 - {name: ts, mountPath: /ts}
+                - {name: key, mountPath: /key, readOnly: true}
           containers:
             - name: dump
               image: postgres:17.10
@@ -58,33 +73,48 @@ spec:
               command: ["/bin/sh", "-ec"]
               args:
                 - |
-                  ts=$(cat /ts/stamp)
-                  f=/backups/maity-$ts.dump
-                  t=/backups/maity-$ts.attachments.tar
+                  umask 077
+                  k=/key/backup.pub
+                  read -r ts tplain < /ts/stamp
+                  f=/backups/maity-$ts.dump.gpg
+                  t=/backups/maity-$ts.attachments.tar.gpg
+                  g=$(mktemp -d)
                   # One command per line: under `sh -e` a failure inside `a && b` does not stop the script, and
                   # the Job then reported success for a dump that never happened (an empty .part and "Complete").
                   trap 'rm -f "$f.part"' EXIT
                   # A few tries: a dump pod that starts before its network is ready got "Connection refused" while the database was fine.
+                  # pg_dump writes to the pipe, so nothing unencrypted reaches the disk; its failure leaves a mark (sh has no pipefail).
                   n=0
-                  until pg_dump -h maity-postgres -U maity -Fc maity -f "$f.part"; do
+                  while :; do
+                    rm -f "$g/failed"
+                    { pg_dump -h maity-postgres -U maity -Fc maity || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
+                      | gpg --batch --quiet --homedir "$g" --no-autostart --trust-model always --recipient-file "$k" --compress-algo none --yes --encrypt --output "$f.part"
+                    [ -e "$g/failed" ] || break
                     n=$((n + 1))
                     [ "$n" -lt 5 ] || exit 1
                     sleep 5
                   done
-                  test -s "$f.part"
+                  plain=$(awk '/ bytes / {print $1}' "$g/count")
+                  [ "${plain:-0}" -gt 0 ]
                   mv "$f.part" "$f"
                   test -s "$t"
                   find /backups -name 'maity-*.part' -mmin +60 -delete
-                  ls -1t /backups/maity-*.dump | tail -n +15 | xargs -r rm --
+                  ls -1t /backups/maity-*.dump.gpg | tail -n +15 | xargs -r rm --
                   # a tar goes with its dump
-                  for x in /backups/maity-*.attachments.tar; do [ -e "${x%.attachments.tar}.dump" ] || rm -f -- "$x"; done
+                  for x in /backups/maity-*.attachments.tar.gpg; do [ -e "${x%.attachments.tar.gpg}.dump.gpg" ] || rm -f -- "$x"; done
+                  # Unencrypted backups from before encryption are left alone, and named every night until they are gone.
+                  old=$(find /backups -maxdepth 1 \( -name 'maity-*.dump' -o -name 'maity-*.attachments.tar' \) | wc -l)
+                  [ "$old" = 0 ] || echo "note: $old unencrypted backups from before encryption are still in /backups; copy off what you need, then delete them"
                   ls -l /backups
-                  echo "dump ok: $f $(stat -c %s "$f") attachments $(stat -c %s "$t")"
+                  echo "dump ok: $f $(stat -c %s "$f") attachments $(stat -c %s "$t") (encrypted; plain bytes: dump $plain, attachments $tplain)"
               securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
               volumeMounts:
                 - {name: b, mountPath: /backups}
                 - {name: ts, mountPath: /ts, readOnly: true}
+                - {name: key, mountPath: /key, readOnly: true}
           volumes:
             - {name: b, persistentVolumeClaim: {claimName: maity-backups}}
             - {name: a, persistentVolumeClaim: {claimName: maity-attachments, readOnly: true}}
             - {name: ts, emptyDir: {sizeLimit: 1Mi}}
+            # optional: without it the pod would wait forever for the Secret; the scripts check for the key and fail the Job instead
+            - {name: key, secret: {secretName: maity-backup-key, optional: true, items: [{key: backup.pub, path: backup.pub}]}}
