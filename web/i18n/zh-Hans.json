@@ -936,7 +936,7 @@
   "device.code.open": "有代码？",
   "device.code.title": "用代码登录",
   "device.expires": "{time}后过期。",
-  "device.mail.address": "你的地址",
+  "device.mail.address": "邮箱地址",
   "device.mail.check": "查收你的邮件",
   "device.mail.code": {
     "other": "{count} 位验证码"
@@ -3529,7 +3529,7 @@
   "reg.terms.version": "版本",
   "reg.title": "注册",
   "reg.unchanged": "未作任何更改。",
-  "register.address": "你的地址",
+  "register.address": "邮箱地址",
   "register.check_mail": "请查收邮件",
   "register.closed": "此 hub 不接受按请求创建新账户。",
   "register.closed_sign_in": "如果你已有账户，请{link}。",

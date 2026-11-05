@@ -951,10 +951,12 @@ def scenario(run: Run, page: Page) -> None:
         free.press("Escape")
         expect(picker).to_be_hidden()
         # The one field stands above the buttons; a reply takes its text along (§7).
-        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        # Talk beside the replies (the owner's agent asked), and Send for the words alone: disabled
+        # while the field is empty.
         current = page.locator("li.entry.current")
-        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
-        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+        free.fill("")
+        expect(current.get_by_role("button", name="Send", exact=True)).to_be_disabled()
         free.fill("Ship it, with this note.")
         current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
@@ -1065,6 +1067,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    send_talk_step(run, page, alpha)
     wide_lines_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
@@ -1150,6 +1153,7 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    start_page_step(run, page)
     legal_json_step(run, page)
     auth_pages_step(run, page)
     site_json_step(run, page)
@@ -1159,6 +1163,69 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
+    """Send and Talk on every request one can answer (docs/api.md §7, tsk-nx6hm8qjzm3z): on a decision
+    with options Send takes the words alone, Ctrl+Enter the same, and is disabled while the field is
+    empty; on a consent it stays disabled and says why, the words go only with a reply. Talk for the
+    owner's own agent. Wide and light, narrow and dark."""
+    run.step("inbox: Send beside the options takes the words alone; a consent's Send says why it cannot")
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            out = run.maity(
+                alpha, "ask", f"Which name at {width} px?\nTwo to choose from, or your own.",
+                "--to", "human", "--class", "decision", "--option", "Maity", "--option", "Hub",
+            )
+            request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+            current = page.locator("li.entry.current")
+            expect(current).to_contain_text(f"Which name at {width} px?")
+            send = current.get_by_role("button", name="Send", exact=True)
+            expect(send).to_be_disabled()
+            expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+            expect(current.locator(".reply-hint")).to_have_count(0)
+            free = current.locator(".free-text textarea")
+            free.fill("Neither: maity-hub.")
+            expect(send).to_be_enabled()
+            run.shot(page, f"send-beside-options-{width}-{scheme}")
+            free.press("Control+Enter")
+            expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+            got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+            answer = got.get("answer") or {}
+            assert answer.get("text") == "Neither: maity-hub." and not answer.get("reply_id") and not answer.get("talk"), (
+                f"{where}: Ctrl+Enter sends the words alone {answer}"
+            )
+
+        # A consent: the words alone would read as No (§15.6), so Send stays disabled and says why.
+        out = run.maity(alpha, "ask", "May the alpha agent tag 0.2.0?", "--to", "human", "--class", "consent")
+        request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_contain_text("May the alpha agent tag 0.2.0?")
+        send = current.get_by_role("button", name="Send", exact=True)
+        hint = current.locator(".reply-hint")
+        expect(hint).to_contain_text("Choose one of the answers")
+        expect(send).to_have_attribute("aria-describedby", hint.get_attribute("id") or "")
+        free = current.locator(".free-text textarea")
+        free.fill("Tag it after the notes.")
+        expect(send).to_be_disabled()
+        free.press("Control+Enter")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        run.shot(page, "send-consent-disabled")
+        run.a11y(page, "inbox, a consent with Send disabled and its reason")
+        page.locator("li.entry.current").get_by_role("button", name="go", exact=True).click()
+        expect_inbox_empty(page)
+        got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+        answer = got.get("answer") or {}
+        assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "send and talk")
 
 
 def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
@@ -1920,10 +1987,38 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         context, page = sign_in_with_totp(run, browser, secret, used)
         reset_by_mail(run, browser, catcher, page)
         context.close()
+        language_choice_step(run, browser)
     finally:
         stop_hub(hub)
         catcher.close()
         run.base = first_base
+
+
+def language_choice_step(run: Run, browser) -> None:
+    """The page's language chosen on /login and /register before sign-in (§6.2) stays the
+    choice, also where the address came with another ?lang=, and across a reload."""
+    run.step("signed out: the language chosen on login and register stays, also after a reload")
+    for path, picker, field in (
+        ("/login", "#login-interface", "#login-handle"),
+        ("/register", "#register-interface", "#register-address"),
+    ):
+        context = browser.new_context(viewport={"width": 1280, "height": 900}, locale="de-DE")
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        page.goto(f"{run.base}{path}?lang=de")
+        expect(page.locator("html")).to_have_attribute("lang", "de")
+        page.locator(field).fill("kim@e2e.example")
+        page.locator(picker).select_option("fr")
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        expect(page.locator(field)).to_have_value("kim@e2e.example")
+        assert page.url.endswith(f"{path}?lang=fr"), page.url
+        page.reload()
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        no_problems(run, f"the language on {path}")
+        context.close()
 
 
 def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
@@ -3779,6 +3874,103 @@ def landing_variants_step(run: Run, page: Page) -> None:
     saved = save()
     assert saved["variants"] == {} and saved["campaigns"] == [], (saved["variants"], saved["campaigns"])
     no_problems(run, "landing variants")
+
+
+def start_page_step(run: Run, page: Page) -> None:
+    """The way to `/` from the sign-in page leaves the dashboard (docs/api.md §16.7, tsk-fmdn6vb2zs19):
+    the hub, not the dashboard, decides per request what `/` shows, so the frame's logo, a section link
+    and the app's own logo are page loads. Only a served page shows it: fixture mode has no click
+    handler. Wide and light, narrow and dark."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("start page: from the sign-in page the logo and a section link open the landing page")
+    page.goto(f"{run.base}/admin/pages/landing")
+    io = page.locator("details.lp-json")
+    io.locator("summary").click()
+    landing = json.loads((WEB / "tools" / "site-fixture.json").read_text(encoding="utf-8"))["landing"]
+    body = {**landing, "enabled": True, "footer": {**landing["footer"], "operator": "Example operator"}}
+    page.locator("#lp-json").fill(json.dumps(body))
+    page.once("dialog", lambda d: d.accept())
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    section = page.locator("#admin-landing-page")
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    form = page.locator("form.lp-form")
+    form.get_by_role("button", name="Save the landing page", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+    assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is True
+
+    def on_landing(seen: Page, where: str) -> None:
+        # The hub's landing page: its own HTML, no dashboard and no sign-in form in it.
+        expect(seen.locator("main#main")).to_have_count(0)
+        expect(seen.locator("#login-handle")).to_have_count(0)
+        expect(seen.locator("main .hero, main section").first).to_be_visible()
+        assert not seen.evaluate("!!(window.Maity && window.Maity.route)"), f"{where}: the dashboard is still loaded"
+
+    try:
+        for width, height, scheme in ((1280, 800, "light"), (390, 844, "dark")):
+            visitor = page.context.browser.new_context(
+                viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme
+            )
+            seen = visitor.new_page()
+            seen.goto(f"{run.base}/login")
+            frame = seen.locator("header.site-header")
+            expect(frame).to_be_visible()
+            frame.locator("a.brand").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the frame's logo at {width} px {scheme}")
+            run.shot(seen, f"start-page-{width}-{scheme}")
+
+            # A section link (`/?lang=en#sN`): the header's where it shows, else the footer's platform column.
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("header.site-header")).to_be_visible()
+            links = seen.locator("header.site-header a[href*='#s'], footer.site-footer a[href*='#s']")
+            shown = links.evaluate_all("(all) => all.findIndex((a) => a.offsetParent !== null)")
+            assert shown >= 0, f"no section link shows at {width} px"
+            nav = links.nth(shown)
+            href = nav.get_attribute("href")
+            assert href and href.startswith("/?lang=") and "#s" in href, href
+            nav.click()
+            expect(seen).to_have_url(f"{run.base}{href}")
+            on_landing(seen, f"a section link at {width} px {scheme}")
+            expect(seen.locator(f"#{href.split('#', 1)[1]}")).to_be_attached()
+
+            # Without the frame (its read failed), the app's own logo leads to the same start page.
+            seen.route("**/api/v1/site/chrome**", lambda r: r.abort())
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("#login-handle")).to_be_visible()
+            expect(seen.locator("header.site-header")).to_have_count(0)
+            seen.locator("#header a.brand-home").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the app's logo at {width} px {scheme}")
+            visitor.close()
+
+        # Signing out leaves for the start page too: a page load, so the landing page, not the
+        # dashboard's sign-in form under `/`. A second session of the owner's, this one stays.
+        leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
+        out = leaving.new_page()
+        out.goto(f"{run.base}/login")
+        out.locator("#login-handle").fill(OWNER)
+        out.locator("#login-password").fill(OWNER_PASSWORD)
+        out.get_by_role("button", name="Sign in", exact=True).click()
+        expect(out.locator("header .me")).to_contain_text("Owner")
+        out.goto(f"{run.base}/all")
+        out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+        out.get_by_role("menuitem", name="Sign out", exact=True).click()
+        expect(out).to_have_url(f"{run.base}/")
+        on_landing(out, "after signing out")
+        run.shot(out, "start-page-signed-out")
+        leaving.close()
+    finally:
+        # Off again: a landing page that is on would greet the signed-out steps after this one.
+        page.goto(f"{run.base}/admin/pages/landing")
+        enabled = page.locator("#lp-enabled")
+        if enabled.is_checked():
+            enabled.uncheck()
+        form.get_by_role("button", name="Save the landing page", exact=True).click()
+        expect(section.locator(".send-status").first).to_contain_text("Saved.")
+        assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is False
+    no_problems(run, "start page")
 
 
 def auth_pages_step(run: Run, page: Page) -> None:
