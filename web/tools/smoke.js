@@ -4484,6 +4484,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mdTrick.querySelectorAll("a").length === 1 && text(mdTrick).includes("(goes to evil.example)")
     && text(mdTrick).includes("[a](https://bank.example@evil.example)"),
     "markdown: a link text that looks like another address says where it goes; userinfo and bidi characters are no link");
+  // One long line (a contract file may hold 4 MiB, §6.8): backtick runs, links never closed, and
+  // the thousands of nodes they make, each in bounded time and without overflowing the stack.
+  const mdTimed = (line) => {
+    const started = Date.now();
+    let made = null;
+    try { made = MD(line); } catch (e) { made = e; }
+    return [made instanceof Error ? made : null, Date.now() - started];
+  };
+  // Every pair of backtick runs is a code span of its own, so the nodes alone take time: the
+  // check is how it grows, four times the runs in less than eight times the time.
+  const [btError, btShort] = mdTimed("`a".repeat(32 * 1024));
+  const [btError4, btLong] = mdTimed("`a".repeat(128 * 1024));
+  expect(!btError && !btError4 && btLong < 8 * btShort + 100,
+    "markdown: a line of backtick runs renders in time that grows with its length (" + btShort + " ms, four times as long " + btLong + " ms)");
+  const [linkError, linkTook] = mdTimed("[a](https://(".repeat(20000));
+  expect(!linkError && linkTook < 1000, "markdown: a line of unclosed links renders in bounded time (" + linkTook + " ms)");
+  const mdSpans = MD("`a` ``b`` `c ``d`` e`");
+  expect(mdSpans.querySelectorAll("code").map((c) => c.textContent).join("|") === "a|b|c ``d`` e",
+    "markdown: a backtick run closes at the next run of its length");
+  const mdBracket = MD("[a](https://x.example/[y]) [b](https://x.example/z)");
+  const mdBracketLinks = mdBracket.querySelectorAll("a");
+  // As the hub renders it: the brackets as text, the address inside them a link of its own.
+  expect(mdBracketLinks.length === 2 && text(mdBracketLinks[0]) === "https://x.example/[y]"
+    && text(mdBracketLinks[1]) === "b" && mdBracketLinks[1].getAttribute("href") === "https://x.example/z"
+    && text(mdBracket).startsWith("[a](https://x.example/[y])"), "markdown: a link target holds no [, as in the hub's renderer");
   expect(MD("```\nif (a\u202e) {}\n```").querySelector(".md-invisible"), "markdown: code with invisible characters is flagged");
   const linear = Date.now(); MD("[".repeat(20000) + "x"); expect(Date.now() - linear < 1000, "markdown: unclosed brackets stay linear");
   // A contract heading (§6.8) with a long run of spaces, with and without a closing sequence: one

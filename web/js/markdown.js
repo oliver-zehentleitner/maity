@@ -21,11 +21,15 @@ window.Maity = window.Maity || {};
   const MARK = /\uE000(\d+)\uE001/g;
   let marks = [];
   const restore = (s) => String(s).replace(MARK, (all, n) => (marks[n] ? marks[n].said : ""));
+  // `out.push(...items)` passes every item as an argument, and a long line's
+  // thousands of nodes overflow the call stack; this appends them one by one.
+  const append = (out, items) => { for (const item of items) out.push(item); return out; };
+
   function withMarks(s, plain) {
     const out = [];
     let from = 0;
     for (const m of s.matchAll(MARK)) {
-      if (m.index > from) out.push(...plain(s.slice(from, m.index)));
+      if (m.index > from) append(out, plain(s.slice(from, m.index)));
       const x = marks[m[1]];
       // @handle#id: the handle and the #id are two links side by side (tsk-bczgjkfpw1wg).
       if (x && x.href && x.instanceHref) {
@@ -35,7 +39,7 @@ window.Maity = window.Maity || {};
       } else if (x) out.push(x.href ? h("a", { class: "mention", href: x.href, title: x.title }, x.said) : h("span", { class: "mention", title: x.title }, x.said));
       from = m.index + m[0].length;
     }
-    if (from < s.length) out.push(...plain(s.slice(from)));
+    if (from < s.length) append(out, plain(s.slice(from)));
     return out;
   }
 
@@ -73,37 +77,49 @@ window.Maity = window.Maity || {};
 
   // Inline: code spans first (a run of n backticks to the next run of
   // exactly n), then links, autolinks and emphasis in the text between.
+  // Each run's closing run is found from the end, once for the line: a
+  // search from the start for every run grew with the square of the runs.
   function inline(text, at) {
     const out = [];
     let from = 0;
     const runs = [...text.matchAll(/`+/g)];
+    const next = new Array(runs.length).fill(-1);
+    const seen = new Map();
+    for (let k = runs.length - 1; k >= 0; k -= 1) {
+      const length = runs[k][0].length;
+      if (seen.has(length)) next[k] = seen.get(length);
+      seen.set(length, k);
+    }
     for (let k = 0; k < runs.length; k += 1) {
       const open = runs[k];
-      const close = runs.findIndex((r, j) => j > k && r[0].length === open[0].length);
+      const close = next[k];
       if (close < 0) continue;
-      out.push(...spans(text.slice(from, open.index), at));
+      append(out, spans(text.slice(from, open.index), at));
       const inner = text.slice(open.index + open[0].length, runs[close].index);
       const code = inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner;
       const linked = at && M.ids.only(restore(code), at);
       if (linked) out.push(linked);
-      else out.push(...inlineCode(code));
+      else append(out, inlineCode(code));
       from = runs[close].index + runs[close][0].length;
       k = close;
     }
-    out.push(...spans(text.slice(from), at));
+    append(out, spans(text.slice(from), at));
     return out;
   }
 
   // [text](https://…), a bare https://… and **strong**, *em* or _em_.
   // A path as a link target was the dashboard's landing page's alone; the
-  // hub renders that page now (§16.7), so here it stays text.
-  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
+  // hub renders that page now (§16.7), so here it stays text. A link's
+  // target holds no `[`, as in the hub's renderer (§16.7): what one `[`
+  // reads ends at the next, where a target to the line's end was read
+  // again from every `[`.
+  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)\[]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
   function spans(text, where) {
     const out = [];
     const plain = (s) => withMarks(s, (t) => (where ? M.ids.link(t, where) : [t]));
     let at = 0;
     for (const m of text.matchAll(TOKEN)) {
-      if (m.index > at) out.push(...plain(text.slice(at, m.index)));
+      if (m.index > at) append(out, plain(text.slice(at, m.index)));
       if (m[1] !== undefined) {
         // A mention the hub stored inside a link (a label, an address's query) is the link's
         // text as written, never a placeholder and never a member link.
@@ -125,7 +141,7 @@ window.Maity = window.Maity || {};
       }
       at = m.index + m[0].length;
     }
-    if (at < text.length) out.push(...plain(text.slice(at)));
+    if (at < text.length) append(out, plain(text.slice(at)));
     return out;
   }
 
@@ -134,7 +150,7 @@ window.Maity = window.Maity || {};
   // A paragraph's lines, each break kept.
   function lines(list, at) {
     const out = [];
-    list.forEach((l, i) => { if (i) out.push(h("br")); out.push(...inline(l, at)); });
+    list.forEach((l, i) => { if (i) out.push(h("br")); append(out, inline(l, at)); });
     return out;
   }
 
