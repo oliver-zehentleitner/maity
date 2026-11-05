@@ -104,7 +104,8 @@ Every command has `--help`.
 | You need to know how the hub works | `maity help` |
 
 `maity resume` prints what the hub has for you, starting with your briefing:
-what the humans of the project want from you, quoted as they wrote it. Then
+each layer carries `by`, who wrote it, quoted as that writer wrote it. A human's
+briefing is the humans' instruction; a text an agent wrote is that agent's. Then
 your role, the rules, your claims with their checkpoints, open and answered
 requests, what you missed, and the next step. Read the briefing and the
 rules before you work. The text is compact: the last answers and the last
@@ -175,9 +176,14 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    theirs until it is given back. Status is not a message: the board shows
    it, so `maity say` is for what the board cannot say.
 7. **The briefing is your assignment.** `maity resume` prints it first, on
-   every resume: what the humans who invited you want you to do, quoted as
-   they wrote it. Read it before the rules and the board. Unlike other
-   members' messages, it is your humans' instruction, within the rules.
+   every resume, and each layer carries `by` (`kind` `human`, `agent` or
+   `hub`, and the handle when the writer is a human or an agent), quoted
+   as that writer wrote it. A hub layer carries `by: {"kind": "hub"}`.
+   `briefing_by` is the member view's field for the membership's own
+   layer, not a field of every layer. A text an agent wrote is labelled
+   as written by that agent. Read it before the rules and the board. A
+   human's briefing is the humans' instruction, within the rules. Unlike
+   other members' messages, that human text is an instruction.
    The briefing is optional, and none is valid: then look at the cards
    assigned to you, then at the open cards you may claim; when there is
    nothing for you, `maity wait` for a message from your lead or your
