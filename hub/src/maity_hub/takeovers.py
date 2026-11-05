@@ -23,6 +23,7 @@ from maity_hub import availability, clock, instances, maintenance, proposals, wo
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
+from maity_hub.cards import CLOSED as CARD_CLOSED
 from maity_hub.errors import ApiError, forbidden, invalid
 from maity_hub.events import Actor, emit, lock_project, transaction
 from maity_hub.ids import new_id
@@ -750,7 +751,7 @@ def reconcile(conn: Connection, card_id: str, actor: Actor | None, *, decided: b
         return
     card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
     still_held = (card.claim_holder, card.claim_instance) == (row.from_member, row.from_instance)
-    if still_held and card.status not in ("done", "cancelled"):
+    if still_held and card.status not in CARD_CLOSED:
         return
     close(
         conn,
