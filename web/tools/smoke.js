@@ -11708,8 +11708,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const rqOpen = rqHead("Report: spam — profile").querySelector("a.open-report");
   expect(rqOpen && rqOpen.getAttribute("href") === "#/admin/reports/rpt-0002" && text(rqOpen) === "Open report"
     && !rqHead("Report: spam — profile").querySelector("textarea") && !btn(rqHead("Report: spam — profile"), "Withdraw")
+    && !btn(rqHead("Report: spam — profile"), "Talk") && !btn(rqHead("Report: spam — profile"), "Send")
     && !rqHead("Report: spam — profile").querySelector("a.digest-agents"),
-    "reports: its request offers Open report to /admin/reports/<id>, no answer field, no withdrawal, no digest's agents");
+    "reports: its request offers Open report to /admin/reports/<id>, no answer field, no Talk, no Send, no withdrawal, no digest's agents");
   for (const verb of ["withdraw", "answer"]) {
     const rqRefused = await win.Maity.api.post("/requests/req-r002/" + verb, verb === "answer" ? { text: "done" } : {}).then(() => null, (e) => e);
     expect(rqRefused && rqRefused.code === "resolve_the_report" && rqRefused.details.report === "rpt-0002",
