@@ -260,7 +260,7 @@ def mark(
     for item in chosen:
         if item.read or item.record_type in records.INBOX:
             continue  # an open matter reads as read only once it is closed (§18.3)
-        if item.kind == "security" and (reason := refusal(conn, item, session)) is not None:
+        if item.kind == "security" and (reason := refusal(item, session)) is not None:
             skipped.append({"id": item.id, "reason": reason})
             continue
         if item.record is not None:
@@ -297,7 +297,7 @@ def ignoring_duplicates(conn: Connection, table: Any) -> Any:
 GUARDED = ("email_address_changed",)
 
 
-def refusal(conn: Connection, item: Item, session: Any) -> str | None:
+def refusal(item: Item, session: Any) -> str | None:
     """Why `session` may not mark the security `item` read, or None (§18.3): `not_earlier`
     when it was created after the address change, else `not_in_good_standing`."""
     if item.record_type not in GUARDED:

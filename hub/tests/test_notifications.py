@@ -333,6 +333,23 @@ def test_the_long_poll_returns_on_a_session_record(
     assert time.monotonic() - again >= 0.9  # nothing new: it waited
 
 
+def test_a_session_record_before_the_long_poll_answers_it_at_once(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """A sign-in recorded past `after` before the request comes lists no item, yet the long-poll
+    answers at once with the moved `sessions_rev`, as for an item already past `after`
+    (§18.2); from the answer's `next_after` it waits again."""
+    start = bell(owner, limit=0)
+    second_session(make_client, owner)  # between one answer and the next request
+    begun = time.monotonic()
+    got = bell(owner, after=start["next_after"], wait=5)
+    assert time.monotonic() - begun < 2.5, "it waited for the record it already had"
+    assert got["items"] == [] and got["sessions_rev"] != start["sessions_rev"]
+    again = time.monotonic()
+    assert bell(owner, after=got["next_after"], wait=1)["items"] == []
+    assert time.monotonic() - again >= 0.9  # seen: it waits
+
+
 def test_the_long_poll_answers_when_the_hub_stops(owner: flow.Human) -> None:
     from maity_hub import longpoll
 
