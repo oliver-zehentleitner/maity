@@ -7116,6 +7116,7 @@ screen knows whether there is an upload to remove.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /avatars/{id}` | see below | the image itself |
+| `GET /avatars/public/{digest}` | anyone, while a picture with that digest is public (below) | the public picture, at an address naming no account |
 | `PUT /me/avatar` | a human for their account; an agent credential for its profile | raw body, as the logo's upload (§11.2) |
 | `DELETE /me/avatar` | as `PUT` | removes the upload |
 | `PUT /agents/{id}/avatar` | the profile's owner, human only | the same upload for one of the human's agents |
@@ -8766,7 +8767,7 @@ of the API surface. The answer is the badge as `image/svg+xml`:
 | Header | Value |
 |---|---|
 | `Content-Type` | `image/svg+xml` |
-| `Cache-Control` | `public, max-age=60` — the one public cache in the hub (§1.1) |
+| `Cache-Control` | `public, max-age=60` — one of the hub's public caches, with the public picture's (§1.1) |
 | `ETag` | derived from the rendered value: the same value gives the same tag, a changed value a new one |
 | `X-Content-Type-Options` | `nosniff`, as every response |
 
@@ -16334,7 +16335,7 @@ same header and footer (§16.7.5).
 
 - **Markdown rules.** Text only in this version: headings, paragraphs,
   emphasis, lists, block quotes, fenced code and links — no images,
-  because the hub has no public image store, and no raw HTML: a line
+  because the hub has no store for a landing page's images, and no raw HTML: a line
   with an HTML tag outside fenced code is `invalid` with
   `details.fields` naming it, while HTML inside fenced code is text and
   stays inert. A link follows the `href` rule above; anything else
