@@ -64,6 +64,8 @@ window.Maity = window.Maity || {};
       try {
         items = (await M.api.get("/auth/sessions")).items.filter((s) => !s.ended_at);
       } catch (err) {
+        // Not read: the bell's next change tries again, not only a new sessions_rev.
+        if (mine === seq) seen = undefined;
         if (!disposed && mine === seq) status.fail(M.t("waiting.sessions.read_failed"), err);
         return;
       }

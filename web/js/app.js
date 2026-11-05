@@ -2101,6 +2101,9 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     append(clear(main), root);
     renderBanner(ctx);
+    // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
+    // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
+    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     watch(ctx, where, known ? item : null, main);
     let label = M.t("view.none");
     if (empty) label = M.t("view.no_projects");

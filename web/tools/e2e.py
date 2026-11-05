@@ -2690,6 +2690,10 @@ def notification_sessions_layout(run: Run, browser) -> None:
                         expect(banner).to_have_count(0)
                     m = page.evaluate(LINES_MEASURE, "main section.current-sessions")
                     assert not m["problems"] and not errors, f"{where}, the box: {m['problems'] + errors}"
+                    # The link to Sessions stands alone on its line, so the spacing rule alone would pass a
+                    # 19 px link: the box keeps it a full 24 px target (WCAG 2.5.8's size, not its exception).
+                    link = box.locator(".hint a").bounding_box()
+                    assert link and link["height"] >= 23.5, f"{where}: the link to Sessions is {link} high, under 24 px"
                     run.shot(page, f"fixtures-current-sessions-{sessions}-{width}" + ("-banner" if with_banner else ""))
                     bell = page.locator("#header button.bell")
                     bell.click()

@@ -39,6 +39,18 @@ window.Maity = window.Maity || {};
   // counts: null until read. sessionsRev: the hub's `sessions_rev` (§18.2), which moves
   // with every sign-in and end; the banner and the "Current sessions" box follow it.
   const state = { counts: null, byProject: {}, settings: null, sessionsRev: null };
+  // Who follows `sessions_rev` without asking for the long-poll (the banner):
+  // told whenever any answer moves it, the count round's or the long-poll's.
+  const revWatchers = new Set();
+  function knowSessionsRev(rev) {
+    if (rev === state.sessionsRev) return;
+    state.sessionsRev = rev;
+    revWatchers.forEach((fn) => fn());
+  }
+  function onSessionsRev(fn) {
+    revWatchers.add(fn);
+    return () => { revWatchers.delete(fn); };
+  }
 
   // The page's address for an item, from its target. Account records lead
   // to the account: a security alert to the sessions, the settings to the
@@ -83,7 +95,7 @@ window.Maity = window.Maity || {};
     const answer = await M.api.get("/me/notifications?limit=0");
     state.counts = answer.counts;
     state.byProject = answer.by_project || {};
-    if ("sessions_rev" in answer) state.sessionsRev = answer.sessions_rev;
+    if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);
     changed();
     return state;
   }
@@ -346,7 +358,7 @@ window.Maity = window.Maity || {};
             after = head.next_after;
             state.counts = head.counts || state.counts;
             state.byProject = head.by_project || state.byProject;
-            if ("sessions_rev" in head) state.sessionsRev = head.sessions_rev;
+            if ("sessions_rev" in head) knowSessionsRev(head.sessions_rev);
           }
           if (!wanted() || halted) break;
           const cancel = typeof AbortController === "function" ? new AbortController() : null;
@@ -375,7 +387,7 @@ window.Maity = window.Maity || {};
         if (answer.next_after) after = answer.next_after;
         state.counts = answer.counts || state.counts;
         state.byProject = answer.by_project || state.byProject;
-        if ("sessions_rev" in answer) state.sessionsRev = answer.sessions_rev;
+        if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);
         // Refresh the snapshot, including removals/read flags; never insert a
         // long-poll item into a request form or assume its count is complete.
         changed();
@@ -447,5 +459,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { known, keepsUnread, skippedWhy, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { known, keepsUnread, skippedWhy, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, onSessionsRev, KIND_WORDS };
 })(window.Maity);

@@ -10724,6 +10724,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.notify.state.sessionsRev = "acr-1000";
   win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
   expect(text(csBox()).includes("Could not read your sessions: down") && csRows().length === 6, "notifications: a failed read of the sessions is said, the rows stay");
+  // The failed read counts as not read: the bell's next change tries again, with sessions_rev unmoved.
+  csGets.length = 0;
+  win.Maity.api.get = (p) => (p === "/auth/sessions" ? (csGets.push(p), Promise.resolve({ items: csMany })) : csGet(p));
+  win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
+  expect(csGets.length === 1 && !text(csBox()).includes("Could not read") && csRows().length === 6,
+    "notifications: after a failed read the bell's next change reads the sessions again, sessions_rev unmoved " + text(csBox()));
+  // The mail sign-in banner follows a moved sessions_rev at once, from any answer the bell reads
+  // (here its counts read outside the 60-second round), not only in that round.
+  const bnGets = [];
+  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? csGet(p).then((a) => Object.assign({}, a, { sessions_rev: "acr-1001" }))
+    : (p === "/auth/sessions?ended=true" && bnGets.push(p), csGet(p)));
+  await win.Maity.notify.read(); for (let k = 0; k < 4; k++) await tick();
+  expect(bnGets.length >= 1 && win.Maity.notify.state.sessionsRev === "acr-1001",
+    "banner: a sessions_rev moved outside the counts round builds the banner again " + bnGets.length);
+  bnGets.length = 0;
+  await win.Maity.notify.read(); for (let k = 0; k < 4; k++) await tick();
+  expect(!bnGets.length, "banner: the same sessions_rev again builds nothing " + bnGets.length);
   win.Maity.api.get = csGet;
   win.Maity.notify.state.sessionsRev = csRev;
   // All notifications (/notifications): unread in bold with a dot, as on the bell, and Mark all read up to the first page's head.

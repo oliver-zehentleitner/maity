@@ -184,14 +184,16 @@ sends `include_security: true`. A sign-in is in none of it: the pinned block has
 a small "Current sessions" box instead: the active sessions, newest first, five and a
 count of the rest, this session and the unconfirmed ones marked, a link to Profile →
 Sessions, no buttons. It reads `GET /auth/sessions` when the page opens and again only
-when `sessions_rev` in a counts answer differs from the value it last read with; the
-mail sign-in banner is redrawn on the same change.
+when the `sessions_rev` the bell knows (from a counts answer or the long-poll) differs from
+the value it last read with; a failed read is tried again on the bell's next change. The
+mail sign-in banner is built again on the same change, at once, not only in the 60-second
+counts round.
 
 **Reason:** the contract makes a sign-in no notification, so a pinned sign-in with a
 confirm button would show something the hub no longer sends. `sessions_rev` is the one
 signal the counts already carry that a session began or ended; reading the session list
-on every counts round would cost a request each 15 seconds for an answer that rarely
-changes.
+on every counts round would cost a request each 60 seconds per tab for an answer that
+rarely changes.
 
 **Rejected alternatives:** reading the sessions on every counts round: it works without
 `sessions_rev`, at one more request per round per tab. Keeping **This was me** in the
@@ -255,8 +257,8 @@ work, including after another session has signed in.
 **Revisit when:** the hub offers the counts as a stream a cookie session can hold, or the counts' latency is reported as too slow
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-28
 
-The `/me` round (`/me`, the notification counts and, while a sign-in
-alert is unread, the banner's session list) runs every 60 seconds, not
+The `/me` round (`/me`, the notification counts and, while the banner
+stands or `sessions_rev` moved, the banner's session list) runs every 60 seconds, not
 15. A tab whose `document.visibilityState` is `hidden` skips it, along
 with the project's events and the chat lists (every 30 seconds, a
 project's and `/chats`). The project's events are read every 15 seconds
