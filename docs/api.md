@@ -7138,7 +7138,13 @@ runner credential is `forbidden` (§15.1).
 - an instance admin (§16), for a human's avatar;
 - for an organisation's avatar (`org-…`, §6.26): the members of the
   organisation and the members of every project it owns, and nobody
-  else.
+  else;
+- **anyone**, with or without a session, for a picture a public page
+  shows (§16.9, the maintainer's decision of 2026-11-05): a human's while
+  the hub serves their page and their `public_profile` is `true`, and an
+  agent's while the hub serves its page. A person who sets
+  `public_profile` to `false` shows no picture to anyone outside the
+  cases above. An organisation's picture is never public.
 
 Any other caller gets `not_found`, as for an id that does not exist: the
 endpoint does not tell whether an account exists. The hub authorizes
@@ -7147,11 +7153,36 @@ the image gets `not_found`, never `304`. The answer has the headers of a
 logo (§11.2) — `Content-Type: image/png`, `X-Content-Type-Options:
 nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag` — except the
-caching: `Cache-Control: private, no-cache`. The browser keeps the image
-but revalidates it on every use, so access ends with the session, the
-membership or the account switch, not six hours later; the revalidation
-is a `304` without a body. It is served from what the hub stored and
-never reads through to the forge.
+caching, which depends on why the caller may read it:
+
+- **A public picture** (the last case above, whoever asks):
+  `Cache-Control: public, max-age=86400, s-maxage=60`. The URL is
+  versioned (`v`, above), so a new picture is a new URL and the browser
+  never shows an old one for a day; a shared cache keeps it no longer
+  than a public page (60 seconds, §16.9), so a picture that stops being
+  public is gone from it within a minute. A browser that already loaded
+  it may keep its copy for the day: the visitor has seen it.
+- **Every other picture**: `Cache-Control: private, no-cache`. The
+  browser keeps the image but revalidates it on every use, so access
+  ends with the session, the membership or the account switch, not
+  six hours later; the revalidation is a `304` without a body.
+
+Either way the image is served from what the hub stored and never reads
+through to the forge.
+
+**Sizes.** `GET /avatars/{id}?s=<size>` serves the picture at `s` × `s`
+pixels, `s` one of `32`, `64`, `128` and `256`; without `s` it is
+`256`, the stored size. Another `s` is `invalid`
+(`details.fields.s: "unsupported"`). A picture smaller than `s` (an
+upload under 256 pixels, never scaled up, below) is served at its own
+size for every larger `s`. The hub scales each size once from the
+stored image, when it stores it or at the first request for that size,
+keeps it next to the stored image and serves the kept bytes; it never
+scales on a request it has served before. Each size has its own `ETag`
+(a digest of its bytes); `v` stays the stored image's, so one
+`avatar_url` names every size and a client adds `&s=<size>` for the
+size it draws. A new upload or a delete drops the kept sizes with the
+image they were made from.
 
 **Upload.** `PUT` with the raw image as the body — no JSON, no multipart
 — and `Content-Type: image/png`, `image/jpeg` or `image/webp`. The rules of the logo's
@@ -7252,7 +7283,9 @@ and the admin's dashboard shows the new picture when it next reads the
 member list, which carries the current URL on every read.
 
 Errors, `GET`: `not_found` when there is no image or the caller may not
-see the member. `PUT`: `invalid` with `details.fields.body` one of
+see the member; `invalid` with `details.fields.s: "unsupported"` for a
+size not listed under **Sizes**, checked after the authorization, so
+it tells nothing to a caller who may not see the image. `PUT`: `invalid` with `details.fields.body` one of
 `unsupported_type` (not PNG, JPEG or WebP by its bytes, or a `Content-Type` that
 does not name the sniffed type), `too_large` (over 1 MiB), `dimensions`
 (over 4096 pixels on a side, by the header or after decoding, or a
@@ -9900,9 +9933,11 @@ everything of its own shown (as in `GET /me`).
 `avatar_url` follows §6.10 ("Who may read an image"): it is the
 image's address only where the caller may read it (a shared project,
 the organisation's own members and its projects' members, the caller's
-own); otherwise `null`, and the dashboard draws a neutral placeholder
-(not §6.10's generated avatar, which needs the account id this answer
-does not give). A public page grants no image (§16.9). The same holds
+own, and a picture a public page shows); otherwise `null`, and the
+dashboard draws a neutral placeholder (not §6.10's generated avatar,
+which needs the account id this answer does not give). A public
+picture (§6.10: a person with a page and `public_profile` `true`) is
+the image's address for every reader. The same holds
 for each `avatar_url` in `members`: an organisation's membership lets
 its members read the organisation's image, not each other's.
 
@@ -17241,7 +17276,8 @@ the list answers the app shell.
 - **Members** — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
-  role. No presence, no instances, no avatar.
+  role. No presence, no instances, no avatar (a picture is on the
+  member's own page only).
 - **Organisation** — the reporting lines (§6.2) between the members
   Members shows; a member who is not shown is an unnamed box with its
   role, so the shape of the team is visible and no hidden name is.
@@ -17308,8 +17344,10 @@ preference (§19.4). Briefings of private
 projects, the soul's earlier versions, memory and preferences are never
 on it. Wherever the dashboard edits a text that such a page shows — a
 soul, an account or project briefing, a membership's briefing — it
-says so next to the editor ("Public on the agent's page"). No presence,
-no instances, no model or harness. `agents` is a reserved
+says so next to the editor ("Public on the agent's page"). It shows
+the agent's picture as a person's page does (below), the placeholder
+when the agent has none; the picture is public while the page is
+(§6.10). No presence, no instances, no model or harness. `agents` is a reserved
 second segment (§16.11), so the address never meets a project.
 
 **A person's page.** `GET /{handle}`, for every active human account
@@ -17332,8 +17370,18 @@ name, the handle and the agents, carries `<meta name="robots"
 content="noindex">` and `X-Robots-Tag: noindex`, and the sitemap leaves
 it out; the person is still named on the public pages of their projects
 (above), and the members of a project they share read the rest in the
-dashboard (§6.27). No address, no session, no presence, no image: a
-visitor sees the placeholder avatar.
+dashboard (§6.27). No address, no session, no presence. **The
+picture**: while `public_profile` is `true` the page shows the person's
+picture at 128 × 128 pixels (`<img>` from `avatar_url` with `&s=128`,
+§6.10, an empty `alt` since the name follows), and a neutral
+placeholder of the same size, drawn with inline style and no image,
+when the person has none; with `public_profile` `false` it shows the
+placeholder. Not the generated avatar of §6.10: a page carries no
+script to draw it, and it would name the account id. A picture is an
+input of the page that shows it, the person's or the agent's: an
+upload, a delete or a moderation reset renders that page again under
+`MAITY_PUBLIC_PAGES_RENDER` (below; a removal at once), so a stored
+page names the current `avatar_url`.
 
 **Online on public pages.** `PATCH /me` (human only) also sets
 `public_presence` (`true` or `false`, anything else `null` included
@@ -17434,7 +17482,8 @@ one or the other. An owner of the organisation sets `public_page`
 (`off` by default, `on`) with `PATCH /orgs/{org}` (§6.26). The page
 shows the `display_name`, the `handle` and the organisation's projects
 whose own `public_page` is `on`, each with a link to its page. The
-avatar is not on it, since a page carries no image (below). The
+avatar is not on it: an organisation's picture is never public
+(§6.10). The
 organisation's members are never shown: who belongs to it is not
 public, whatever its page says; a project's page still names its own
 members (above). Without `public_page: on` the address
@@ -17490,7 +17539,9 @@ the Board's 30-day window for `done` and `cancelled`, or drops below
 the 200 of an open column, is not a removal and leaves with the next
 render. The
 hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
-font or image from anywhere (the hub has no public image store, §16.7).
+font from anywhere, and no image but the person's or the agent's
+picture on their own page, from this hub (§6.10; the hub has no other
+public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
@@ -17504,7 +17555,8 @@ text (cut first, then escaped), and a `<link rel="canonical">` with
 its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
 `Cache-Control: public, max-age=60`, an `ETag`,
 `Content-Security-Policy: default-src 'none'; style-src
-'unsafe-inline'`, `X-Content-Type-Options: nosniff`, and never a
+'unsafe-inline'; img-src 'self'` (`img-src` for the pictures of a
+person's and an agent's page, §6.10), `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie`, as every answer on these addresses, the
 app shell's included (§16.11). When a page stops being public for any
 reason above, the hub deletes its stored page in the same transaction
