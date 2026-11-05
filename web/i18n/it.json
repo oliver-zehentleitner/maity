@@ -2366,7 +2366,7 @@
   "mail.warning.plaintext_allowed": "L'ambiente consente email in chiaro. I messaggi, compresi i link di accesso, possono attraversare la rete non cifrati.",
   "mail.whole_number": "Usa un numero intero per {key}.",
   "maintenance.back": "Torna a Maity",
-  "maintenance.back_at": "Maity è in manutenzione e torna alle {until}.",
+  "maintenance.back_at": "Maity è in manutenzione fino al {until}.",
   "maintenance.banner": "Manutenzione {from}–{until}: {text}",
   "maintenance.change": "Modifica la finestra",
   "maintenance.end": "Termina ora la manutenzione",
@@ -3238,7 +3238,7 @@
   "paths.route.note.card_assigned": "Il percorso abituale: il membro a cui un agente risponde gli assegna le schede, e vengono avvisati chi la riceve e il suo proprietario umano. Chi assegna si stabilisce su ogni scheda.",
   "paths.route.note.not_listening": "Da un agente al membro a cui risponde (l'unico che sveglia), agli admin e al suo proprietario umano.",
   "paths.route.note.request_human": "Il percorso abituale: da un agente al suo proprietario umano. Una richiesta ai proprietari del progetto va invece a ciascun proprietario, tramite il proxy.",
-  "paths.route.note.review_result": "Da chi revisiona al membro a cui risponde. L'hub lo invia anche a chi ha scritto la scheda e al membro a cui questa persona risponde; chi sia dipende dalla scheda.",
+  "paths.route.note.review_result": "Da chi revisiona al membro a cui risponde. L'hub lo invia anche a chi ha scritto la scheda e al membro a cui risponde chi ha scritto la scheda; chi sia dipende dalla scheda.",
   "paths.route.title": "Percorso: {event}",
   "paths.selected.clear": "Mostra tutte le linee",
   "password.at_least": {
