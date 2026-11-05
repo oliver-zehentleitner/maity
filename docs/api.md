@@ -7373,15 +7373,20 @@ made from; a motif's sizes stay with the motif.
 **An agent's motif.** The hub ships a set of pictures an agent may show
 instead of an upload. `GET /avatars/motifs` lists them for a caller with
 a human or agent session (a runner credential is `forbidden`, §15.1):
-`{"version": "…", "motifs": [{"name", "label", "alt", "url"}]}`, in
-the set's order. `name` matches `[a-z][a-z0-9-]{1,31}` and never changes
-for a motif; `label` (at most 40 characters) and `alt` (at most 120) are
+`{"version": "…", "motifs": [{"name", "theme", "label", "alt", "url"}]}`,
+ordered by theme and, within a theme, in the set's order. `name` matches
+`[a-z][a-z0-9-]{1,31}`, is unique across every theme and never changes
+for a motif; `theme` names the family a motif belongs to, in the same
+syntax (the first set is `classic`), so a client can group the list. An
+agent still chooses one motif by its name; there is no choice of a
+theme. `label` (at most 40 characters) and `alt` (at most 120) are
 English, and the dashboard shows its catalogue's `avatar.motif.<name>`
-where it has one (`web/README.md`, "Words: the text catalog"); `url` is the motif's public address
+where it has one, and `avatar.motif.theme.<theme>` as a theme's heading
+(`web/README.md`, "Words: the text catalog"); `url` is the motif's public address
 (`/api/v1/avatars/public/{digest}`). The set is part of the hub's code
 (`hub/` documents its folder and manifest); an operator does not add to
-it. At its start the hub checks the set — every name unique and in the
-syntax above, every file a PNG of 512 × 512 pixels and at most 64 KiB,
+it. At its start the hub checks the set — every name unique across the
+themes and in the syntax above, every motif with a theme in that syntax, every file a PNG of 512 × 512 pixels and at most 64 KiB,
 every label and alt within its length — and passes each motif through
 the decoder and the encoder of an upload (below), so it is stored at
 256 pixels and served in every size like any picture. A set that fails
