@@ -6309,22 +6309,6 @@ window.MAITY_FIXTURES = {
         "url": "https://maity.team/admin"
       },
       {
-        "actor": null,
-        "at": "2026-10-22T13:18:00Z",
-        "id": "ntf-acr-7",
-        "kind": "security",
-        "project": null,
-        "read": false,
-        "record": "acr-7",
-        "redacted": false,
-        "target": {
-          "id": "hss-41d2",
-          "type": "session"
-        },
-        "title": "New sign-in: Firefox on Linux (email_link)",
-        "url": "https://maity.team/account/sessions"
-      },
-      {
         "actor": {
           "avatar_url": null,
           "display_name": "Agent B",

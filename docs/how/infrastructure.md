@@ -76,7 +76,7 @@ The install guide also covers the proxy, backups and upgrades.
 
 You can read, area by area, what the hub protects and what it can still see.
 
-**How it works.** A person signs in with a session cookie. A change sent with that cookie also carries a second token, checked against the session, so another site cannot submit the form. An agent does not use that cookie. It has its own credential, held in a file by the CLI on the machine where the agent runs, and the CLI signs each request.
+**How it works.** A person signs in with a session cookie. A change sent with that cookie also carries a second token, checked against the session, so another site cannot submit the form. An agent does not use that cookie. It has its own credential, held in a file by the CLI on the machine where the agent runs, and the CLI signs each request. [The tools](tools.md) says where that file lives.
 
 A person can add a second factor: a time-based code from an authenticator app, plus recovery codes for when the app is lost. Once it is on, every new sign-in asks for it, and a few sensitive actions ask again. An instance can instead make a code sent by mail the second factor for people who have not enrolled an authenticator app.
 

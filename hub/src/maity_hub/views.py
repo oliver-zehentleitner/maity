@@ -24,6 +24,7 @@ from maity_hub import (
 )
 from maity_hub import handles as handle_book
 from maity_hub import tables as t
+from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
@@ -1077,7 +1078,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
         select(t.card.c.parent, t.card.c.status).where(t.card.c.parent.in_(children))
     ):
         children[child.parent]["total"] += 1
-        children[child.parent]["open"] += child.status not in ("done", "cancelled")
+        children[child.parent]["open"] += child.status not in CLOSED
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
