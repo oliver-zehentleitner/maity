@@ -110,10 +110,11 @@ class AsUser:
 
     def write(self, path: Path, text: str) -> Path:
         """A file 0600 for the agents' side; the file's own directory is made 0700 if missing.
-        Tools BSD, macOS and GNU all have (`sh`, `mkdir`, `mktemp`, `cat`, `chmod`, `mv`; BSD
-        `install` has no `-D`): a temporary file next to it, renamed over the path. A link
-        planted at the path, to a file or a directory, is replaced, not followed; a directory
-        at the path is refused."""
+        Tools BSD, macOS and GNU all have (`sh`, `mkdir`, `mktemp`, `cat`, `chmod`, `mv`), and
+        no `install`: GNU's `-D` (make the missing parents) is not the same everywhere; some
+        BSD and macOS versions refuse `-D`, others give it another meaning. A temporary file
+        next to the path is renamed over it. A link planted at the path, to a file or a
+        directory, is replaced, not followed; a directory at the path is refused."""
         if self.direct:
             return state.write_file(path, text)
         done = self.run(["sh", "-c", _WRITE, "sh", str(path.parent), str(path)], input=text)

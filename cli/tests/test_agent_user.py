@@ -94,8 +94,8 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
 def test_a_file_for_the_agents_side_is_written_without_gnu_install(
     tmp_path: Path, fake_sudo: Path
 ) -> None:
-    """A host whose `install` has no `-D` (BSD, macOS) still gets the file: 0600, in a new
-    0700 directory, replacing a link planted at the path (to a file or a directory) instead
+    """A host whose `install` refuses `-D`, as one macOS host did, still gets the file: 0600,
+    in a new 0700 directory, replacing a link planted at the path (to a file or a directory) instead
     of writing through it, and refusing a directory at the path."""
     bsd = fake_sudo.parent / "sbin" / "install"  # first on the fixture's PATH
     bsd.write_text('#!/bin/sh\ncase " $* " in *" -D "*) echo "install: illegal option -- D" >&2;'
