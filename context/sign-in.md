@@ -415,7 +415,7 @@ erase their addresses (the maintainer's choice of the two options).
 **Limit:** the fingerprint is pseudonymous, not anonymous: whoever
 holds the key, or without `MAITY_SECRET_KEY` a copy of the whole
 database (the pepper sits there), can test a guessed source address,
-and source addresses are few enough to try them all. Setting, changing
+and the whole IPv4 range is few enough to try. Setting, changing
 or removing `MAITY_SECRET_KEY` gives every address a new fingerprint,
 so every account has no known source until its next sign-in.
 
