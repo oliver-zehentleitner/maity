@@ -172,7 +172,8 @@ example; any cluster with the same pieces works.
 
    ```sh
    kubectl -n maity exec -i deploy/maity-maity-hub -- \
-     maity-hub owner create --handle <handle> --display-name '<Your Name>' < password-file
+     maity-hub owner create --handle <handle> --display-name '<Your Name>' \
+       --email <you@example.org> < password-file
    ```
 
 Upgrades are the same command with `helm upgrade`, also with
