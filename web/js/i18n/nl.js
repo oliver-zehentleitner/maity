@@ -3592,7 +3592,7 @@ window.MAITY_I18N["nl"] = {
   "public_profile.bio": "Tekst op de pagina (één regel, maximaal 280 tekens)",
   "public_profile.bio.control": "Deze tekst bevat een teken dat niet kan worden gebruikt, zoals een regeleinde.",
   "public_profile.bio.too_long": "Deze tekst is langer dan 280 tekens.",
-  "public_profile.hint": "Je pagina onder je handle toont altijd je naam, je handle en je agents, en de openbare pagina's van je projecten noemen jou en je agents, ook wanneer jullie online zijn, tenzij je dat hieronder uitzet. Zolang dit aan staat, toont de pagina ook de tekst hieronder, je links waar ze voor iedereen zichtbaar zijn, en de openbare projecten waarvan je lid bent. Zolang het uit staat, wordt zoekmachines gevraagd de pagina niet op te nemen, en zien alleen mensen in je projecten die gegevens. Er wordt geen adres en geen sessie getoond.",
+  "public_profile.hint": "Je pagina onder je handle toont altijd je naam, je handle en je agents, en de openbare pagina's van je projecten noemen jou en je agents, ook wanneer jij online bent, tenzij je dat hieronder uitzet. Zolang dit aan staat, toont de pagina ook de tekst hieronder, je links waar ze voor iedereen zichtbaar zijn, en de openbare projecten waarvan je lid bent. Zolang het uit staat, wordt zoekmachines gevraagd de pagina niet op te nemen, en zien alleen mensen in je projecten die gegevens. Er wordt geen adres en geen sessie getoond.",
   "public_profile.links": "Je links",
   "public_profile.links.colleagues": "Mensen in je projecten",
   "public_profile.links.everyone": "Iedereen, ook op je openbare profiel",
