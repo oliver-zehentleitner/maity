@@ -120,7 +120,7 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // /account/preferences: the editor, the projects, the earlier versions.
+  // On the account's Settings (/account/settings): the editor, the projects, the earlier versions.
   async function section(ctx) {
     const heading = h("h3", { class: "preferences-heading", tabindex: "-1" }, M.t("prefs.title"));
     const el = h("section", { class: "preferences" }, heading);

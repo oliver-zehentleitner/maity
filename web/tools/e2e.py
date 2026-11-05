@@ -771,6 +771,7 @@ def main() -> int:
                     chat_height_views(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
+                    account_tabs_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -2980,6 +2981,199 @@ def notification_sessions_layout(run: Run, browser) -> None:
                 context.close()
 
 
+# The account's tab rows (tsk-3banvfzv3nvs): each row inside the window and on one line, every tab a
+# 24 px target with its text inside it, no two tabs over each other, the current one in sight in
+# its row, the fade on a row that scrolls and on no other, the heading above the row, the row
+# above the tab's first part, and the sign-in banner, if shown, above all of it.
+TABS_MEASURE = """() => {
+  const problems = [], eps = 0.5, vw = document.documentElement.clientWidth;
+  const name = (el) => el.tagName.toLowerCase() + "." + String(el.className).trim().split(/\\s+/).join(".") + " '" + el.textContent.trim().slice(0, 30) + "'";
+  if (document.documentElement.scrollWidth > window.innerWidth) problems.push("the page is " + document.documentElement.scrollWidth + " px wide");
+  const rows = Array.from(document.querySelectorAll("main nav.account-tabs"));
+  if (!rows.length) problems.push("no tab row");
+  const heading = rows.length && rows[0].previousElementSibling && rows[0].previousElementSibling.matches("h2") ? rows[0].previousElementSibling : null;
+  const banner = document.querySelector("main .signin-banner");
+  let above = heading ? heading.getBoundingClientRect().bottom : null;
+  if (!heading) problems.push("no heading");
+  if (banner && heading && banner.getBoundingClientRect().bottom > heading.getBoundingClientRect().top + eps) problems.push("the banner runs over the heading");
+  for (const nav of rows) {
+    const n = nav.getBoundingClientRect();
+    if (n.left < -eps || n.right > vw + eps) problems.push(name(nav) + " leaves the window: " + n.left + ".." + n.right);
+    if (above !== null && n.top < above - eps) problems.push(name(nav) + " starts above what stands before it");
+    above = n.bottom;
+    const tabs = Array.from(nav.children);
+    const tops = new Set(tabs.map((t) => Math.round(t.getBoundingClientRect().top + nav.scrollTop)));
+    if (tops.size > 1) problems.push(name(nav) + " wraps onto " + tops.size + " lines");
+    for (const t of tabs) {
+      const r = t.getBoundingClientRect();
+      if (r.height < 24 - eps || r.width < 24 - eps) problems.push(name(t) + " is " + Math.round(r.width) + "x" + Math.round(r.height));
+      if (t.scrollWidth > t.clientWidth + 1) problems.push(name(t) + "'s text is wider than the tab");
+    }
+    for (let i = 0; i + 1 < tabs.length; i++) {
+      const a = tabs[i].getBoundingClientRect(), b = tabs[i + 1].getBoundingClientRect();
+      if (b.left < a.right - eps) problems.push(name(tabs[i]) + " and " + name(tabs[i + 1]) + " overlap");
+    }
+    const cur = nav.querySelector('[aria-current="page"]');
+    if (!cur) problems.push(name(nav) + " marks no tab");
+    else {
+      const c = cur.getBoundingClientRect();
+      if (c.left < n.left - eps || c.right > n.right + eps) problems.push(name(cur) + " is out of sight in its row");
+    }
+    const scrolls = nav.scrollWidth > nav.clientWidth + 1;
+    const faded = nav.classList.contains("more-after") || nav.classList.contains("more-before");
+    if (scrolls !== faded) problems.push(name(nav) + (scrolls ? " scrolls without the fade" : " fades without scrolling"));
+  }
+  const last = rows[rows.length - 1];
+  const next = last && last.nextElementSibling;
+  if (next && next.getBoundingClientRect().top < last.getBoundingClientRect().bottom - eps) problems.push(name(next) + " runs over the tab row");
+  return { problems, scrollY: window.scrollY,
+    tabs: rows.map((nav) => Array.from(nav.children).map((t) => (t.getAttribute("aria-current") ? "*" : "") + t.textContent.trim())) };
+}"""
+
+ACCOUNT_TABS = (
+    ("/account", "Profile", None, "Your picture"),
+    ("/account/settings", "Settings", None, "Theme"),
+    ("/account/notifications", "Notifications", None, "When mail goes out"),
+    ("/account/security", "Security", "Sign-in", "Change password"),
+    ("/account/security/sessions", "Security", "Sessions", "Sessions"),
+    ("/account/security/device", "Security", "Another device", "Sign in another device"),
+    ("/account/security/forge", "Security", "Forge access", "Forge access"),
+    ("/account/security/data", "Security", "Your data", "Your data"),
+    ("/account/orgs", "Organisations", None, "Organisations"),
+    # The setup's return (§11.4, §16.11): Forge access at its own address, no redirect.
+    ("/settings/forge", "Security", "Forge access", "Forge access"),
+)
+# The addresses before the tabs (the menu's, the hub's mails and redirects, §11.4): where each
+# leads, in place of it in the history, and the heading focused there; None, none.
+ACCOUNT_MOVED = (
+    ("/account/picture", "/account", "Your picture"),
+    ("/account/preferences", "/account/settings", "Your preferences"),
+    ("/account/theme", "/account/settings", "Theme"),
+    ("/account/password", "/account/security", "Change password"),
+    ("/account/sessions", "/account/security/sessions", "Sessions"),
+    ("/account/sign-in-device", "/account/security/device", "Sign in another device"),
+    ("/account/forge", "/account/security/forge", "Forge access"),
+    ("/account/data", "/account/security/data", "Your data"),
+    ("/account/unknown", "/account", None),
+    ("/account/security/unknown", "/account/security", None),
+)
+
+
+def account_tabs_layout(run: Run, browser) -> None:
+    """The account's tabs (tsk-3banvfzv3nvs) in fixture mode, every state the layout has: each tab
+    and each of Security's own at 2560, 1280 and 390 px, with the sign-in banner and without
+    (TABS_MEASURE on every row and tab); switching by a click (the address, the marked tab, the
+    page's top, the history); the profile menu, folded and opened, naming the tabs; and every
+    address before the tabs leading to its tab, its heading focused, in place of it in the history."""
+    run.step("fixtures: the account's tabs at 2560, 1280 and 390 px, banner on and off, switched, the old addresses led on")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for path, tab, sub, part in ACCOUNT_TABS:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#{path}")
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                expect(page.locator("main .signin-banner")).to_be_visible()
+                if path == "/account/security":
+                    # The hub's mail and bell item about the second factor lead here: it comes first.
+                    expect(page.locator("main h3").first).to_have_text("Two-factor sign-in")
+                for banner in (True, False):
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                    where = f"{path} at {width}x{height}" + (" with the banner" if banner else "")
+                    m = page.evaluate(TABS_MEASURE)
+                    assert not m["problems"] and not errors, f"{where}: {m['problems'] + errors}"
+                    want = [t if t != tab else "*" + t for t in ("Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts")]
+                    assert m["tabs"][0] == want, f"{where}: the tabs are {m['tabs'][0]}"
+                    if sub:
+                        assert "*" + sub in m["tabs"][1] and len(m["tabs"]) == 2, f"{where}: Security's tabs are {m['tabs'][1:]}"
+                    else:
+                        assert len(m["tabs"]) == 1, f"{where}: {len(m['tabs'])} tab rows"
+                    run.shot(page, "fixtures-account-tabs" + path.replace("/", "-") + f"-{width}" + ("-banner" if banner else ""))
+                # The focus ring of a tab whole, inside its row, which clips what stands outside it.
+                page.locator("main nav.account-tabs a.view-tab").first.focus()
+                ring = page.evaluate("""() => { const a = document.activeElement, nav = a.closest('nav');
+                  const cs = getComputedStyle(a), out = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
+                  const r = a.getBoundingClientRect(), n = nav.getBoundingClientRect();
+                  return { style: cs.outlineStyle, top: r.top - out - n.top, bottom: n.top + nav.clientHeight - (r.bottom + out) }; }""")
+                assert ring["style"] != "none" and ring["top"] >= -0.5 and ring["bottom"] >= -0.5, f"{path} at {width}: the focus ring is cut by its row {ring}"
+                if width == 1280 and path in ("/account", "/account/security/sessions"):
+                    run.a11y(page, f"fixtures: account {path}")
+            # Switching: from far down a tab, a click on another shows it from its top, a new entry in the history.
+            page.goto(f"{index}?lang=en#/account/settings")
+            expect(page.locator("main h3", has_text="Theme")).to_be_visible()
+            page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            row = page.locator("main nav.account-tabs").first
+            for path, tab, sub, part in ACCOUNT_TABS:
+                if path == "/settings/forge":
+                    continue  # reached from the hub, not by a tab
+                if sub not in (None, "Sign-in"):
+                    page.locator("main nav.security-tabs").get_by_role("link", name=sub, exact=True).click()
+                else:
+                    row.get_by_role("link", name=tab, exact=True).click()
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                assert page.url.endswith("#" + path), f"switched to {tab}/{sub} at {width}: {page.url}"
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors and m["scrollY"] == 0, f"switched to {path} at {width}: {m['problems'] + errors}, scrollY {m['scrollY']}"
+                page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            page.go_back()
+            expect(page.locator("main h3", has_text="Your data")).to_be_visible()
+            assert page.url.endswith("#/account/security/data"), f"back at {width}: {page.url}"
+            # The profile menu, folded and opened: the tabs, Linked accounts to come, then Sign out.
+            menu = page.locator("#header .profile-menu")
+            menu.click()
+            items = page.locator("#header ul.menu:visible .menu-item")
+            expect(items).to_have_text(["Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts · later", "Sign out"])
+            m = page.evaluate(LINES_MEASURE, "#header ul.menu:not([hidden])")
+            assert not m["problems"] and not errors, f"the profile menu at {width}: {m['problems'] + errors}"
+            run.shot(page, f"fixtures-account-menu-{width}")
+            items.nth(2).click()
+            expect(page.locator("main h3", has_text="When mail goes out")).to_be_visible()
+            m = page.evaluate(TABS_MEASURE)
+            assert not m["problems"] and "*Notifications" in m["tabs"][0], f"the menu's Notifications at {width}: {m}"
+            # Answers that take time, as a hub's do (the fixtures answer at once): the view is put in
+            # the page only once its parts are read, so the rows are measured, the current tab
+            # brought into sight and a heading focused after that, not before (review of #1409).
+            page.goto(f"{index}?lang=en#/all")
+            page.evaluate("""() => { const api = window.Maity.api;
+              for (const name of ["get", "post"]) { const call = api[name];
+                api[name] = (...a) => new Promise((ok) => window.setTimeout(ok, 150)).then(() => call.apply(api, a)); } }""")
+            for path, tab, sub, part in ACCOUNT_TABS:
+                page.evaluate("(p) => { location.hash = '#' + p; }", path)
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors, f"{path} at {width}, slow answers: {m['problems'] + errors}"
+            for old, new, focused in ACCOUNT_MOVED:
+                page.evaluate("() => { location.hash = '#/all'; }")
+                expect(page.locator("main nav.account-tabs")).to_have_count(0)
+                page.evaluate("(p) => { location.hash = '#' + p; }", old)
+                page.wait_for_function("(p) => location.hash === '#' + p", arg=new)
+                expect(page.locator("main nav.account-tabs").first).to_be_visible()
+                if focused:
+                    expect(page.locator("main h3:focus")).to_have_text(focused)
+                # In place of the old address in the history: Back leads to the page before it.
+                page.go_back()
+                page.wait_for_function("() => location.hash === '#/all'")
+            # The addresses before the tabs.
+            for old, new, focused in ACCOUNT_MOVED:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#{old}")
+                page.wait_for_function("(p) => location.hash === '#' + p", arg=new)
+                expect(page.locator("main nav.account-tabs").first).to_be_visible()
+                if focused:
+                    expect(page.locator("main h3:focus")).to_have_text(focused)
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors, f"{old} at {width}: {m['problems'] + errors}"
+                page.go_back()
+                page.wait_for_function("() => location.href === 'about:blank'")
+        finally:
+            context.close()
+
+
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
     """What `maity runner pair` does on the runner host: the exchange of §15.2."""
     words = shlex.split(pair_line)
@@ -4998,11 +5192,15 @@ def members_step(run: Run, page: Page) -> None:
 
 
 def picture_step(run: Run, page: Page) -> None:
-    """docs/api.md §6.10: the owner's picture, from the profile menu; uploaded where the hub has it."""
+    """docs/api.md §6.10: the owner's picture, on the account's Profile from the profile menu, and at
+    the address before the tabs, /account/picture, which leads there; uploaded where the hub has it."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
-    page.get_by_role("menuitem", name="Picture", exact=True).click()
-    expect(page).to_have_url(re.compile(r"/account/picture$"))
+    page.get_by_role("menuitem", name="Profile", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account$"))
+    expect(page.locator(".picture-heading")).to_be_visible()
+    page.goto(run.base + "/account/picture")
+    expect(page).to_have_url(re.compile(r"/account$"))
     expect(page.locator(".picture-heading")).to_be_focused()
     run.a11y(page, "account picture")
     page.locator("#avatar-file-" + page.evaluate("Maity.api.get('/me').then((m) => m.member.id)")).set_input_files(
@@ -5062,11 +5260,16 @@ def change_password(run: Run, page: Page) -> None:
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
-    page.get_by_role("menuitem", name="Change password", exact=True).click()
-    expect(page).to_have_url(re.compile(r"/account$"))
-    # The sessions (§2.6.5): the list, this session in it.
+    page.get_by_role("menuitem", name="Security", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/security$"))
+    # The sessions (§2.6.5), Security's tab of their own: the list, this session in it.
+    tabs = page.locator("main nav.security-tabs")
+    tabs.get_by_role("link", name="Sessions", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/security/sessions$"))
     sessions = page.locator("section.sessions")
     expect(sessions.locator("li.session.current")).to_be_visible()
+    tabs.get_by_role("link", name="Sign-in", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/security$"))
     page.locator("#password-current").fill("not the password")
     page.locator("#password-new").fill(new_password)
     page.locator("#password-repeat").fill(new_password)
