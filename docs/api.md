@@ -7105,8 +7105,8 @@ request req-ms9y03z7a5g5). Its sources, the first that applies wins:
    dashboard and every other client show the same picture.
 
 An agent's `avatar_url` is never `null` once its profile exists (a
-placement's `agent` before the first pickup creates the profile is
-`null` as a whole, §15.5). A human's sources stay the
+placement whose profile the first pickup still has to create carries
+`agent.id` and `agent.avatar_url` as `null` until then, §15.5). A human's sources stay the
 three above, and a human without an upload or a forge picture keeps the
 generated avatar the client draws.
 
