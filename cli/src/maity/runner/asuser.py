@@ -28,10 +28,16 @@ from pathlib import Path
 from .. import state
 
 TIMEOUT = 60.0
-# `write` on the agents' side: $1 the directory, $2 the file; the text on stdin.
+# `write` on the agents' side: $1 the directory, $2 the file; the text on stdin. A link at the
+# path is removed first (`mv` would otherwise move into a linked directory), a directory there
+# is refused, and the temporary file is removed when a step fails.
 _WRITE = (
-    'mkdir -p -m 700 -- "$1" && t=$(mktemp "$2.XXXXXX") && { cat > "$t" && chmod 600 -- "$t"'
-    ' && mv -f -- "$t" "$2" || { rm -f -- "$t"; exit 1; }; }'
+    'mkdir -p -m 700 -- "$1" || exit 1; '
+    'if [ -L "$2" ]; then rm -f -- "$2" || exit 1; '
+    'elif [ -d "$2" ]; then echo "$2 is a directory" >&2; exit 1; fi; '
+    't=$(mktemp "$2.XXXXXX") || exit 1; '
+    'if cat > "$t" && chmod 600 -- "$t" && mv -f -- "$t" "$2"; then exit 0; fi; '
+    'rm -f -- "$t"; exit 1'
 )
 REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
@@ -103,9 +109,11 @@ class AsUser:
         return Path(pwd.getpwnam(str(self.user)).pw_dir)
 
     def write(self, path: Path, text: str) -> Path:
-        """A file 0600 for the agents' side, its directory made 0700 if missing. POSIX tools only
-        (BSD `install` has no `-D`): a temporary file next to it, renamed over the path, so a
-        link planted there is replaced, not followed."""
+        """A file 0600 for the agents' side; the file's own directory is made 0700 if missing.
+        Tools BSD, macOS and GNU all have (`sh`, `mkdir`, `mktemp`, `cat`, `chmod`, `mv`; BSD
+        `install` has no `-D`): a temporary file next to it, renamed over the path. A link
+        planted at the path, to a file or a directory, is replaced, not followed; a directory
+        at the path is refused."""
         if self.direct:
             return state.write_file(path, text)
         done = self.run(["sh", "-c", _WRITE, "sh", str(path.parent), str(path)], input=text)

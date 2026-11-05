@@ -723,9 +723,9 @@ one version, not a contract.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user
+**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user; a tester's macOS run, where BSD `install` refused `-D` for every write on the agents' side, and the reviews of #1411, 2026-11-05
 **See:** runner.md — 2bdc5809-b08b-4fa2-97bc-004d37c4cddb — as of 2026-10-22
-**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), or a live run shows a harness writing where the agents' user cannot
+**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), a live run shows a harness writing where the agents' user cannot, or a target host lacks one of the tools the agents' side writes with
 
 With `layout = "agent_user"`, every command for the agents runs as
 `sudo -n -u <agent_user> --`, with only the environment it needs passed
@@ -751,6 +751,14 @@ own; a listing that is not complete refuses the start
 sandbox tools are looked up, and Codex's sandbox tried, as that user on
 the agents' PATH as well.
 
+Files for the agents' side (in this layout and on ssh hosts) are written
+by one fixed `sh -c` script with tools BSD, macOS and GNU all have. It
+makes the file's own directory 0700 if missing, writes the text from
+stdin into a `mktemp` file next to the path, sets it 0600 and renames it
+over the path. A link at the path, to a file or a directory, is removed
+first, and a directory at the path is refused. The text never appears in
+an argument, and the path never holds a half-written file.
+
 **Reason:** the layout exists so that agents, and any repository code
 they run, cannot read the runner's credential or state. That only holds
 if nothing the agents need has to be inside the runner's 0700 state
@@ -769,6 +777,13 @@ files and credentials; separating them needs one user per agent (ssh
 - Running tmux as the runner with `server-access` for the agents' user:
   tmux 3.3 and later only, and the sessions' processes would still be
   the runner's.
+- `install -D -m 600 /dev/stdin <path>` for the agents' files: GNU only.
+  BSD and macOS `install` has no `-D`, so no agent could start there in
+  this layout or over ssh.
+- `cat >` straight into the path: it writes through a link planted
+  there, and leaves a half-written file when it fails.
+- `mv -T` or other GNU-only guards against a directory at the path: the
+  same portability problem as `install -D`.
 
 ## On the ssh backend each host is a target that runs its own `maity`
 

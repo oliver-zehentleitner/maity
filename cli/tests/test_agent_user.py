@@ -91,11 +91,12 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
     assert "maity-agent -- sh -c mkdir -p" in fake_sudo.read_text()
 
 
-def test_a_file_for_the_agents_side_is_written_with_posix_tools(
+def test_a_file_for_the_agents_side_is_written_without_gnu_install(
     tmp_path: Path, fake_sudo: Path
 ) -> None:
     """A host whose `install` has no `-D` (BSD, macOS) still gets the file: 0600, in a new
-    0700 directory, replacing a link planted at the path instead of writing through it."""
+    0700 directory, replacing a link planted at the path (to a file or a directory) instead
+    of writing through it, and refusing a directory at the path."""
     bsd = fake_sudo.parent / "sbin" / "install"  # first on the fixture's PATH
     bsd.write_text('#!/bin/sh\ncase " $* " in *" -D "*) echo "install: illegal option -- D" >&2;'
                    ' exit 64;; esac\nexec /usr/bin/install "$@"\n')  # fmt: skip
@@ -114,6 +115,19 @@ def test_a_file_for_the_agents_side_is_written_with_posix_tools(
     assert not target.is_symlink() and target.read_text() == "two\n"
     assert elsewhere.read_text() == "keep\n"
     assert [p.name for p in target.parent.iterdir()] == ["file"]  # no temporary file left
+    linked_dir = tmp_path / "linked-dir"
+    linked_dir.mkdir()
+    target.unlink()
+    target.symlink_to(linked_dir)
+    as_user.write(target, "three\n")
+    assert not target.is_symlink() and target.read_text() == "three\n"
+    assert list(linked_dir.iterdir()) == []
+    target.unlink()
+    target.mkdir()
+    with pytest.raises(OSError, match="is a directory"):
+        as_user.write(target, "four\n")
+    assert target.is_dir() and list(target.iterdir()) == []
+    assert [p.name for p in target.parent.iterdir()] == ["file"]
 
 
 def test_the_runner_files_stay_the_runners(
