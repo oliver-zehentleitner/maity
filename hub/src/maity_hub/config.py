@@ -148,6 +148,8 @@ class Settings:
     public_pages_render: str = "on_change"
     public_pages_interval_hours: int = 6
     public_pages_snapshot_minutes: int = 5
+    public_pages_startup_seconds: int = 30
+    public_pages_render_seconds: int = 2
     # MAITY_ROUTE_LIMITS: limits on single routes the operator sets in an emergency, counted per
     # client address in each process; empty, no route has one beyond its own (§1.7).
     route_limits: tuple[RouteLimit, ...] = ()
@@ -248,6 +250,12 @@ class Settings:
             ),
             public_pages_snapshot_minutes=parse_whole(
                 env, "MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", 5, 1, 60
+            ),
+            public_pages_startup_seconds=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_STARTUP_SECONDS", 30, 1, 600
+            ),
+            public_pages_render_seconds=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_RENDER_SECONDS", 2, 1, 60
             ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),

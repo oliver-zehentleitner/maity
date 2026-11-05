@@ -1,0 +1,6 @@
+# What the docs site is built with (pages.yml) and the docs renderer's tests run with (ci.yml):
+# the Keep the Why dashboard export, and the Markdown and YAML of tools/site_docs.py.
+# `make -C tools lock` after a change here; CI runs `make -C tools lock-check`.
+keep-the-why-dashboard==0.11.43
+markdown==3.11.2
+PyYAML==6.0.3

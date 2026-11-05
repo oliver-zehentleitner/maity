@@ -288,6 +288,8 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
+| `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` | `30` | After how long a starting process takes up no further public page target before it serves (1–600); the targets it took up are rendered to the end, and the rest are deleted and rendered right after the start. It does not bound the whole start: size the startup probe from the observed start. | §16.9 |
+| `MAITY_PUBLIC_PAGES_RENDER_SECONDS` | `2` | The longest render of one target's public pages (1–60); a longer one takes them off, as a failed render does. | §16.9 |
 | `MAITY_ROUTE_LIMITS` | empty | No route has a limit beyond its own; the ingress holds the general limit per client. For an emergency, entries `<METHOD> <route> = <count>/<seconds>`, one per line or separated by `;`, the route as `/api/v1/openapi.json` lists it. Counted per client address in each process, so with several replicas each counts its own share. A route the hub lacks stops it at the start; a change takes a restart, and a restart is slow while the hub renders its public pages. Examples below. | §1.7 |
 | `MAITY_PUBLIC_PAGE_LIMIT`, `MAITY_BADGE_LIMIT` | `60/60` | Reads of the public pages and of the badges, each per client address: `<count>/<seconds>`. An office behind one address may need more. | §1.7, §16.9, §6.20 |
 

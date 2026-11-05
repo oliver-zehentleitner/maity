@@ -18,6 +18,28 @@ agents; this file is the short form for a human contributor.
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 
+## Lint and types before a push
+
+A red CI from formatting or types costs a round of about an hour. An
+opt-in pre-push hook runs CI's own `make lint typecheck` (`black --check`,
+`ruff`, `mypy`, no tests) for each of `hub/` and `cli/` that the push
+touches. Turn it on once per clone:
+
+```sh
+git config core.hooksPath tools/hooks
+python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python
+```
+
+The second line is the hub's environment from the hashed lock, the same
+one CI installs; the hook uses it for both packages (or the Python that
+`MAITY_HOOK_PYTHON` names). It stops before checking when black, ruff or
+mypy there differ from the pins in `hub/requirements/dev.txt`: after a
+lock change, run `make -C hub install PYTHON=.venv/bin/python` again. It
+checks the working tree, so it also stops when HEAD is not the pushed
+commit or a touched package has uncommitted changes. `git push
+--no-verify` skips it; `git config --unset core.hooksPath` turns it off.
+`tools/pre_push.py` has the details.
+
 ## Before merging a change to the web catalogs
 
 A pull request that changes `web/i18n/en.json` or a language file in

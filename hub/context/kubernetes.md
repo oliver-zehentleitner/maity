@@ -456,3 +456,70 @@ then waits at Traefik, and reaches the hub whole and at once.
   host-wide value.
 - **A 2m host-wide limit plus 11m for the upload path:** the same second
   object for limits the hub already enforces itself.
+
+## The general request limit is the ingress's: one per client address, off until every agent's `maity wait` retries a 429
+
+**Id:** a4438713-f4a6-47da-ae40-1d580e68126f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision on card tsk-h238y7cpk23m and the plan the team lead approved, 2026-11-04 (the decision and the values are confirmed); Traefik's source (v3.3, `rate_limiter.go`, oxy `connlimit`) for the 429 and its `Retry-After`; ingress-nginx's documentation for its 503 default and its count per controller replica; the count per Traefik router, the count per spelling of the host and the cap's place after the buffering were reproduced in review on a local Traefik v3.3.7, not on a cluster
+**Revisit when:** a CLI release whose `maity wait` retries a 429 is installed on every agent (then the limit can be on by default), the chart ships a Gateway API route, the k3s setup moves off Traefik or runs more than one Traefik, or the hub's attachment cap or memory limit changes
+**See:** kubernetes.md#the-ingress-lets-a-10-mib-upload-through-11m-for-ingress-nginx-a-buffered-route-of-its-own-on-traefik — 5eb8e035-d2f3-4eed-872b-7e21bd473792 — as of 2026-11-04
+
+The hub has no general request budget. Its own limits are per route,
+among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
+reads. The general limit
+sits at the ingress, one per client address for every request:
+- **Chart:** `ingress.requestLimit`, off by default, renders ingress-nginx's
+  `limit-rps`, `limit-burst-multiplier` (the burst divided by the rate,
+  rounded up) and `limit-connections`.
+- **k3s setup:** `deploy/k3s-single/request-limit.yaml` holds Traefik
+  middlewares for the same limit, with IPv6 counted per /64, plus two that
+  apply only on the upload route: 4 open uploads per address and 10 for the
+  whole host. The caps per address come before the buffering, so an upload
+  they refuse is never read. The cap for the host comes after it, so it counts
+  only the bodies on their way to the hub, and it counts on one spelling of
+  the host name, which a `headers` middleware sets. The lines that switch them on are comments in `hub-values.yaml` and
+  `uploads.yaml`.
+- **Values:** 50 requests a second, bursts of 200, 100 open at a time per
+  address.
+
+**Reason:** the ingress refuses a flood before the hub spends anything
+on it, and the controller already knows the client's address. The values
+are high because every agent on one machine shares that machine's address:
+a machine running a team's agents, each holding a 55-second long-poll and
+making bursts of calls, has to stay well under the limit, and the limit is
+there to stop floods. The upload gets caps of its own because the hub holds
+each upload, up to 10 MiB, in memory while it checks it: 100 open uploads
+would be about 1 GiB against the chart's 512 MiB memory limit, and 10 in all
+are 100 MiB. Off by default, because a `maity wait` from before the CLI
+release that retries a 429 ends with exit 1 on the first one, and an agent
+loop that stops on exit 1 stops listening; the chart's defaults go live with
+any chart update, so switching the limit on is the operator's step once
+every agent runs that release.
+
+The ingress-nginx annotations cannot set the status code: its controller
+ConfigMap does (`limit-req-status-code`, `limit-conn-status-code`, 503 by
+default), and the chart does not own the controller, so the README
+recommends 429. ingress-nginx counts each IPv6 address on its own, and the
+one Ingress cannot give the upload path limits of its own; the README names
+both, and that ingress-nginx counts in each controller replica. Traefik keeps
+a count per router: the upload route and the join host each count apart from
+the rest of the host, so one address may reach the values once on each.
+
+**Rejected alternatives:**
+- **The cap for the host before the buffering, like the caps per address:**
+  uploads whose bodies are still arriving would take the slots while the
+  hub holds none of them, and the cap would then count more than the memory
+  it is there for.
+- **Counting the host as the client sent it:** Traefik groups by the raw
+  `Host` header while the route's host match ignores case, so each spelling
+  would get 10 of its own.
+- **A general per-address budget in the hub:** every request would cost a
+  count, either a row in PostgreSQL shared across replicas or one count per
+  pod, and the hub would have read and parsed the request first. The ingress
+  refuses it earlier and for nothing.
+- **The limit on by default:** the first chart update would switch it on for
+  agents whose `maity wait` still ends on a 429.
+- **The host's 100 open requests for uploads too:** that is the 1 GiB above.
