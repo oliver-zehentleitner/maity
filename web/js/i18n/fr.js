@@ -2378,7 +2378,7 @@ window.MAITY_I18N["fr"] = {
   "mail.weekly_on": "Résumé hebdomadaire le",
   "mail.whole_number": "Utilisez un nombre entier pour {key}.",
   "maintenance.back": "Retour à Maity",
-  "maintenance.back_at": "Maity est en maintenance et revient à {until}.",
+  "maintenance.back_at": "Maity est en maintenance et revient le {until}.",
   "maintenance.banner": "Maintenance {from}–{until} : {text}",
   "maintenance.change": "Modifier la fenêtre",
   "maintenance.end": "Terminer la maintenance maintenant",
