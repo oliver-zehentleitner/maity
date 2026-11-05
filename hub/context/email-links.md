@@ -109,9 +109,10 @@ leaves the page. `form-action 'self'` is new: the old policy did not restrict wh
 
 The four pages of `routes/mail_links.py` and the sign-in link's page are drawn by one helper,
 `link_frame.page`, which reads the frame's model and answers with `link_frame.HEADERS`
-(`render.DOOR_CSP`, `Referrer-Policy: no-referrer`). The pages keep their words, statuses, the
-GET that changes nothing and the one button; their content stands in a `.link-page` block of the
-door's column, which `public-pages.css` gives paragraph spacing and the quote's rule. A test
+(`render.DOOR_CSP`, `Referrer-Policy: no-referrer`). The four pages of `mail_links.py` keep their
+words, statuses, the GET that changes nothing and the one button, and their content stands in a
+`.link-page` block of the door's column, which `public-pages.css` gives paragraph spacing and the
+quote's rule. The sign-in link's page keeps its own content and its GET's form cookie, as above. A test
 pins the policy string and loads each stylesheet the page names under it.
 
 **Reason:** one helper keeps the five link pages under one policy and one frame, so a change to
