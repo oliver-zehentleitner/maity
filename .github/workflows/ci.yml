@@ -99,7 +99,8 @@ jobs:
 
   # The changelog fragments in changelog.d/ (one per pull request, folded into
   # CHANGELOG.md at release) and the tools' own tests; standard library only, except the
-  # docs renderer's Markdown and YAML, on the oldest Python the tools support.
+  # docs site's lock (tools/requirements/site.txt: the docs renderer's Markdown and YAML and
+  # the Keep the Why dashboard), on the oldest Python the tools support.
   changelog:
     runs-on: ubuntu-latest
     timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)

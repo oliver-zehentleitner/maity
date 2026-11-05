@@ -41,7 +41,8 @@ jobs:
       - name: Audit the locks
         run: |
           status=0
-          # The docs site's lock (tools/requirements/site.txt, pages.yml).
+          # The docs site's lock (tools/requirements/site.txt, pages.yml). A finding there is
+          # fixed in tools/requirements/site.in and `make -C tools lock`, not as hub/README.md says.
           echo "::group::tools/requirements/site.txt"
           "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../tools/requirements/site.txt \
             --require-hashes --disable-pip --progress-spinner off --desc on || status=1
