@@ -1256,6 +1256,8 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .bell-counts { margin: 4px 0 8px; font-size: 0.85rem; }
 .bell-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .bell-items li { overflow-wrap: anywhere; font-size: 0.9rem; }
+/* Lines 24 px apart: on a phone a row's link wraps beside Mark read, and its 24 px circle would meet the button (WCAG 2.5.8). */
+.bell-items li a { line-height: 24px; }
 .bell-items li.unread a { font-weight: 600; }
 .bell-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
 .notify-kinds { border: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
@@ -1337,6 +1339,13 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 /* Waiting activity follows the request forms without replacing them. */
 .waiting-group { margin-top: 1.5rem; }
 .waiting-items { list-style: none; padding: 0; }
+/* "Current sessions" on the Notifications page (js/waiting.js): compact, its link a 24 px target. */
+.current-sessions { gap: 6px; }
+.current-sessions h3 { margin: 0; font-size: 1rem; }
+.current-sessions-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.current-sessions-items li { overflow-wrap: anywhere; font-size: 0.9rem; }
+.current-sessions .send-status:empty { display: none; }
+.current-sessions .hint a { display: inline-block; min-height: 24px; line-height: 24px; }
 .waiting-item { display: flex; flex-wrap: wrap; gap: .4rem .7rem; padding: .7rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .waiting-item a { flex: 1 1 18rem; }
 .waiting-item .muted { font-size: .85rem; }

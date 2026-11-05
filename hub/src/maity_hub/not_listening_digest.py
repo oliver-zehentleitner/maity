@@ -35,7 +35,7 @@ from sqlalchemy import Connection, Engine, and_, case, func, insert, select, upd
 
 from maity_hub import clock, maintenance, worker_runs
 from maity_hub import tables as t
-from maity_hub.cards import CLOSED as CLOSED_CARDS
+from maity_hub.cards import SOME_INSTANCE, open_claims
 from maity_hub.events import lock_project, transaction
 from maity_hub.notifications import preferences, records
 
@@ -122,11 +122,7 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         )
         .join(t.membership, t.membership.c.id == c.claim_holder)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-        .where(
-            c.claim_holder.isnot(None),
-            c.claim_instance.isnot(None),
-            c.status.notin_(CLOSED_CARDS),  # a closed card keeps its holder's columns
-        )
+        .where(open_claims(None, instance=SOME_INSTANCE))
         .order_by(c.id)
     )
     if owner_id is not None:

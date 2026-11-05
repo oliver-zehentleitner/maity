@@ -17,6 +17,8 @@ from collections.abc import Sequence
 from itertools import pairwise
 from typing import Any
 
+from maity_hub.cards import CLOSED
+
 DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
 LONGEST = 24  # past this a move spreads the column out instead of growing a key
 SPREAD_WIDTH = 4  # characters per key when a column is spread out
@@ -57,9 +59,6 @@ def spread(count: int) -> list[str]:
             digits.append(DIGITS[digit])
         keys.append("".join(reversed(digits)).rstrip("0") or "1")
     return keys
-
-
-CLOSED = ("done", "cancelled")
 
 
 def column_key(card: Any) -> tuple[Any, ...]:
