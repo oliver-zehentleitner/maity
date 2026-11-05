@@ -160,9 +160,9 @@ Keeping the projects' record keeps other members' history readable.
 **Source:** the lead's ruling in the review of the hub's product line (2026-11-03), on the reviewers' point that the line was neither centred nor muted on the link, join and maintenance pages; `hub/src/maity_hub/product_line.py`
 **See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-03
 
-The hub's pages under its default policy `default-src 'self'` (the mail
-link pages, the join page in a browser, the
-`503` maintenance page) carry one fixed `<style>` block for the product
+The hub's pages under its default policy `default-src 'self'` (the join
+page in a browser and the `503` maintenance page; the mail link pages
+stand in the frame under its own policy instead, 8191d964) carry one fixed `<style>` block for the product
 line and answer with `default-src 'self'; style-src 'sha256-…'`, the
 hash of exactly that block. A test checks that the hash in the header
 is the block's.
