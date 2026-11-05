@@ -392,7 +392,7 @@
     "one": "{count} alerta ficou não lido: ",
     "other": "{count} alertas ficaram não lidos: "
   },
-  "bell.skipped.not_earlier": "só uma sessão mais antiga do que ela pode marcá-lo",
+  "bell.skipped.not_earlier": "só uma sessão mais antiga pode marcá-lo",
   "bell.skipped.not_in_good_standing": "o próprio acesso desta sessão ainda não está confirmado",
   "bell.title": "Notificações",
   "bell.unread": {
@@ -2286,7 +2286,7 @@
   "mail.timezone.hint": "Os resumos e as horas de silêncio seguem ele.",
   "mail.timezone.unknown": "O hub não conhece este fuso horário. Use um nome como Europe/Vienna.",
   "mail.timezone.use": "Usar {zone}",
-  "mail.weekly_on": "Resumo semanal na",
+  "mail.weekly_on": "Dia do resumo semanal",
   "mail.complete": "A configuração de e-mail está completa.",
   "mail.count.failures": {
     "one": "{count} falha",
@@ -4008,7 +4008,7 @@
   "sessions.other_alerts": "Outros alertas",
   "sessions.read_failed": "Não foi possível ler as suas sessões: {reason}",
   "sessions.refused.conflict": "foi substituído por uma alteração mais nova, exibida agora",
-  "sessions.refused.not_earlier": "só uma sessão que entrou antes dela pode fazer isso",
+  "sessions.refused.not_earlier": "só uma sessão que entrou antes pode fazer isso",
   "sessions.refused.not_in_good_standing": "o próprio acesso desta sessão ainda não está confirmado; confirme-a antes a partir de outra sessão",
   "sessions.refused.too_new": "esta sessão é nova demais para isso",
   "sessions.second_factor_badge": "segundo fator concluído",

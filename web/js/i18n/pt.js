@@ -397,7 +397,7 @@ window.MAITY_I18N["pt"] = {
     "one": "{count} alerta ficou não lido: ",
     "other": "{count} alertas ficaram não lidos: "
   },
-  "bell.skipped.not_earlier": "só uma sessão mais antiga do que ela pode marcá-lo",
+  "bell.skipped.not_earlier": "só uma sessão mais antiga pode marcá-lo",
   "bell.skipped.not_in_good_standing": "o próprio acesso desta sessão ainda não está confirmado",
   "bell.title": "Notificações",
   "bell.unread": {
@@ -2378,7 +2378,7 @@ window.MAITY_I18N["pt"] = {
   "mail.warning.password_in_database": "A senha SMTP está armazenada no banco de dados. No Kubernetes, configure-a por meio de um Secret.",
   "mail.warning.password_unreadable": "A senha SMTP armazenada não pode ser aberta com a chave da instância. Defina-a de novo.",
   "mail.warning.plaintext_allowed": "O ambiente permite e-mail em texto simples. As mensagens, inclusive os links de acesso, podem cruzar a rede sem criptografia.",
-  "mail.weekly_on": "Resumo semanal na",
+  "mail.weekly_on": "Dia do resumo semanal",
   "mail.whole_number": "Use um número inteiro para {key}.",
   "maintenance.back": "Voltar ao Maity",
   "maintenance.back_at": "O Maity está em manutenção até {until}.",
@@ -4025,7 +4025,7 @@ window.MAITY_I18N["pt"] = {
   "sessions.other_alerts": "Outros alertas",
   "sessions.read_failed": "Não foi possível ler as suas sessões: {reason}",
   "sessions.refused.conflict": "foi substituído por uma alteração mais nova, exibida agora",
-  "sessions.refused.not_earlier": "só uma sessão que entrou antes dela pode fazer isso",
+  "sessions.refused.not_earlier": "só uma sessão que entrou antes pode fazer isso",
   "sessions.refused.not_in_good_standing": "o próprio acesso desta sessão ainda não está confirmado; confirme-a antes a partir de outra sessão",
   "sessions.refused.too_new": "esta sessão é nova demais para isso",
   "sessions.second_factor_badge": "segundo fator concluído",
