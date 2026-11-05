@@ -188,3 +188,47 @@ the other dashboard views: the badge link, the one place a stranger is
 sent into a project, would end on the login. Mapping the swarm tab to
 the overview for a visitor too: the login there is what lets a member
 who follows a mail link go on to the swarm after signing in.
+
+## `/` is the hub's start page: a click on a link to it is a page load, never a route change
+
+**Id:** 4f5c757a-98f6-44d1-adad-08fbe61b3d33
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7 (the root shows the landing page to a visitor without a session while it is enabled, the shell otherwise), §16.7.5 (the frame's mark and section links); hub/src/maity_hub/routes/pages.py `root`; web/js/route.js `listen`; web/js/app.js `logout`; the card tsk-fmdn6vb2zs19 (the logo on the sign-in page showed the sign-in form at `/`) and the lead's approval of the plan, 2026-11-04; the review of #1340 (the same form after signing out)
+**Revisit when:** the dashboard draws a view of its own at `/`, or the hub stops deciding per request what `/` shows
+
+The click handler of `M.route.listen` leaves every link whose path is
+`/` to the browser, with or without a query or a fragment
+(`/`, `/?lang=de`, `/?lang=de#s3`): the browser loads the page, and
+the hub answers it. Signing out leaves the same way: `logout`
+(`web/js/app.js`) ends with `M.route.load`, a page load that replaces
+the current entry, unless it has a dashboard path to return to (the
+invitation's "Not you?"). `M.route.go("/")` stays a route change where
+the session exists: after the sign-in (`renderStep`, and the second
+factor's own address once the sign-in is complete) and after a device sign-in (`web/js/device-sign-in.js`), where the hub's
+answer to `/` is the shell anyway.
+
+**Reason:** what `/` shows is the hub's decision, taken per request
+from the session cookie and `?as=public`: the landing page while it is
+enabled, for a visitor without a session or anyone asking `?as=public`,
+the shell otherwise, where the dashboard draws the sign-in for a
+visitor (a running maintenance window answers with its refusal page in
+place of the landing page). The dashboard cannot draw the landing page;
+it is the hub's own HTML. A route change to `/` kept the dashboard and
+drew its own view for a visitor, which is the sign-in form, while the
+address bar named the landing page. The frame's logo, its section
+links, the app's own logo signed out and the way out of a sign-out all
+led there. Fixture mode has no click handler and no hub, so only a
+served page showed it; the e2e step `start_page_step` covers the links
+and the sign-out.
+
+**Rejected alternative:** a marker on each link that must be a page
+load (`data-…` set by `js/site-chrome.js`): every link to `/` would have
+to remember it, and the app's own logo already lacked one. A dashboard
+view at `/` that reloads the page: two loads, and the hub's rule
+written a second time in the dashboard. `M.route.go` itself loading
+every start-page target: a full reload after each sign-in that ends on
+`/` (the second factor's step, a device sign-in without another `next`,
+a password sign-in with a `next` of `/`, which `render` routes to),
+where the hub answers the shell anyway.

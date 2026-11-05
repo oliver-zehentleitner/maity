@@ -53,6 +53,7 @@ from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials, second_factor
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke
+from maity_hub.cards import open_claims
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.config import Settings
 from maity_hub.db import retrying
@@ -1184,13 +1185,7 @@ def _move_to_replacement(
     from maity_hub.routes.tasks import audience  # tasks imports this module's neighbours
 
     now = clock.now()
-    held = conn.execute(
-        select(t.card).where(
-            t.card.c.claim_holder == member.id,
-            t.card.c.claim_instance == old,
-            t.card.c.status.notin_(("done", "cancelled")),
-        )
-    ).all()
+    held = conn.execute(select(t.card).where(open_claims(member.id, instance=old))).all()
     for card in held:
         conn.execute(
             update(t.card)

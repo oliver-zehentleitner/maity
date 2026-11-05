@@ -34,7 +34,7 @@ from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
-from maity_hub.notifications import items, listing, preferences
+from maity_hub.notifications import items, listing, preferences, records
 from maity_hub.notifications.items import Item
 
 log = logging.getLogger(__name__)
@@ -50,20 +50,49 @@ MAILED_KINDS = ("inbox", "chat", "mention")
 NEVER_MAILED = ("registration_pending", "mail_disabled")
 # The alert of a new sign-in: a security mail of its own while `security` is immediate, an
 # item of the digest the human put security in, none when off (§18.4, §2.6.5).
-SIGN_IN_ALERT = "session_created"
+SIGN_IN_ALERT = records.SIGN_IN
 # A takeover under way: a security mail of its own at once, whatever the mode, never held
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
 AT_ONCE = ("second_factor_changed", "second_factor_failed")
 
 
-_SCHEME = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]*):(?=//)")
+_SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
+_WORD = re.compile(r"\w")
 _DOT = re.compile(r"(?<=[A-Za-z0-9-])\.(?=[A-Za-z])")
+
+
+def _schemes(text: str) -> str:
+    """`scheme://` as `scheme[:]//`: a letter at a word's start, then letters, digits, `+`,
+    `.` or `-` up to the `:`. Each `://` looks back over its own run only, so the work grows
+    with the text's length; the pattern it replaces tried every word start of a long run."""
+    out = []
+    last = 0
+    at = text.find("://")
+    while at >= 0:
+        start = at
+        while start > last and text[start - 1] in _SCHEME_CHARS:
+            start -= 1
+        # The leftmost letter at a word boundary: the run's first character after a
+        # character that is no word character, or one after a `+`, `.` or `-`.
+        boundary = (start == 0 or not _WORD.match(text[start - 1])) and start < at
+        found = start < at and text[start].isascii() and text[start].isalpha() and boundary
+        found = found or any(
+            text[i - 1] in "+.-" and text[i].isascii() and text[i].isalpha()
+            for i in range(start + 1, at)
+        )
+        if found:
+            out.append(text[last:at])
+            out.append("[:]")
+            last = at + 1
+        at = text.find("://", at + 1)
+    out.append(text[last:])
+    return "".join(out)
 
 
 def defang(text: str) -> str:
     """No mail client turns this into a link: `https[:]//`, `example[.]org`,
     `www[.]x`, `me@example[.]org` (§18.5)."""
-    return _DOT.sub("[.]", _SCHEME.sub(r"\1[:]", text))
+    return _DOT.sub("[.]", _schemes(text))
 
 
 def quoted(text: str) -> str:
@@ -147,7 +176,7 @@ def for_human(
     since = row.verified_at
     pending = [
         i
-        for i in items.derive(conn, where)
+        for i in items.derive(conn, where, sign_ins=True)
         if not i.read
         and not i.redacted  # a redacted event reaches no mail at all (§18.5)
         and i.record_type not in NEVER_MAILED

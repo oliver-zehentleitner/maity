@@ -63,8 +63,8 @@ config:
   # API only.
   dashboard: true
   # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
-  # single-process hub. More than 1 only with PostgreSQL and at least two pool
-  # connections per process (the hub refuses to start otherwise); the pool
+  # single-process hub. More than 1 only with PostgreSQL and at least one pool
+  # connection per process (the hub refuses to start otherwise); the pool
   # (MAITY_DB_POOL_SIZE) is split among them. resources must grow with them:
   # about 150Mi of memory and a share of CPU per process.
   workers: 1
@@ -229,6 +229,22 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "75"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-body-size: "11m"
+  # One limit per client address for every request, at the ingress (README.md,
+  # "Ingress controllers"). The hub has no general request budget of its own,
+  # only limits per route (sign-ins, codes, uploads among them). Off by default: a
+  # `maity wait` older than the CLI release that retries a 429 ends on one.
+  # With it on, the Ingress gets ingress-nginx's annotations: `limit-rps`
+  # (perSecond), `limit-burst-multiplier` (burst / perSecond, rounded up) and
+  # `limit-connections` (inFlight). Another controller needs its own
+  # equivalent (deploy/k3s-single/request-limit.yaml for Traefik). The values
+  # are per address and per controller replica, and every agent on one machine
+  # shares that machine's address.
+  requestLimit:
+    enabled: false
+    perSecond: 50
+    burst: 200
+    # Open requests at a time; each `maity wait` holds one for up to 55 s.
+    inFlight: 100
   tls:
     enabled: true
     # Empty: <release fullname>-tls.

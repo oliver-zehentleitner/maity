@@ -563,7 +563,7 @@ one from prose.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
 
-## Agents name members to humans by handle, never by instance suffix or id alone
+## In what a human reads, agents name members by handle, never by instance suffix or id alone
 
 **Id:** e0eac636-6163-49b5-8ed7-9ad702c48111
 **Type:** decision

@@ -73,7 +73,7 @@ production.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02
+**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02; card tsk-zhypjk5k6h60 (jour fixe proposal req-grd7hspd3ke5, adopted 2026-11-05) for the 202 answers and value forms
 **Revisit when:** the hub declares response models on its routes — then the check can read the models' schema instead of a recorded file
 
 `hub/tests/test_web_shapes.py` seeds a project, sends the requests listed
@@ -85,7 +85,13 @@ again. `tools/check.py` sends the same requests to the fixture hub
 (`tools/fixture_answers.js`, which runs `js/api.js` on the fixtures) and
 reports every difference that is not in
 `tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
-does not, a key the hub has and the fixture lacks, another type. The
+does not, a key the hub has and the fixture lacks, another type. A
+request may name the `status` the hub must answer it with, so a listed
+`202` is a consent filed instead of the change, never the change itself;
+and `forms`, paths where a string is compared by its value with every id
+written `<id>`, so a request's `to` of `owner` and one of `human:<id>`
+differ (they reach different people) while two ids of either side do not.
+A `{placeholder}` in a body is filled like one in a path. The
 baseline holds today's differences; for a request already listed it only
 shrinks (`make fixtures` drops what no longer differs); a request added
 to the list has its differences written into the baseline by hand, since
@@ -109,7 +115,11 @@ unchanged and compares what each side actually answers.
 above. Comparing the fixture JSON files with `docs/api.md` — the
 contract is prose, and the files are not the answers. Treating every
 missing key as a finding at once — about 80 today; the baseline lets the
-check land and the fixtures catch up route by route.
+check land and the fixtures catch up route by route. Comparing every
+string by its value — ids, times and texts differ between any two seeds,
+so nearly every string would differ. Keys and types alone — they cannot
+tell a consent the fixture addresses to `owner` from the hub's to
+`human:<id>`, a string either way, the case the card names.
 
 **Consequence:** a key the hub sends only in some states is missing
 from the record when the seed lacks that state, and an empty list says

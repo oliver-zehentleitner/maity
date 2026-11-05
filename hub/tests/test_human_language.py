@@ -9,6 +9,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.notifications import records
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_notification_mail import ask, notifications, run, setup
@@ -50,10 +51,12 @@ def test_the_bell_speaks_the_humans_language(make_client: ClientFactory, migrate
         "/projects/maintainer/maity/requests",
         {"class": "decision", "title": "Welche?", "to": "owner"},
     )
+    with migrated.begin() as conn:  # a security item; a sign-in is none (§2.6.5)
+        records.write(conn, owner.id, "second_factor_changed", {"change": "changed"})
     items = owner.get("/me/notifications").json()["items"]
     titles = {i["kind"]: i["title"] for i in items}
     assert titles["inbox"].endswith("fragt: Welche?")
-    assert titles["security"].startswith("Neue Anmeldung: ")
+    assert titles["security"] == "Zwei-Faktor-Anmeldung geändert"
 
 
 def test_a_removed_member_has_no_language(make_client: ClientFactory, migrated: Engine) -> None:

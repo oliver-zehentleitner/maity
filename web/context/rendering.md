@@ -104,7 +104,7 @@ picture from a third-party avatar service — it would send member ids out.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22; card tsk-qzvb0c0abm3a (bounded work per line, 2026-11-04)
 **Revisit when:** messages need tables or images, or another view wants Markdown beyond what the renderer covers
 
 A chat message is drawn as Markdown by `js/markdown.js`: paragraphs
@@ -121,6 +121,17 @@ it goes. Every piece of text becomes a text node; raw HTML stays visible as
 text, and anything not understood is shown as written. Quote puts a
 message into the composer as `>` lines, which the renderer draws as a
 quote.
+
+Its work on one line grows with the line's length, since the contract
+view (§6.8) draws files of up to 4 MiB with it (card tsk-qzvb0c0abm3a).
+Each backtick run's closing run is found from a table built once per
+line; the search from the start for every run grew with the square of
+the runs. A link's target holds no `[`, as in the hub's renderer
+(§16.7): what one `[` reads ends at the next, where a target to the
+line's end was read again from every `[`; such a target's brackets stay
+text, and the address inside them is a bare link. Nodes are appended
+one by one, since spreading a long line's thousands of them into one
+`push` overflowed the call stack.
 
 **Reason:** what people paste into a chat with an agent is code, commands
 and short lists; a dozen rules cover that. Building nodes keeps the rule
@@ -409,7 +420,7 @@ already turns every piece into a text node.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §6.8 ("The whole contract": `toc` with `anchor` and `line`, `ETag` and `Cache-Control: private, no-cache`, read when the view opens and again only on Refresh, an error shows the path and the hub's reason); web/js/contract.js, web/js/markdown.js `opts.anchors`; the card tsk-6jz07t0080rk
+**Source:** docs/api.md §6.8 ("The whole contract": `toc` with `anchor` and `line`, `ETag` and `Cache-Control: private, no-cache`, read when the view opens and again only on Refresh, an error shows the path and the hub's reason); web/js/contract.js, web/js/markdown.js `opts.anchors` and `atxTitle`; the cards tsk-6jz07t0080rk and tsk-qzvb0c0abm3a
 **Revisit when:** the hub's heading parser and the dashboard's renderer part ways on what a line is, the designer reworks the view, or the dashboard gets its own cache layer
 
 `/<owner>/<slug>/contract` reads `GET …/contract` once when it opens and
@@ -425,6 +436,16 @@ its section number a text of its own. Before rendering, the view turns
 every line separator Python's `str.splitlines` knows into a line break,
 so the hub's `line` and the renderer's count are the same. An error
 replaces the page with the path and the hub's reason.
+
+An anchored line's title is cut as the hub cuts it (`contract_text._atx`):
+up to three spaces, the marks, the title without a closing `#` run after
+a space or a tab. `atxTitle` does it in string steps, one pass over the
+line each, as the hub does since the same card: a file of up to 4 MiB
+may hold one long line, and the patterns before them tried every start
+in a run of spaces, which grew with the square of the run. The title is
+the old pattern's, checked against it as an oracle on short lines, and a
+smoke case reads three headings with 128 KiB of spaces each in bounded
+time.
 
 **Reason:** a file can be a megabyte, so a poll would cost the forge and
 the hub a read every time, and the browser's cache already does what
@@ -622,7 +643,7 @@ dashboard's files, would have no script.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; card tsk-7dty3gkegqgc, 2026-11-04; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
 **Revisit when:** a language's file grows so that its load shows on the first paint, or a catalog is complete enough that English need not come with it
 
 `js/i18n/en.js` stays in `index.html`, since a key without a translation reads in English. Another
@@ -637,6 +658,13 @@ The registration sends `interface_language` only for an explicit choice (the pic
 `?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
+`?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
+pickers on `/login` and `/register`, the frame's languages) also writes its tag into an address
+that carries `?lang=`, through `M.route.go` with `quiet`, which replaces the address without
+drawing the view again. The frame's links lead to `/register?lang=<the frame's language>`, and `/register`
+reads the session again when it is drawn: before, its 401 read the older `?lang=` back, and the
+page jumped back to the language it was reached in (tsk-7dty3gkegqgc; on `/login`, a reload did).
+
 **Reason:** the visible language must be known before a view draws its words, and several views read
 the session themselves. A catalog per language keeps nine languages off every page load.
 
@@ -648,6 +676,12 @@ the session themselves. A catalog per language keeps nine languages off every pa
 - Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
 - Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
   the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+- Reading `?lang=` only once, when the dashboard loads: an address with `?lang=` would then say
+  another language than the page, and a reload would still take the choice back.
+- Writing `?lang=` into every address on a choice, also one without it: the choice is already kept in
+  the browser, and an address copied from the page would then fix the language for whoever opens it.
+- `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
+  so what was typed into the form so far would be lost.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 

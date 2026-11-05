@@ -124,14 +124,16 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
     return found
 
 
-def derive(conn: Connection, where: Scope) -> list[Item]:
+def derive(conn: Connection, where: Scope, *, sign_ins: bool = False) -> list[Item]:
     """Every item of the last 30 days (security items: while their record lives), newest
-    first, with its read flag."""
+    first, with its read flag. `sign_ins`: with an item for each new sign-in too, which
+    only the mailer reads; the bell never lists one (§2.6.5)."""
     now = clock.now()
     found: list[Item] = []
     for mine in where.memberships:
         found += _from_events(conn, where, mine, now)
-    found += _from_records(conn, where, now)
+    types = (*RECORD_TYPES, records.SIGN_IN) if sign_ins else RECORD_TYPES
+    found += _from_records(conn, where, now, types)
     found.sort(key=lambda item: item.order, reverse=True)
     return found
 
@@ -583,6 +585,7 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     return where.say(change, by=data.get("by"))
 
 
+# The records the bell lists; a new sign-in is not among them (§2.6.5).
 RECORD_TYPES = (*records.SECURITY, *records.INBOX, *records.NOTICES, "personal_request_created")
 
 
@@ -594,14 +597,15 @@ def _record_rows(where: Scope, now: datetime, types: Sequence[str] = RECORD_TYPE
     )
 
 
-def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
-    return _record_items(conn, where, now, conn.execute(_record_rows(where, now)).all())
+def _from_records(
+    conn: Connection, where: Scope, now: datetime, types: Sequence[str] = RECORD_TYPES
+) -> list[Item]:
+    return _record_items(conn, where, now, conn.execute(_record_rows(where, now, types)).all())
 
 
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:
     """The items of these account records (§18.1)."""
     waiting = _waiting_registrations(conn, rows)
-    open_reports = _open_reports(conn, rows)
     # Only the newest `agents_not_listening` record can be open; the older ones ended. Read
     # from the table, not from `rows`: a paged read hands over one chunk, which may hold an
     # older record without the newest (`_records_paged`).
@@ -656,7 +660,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record_type=row.type,
                 )
             )
-        elif row.type == "session_created":
+        elif row.type == records.SIGN_IN:  # the mailer's alone (`derive`)
             method = data.get("method")
             items.append(
                 Item(
@@ -801,28 +805,6 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                         open=True,
                     )
                 )
-        elif row.type == "report_open":
-            # Listed while the report is open, however old, and read once it is resolved or
-            # expired (§16.8, §18.1); no read mark closes it.
-            report = str(data.get("report"))
-            pending = report in open_reports
-            if not pending and row.at < now - WINDOW:
-                continue
-            items.append(
-                Item(
-                    kind="inbox",
-                    at=row.at,
-                    record=row.n,
-                    title=_cut(
-                        where.say("reported", reason=data.get("reason"), type=data.get("type"))
-                    ),
-                    target={"type": "report", "id": report},
-                    url=_url(where, f"/admin/reports/{report}"),
-                    read=not pending,
-                    record_type=row.type,
-                    open=pending,
-                )
-            )
         elif row.type == "moderation_applied" and row.at >= now - WINDOW:
             # The affected account's notice of an action on its content (§16.8): the
             # action and the note, never the reporter. Read by a read mark as any notice:
@@ -862,20 +844,6 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                 )
             )
     return items
-
-
-def _open_reports(conn: Connection, rows: Sequence[Any]) -> set[str]:
-    """The reports of these `report_open` records that are still open (§16.8)."""
-    wanted = {str((row.data or {}).get("report")) for row in rows if row.type == "report_open"}
-    if not wanted:
-        return set()
-    return set(
-        conn.execute(
-            select(t.abuse_report.c.id).where(
-                t.abuse_report.c.id.in_(wanted), t.abuse_report.c.status == "open"
-            )
-        ).scalars()
-    )
 
 
 def _waiting_registrations(conn: Connection, rows: Sequence[Any]) -> set[str]:

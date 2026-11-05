@@ -1,6 +1,6 @@
-"""The bell and "This was me" (docs/api.md §2.6.5, §2.8.5, §18.2, §18.3; tsk-0kz8v1ff5sgf):
-reading a security alert confirms nothing, a sign-in is confirmed by its own call, "mark all
-read" takes security alerts on request, and the unread ones stand pinned on top."""
+"""The bell and "This was me" (docs/api.md §2.6.5, §2.8.5, §18.2, §18.3; tsk-0kz8v1ff5sgf,
+tsk-0baaez2895sb): a sign-in is no bell item and is confirmed by its own call, "mark all read"
+takes security alerts on request, and the unread ones stand pinned on top."""
 
 from __future__ import annotations
 
@@ -82,9 +82,11 @@ def _listed(caller: flow.Human, public_id: str) -> dict[str, Any]:
     return next(item for item in items if item["id"] == public_id)
 
 
-def _alert(caller: flow.Human, public_id: str) -> dict[str, Any]:
-    pinned = caller.get("/me/notifications").json()["pinned"]
-    return next(i for i in pinned if i["target"] == {"type": "session", "id": public_id})
+def _address_change(engine: Engine, human_id: str) -> str:
+    """An `email_address_changed` record written now; the id of its item."""
+    with engine.begin() as conn:
+        n = records.write(conn, human_id, "email_address_changed", {"address": "new@example.org"})
+    return f"ntf-acr-{n}"
 
 
 def _sign_in_alert_read(engine: Engine, public_id: str) -> bool:
@@ -98,7 +100,7 @@ def _sign_in_alert_read(engine: Engine, public_id: str) -> bool:
 # --- "This was me" ------------------------------------------------------------------------
 
 
-def test_this_was_me_confirms_and_marks_the_alert_read(
+def test_this_was_me_confirms_and_marks_nothing_read(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
     strong = sign_in(make_client)
@@ -111,20 +113,21 @@ def test_this_was_me_confirms_and_marks_the_alert_read(
     assert answer["id"] == weak_id and answer["good_standing"] is True
     assert answer["confirmed_by"] == strong_id and answer["confirmed_at"] is not None
     assert _listed(strong, weak_id)["confirmed_by"] == strong_id
-    assert _sign_in_alert_read(migrated, weak_id)
+    # A sign-in is no bell item (§2.6.5): its record keeps no read mark to set.
+    assert not _sign_in_alert_read(migrated, weak_id)
     # Again: nothing changes, the first confirmation stays.
     again = strong.post(f"/auth/sessions/{weak_id}/confirm", {}).json()
     assert again["confirmed_at"] == answer["confirmed_at"]
 
 
-def test_a_session_in_good_standing_already_only_gets_its_alert_read(
+def test_a_session_in_good_standing_already_is_left_as_it_is(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
     older = sign_in(make_client)
     _, newer_id = plant(make_client, migrated, human, "password", -1)
     answer = older.post(f"/auth/sessions/{newer_id}/confirm", {}).json()
     assert answer["good_standing"] is True and answer["confirmed_at"] is None
-    assert _sign_in_alert_read(migrated, newer_id)
+    assert not _sign_in_alert_read(migrated, newer_id)
 
 
 @pytest.mark.parametrize("case", ["ended", "unknown", "another_human"])
@@ -185,36 +188,40 @@ def test_a_confirmed_session_confirms_and_ends_others(
 # --- reading confirms nothing -------------------------------------------------------------
 
 
-def test_reading_the_alert_by_id_confirms_nothing(
+def test_a_sign_in_is_no_bell_item(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
+    """Not listed, not counted, not pinned, and its record's id marks nothing (§2.6.5, "A
+    sign-in is no notification")."""
     strong = sign_in(make_client)
     _, weak_id = plant(make_client, migrated, human, "email_link", -1)
-    alert = _alert(strong, weak_id)
-    answer = strong.post("/me/notifications/read", {"ids": [alert["id"]]}).json()
-    assert answer["skipped"] == []
-    assert _sign_in_alert_read(migrated, weak_id)
+    answer = strong.get("/me/notifications").json()
+    for listed in (answer["items"], answer["pinned"]):
+        assert [i for i in listed if i["target"]["type"] == "session"] == []
+    assert answer["counts"]["security"] == 0
+    with migrated.connect() as conn:
+        record = records.sign_in_records(conn, human)[weak_id]
+    marked = strong.post("/me/notifications/read", {"ids": [f"ntf-acr-{record.n}"]}).json()
+    assert marked["skipped"] == [] and marked["counts"]["security"] == 0
+    assert not _sign_in_alert_read(migrated, weak_id)
     listed = _listed(strong, weak_id)
     assert (listed["good_standing"], listed["confirmed_at"], listed["confirmed_by"]) == (
         False,
         None,
         None,
     )
-    pinned = strong.get("/me/notifications").json()["pinned"]
-    assert [i for i in pinned if i["target"]["id"] == weak_id] == []
 
 
 def test_a_session_that_may_not_mark_an_alert_is_told_why(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
-    weak_old, _ = plant(make_client, migrated, human, "device_code", 300)
-    weak_new, weak_new_id = plant(make_client, migrated, human, "email_link", 10)
-    alert = _alert(weak_old, weak_new_id)
+    weak_old, _ = plant(make_client, migrated, human, "device_code", 300, alert=False)
+    change = _address_change(migrated, human)
+    weak_new, _ = plant(make_client, migrated, human, "email_link", -1, alert=False)
     for caller, reason in ((weak_new, "not_earlier"), (weak_old, "not_in_good_standing")):
-        answer = caller.post("/me/notifications/read", {"ids": [alert["id"]]}).json()
-        assert answer["skipped"] == [{"id": alert["id"], "reason": reason}]
-        assert answer["counts"]["security"] >= 1
-    assert not _sign_in_alert_read(migrated, weak_new_id)
+        answer = caller.post("/me/notifications/read", {"ids": [change]}).json()
+        assert answer["skipped"] == [{"id": change, "reason": reason}]
+        assert answer["counts"]["security"] == 1
 
 
 def test_mark_all_read_takes_security_alerts_only_when_asked(
@@ -222,41 +229,39 @@ def test_mark_all_read_takes_security_alerts_only_when_asked(
 ) -> None:
     strong = sign_in(make_client)
     _, weak_id = plant(make_client, migrated, human, "email_link", -1)
-    _, own_id = plant(make_client, migrated, human, "email_code", -2)
-    with migrated.begin() as conn:  # a security kind any session may mark read
+    with migrated.begin() as conn:
+        conn.execute(  # signed in a minute before the change below
+            update(t.human_session)
+            .where(t.human_session.c.method != "email_link")
+            .values(created_at=clock.now() - timedelta(minutes=1))
+        )
         records.write(conn, human, "second_factor_changed", {"change": "enabled"})
-    strong_id = strong.get("/auth/session").json()["session_id"]
-    own_alert = _alert(strong, strong_id)  # its own sign-in, which it may not mark
+    _address_change(migrated, human)
     head = strong.get("/me/notifications").json()
-    assert head["counts"]["security"] == 4
+    assert head["counts"]["security"] == 2  # the factor and the address; no sign-in
     left = strong.post("/me/notifications/read", {"up_to": head["next_after"]}).json()
-    assert left["counts"]["security"] == 4 and left["skipped"] == []
+    assert left["counts"]["security"] == 2 and left["skipped"] == []
     marked = strong.post(
         "/me/notifications/read", {"up_to": head["next_after"], "include_security": True}
     ).json()
-    assert marked["counts"]["security"] == 1
-    assert marked["skipped"] == [{"id": own_alert["id"], "reason": "not_earlier"}]
-    for public_id in (weak_id, own_id):
-        assert _sign_in_alert_read(migrated, public_id)
-        assert _listed(strong, public_id)["good_standing"] is False
+    assert marked["counts"]["security"] == 0 and marked["skipped"] == []
+    assert not _sign_in_alert_read(migrated, weak_id)
+    assert _listed(strong, weak_id)["good_standing"] is False
 
 
 def test_mark_all_read_from_a_weak_session_names_what_it_left(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
-    weak, weak_id = plant(make_client, migrated, human, "device_code", 300)
-    _, other_id = plant(make_client, migrated, human, "email_link", 10)
+    weak, _ = plant(make_client, migrated, human, "device_code", 300)
     with migrated.begin() as conn:
         records.write(conn, human, "second_factor_changed", {"change": "enabled"})
+    change = _address_change(migrated, human)
     head = weak.get("/me/notifications").json()
     answer = weak.post(
         "/me/notifications/read", {"up_to": head["next_after"], "include_security": True}
     ).json()
-    reasons = {item["reason"] for item in answer["skipped"]}
-    assert len(answer["skipped"]) == 2 and reasons == {"not_earlier", "not_in_good_standing"}
-    assert answer["counts"]["security"] == 2  # the second-factor alert went
-    assert not _sign_in_alert_read(migrated, weak_id)
-    assert not _sign_in_alert_read(migrated, other_id)
+    assert answer["skipped"] == [{"id": change, "reason": "not_in_good_standing"}]
+    assert answer["counts"]["security"] == 1  # the second-factor alert went
 
 
 @pytest.mark.parametrize("value", ["yes", 1, None])
@@ -274,39 +279,30 @@ def test_include_security_is_a_flag_for_up_to_only(
 def test_a_newer_session_not_in_good_standing_is_told_not_earlier(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
-    """Created after the sign-in, not the session it reports on, and not in good standing
-    either: `not_earlier` comes first (§18.3), as it does for "This was me"."""
-    old, old_id = plant(make_client, migrated, human, "email_link", 300)
-    newer, _ = plant(make_client, migrated, human, "device_code", 10)
-    alert = _alert(old, old_id)
-    answer = newer.post("/me/notifications/read", {"ids": [alert["id"]]}).json()
-    assert answer["skipped"] == [{"id": alert["id"], "reason": "not_earlier"}]
-    assert not _sign_in_alert_read(migrated, old_id)
+    """Created after the address change and not in good standing either: `not_earlier`
+    comes first (§18.3), as it does for "This was me"."""
+    change = _address_change(migrated, human)
+    newer, _ = plant(make_client, migrated, human, "device_code", -1, alert=False)
+    answer = newer.post("/me/notifications/read", {"ids": [change]}).json()
+    assert answer["skipped"] == [{"id": change, "reason": "not_earlier"}]
 
 
-def test_a_newer_session_may_not_mark_an_older_sign_in_or_change(
+def test_a_newer_session_in_good_standing_may_not_mark_an_older_change(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
-    """Not the session it reports on, but created after it: `not_earlier`, checked before
-    the standing, for a sign-in and for an address change alike (§18.3)."""
-    _, old_id = plant(make_client, migrated, human, "email_link", 300)
+    """Created after the change: `not_earlier`, checked before the standing (§18.3)."""
     with migrated.begin() as conn:
         records.write(conn, human, "email_address_changed", {"address": "new@example.org"})
-    strong = sign_in(make_client)  # in good standing, created after both
+        conn.execute(  # the change was a minute ago
+            update(t.account_record)
+            .where(t.account_record.c.type == "email_address_changed")
+            .values(at=clock.now() - timedelta(minutes=1))
+        )
+    strong = sign_in(make_client)  # in good standing, created after it
     pinned = strong.get("/me/notifications").json()["pinned"]
-    sign_in_alert = _alert(strong, old_id)
     [change] = [i for i in pinned if i["target"] == {"type": "settings", "id": "notifications"}]
-    answer = strong.post(
-        "/me/notifications/read", {"ids": [sign_in_alert["id"], change["id"]]}
-    ).json()
-    assert sorted(answer["skipped"], key=lambda i: i["id"]) == sorted(
-        [
-            {"id": sign_in_alert["id"], "reason": "not_earlier"},
-            {"id": change["id"], "reason": "not_earlier"},
-        ],
-        key=lambda i: i["id"],
-    )
-    assert not _sign_in_alert_read(migrated, old_id)
+    answer = strong.post("/me/notifications/read", {"ids": [change["id"]]}).json()
+    assert answer["skipped"] == [{"id": change["id"], "reason": "not_earlier"}]
 
 
 def test_an_earlier_session_in_good_standing_marks_an_address_change(
@@ -333,21 +329,23 @@ def test_pinned_holds_every_unread_security_alert_whatever_the_page(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
     strong = sign_in(make_client)
-    _, weak_id = plant(make_client, migrated, human, "email_link", -1)
+    plant(make_client, migrated, human, "email_link", -1)
     with migrated.begin() as conn:
+        records.write(conn, human, "email_address_changed", {"address": "new@example.org"})
         records.write(conn, human, "second_factor_changed", {"change": "enabled"})
         # Old, beyond any page, and beyond the 30 days that count other items as read.
         conn.execute(
             update(t.account_record)
-            .where(t.account_record.c.type == "session_created")
+            .where(t.account_record.c.type == "email_address_changed")
             .values(at=clock.now() - timedelta(days=40))
         )
     for query in ("", "?limit=0", "?kind=chat", "?unread=true&kind=mention"):
         answer = strong.get(f"/me/notifications{query}").json()
-        kinds = [i["kind"] for i in answer["pinned"]]
-        assert kinds == ["security"] * 3, query  # its own sign-in, the planted one, the factor
-        assert answer["pinned"][0]["target"] == {"type": "settings", "id": "security"}
-        assert {"type": "session", "id": weak_id} in [i["target"] for i in answer["pinned"]]
+        targets = [i["target"] for i in answer["pinned"]]
+        assert targets == [  # no sign-in, neither its own nor the planted one
+            {"type": "settings", "id": "security"},
+            {"type": "settings", "id": "notifications"},
+        ], query
     held = strong.get("/me/notifications").json()["next_after"]
     assert "pinned" not in strong.get(f"/me/notifications?after={held}").json()
 
@@ -360,7 +358,7 @@ def test_pinned_shows_the_newest_fifty(
         for _ in range(52):
             records.write(conn, human, "second_factor_changed", {"change": "enabled"})
     answer = me.get("/me/notifications").json()
-    assert len(answer["pinned"]) == 50 and answer["counts"]["security"] == 53  # and its own
+    assert len(answer["pinned"]) == 50 and answer["counts"]["security"] == 52
     numbers = [int(i["id"].removeprefix("ntf-acr-")) for i in answer["pinned"]]
     assert numbers == sorted(numbers, reverse=True)
 
@@ -377,26 +375,27 @@ def hold_at_enrolment(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_records_without_an_item_take_no_place_in_pinned(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
-    """A sign-in alert, then more newer forge records that give no item than the block
-    holds: the alert still stands pinned, as it is counted (§18.1, §18.2)."""
+    """An address-change alert, then more newer forge records that give no item than the
+    block holds: the alert still stands pinned, as it is counted (§18.1, §18.2)."""
     strong = sign_in(make_client)
+    _address_change(migrated, human)
+    change = {"type": "settings", "id": "notifications"}
     with migrated.begin() as conn:
         for _ in range(50):
             records.forge_access_changed(conn, human, "owner_token", "token_removed", "octo")
         records.forge_access_changed(conn, human, "app", "unlinked", None)
-        conn.execute(  # all newer than the sign-in
+        conn.execute(  # all newer than the change
             update(t.account_record)
             .where(t.account_record.c.type == "forge_access_changed")
             .values(at=clock.now() + timedelta(minutes=1))
         )
-    strong_id = strong.get("/auth/session").json()["session_id"]
     answer = strong.get("/me/notifications").json()
     assert answer["counts"]["security"] == 1
-    assert [i["target"] for i in answer["pinned"]] == [{"type": "session", "id": strong_id}]
+    assert [i["target"] for i in answer["pinned"]] == [change]
     with migrated.begin() as conn:
         records.forge_access_changed(conn, human, "owner_token", "token_set", "octo")
     pinned = strong.get("/me/notifications").json()["pinned"]
-    assert len(pinned) == 2 and pinned[1]["target"] == {"type": "session", "id": strong_id}
+    assert len(pinned) == 2 and pinned[1]["target"] == change
 
 
 def test_a_moved_session_in_good_standing_reaches_the_confirm(
@@ -581,7 +580,7 @@ def test_an_end_waits_for_a_running_confirm_and_ends_it(
     make_client: ClientFactory, migrated: Engine, human: str, method: str
 ) -> None:
     """The confirm holds the target first: the end waits for it and then ends the session,
-    whose sign-in stays confirmed and its alert read."""
+    whose sign-in stays confirmed."""
     strong = sign_in(make_client)
     _, target_id = plant(make_client, migrated, human, method, -1)
     current = session_id_hash(strong.client.cookies[SESSION_COOKIE])
@@ -596,4 +595,4 @@ def test_an_end_waits_for_a_running_confirm_and_ends_it(
     row = _session(migrated, target_id)
     assert row.ended_at is not None
     assert (row.confirmed_at is not None) is (method == "email_link")
-    assert _sign_in_alert_read(migrated, target_id)
+    assert not _sign_in_alert_read(migrated, target_id)  # a confirm marks nothing read

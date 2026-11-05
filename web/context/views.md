@@ -429,43 +429,59 @@ one's own. They would promise inbox, board and members, none of which
 the hub answers. A removal form inside the closed chat: the admin cannot
 open that chat.
 
-## The project's messages are read from the project's events until the hub has the message listing
+## The project's messages are read from the hub's message listing, a page at a time
 
 **Id:** 8e483bb1-53be-4ce2-a139-561989db21af
 **Type:** decision
 **Status:** needs-review
-**Evidence:** inferred
-**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
-**Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
-**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
+**Evidence:** confirmed
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with lotse that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
+**Revisit when:** §8.8 gains a `wait` of its own, or the listing's page or scan budget no longer fits one opening
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-04
 
-The Messages tab reads the project's events within the hub's latest
-5000 (the `seq` counts all projects, 4c3f8949)
-(`wait=0`, 200 per page, from the head that `after=latest` names) and
-keeps every message that is not a chat and not removed. When the log is
-longer, the view says that older messages are not read. A cursor that
-does not move stops the read with an error. The view shows the messages
-newest first and filters them by type in the page. New messages, removals
-and deleted files arrive through the project's feed and change the list
-in place. A removed message leaves the list and is never shown as a
-tombstone. Tombstones come with §8.8 once the hub serves it.
+The Messages tab reads `GET /projects/{owner}/{slug}/messages` (§8.8):
+its newest page of 50 when opened or when the type filter changes (the
+filter is the hub's `type=`), and the next older page with the
+listing's `next_cursor` behind **Older messages**. There is no window:
+however far a message lies behind the hub's head, paging back reaches
+it, at one request per page. The project's feed is only the signal, as
+on the Ticker: a message event there reads the listing forward with
+`after=` from the newest message shown (or from just below the first
+that arrived, when none is shown), oldest first, following the
+listing's `next_cursor` on that same `after=` and type until it is
+`null`, at most 20 pages per round (a round out of pages leaves its
+cursor to the next signal's round), and puts what is new at the top. Removals (`event_redacted`)
+put the listing's tombstone in place of the message, or drop it from a
+list filtered by type, since §8.8 lists tombstones only unfiltered;
+deleted files are marked in place, and the listing says `deleted_at` on
+a later read. A removed project message shows as a tombstone without
+its reason; a removed chat message is never listed, as §8.8 says.
 
-**Reason:** §8.3 is the only read the hub answers that returns project
-messages, and its audience filter already decides what this reader may
-see. It is not §8.8's set, though: §8.5 replaces a removed message's
-whole payload, so a removed chat message looks like a removed project
-message there, and §8.8 never lists the former. Showing no tombstone is
-the one way the scan never lists a chat's. A stated window bounds the
-requests per opening without hiding that something is missing.
+A page of the listing examines at most the hub's scan budget (2000
+project messages, `hub/src/maity_hub/routes/project_messages.py`), so it
+may be short or empty while `next_cursor` is set. The live read follows
+`next_cursor` on the same `after=` until it is `null`, and an empty page
+with a cursor is not shown as no messages: the list says older messages
+have not been read yet. Reason: §8.8 makes `null` the only end of the
+history. On #1348's head, a live read that stopped on a short page left
+a new blocker unseen behind 2100 notices until reload (reviews seq
+69640 and 69731). Rejected alternative: stopping on a page shorter than
+`limit`, which misses what lies past the budget.
 
-**Rejected alternative:** waiting for the hub's message listing before
-building the view: it would leave project messages unreadable in the
-dashboard, the gap noted on the attachments change. Reading the whole log
-from the start: one request per 200 events on every opening, with no
-bound. Keeping tombstones whose audience is `all` or a role: it still
-hides the removal of a message sent to one member, and guesses at what
-the hub knows. Having the hub mark a conversation's message after
-redaction: a contract change that §8.8 already makes unnecessary.
+**Reason:** the scan of `/events` within the hub's latest 5000 `seq`
+(4c3f8949) lost every message behind that window in a busy hub and read
+up to 26 pages on every opening. §8.8 is the read for exactly this
+view: the hub's audience rules, its type filter and its tombstones, at
+a cost of one page per request whatever the history. The feed stays the
+live signal because §8.8 has no `wait`.
+
+**Rejected alternative:** keeping the window scan beside the listing:
+two reads that disagree on tombstones and on what a filter shows.
+Reading new messages from the feed's own payloads: the feed's
+audience and shape are §8.3's, not the listing's, and a filter would
+have to be applied in the page again. Hiding tombstones as before: the
+scan hid them only because it could not tell a chat's from a project's;
+the listing can.
 
 ## Sessions say what this session may not do before it is tried, and This was me is the only way a sign-in is confirmed
 
@@ -521,6 +537,7 @@ shows.
 **Revisit when:** the session view gains a field that says what a session may do
 **See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
 **See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-03
+**See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-04
 
 What the earlier entry says about disabled buttons and their reasons stands. What
 changed: **This was me** posts the session's confirm and is offered on an active
@@ -540,6 +557,11 @@ the session, so its result is known without reading the list again.
 contract made reading and confirming two acts. Keeping the banner tied to the unread
 alert: marking it read in the bell would take the banner down while the sign-in is still
 unconfirmed. Offering This was me on an ended session: there is nothing left to confirm.
+
+**Since 2026-11-04** (09f74f56-7c6c-4d94-a499-ef804b022f3a): `pinned` holds no sign-in, so the
+unread alerts listed in this section are only the other security kinds, each with **Mark
+read**; no row says its sign-in alert is unread, and the ended sessions stay folded. **This
+was me** on an active unconfirmed session is unchanged.
 
 ## The Ticker view reads the listing, not the events, and says each reason in the dashboard's own words
 
@@ -715,32 +737,79 @@ button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
 off while nothing it marks is unread, with a line that sign-in and
 address alerts stay unread. **Mark read** is not offered on one of the
-four open matters of §18.3 — `registration_pending`, `mail_disabled`,
-`report_open`, `agents_not_listening`, told by their targets
-(`registration`, `settings`, `report`, `agents`, `M.notify.keepsUnread`)
+open matters of §18.3 — `registration_pending`, `mail_disabled`,
+`agents_not_listening`, told by their targets
+(`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
 — which read as read once the matter is closed, nor on a sign-in or
 address alert unless this session may confirm it (`M.sessions.mayConfirm`,
 §2.6.5): the hub skips such an id without saying so, and a button that
 does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item.
+when the page shows an unread security item. Until 2026-11-04 a fourth
+matter, `report_open` (target `report`), stood among them; a new report
+is now the instance admin's personal request instead (entry
+f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
 
 Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
 6e357e0c "An inbox answer carries a note with any button", §7) each open
 request has one free-text field **above** its buttons, always writable:
 every reply button sends `{reply_id, text}` when the field has text, and
-**Talk** sends `{talk: true, text}`; a request without replies keeps
-**Send** for the plain text next to Talk. "Talk" is one word in every
-language (a language file leaves `inbox.talk` out rather than translating
-it). Talk is offered only where the asker is an agent the reader owns
-(§7: accepted only from the human who owns the asking agent): inside a
-project from the member list (`owner_id`), across projects and for a
-personal request from the reader's own profiles (`GET /agents`, read once
-per view; their ids are the agents' member ids). Never for a human, for a
-request the hub filed itself (no asking agent reads the answer), or for an
-unreadable personal one, and not when the profiles cannot be read: a
-button that surely ends in `invalid` looks broken. `canTalk()` in
-`js/inbox.js` is the one place to change when the hub computes a field
-for it.
+**Talk** sends `{talk: true, text}`, **Send** the text alone. "Talk" is
+one word in every language (a language file leaves `inbox.talk` out
+rather than translating it). Talk works only where the asker is an agent
+the reader owns (§7: accepted only from the human who owns the asking
+agent): inside a project from the member list (`owner_id`), across
+projects and for a personal request from the reader's own profiles
+(`GET /agents`, read once per view; their ids are the agents' member
+ids). For a human asker, a request the hub filed itself (no asking agent
+reads the answer) and when the profiles cannot be read it is disabled
+with its reason; where Send and Talk stand and when they are disabled is
+the next entry's. `canTalk()` in `js/inbox.js` is the one place to
+change when the hub computes a field for it.
+
+## Send and Talk stand on every request one can answer; where the hub would refuse them they stay, disabled, and say why
+
+**Id:** 3cfa5e18-b709-4d76-a560-ce24ef5eecfc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-nx6hm8qjzm3z (Send and Talk on every inbox item) and the lead's decisions on its plan, 2026-11-04; docs/api.md §7 "The inbox", §15.6 (a consent's text alone read as No); hub/src/maity_hub/takeovers.py (`reply_required` on a takeover's request); web/js/inbox.js; the e2e step `send_talk_step`
+**Revisit when:** the request view says which consent carries a proposal or a placement, or the hub computes per request whether the text alone or `talk` is accepted
+
+Every request with a field has **Send** after its replies, on a request
+with options too: it sends the text alone (`{text}`), Ctrl+Enter the
+same, and is disabled while the field is empty. It stays disabled, with
+its reason below the buttons (`.reply-hint`, its `aria-describedby`),
+on every `consent`, every request with `action` or `placement`, and a
+takeover's (`takeover_id`), and there Ctrl+Enter is not offered: a
+shortcut that never sends is not announced. **Talk** stands on every request one can
+answer, disabled with its reason where `talk` is not accepted: for
+another owner's agent, a human asker and a request the hub filed itself
+(above), and on a takeover's: like the words alone, it is refused there,
+since one of its replies is required. No reason is said for a Send that
+is not there.
+Neither stands where no answer is possible at all: a call that only the
+project's owner answers, seen by another member, and a personal request
+not read in full. A refused answer gives the controls back, and what was
+disabled stays disabled.
+
+**Reason:** the hub takes the text alone as an answer to any request
+(§7), so a request with options had no way to answer in one's own words
+although the hub would take it. Where the hub refuses the text alone (a
+takeover's reply is required) or reads it as No (a consent's proposal or
+placement, §15.6), a button that sends it would answer something the
+reader did not mean; one that is missing does not say why. Every
+consent is treated alike, a plain one too: the request as the inbox
+reads it does not say which consent carries a proposal or a placement,
+and a Send that works on one consent and not on another, for a reason
+the reader cannot see, would be the same surprise.
+
+**Rejected alternative:** hiding Send and Talk where they do not apply,
+as before: the reader cannot tell a button that is missing here from one
+that does not exist. Talk for another owner's agent: the hub refuses it
+(`only_the_owner_of_the_agent`), so the button would surely end in
+`invalid`. A field from the hub saying per request whether the text
+alone and `talk` are accepted: a hub change for what the dashboard can
+tell from the request today; the Revisit when names it.
 
 ## A project's unread mentions are a link beside its tabs, to /notifications filtered to the project
 
@@ -773,13 +842,13 @@ by kind and project for reading and for marking, so the dashboard needs no new c
 - The line in the inbox only: it would show on one tab, and the inbox does not redraw when only
   the counts change.
 
-## A personal request in the cross-project inbox is labelled Personal and links into no project
+## A personal request in the cross-project inbox is labelled Personal; its project, card and mentions are no links
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29; the review of PR #1356 that found the people of a personal request linked by the member list since, 2026-11-04
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -790,7 +859,10 @@ Withdraw, which only its human may do. Grouped by project, the personal
 ones come first under "Personal". Since 2026-10-29 a project's own inbox
 lists the open personal requests about that project too, read from
 `GET /requests`: its tab counts them (§18.2), so the list shows what the
-tab says; they keep the label and lead into nothing. The hub has no
+tab says; they keep the label, and their badge, card and mentions lead
+into nothing. Who asked, on whose behalf and to whom are named as
+everywhere: a link only for a member the request's project lists
+(801bc195). The hub has no
 project filter on `GET /requests` (§7), so the project's inbox filters
 what it reads; a failed read is said in the list's status line, never
 shown as an empty list, since a list short of its tab is the bug this
@@ -800,8 +872,9 @@ not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
 request, the project's own listing never holds one (§7), and its human
-need not be a member of that project: every link or member read into the
-project would lead nowhere. A tab that counts what its list leaves out
+need not be a member of that project: a link to the project's inbox or
+card would lead nowhere. A member the project lists has a page there,
+and one it does not list stays text (801bc195). A tab that counts what its list leaves out
 reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
@@ -847,16 +920,21 @@ menu per press would make that slow.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23; the maintainer's report that "Asked by" in the inbox was plain text, relayed by the lead on tsk-3re8qp89hc18, 2026-11-04 (web/js/inbox.js `ref` and `membersOf`, the e2e step `asker_links_step`); the review of PR #1356 that found links to members the project no longer lists, 2026-11-04
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
 a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
-project does not list (removed, outside), a personal request's people,
-whose project the human may not be in, and every member in a view read
-from outside the project are plain text. A name inside a button (an
-inbox entry's head) stays text, since a link cannot sit in a button.
+project does not list (removed, outside) and every member in a view read
+from outside the project are plain text. The inbox of all projects
+reads the member list of each request's project among the reader's, once
+per view, and names who asked, on whose behalf and to whom by it: a link
+into the request's project for one that list names, text for one it does
+not (a member removed since, a human who asks without a membership, a
+project the reader is not in, a list that could not be read), as inside
+a project. A name inside a button (an inbox entry's head) stays text,
+since a link cannot sit in a button.
 
 **Reason:** the maintainer wants to reach any member's actions from
 wherever they appear, and one helper keeps the link, the tooltip and the
@@ -864,6 +942,13 @@ plain-text rule the same on every page.
 
 **Rejected alternative:** a link built in each view: the rules for who
 is linkable (listed, inside the project) would drift between pages.
+Keeping the inbox of all projects plain text, as it was until
+2026-11-04, since it read no member list there: the maintainer found the
+plain name a dead end. A link built from the request alone, for anyone
+it names in one of the reader's projects: the hub keeps an open request
+of a member removed since, and names a human who asks without a
+membership the same way, and both links opened only "No member with the
+id … in this project" (the review of PR #1356, 2026-11-04).
 
 ## A route the hub does not serve is said quietly, and the page does not ask it again
 
@@ -1320,8 +1405,8 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; contract in `docs/api.md` §6.16, §8.5
-**Revisit when:** the dashboard gets a dialog of its own for reasons, the list is drawn per note, or an open edit has to outlive the list being drawn again
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; PR #1391 (tsk-wvf8s7f44vz7, an open edit kept across a redraw of the list, with its focus and caret restored); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons, or the list is drawn per note
 **See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
 **See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
 
@@ -1341,10 +1426,13 @@ fails there is no form yet, as before). The list stays as drawn while it is
 read, only the latest read replaces it, and its Edit and Remove wait
 meanwhile (`aria-busy`). On a post's success exactly the text sent leaves
 the field; anything typed since stays. After an edit, a removal or a post
-the focus moves on only if it is still where that action left it. Known
-gap: an edit opened before another action draws the list again (a post, a
-removal, a second edit ending) goes with the list, its text too; that was
-so before and waits for its own card (tsk-wvf8s7f44vz7). An edit and a removal name the
+the focus moves on only if it is still where that action left it. An edit
+already open keeps its row across that redraw (a post, a removal, another
+edit ending): the same form and the text typed into it stay, and when the
+edit held the focus at redraw the same field and caret come back, so a post
+does not move them into Add a note; a reader who moved focus elsewhere
+during the read is left alone. Cancel or a successful save drops the form
+before the next read; a note gone as a tombstone ends the edit. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1356,7 +1444,8 @@ holder, the date and the reason, never the old text, none on a removed note.
 refusal for a button that should not have been there; an empty reason is not
 sent, so the edit mark of one's own note stays without one, as §6.16 has it;
 one way of asking a removal's reason in the whole dashboard; a note is posted
-once, however the list is drawn again around its post.
+once, however the list is drawn again around its post; an open edit is the
+writer's draft of that note, so a redraw of the list must not throw it away.
 
 **Rejected alternatives:**
 - Showing Edit to every reader and letting the hub refuse: a button that
@@ -1369,8 +1458,13 @@ once, however the list is drawn again around its post.
   refusal vanished with a failed read. A form drawn once has none of it.
 - Keeping an edit begun on the list being read: the list drawn after the read
   would have to merge it in; Edit and Remove waiting for the read is simpler.
-  This covers only an edit begun during a read, not one already open (the
-  known gap above).
+  That lock covers only an edit begun during a read; an edit already open is
+  kept by holding its row across the redraw (tsk-wvf8s7f44vz7).
+- Making Edit wait while a post or a removal is in flight: disabling Edit
+  only stops a new edit from beginning — it does not stop typing in an
+  already open textarea, and that open edit would still lose its row on the
+  redraw. Keeping the open row lets both run, and restores its focus when it
+  still held it.
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
@@ -1927,7 +2021,7 @@ line, because a display at the fields only would swallow it (merge of
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration, a `report_open` item to the report in Admin → Reports) and the review of #778, 2026-10-31
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration; until 2026-11-04 a `report_open` item to the report in Admin → Reports, since then a report's request in the inbox, §16.8) and the review of #778, 2026-10-31
 **Revisit when:** a section other than Registration and Reports needs a link of its own, or the area grows past one row of buttons
 
 `/admin` reads every section as before, then shows one: a row of
@@ -1936,9 +2030,10 @@ page opens on the first, Statistics. A section whose read fails says so
 in its place (until 2026-10-30 a section the hub did not serve left the
 row, e1699490). The others stay
 in the page, hidden, so a form half filled in keeps what was typed.
-The two sections a notification leads into have an address:
-`/admin/registration`, and `/admin/reports/<id>`, which opens that
-report as well. The page is the same, opened on that section; the
+The two sections a notification or a request leads into have an
+address: `/admin/registration`, and `/admin/reports/<id>`, which opens
+that report as well (the target of a report's request, entry
+f50ed8ee-5948-43c8-817a-d1b008bf1f5a). The page is the same, opened on that section; the
 section is found by the hub path it reads, not by its label, which is
 translated.
 
@@ -1948,7 +2043,7 @@ under each other hid all but the first below the fold.
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
 shorter. A route for every section (`/admin/users`): only the two
-sections a notification names need a link. The older Users page at `/admin/users` was removed
+sections a notification or a request names need a link. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
@@ -2109,7 +2204,7 @@ panel above the columns, as before: the length of the page.
 **Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
-**Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
+**Revisit when:** the hub can read the newest page and mark it read in one request (the Messages view pages through the project messages listing, §8.8, since 2026-11-04: 8e483bb1)
 
 Direct and group chats read the newest 50: back with `before=` (the
 list's last message, else the largest integer), then forward from the
@@ -2715,7 +2810,9 @@ summary lists the instances. The bell's `agents_not_listening` item
 opened: like `registration_pending` and `mail_disabled` it asks for an
 action (resume or end the instances) and is read once the matter is
 closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
-names its target `agents`.
+names its target `agents`. A report's request (entry f50ed8ee-5948-43c8-817a-d1b008bf1f5a) has the
+digest's shape, filed by the hub, personal, without project or
+organisation, but is no digest and gets no such link.
 
 **Reason:** "—" as an asker reads as a missing name, not as the hub;
 and "the agent waits for the answer" would be false. The instances
@@ -3240,6 +3337,8 @@ The cross-project inbox takes a personal request whose `project` is
 organisation where the request carries `org`, and nothing links into a
 project. A request with `project` and `org` (a transfer into an
 organisation) names the project and the organisation it would move into.
+One with neither (a report's request, §16.8) is labelled Personal alone,
+its hidden name "Personal: " rather than "Personal, : ".
 
 **Reason:** an invitation into an organisation belongs to no project,
 and the inbox read `project.full_name` on every request, so one such
@@ -3247,6 +3346,40 @@ request broke the whole list.
 
 **Rejected alternative:** filling in an empty project: it shows a
 project that is not there, and the links behind it lead nowhere.
+
+## A report's request in the inbox only opens the report
+
+**Id:** f50ed8ee-5948-43c8-817a-d1b008bf1f5a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.8 ("Who is told"), §7 (`report`, `resolve_the_report`), §1.3; the card tsk-xz3yt6yz1b2b and the coordinator's approval of variant A, 2026-11-04 (the request cannot be answered, resolving stays in Admin → Reports; Open report must work from the all-projects inbox); hub/context/reports.md 2011e591
+**Revisit when:** the hub lets the request itself resolve its report, or a report's request reaches someone other than the instance admin
+
+A new abuse report reaches the instance admin as a personal request
+without project or organisation, filed by the hub, carrying `report`
+(`id`, `reason`, `type`). In the inbox such a request shows no text
+field, no replies, no Withdraw and no digest's link to one's agents,
+only **Later** and **Open report**, a link to `/admin/reports/<id>`,
+where the admin reads the snapshot and resolves it. Resolving or expiry
+withdraws the request on the hub's side; the inbox drops it on its next
+read. The fixture hub does the same: it lists such requests for the open
+reports, refuses answering or withdrawing them with `resolve_the_report`,
+and withdraws one when its report is resolved. The bell's `report`
+target (`report_open`) is gone from `M.notify`.
+
+**Reason:** the hub refuses every answer and withdrawal of a report's
+request (409 `resolve_the_report`), so a field or button there could only
+fail; the decision needs the snapshot and the actions of Admin → Reports.
+
+**Rejected alternatives:**
+- Resolving in the inbox (the card's variant B): a second place for the
+  same action, without the snapshot beside it.
+- Keeping the bell's `report_open` item beside the request: every report
+  shown, and mailed, twice.
+- The digest's link to one's agents, which its shape alone would give
+  (hub-filed, personal, no project, no organisation): it says nothing
+  about a report.
 
 ## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
 
@@ -3299,34 +3432,43 @@ up the state, so the mark belongs there as well as in the header.
   move back to build, which the maintainer's decision rules out.
 - The mark in the header alone: the overview is where the state is read.
 
-## A member's Activity and the project's Messages read the hub's latest 5000 events and say so
+## A member's Activity reads the hub's latest 5000 events and says so
 
 **Id:** 4c3f8949-c8df-4c99-bb0c-08dc47205eed
 **Type:** workaround
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history
-**Revisit when:** §8.3 takes `actor=`, or the hub serves the project messages listing (§8.8)
+**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor) and §8.8 (the listing holds messages only, with no filter by sender); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history; the card tsk-0m6qx612y5px and lotse's agreement, 2026-11-04 (project message seq 69405): the Messages view moves to §8.8, the Activity keeps the window
+**Revisit when:** §8.3 takes `actor=` (`GET /events?actor=`)
 
 The hub cannot be asked for one member's events, nor for a project's
 latest events counted in that project. The member page's Activity
 therefore pages through the project's feed from the hub's latest 5000
-`seq` forward, as the Messages view always did (one shared scan,
-`M.recentEvents`), keeps the member's own events that are not redacted,
-and shows the newest 50; each opening of the page reads up to 26 pages
-of 200, a cost bounded by the window, not by history. Where the window
-cut something, both views say
-it counts the hub's latest 5000 events, all projects counted, so a quiet
-member in a busy hub reads as cut, not as idle.
+`seq` forward (its own scan in js/member-page.js), keeps the member's
+own events that are not redacted, and shows the newest 50; each opening
+of the page reads up to 26 pages of 200, a cost bounded by the window,
+not by history. Where the window cut something, it says it counts the
+hub's latest 5000 events, all projects counted, so a quiet member in a
+busy hub reads as cut, not as idle. A cursor that does not move stops
+the read with an error. The Messages view no longer shares this scan:
+it pages through the message listing (§8.8, 8e483bb1) since 2026-11-04.
 
 **Reason:** what the client can afford to read is bounded by the hub's
 numbering, not the project's; a sentence that names the project's events
-would promise what the window cannot see.
+would promise what the window cannot see. The Activity stays on the
+window when the Messages view leaves it: it lists every kind of a
+member's events (cards claimed, requests answered, members joined, and
+messages), while §8.8 lists messages only and cannot be asked for one
+sender, so it would show a fraction of the Activity and still need the
+scan for the rest. Settled with lotse on 2026-11-04 (seq 69405).
 
 **Rejected alternative:** reading the whole feed from the first event:
 its cost grows with the hub's history, which the 2026-10-26 rule rules
 out. A window of 200 for the Activity: in a busy hub it held few or none
-of the project's events and said nothing about it.
+of the project's events and said nothing about it. The Activity from
+§8.8 alone, filtered to the member in the page: it would drop every
+event that is not a message and page through every sender's messages to
+find one member's.
 
 ## The swarm statistics are the Overview's Swarm tab, read on their own; no project tab, no public page, no switch
 
@@ -4847,3 +4989,48 @@ Eight rules of `ktw-views.css` write `#fff` on the library's accent (selected co
 **Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
 
 **Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one. Checking only the export's fields, or only what the library writes: the fields keep a bad link from shaping what the library builds from it, the check of the mounts covers links in entry text and any field a later library adds. An elsewhere view of Maity's own for a `centre`: a second rendering of an entry the library's pages already draw. A centred entry as its `ref` place: the library's `ref` resolves the entry and goes to it at that centre, which was the same address again, so the page never left "Looking for …"; and a child root had no place in it.
+
+## The organisation's Paths face draws only edges the members API gives; an event's usual edges are marked as usual
+
+**Id:** 04ce10bd-5160-46e3-bb6d-7c3f760f4167
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-j9ktmj7e4fxq, 2026-11-05: the lead's answer to the request on the card (req-x3hgj0b7xzy3), choosing the members API as the only source and usual edges marked as such; the designer's approved draft for the layout
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-11-05
+**Revisit when:** the hub names an event's recipients itself (a routing read), or a team's lead has more than one role group too wide for the canvas
+
+The Team page's Organisation tab has two faces, Tree and Paths, the choice kept per browser. Paths (`js/paths.js`) draws the team top-down from `reports_to`, humans first, a lead centred over its members, and more than six members of one role under one lead folded into one box that opens in place. The reporting lines are a chip of their own, on by default; four more chips draw where one event goes, from the routing of docs/api.md §8.2 and §8.4: a review result to the reviewer's lead, not listening to the agent's lead, the admins and the owner (never a meat proxy), a request to a human to the agent's owner, and a card assignment from a lead to the member and the member's owner. Every edge is computed from what `GET /members` returns. Where the hub's routing depends on something the members list does not carry (who assigned the card, who wrote the reviewed PR), the edge is drawn as usual, dotted and named "usual" in the legend, or only said in the chip's note. At phone width the drawing gives way to a list of cards, each naming whom the member reports to and what it gets.
+
+**Reason:** a picture of the routing that the hub does not do is worse than none; the members list is what the dashboard already reads, and the usual edges answer the question readers ask (who hears about this) without claiming the hub computed them.
+
+**Rejected alternatives:** a routing table of the dashboard's own, kept beside §8: a second copy that drifts from the hub. Leaving out the edges the members list cannot settle: card assignment, the most asked about, would show nothing. A force layout: it moves on every redraw and hides who reports to whom; the draft's tidy tree keeps the hierarchy readable.
+
+## Join an agent asks for the second factor in its form, and names the project and the missing right
+
+**Id:** 2e60e51f-5e0e-4bd0-bc46-365b3c050d13
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's reports on tsk-trb99kkhv1rk (an owner could not create a join and saw only "you lack the rights"; the maintainer saw "this call needs your second factor first" with the second factor set to mail for everyone), 2026-11-05; hub/src/maity_hub/routes/joins.py (`create_join` calls `require_step_up`), docs/api.md §2.8.4; web/js/step-up.js
+**Revisit when:** the hub stops treating join creation as a sensitive call, or the dashboard gets one step-up place for every view
+
+Creating a join goes through `M.stepUp.run`, the same as every other
+sensitive call in the dashboard: on `step_up_required` the form asks for
+the code (by app, or the mailed code under the mail factor) and sends the
+join again; Cancel ends without a refusal. A bare `forbidden` with
+`scope: members:admin` (no admin rights, and members may not bring
+agents) is said in words that name the right. The panel names the project
+the join is for, by name and full name.
+
+**Reason:** the hub has always asked for the second factor on
+`POST …/joins`, but the join form showed it as a refusal: in English
+the hub's own sentence, translated as the generic "you do not have the
+rights for this", so an owner who had done nothing wrong could not add an
+agent at all. With several projects open the target project was only the
+tab's.
+
+**Rejected:** a hub change (the hub's rule is right; a sole owner may not
+make themselves admin either, the maintainer confirmed); a generic words
+entry for `step_up_required` in js/errors.js alone, which would say the
+cause but still leave no way to give the code.

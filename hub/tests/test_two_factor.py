@@ -626,11 +626,11 @@ def test_a_trusted_session_held_at_enrolment_may_still_confirm_a_sign_in(
     assert admin.get("/me").json()["error"]["details"]["reason"] == (
         "second_factor_enrolment_required"
     )
-    items = admin.get("/me/notifications").json()["items"]
-    alert = next(i for i in items if i["kind"] == "security")
-    assert admin.post("/me/notifications/read", {"ids": [alert["id"]]}).status_code == 200
-    after = admin.get("/me/notifications").json()["items"]
-    assert next(i for i in after if i["id"] == alert["id"])["read"] is True
+    # "This was me" is one of the moved calls; a sign-in is no bell item to mark (§2.6.5).
+    later_id = later.get("/api/v1/auth/session").json()["session_id"]
+    confirmed = admin.post(f"/auth/sessions/{later_id}/confirm", {})
+    assert confirmed.status_code == 200, confirmed.text
+    assert admin.get("/me/notifications").status_code == 200
     # A fresh enrolment session (its sign-in not complete) gets neither.
     fresh = make_client(secret_key=KEY)
     login(fresh)
