@@ -459,10 +459,8 @@ guessed address against it, and a source address is easy to guess. A
 fingerprint goes 30 days after its last sign-in and with the account
 (§2.9). Setting, changing or removing `MAITY_SECRET_KEY` changes the
 key, so every fingerprint stops matching: each account has no known
-source until its next sign-in. It is not in the export: it is the hub's
-own bookkeeping of a value the human never gave as such, and the
-sessions in the export already show what the human can know of their
-sign-ins.
+source until its next sign-in. The fingerprints are not part of the
+export (§2.9).
 
 `POST /auth/password`, `POST /auth/reauthenticate` (§2.8.1) and the
 change of a verified address (§18.4) count their wrong passwords in
