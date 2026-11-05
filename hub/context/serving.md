@@ -422,7 +422,7 @@ that finally runs reports its whole length in the next window. Without a tick in
 **Evidence:** inferred
 **Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04 (a total read deadline); the value is the implementer's; `docs/api.md` §1.3 and §1.7; implementation session, 2026-11-04
 **Revisit when:** a client legitimately needs longer for a 10 MiB upload, or an ingress in front of the hub buffers whole bodies itself
-**See:** attachments.md#an-uploads-caller-is-checked-from-its-headers-before-its-body-is-read — ea27e3d7-14b1-40ab-8158-b86ab575583e — as of 2026-11-04
+**See:** attachments.md#a-large-bodys-caller-is-checked-from-its-headers-before-the-body-is-read — ea27e3d7-14b1-40ab-8158-b86ab575583e — as of 2026-11-04
 
 Every body is read by `body.read` against one deadline, `body.BODY_SECONDS`
 (120), counted from when the read starts. Its two callers are the
