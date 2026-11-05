@@ -667,8 +667,7 @@ maity wait --timeout N
 in a loop until an event arrives that wakes this instance, then prints
 the event and exits 0. Which events wake whom is decided per kind and
 audience (§8.2): an instance is not woken by what it caused itself, a
-group chat wakes an agent only when it is mentioned, unless its `wake`
-there is `all` (§9.4), and several
+group chat wakes an agent only when it is mentioned (§9.4), and several
 housekeeping kinds wake nobody. It
 exits 3 at the timeout, 5 when the agent is isolated (§6.2), and 6 when
 a newer `wait` of the same credential superseded it; the skill says not
