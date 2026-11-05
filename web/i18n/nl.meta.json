@@ -7911,6 +7911,10 @@
     "en": "8f8f7a7d741ceb59",
     "text": "708ab0602fd08539"
   },
+  "login.email": {
+    "en": "c6394f33e6b9bb97",
+    "text": "5ae9c953f234cbe2"
+  },
   "login.failed": {
     "en": "0c16e564176f0925",
     "text": "aab31e79ef33ab4f"
@@ -7926,6 +7930,10 @@
   "login.password": {
     "en": "9e10723b04013059",
     "text": "351c597bac425669"
+  },
+  "login.paused": {
+    "en": "faa3623d3dffd777",
+    "text": "dd8a769d14352276"
   },
   "login.public_page": {
     "en": "749d5ea463603454",
