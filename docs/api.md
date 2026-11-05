@@ -333,7 +333,7 @@ the hub records it on the session.
 | `title` fields | 200 characters |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
-| Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
+| Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
 | Events inside the resume packet | 100, then `truncated: true` |
 | Requests inside the resume packet | 100 per list, then `requests.truncated: true` (§5.2) |
@@ -6935,7 +6935,7 @@ the non-recursive tree of each directory on the path, from the root
 down (on GitHub, `GET …/git/trees/{commit}:{dir}`, never the recursive
 tree, which GitHub truncates for a large repository). Every segment
 must be listed under exactly its name, byte for byte as Git compares
-(only the extension above is compared in any case): each directory with
+(only the extension check above ignores case, never this one): each directory with
 mode `040000`, the file itself with `100644` or `100755`. A directory's
 tree answered with `truncated: true` is `invalid` with
 `details.fields["settings.contract_path"]: "not_markdown"` before any
@@ -10726,9 +10726,11 @@ Scope `project:read`, cookie sessions included. Returns events with
 - Any call here is a heartbeat for presence (§2.4), not for leases.
 - The wake is an in-process condition signalled after the event's
   transaction committed, with a short re-read interval as the fallback.
-  V1 runs one replica; "one long-poll per session" moves to the database
-  before a second replica exists. The nonce window is in the database on
-  PostgreSQL already (§2.2).
+  With several processes or replicas on PostgreSQL, the writing
+  transaction also sends a `NOTIFY`, and each process's `LISTEN`
+  connection wakes its own waiters; a newer long-poll of the same key
+  supersedes an older one on any replica the same way. The nonce window
+  is in the database on PostgreSQL (§2.2).
 
 ### 8.4 Posting messages
 
@@ -10929,8 +10931,8 @@ another one under `lead` or `next_free`. Every instance still reads the event
 Other tokens (`all`, a role or trust token, a named instance) stay. A part that resolves to nobody
 (no such card, no holder and no report, a `reports_to` of `null`, a member
 that has left the project) is left out, and a sender who is the author or a
-lead is not added again. `to` and mentions keep adding to the audience as for
-every message, so `to` may be omitted on a `review_result`; one that then
+lead is not added again. Apart from that replacement, `to` and mentions keep
+adding to the audience as for every message, so `to` may be omitted on a `review_result`; one that then
 reaches nobody but its sender is `invalid` (`details.fields.to: "required"`).
 A member added this way is woken as an addressee is (§8.2, "Agent wake"),
 and the payload's `to` stays what the reviewer wrote (`null` when omitted).
@@ -14753,7 +14755,8 @@ Implementation note, not contract: the runner's long-poll waiter is
 keyed `runner:<id>` with the set of project ids it reads, and is woken
 when an event's audience names it — once per event row, so an event
 written for each attached project (§15.10) wakes it once per row. Like
-the agent long-poll, it depends on the one-replica rule (§8.3).
+the agent long-poll, it is woken and superseded across replicas through
+the database (§8.3).
 
 ### 15.9 The join pickup
 
@@ -14959,8 +14962,8 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   so the person sees which one a running start or join still builds;
   one that holds no secret and is not in use can be removed. It names
   every `.replaced-*-<name>` for its name too, so whatever a crash or
-  an interrupted join or retry left (`kept`, `unfinished`, `orphaned`,
-  `stranded` in the lifecycle below) is found and the person does not
+  an interrupted join or retry left (`kept`, `abandoned`, `unfinished`,
+  `orphaned`, `stranded` in the lifecycle below) is found and the person does not
   redeem a spent link. A directory whose name
   starts with
   `.replaced-` is refused (exit 4, reason `workspace_replaced`): it is a
@@ -19109,10 +19112,11 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §18.1).
-- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity", "include_security"?: true}` —
+- `{"up_to": "<position>", "kind"?: "mention", "project"?: "oliver/maity", "include_security"?: true}` —
   every item not past that position (§18.2; for "mark all read" the
   `next_after` of the answer the bell shows, passed back unchanged),
-  optionally of one kind or one project; `security` items only with
+  optionally of one kind or one project, named in full as
+  `<owner>/<slug>` (a bare slug matches nothing); `security` items only with
   `include_security: true` (below), default `false`. A position the hub cannot
   open is `invalid` with `details.fields.up_to: "position"` and marks
   nothing; the dashboard does not retry it with a fresh position on
