@@ -20,15 +20,15 @@ A pull request that mixes unrelated work makes it harder to tell which behavior 
 
 Our project requires an approval from each of three reviewer vendors: Antigravity, Grok and ChatGPT. Each review starts in a fresh context. The approvals and the automated `ci-ok` check must refer to the exact commit being merged. This is our project's quality rule, not a fixed number of reviewers imposed on every Maity project.
 
-**An example.** In an early incident, an instruction to apply renames crossed with an instruction to wait for review. The review examined the old pushed commit and reported changes the author had already made locally. Someone then had to sort the findings by hand.
-
 **How it works.** Give reviewers the full base and head commit IDs and the scope to inspect. Wait for all requested results before pushing the collected fixes, then have the reviewers check the delta. Maity's completion report records the head, and a review-result message carries the head it judged and its verdict. Those records let you compare what was reviewed with what will merge ([completion reports](../api.md#66-completion-report), [review messages](../api.md#84-posting-messages)).
+
+**An example.** In an early incident, an instruction to apply renames crossed with an instruction to wait for review. The review examined the old pushed commit and reported changes the author had already made locally. Someone then had to sort the findings by hand.
 
 ## Check the review's evidence too
 
 A confident review is not proof that its author read the code correctly. We have had reviews name code that did not exist. Adding another reviewer alone does not establish whether a quoted line is real.
 
-Our lead samples each review's claims against the diff before counting its approval. Review-result messages in Maity include citations: paths, optional line numbers and quoted text. The hub requires those fields and reads no repository. The `maity` client checks citations and the files and names in the review text against its local clone before sending. That can catch a misquote; it cannot establish that a conclusion drawn from a correct quote is right.
+Our lead samples each review's claims against the diff before counting its approval. Review-result messages in Maity include citations: paths, optional line numbers and quoted text. The hub requires those fields and reads no repository. The `maity` client checks citations and the files and names in the review text against its local clone before sending, when the clone and the reviewed commit are available. Without them, the client sends the review unchecked and prints a notice. That can catch a misquote; it cannot establish that a conclusion drawn from a correct quote is right.
 
 **How it works.** Open the cited file at that commit. Check that the quotation exists and supports the finding, then reproduce the behavior when the finding depends on it. If the evidence is wrong, have the review corrected before relying on its verdict.
 
@@ -52,7 +52,7 @@ Keep reasons separately from progress. A checkpoint says where work stopped. [Ke
 
 Passing a question between several agent windows makes you the team's messenger. A decision can also get lost among ordinary chat messages.
 
-**How it works.** Have agents resolve routine work within their role and ask through their reporting line when they need a decision. Bring questions that belong to a human to the inbox, with the problem, what has been tried and the available options. In Maity, the person can answer there or use **Talk** to discuss the question first. The answer returns to the asking agent instance. A conversation helps reach a decision; it does not replace a required consent ([requests](../api.md#7-requests-to-humans-the-inbox)).
+**How it works.** Have agents resolve routine work within their role and ask through their reporting line when they need a decision. Bring questions that belong to a human to the inbox, with the problem, what has been tried and the available options. In Maity, the person can answer there. If the asking agent is yours, you can also choose **Talk**. This answers the request with “neither — let’s talk” and sends the agent to your conversation; it does not leave the request open. The answer returns to the asking agent instance. A conversation helps reach a decision; it does not replace a required consent ([requests](../api.md#7-requests-to-humans-the-inbox)).
 
 ## Read on
 
