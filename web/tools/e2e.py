@@ -1069,6 +1069,7 @@ def scenario(run: Run, page: Page) -> None:
     id_links_step(run, page, alpha, task["id"])
     send_talk_step(run, page, alpha)
     wide_lines_step(run, page, alpha, task["id"])
+    note_edit_survives_redraw_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1310,6 +1311,50 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
     expect_inbox_empty(page)
     no_problems(run, "long lines")
+
+
+def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """An open note edit keeps its form and the text typed into it when the notes list is drawn
+    again (tsk-wvf8s7f44vz7): a post from Add a note redraws the list; Cancel still ends the edit.
+    Desktop and phone, light — the state after load, not a layout fit."""
+    run.step("an open note edit survives a post's redraw of the notes list")
+    seed = "A note whose edit outlives a redraw"
+    run.maity(alpha, "note", "add", card_id, seed)
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "light")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            panel = page.locator("aside.card-panel")
+            expect(panel).to_be_visible()
+            note = panel.locator("li.card-note").filter(has_text=seed).first
+            expect(note).to_be_visible()
+            note.locator("button.card-note-edit").click()
+            form = note.locator("form.card-note-edit-form")
+            expect(form).to_be_visible()
+            field = form.locator("textarea")
+            typed = f"typed across the redraw at {width}"
+            field.fill(typed)
+            posted = f"A post that redraws the list at {width}"
+            add = panel.locator("form.card-note-form")
+            add.locator("#card-note-body").fill(posted)
+            add.get_by_role("button", name="Post the note", exact=True).click()
+            expect(panel.locator("li.card-note").filter(has_text=posted)).to_be_visible()
+            expect(form).to_be_visible()
+            expect(field).to_have_value(typed)
+            # Same DOM node: the keep holds the open li across the redraw.
+            assert field.evaluate("(el) => el.isConnected"), f"{where}: the edit field was replaced"
+            form.get_by_role("button", name="Cancel", exact=True).click()
+            expect(note.locator("form.card-note-edit-form")).to_have_count(0)
+            expect(note.locator("button.card-note-edit")).to_be_visible()
+            if width == 390:
+                run.shot(page, "note-edit-survives-redraw-phone")
+        run.a11y(page, "card panel, an open note edit after a post")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "note edit survives redraw")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
