@@ -249,13 +249,33 @@ window.Maity = window.Maity || {};
     try { return render(marked, at, 0, o.anchors); } finally { marks = []; }
   };
   // An ATX heading's text as the hub reads it (§6.8): up to three spaces,
-  // the marks, the title, a closing run of marks dropped.
+  // the marks, the title, a closing run of marks dropped; null for a line
+  // that is no heading. String steps, one pass over the line each, so the
+  // work grows with the line's length: the patterns they replace tried every
+  // start in a run of spaces. A line separator after the marks makes no
+  // heading, as the pattern's `.` held none.
+  const blank = (c) => c === " " || c === "\t";
+  function atxTitle(line) {
+    let start = 0;
+    while (start < 3 && line[start] === " ") start += 1;
+    let level = 0;
+    while (line[start + level] === "#") level += 1;
+    const rest = line.slice(start + level);
+    if (level < 1 || level > 6 || (rest && !blank(rest[0])) || /[\u2028\u2029]/.test(rest)) return null;
+    let from = 0;
+    let to = rest.length;
+    while (from < to && blank(rest[from])) from += 1;
+    while (to > from && blank(rest[to - 1])) to -= 1;
+    let end = to;
+    while (end > from && rest[end - 1] === "#") end -= 1;
+    if (end < to && end > from && blank(rest[end - 1])) to = end; // a closing sequence
+    return rest.slice(from, to).trim();
+  }
   // Its section number, as the hub finds one, is a text of its own.
-  const ATX = /^ {0,3}#{1,6}(?:[ \t]+(.*?))?[ \t]*$/;
   const NUMBER = /^\d+(?:\.\d+)*\.?$/;
   function anchored(line, where, at) {
-    const m = ATX.exec(line);
-    const title = m ? (m[1] || "").replace(/[ \t]+#+$/, "").trim() : line.trim();
+    const atx = atxTitle(line);
+    const title = atx === null ? line.trim() : atx;
     const cut = title.indexOf(" ");
     const first = cut < 0 ? title : title.slice(0, cut);
     const numbered = NUMBER.test(first) && cut > 0;

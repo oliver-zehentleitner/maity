@@ -14,6 +14,7 @@ from sqlalchemy import Connection, insert, select, update
 from maity_hub import clock, namespace
 from maity_hub import tables as t
 from maity_hub.board import history
+from maity_hub.cards import CLOSED
 from maity_hub.errors import invalid
 from maity_hub.events import Actor, emit
 from maity_hub.forge import Forge
@@ -246,7 +247,7 @@ def waiting(conn: Connection, project_id: str) -> list[dict[str, Any]]:
         .where(
             t.card.c.project_id == project_id,
             t.card.c.kind == "setup",
-            t.card.c.status.notin_(("done", "cancelled")),
+            t.card.c.status.not_in(CLOSED),
         )
         .order_by(t.card.c.created_at, t.card.c.id)
     ).all()

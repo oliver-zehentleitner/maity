@@ -179,13 +179,13 @@ value, since a row written by an older version or by hand is still shown to the 
 - Giving the landing page the dashboard's `default-src 'self'` and its stylesheet: it would allow
   the page to load files and make the policy depend on what the dashboard ships.
 
-## The Markdown renderer and the language choice do bounded work per input: a link's runs are capped and its opening spaces taken possessively, quotes nest 8 deep, `Accept-Language` is read for 1024 characters and 20 parts
+## The Markdown renderer and the language choice do bounded work per input: a link's runs are capped and its opening spaces taken possessively, quotes nest 8 deep, `Accept-Language` is read for 1024 characters and 20 parts; the contract's headings and the `.keep-the-why` list lines are read in string steps
 
 **Id:** 94d7a94f-40a8-46ea-b271-39e6d8f1ed9f
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`), `notifications/mailer.py` (`_schemes`) and `auth/sessions.py` (`_safari`), replaced in PR 5 of the card (2026-11-04)
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`), `contract_text.py` (`_atx`), `ktw.py` (`_setting`, `_child`), `notifications/mailer.py` (`_schemes`) and `auth/sessions.py` (`_safari`), the last two replaced in PR 5 of the card (2026-11-04)
 **Revisit when:** the renderer gets a construct with a pattern of its own, a member text may grow beyond its current limit (a card's 16 KiB, a note's 4 KiB), or the hub gains a way to stop a render that runs too long
 
 The renderer above runs on members' words too: the text of a public project, a card's body and its
@@ -220,8 +220,16 @@ with the text's length and never with the ways of splitting it:
   characters BCP 47 asks every implementation to support matches nothing. Nothing past the
   limit is copied, split or converted: a split with a limit still copies the rest, and a q-value
   of any length is converted.
+- The same holds for two files the hub reads from a repository: the contract's ATX headings
+  (`contract_text._atx`, a file of up to 4 MiB, §6.8) and the list lines of a `.keep-the-why`
+  (`ktw._setting`, `ktw._child`, up to 64 KiB, §11.3). Each is a few string steps, one pass over
+  the line each; the patterns before them tried every start in a run of spaces, and the child
+  line's every split of the whitespace before its colon, which took minutes on 8 KiB of spaces.
+  What a line means is unchanged, checked against the old patterns as an oracle on short lines,
+  down to a name of whitespace only, which is its last character.
 
-A test renders the longest stored text of each shape in under a second.
+A test renders the longest stored text of each shape in under a second, and reads the longest
+line of each file shape in under a second.
 
 **Reason:** CPython holds the interpreter lock while a pattern runs, so one slow render stops
 every request of the process, and a render in a writing transaction or at start-up holds the
@@ -235,6 +243,9 @@ callers at once.
   of patterns that can be written linearly.
 - Shortening members' texts: the limits on cards and notes are the contract's, and a shorter
   text with the same patterns is only slower to reach.
+- For the headings and list lines, the same patterns with possessive runs: `\s` against
+  `[ \t]`, the closing `#` run and the name of whitespace only would each have had to be rebuilt
+  inside the pattern; the string steps keep the old meaning in a form the oracle checks.
 
 ## The landing page's look is the hub's own files, served from the package under their digest; the page reads without them
 

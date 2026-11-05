@@ -1,11 +1,13 @@
 name: audit
 
-# The hub's locked dependencies (hub/requirements/*.txt) against the known
+# The hub's locked dependencies (hub/requirements/*.txt) and the CLI's release
+# build tools (cli/requirements/release.txt) against the known
 # advisories (pip-audit, which asks the PyPI vulnerability service). On every
 # push to main and every pull request, and once a day, so an advisory published
 # for a pin nobody changed still turns this red. A failure names each package,
 # its version, the advisory id and the fixed versions; what to do then is in
-# hub/README.md, "Dependencies". The CLI has no dependencies and is not audited.
+# hub/README.md, "Dependencies". The CLI itself has no dependencies; its release
+# lock holds only what builds and checks the package.
 on:
   push:
     branches: [main]
@@ -47,4 +49,8 @@ jobs:
               --require-hashes --disable-pip --progress-spinner off --desc on || status=1
             echo "::endgroup::"
           done
+          echo "::group::cli/requirements/release.txt"
+          "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../cli/requirements/release.txt \
+            --require-hashes --disable-pip --progress-spinner off --desc on || status=1
+          echo "::endgroup::"
           exit "$status"

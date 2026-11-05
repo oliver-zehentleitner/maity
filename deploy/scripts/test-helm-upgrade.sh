@@ -21,8 +21,8 @@ case "$*" in
   *"logs"*)
     [ "$FAIL" = logs_unreadable ] && { echo "error: pod gone" >&2; exit 1; }
     [ "$FAIL" = dump_retry ] && echo "pg_dump: error: connection to server failed: Connection refused"
-    if [ "$FAIL" = dump_notar ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
-    elif [ "$FAIL" != dump_nomark ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709 attachments 10240"; fi
+    if [ "$FAIL" = dump_notar ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump.gpg 4048709"
+    elif [ "$FAIL" != dump_nomark ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump.gpg 4048709 attachments 10402 (encrypted; plain bytes: dump 4048541, attachments 10240)"; fi
     exit 0;;
   *"delete job"*)           exit 0;;
   *"scale"*)

@@ -221,3 +221,190 @@ def test_without_the_commit_neither_is_checked_and_it_is_sent(
     missing = "7039a4b6fd8b988d71a63338711da188fcd95fba"
     assert _send(tmp_path, missing, "`test_invented` covers it.") == cli.EXIT_OK
     assert "cites and text not checked: commit" in capsys.readouterr().err
+
+
+# Form 4: a quotation from a file. FILES has no prose, so these tests add a page.
+PAGE = {
+    "docs/how/connected.md": (
+        "# How agents are connected\n\n"
+        "An agent that asks a question goes back to the card it asked about,\n"
+        "and the card is marked blocked, so everyone can see why it is not moving.\n"
+        "The `.flag` box stays until the answer.\n"
+        'Its label reads "waiting for an answer" until then.\n'
+    ),
+    "web/js/wake.js": (
+        "// The wait returns at once with every new event\n"
+        "// addressed to this agent, then the harness wakes it.\n"
+        'const LABEL = "a \\"quoted\\" word in the label";\n'
+    ),
+}
+
+
+def quoted(clone: Path, body: str) -> list[str]:
+    head = _commit({**FILES, **PAGE})
+    return textcheck.check(clone, head, body).bad
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'docs/how/connected.md:3 says "the agent closes the card when it is done".',
+        "docs/how/connected.md:3: “the agent closes the card when it is done”",
+        "„the agent closes the card when it is done“ (docs/how/connected.md:3) is wrong.",
+        '"the agent closes the card when it is done" (`docs/how/connected.md:3`)',
+    ],
+)
+def test_a_quote_next_to_a_file_and_line_must_stand_in_that_file(clone: Path, body: str) -> None:
+    found = quoted(clone, body)
+    assert len(found) == 1, found
+    assert '"the agent closes the card when it is done": not in docs/how/connected.md' in found[0]
+
+
+def test_a_quote_in_a_section_about_one_file_must_stand_in_that_file(clone: Path) -> None:
+    body = (
+        "## `docs/how/connected.md`\n\n"
+        "P2: “nobody can see why the card stopped moving” reads oddly.\n\n"
+        "### Wording\n\n"
+        'Also "an agent waits for the owner here".\n\n'
+        "## Summary\n\n"
+        '"a sentence that is in no file" is prose here, not a quote.\n'
+    )
+    found = quoted(clone, body)
+    assert len(found) == 2, found
+    assert "nobody can see why the card stopped moving" in found[0]
+    assert "an agent waits for the owner here" in found[1]
+
+
+def test_a_quote_that_stands_passes_across_wrapped_lines_cuts_and_code_marks(
+    clone: Path,
+) -> None:
+    body = (
+        "docs/how/connected.md:3-4: “goes back to the card it asked about, and the card is "
+        'marked blocked”, and "so everyone can see … it is not moving." '
+        "(docs/how/connected.md:4); “The .flag box stays until the answer” "
+        "(docs/how/connected.md:5)."
+    )
+    assert quoted(clone, body) == []
+
+
+def test_a_section_quote_may_stand_on_the_default_branch_but_a_line_quote_may_not(
+    clone: Path,
+) -> None:
+    main = _commit({**FILES, **PAGE})
+    _git("update-ref", "refs/remotes/origin/HEAD", main)
+    head = _commit({"docs/how/connected.md": "# How agents are connected\n\nRewritten.\n"})
+    removed = "goes back to the card it asked about"
+    section = f'## docs/how/connected.md\n\nThe change drops "{removed}".\n'
+    assert textcheck.check(clone, head, section).bad == []
+    found = textcheck.check(clone, head, f'docs/how/connected.md:3 says "{removed}"').bad
+    assert len(found) == 1, found
+    assert "not in docs/how/connected.md at the head, verbatim" in found[0]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'docs/how/connected.md:3 calls it "blocked" and "merge-ready" and "in review" here.',
+        'docs/how/connected.md:3 the `"a quote in a code span is a name"` form 2 checks.',
+        'A sentence with no file: "nothing in the head says this at all".',
+        'docs/how/connected.md:3 an odd quote " stays text.',
+        '- "a claim the review checked here": docs/how/connected.md:3 is its evidence.',
+        'docs/how/connected.md:3 holds. Proposal: "an agent goes back to its card".',
+        '"a mutation the reviewer applied here" (after docs/how/connected.md:3) survives.',
+        "## docs/how/connected.md and web/i18n/nl.json\n\n"
+        '"a quote in a section about two files".',
+    ],
+)
+def test_short_terms_and_quotes_not_tied_to_a_file_pass(clone: Path, body: str) -> None:
+    assert [line for line in quoted(clone, body) if "not in docs/how" in line] == []
+
+
+def test_say_refuses_a_quote_that_is_not_at_the_head(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    head = _commit({**FILES, **PAGE})
+    before = len(fake.signed())
+    text = 'docs/how/connected.md:3 says "the agent closes the card when it is done".'
+    assert _send(tmp_path, head, text) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert '"the agent closes the card when it is done": not in docs/how/connected.md' in err
+    assert "a proposed wording, an output, a mutation or a removed text" in err
+    assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
+
+
+def test_a_quote_of_a_wrapped_comment_or_with_an_escaped_quote_stands(clone: Path) -> None:
+    body = (
+        'web/js/wake.js:1 says "every new event addressed to this agent, then the harness".\n\n'
+        'web/js/wake.js:3 holds "a \\"quoted\\" word in the label".\n\n'
+        'docs/how/connected.md:6 says "Its label reads \\"waiting for an answer\\" until".\n\n'
+        'docs/how/connected.md:3 has no "agent \\"waits\\" for the owner here".\n'
+    )
+    found = quoted(clone, body)
+    assert len(found) == 1 and 'agent \\"waits\\" for the owner here' in found[0], found
+
+
+def test_a_heading_with_two_files_ends_the_section_of_one_above(clone: Path) -> None:
+    body = (
+        "## docs/how/connected.md\n\n"
+        "### docs/how/connected.md and web/js/wake.js\n\n"
+        '"every new event addressed to this agent" is from the script.\n'
+    )
+    assert quoted(clone, body) == []
+
+
+def test_a_table_cell_ties_no_quote_in_the_next_cell(clone: Path) -> None:
+    body = (
+        "| Where | Proposal |\n|---|---|\n"
+        '| docs/how/connected.md:3 | "an agent goes back to its own card" |\n'
+    )
+    assert quoted(clone, body) == []
+
+
+def test_an_escaped_backslash_before_a_quote_closes_it() -> None:
+    # Two backslashes before a quote are a backslash, then the closing quote; one masks it.
+    files = ["docs/how/connected.md"]
+    closed = 'docs/how/connected.md:3 says "a path ends in C:\\\\" and "the next quote here".'
+    assert [q.text for q in textcheck.quotations(closed, files)] == ["a path ends in C:\\\\"]
+    masked = 'docs/how/connected.md:3 says "a \\"masked\\" word stays inside".'
+    assert [q.text for q in textcheck.quotations(masked, files)] == [
+        'a \\"masked\\" word stays inside'
+    ]
+    # Three backslashes mask the quote mark; blanking them keeps the quote's end in place.
+    three = 'docs/how/connected.md:3 says "a word \\\\\\" with three, then closed here".'
+    assert [q.text for q in textcheck.quotations(three, files)] == [
+        'a word \\\\\\" with three, then closed here'
+    ]
+
+
+def test_places_of_two_files_next_to_a_quote_tie_it_to_none() -> None:
+    files = ["docs/how/connected.md", "web/js/wake.js"]
+    both_after = (
+        'It reads "four entirely fabricated words" (docs/how/connected.md:3 and web/js/wake.js:1).'
+    )
+    assert textcheck.quotations(both_after, files) == []
+    around = 'docs/how/connected.md:3 says "four entirely fabricated words" (web/js/wake.js:1).'
+    assert textcheck.quotations(around, files) == []
+    one = 'docs/how/connected.md:3 says "four entirely fabricated words" (docs/how/connected.md:4).'
+    assert [q.files for q in textcheck.quotations(one, files)] == [["docs/how/connected.md"]]
+
+
+def test_a_place_in_brackets_on_the_next_line_ties_the_quote() -> None:
+    files = ["docs/how/connected.md"]
+    wrapped = 'The page reads "four entirely fabricated words"\n(docs/how/connected.md:3).'
+    assert [q.files for q in textcheck.quotations(wrapped, files)] == [["docs/how/connected.md"]]
+
+
+def test_the_brackets_of_one_quote_are_no_place_before_the_next() -> None:
+    files = ["docs/how/connected.md", "web/js/wake.js"]
+    two = (
+        'It reads "four entirely fabricated words" (docs/how/connected.md:3) and'
+        ' "four more fabricated words here" (web/js/wake.js:1).'
+    )
+    assert [q.files for q in textcheck.quotations(two, files)] == [
+        ["docs/how/connected.md"],
+        ["web/js/wake.js"],
+    ]
