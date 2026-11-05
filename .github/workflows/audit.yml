@@ -1,11 +1,15 @@
 name: audit
 
-# The hub's locked dependencies (hub/requirements/*.txt) against the known
-# advisories (pip-audit, which asks the PyPI vulnerability service). On every
-# push to main and every pull request, and once a day, so an advisory published
-# for a pin nobody changed still turns this red. A failure names each package,
-# its version, the advisory id and the fixed versions; what to do then is in
-# hub/README.md, "Dependencies". The CLI has no dependencies and is not audited.
+# The hub's locked dependencies (hub/requirements/*.txt), the CLI's release
+# build tools (cli/requirements/release.txt) and the docs site's lock
+# (tools/requirements/site.txt) against the known advisories (pip-audit, which
+# asks the PyPI vulnerability service). On every push to main and every pull
+# request, and once a day, so an advisory published for a pin nobody changed
+# still turns this red. A failure names each package, its version, the advisory
+# id and the fixed versions; what to do then is in hub/README.md,
+# "Dependencies"; for the site's lock it is a new pin in
+# tools/requirements/site.in and `make -C tools lock`. The CLI itself has no
+# dependencies; its release lock holds only what builds and checks the package.
 on:
   push:
     branches: [main]
@@ -41,10 +45,19 @@ jobs:
       - name: Audit the locks
         run: |
           status=0
+          # The docs site's lock (tools/requirements/site.txt, pages.yml).
+          echo "::group::tools/requirements/site.txt"
+          "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../tools/requirements/site.txt \
+            --require-hashes --disable-pip --progress-spinner off --desc on || status=1
+          echo "::endgroup::"
           for lock in runtime dev build tools; do
             echo "::group::requirements/$lock.txt"
             "$RUNNER_TEMP/audit/bin/pip-audit" --requirement "requirements/$lock.txt" \
               --require-hashes --disable-pip --progress-spinner off --desc on || status=1
             echo "::endgroup::"
           done
+          echo "::group::cli/requirements/release.txt"
+          "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../cli/requirements/release.txt \
+            --require-hashes --disable-pip --progress-spinner off --desc on || status=1
+          echo "::endgroup::"
           exit "$status"

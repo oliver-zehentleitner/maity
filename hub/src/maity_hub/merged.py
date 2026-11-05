@@ -186,7 +186,7 @@ def _touch_parent(conn: Connection, parent_id: str, state: str) -> None:
     children = {"open": 0, "total": 0}
     for (status,) in conn.execute(select(t.card.c.status).where(t.card.c.parent == parent_id)):
         children["total"] += 1
-        children["open"] += status not in ("done", "cancelled")
+        children["open"] += status not in cards.CLOSED
     emit(
         conn,
         parent.project_id,

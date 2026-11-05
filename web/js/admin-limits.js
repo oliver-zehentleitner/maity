@@ -28,6 +28,8 @@ window.Maity = window.Maity || {};
       atWords: (n) => M.t("limits.agents.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
     { key: "max_orgs_per_human", at: "humans_at_org_limit", label: () => M.t("limits.orgs.label"), hint: () => M.t("limits.orgs.hint"),
       atWords: (n) => M.t("limits.orgs.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
+    { key: "max_projects_per_owner", at: "owners_at_project_limit", label: () => M.t("limits.projects.label"), hint: () => M.t("limits.projects.hint"),
+      atWords: (n) => M.t("limits.projects.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
     // The whole hub's, not a person's (§8.7): in GiB here, bytes for the hub, 1 GiB to 1 PiB.
     { key: "max_attachment_storage", at: "attachment_storage_used", label: () => M.t("limits.storage.label"), hint: () => M.t("limits.storage.hint"),
       atWords: (n) => stored(n), unit: GIB, max: 1024 * 1024, invalid: () => M.t("limits.error.invalid_storage") },

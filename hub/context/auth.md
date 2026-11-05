@@ -452,7 +452,9 @@ the window holds nothing of the request.
 "This was me" (`POST /auth/sessions/{id}/confirm`, §2.6.5) writes `confirmed_at` and
 `confirmed_by` on the confirmed session's `human_session` row. `sessions.good_standing` reads
 the row alone: password or registration, a TOTP or recovery-code second factor, or
-`confirmed_at`. Reading the `session_created` item sets nothing on the session. The migration
+`confirmed_at`. Since tsk-0baaez2895sb a new sign-in is no bell item at all (§2.6.5, root
+`context/notifications.md` feb34f93): the confirm marks nothing read, and no read mark of a
+`session_created` record is written any more. The migration
 `20261103100000_session_confirmed` carries over every `session_created` record that a session
 marked read (`read_by` set) as a confirmation at that read's time by that session. Before, only
 an allowed session could mark one, so each such mark was a confirmation. A record read without
@@ -463,22 +465,32 @@ until the migration commits.
 The confirm checks run in one transaction. A target not yet in good standing is confirmed by a
 conditional `UPDATE` on `ended_at IS NULL`; then every target, in good standing or not, is read
 again with a row lock (`SELECT … FOR UPDATE`), and if it ended meanwhile the call is
-`not_found` with nothing confirmed or marked. A concurrent `DELETE` therefore either waits and
+`not_found` with nothing confirmed. A concurrent `DELETE` therefore either waits and
 ends a confirmed session, or leaves the confirm `not_found`. A target already in good standing
 keeps its standing as it is; only its liveness is held.
 
-Who may mark a security item read is `listing.refusal`. Only `session_created` and
-`email_address_changed` are guarded; every other security kind may be marked from any session
-(§18.3). `not_earlier` is checked before `not_in_good_standing`, in the confirm's order, and
-each skipped item is answered in `skipped`. A sign-in whose session row is gone is judged by
-the time of its record, so "mark all read" from an older session in good standing still clears
-it.
+Who may mark a security item read is `listing.refusal`. Only `email_address_changed` is
+guarded; every other security kind may be marked from any session (§18.3). `not_earlier` is
+checked before `not_in_good_standing`, in the confirm's order, and each skipped item is answered
+in `skipped`.
+
+The bell leaves new sign-ins out where it reads its records: `records.SECURITY` no longer holds
+`session_created`, so the list, the counts and the pinned block never read one, and records
+written before the change, read or not, drop out the same way without a migration. The mailer
+alone asks for them (`items.derive(sign_ins=True)`), for the sign-in mail of the `security`
+mode, which stays. `sessions_rev` (§18.2) is `acr-<n>` of the newest live `session_created` or
+`session_ended` record (`records.sessions_rev`), the number the session list already gives as
+`created.record`; a held long-poll also answers when it moves, though it lists no item; a
+session record already past `after` when the request comes answers at once, as an item past
+`after` does, so a sign-in between two answers is not seen only after the full wait. A confirm
+writes no record and so moves nothing: another tab's banner of that sign-in goes at its next
+read of the sessions, not at once.
 
 The pinned block (`items.pinned`) reads the unread security records alone, newest first, up to
 50. Security items come only from account records, so it reads no project's events. The 50 are
 taken in SQL, so the records that give no item (a forge access that went, §18.1) are left out
 in SQL too (`items.records_without_item`): counted against the limit, 50 newer ones would hide
-a sign-in alert that `counts.security` still counts. A session
+an older alert that `counts.security` still counts. A session
 moved into enrolment (§2.8.5) keeps `GET /me/notifications`, `POST /me/notifications/read` and
 the confirm only while its sign-in was complete and it is in good standing; a fresh enrolment
 sign-in keeps none of them.
@@ -502,4 +514,5 @@ and lets the bell mark alerts read without touching it.
   marked read on an ended session (shown on PostgreSQL in review).
 - Refusing to mark the alert of a session whose row is gone (the old behaviour): such an alert
   could then never be cleared until its record expired, the very thing the bell change set out to
-  end.
+  end. Moot since card tsk-0baaez2895sb: a sign-in is no bell item, so there is no such
+  alert to mark.

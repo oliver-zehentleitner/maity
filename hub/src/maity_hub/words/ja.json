@@ -101,6 +101,7 @@
   "product.bug": "バグを見つけましたか？",
   "product.love": "愛",
   "product.made_by": "{name} が {github} & {maity} で {heart} を込めて作りました",
+  "product.security": "脆弱性を見つけましたか？",
   "register_page.button": "アカウントを作成",
   "register_page.closed": "登録は受け付けていません。",
   "register_page.dead": "このリンクは無効になりました。",

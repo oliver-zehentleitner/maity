@@ -169,16 +169,17 @@ the total as `attachment_storage_used`. The check runs under the project's lock
 after the project's quota and the pending cap. Lowering the limit deletes nothing.
 
 **Reason:** the per-project quota bounds one project, not the disk: with projects
-uncapped per account until the project limit lands, the total had no ceiling. The
-disk belongs to the operator, so the limit sits with the instance, not the account.
-The total says how much the whole instance stores, which is the operator's
-business, not a member's. Uploads already serialise per project; one lock for the
-instance would make every upload anywhere wait for every other, for a limit where
-passing it by the stored sizes of the uploads in flight, at most one per project,
-does no harm. Those can exceed the 10 MiB file cap, which applies before
-re-encoding: a 4.8 MiB JPEG was measured at 13.9 MiB stored. `unlimited` as the
-default leaves a self-hosted instance as it was; the hosted instance sets its own
-value in the admin area.
+uncapped per account (and accounts uncapped even once the project limit landed), the
+total had no ceiling. The disk belongs to the operator, so the limit sits with the
+instance, not the account. The total says how much the whole instance stores, which
+is the operator's business, not a member's. Uploads already serialise per project;
+one lock for the instance would make every upload anywhere wait for every other, for
+a limit where passing it by the stored sizes of the other uploads in flight when the
+last of them to be accepted was checked, at most one per project, does no harm.
+Those can exceed the 10 MiB file cap, which applies before re-encoding: a 4.8 MiB
+JPEG was measured at 13.9 MiB stored. `unlimited` as the default leaves a
+self-hosted instance as it was; the hosted instance sets its own value in the admin
+area.
 
 **Rejected alternatives:**
 - One instance-wide lock for an exact cap: serialises all uploads on the instance.

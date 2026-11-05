@@ -45,6 +45,7 @@ REQUEST_KEYS = {
     "forwarding",
     "humans_only",
     "takeover_id",  # §6.19, set by the hub only
+    "report",  # §16.8, set by the hub only
 }
 
 

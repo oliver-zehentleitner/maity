@@ -37,7 +37,6 @@ PATH_MAX = 255
 SECTION_MAX = 32
 
 SECTION = re.compile(r"[^\s#]+")
-ATX = re.compile(r" {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)$")
 
 
@@ -119,11 +118,29 @@ def _headings(lines: list[str]) -> list[tuple[int, int, str]]:
         if opening and not (opening.group(1)[0] == "`" and "`" in opening.group(2)):
             fence = opening.group(1)
             continue
-        heading = ATX.match(bare)
+        heading = _atx(bare)
         if heading:
-            title = re.sub(r"[ \t]+#+$", "", heading.group(2) or "")  # a closing sequence
-            found.append((index, len(heading.group(1)), title.strip()))
+            found.append((index, heading[0], heading[1]))
     return found
+
+
+def _atx(line: str) -> tuple[int, str] | None:
+    """(level, title) of an ATX heading: up to three spaces, one to six `#`, then the end or a
+    space or a tab and the title, without a closing sequence of `#` after a space or a tab.
+    String steps, each one pass over the line, so the work grows with the line's length: the
+    patterns they replace tried every start in a run of spaces."""
+    marks = line.lstrip(" ")
+    if len(line) - len(marks) > 3:
+        return None
+    rest = marks.lstrip("#")
+    level = len(marks) - len(rest)
+    if not 1 <= level <= 6 or (rest and rest[0] not in " \t"):
+        return None
+    title = rest.strip(" \t")
+    bare = title.rstrip("#")
+    if bare != title and bare[-1:] in (" ", "\t"):
+        title = bare  # a closing sequence
+    return level, title.strip()
 
 
 def find_section(markdown: str, section: str) -> Section:

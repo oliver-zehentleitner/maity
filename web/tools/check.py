@@ -1004,8 +1004,13 @@ SHAPES = os.path.join(ROOT, "tools", "hub-shapes.json")
 SHAPES_BASELINE = os.path.join(ROOT, "tools", "fixture-shapes-baseline.json")
 
 
-def shape_of(value, maps=frozenset(), at=""):
+SHAPE_ID = re.compile(r"\b[a-z]{3}-[0-9a-z]+\b")
+
+
+def shape_of(value, maps=frozenset(), at="", forms=frozenset()):
     """As shape() in hub/tests/test_web_shapes.py, which writes the other side."""
+    if isinstance(value, str) and at in forms:
+        return {"form": SHAPE_ID.sub("<id>", value)}
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, (int, float)):
@@ -1017,13 +1022,13 @@ def shape_of(value, maps=frozenset(), at=""):
     merged = None
     if isinstance(value, list):
         for item in value:
-            merged = merge_shapes(merged, shape_of(item, maps, at + "[]"))
+            merged = merge_shapes(merged, shape_of(item, maps, at + "[]", forms))
         return {"array": merged}
     if at in maps:
         for item in value.values():
-            merged = merge_shapes(merged, shape_of(item, maps, at + "{}"))
+            merged = merge_shapes(merged, shape_of(item, maps, at + "{}", forms))
         return {"map": merged}
-    return {"object": {k: shape_of(v, maps, "%s.%s" % (at, k)) for k, v in sorted(value.items())}}
+    return {"object": {k: shape_of(v, maps, "%s.%s" % (at, k), forms) for k, v in sorted(value.items())}}
 
 
 def merge_shapes(a, b):
@@ -1052,6 +1057,10 @@ def shape_differences(fixture, hub, at=""):
     kind = lambda x: x if isinstance(x, str) else next(iter(x))  # noqa: E731
     if kind(fixture) != kind(hub):
         return ["%s: %s where the hub sends %s" % (at or "the answer", kind(fixture), kind(hub))]
+    if kind(fixture) == "form":
+        if fixture["form"] != hub["form"]:
+            return ["%s: %s where the hub sends %s" % (at, json.dumps(fixture["form"]), json.dumps(hub["form"]))]
+        return []
     if kind(fixture) in ("array", "map"):
         return shape_differences(fixture[kind(fixture)], hub[kind(hub)], at + ("[]" if kind(fixture) == "array" else "{}"))
     if kind(fixture) != "object":
@@ -1071,7 +1080,9 @@ def check_fixture_shapes(node, write, notes):
         notes.append("node not on PATH: the fixtures' shapes are not compared with the hub's")
         return
     hub = json.loads(read(SHAPES))
-    maps = frozenset(json.loads(read(os.path.join(ROOT, "tools", "shape-requests.json")))["maps"])
+    spec = json.loads(read(os.path.join(ROOT, "tools", "shape-requests.json")))
+    maps = frozenset(spec["maps"])
+    forms = {"%s %s" % (r["method"], r["path"]): frozenset(r.get("forms", [])) for r in spec["requests"]}
     r = subprocess.run([node, os.path.join(ROOT, "tools", "fixture_answers.js")], capture_output=True, text=True)
     if r.returncode != 0:
         finding(os.path.join(ROOT, "tools", "fixture_answers.js"), 1, "failed: " + " | ".join(r.stderr.strip().splitlines()[:4]))
@@ -1087,7 +1098,7 @@ def check_fixture_shapes(node, write, notes):
             finding(SHAPES_BASELINE, 1, "the fixture hub refuses %s: %s" % (key, answer["error"]))
             continue
         known = set(baseline.get(key, []))
-        now = shape_differences(shape_of(answer["answer"], maps), hub[key])
+        now = shape_differences(shape_of(answer["answer"], maps, "", forms.get(key, frozenset())), hub[key])
         for d in now:
             if d not in known:
                 finding(SHAPES_BASELINE, 1, "fixture answer to %s: %s" % (key, d))

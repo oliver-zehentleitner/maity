@@ -61,8 +61,22 @@ example; any cluster with the same pieces works.
    tagged with the version and the full commit SHA and never `latest`. The
    workflow `publish-image` builds them; until its first release you build
    the image yourself. Pin it by digest (`image.digest`) when you can; the
-   workflow's run summary prints it. To build your own from the repository
-   root:
+   workflow's run summary prints it. Each published digest is signed with
+   cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
+   signature before you pin a digest:
+
+   ```sh
+   cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+   ```
+
+   This needs cosign v3 or later: the workflow stores the signature in the
+   newer bundle format, which cosign 2.x does not find.
+
+   An image whose signature names another workflow or another ref did not
+   come from a release or from `main`; don't run it. To build your own from
+   the repository root:
 
    ```sh
    docker build -f deploy/Dockerfile -t registry.example.org/maity-hub:<commit> .
@@ -280,6 +294,31 @@ unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
 k3s's Traefik, `deploy/k3s-single/uploads.yaml` gives the upload its own
 route, which buffers the body before it reaches the hub.
 
+The hub has no general request budget. Its own limits are per route,
+among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
+reads. The general limit belongs to the controller: one limit
+per client address for every request. `ingress.requestLimit` sets it for
+ingress-nginx (`limit-rps`, `limit-burst-multiplier`, `limit-connections`).
+It is off by default. Switch it on only once every agent runs a `maity`
+whose `maity wait` retries a 429. An older one ends its wait on the first
+refusal. Some things to know:
+
+- **Status code:** ingress-nginx refuses with `503` unless its controller
+  ConfigMap sets `limit-req-status-code` and `limit-conn-status-code` to
+  `429`, which is better: clients take a 429 as "slow down", a 503 as an
+  outage.
+- **IPv6:** ingress-nginx counts each IPv6 address on its own, not per
+  network.
+- **Replicas:** ingress-nginx counts in each controller replica, so with
+  several a client gets the values once per replica.
+- **The upload route:** ingress-nginx cannot give the upload a limit of its
+  own within this one Ingress, so uploads count against `inFlight` like any
+  request.
+- **Traefik:** `deploy/k3s-single/request-limit.yaml` does the same and
+  more.
+- **Every agent on one machine shares that machine's address,** so the
+  values leave room for a whole team.
+
 The default annotations are for ingress-nginx, the most common controller
 until now. Upstream ingress-nginx (`kubernetes/ingress-nginx`) has been
 retired since March 2026: no further releases or security fixes. A new
@@ -399,14 +438,14 @@ through the database (`hub/context/replicas.md`).
 - **Drains and nodes:** a PodDisruptionBudget keeps one pod up; the pods
   spread over nodes where they can (`topologySpreadConstraints` replaces it).
 - **Connections:** the hub asks up to
-  pods × (`config.workers` × (pool share + overflow share + 1) + 1)
+  pods × (`config.workers` × (pool share + overflow share + 2 + 1) + 1)
   connections: each worker its share of `database.poolSize` and
-  `database.maxOverflow` (divided by the workers, rounded down) and one
-  listener, each pod one more for the readiness probe. With more than one
+  `database.maxOverflow` (divided by the workers, rounded down), two for the
+  shared counters and one listener, each pod one more for the readiness probe. With more than one
   replica, pods is replicas + 1, for the surge pod of a rolling update. Keep
   that under the database's `max_connections` less its reserved connections;
   the hub warns at its start when it is not. Example: 3 replicas with 2
-  workers and the default 16 + 16 ask 4 × (2 × (8 + 8 + 1) + 1) = 140.
+  workers and the default 16 + 16 ask 4 × (2 × (8 + 8 + 2 + 1) + 1) = 156.
 
 ## When an install or upgrade fails
 

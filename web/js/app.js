@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
-    // Redrawn in place from the feed (js/messages.js).
+    // The hub's listing (§8.8), new messages from the feed, in place (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
@@ -457,8 +457,11 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      // Signed out at the same address: nothing changes there, so draw it.
-      if (!M.route.go(after || "/", { replace: true })) render();
+      // The start page is the hub's to answer (§16.7): signed out, `/` may be the landing page, so
+      // it is a page load. A dashboard path is a route change. At the same address (fixture mode,
+      // where the start page is a route too), nothing changes there, so draw it.
+      const left = !after || M.route.startPage(after) ? M.route.load(after || "/") : M.route.go(after, { replace: true });
+      if (!left) render();
     }
   }
 
@@ -1657,10 +1660,10 @@ window.Maity = window.Maity || {};
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
-        // While the banner stands, or when the security count moved (a
-        // sign-in, a confirm elsewhere): the banner is built again, so an
-        // approved session ending elsewhere shows at once (§2.6.5).
-        if (bannerShown || securityCount() !== bannerFor) renderBanner(ctx);
+        // While the banner stands, or when `sessions_rev` moved (a sign-in,
+        // an end elsewhere): the banner is built again, so an approved
+        // session ending elsewhere shows at once (§2.6.5).
+        if (bannerShown || sessionsRev() !== bannerFor) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -1850,17 +1853,17 @@ window.Maity = window.Maity || {};
 
   let renderSeq = 0;
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
-  // page renders, and again while it stands or when the count of unread
-  // security alerts changes. It follows the sessions, read or not.
-  let bannerFor = 0;
+  // page renders, and again while it stands or when `sessions_rev` moves (a
+  // sign-in or an end, §18.2); a sign-in is no bell item to count.
+  let bannerFor = null;
   let bannerShown = false;
   let bannerSeq = 0;
-  const securityCount = () => (M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
+  const sessionsRev = () => M.notify.state.sessionsRev;
   function renderBanner(ctx) {
     if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
-    bannerFor = securityCount();
+    bannerFor = sessionsRev();
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
     M.sessions.banner(ctx, () => render()).then((b) => {
       if (seq !== bannerSeq) return;
@@ -2098,6 +2101,9 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     append(clear(main), root);
     renderBanner(ctx);
+    // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
+    // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
+    ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     watch(ctx, where, known ? item : null, main);
     let label = M.t("view.none");
     if (empty) label = M.t("view.no_projects");
