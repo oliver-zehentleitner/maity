@@ -1371,8 +1371,13 @@ def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: s
             page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
             panel = page.locator("aside.card-panel")
             expect(panel).to_be_visible()
-            note = panel.locator("li.card-note").filter(has_text=seed).first
-            expect(note).to_be_visible()
+            # Pin the note by id before Edit: once the form is open the body text is gone
+            # (only the textarea holds it), so a has_text filter would miss the row.
+            seeded = panel.locator("li.card-note").filter(has_text=seed).first
+            expect(seeded).to_be_visible()
+            note_id = seeded.get_attribute("data-note")
+            assert note_id, f"{where}: the seed note has no data-note"
+            note = panel.locator(f'li.card-note[data-note="{note_id}"]')
             note.locator("button.card-note-edit").click()
             form = note.locator("form.card-note-edit-form")
             expect(form).to_be_visible()
