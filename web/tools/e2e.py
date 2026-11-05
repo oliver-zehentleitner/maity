@@ -2372,6 +2372,40 @@ def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     no_problems(run, "mail factor: the admin's switch")
 
 
+def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
+    """tsk-trb99kkhv1rk: creating a join is a sensitive call (§2.8.4). Under Mail for everyone
+    the join form asks for the mailed code itself and then creates the join, instead of ending
+    in a refusal; the panel names the project the join is for."""
+    page.goto(run.base + f"/{OWNER}/e2e-mail/agents")
+    panel = page.locator(".join-panel")
+    add = page.get_by_role("button", name="Join an agent", exact=True)
+    expect(panel.or_(add).first).to_be_visible()
+    if not panel.is_visible():
+        add.click()
+    expect(panel.locator(".join-project")).to_contain_text(f"Joins into the project E2E Mail ({OWNER}/e2e-mail)")
+    page.locator("#join-agent").select_option("")  # "A new agent profile…"
+    page.locator("#join-handle").fill("e2e-mail-agent")
+    page.locator("#join-display").fill("E2E Mail Agent")
+    page.locator("#join-role").select_option("coder")
+    seen = len(catcher.mails)
+    page.get_by_role("button", name="Create join line", exact=True).click()
+    question = panel.locator("form.step-up")
+    expect(question).to_contain_text("Confirm with a code by mail")
+    expect(panel.locator(".join-result")).to_have_count(0)
+    run.shot(page, "mail-factor-join-step-up")
+    run.a11y(page, "mail factor: Join an agent asks for the mailed code")
+    code = re.search(r"(\d{3} ?\d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    assert code, "no step-up code in the mail"
+    page.locator("#step-up-step_up_mail").fill(code.group(1))
+    question.get_by_role("button", name="Confirm", exact=True).click()
+    expect(page.locator(".paste-line")).to_be_visible()
+    expect(question).to_have_count(0)
+    expect(page.locator("article.seat", has_text="E2E Mail Agent").first).to_contain_text("coder")
+    # The join's first refusal is what opens the question.
+    run.problems = [p for p in run.problems if "/joins answered 403" not in p]
+    no_problems(run, "mail factor: Join an agent with the mailed code")
+
+
 def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     """Mail for everyone (§2.8.7, §2.8.8) on a hub of its own: the owner verifies an address and
     turns it on in Admin → Sign-in, and the page signs in by the mail's link and by its code,
@@ -2394,10 +2428,15 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     run.base = f"http://127.0.0.1:{port}"
     run.step(f"mail factor hub on {run.base}: the admin verifies an address and turns it on")
     hub = start_hub(third, artifacts, port, extra, "hub-mail-factor.log")
-    older_context = None
+    older_context = joiner_context = None
     try:
         older_context, older = sign_in(run, browser)
         verify_address(run, older, catcher)
+        # A second session from before the switch, for the join: the export's step-up below
+        # must not have passed on it (the factor counts for 10 minutes on its session, §2.8.4).
+        joiner_context, joiner = sign_in(run, browser)
+        joiner.get_by_role("link", name="Create a project", exact=True).click()
+        create_project(run, joiner, "E2E Mail", "e2e-mail")
         # Before the switch the login page offers the link by mail.
         first, _ = password_sign_in(run, browser, offers_link=True)
         first.close()
@@ -2457,7 +2496,12 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         # The export's first refusal is what opens the question.
         run.problems = [p for p in run.problems if "/me/export answered 403" not in p]
         no_problems(run, "mail factor: the step-up")
+
+        run.step("mail factor: Join an agent asks for the mailed code in its form, then creates the join")
+        mail_factor_join(run, joiner, catcher)
     finally:
+        if joiner_context is not None:
+            joiner_context.close()
         if older_context is not None:
             older_context.close()
         stop_hub(hub)
