@@ -143,6 +143,7 @@ from maity_hub.routes import people as people_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
+from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
@@ -452,6 +453,7 @@ def create_app(
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(board.router, prefix=prefix)
+    app.include_router(restricted_routes.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
     app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(overview.router, prefix=prefix)
