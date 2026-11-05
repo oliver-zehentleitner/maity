@@ -252,13 +252,15 @@ window.Maity = window.Maity || {};
 
   // ---- the signed-in device: /account/sign-in-device ----------------------
 
-  async function anotherDevice(ctx, root) {
-    const heading = h("h2", { tabindex: "-1" }, M.t("device.other.title"));
+  // A tab of the account's Security (js/account.js); with focus (the old address
+  // /account/sign-in-device) its heading is focused.
+  async function anotherDevice(ctx, root, focus) {
+    const heading = h("h3", { tabindex: "-1" }, M.t("device.other.title"));
     const stage = h("div", { class: "device-stage" });
     append(root, heading,
       h("p", { class: "muted" }, M.t("device.other.intro")),
       stage);
-    window.setTimeout(() => heading.focus(), 0);
+    if (focus) window.setTimeout(() => heading.focus(), 0);
     await start(ctx, stage);
   }
 

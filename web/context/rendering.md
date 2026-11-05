@@ -174,7 +174,7 @@ fight each other.
 **See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-10-22
 
 The human sets their own picture and their agents' pictures on the
-account (`#/account/picture`, the profile menu's **Picture**), never in a
+account (its Profile tab, `#/account`; `#/account/picture` leads there), never in a
 project's views. Before sending, the page checks the file the way the hub
 does: the type from its first bytes (PNG, JPEG or WebP) and at most
 1 MiB. It sends the raw body with the sniffed type and says the hub's

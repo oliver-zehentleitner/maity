@@ -9455,10 +9455,6 @@
     "en": "21cf98a292e94015",
     "text": "21cf98a292e94015"
   },
-  "menu.change_password": {
-    "en": "22d7685ba44f1925",
-    "text": "1879cdbdea42df9a"
-  },
   "menu.instance_admin": {
     "en": "ba4c3985e0e7fe45",
     "text": "d435ff9ccba62a1d"
@@ -9474,14 +9470,6 @@
   "menu.orgs": {
     "en": "b58edddaa8f66d6d",
     "text": "b58edddaa8f66d6d"
-  },
-  "menu.picture": {
-    "en": "3ee270463954f502",
-    "text": "fc6eaa65315f601d"
-  },
-  "menu.preferences": {
-    "en": "83adb5c50b2303db",
-    "text": "78611f3a37b53fd1"
   },
   "menu.profile": {
     "en": "96ad4bd0f7baa40e",
@@ -9503,17 +9491,9 @@
     "en": "83909f82446ee9c3",
     "text": "b8af7531fed1b7b7"
   },
-  "menu.sign_in_device": {
-    "en": "ec9e69bb1c719132",
-    "text": "b2ffc4f3523a674d"
-  },
   "menu.sign_out": {
     "en": "d46969bdd3258d1d",
     "text": "232a448dfaae4a47"
-  },
-  "menu.theme": {
-    "en": "888560be416ca928",
-    "text": "ed3ff85885d7fed0"
   },
   "messages.filter.every_type": {
     "en": "e07a1390aa248806",

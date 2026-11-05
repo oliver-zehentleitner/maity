@@ -119,7 +119,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
-    // /settings/forge: the account's forge access (§11.4, §16.11), where the hub's setup redirect lands.
+    // /settings/forge: the account's Forge access (§11.4, §16.11), where the hub's setup redirect lands.
     if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
@@ -1323,6 +1323,10 @@ window.Maity = window.Maity || {};
     else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
   }
 
+  // A view's own row of tabs that scrolls sideways (the account's, js/account.js): the current
+  // tab in sight, the fade on the side with more.
+  M.scrollRow = (nav) => { showCurrent(nav); scrollCue(nav); };
+
   // The inbox tab says the project's open requests, the chat tab its unread
   // chats (docs/api.md §18.2), once the counts are read.
   function tabCount(ctx, route) {
@@ -1496,15 +1500,8 @@ window.Maity = window.Maity || {};
       class: "profile-menu",
       face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
       items: () => [
-        { label: M.t("menu.profile"), href: "/account" },
-        { label: M.t("menu.picture"), href: "/account/picture" },
-        { label: M.t("menu.preferences"), href: "/account/preferences" },
-        { label: M.t("menu.theme"), href: "/account/theme" },
-        ctx.me.kind === "human" ? { label: M.t("menu.security"), href: "/account/security" } : null,
-        ctx.me.kind === "human" ? { label: M.t("menu.orgs"), href: "/account/orgs", current: ctx.scope === "orgs" } : null,
-        { label: M.t("menu.sign_in_device"), href: "/account/sign-in-device" },
-        { label: M.t("menu.change_password"), href: "/account" },
-        { label: M.t("menu.linked_accounts"), disabled: true, why: M.t("menu.later") },
+        // The account's tabs (js/account.js), then signing out.
+        ...M.accountTabs.menuItems(ctx),
         { separator: true },
         { label: M.t("menu.sign_out"), onSelect: logout },
       ].filter(Boolean),
@@ -2190,10 +2187,33 @@ window.Maity = window.Maity || {};
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
 
-  // Back, forward, a link of the dashboard, M.route.go: the view follows.
-  M.route.listen(() => { if (!followingRoute || !followingRoute(parseRoute())) render(); });
+  // Back, forward, a link of the dashboard, M.route.go: the view follows. Another view starts
+  // at the top of the page: the window keeps its scroll over a change of the address, so a
+  // long view opened after another one was scrolled down began where that one stood. A card
+  // (…/tasks/<id>) is the board with its panel, the same view: the board stays where it was,
+  // and so does it when the panel closes. Not either when the view follows the change itself
+  // (a chat chosen in /chats) or only the query changed; a place drawn after the view (an
+  // anchor, a section of the account, the board as it was left) is scrolled to by that view.
+  const viewAt = () => {
+    let where;
+    try { where = parseRoute(); } catch { return M.route.current().path; }
+    if (where.scope !== "project") return M.route.current().path;
+    const tab = NAV.find((n) => n.route === where.route);
+    const view = (tab && tab.view) || where.route;
+    return view === "board" ? "board:" + where.slug : M.route.current().path;
+  };
+  let drawnView = viewAt();
+  M.route.listen(() => {
+    const view = viewAt();
+    const moved = view !== drawnView;
+    drawnView = view;
+    if (followingRoute && followingRoute(parseRoute())) return;
+    if (moved && window.scrollTo) window.scrollTo(0, 0);
+    render();
+  });
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
+    document.querySelectorAll("nav.account-tabs").forEach(updateCue);
   });
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);

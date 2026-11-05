@@ -1720,6 +1720,12 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+/* The account's tabs (js/account.js): one row that scrolls sideways on a phone, not wrapped. */
+.view-tabs.account-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.account-tabs .view-tab { white-space: nowrap; flex: 0 0 auto; }
+.account-tabs .view-tab.later { color: var(--muted); cursor: default; }
+/* Security's own tabs, under the account's: smaller, no line of their own. */
+.view-tabs.security-tabs { border-bottom: none; margin-top: -4px; font-size: 0.92rem; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
 /* The instance an address's #id leads to (tsk-bczgjkfpw1wg). */
