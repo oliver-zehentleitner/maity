@@ -140,25 +140,20 @@ def test_three_per_target_and_twenty_a_day(team: dict[str, Any], migrated: Engin
     assert over.status_code == 429 and int(over.headers["Retry-After"]) > 0
 
 
-def test_the_admin_is_told_and_the_item_closes_with_the_report(
+def test_the_admin_is_told_and_the_request_closes_with_the_report(
     team: dict[str, Any], migrated: Engine
 ) -> None:
+    # The whole of it is in test_report_request.py (§16.8, §7).
     made = report(team["pat"], {"type": "project", "id": PROJECT}, "abuse").json()
 
-    def item() -> dict[str, Any]:
-        found = [
-            i
-            for i in team["owner"].get("/me/notifications").json()["items"]
-            if i["target"] == {"type": "report", "id": made["id"]}
-        ]
-        assert len(found) == 1
-        shown: dict[str, Any] = found[0]
-        return shown
+    def open_ones() -> list[str]:
+        listed = team["owner"].get("/requests").json()["items"]
+        return [r["report"]["id"] for r in listed if r.get("report")]
 
-    assert item()["kind"] == "inbox" and item()["read"] is False
+    assert open_ones() == [made["id"]]
     resolved = team["owner"].post(f"/admin/reports/{made['id']}/resolve", {"action": "dismiss"})
     assert resolved.status_code == 200, resolved.text
-    assert item()["read"] is True
+    assert open_ones() == []
 
 
 def test_only_the_instance_admin_reads_and_resolves(team: dict[str, Any], migrated: Engine) -> None:

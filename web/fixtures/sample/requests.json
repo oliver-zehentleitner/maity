@@ -23,6 +23,7 @@
       "while_open": "wait",
       "needs_in_session": null,
       "ktw_ref": null,
+      "report": null,
       "status": "open",
       "answer": null,
       "created_at": "2026-10-21T13:05:00Z",
