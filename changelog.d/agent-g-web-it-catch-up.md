@@ -7,4 +7,4 @@
   the organisation's Paths view, the current sessions on the Notifications page and a card quota for
   restricted text; the security alerts follow the English again (sign-ins are no longer alerts); the hub
   words have the instances in the frame and the public notice on the registration page. With that, Italian
-  has all web keys and every hub word (tsk-ya56x9gx986r).
+  has all web keys and every hub word (#1415, tsk-ya56x9gx986r).
