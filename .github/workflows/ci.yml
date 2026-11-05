@@ -99,7 +99,8 @@ jobs:
 
   # The changelog fragments in changelog.d/ (one per pull request, folded into
   # CHANGELOG.md at release) and the tools' own tests; standard library only, except the
-  # docs renderer's Markdown and YAML, on the oldest Python the tools support.
+  # docs site's lock (tools/requirements/site.txt: the docs renderer's Markdown and YAML and
+  # the Keep the Why dashboard), on the oldest Python the tools support.
   changelog:
     runs-on: ubuntu-latest
     timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
@@ -120,8 +121,16 @@ jobs:
       # The Keep the Why skill's pins (install source, Git fallback, installer, linter action) name
       # the release .keep-the-why's context-schema is on.
       - run: python tools/ktw_pin.py
-      # tools/site_docs.py renders Markdown; its tests are skipped without these two.
-      - run: pip install --quiet markdown==3.11.2 PyYAML==6.0.3
+      # The docs site's lock (pages.yml) follows site.in; uv from the hub's hashed tools lock,
+      # in an environment of its own.
+      - run: |
+          python -m venv "$RUNNER_TEMP/uv"
+          "$RUNNER_TEMP/uv/bin/pip" install --quiet --require-hashes --no-deps --only-binary :all: -r hub/requirements/tools.txt
+          make -C tools lock-check UV="$RUNNER_TEMP/uv/bin/uv"
+      # tools/site_docs.py renders Markdown; its tests are skipped without Markdown and YAML,
+      # which come from that lock.
+      - run: |
+          pip install --quiet --require-hashes --no-deps --only-binary :all: -r tools/requirements/site.txt
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python

@@ -1,8 +1,11 @@
 name: pages
 
-# The project site at maity.dev (plain files from docs/, no build, with a sitemap.xml and
-# a robots.txt made at deploy) and the Keep the Why dashboard at /keep-the-why-dashboard/
+# The project site at maity.dev (the files from docs/, the docs pages rendered from them, a
+# sitemap.xml and a robots.txt) and the Keep the Why dashboard at /keep-the-why-dashboard/
 # on GitHub Pages.
+# Two jobs: `build` makes the site with read access alone and installs nothing but
+# tools/requirements/site.txt, pinned with hashes; `deploy` installs nothing and, of the two,
+# alone holds `pages: write` and `id-token: write`.
 on:
   push:
     branches: [main]
@@ -10,26 +13,31 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # the dashboard dates entries by Git history
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      # A fresh environment with nothing but the hashed lock, as wheels only (a package with
+      # only an sdist would be built with unhashed build tools); its bin/ first on PATH.
+      - run: |
+          python -m venv "$RUNNER_TEMP/site"
+          "$RUNNER_TEMP/site/bin/pip" install --quiet --require-hashes --no-deps --only-binary :all: \
+            -r tools/requirements/site.txt
+          echo "$RUNNER_TEMP/site/bin" >> "$GITHUB_PATH"
       # Keep the Why: index.html, state.json and the live badges
       # (badge-entries.svg, badge-entries-flat.svg), exported from this checkout.
       # The root and every child project (hub, cli, web) get their own export;
@@ -41,7 +49,6 @@ jobs:
           cp -r docs/. site/
           # The brand files have one home, web/brand/; the site links them from brand/.
           cp -r web/brand site/brand
-          pip install --quiet keep-the-why-dashboard
           ktw-dashboard --export site/keep-the-why-dashboard .
           for d in hub cli web; do
             if [ -d "$d/context" ]; then
@@ -50,14 +57,24 @@ jobs:
           done
       # The docs pages at /docs/, rendered from docs/nav.yml and the Markdown it lists
       # (tools/site_docs.py); docs/ stays the only source of their text.
-      - run: |
-          pip install --quiet markdown==3.11.2 PyYAML==6.0.3
-          python tools/site_docs.py site
+      - run: python tools/site_docs.py site
       # sitemap.xml from the pages above (not the dashboard's entries, not the brand files)
       # and a robots.txt that names it, for the search engines' consoles.
       - run: python tools/site_sitemap.py site --docs docs
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
+
+  # Publishes the artifact `build` uploaded; no checkout, nothing installed.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
