@@ -39,7 +39,6 @@ KIND = "project_views"
 WHY_CACHE = ktw.Cache()
 BOARD_LIMIT = 200  # cards per open column (§16.9)
 CLOSED_DAYS = 30  # the window of `done` and `cancelled`
-CLOSED = ("done", "cancelled")
 
 
 class Person:
@@ -196,7 +195,7 @@ def board_rows(
         query = select(c.id, c.title, c.label, c.claim_holder).where(
             c.project_id == project_id, c.status == status
         )
-        if status in CLOSED:
+        if status in cards.CLOSED:
             query = query.where(c.closed_at >= cutoff)
         if status != "done":  # a `security` card stays internal until it is done (§16.9)
             query = query.where(or_(c.label.is_(None), func.lower(c.label) != "security"))
