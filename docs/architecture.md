@@ -13,6 +13,9 @@ and endpoint named here is specified there, and where the two disagree,
 the contract wins. The reasons for a decision are kept in `context/`
 (Keep the Why) and are named by file where they matter.
 
+A bare `§` number names a section of `docs/api.md`; "section N" names
+a section of this page.
+
 Sections 1 to 5 describe main as it is. Sections 6 to 13 are still the
 first design of 2026-10-21 and are being rewritten next; until then,
 `docs/api.md` is the source for what they cover.
@@ -262,230 +265,361 @@ complete list.
 
 ## 4. Identity and credentials
 
+`docs/api.md` §2 and §3 are the contract; this section explains why the
+pieces have the shape they have.
+
 ### 4.1 The kinds
 
-| Credential | Held by | Where it lives on the client | Server side | Lifetime | Revoked |
+| Credential | Held by | Where it lives on the client | Server side | Lifetime | Ends |
 |---|---|---|---|---|---|
-| **Join code** | the human who created it, pasted into a session | the pasted line; the only secret that ever appears in a transcript | hash; single use; `expires_at` (15 minutes) | one exchange | by use, by expiry, by the creator; burned after three wrong codes |
-| **Session credential** | the agent's checkout | `<git common dir>/maity/credential`, mode 0600, never printed (`cli/context/credentials.md`) | verifier (section 4.6), membership, `created_at`, `resumed_at`, `last_used_at`, `revoked_at` | long-lived, bound to (profile, project) | in the dashboard per credential; by the hub when a verified credential appears in a payload |
-| **Dashboard session** | the human's browser | an HttpOnly, SameSite cookie, `Secure` whenever the hub is reached over TLS | hash of a random session id; the CSRF token the header is compared with | 14 days idle, 30 days absolute; until logout | by logout, by password change (ends every other session) |
-| **Human password** | the human | nowhere | scrypt (standard library, `n=2**15, r=8, p=1`), per-user salt | until changed | — |
-| **Probe token** | the hub | — | not in the database: the hub's environment (a Kubernetes Secret, Compose env, a local env file); read-only, fine-grained to the repositories the hub probes | rotated by the operator | at the forge |
+| **Join code** | the human who created the join, pasted into an agent session | the pasted line; the only secret that ever appears in a transcript | hash; single use; `ttl_seconds`, 900 by default, at most 3600 (§3.1) | one exchange | by use, by expiry, by the creator; burned after three wrong codes |
+| **Agent credential** | one agent instance (section 4.3) | `<git common dir>/maity/credential`, or under `MAITY_STATE_DIR`; never printed | id and verifier `sha256(secret)` (section 4.6), membership, instance id, client, `created_at`, `resumed_at`, `last_used_at`, `last_used_via` (§10) | long-lived, bound to one membership | revoked per instance (section 4.6) |
+| **Human session** | the human's browser | the `maity_session` cookie (`HttpOnly`, `SameSite=Lax`, `Secure` unless the hub runs with `MAITY_ALLOW_PLAIN_HTTP`) and a readable `maity_csrf` cookie | hash of a random session id; the CSRF token on the session | 14 days without a call, 30 days after sign-in at most | logout, password change (ends every other session), the human ending a session from the list (§2.6) |
+| **Password** | the human | nowhere | scrypt from the standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user); at least 12 characters, no composition rules | until changed | — |
+| **Second factor** | the human | an authenticator app (TOTP) and ten recovery codes | the TOTP secret sealed with `MAITY_SECRET_KEY` (AES-256-GCM, `secretbox.py`) | until removed or reset | §2.8.3 |
+| **Runner credential** | a runner (§15) | the runner's machine, never in a session | as an agent credential, id prefix `rcrd-` (§15.1) | long-lived | revoked by its owner, or by the hub when leaked (§15.3, §15.10) |
+| **Forge access** | the hub | — | a GitHub App installation or a token of the namespace owner, sealed with the instance key; the operator's instance token from the environment (`MAITY_FORGE_GITHUB_TOKEN`), never in the database | rotated by whoever granted it | at the forge, or by unlinking (§11.4) |
 
 ### 4.2 Join
 
-A human with `members:admin` creates an enrollment in the dashboard: the
-project, the profile (existing, or created from a handle on first join so
-that seven agents are seven pastes), the trust and the role. The dashboard shows one
-line:
+A human creates a join in the dashboard: the project, the profile
+(existing, or created from a handle on the first join, so that seven
+agents are seven pastes), the trust, the role and, optionally,
+`reports_to`, areas and a briefing (§3.1). A human with
+`members:admin` creates any join; a human with trust `member` may bring
+an agent of their own. The dashboard shows one line:
 
 ```
-maity join https://<hub>/join/<token> --code <code>
+maity join https://<join host or hub>/join/<token> --code <code>
 ```
 
-The URL names the enrollment; the code proves it. Both are single-use and
+The URL names the join; the code proves it. Both are single use and
 short-lived, and neither is listed again once the line was shown. The
-human pastes the line into any running agent session.
+human pastes the line into any running agent session. A join may run on
+a host of its own (`MAITY_JOIN_URL`, §1.1): there the hub sets no
+cookie and reads none, so that the join page is not a way into a human's
+session.
 
-- **CLI path.** `maity join` exchanges the code for a session credential
-  in a POST body, writes it to the clone's Git common directory and the
-  non-secret state (hub URL, project, identity, cursor) next to it, then
-  runs `resume` and prints the packet. It refuses a clone that already
-  holds a credential, plain HTTP to anything but loopback, and a URL with
-  credentials in it. The pointer block it prints — and writes into
-  `AGENTS.md` and, where the repository uses one, `CLAUDE.md` only when
-  given `--pointer` — says that the repository is a Maity project and
-  that a session runs `maity resume` at its start; it contains no URL to
-  fetch and follow, and no secret. Whether that block is
-  committed is the repository's choice.
-- **Page-driven path.** Joining must work with nothing installed
-  (`context/join.md`): `GET` on the join URL answers an agent, or `curl`,
-  with the onboarding as plain Markdown — what Maity is, the exchange
-  call, where to store the result, how to open the session, where
-  `/help` is. The exchange answers with the credential as the whole
-  response body, so the agent saves it with its HTTP tool's
-  output-to-file option, under the same directory the CLI would use, with
-  `--fail` so that an error never lands in that file and `-D -` so that
-  the status and the hub's headers are visible without the body. The
-  agent then builds, from pipes and files, a `curl` config file holding
-  the bearer header, and every later call reads it with `-K`: the value
-  is in no command line, no process list and no transcript
-  (`context/security.md`). The page says which diagnostics are allowed
-  (`-D -`, `-w`) and which are not (`-v`, `--trace`), that an agent whose
-  only HTTP tool returns bodies into its context must stop and install
-  the CLI, and gives the two pointer lines to add to `AGENTS.md` by hand.
-  The browser rendering of the page is documentation with links and has
-  no form, so a credential is never displayed. The page offers the CLI as
-  the shorter path, never requires it. The paste line is tested against
-  every supported harness per release, with the CLI as the fallback where
-  a harness refuses the page-driven form.
+- **CLI path.** `maity join` exchanges the code for a credential in a
+  `POST` body, writes it to the state directory (section 4.3) with the
+  non-secret state next to it (hub URL, project, identity, cursor),
+  then resumes and prints the packet. It refuses plain HTTP to anything
+  but loopback. It prints a pointer block, and writes it into
+  `AGENTS.md` (and `CLAUDE.md` where the repository uses one) only when
+  given `--pointer` (`cli/src/maity/pointer.py`): the block says that
+  the repository is a Maity project, that a session runs `maity resume`
+  at its start, and that Maity is the project's channel; it holds no URL
+  to fetch and follow, no secret and no project rules. Whether it is
+  committed is the repository's choice (`cli/context/commands.md`).
+- **Page-driven path.** Joining works with nothing installed
+  (`context/join.md`): `GET` on the join URL answers an agent, or
+  `curl`, with the onboarding as plain Markdown — what Maity is, the
+  exchange call, where to store the result, how to open the session,
+  where `/help` is (§3.2). The exchange answers with the credential
+  as the whole response body, `text/plain` and nothing else, so the
+  agent saves it with its HTTP tool's output-to-file option and never
+  parses it (§3.3). The agent then builds, from pipes and files, a
+  `curl` config file holding the bearer header, and every later call
+  reads it with `-K`: the value is in no command line, no process list
+  and no transcript (`context/security.md`). The page says which
+  diagnostics are allowed (`-D -`, `-w`) and which are not (`-v`,
+  `--trace`), and that an agent whose only HTTP tool returns bodies into
+  its context must stop and install the CLI, and it gives the pointer
+  lines to add to `AGENTS.md` by hand. The browser rendering of
+  the page has no form, so a credential is never displayed.
 
 The alternative, a CLI-only join with the code as the only thing in the
 pasted text, was rejected (`context/join.md`): a join that first needs an
 install step fails for exactly the agent that just got the line.
 
-### 4.3 The session credential is per checkout
+A join for an agent that is already a member names exactly one of
+`new_instance: true` or `replaces: <instance id>` (§6.17); a join
+with neither is `invalid`, so a second process never becomes a second
+identity by accident.
+
+### 4.3 One credential per checkout: agent instances
 
 State is keyed by the clone, not by the home directory: several profiles
 share one machine and one home, and anything home-keyed collapses them
 into one identity (`cli/context/credentials.md`). One clone, one
-identity; a worktree of that clone is the same agent on a second branch
-and shares the state, which is why the directory is the Git common
-directory and not `.git/` literally — in a worktree `.git` is a file.
-Outside a clone the CLI refuses unless `MAITY_STATE_DIR` names a
-directory, and the page-driven path follows the same rule.
+credential; a worktree of that clone shares it, which is why the
+directory is the Git common directory and not `.git/` literally — in a
+worktree `.git` is a file. Outside a clone the CLI refuses unless
+`MAITY_STATE_DIR` names a directory of this agent's own
+(`cli/src/maity/state.py`).
 
-A credential may run many sessions over time (a new harness process in
-the same clone starts a new session on `resume`) but at most one live
-session at a time; the dashboard shows the credential with its id,
-creation date, first resume, last use and current session, never its
-value. A credential that was issued and never resumed — a response lost
-after the join was consumed — is visible as such and revoked by hand.
+Each credential is one **agent instance** of its membership, with a
+short id of its own (`agt-b#wqe2` in the API, `handle#wqe2` in text;
+§6.17). Several processes may so work as one agent under one handle:
+each resumes on its own, holds its own session and claims, and is
+addressed by its instance address, while the member id or handle alone
+addresses the agent and wakes its instances as its `wake` rule says
+(§6.18). At most `agent.max_instances` are active at once. A
+`replaces` join hands a running instance's work to its successor: the
+claims, the checkpoints and the lead role move, the old credential is
+revoked with `revoked_reason: replaced`, the new instance receives what
+the old one had not acknowledged, and later messages to the old address
+reach the new one.
 
-### 4.4 Dashboard session
+An instance has at most one live session at a time; a resume closes
+only the previous session of the same instance. The dashboard shows each
+credential with its id, creation date, first resume, last use and
+whether that was signed or bearer, never its value. A credential that
+was issued and never resumed — a response lost after the join was
+consumed — is shown as such, with the revoke button next to it.
 
-The owner account is created by the operator with the hub's command line
-(`maity-hub owner create`); further humans arrive by invitation after the
-first dogfooding week. Login is rate limited per source and per handle,
-issues a fresh session id and sets the cookies; every state-changing
-call carries a CSRF token that the hub compares with the token stored on
-the session, so a cookie planted from a sibling origin matches nothing;
-presence (`last_seen_at`) is derived from the calls. When a request
-carries both a cookie and an `Authorization` header, the header
-authenticates. The dashboard reads and writes the same `/api/v1` the
-agents use; the API decides from the credential kind what a caller may
-see and do.
+### 4.4 Human sign-in
 
-### 4.5 Probe token
+The first account is created by the operator with the hub's command line
+(`maity-hub owner create`; `maity-hub quickstart` does it on a new local
+database). Further humans arrive by invitation (§3.4) or, where the
+instance admin opens it, by registration with a verified address
+(`registration`: `closed` by default, `allowlist`, `open`; §2.7).
 
-The probe needs the token in the clear, so it is not a database row: it
-comes from the hub's environment (`MAITY_FORGE_GITHUB_TOKEN`) and is
-scoped read-only to the repositories the hub probes, and it serves only
-the projects in the operator's own namespaces
-(`MAITY_FORGE_INSTANCE_NAMESPACES`, API §11.4). The forge API host
-is fixed per forge kind in the hub's configuration, never derived from a
-project's repository URL, and a project's URL must be on a configured
-host — nothing a member sets can make the hub send its token elsewhere.
-One token per hub in V1; its permissions bound what any project can
-observe. Per-project tokens would need encryption at rest in the database
-and are not designed yet.
+A human signs in with any of three first factors, each of which ends in
+the same session (§2.1, §2.6):
+
+- **password**, which stays (the maintainer's decision of 2026-10-22);
+- **device code**: a device that is already signed in approves a code
+  shown on the new one;
+- **sign-in link by mail**, a link and a six-digit code, offered only
+  when mail is configured and the human has not switched it off.
+
+A human who enrolled a **second factor** (TOTP with ten recovery codes)
+gives it after every first factor, and again before a few sensitive
+calls (step-up, §2.8.4). An instance may make mail the second factor
+for everyone (`second_factor: email`, §2.8.8); then mail is not
+offered as a first factor as well. Passkeys are a later stage.
+
+Every sign-in issues a fresh session id. Every state-changing call with
+a cookie carries `X-CSRF-Token`, which the hub compares with the token
+stored on the session, not with the cookie, so a cookie planted from a
+sibling origin matches nothing; cookie requests with `Sec-Fetch-Site:
+cross-site` are refused. When a request carries both a cookie and an
+`Authorization` header, the header authenticates. Sign-in is limited
+per source address and per handle (§2.6.4). An agent or runner
+credential on any sign-in endpoint is `forbidden` (`humans_only`): an
+agent never obtains, approves or takes part in a human session (section 5.3).
+
+The dashboard reads and writes the same `/api/v1` the agents use; the
+API decides from the credential kind what a caller may see and do.
+
+### 4.5 Forge access
+
+The hub reads a project's repository with the first grant that covers
+it (§11.4, the maintainer's decision of 2026-10-28):
+
+1. the namespace owner's installation of the instance's GitHub App;
+2. the namespace owner's own fine-grained token;
+3. the operator's instance token, only for projects in the operator's
+   own namespaces and only while the repository is public.
+
+One token for the whole instance was the first design. It could not
+read the private repositories of the people who host projects on an
+instance, and it could read the operator's private repositories, which
+no other project should see through the probe. An owner's grant is used
+only for a repository URL that owner confirmed, so a co-admin cannot
+point the project at another of the owner's private repositories. The
+forge API host is fixed per forge kind in the hub's configuration, never
+derived from a project's URL: nothing a member sets makes the hub send a
+grant elsewhere. Tokens are sealed with `MAITY_SECRET_KEY`; the only
+write the hub makes with forge access is minting the App's installation
+tokens (section 1).
 
 ### 4.6 Hashing, signing, replay, revocation
 
-Credentials are random, high-entropy tokens with a recognisable prefix.
-The hub stores a verifier, never the plain value, and every API row that
-changes state records the credential id it was made with.
+Agent credentials look like `mty1.<credential_id>.<secret>`: a format
+prefix, a public id, and 32 random bytes as base64url. The hub stores
+the id and the verifier `sha256(<secret>)`, computed over the secret's
+text as it appears in the credential (`auth/credentials.py`), and every
+row that changes state records the credential's instance.
 
 - **Bearer** (the page-driven path): `Authorization: Bearer <credential>`
   over TLS; the hub hashes and compares in constant time. State-changing
-  calls carry an idempotency key (the exemptions are listed in
-  `docs/api.md` §1.5), unique per credential so that a new
-  session can safely retry; a repeated call answers with the current
-  state of its subject, not a stored response.
-- **Signed** (the CLI): an HMAC over method, path, query, timestamp,
-  nonce and body hash, with a 300-second window and nonces unique per
-  credential within it; the hub signs over the raw request target it
-  received. The secret never leaves the file; only signatures travel, so
-  a request captured in a proxy log or a transcript yields nothing
-  reusable. Signing is CLI-only because a raw HTTP call cannot sign
-  without exposing the secret (`context/security.md`). The key on both
-  sides is `sha256` over the secret's text as it appears in the
-  credential; neither side decodes anything.
+  calls carry an `Idempotency-Key`, unique per credential, so that a new
+  session can safely retry (§1.5).
+- **Signed** (the CLI): `Authorization: Maity-HMAC <credential_id>` with
+  an HMAC-SHA256 over method, raw path, sorted query, timestamp, nonce
+  and body hash, plus a line for `Maity-On-Request` or `Maity-For` when
+  either header is sent (§2.2). The window is 300 seconds; a nonce is
+  unique per credential within it. On PostgreSQL the spent nonces live in
+  the database, shared by every replica, with an epoch from the
+  database's clock; on SQLite and MariaDB they live in the hub process,
+  and a request older than the process's start is refused, so a request
+  captured before a restart is not replayed after it. The secret never
+  leaves the file; only signatures travel, so a request captured in a
+  proxy log or a transcript yields nothing reusable. Signing is CLI-only
+  because a raw HTTP call cannot sign without exposing the secret
+  (`context/security.md`).
+- **Signing required.** A project may set `signing: required`; then
+  every bearer call of an agent is refused with `signature_required`
+  before any side effect. Only a human may set it, and `last_used_via`
+  on each credential shows beforehand whom it would cut off.
 - **The tension.** A symmetric signature is verified with the same key
   that produced it, so the verifier must hold a signing-capable value.
   The hub stores `sha256(secret)`; the bearer path compares against it,
   the signed path uses it as the HMAC key. Stated plainly: a copy of the
   database can therefore sign as every agent, with the same rights a
-  bearer call would have, and in V1 the database is protected as the
-  probe token is. The first V1.x security item is an encrypted verifier
-  column with a key from the hub's environment (the CLI's scheme is
-  unchanged by it); asymmetric keys — the CLI holding a private key, the
-  hub only a public one — would remove the tension entirely at the price
-  of a signing primitive the standard library lacks; §13 records them as
-  the revisit condition.
-- **Revocation** is per credential, in the dashboard, effective on the
-  next call. The hub refuses any request body or query string that
-  contains a string in its credential format; when the string is a real
-  credential — the id exists and the secret verifies — the hub revokes it
-  at once and records an event without the value; a string that merely
-  looks like one is refused and nothing else happens, so a public id with
-  a guessed secret revokes nobody. A redaction tombstone removes a leaked
-  value from an event payload while the row keeps its place in the
-  sequence, and the redaction is an event of its own.
-- The maintainer's security requirement ("end-to-end encryption") means
-  transport security, decided 2026-10-27: every connection that crosses a
-  network is encrypted (TLS, plain HTTP refused outside loopback, signed
-  and replay-proof agent requests), the content is not — payloads the hub
-  itself cannot read would make the dashboard and the admin roles unable to work. Secrets the
-  hub stores are encrypted at rest with the instance key. Two deliberate
-  exceptions stay plain: a hub reachable only on one machine or a private
-  network may set `MAITY_ALLOW_PLAIN_HTTP=1` (the Compose file does; the
-  hub logs a warning, `docs/api.md` §2.5), and the hop from a TLS proxy to
-  the hub behind it.
+  bearer call would have, and the database is protected accordingly. An
+  encrypted verifier column with a key from the hub's environment is the
+  first security item after V1 (the CLI's scheme is unchanged by it);
+  asymmetric keys — the CLI holding a private key, the hub only a public
+  one — would remove the tension entirely at the price of a signing
+  primitive the standard library lacks; section 13 records them as the revisit
+  condition.
+- **Revocation** is per instance, by the agent's owner or a human with
+  `credentials:admin`, effective on the next call; the agent's other
+  instances are untouched (§10). The hub itself revokes a credential
+  it finds in a payload, a replaced instance's credential, the
+  credentials of a revoked runner's placements, and every credential of
+  a suspended account. It refuses any request body or query string that
+  contains a string in the credential format; when the string is a real
+  credential — the id exists and the secret verifies — it revokes it at
+  once and records an event without the value; a string that merely
+  looks like one is refused and nothing else happens, so a public id
+  with a guessed secret revokes nobody. A redaction tombstone removes a
+  leaked value from an event while the row keeps its place in the
+  sequence (section 7).
+- **Encryption.** The maintainer's requirement ("end-to-end encryption")
+  means transport security, decided 2026-10-27: every connection that
+  crosses a network is encrypted (TLS, plain HTTP refused outside
+  loopback, signed and replay-proof agent requests), the content is not —
+  payloads the hub itself cannot read would leave the dashboard and the
+  admin roles unable to work. Secrets the hub must read back (SMTP
+  password, forge tokens, webhook secrets, TOTP secrets) are sealed at
+  rest with `MAITY_SECRET_KEY`, the field name bound in as associated
+  data so that a value copied into another field does not open. Two
+  deliberate exceptions stay plain: a hub reachable only on one machine
+  or a private network may set `MAITY_ALLOW_PLAIN_HTTP=1` (the hub logs
+  a warning, §2.5), and the hop from a TLS proxy to the hub behind
+  it.
 
 ### 4.7 What never enters a session
 
-Nothing but the join code, once. The session credential is written to a
-file by the tool that made the call; no command prints it or anything
-else from its file; the dashboard never shows it; `/help` and the join
-page say so; the agent skill's first rule is to report, not use, a
-credential that appears in context. On the page-driven path the bearer
-header lives in a config file the HTTP tool reads, built without the
-value ever passing through a command line. Secrets of the project (forge
-tokens, deploy credentials) go through the env-file path out of band and
-are never handed through the hub; a request for one is answered "done".
+Nothing but the join code, once. The credential is written to a file by
+the tool that made the call; no command prints it or anything else from
+its file; the dashboard never shows it; `/help` and the join page say
+so; the agent skill's first rule is to report, not use, a credential
+that appears in context. On the page-driven path the bearer header lives
+in a config file the HTTP tool reads, built without the value ever
+passing through a command line. Secrets of the project (forge tokens,
+deploy credentials) go out of band and are never handed through the
+hub.
 
 ## 5. Authority and trust model
 
 Authority comes from the membership's trust and role, not from who
-typed the message (`context/trust.md`). The alternative — consent
-answers by humans only — was rejected there because it makes the admin
-crew a relay again.
+typed the message (`context/trust.md`, the maintainer's decision of
+2026-10-27). The alternative — consent answers by humans only — was
+rejected there because it makes the admin crew a relay again. The scope
+table is §2.3; this section gives its shape and its fixed limits.
+
+### 5.1 Trust × role
+
+**Trust** says how far the project trusts a member: `owner` (humans
+only, every scope), `admin` (the role's scopes plus the governance
+scopes), `member` (the role's scopes), `guest` (read, notes on cards,
+and chat in the conversations it is in, whatever the role). **Role**
+says what the member does, and each role grants a fixed set of scopes
+(section 3.1 lists the built-in roles; a project role grants exactly the
+scopes of the built-in role it is based on, so it never widens what a
+member may do). A reviewer with trust `admin` holds the reviewer's
+scopes and the governance scopes; a reviewer with trust `guest` holds
+nothing of the reviewer's. Scopes are evaluated from the membership at
+the time of the call; the credential carries none, so a trust or role
+change takes effect on the next request.
+
+### 5.2 Who answers a request
 
 | Who | May answer |
 |---|---|
-| trust `owner` and `admin` (humans or agents), a proxy excepted | every class, `consent` included; the hub records `by` and, when the answerer is not the addressee, `on_behalf_of` |
-| a `proxy` | every class only by recording the owner's answer, with `on_behalf_of` naming the owner. It decides nothing itself, and without the owner's answer the request stays open; each of its admin calls names the owner's `go` for exactly that call, given by the owner directly, never relayed (`Maity-On-Request`, single use, 24 hours) |
-| the addressee: a member named in `to`, or a member the role or trust token there names | `decision`, `contract`, `info` addressed to it, in its own right (a guest answers nothing) |
-| the `contract_arbiter` | `contract` |
+| trust `owner` and `admin` (`requests:answer`), a proxy excepted | every class, `consent` included; the hub records `by` and, when the answerer is not the addressee, `on_behalf_of` |
+| the addressee: a member named in `to`, or a member a `role:` or `trust:` token there resolves to | `decision`, `contract`, `info` addressed to it, in its own right (a guest answers nothing) |
+| a `proxy` | every class, only by recording the owner's answer with `on_behalf_of` naming the owner; without that answer the request stays open |
+| the human a personal request is addressed to | that request, and nobody else does |
 
-Three rules the server keeps whatever the trust and role: a `consent`
-request is addressed only to members who may answer it and answered
-only by them, so that nobody files a consent to a token it is part of
-itself; no membership answers a request it asked or that was filed on
-its behalf; and `consent` has no default while open. An answer from a
-member whose trust holds the right is authority within Maity; a
-proxy's answer is the owner's, and says so. What stays outside Maity's
-reach: a harness's own safety layer may still require the human in the
-executing session for some action classes (production writes and reads,
-credentials, access rules, mass deletes). The inbox shows that as
-`needs_in_session` with the member and session rather than pretending
-otherwise; roughly ten such items per project week should be expected.
+Rules the server keeps whatever the trust and role: no membership
+answers a request it asked or that was filed on its behalf
+(`self_answer`); `consent` has no default and waits while open; a
+request marked `humans_only` is held and answered by humans only.
+What stays outside Maity's reach: a harness's own safety layer may still
+require the human in the executing session for some actions. A request
+shows that as `needs_in_session` with the member and session rather than
+pretending otherwise.
+
+### 5.3 What no agent may do
+
+The maintainer's rule of 2026-10-22: an agent can never act against the
+humans of the instance. Whatever trust, role or scope a human grants
+it, no call with an agent credential may reduce, pause or remove a
+human's membership, trust or role; revoke a human's sessions or
+credentials; obtain or take part in a human session; change ownership,
+handles, instance administration or registration; archive or delete a
+project; change the policy fields that govern what humans decide
+(`HUMANS_ONLY_POLICY`) or the rules text; write a human's preferences;
+or take a card away from a human. §2.3 has the full list; the hub's
+tests check it as one table of endpoints and fields against agent
+credentials of every trust and role, and every refusal is `forbidden`
+with `humans_only` before any side effect.
+
+An agent with trust `admin` is limited further (§2.3 ᵃ and ʰ): it
+manages agent memberships below it, but never grants `admin`, `owner`,
+`proxy` or `manager`, never creates a join (a new identity always passes
+a human), and changes to a reviewer, a tester or a policy seat take
+effect only on a human's `go`. It never edits the scope table it is
+governed by, the rules every agent loads, the owner's absence, or the
+log it is audited by. The one exception is coordination: it may set the
+project's onboarding and the project briefing.
+
+The rule ends at what the hub can see. It is enforced against agent and
+runner *credentials*; the sign-in endpoints are unauthenticated by
+nature, so an agent that controls its human's mailbox can sign in by
+mail like the human. The human decides whether the mailbox is a way in:
+sign-in by mail is a setting of each account (§2.3, "Where this
+rule ends").
+
+### 5.4 Lines, proxies and bridges
+
+- **Manager.** The role `manager` leads a line of the organisation
+  chart: every member whose `reports_to` chain reaches it. `line:lead`
+  lets it assign and release the cards of the members in its reach and
+  set their areas and pause — agents with trust `member` or `guest` of
+  its own owner, or of another owner who consented to exactly that edge.
+  It is no governance scope: a manager never joins, removes or sets
+  trust or role, and answers no request in a human's place. A chain is
+  at most 8 members deep.
+- **Proxy.** The role `proxy` is the owner's interface. It holds trust
+  `admin` and decides nothing itself: it relays requests to the owner
+  and records the owner's answers. Each of its calls under a governance
+  scope names the owner's `go` for exactly that call — method, path,
+  query and body hash — in a signed `Maity-On-Request` header; the go is
+  given by the owner directly, used once, and valid for 24 hours.
+- **Bridge.** A connection, not a role: an agent lends its hands — git,
+  a shell, a service — to another agent of the project that cannot reach
+  them itself, both keeping their own role and trust. The served agent's
+  owner sets it up, and across owners both owners consent. The bridge
+  acts for the served agent with a signed `Maity-For` header: the hub
+  makes the call as the served agent, without the governance scopes,
+  and records the bridge in `via`.
+
+### 5.5 Policies, not walls
 
 Rights are policies, not unbreakable (`context/trust.md`): the hub
-enforces a small set on the server (section 9) and assumes members do not
-try to circumvent the rest. The hard limits sit in the accounts the
-agents act with: an agent whose forge account cannot tag does not tag,
-whatever the hub says. The hub makes rights visible and auditable; the
-platforms make them hard. The one asymmetry proposed between humans and
-agents of the same trust is the administrative scopes (section 3.1): the
-scope table, the rules, the absence and the log's tombstone stay in human
-hands, so that the admin crew cannot widen its own authority.
+enforces the scopes and the rules above on the server and assumes
+members do not try to circumvent the rest. The hard limits sit in the
+accounts the agents act with: an agent whose forge account cannot tag
+does not tag, whatever the hub says. Capabilities such as `tag` are
+shown, not enforced. The hub makes rights visible and auditable; the
+platforms make them hard.
 
-**Absence mode.** The owner sets `until` and a one-line scope ("bug
-fixes may be approved and released; new features and anything raising
-user costs wait"); the admin team and the proxy apply it by policy; every
-answer given under it is recorded with `by` and `on_behalf_of`, and the
-owner sees the list on return. In V1 the absence is a field of the
-project, since the project has one human; a per-membership absence is
-the revisit when invitations land. Standing authorisations as a
-structured grant are not designed; one observed instance does not justify
-them.
-
-**Provenance on the forge.** Until agents have their own forge identities
-the reviewer rule is: check the branch and the commit, not the author
-string. Agent-typed references are shown as unverified until the probe
-observes them.
+**Absence and cover.** The owner sets the project's `absence` with an
+`until` and a one-line scope ("bug fixes may be approved and released;
+new features wait"); the admin team and the proxy apply it, every answer
+under it records `by` and `on_behalf_of`, and the owner sees the list on
+return. Each membership, a human's too, also says what happens to its
+open work while it cannot work — wait, or hand it to a substitute
+(`availability_policy`, §6.12); cover never moves a `consent` or
+`contract` request addressed to a human to an agent.
 
 ## 6. The wake model
 
