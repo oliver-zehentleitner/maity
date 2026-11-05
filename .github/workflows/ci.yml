@@ -118,6 +118,9 @@ jobs:
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check
+      # The Keep the Why skill's pins (install source, Git fallback, installer, linter action) name
+      # the release .keep-the-why's context-schema is on.
+      - run: python tools/ktw_pin.py
       # The docs site's lock (pages.yml) follows site.in; uv from the hub's hashed tools lock,
       # in an environment of its own.
       - run: |
