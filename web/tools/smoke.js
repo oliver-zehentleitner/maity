@@ -7977,6 +7977,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("q", 409, "/x", "attachment_quota", { scope: "pending" }));
   await atPick("chat-files", [atFile("more.png", PNG, 100, "image/png")]);
   expect(text(main).includes("Not attached: more.png: you have 20 files, or 100 MiB, waiting to be sent"), "attachments: the pending quota in words");
+  win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("q", 409, "/x", "attachment_quota", { scope: "instance" }));
+  await atPick("chat-files", [atFile("full.png", PNG, 100, "image/png")]);
+  expect(text(main).includes("Not attached: full.png: this hub's storage for files is full; ask its operator"), "attachments: the hub's storage full in words, no numbers");
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("d", 400, "/x", "invalid", { fields: { body: "dimensions" } }));
   await atPick("chat-files", [atFile("huge.png", PNG, 100, "image/png")]);
   expect(text(main).includes("the image is larger than 8192 pixels"), "attachments: an image too large in pixels in words");
@@ -12103,6 +12106,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(lmPatches.slice(1)) === JSON.stringify([{ max_agents_per_human: "unlimited" }, { max_agents_per_human: null }])
     && byId("limits-max_agents_per_human-mode").value === "default",
     "limits: no limit is sent as unlimited, the default as null " + JSON.stringify(lmPatches));
+  // The attachment storage of the whole hub (§16.5, tsk-qa9r26kb2teq): in GiB here, bytes for the hub, what is stored now said.
+  expect(byId("limits-max_attachment_storage-mode").value === "default" && text(lmSection()).includes("Stored now: 700 MiB.")
+    && text(lmSection()).includes("Attachment storage of the hub"), "limits: the hub's attachment storage, unlimited by default, with what is stored now (below 1 GiB in MiB)");
+  // The script checks the fields: a stored value that is no whole GiB, shown rounded, must not stop the form in the browser.
+  expect(lmSection().querySelector("form.admin-limits").attrs.novalidate !== undefined, "limits: the form leaves the checks to the script (novalidate)");
+  byId("limits-max_attachment_storage-mode").value = "number"; byId("limits-max_attachment_storage-mode").dispatch("change");
+  byId("limits-max_attachment_storage").value = "0";
+  await lmSubmit();
+  expect(lmPatches.length === 3 && text(byId("limits-max_attachment_storage-error")) === "A whole number of GiB from 1 to 1048576.",
+    "limits: a storage value out of range is said at its field in GiB and nothing is sent");
+  byId("limits-max_attachment_storage").value = "50";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[3]) === JSON.stringify({ max_attachment_storage: 50 * 1024 ** 3 }) && byId("limits-max_attachment_storage").value === "50",
+    "limits: the storage is sent in bytes and shown in GiB " + JSON.stringify(lmPatches));
+  await lmSubmit();
+  expect(lmPatches.length === 4 && text(lmSection()).includes("Nothing changed."), "limits: a number left as it was is not sent again");
+  // A stored storage value that is no whole GiB (set in bytes) is shown rounded and kept: the form still saves another field.
+  await lmPatch("/admin/settings/limits", { max_attachment_storage: 1.5 * 1024 ** 3 });
+  byId("limits-max_agents_per_human-mode").value = "number"; byId("limits-max_agents_per_human-mode").dispatch("change");
+  byId("limits-max_agents_per_human").value = "300";
+  await lmSubmit(); // the redraw reads the 1.5 GiB from the hub's answer
+  expect(lmPatches.length === 5 && byId("limits-max_attachment_storage").value === "1.5", "limits: a storage value of 1.5 GiB is shown rounded " + JSON.stringify(lmPatches));
+  byId("limits-max_agents_per_human").value = "301";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[5]) === JSON.stringify({ max_agents_per_human: 301 }) && text(lmSection()).includes("Saved."),
+    "limits: with 1.5 GiB stored, another field saves and the storage is not sent " + JSON.stringify(lmPatches));
+  // A value that shows rounded as a whole number (1 GiB and a byte shows as 1) can still be set to that number by typing it.
+  await lmPatch("/admin/settings/limits", { max_attachment_storage: 1024 ** 3 + 1 });
+  byId("limits-max_agents_per_human").value = "302";
+  await lmSubmit(); // the redraw reads 1 GiB and a byte
+  expect(lmPatches.length === 7 && byId("limits-max_attachment_storage").value === "1", "limits: 1 GiB and a byte shows as 1 " + JSON.stringify(lmPatches));
+  byId("limits-max_attachment_storage").value = "1"; byId("limits-max_attachment_storage").dispatch("input");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[7]) === JSON.stringify({ max_attachment_storage: 1024 ** 3 }),
+    "limits: typing the shown whole number sets it exactly " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
