@@ -3162,6 +3162,7 @@ window.MAITY_I18N["ja"] = {
   "product.bug": "バグを見つけましたか？",
   "product.love": "愛",
   "product.made_by": "{name} が {github} & {maity} で {heart} を込めて作りました",
+  "product.security": "脆弱性を見つけましたか？",
   "profile_delete.busy": "削除しています…",
   "profile_delete.done": "プロフィール @{handle} を削除しました。",
   "profile_delete.done_ended": "プロフィール @{handle} を削除しました。そのメンバーシップは終了しました。",
