@@ -121,7 +121,7 @@ jobs:
       # in an environment of its own.
       - run: |
           python -m venv "$RUNNER_TEMP/uv"
-          "$RUNNER_TEMP/uv/bin/pip" install --quiet --require-hashes -r hub/requirements/tools.txt
+          "$RUNNER_TEMP/uv/bin/pip" install --quiet --require-hashes --only-binary :all: -r hub/requirements/tools.txt
           make -C tools lock-check UV="$RUNNER_TEMP/uv/bin/uv"
       # tools/site_docs.py renders Markdown; its tests are skipped without Markdown and YAML,
       # which come from that lock.
