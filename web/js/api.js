@@ -1365,7 +1365,19 @@ window.Maity = window.Maity || {};
     if (youngerThanHour(cur) && Date.parse(s.created_at) < Date.parse(cur.created_at)) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
   }
   // Ending one ends the sessions it approved by device code, and theirs.
+  // `sessions_rev` (§18.2): the number of the newest session record, here the
+  // highest `created.record` of the fixture's sessions, raised by every end.
+  let sessionRecord = null;
+  function sessionsRev() {
+    if (sessionRecord === null) {
+      const numbers = fixtures()["sessions.json"].items.map((s) => Number(((s.created || {}).record || "acr-0").slice(4)));
+      sessionRecord = Math.max(0, ...numbers);
+    }
+    return sessionRecord ? "acr-" + sessionRecord : null;
+  }
   function endSession(s, by) {
+    sessionsRev();
+    sessionRecord += 1; // its session_ended record
     Object.assign(s, { ended_at: nowIso(), ended_by: by });
     activeSessions().filter((x) => x.approved_by === s.id).forEach((x) => endSession(x, by));
   }
@@ -1843,7 +1855,7 @@ window.Maity = window.Maity || {};
       const after = query.get("after");
       const head = headOf(n.items);
       if (after !== null) {
-        if (!limit) return { counts, by_project: byProject, items: [], next_cursor: null, next_after: after, server_time: nowIso() };
+        if (!limit) return { counts, by_project: byProject, items: [], sessions_rev: sessionsRev(), next_cursor: null, next_after: after, server_time: nowIso() };
         const past = items.filter((x) => pastOf(x, after)).sort(inOrder);
         const listed = past.slice(0, limit);
         const [a, b] = parts(after);
@@ -1852,7 +1864,7 @@ window.Maity = window.Maity || {};
         const next = past.length > limit
           ? Math.max(a, ...listed.filter((x) => !x.record).map((x) => x.seq)) + "." + Math.max(b, ...listed.filter((x) => x.record).map(recordNo))
           : Math.max(a, ha) + "." + Math.max(b, hb);
-        return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: next, server_time: nowIso() };
+        return { counts, by_project: byProject, items: listed.map(view), sessions_rev: sessionsRev(), next_cursor: null, next_after: next, server_time: nowIso() };
       }
       const offset = Number(query.get("cursor") || 0);
       const ordered = items.slice().sort(inOrder).reverse();
@@ -1862,7 +1874,7 @@ window.Maity = window.Maity || {};
       const pinned = n.items.filter((x) => x.kind === "security" && !x.read)
         .sort(inOrder).reverse().slice(0, 50);
       return { counts, by_project: byProject, items: listed.map(view),
-        pinned: pinned.map(view),
+        pinned: pinned.map(view), sessions_rev: sessionsRev(),
         next_cursor: limit && offset + limit < ordered.length ? String(offset + limit) : null,
         next_after: head, server_time: nowIso() };
     }],
