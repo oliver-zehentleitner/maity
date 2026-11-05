@@ -333,8 +333,9 @@ dump ten minutes earlier worked, which fits a pod whose network was not ready ye
 
 #1218 made the instance's forge token serve only the namespaces listed
 in `MAITY_FORGE_INSTANCE_NAMESPACES`; unset, it serves no project. Its
-changelog fragment and `hub/README.md` said so ("set the variable when
-upgrading"). The production instance was deployed with the change, and
+changelog fragment said so and asked to "set the variable when
+upgrading"; `hub/README.md` documents the setting ("Empty: it serves no
+project"). The production instance was deployed with the change, and
 the setting was never added. From then on the hub could not read the
 project's own repository: the Keep the Why dashboard's Why reported
 that Maity has no access to it (`probe_not_configured`), and no forge

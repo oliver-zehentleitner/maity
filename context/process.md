@@ -150,9 +150,10 @@ a step done before the deploy. A pull request whose setting changes live
 behaviour while unset names the setting and that effect in its body and
 in its fragment, so the grep finds it.
 
-**Reason:** a note that sat in the changelog did not reach the deploy
-(incident 2083a296): the lists were built from pull request titles and
-cards, and the fragments are where a change says what its upgrade needs.
+**Reason:** the deploy list did not name the setting, although the
+fragment of #1218 did (incident 2083a296), and the fragments are where a
+change says what its upgrade needs. How that list was built is the
+incident's inferred part, not this rule's.
 
 **Rejected alternatives:**
 - Leaving it to whoever deploys to read every merged pull request for
