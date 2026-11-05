@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import unicodedata
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -130,9 +132,14 @@ def _query_version(request: Request) -> int | None:
     given = request.query_params.get("base_version")
     if given is None:
         return None
-    if not given.isdigit():
+    # ASCII digits only: `str.isdigit` also passes "²" and other Unicode digits that `int`
+    # refuses, and `int` refuses an overlong number too; each is `invalid`, never a 500.
+    if re.fullmatch(r"[0-9]+", given) is None:
         raise invalid({"base_version": "int_parsing"})
-    return int(given)
+    try:
+        return int(given)
+    except ValueError:
+        raise invalid({"base_version": "int_parsing"}) from None
 
 
 # --- views -----------------------------------------------------------------------------------
@@ -287,6 +294,17 @@ def get_restricted(slug: str, card_id: str, request: Request, caller: AnyCaller)
         return JSONResponse(_read(conn, card.id))
 
 
+def _admit_locked(
+    conn: Connection, caller: Caller, slug: str, card_id: str
+) -> tuple[Membership, Any]:
+    """The project lock first, then the access check inside it (§6.4 "Access"): a set or
+    membership change committed before the lock is seen, so a caller it removed writes
+    nothing. The project the write decides on is the one read under the lock."""
+    locked = _locked(conn, membership(conn, caller, slug))
+    mine, card = _admit(conn, caller, slug, card_id)
+    return replace(mine, project=locked.project), card
+
+
 def _guarded(request: Request, caller: Caller, slug: str, card_id: str) -> None:
     """The access check ahead of the idempotent run: a repeat of a stored call answers only
     after it passed again, so a caller no longer in the set gets `forbidden`, never the
@@ -300,8 +318,7 @@ def put_restricted(slug: str, card_id: str, request: Request, caller: AnyCaller)
     _guarded(request, caller, slug, card_id)
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine, card = _admit(conn, caller, slug, card_id)
-        mine = _locked(conn, mine)
+        mine, card = _admit_locked(conn, caller, slug, card_id)
         text, base_version = _put_body(_raw(request))
         row = _row(conn, card.id)
         if row is not None and row.text == text:
@@ -333,8 +350,7 @@ def delete_restricted(slug: str, card_id: str, request: Request, caller: AnyCall
     _guarded(request, caller, slug, card_id)
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine, card = _admit(conn, caller, slug, card_id)
-        mine = _locked(conn, mine)
+        mine, card = _admit_locked(conn, caller, slug, card_id)
         base_version = _query_version(request)
         row = _row(conn, card.id)
         if row is None or row.text is None:

@@ -13,6 +13,7 @@ from sqlalchemy import Engine, insert, select, update
 from maity_hub import account_deletion, clock, export, restricted
 from maity_hub import tables as t
 from maity_hub.routes import restricted as routes
+from maity_hub.routes import tasks as tasks_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -435,6 +436,53 @@ def test_a_repeat_answers_only_after_the_access_check(owner: flow.Human, migrate
     _set(migrated, "nobody_except", [])
     gone = put(owner, card["id"], {"text": MARKER, "base_version": 0}, key=key)
     assert gone.status_code == 403 and _reason(gone) == "restricted"
+
+
+def test_a_set_change_before_the_project_lock_stops_the_write(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The set closes between the access check ahead of the run and the project lock: the
+    write admits again under the lock and refuses (review of #1401)."""
+    card = _card(owner)
+    _set(migrated, "nobody_except", [owner.id])
+    _write(owner, card["id"], MARKER)
+    project = _project(migrated)
+    closed = dict(project.settings or {}) | {
+        "restricted_access": {"mode": "nobody_except", "members": []}
+    }
+    real = tasks_routes._locked
+
+    def closing_first(conn: Any, mine: Any) -> Any:
+        conn.execute(update(t.project).where(t.project.c.id == project.id).values(settings=closed))
+        return real(conn, mine)
+
+    monkeypatch.setattr(routes, "_locked", closing_first)
+    written = put(owner, card["id"], {"text": "after", "base_version": 1})
+    cleared = delete(owner, card["id"], base=1)
+    for response in (written, cleared):
+        assert response.status_code == 403 and _reason(response) == "restricted"
+    monkeypatch.setattr(routes, "_locked", real)
+    after = get(owner, card["id"]).json()
+    assert after["text"] == MARKER and after["version"] == 1
+
+
+@pytest.mark.parametrize(
+    "given",
+    ["\u00b2", "\u0661", "1\u00b2", "9" * 5000, "-1", " 1", "1.0"],
+    ids=["superscript", "arabic_indic", "mixed", "overlong", "negative", "space", "decimal"],
+)
+def test_a_base_version_that_is_not_ascii_digits_is_invalid(
+    owner: flow.Human, migrated: Engine, given: str
+) -> None:
+    card = _card(owner)
+    _set(migrated, "nobody_except", [owner.id])
+    _write(owner, card["id"], MARKER)
+    response = owner.client.delete(
+        _path(card["id"]), params={"base_version": given}, headers=_headers(owner, None)
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"] == {"fields": {"base_version": "int_parsing"}}
+    assert get(owner, card["id"]).json()["text"] == MARKER
 
 
 # --- never a card field --------------------------------------------------------------------------

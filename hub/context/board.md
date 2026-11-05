@@ -299,6 +299,9 @@ model on the route, so a caller outside the set gets the same
 `PUT` and `DELETE` the access check runs in its own transaction before
 `idempotency.run`, so a stored answer is replayed only to a caller who
 is still in the set; a key used before leaving the set replays nothing.
+Inside the write the project lock comes first and the access check runs
+again under it, so a set or membership change committed before the lock
+is seen and a caller it removed writes nothing.
 
 **Reason:** the text is the one value on a card some members must not
 learn; a validation error, a `404` against a `200`, or a replayed
@@ -311,6 +314,8 @@ about it.
 - Leaving the check to the handler inside `idempotency.run`: a replay
   answers before the handler runs and would hand the stored text to a
   member who has since left the set.
+- Admitting before the project lock and writing under it: a removal
+  committed between the two still wrote (review of #1401, 2026-11-05).
 
 ## The restricted-text write caps count the text's own history rows
 

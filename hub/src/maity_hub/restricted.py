@@ -2,8 +2,9 @@
 "Restricted text", §6.1 "Restricted access").
 
 The set is resolved on every call from `settings.restricted_access` and the project's
-memberships, never stored resolved. Nothing outside this module and `routes/restricted.py`
-reads `task_restricted`, so no other read of a card can carry the text."""
+memberships, never stored resolved. Only this module, `routes/restricted.py` and the export's
+one exception (`export.py`, the caller's own texts of a set they are in, §2.9) read
+`task_restricted`; no read of a card does, so none can carry the text."""
 
 from __future__ import annotations
 
