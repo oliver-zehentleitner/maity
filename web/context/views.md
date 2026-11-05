@@ -1323,7 +1323,7 @@ save: it fixes the jump but not the place the maintainer found odd.
 The theme menu (System, Light, Dark) shows in the header only on the
 pages one sees signed out: the sign-in page and the landing page (the
 public swarm page went with the contract #697). Signed in, the header has none; Your account has a
-Theme section (`/account/theme`, also in the profile menu) with the
+Theme section (on its Settings tab, `/account/settings`; `/account/theme` leads there) with the
 same three choices as radio buttons and a line that the choice is kept
 in this browser only. It is the same per-browser value either way, so a
 pick made signed out holds after signing in.
@@ -2927,7 +2927,7 @@ from Members in its favour: that reverses the maintainer's own choice
 **Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
 **See:** rendering.md#a-picture-is-uploaded-on-the-account-checked-as-the-hub-checks-it-with-no-preview-of-the-chosen-file — 3ec853f0-4141-4e81-acdf-c0fee94c920b — as of 2026-10-28
 
-The account (`/account/picture`) sets the human's own picture. An
+The account's Profile tab (`/account`; `/account/picture` leads there) sets the human's own picture. An
 agent's picture is set where the agent is managed: in its row on
 Members, under **Details** or **Manage**, for its owner only, as §6.10
 allows. The picture is read from one's agent profiles (`GET /agents`)
@@ -3914,8 +3914,8 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 **Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
 **Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
 
-**Forge access** is a section of the account page, next to the
-sessions. It shows:
+**Forge access** is a tab of the account's Security
+(`/account/security/forge`), next to the sessions. It shows:
 - the linked installations of the instance's GitHub App, each with its
   status and the repositories it covers;
 - **Link the GitHub App**, offered only where `app_configured`;
@@ -3925,8 +3925,8 @@ sessions. It shows:
   with a hint naming the read permissions the probe needs.
 
 A token is never shown, only that one is set, its login and its status.
-`/settings/forge`, the path the hub's setup redirect lands on, is the
-same account page opened at that section. Its `?error=<reason>` is said
+`/settings/forge`, the path the hub's setup redirect lands on, shows
+that same tab at its own address. Its `?error=<reason>` is said
 in words and dropped from the address. A project's settings say which
 grant reads its repository (`probe_via` in words) and whether the
 namespace owner confirmed it, with **Confirm this repository for my
@@ -5034,3 +5034,56 @@ tab's.
 make themselves admin either, the maintainer confirmed); a generic words
 entry for `step_up_required` in js/errors.js alone, which would say the
 cause but still leave no way to give the code.
+
+## The account is in tabs, each at an address of its own; the addresses before them lead to their tab
+
+**Id:** 36bfb48e-ae7c-41f4-9e73-b0abfef34bce
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3banvfzv3nvs (the maintainer and the lead, 2026-11-05): the tabs Profile, Settings, Notifications, Security and Organisations, Linked accounts shown as to come, the profile menu as the tabs, a sideways-scrolling row on a phone, the hub unchanged; Security's own tabs proposed to the lead on the card (2026-11-05); the scroll carried over from the page before, reproduced on main (`/account` opened at 2481 of 4535 px)
+**Revisit when:** linked accounts arrive, the hub's mails and redirects name the new addresses, or a tab grows long enough to want tabs of its own
+
+The account page is in tabs (`js/account.js`), each tab at its own address. The profile menu is
+the same list as the tabs, followed by Sign out.
+
+| Tab | Address | What it holds |
+|---|---|---|
+| Profile | `/account` | name, handle, picture, meat proxy, public profile |
+| Settings | `/account/settings` | preferences, the site's and the personal language, theme |
+| Notifications | `/account/notifications` | mail, when mail goes out, agents that stop listening, browser notifications; a line leads to the language under Settings |
+| Security | `/account/security` | its own tabs: Sign-in (second factor, then password), Sessions (`/sessions`), Another device (`/device`), Forge access (`/forge`), Your data (`/data`) |
+| Organisations | `/account/orgs` | `js/orgs.js`, as before |
+| Linked accounts | none | greyed, to come |
+
+Security and Organisations are a human's alone, as in the menu before. On Sign-in the second
+factor stands above the password form: the hub's mail and bell item about a changed or failed
+second factor link to `/account/security` (`hub/src/maity_hub/notifications/mailer.py`,
+`items.py`), and the hub stays unchanged on this card.
+
+The addresses of the single page before the tabs are still reached from mails already sent, the
+bell and the hub's links:
+- `/account/picture`, `/account/preferences`, `/account/theme`, `/account/password`,
+  `/account/sessions`, `/account/sign-in-device`, `/account/forge` and `/account/data` each lead
+  to their tab. The new address replaces the old one in the history, the query goes along, and
+  the heading of that part is focused.
+- An unknown address leads to Profile, and an unknown tab of Security leads to Sign-in.
+- `/settings/forge` is no old address: the contract names it as the setup's return (§16.11), so
+  it shows Forge access itself (see the Forge access entry, 861705c6).
+
+A change of view starts at the page's top (`js/app.js`, the route listener). Before, the
+browser kept the scroll position of the page one came from. The board and an opened card count
+as one view, so the card panel and the board's place on return stay as they were.
+
+**Reason:** the account was a single page of eleven parts. One looked for a part by scrolling,
+and the menu's entries were anchors into that page. Tabs show one part at a time, and each one
+can be linked.
+
+**Rejected alternatives:**
+- Keeping the single page with the menu's anchors: this is what the card replaces.
+- Letting the hub send the new addresses: the card leaves the hub unchanged, and mails already
+  sent carry the old addresses anyway.
+- Wrapping the tab rows: on a phone they would take two or three lines. The card asks for one
+  row that scrolls, with the fade on the side that has more.
+- Resetting the scroll on every change of address: opening a card on the board would jump to
+  the top, and the board's place on return would be lost.

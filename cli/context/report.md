@@ -155,3 +155,66 @@ as a link there does not: it says nothing about this checkout.
   card, and the report would file that checkout's head as the card's
   work unchecked. The refusal costs a reachable fix (the card's branch,
   or installing gh); a wrong report on the card costs a reviewer's time.
+
+## What maity hands to git and gh is checked first, and git's transports are fixed
+
+**Id:** 4f4e8ada-9e3b-47bc-8a9e-d44daf025512
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** CLI hardening task, plan approved by the coordinator, 2026-11-04; verified with git 2.43 (a clone's own `protocol.<name>.allow` outranks `-c protocol.allow` on the command line, `GIT_ALLOW_PROTOCOL` outranks both; `ls-remote --heads -- <remote> <ref>` keeps both as operands)
+**See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-04
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
+**Revisit when:** maity checks a clone's configuration before its own git, git changes how `GIT_ALLOW_PROTOCOL` ranks against configuration, a forge reached over another transport is supported, or `report` learns a forge other than GitHub
+
+`maity report` reads a branch's upstream from the clone's configuration
+and passes it to `git ls-remote`. Before that, the remote, every URL it
+is configured with and the merge ref are checked: none may start with
+`-` or contain `::`, and the merge ref must lie under `refs/heads/`.
+Every other upstream `git push -u` stores still reads: a configured
+remote whatever its name, a URL, a relative path, `host:path`. A refused
+one gets the hint to set the upstream with `git push -u`. `ls-remote`
+gets `--` before them. Every git run through `proc.run` (maity's own
+git, such as report, checkpoint, the cite and text checks, the state
+lookup, the join's root lookup, the first resume's remote check and the
+build identity) gets `GIT_ALLOW_PROTOCOL` with `https`, `http`,
+`ssh`, `git` and `file`; the runner's direct clone of a workspace passes
+its own `https:ssh`, because the variable replaces its `-c protocol.*`
+settings as well. A `GIT_ALLOW_PROTOCOL` already in the environment, the
+operator's own, narrows that list and is never widened by it. Programs `proc.run` starts by name come from an absolute
+PATH entry, never the current directory (a name with a directory in it
+is a path the caller chose and is used as given), and on Windows
+with `NoDefaultCurrentDirectoryInExePath` set for what they start in
+turn. Two runner paths run git without `proc.run` and keep their own
+settings: `gc`'s read of a clone (`operate.unsaved_work`, pinned
+`protocol.allow=never` and a cleaned environment) and a workspace clone
+made as the agents' user (`as_user.run`, the `-c` list of `https` and
+`ssh`). Settings in the clone's own configuration still apply to
+`ls-remote`; this change does not limit them. Under the runner, a
+companion change that lands together with this one runs git only after
+the clone passes the plain-clone check `gc` uses.
+`gh pr view` is asked only about an `https` URL on github.com or
+`GH_HOST`, the same hosts `report` already asks gh about.
+
+**Reason:** the clone's configuration is written by the agent working in
+it, so it is input, not maity's own setting. maity only reads a remote;
+a value git reads as an option, or a remote helper
+(`<transport>::<address>`), would change what git runs for that. The transports are fixed through the
+environment because a command-line `-c protocol.allow=never` loses to a
+`protocol.<name>.allow` in that same configuration. The value checks
+stay as a second line beside it, and they give a refusal that names the
+fix instead of git's error. Windows searches the current directory
+before PATH for a bare program name.
+
+**Rejected alternatives:**
+- `-c protocol.allow=never` plus one `always` per wanted transport on
+  git's command line: tried first; a clone's own
+  `protocol.ext.allow=always` still applies, since a protocol's own key
+  outranks the default.
+- Only `--` before the operands: covers a leading `-`, not a remote
+  helper in the remote's name or URL.
+- Accepting only remote names in ASCII and URLs of a few known shapes:
+  refused upstreams `git push -u` makes (a remote named in another
+  script, `../remote.git`, an ssh alias as `host:path`), and the
+  transports are limited by the environment anyway.
+- `shutil.which`: on Windows it searches the current directory first.

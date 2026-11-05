@@ -132,6 +132,33 @@ night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
 
+## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
+
+**Id:** 85c4ab14-7638-454f-b7fd-1ca1921c559a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-05 to keep the lesson of the unset forge setting in `context/`, and the lead's rule for it, 2026-11-05
+**Revisit when:** the deploy candidate's list is generated from the fragments by a tool, or fragments get a marker of their own for upgrade steps
+**See:** incidents.md#a-setting-whose-unset-value-stopped-the-hub-reading-its-own-repository-went-to-production-unset — 2083a296-dac3-4164-b51e-9a3a6a38a26b — as of 2026-11-05
+
+Before the deploy go, the lead greps the changelog fragments shipped
+between the live SHA and the candidate SHA for upgrade and setting
+notes ("set … when upgrading", a new or changed setting, an effect
+while unset), and puts each one on the deploy candidate's test list as
+a step done before the deploy. A pull request whose setting changes live
+behaviour while unset names the setting and that effect in its body and
+in its fragment, so the grep finds it.
+
+**Reason:** the deploy list did not name the setting, although the
+fragment of #1218 did (incident 2083a296), and the fragments are where a
+change says what its upgrade needs. How that list was built is the
+incident's inferred part, not this rule's.
+
+**Rejected alternatives:**
+- Leaving it to whoever deploys to read every merged pull request for
+  new settings: that missed a setting whose note was in the changelog.
+
 ## When a reviewer returns, the cover's finished reviews stand and the returning reviewer takes the unstarted ones
 
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
@@ -1379,13 +1406,13 @@ each command is checked only once.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
 
-## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+## Docs images and diagrams live in `docs/img/`; screenshots are of fixture mode, and the site points a relative image at the deployed file
 
 **Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there)
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there). Pull request #1353 on card tsk-dremqrfz48jq, 2026-11-05: the designer's statement that the diagrams are drawn by the designer, take the same 256-colour and oxipng reduction as the screenshots, and that their source stays with the designer
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 
@@ -1413,6 +1440,11 @@ wide and reduced to 256 colours (libimagequant, then oxipng level 4)
 before it is committed: about 290 KB for three instead of 734 KB, since
 every version stays in the history. The designer's script is not in
 the repository yet.
+
+Diagrams in the same directory are drawn by the designer, and their
+source stays with the designer. They take the same reduction as the
+screenshots: 256 colours with libimagequant, then oxipng level 4. The
+repository does not redraw them or change their width.
 
 **Reason:** a page and its pictures come from the same place, like the
 text (the entry linked above), and fixture data is the one dashboard
@@ -1517,3 +1549,86 @@ HEAD is not the pushed commit or a touched package has uncommitted changes.
   the push is simpler and says so.
 - The CLI's tools from the CLI's own environment: the `cli` CI job installs its dev extra unpinned, so there is no
   lock to compare with yet; until a CLI dev lock exists the hook checks the CLI with the hub lock's versions.
+
+## The Keep the Why skill is pinned to the release the context is on, and a check holds every copy to it
+
+**Id:** ac5eadee-18cd-4250-8384-cae3b4459971
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04); the scope and the rejected pin chosen by the team lead on the plan, 2026-11-04; `tools/ktw_pin.py`, `AGENTS.md`, `hub/src/maity_hub/config.py`, `hub/src/maity_hub/ktw_skill.py`, `.github/workflows/ktw-lint.yml`
+**Revisit when:** a Keep the Why release is adopted (bump every copy with `context-schema`), the skill gains a signed or hashed release format, or the project decides to vendor the skill
+
+The install instructions in `AGENTS.md`, the hub's default
+`MAITY_KTW_SKILL_SOURCE` and the Git fallback it derives name the skill's
+release tree `tree/v<context-schema>`, not the moving `latest`. The skills
+installer is named as `npx skills@<version>`, the version kept once in
+`ktw_skill.py` (`SKILLS_INSTALLER`). The linter action is pinned by commit
+SHA, its tag in a comment. `-g -y` stays: where the skill lands is
+unchanged. `tools/ktw_pin.py`, run in the changelog job of ci.yml, fails
+when any copy names another release than `.keep-the-why`'s
+`context-schema`, another installer version, or the action by tag. It
+reads every form a copy is written in: the full tree URL, a bare
+`tree/<ref>`, the hub README's "`<ref>` release tree", and
+`skills@<version>` with or without `npx`, each with any ref, so a short
+form naming `latest` fails too, as does a `skills` in backticks without a
+version. The `.keep-the-why` files of `hub/`, `cli/` and `web/` must exist
+and name the root's `context-schema`. That the action's SHA is the
+commit of the tag in its comment it cannot check offline: on a bump the
+author and the reviewers check it (`git ls-remote` on the tag).
+
+**Reason:** what these lines install is an instruction set every agent in
+the project follows, and the installer runs code on the agent's machine.
+A moving tag changes both without a change here. `context-schema` already
+says which release the context was migrated to, so tying the pins to it
+keeps the installed skill and the context on one version. Whoever migrates
+the context bumps the pins in the same pull request, and the check names
+every line that was missed.
+
+**Rejected alternatives:**
+- `pinned-version` with `pinned-path` in `.keep-the-why`: the skill
+  supports it only with a vendored copy in the repository. Every agent
+  whose installed version differs would then follow that copy, or stop
+  hard without it, which changes how every agent works.
+- Dropping `-g` to install per project: changes where the skill lands
+  for every agent; the pin is about the version only.
+- Pins without a check: the next release would be bumped in some copies
+  and not others.
+
+## The browser end-to-end test and the join smoke install only from hashed locks, the CLI in an environment of its own
+
+**Id:** 9a0ed6f7-694b-4036-8b78-16ff53aa760a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `.github/workflows/ci.yml` (`web-e2e`, `join-smoke`), `web/requirements/e2e.in`, `web/Makefile`
+**Revisit when:** the CLI gets a hashed dev lock of its own (then that environment can serve), the hub's runtime lock stops constraining Playwright's dependencies (the e2e lock would then need its own environment), or pip installs from a standard lock (`pylock.toml`) without uv
+
+`web-e2e` installs the hub from `hub/requirements/runtime.txt` and `build.txt` and Playwright from
+`web/requirements/e2e.txt`, all with hashes, then the hub editable without build isolation.
+`e2e.txt` is compiled from `e2e.in` with the hub's runtime lock as constraints (`make -C web lock`),
+and `web-e2e` checks it with `make -C web lock-check` first. `join-smoke` installs the hub the same
+way, without Playwright. In both jobs the CLI goes into a virtual environment of its own, from
+`cli/requirements/release.txt`, editable without build isolation, and only its `maity` is linked
+into a directory on `PATH`. Before, `web-e2e` ran `pip install -e hub -e cli playwright==1.64.0`,
+and `join-smoke` ran `pip install -e cli`.
+
+**Reason:**
+- The hub's and the CLI's editable installs each need their build backend. With build isolation pip
+  fetches it for every run without a hash (hatchling with only a lower bound); without it, it comes
+  from a hashed lock.
+- The CLI's build backend is setuptools, pinned in `cli/requirements/release.txt`, which a lock-check
+  holds equal to the CLI's `[build-system]`. That lock is compiled without the hub's pins, so it gets
+  an environment of its own rather than meeting the hub's locks in one.
+- Only `maity` goes on `PATH`: the CLI environment's own `python` and `pip` would otherwise come
+  before the hub's, and the e2e tools run on the hub's Python, where Playwright is.
+- With the hub's runtime pins as constraints, a package both locks name (today `typing-extensions`)
+  has the same version and hashes in both, so pip installs the three files together.
+
+**Rejected alternatives:**
+- setuptools into the hub's environment from the CLI's release lock: two locks compiled apart in
+  one environment.
+- A lock of its own for setuptools alone: a further lock for one package that the release lock
+  already pins and checks.
+- `e2e.txt` without the shared packages (`--no-emit-package`): the lock would not stand on its
+  own, and pip already accepts the same pin twice.

@@ -309,7 +309,14 @@ to allow it.
 git and gh run with prompts switched off (`GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never`, `GH_PROMPT_DISABLED=1`), stdin closed and a
 30-second timeout. A remote that asks for a password is an error, never a
-hanging command.
+hanging command. maity's own git and gh calls (such as report, checkpoint,
+the cite and text checks, the state lookup, the join's root lookup and
+the build identity) start by name from an absolute
+`PATH` entry, never from the current directory, and git may use only the
+https, http, ssh, git and file transports (`GIT_ALLOW_PROTOCOL`, narrowed
+further by one you set yourself). The runner's `gc` read of a clone and a
+workspace clone made as the agents' user run git with settings of their
+own (see `context/report.md`).
 
 ## `report`
 
@@ -336,6 +343,11 @@ It refuses with exit 4, before anything is sent, on any of these:
   that PR's branch (`git switch`), or after a merge with the branch
   deleted, from that branch recreated at its merged head
   (`git switch -c <branch> <merged head>`)
+
+Before it asks git about the upstream, it refuses with exit 1 an upstream
+whose remote, configured URL or merge ref starts with `-` or names a remote
+helper (`<transport>::<address>`), and a merge ref outside `refs/heads/`;
+the message names `git push -u` to set it again.
 
 Before sending, `report` prints what it reports on standard error:
 `reporting <branch> at <head>, PR #<n> (<state>)`.
