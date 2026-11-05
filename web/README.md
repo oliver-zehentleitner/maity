@@ -1401,7 +1401,10 @@ fails while the bundle is stale.
 `make check` also compares the fixture hub's answers to the requests in
 `tools/shape-requests.json` with the hub's, recorded in
 `tools/hub-shapes.json`: a key or type the hub does not send is a
-finding, unless `tools/fixture-shapes-baseline.json` lists it. For a
+finding, unless `tools/fixture-shapes-baseline.json` lists it. A request
+there may name the `status` the hub answers with (`202`: a consent filed
+instead of the change) and `forms`, paths whose strings are compared by
+value with ids as `<id>` (a consent's `to`: `owner` or `human:<id>`). For a
 request already in the list the baseline only shrinks; a request added to
 the list has its differences written into the baseline by hand, since
 `python3 tools/check.py --write` only drops entries. After a change to the hub's answers, run `make shapes`
@@ -1743,6 +1746,7 @@ web/
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
 ├── js/org.js         (5) the organisation tree, a section of the Overview
+├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat

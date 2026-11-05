@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import catalog, clock, landing, landing_stats, legal, paths, render
+from maity_hub import catalog, clock, landing, link_frame, paths, render
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import second_factor, sessions, sign_in_settings
@@ -282,26 +282,9 @@ def _token(hub: Settings, token: str) -> dict[str, Any] | None:
     return payload
 
 
-# The token is in the address: no `Referer` carries it on (§1.1, §16.13).
-HEADERS = {"Content-Security-Policy": render.DOOR_CSP, "Referrer-Policy": "no-referrer"}
-
-
-def _page(
-    conn: Connection, request: Request, language: str, title: str, content: str, status: int = 200
-) -> HTMLResponse:
-    """The link page or the dead-link page in the frame of the pages without a session, as
-    the dashboard's `/login` stands (§16.7.5): `content` goes into the door's form column."""
-    frame = landing.stored(conn)
-    body = render.door_document(
-        lang=language,
-        title=title,
-        content=content,
-        setting=frame,
-        legal=legal.public(legal.stored(conn)),
-        stats=landing_stats.for_frame(conn, frame),
-        accept_language=request.headers.get("accept-language"),
-    )
-    return HTMLResponse(body, status_code=status, headers=HEADERS)
+# The link page and the dead-link page stand in the frame of the pages without a session, as
+# the dashboard's `/login` stands, under the mail link pages' one policy (§16.7.5).
+_page = link_frame.page
 
 
 def _dead(conn: Connection, request: Request) -> HTMLResponse:

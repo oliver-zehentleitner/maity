@@ -25,7 +25,6 @@ from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
-from maity_hub.notifications import records
 from maity_hub.views import principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
@@ -303,7 +302,7 @@ def _limit(conn: Connection, account: str, kind: str, target_id: str, now: datet
 
 
 def create(conn: Connection, caller: Caller, body: dict[str, Any]) -> dict[str, Any]:
-    """File a report and the instance admin's `report_open` inbox item; `{id, created_at}`."""
+    """File a report and the instance admin's request about it; `{id, created_at}`."""
     reason, text = body.get("reason"), body.get("text")
     if reason not in REASONS:
         raise invalid({"reason": "unknown"})
@@ -334,11 +333,14 @@ def create(conn: Connection, caller: Caller, body: dict[str, Any]) -> dict[str, 
     )
     admin = instance_admin_id(conn)
     if admin is not None:
-        # The instance admin's `inbox` item, open while the report is (§16.8, §18.1):
-        # ids and kinds only, never the content.
-        records.write(
-            conn, admin, "report_open", {"report": report_id, "reason": reason, "type": kind}
-        )
+        # The instance admin's personal request, open while the report is (§16.8, §7): ids
+        # and kinds only, never the content; mailed by the `inbox` mode through its record.
+        from maity_hub import catalog
+        from maity_hub.notifications import preferences
+        from maity_hub.routes.requests import file_hub_report
+
+        words = catalog.section("notify", preferences.text_language(conn, admin))
+        file_hub_report(conn, admin, report_id, words["reported"].format(reason=reason, type=kind))
     return {"id": report_id, "created_at": ts(now)}
 
 
@@ -425,6 +427,7 @@ def resolve(
             closed_at=row.closed_at if row.status == "resolved" else now,
         )
     )
+    _withdraw_requests(conn, [report_id], "resolved")
     found = conn.execute(select(t.abuse_report).where(t.abuse_report.c.id == report_id)).one()
     return admin_view(conn, found, snapshot=True)
 
@@ -437,16 +440,28 @@ def expire(conn: Connection) -> None:
     what closed 90 days ago (§16.8). Rows stay as the record."""
     now = clock.now()
     r = t.abuse_report.c
-    conn.execute(
-        update(t.abuse_report)
-        .where(r.status == "open", r.created_at <= now - OPEN_FOR)
-        .values(status="expired", closed_at=now)
-    )
+    due = r.status == "open", r.created_at <= now - OPEN_FOR
+    expiring = list(conn.execute(select(r.id).where(*due)).scalars())
+    if expiring:
+        conn.execute(
+            update(t.abuse_report)
+            .where(r.id.in_(expiring), *due)
+            .values(status="expired", closed_at=now)
+        )
+        _withdraw_requests(conn, expiring, "expired")
     conn.execute(
         update(t.abuse_report)
         .where(r.closed_at.isnot(None), r.closed_at <= now - KEPT_AFTER, r.purged_at.is_(None))
         .values(snapshot=None, text=None, note=None, purged_at=now)
     )
+
+
+def _withdraw_requests(conn: Connection, report_ids: list[str], reason: str) -> None:
+    """The instance admin's requests about these reports close with them (§16.8)."""
+    from maity_hub.routes.requests import withdraw_report_request
+
+    for report_id in report_ids:
+        withdraw_report_request(conn, report_id, reason)
 
 
 class Worker:

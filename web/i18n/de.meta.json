@@ -3879,6 +3879,10 @@
     "en": "573787aef85bae91",
     "text": "564d1d19b0a06055"
   },
+  "error.resolve_the_report": {
+    "en": "801abed453bd5d19",
+    "text": "b7f241a707bffef2"
+  },
   "error.role_unknown": {
     "en": "93981d3d18c2300e",
     "text": "051f707138cd3060"
@@ -4947,6 +4951,10 @@
     "en": "09ce28c5fbadb304",
     "text": "4df972b3d7af56d8"
   },
+  "inbox.label.personal_alone": {
+    "en": "f872d2297c5f8e77",
+    "text": "b86f1ed056c99fba"
+  },
   "inbox.label.personal_into": {
     "en": "1ecc511a1fbfc2fb",
     "text": "45dac274590a19cc"
@@ -4982,6 +4990,10 @@
   "inbox.note_label": {
     "en": "5aac3b2989bdadeb",
     "text": "568d870c8bb2e2cd"
+  },
+  "inbox.open_report": {
+    "en": "074964d062492852",
+    "text": "5799fbcd128d8902"
   },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
@@ -6639,6 +6651,10 @@
     "en": "d4db3dec5f3106ce",
     "text": "1a695fc004abb6f1"
   },
+  "join.failed.no_admin": {
+    "en": "4641d9d8fbec8dec",
+    "text": "53dc767d6c510617"
+  },
   "join.failed.project_not_allowed": {
     "en": "82aad411db255b20",
     "text": "648690ead69827e8"
@@ -6835,6 +6851,10 @@
     "en": "34f895fb60829706",
     "text": "8be7ac1898233919"
   },
+  "join.project": {
+    "en": "0ddd96140a4e9f8d",
+    "text": "2879c24a205f4ad6"
+  },
   "join.quota.active": {
     "en": "ca8fdb9858229298",
     "text": "77968a53a28eac15"
@@ -6966,6 +6986,10 @@
   "join.state_dir.where": {
     "en": "a54827d5e1fb0ca8",
     "text": "ea3e6196c0bc78fb"
+  },
+  "join.step_up": {
+    "en": "0365bc43945f8179",
+    "text": "4129bab0c9388617"
   },
   "join.takes_over.both": {
     "en": "ebfd426a5da19bf1",

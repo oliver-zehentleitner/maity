@@ -737,14 +737,17 @@ button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
 off while nothing it marks is unread, with a line that sign-in and
 address alerts stay unread. **Mark read** is not offered on one of the
-four open matters of §18.3 — `registration_pending`, `mail_disabled`,
-`report_open`, `agents_not_listening`, told by their targets
-(`registration`, `settings`, `report`, `agents`, `M.notify.keepsUnread`)
+open matters of §18.3 — `registration_pending`, `mail_disabled`,
+`agents_not_listening`, told by their targets
+(`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
 — which read as read once the matter is closed, nor on a sign-in or
 address alert unless this session may confirm it (`M.sessions.mayConfirm`,
 §2.6.5): the hub skips such an id without saying so, and a button that
 does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item.
+when the page shows an unread security item. Until 2026-11-04 a fourth
+matter, `report_open` (target `report`), stood among them; a new report
+is now the instance admin's personal request instead (entry
+f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
 
 Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
 6e357e0c "An inbox answer carries a note with any button", §7) each open
@@ -2018,7 +2021,7 @@ line, because a display at the fields only would swallow it (merge of
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration, a `report_open` item to the report in Admin → Reports) and the review of #778, 2026-10-31
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration; until 2026-11-04 a `report_open` item to the report in Admin → Reports, since then a report's request in the inbox, §16.8) and the review of #778, 2026-10-31
 **Revisit when:** a section other than Registration and Reports needs a link of its own, or the area grows past one row of buttons
 
 `/admin` reads every section as before, then shows one: a row of
@@ -2027,9 +2030,10 @@ page opens on the first, Statistics. A section whose read fails says so
 in its place (until 2026-10-30 a section the hub did not serve left the
 row, e1699490). The others stay
 in the page, hidden, so a form half filled in keeps what was typed.
-The two sections a notification leads into have an address:
-`/admin/registration`, and `/admin/reports/<id>`, which opens that
-report as well. The page is the same, opened on that section; the
+The two sections a notification or a request leads into have an
+address: `/admin/registration`, and `/admin/reports/<id>`, which opens
+that report as well (the target of a report's request, entry
+f50ed8ee-5948-43c8-817a-d1b008bf1f5a). The page is the same, opened on that section; the
 section is found by the hub path it reads, not by its label, which is
 translated.
 
@@ -2039,7 +2043,7 @@ under each other hid all but the first below the fold.
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
 shorter. A route for every section (`/admin/users`): only the two
-sections a notification names need a link. The older Users page at `/admin/users` was removed
+sections a notification or a request names need a link. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
@@ -2806,7 +2810,9 @@ summary lists the instances. The bell's `agents_not_listening` item
 opened: like `registration_pending` and `mail_disabled` it asks for an
 action (resume or end the instances) and is read once the matter is
 closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
-names its target `agents`.
+names its target `agents`. A report's request (entry f50ed8ee-5948-43c8-817a-d1b008bf1f5a) has the
+digest's shape, filed by the hub, personal, without project or
+organisation, but is no digest and gets no such link.
 
 **Reason:** "—" as an asker reads as a missing name, not as the hub;
 and "the agent waits for the answer" would be false. The instances
@@ -3331,6 +3337,8 @@ The cross-project inbox takes a personal request whose `project` is
 organisation where the request carries `org`, and nothing links into a
 project. A request with `project` and `org` (a transfer into an
 organisation) names the project and the organisation it would move into.
+One with neither (a report's request, §16.8) is labelled Personal alone,
+its hidden name "Personal: " rather than "Personal, : ".
 
 **Reason:** an invitation into an organisation belongs to no project,
 and the inbox read `project.full_name` on every request, so one such
@@ -3338,6 +3346,40 @@ request broke the whole list.
 
 **Rejected alternative:** filling in an empty project: it shows a
 project that is not there, and the links behind it lead nowhere.
+
+## A report's request in the inbox only opens the report
+
+**Id:** f50ed8ee-5948-43c8-817a-d1b008bf1f5a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.8 ("Who is told"), §7 (`report`, `resolve_the_report`), §1.3; the card tsk-xz3yt6yz1b2b and the coordinator's approval of variant A, 2026-11-04 (the request cannot be answered, resolving stays in Admin → Reports; Open report must work from the all-projects inbox); hub/context/reports.md 2011e591
+**Revisit when:** the hub lets the request itself resolve its report, or a report's request reaches someone other than the instance admin
+
+A new abuse report reaches the instance admin as a personal request
+without project or organisation, filed by the hub, carrying `report`
+(`id`, `reason`, `type`). In the inbox such a request shows no text
+field, no replies, no Withdraw and no digest's link to one's agents,
+only **Later** and **Open report**, a link to `/admin/reports/<id>`,
+where the admin reads the snapshot and resolves it. Resolving or expiry
+withdraws the request on the hub's side; the inbox drops it on its next
+read. The fixture hub does the same: it lists such requests for the open
+reports, refuses answering or withdrawing them with `resolve_the_report`,
+and withdraws one when its report is resolved. The bell's `report`
+target (`report_open`) is gone from `M.notify`.
+
+**Reason:** the hub refuses every answer and withdrawal of a report's
+request (409 `resolve_the_report`), so a field or button there could only
+fail; the decision needs the snapshot and the actions of Admin → Reports.
+
+**Rejected alternatives:**
+- Resolving in the inbox (the card's variant B): a second place for the
+  same action, without the snapshot beside it.
+- Keeping the bell's `report_open` item beside the request: every report
+  shown, and mailed, twice.
+- The digest's link to one's agents, which its shape alone would give
+  (hub-filed, personal, no project, no organisation): it says nothing
+  about a report.
 
 ## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
 
@@ -4947,3 +4989,48 @@ Eight rules of `ktw-views.css` write `#fff` on the library's accent (selected co
 **Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
 
 **Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one. Checking only the export's fields, or only what the library writes: the fields keep a bad link from shaping what the library builds from it, the check of the mounts covers links in entry text and any field a later library adds. An elsewhere view of Maity's own for a `centre`: a second rendering of an entry the library's pages already draw. A centred entry as its `ref` place: the library's `ref` resolves the entry and goes to it at that centre, which was the same address again, so the page never left "Looking for …"; and a child root had no place in it.
+
+## The organisation's Paths face draws only edges the members API gives; an event's usual edges are marked as usual
+
+**Id:** 04ce10bd-5160-46e3-bb6d-7c3f760f4167
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-j9ktmj7e4fxq, 2026-11-05: the lead's answer to the request on the card (req-x3hgj0b7xzy3), choosing the members API as the only source and usual edges marked as such; the designer's approved draft for the layout
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-11-05
+**Revisit when:** the hub names an event's recipients itself (a routing read), or a team's lead has more than one role group too wide for the canvas
+
+The Team page's Organisation tab has two faces, Tree and Paths, the choice kept per browser. Paths (`js/paths.js`) draws the team top-down from `reports_to`, humans first, a lead centred over its members, and more than six members of one role under one lead folded into one box that opens in place. The reporting lines are a chip of their own, on by default; four more chips draw where one event goes, from the routing of docs/api.md §8.2 and §8.4: a review result to the reviewer's lead, not listening to the agent's lead, the admins and the owner (never a meat proxy), a request to a human to the agent's owner, and a card assignment from a lead to the member and the member's owner. Every edge is computed from what `GET /members` returns. Where the hub's routing depends on something the members list does not carry (who assigned the card, who wrote the reviewed PR), the edge is drawn as usual, dotted and named "usual" in the legend, or only said in the chip's note. At phone width the drawing gives way to a list of cards, each naming whom the member reports to and what it gets.
+
+**Reason:** a picture of the routing that the hub does not do is worse than none; the members list is what the dashboard already reads, and the usual edges answer the question readers ask (who hears about this) without claiming the hub computed them.
+
+**Rejected alternatives:** a routing table of the dashboard's own, kept beside §8: a second copy that drifts from the hub. Leaving out the edges the members list cannot settle: card assignment, the most asked about, would show nothing. A force layout: it moves on every redraw and hides who reports to whom; the draft's tidy tree keeps the hierarchy readable.
+
+## Join an agent asks for the second factor in its form, and names the project and the missing right
+
+**Id:** 2e60e51f-5e0e-4bd0-bc46-365b3c050d13
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's reports on tsk-trb99kkhv1rk (an owner could not create a join and saw only "you lack the rights"; the maintainer saw "this call needs your second factor first" with the second factor set to mail for everyone), 2026-11-05; hub/src/maity_hub/routes/joins.py (`create_join` calls `require_step_up`), docs/api.md §2.8.4; web/js/step-up.js
+**Revisit when:** the hub stops treating join creation as a sensitive call, or the dashboard gets one step-up place for every view
+
+Creating a join goes through `M.stepUp.run`, the same as every other
+sensitive call in the dashboard: on `step_up_required` the form asks for
+the code (by app, or the mailed code under the mail factor) and sends the
+join again; Cancel ends without a refusal. A bare `forbidden` with
+`scope: members:admin` (no admin rights, and members may not bring
+agents) is said in words that name the right. The panel names the project
+the join is for, by name and full name.
+
+**Reason:** the hub has always asked for the second factor on
+`POST …/joins`, but the join form showed it as a refusal: in English
+the hub's own sentence, translated as the generic "you do not have the
+rights for this", so an owner who had done nothing wrong could not add an
+agent at all. With several projects open the target project was only the
+tab's.
+
+**Rejected:** a hub change (the hub's rule is right; a sole owner may not
+make themselves admin either, the maintainer confirmed); a generic words
+entry for `step_up_required` in js/errors.js alone, which would say the
+cause but still leave no way to give the code.

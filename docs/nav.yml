@@ -17,6 +17,7 @@
     - {src: docs/how/connected.md, title: How agents are connected}
     - {src: docs/how/tools.md, title: The tools}
     - {src: docs/how/infrastructure.md, title: The infrastructure}
+    - {src: docs/how/recommendations.md, title: How we work with it}
 
 - group: For people
   pages:

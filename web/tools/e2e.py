@@ -769,6 +769,7 @@ def main() -> int:
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
                     chat_height_views(run, browser)
+                    paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
@@ -2371,6 +2372,68 @@ def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     no_problems(run, "mail factor: the admin's switch")
 
 
+def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
+    """tsk-trb99kkhv1rk: creating a join is a sensitive call (§2.8.4). Under Mail for everyone
+    the join form asks for the mailed code itself and then creates the join, instead of ending
+    in a refusal; the panel names the project the join is for."""
+    page.goto(run.base + f"/{OWNER}/e2e-mail/agents")
+    panel = page.locator(".join-panel")
+    add = page.get_by_role("button", name="Join an agent", exact=True)
+    expect(panel.or_(add).first).to_be_visible()
+    if not panel.is_visible():
+        add.click()
+    expect(panel.locator(".join-project")).to_contain_text(f"Joins into the project E2E Mail ({OWNER}/e2e-mail)")
+    create = page.get_by_role("button", name="Create join line", exact=True)
+    question = panel.locator("form.step-up")
+    # Closing the panel while the code is asked ends that submission (#1399 review): reopened,
+    # no question is left, the button is free, and only the fields then shown make the join.
+    page.locator("#join-agent").select_option("")  # "A new agent profile…"
+    page.locator("#join-handle").fill("e2e-mail-cancelled")
+    page.locator("#join-display").fill("E2E Mail Cancelled")
+    seen = len(catcher.mails)
+    create.click()
+    expect(question).to_contain_text("Confirm with a code by mail")
+    # Its mail is in before the next question asks for one of its own.
+    newest_mail(catcher, MAIL_ADDRESS, seen)
+    panel.locator(".join-form .actions").get_by_role("button", name="Cancel", exact=True).click()
+    expect(panel).to_be_hidden()
+    add.click()
+    expect(question).to_have_count(0)
+    expect(create).to_be_enabled()
+    # A project's full name may be one long word: at phone width the panel's line wraps it.
+    page.set_viewport_size({"width": 390, "height": 844})
+    long_slug = "p" * 63
+    widths = panel.locator(".join-project").evaluate(
+        "(el, label) => { const was = el.textContent; el.textContent = label;"
+        " const w = [document.documentElement.scrollWidth, document.documentElement.clientWidth];"
+        " el.textContent = was; return w; }",
+        f"Joins into the project {long_slug} ({OWNER}/{long_slug})",
+    )
+    assert widths[0] <= widths[1], f"a 63-character project name widens the page at 390px: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator("#join-agent").select_option("")
+    page.locator("#join-handle").fill("e2e-mail-agent")
+    page.locator("#join-display").fill("E2E Mail Agent")
+    page.locator("#join-role").select_option("coder")
+    seen = len(catcher.mails)
+    create.click()
+    expect(question).to_contain_text("Confirm with a code by mail")
+    expect(panel.locator(".join-result")).to_have_count(0)
+    run.shot(page, "mail-factor-join-step-up")
+    run.a11y(page, "mail factor: Join an agent asks for the mailed code")
+    code = re.search(r"(\d{3} ?\d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    assert code, "no step-up code in the mail"
+    page.locator("#step-up-step_up_mail").fill(code.group(1))
+    question.get_by_role("button", name="Confirm", exact=True).click()
+    expect(page.locator(".paste-line")).to_be_visible()
+    expect(question).to_have_count(0)
+    expect(page.locator("article.seat", has_text="E2E Mail Agent").first).to_contain_text("coder")
+    expect(page.locator("article.seat", has_text="E2E Mail Cancelled")).to_have_count(0)
+    # The join's first refusal is what opens the question.
+    run.problems = [p for p in run.problems if "/joins answered 403" not in p]
+    no_problems(run, "mail factor: Join an agent with the mailed code")
+
+
 def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     """Mail for everyone (§2.8.7, §2.8.8) on a hub of its own: the owner verifies an address and
     turns it on in Admin → Sign-in, and the page signs in by the mail's link and by its code,
@@ -2393,10 +2456,15 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     run.base = f"http://127.0.0.1:{port}"
     run.step(f"mail factor hub on {run.base}: the admin verifies an address and turns it on")
     hub = start_hub(third, artifacts, port, extra, "hub-mail-factor.log")
-    older_context = None
+    older_context = joiner_context = None
     try:
         older_context, older = sign_in(run, browser)
         verify_address(run, older, catcher)
+        # A second session from before the switch, for the join: the export's step-up below
+        # must not have passed on it (the factor counts for 10 minutes on its session, §2.8.4).
+        joiner_context, joiner = sign_in(run, browser)
+        joiner.get_by_role("link", name="Create a project", exact=True).click()
+        create_project(run, joiner, "E2E Mail", "e2e-mail")
         # Before the switch the login page offers the link by mail.
         first, _ = password_sign_in(run, browser, offers_link=True)
         first.close()
@@ -2456,7 +2524,12 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         # The export's first refusal is what opens the question.
         run.problems = [p for p in run.problems if "/me/export answered 403" not in p]
         no_problems(run, "mail factor: the step-up")
+
+        run.step("mail factor: Join an agent asks for the mailed code in its form, then creates the join")
+        mail_factor_join(run, joiner, catcher)
     finally:
+        if joiner_context is not None:
+            joiner_context.close()
         if older_context is not None:
             older_context.close()
         stop_hub(hub)
@@ -2517,6 +2590,122 @@ def fixture_views(run: Run, browser) -> None:
         run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
+
+
+PATHS_TEAM = (
+    [{"id": "o", "kind": "human", "display_name": "oliver", "trust": "owner", "role": "manager"},
+     {"id": "w", "kind": "human", "display_name": "wolfgang", "trust": "member", "role": "manager"},
+     {"id": "l", "kind": "agent", "display_name": "lotse", "trust": "admin", "role": "manager", "reports_to": "o", "owner_id": "o",
+      "instances": [{"id": "a"}, {"id": "b"}]},
+     {"id": "rl", "kind": "agent", "display_name": "review-team-lead", "trust": "admin", "role": "manager", "reports_to": "o", "owner_id": "o"},
+     {"id": "mh", "kind": "agent", "display_name": "marketing-head", "trust": "member", "role": "manager", "reports_to": "o", "owner_id": "o"}]
+    + [{"id": f"c{i}", "kind": "agent", "display_name": f"maity-coder-claude-{i:03d}", "trust": "member", "role": "coder",
+        "reports_to": "l", "owner_id": "o"} for i in range(1, 14)]
+    + [{"id": k, "kind": "agent", "display_name": k, "trust": "member", "role": role, "reports_to": lead, "owner_id": "o"}
+       for k, role, lead in (("ops", "ops", "l"), ("test-team", "tester", "l"), ("grok", "reviewer", "rl"), ("chatgpt", "reviewer", "rl"),
+                             ("antigravity", "reviewer", "rl"), ("designer", "designer", "mh"), ("writer", "writer", "mh"),
+                             # a project's own role whose name is an inherited property of an object
+                             ("x-bridge", "constructor", "mh"))]
+)
+
+# The Paths face against the window: page width, boxes that overlap or leave the canvas, a name
+# wider than its box, the panel under the drawing, the phone's cards.
+PATHS_MEASURE = """() => {
+  const r = (el) => el.getBoundingClientRect();
+  const wide = document.querySelector('main .paths-wide');
+  const narrow = document.querySelector('main .paths-narrow');
+  const out = { page: [document.documentElement.scrollWidth, window.innerWidth], wideShown: !!(wide && wide.offsetParent),
+    narrowShown: !!(narrow && narrow.offsetParent), overlaps: [], outside: [], clipped: [], chipsOut: [], cardsOut: [],
+    reports: document.querySelectorAll('main .paths-lines path.paths-report').length,
+    nodes: document.querySelectorAll('main .paths-canvas .paths-node').length,
+    groups: document.querySelectorAll('main .paths-canvas .paths-group').length };
+  document.querySelectorAll('main .paths-chip').forEach((c) => { if (r(c).right > window.innerWidth + 0.5) out.chipsOut.push(c.textContent); });
+  if (out.wideShown) {
+    const canvas = r(document.querySelector('main .paths-canvas'));
+    const nodes = Array.from(document.querySelectorAll('main .paths-canvas .paths-node'));
+    nodes.forEach((n, i) => {
+      const a = r(n);
+      if (a.left < canvas.left - 0.5 || a.right > canvas.right + 0.5 || a.top < canvas.top - 0.5 || a.bottom > canvas.bottom + 0.5) out.outside.push(n.dataset.id);
+      nodes.slice(i + 1).forEach((m) => { const b = r(m);
+        if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) out.overlaps.push(n.dataset.id + '/' + m.dataset.id); });
+      // Every part meant to stay visible lies inside its box on all four sides (the box clips).
+      n.querySelectorAll('.paths-shape, .paths-count, .paths-name, .paths-sub, .paths-group-label, .paths-tiles').forEach((t) => {
+        const b = r(t);
+        if ((t.matches('.paths-name, .paths-sub, .paths-group-label') && t.scrollWidth > t.clientWidth + 1) || b.left < a.left - 0.5 || b.right > a.right + 0.5 || b.top < a.top - 0.5 || b.bottom > a.bottom + 0.5)
+          out.clipped.push(n.dataset.id + ':' + (t.className || '') + ':' + t.textContent); });
+    });
+    out.panelBelow = r(document.querySelector('main .paths-panel')).top >= r(document.querySelector('main .paths-scroll')).bottom - 0.5;
+    out.scrollFits = r(document.querySelector('main .paths-scroll')).right <= window.innerWidth + 0.5;
+  }
+  if (out.narrowShown) document.querySelectorAll('main .paths-card').forEach((c) => { if (r(c).right > window.innerWidth + 0.5 || r(c).left < -0.5) out.cardsOut.push(c.dataset.id); });
+  return out;
+}"""
+
+
+def paths_views(run: Run, browser) -> None:
+    """The Organisation tab's Paths face (tsk-j9ktmj7e4fxq) in fixture mode, every state the layout
+    has: 2560, 1280 and 390 px wide; with and without the sign-in banner; the fixture team and a
+    team shaped like Maity's (26 members, 13 coders under one lead, one role of its own) folded
+    and opened; the reporting lines on and off. Nothing overlaps, leaves the canvas or the window, no name is wider
+    than its box, and the panel stands under the drawing."""
+    run.step("fixtures: the Paths face fits at every width, with or without the banner, folded and opened")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for team in ("fixture", "maity"):
+                for banner in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en#/maintainer/maity/organisation")
+                    page.locator("main .org-faces").get_by_role("button", name="Paths", exact=True).click()
+                    if team == "maity":
+                        page.evaluate("""(members) => {
+                          const M = window.Maity; const c = { members, memberById: {}, link: (...p) => '/maintainer/maity/' + p.join('/'), nameOf: (id) => id };
+                          members.forEach((m) => { c.memberById[m.id] = m; });
+                          const box = document.querySelector('main .org-box'); while (box.firstChild) box.removeChild(box.firstChild);
+                          box.appendChild(M.paths.draw(c, { chip: null, selected: null, open: new Set(), lines: true }));
+                        }""", PATHS_TEAM)
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                    page.locator("main .paths-chips").get_by_role("button", name="Card assigned", exact=True).click()
+                    states = [("folded", None)]
+                    if team == "maity" and width > 700:
+                        states.append(("opened", "main .paths-canvas .paths-group"))
+                    for state, opener in states:
+                        if opener:
+                            page.locator(opener).click()
+                        for lines in (True, False):
+                            if not lines:
+                                page.locator("main .paths-chips").get_by_role("button", name="Reporting lines", exact=True).click()
+                            m = page.evaluate(PATHS_MEASURE)
+                            where = f"{team} team, {state}, lines {'on' if lines else 'off'}, at {width}x{height}" + (" with the banner" if banner else "")
+                            assert not errors, f"{where}: {errors}"
+                            assert m["page"][0] <= m["page"][1], f"{where}: the page is {m['page'][0]} px wide"
+                            assert not m["chipsOut"], f"{where}: chips past the window {m['chipsOut']}"
+                            if width > 700:
+                                assert m["wideShown"] and not m["narrowShown"], f"{where}: the drawing is not the face shown"
+                                assert not m["overlaps"], f"{where}: boxes overlap {m['overlaps']}"
+                                assert not m["outside"], f"{where}: boxes leave the canvas {m['outside']}"
+                                assert not m["clipped"], f"{where}: parts outside their box or text wider than it {m['clipped']}"
+                                assert m["panelBelow"] and m["scrollFits"], f"{where}: the panel is not under the drawing, or the drawing's frame leaves the window"
+                                assert (m["reports"] > 0) == lines, f"{where}: {m['reports']} reporting lines drawn"
+                                if team == "maity":
+                                    assert (m["groups"], m["nodes"]) == ((1, 14) if state == "folded" else (0, 26)), f"{where}: {m['groups']} boxes, {m['nodes']} in all"
+                            else:
+                                assert m["narrowShown"] and not m["wideShown"], f"{where}: the list is not the face shown"
+                                assert not m["cardsOut"], f"{where}: cards past the window {m['cardsOut']}"
+                            if not lines:
+                                page.locator("main .paths-chips").get_by_role("button", name="Reporting lines", exact=True).click()
+                    run.shot(page, f"fixtures-paths-{team}-{width}" + ("-banner" if banner else ""))
+            if width == 1280:
+                run.a11y(page, "fixtures: organisation paths")
+            page.goto(f"{index}?lang=en#/maintainer/maity/organisation")
+            page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
+        finally:
+            context.close()
 
 
 CHAT_MEASURE = """() => {
@@ -4300,7 +4489,8 @@ def legal_json_step(run: Run, page: Page) -> None:
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
-    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    opens it from the request in the all-projects inbox, reads the report and its snapshot as
+    text, and resolves it with hide and a note, which withdraws the request."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     if not me.get("instance_admin"):
         return
@@ -4313,11 +4503,20 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
         {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
     )
     assert filed.get("id"), filed
-    # The admin is told (§16.8), and the item names the report the bell links to (§18.2).
-    told = page.request.get(f"{run.base}/api/v1/me/notifications?limit=20").json()["items"]
-    assert any((i.get("target") or {}) == {"type": "report", "id": filed["id"]} for i in told), told
-    # Where the report_open notification leads (§18.2): the section, that report opened.
-    page.goto(f"{run.base}/admin/reports/{filed['id']}")
+    # The admin is told by a personal request without a project (§16.8, §7), in the
+    # all-projects inbox: no answer, no withdrawal, only Open report.
+    mine = page.request.get(f"{run.base}/api/v1/requests").json()["items"]
+    [asked] = [r for r in mine if (r.get("report") or {}).get("id") == filed["id"]]
+    assert (asked["personal"], asked["project"], asked["replies"]) == (True, None, []), asked
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+    entry = page.locator("li.entry", has_text="Report: spam — card")
+    entry.locator("button.entry-head").click()
+    expect(entry.locator("textarea")).to_have_count(0)
+    expect(entry.get_by_role("button", name="Withdraw", exact=True)).to_have_count(0)
+    entry.get_by_role("link", name="Open report", exact=True).click()
+    # Where it leads: the section, that report opened.
+    expect(page).to_have_url(re.compile(r"/admin/reports/" + re.escape(filed["id"]) + "$"))
     section = page.locator("section.admin-section[aria-label='Reports']")
     expect(section).to_be_visible()
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_be_visible()
@@ -4331,6 +4530,9 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     opened.get_by_role("button", name="Resolve", exact=True).click()
     expect(section).to_contain_text("Resolved: Hide.")
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_have_count(0)
+    # Resolving withdrew the request (§16.8).
+    shown = page.request.get(f"{run.base}/api/v1/requests/{asked['id']}").json()
+    assert shown["status"] == "withdrawn", shown
     run.shot(page, "reports-admin")
     run.a11y(page, "reports admin")
     no_problems(run, "reports admin")
@@ -4759,6 +4961,15 @@ def members_step(run: Run, page: Page) -> None:
     expect(page).to_have_url(re.compile(r"/members/agt-[0-9a-z]+/sessions/[0-9a-z]+$"))
     expect(page.locator(".member-instances li.chosen")).to_have_count(1)
     page.go_back()
+    expect(page.locator("main .org-tree")).to_be_visible()
+    # Paths (tsk-j9ktmj7e4fxq): the same members drawn, and one chip's route from the hub's member views.
+    page.locator("main .org-faces").get_by_role("button", name="Paths", exact=True).click()
+    page.locator("main .paths-chips").get_by_role("button", name="Not listening", exact=True).click()
+    expect(page.locator("main .paths-panel .paths-route-list")).to_contain_text("E2E Agent ⇢ Owner")
+    expect(page.locator("main .paths-lines path.paths-route").first).to_be_attached()
+    run.a11y(page, "team page, organisation paths")
+    run.shot(page, "organisation-paths")
+    page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
     expect(page.locator("main .org-tree")).to_be_visible()
     view_tab(page, "Members").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.

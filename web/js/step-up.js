@@ -126,5 +126,11 @@ window.Maity = window.Maity || {};
     }
   }
 
-  M.stepUp = { run };
+  // Ends a question still open in slot as its own Cancel would: the waiting call
+  // rejects with "cancelled" (a panel closed while it asked, for instance).
+  function cancel(slot) {
+    if (open.has(slot)) open.get(slot)();
+  }
+
+  M.stepUp = { run, cancel };
 })(window.Maity);

@@ -4152,6 +4152,7 @@ window.MAITY_FIXTURES = {
             "label": "Argon2id"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "The credential table needs a hash before the first join can be tested end to end.",
         "task": {
@@ -4205,6 +4206,7 @@ window.MAITY_FIXTURES = {
             "label": "no"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Records that credentials never enter a model's context.",
         "task": null,
@@ -4262,6 +4264,7 @@ window.MAITY_FIXTURES = {
             "label": "mty"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "The join line in context/join.md uses `maity join`.",
         "task": {
@@ -4329,6 +4332,7 @@ window.MAITY_FIXTURES = {
             "label": "Board first"
           }
         ],
+        "report": null,
         "status": "answered",
         "summary": "Order taken from the brief.",
         "task": {
@@ -4361,6 +4365,7 @@ window.MAITY_FIXTURES = {
         "options": [],
         "priority": "low",
         "replies": [],
+        "report": null,
         "status": "open",
         "summary": "Nobody here knows; the answer is a fact only the maintainer has.",
         "task": null,
@@ -4407,6 +4412,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "",
         "task": null,
@@ -4453,6 +4459,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "",
         "task": null,
@@ -4500,6 +4507,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "",
         "task": null,
@@ -6626,6 +6634,7 @@ window.MAITY_FIXTURES = {
             "label": "Go"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Agent Q, your agent in elsewhere, would add a line to its soul: \"Ask before touching the deploy scripts.\"",
         "task": null,
@@ -6677,6 +6686,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Agent A, admin in Maity, proposes a change to your preferences.",
         "task": null,
@@ -6685,6 +6695,66 @@ window.MAITY_FIXTURES = {
         "to": "human:hum-maintainer",
         "tried": null,
         "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": null,
+        "class": "info",
+        "created_at": "2026-10-29T09:10:00Z",
+        "filed_by": "hub",
+        "id": "req-r003",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "personal": true,
+        "priority": "normal",
+        "project": null,
+        "replies": [],
+        "report": {
+          "id": "rpt-0003",
+          "reason": "prompt_injection",
+          "type": "message"
+        },
+        "status": "open",
+        "summary": null,
+        "task": null,
+        "task_id": null,
+        "title": "Report: prompt_injection — message",
+        "to": "human:hum-maintainer",
+        "tried": null,
+        "while_open": "wait"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": null,
+        "class": "info",
+        "created_at": "2026-10-28T15:00:00Z",
+        "filed_by": "hub",
+        "id": "req-r002",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "personal": true,
+        "priority": "normal",
+        "project": null,
+        "replies": [],
+        "report": {
+          "id": "rpt-0002",
+          "reason": "spam",
+          "type": "profile"
+        },
+        "status": "open",
+        "summary": null,
+        "task": null,
+        "task_id": null,
+        "title": "Report: spam — profile",
+        "to": "human:hum-maintainer",
+        "tried": null,
+        "while_open": "wait"
       }
     ],
     "next_cursor": null
@@ -7620,6 +7690,7 @@ window.MAITY_FIXTURES = {
             "label": "2.3.1"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Totals with three items at 0.335 round down instead of up.",
         "task": {
