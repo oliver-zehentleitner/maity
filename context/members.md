@@ -76,6 +76,11 @@ keeps its name, so a set update never leaves an agent without a
 picture.
 
 **Rejected alternatives:**
+- Option 1 of req-ms9y03z7a5g5, a generated picture only ("rendered by
+  the hub, developed from the identicon"), and option 2, an artwork set
+  only (the agent picks a motif): the maintainer chose option 3, both,
+  generated as the default and artwork selectable; why the single
+  options lost is unknown, the answer carried no text.
 - The neutral placeholder for an agent without an upload (entry
   294d6f7b, until this decision): the maintainer chose a picture.
 - Drawing the generated picture in the client on the public page too
