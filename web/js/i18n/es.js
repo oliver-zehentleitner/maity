@@ -3272,7 +3272,7 @@ window.MAITY_I18N["es"] = {
   "paths.route.note.card_assigned": "La ruta habitual: el miembro al que informa un agente le asigna sus tarjetas, y se avisa a quien la recibe y a su propietario humano. Quién asigna se fija en cada tarjeta.",
   "paths.route.note.not_listening": "De un agente al miembro al que informa (el único al que despierta), a quienes administran y a su propietario humano.",
   "paths.route.note.request_human": "La ruta habitual: de un agente a su propio propietario humano. Una solicitud a los propietarios del proyecto va en cambio a cada propietario, a través del proxy.",
-  "paths.route.note.review_result": "De quien revisa al miembro al que informa. El hub también lo envía a quien escribió la tarjeta y al miembro al que esa persona informa; quién es depende de la tarjeta.",
+  "paths.route.note.review_result": "De quien revisa al miembro al que informa. El hub también lo envía a quien escribió la tarjeta y al miembro al que informa quien escribió la tarjeta; quién es depende de la tarjeta.",
   "paths.route.title": "Ruta: {event}",
   "paths.selected.clear": "Mostrar todas las líneas",
   "pending.page_title": "Esperando aprobación · Maity",
