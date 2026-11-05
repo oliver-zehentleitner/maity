@@ -2046,6 +2046,18 @@ cross_chat_message = Table(
     **MYSQL_TABLE,
 )
 
+# Who a cross-chat message mentions, one row per mentioned participant other than the
+# author. `mentions_unread` counts from here, so a chat's quiet history is not read.
+cross_chat_mention_for = Table(
+    "cross_chat_mention_for",
+    metadata,
+    _ref("conversation_id", "cross_chat.id", nullable=False),
+    Column("member_id", String(ID), nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("conversation_id", "member_id", "seq"),
+    **MYSQL_TABLE,
+)
+
 # How far a participant has read a cross-project group chat (§9.5). The reader is the
 # profile or the owning human, so every credential of one agent shares one cursor.
 cross_chat_read = Table(

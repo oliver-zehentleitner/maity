@@ -133,13 +133,33 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_cross_chat_read_conversation_id"), "cross_chat_read", ["conversation_id"]
     )
+    op.create_table(
+        "cross_chat_mention_for",
+        sa.Column("conversation_id", sa.String(length=40), nullable=False),
+        sa.Column("member_id", sa.String(length=40), nullable=False),
+        sa.Column("seq", BIG_ID, nullable=False),
+        sa.ForeignKeyConstraint(
+            ["conversation_id"],
+            ["cross_chat.id"],
+            name=op.f("fk_cross_chat_mention_for_conversation_id_cross_chat"),
+        ),
+        sa.PrimaryKeyConstraint(
+            "conversation_id",
+            "member_id",
+            "seq",
+            name=op.f("pk_cross_chat_mention_for"),
+        ),
+        **MYSQL,
+    )
 
 
 def downgrade() -> None:
+    # The tables go whole: MariaDB refuses to drop an index a foreign key still needs
+    # (hub/context/persistence.md, "A downgrade drops a table whole").
+    op.drop_table("cross_chat_mention_for")
     op.drop_table("cross_chat_read")
     op.drop_table("cross_chat_message")
     op.drop_table("cross_chat_participant")
-    op.drop_index(op.f("ix_cross_chat_owner_id"), table_name="cross_chat")
     op.drop_table("cross_chat")
     op.drop_column("event", "actor_instance")
     op.drop_column("event", "actor_agent_id")

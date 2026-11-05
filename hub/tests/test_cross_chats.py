@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, event, insert, select, update
 
-from maity_hub import cross_chats, mentions
+from maity_hub import clock, cross_chats, mentions
 from maity_hub import tables as t
+from maity_hub.db import current_revision, downgrade, migrate
+from maity_hub.ids import new_id
 from maity_hub.ratelimit import Limiter
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -481,3 +483,187 @@ def test_the_export_includes_the_chat_and_deletion_removes_it(
     with migrated.connect() as conn:
         assert conn.execute(select(t.cross_chat.c.id)).all() == []
         assert conn.execute(select(t.cross_chat_message.c.id)).all() == []
+        assert conn.execute(select(t.cross_chat_mention_for.c.seq)).all() == []
+
+
+def test_not_found_comes_before_deleted(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A deleted profile named beside an id the caller does not own is not_found (§9.5)."""
+    agent = flow.agent(make_client, owner)
+    lone = owner.post("/agents", {"handle": "gone", "display_name": "Gone"}).json()
+    assert owner.delete(f"/agents/{lone['id']}").status_code == 200
+    stranger = flow.human(make_client, migrated, "outsider")
+    flow.project(stranger, "theirs")
+    theirs = flow.agent(make_client, stranger, "outsider/theirs")
+    deleted_first = create(owner, lone["id"], "no-such")
+    assert deleted_first.status_code == 404, deleted_first.text
+    foreign_second = create(owner, lone["id"], theirs.id)
+    assert foreign_second.status_code == 404, foreign_second.text
+    # The deleted id alone, with a real agent, is still deleted.
+    only_deleted = create(owner, agent.id, lone["id"])
+    assert only_deleted.status_code == 400 and field(only_deleted, "participants") == "deleted"
+
+
+def test_removing_the_last_open_membership_drops_the_isolated_one(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Isolate A, remove the membership that was not isolated, lift A: the agent is out (§9.5)."""
+    home = flow.agent(make_client, owner)
+    flow.project(owner, "other")
+    away = flow.agent(make_client, owner, "other")
+    chat = create(owner, home.id, away.id).json()
+    flow.agent(make_client, owner, "other", agent={"id": home.id})
+    isolated = owner.post(
+        f"/projects/maintainer/maity/members/{home.id}/isolate", {"reason": "hold"}
+    )
+    assert isolated.status_code == 200, isolated.text
+    removed = owner.delete(f"/projects/maintainer/other/members/{home.id}")
+    assert removed.status_code == 200, removed.text
+    with migrated.connect() as conn:
+        reason = conn.execute(
+            select(t.cross_chat_participant.c.reason).where(
+                t.cross_chat_participant.c.conversation_id == chat["id"],
+                t.cross_chat_participant.c.member_id == home.id,
+                t.cross_chat_participant.c.here.is_(None),
+            )
+        ).scalar_one()
+    assert reason == "membership_isolated"
+    lifted = owner.delete(f"/projects/maintainer/maity/members/{home.id}/isolate")
+    assert lifted.status_code == 200, lifted.text
+    assert home.get(f"/me/cross-chats/{chat['id']}").status_code == 404
+    assert home.get(f"/me/cross-chats/{chat['id']}/messages").status_code == 404
+    still = owner.get(f"/me/cross-chats/{chat['id']}").json()
+    assert home.id not in [p["member_id"] for p in still["participants"]]
+
+
+def test_an_instance_mention_skips_an_isolated_membership(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    home = flow.agent(make_client, owner)
+    flow.project(owner, "other")
+    away = flow.agent(make_client, owner, "other")
+    chat = create(owner, home.id, away.id).json()
+    flow.agent(make_client, owner, "other", agent={"id": home.id})
+    assert (
+        owner.post(
+            f"/projects/maintainer/maity/members/{home.id}/isolate", {"reason": "hold"}
+        ).status_code
+        == 200
+    )
+    handle = next(p["handle"] for p in chat["participants"] if p["member_id"] == home.id)
+    posted = away.post(
+        f"/me/cross-chats/{chat['id']}/messages",
+        {"body": f"@{handle}#{home.instance} over here"},
+    )
+    assert posted.status_code == 201, posted.text
+    maity = project_id(migrated, "maity")
+    other = project_id(migrated, "other")
+    with migrated.connect() as conn:
+        places = conn.execute(
+            select(t.event.c.project_id, t.event.c.audience).where(
+                t.event.c.kind == "cross_chat_mention"
+            )
+        ).all()
+    assert places
+    assert all(row.project_id != maity for row in places)
+    assert any(row.project_id == other and f"member:{home.id}" in row.audience for row in places)
+
+
+def _quiet(engine: Engine, chat_id: str, author: str, count: int) -> None:
+    """Messages that mention nobody, written past the hub's mention index."""
+    with engine.begin() as conn:
+        start = int(
+            conn.execute(
+                select(t.cross_chat.c.next_seq).where(t.cross_chat.c.id == chat_id)
+            ).scalar_one()
+        )
+        now = clock.now()
+        conn.execute(
+            insert(t.cross_chat_message),
+            [
+                {
+                    "id": new_id("cross_message"),
+                    "conversation_id": chat_id,
+                    "seq": start + i,
+                    "author_id": author,
+                    "body": "quiet",
+                    "sent_at": now,
+                    "mentions": [],
+                    "redacted": False,
+                }
+                for i in range(count)
+            ],
+        )
+        conn.execute(
+            update(t.cross_chat)
+            .where(t.cross_chat.c.id == chat_id)
+            .values(next_seq=start + count, last_message_at=now)
+        )
+
+
+def _message_rows_fetched(engine: Engine, call: Any) -> int:
+    """Rows a SELECT of `cross_chat_message` returned to the hub during `call`."""
+    counted = {"n": 0}
+
+    def before(
+        conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
+    ) -> None:
+        if "cross_chat_message" not in statement.lower():
+            return
+        fetchall, fetchmany, fetchone = cursor.fetchall, cursor.fetchmany, cursor.fetchone
+
+        def all_rows() -> Any:
+            rows = fetchall()
+            counted["n"] += len(rows)
+            return rows
+
+        def many_rows(size: int | None = None) -> Any:
+            rows = fetchmany() if size is None else fetchmany(size)
+            counted["n"] += len(rows)
+            return rows
+
+        def one_row() -> Any:
+            row = fetchone()
+            if row is not None:
+                counted["n"] += 1
+            return row
+
+        cursor.fetchall = all_rows
+        cursor.fetchmany = many_rows
+        cursor.fetchone = one_row
+
+    event.listen(engine, "before_cursor_execute", before)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", before)
+    return counted["n"]
+
+
+def test_mention_unread_does_not_read_the_quiet_history(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Ten quiet messages and ten thousand return the same message rows to the list."""
+    flow.project(owner, "other")
+    home = flow.agent(make_client, owner)
+    away = flow.agent(make_client, owner, "other")
+    chat = create(owner, home.id, away.id).json()
+    _quiet(migrated, chat["id"], owner.id, 10)
+    small = _message_rows_fetched(migrated, lambda: home.get("/me/cross-chats"))
+    _quiet(migrated, chat["id"], owner.id, 9_990)
+    large = _message_rows_fetched(migrated, lambda: home.get("/me/cross-chats"))
+    assert small == large
+    assert large < 20
+    listed = home.get("/me/cross-chats").json()["items"][0]
+    assert listed["unread"] == 10_000
+    assert listed["mentions_unread"] == 0
+
+
+def test_the_cross_chat_migration_downgrades_and_returns(engine: Engine) -> None:
+    migrate(engine)
+    assert current_revision(engine) == "20261105073000_cross_chats"
+    downgrade(engine, "20261104150000_report_request")
+    assert current_revision(engine) == "20261104150000_report_request"
+    migrate(engine)
+    assert current_revision(engine) == "20261105073000_cross_chats"

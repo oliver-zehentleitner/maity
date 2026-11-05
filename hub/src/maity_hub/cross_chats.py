@@ -149,11 +149,14 @@ def _checked_agents(
         if ids
         else {}
     )
+    # not_found for the whole list, then deleted: one earlier id must not hide a later
+    # one the caller does not own (§9.5).
     for member_id in ids:
         row = profiles.get(member_id)
         if row is None or row.owner_id != owner_id:
             raise not_found()
-        if row.deleted_at is not None:
+    for member_id in ids:
+        if profiles[member_id].deleted_at is not None:
             raise invalid({"participants": "deleted"}, "the profile was deleted")
     active = (
         set(
@@ -567,19 +570,24 @@ def _unreads(
             .group_by(t.cross_chat_message.c.conversation_id)
         ).all()
     }
-    mentioned: dict[str, int] = {}
-    rows = conn.execute(
-        select(
-            t.cross_chat_message.c.conversation_id,
-            t.cross_chat_message.c.mentions,
-            t.cross_chat_message.c.redacted,
-        ).where(or_(*clauses))
-    ).all()
-    for row in rows:
-        if row.redacted:
-            continue
-        if any(m.get("member_id") == reader_id for m in row.mentions or []):
-            mentioned[row.conversation_id] = mentioned.get(row.conversation_id, 0) + 1
+    # Mentions of this reader live in their own rows, so the count does not read the
+    # chat's other messages.
+    hits = [
+        and_(
+            t.cross_chat_mention_for.c.conversation_id == cid,
+            t.cross_chat_mention_for.c.member_id == reader_id,
+            t.cross_chat_mention_for.c.seq > seq,
+        )
+        for cid, seq in seen.items()
+    ]
+    mentioned = {
+        cid: int(n)
+        for cid, n in conn.execute(
+            select(t.cross_chat_mention_for.c.conversation_id, func.count())
+            .where(or_(*hits))
+            .group_by(t.cross_chat_mention_for.c.conversation_id)
+        ).all()
+    }
     return unread, mentioned
 
 
@@ -993,6 +1001,7 @@ def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
         .where(
             t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),
+            t.membership.c.isolated_since.is_(None),
             t.credential.c.instance == instance,
         )
     ).all()
@@ -1072,6 +1081,14 @@ def post(conn: Any, caller: Caller, chat: Any, body: str) -> dict[str, Any]:
         .where(t.cross_chat.c.id == chat.id)
         .values(next_seq=seq + 1, last_message_at=now)
     )
+    if others:
+        conn.execute(
+            insert(t.cross_chat_mention_for),
+            [
+                {"conversation_id": chat.id, "member_id": member_id, "seq": seq}
+                for member_id in others
+            ],
+        )
     remember(conn, reader, chat.id, seq)
     _mention_events(conn, caller, chat, message_id, seq, stored)
     row = conn.execute(
@@ -1100,6 +1117,12 @@ def redact(conn: Any, chat: Any, row: Any, reason: str, by: str) -> dict[str, An
         update(t.cross_chat_message)
         .where(t.cross_chat_message.c.id == row.id)
         .values(body=None, mentions=[], redacted=True, redaction=mark)
+    )
+    conn.execute(
+        t.cross_chat_mention_for.delete().where(
+            t.cross_chat_mention_for.c.conversation_id == chat.id,
+            t.cross_chat_mention_for.c.seq == row.seq,
+        )
     )
     updated = conn.execute(
         select(t.cross_chat_message).where(t.cross_chat_message.c.id == row.id)
@@ -1135,15 +1158,19 @@ def profile_left(
 
 def membership_ended(conn: Any, agent_id: str, by: str | None) -> None:
     """The profile's last active membership ended: it leaves every such chat. One
-    membership ending while another remains does not."""
+    membership ending while another remains does not, unless every one that remains
+    is isolated: that is every active membership isolated, and the profile leaves
+    (§9.5). Lifting the isolation does not put it back."""
     remaining = conn.execute(
-        select(t.membership.c.id).where(
+        select(t.membership.c.isolated_since).where(
             t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True)
         )
-    ).first()
-    if remaining is not None:
+    ).all()
+    if not remaining:
+        profile_left(conn, agent_id, by, "membership_removed")
         return
-    profile_left(conn, agent_id, by, "membership_removed")
+    if all(row.isolated_since is not None for row in remaining):
+        profile_left(conn, agent_id, by, "membership_isolated")
 
 
 def isolation_settled(conn: Any, agent_id: str, by: str | None) -> None:
@@ -1173,7 +1200,12 @@ def remove_owned(conn: Any, human_id: str) -> None:
     )
     if not ids:
         return
-    for table in (t.cross_chat_message, t.cross_chat_read, t.cross_chat_participant):
+    for table in (
+        t.cross_chat_mention_for,
+        t.cross_chat_message,
+        t.cross_chat_read,
+        t.cross_chat_participant,
+    ):
         conn.execute(table.delete().where(table.c.conversation_id.in_(ids)))
     conn.execute(t.cross_chat.delete().where(t.cross_chat.c.id.in_(ids)))
 
