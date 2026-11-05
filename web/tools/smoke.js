@@ -4065,6 +4065,81 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !btn(neNote(cpLockId), "Edit").disabled && !neNote(cpLockId).querySelector("form.card-note-edit-form"),
     "card panel: while the list is read its Edit waits, no edit begins on the old list; after the read it is free "
       + JSON.stringify([cpLockMid, cpLockList.getAttribute("aria-busy"), neNote(cpLockId) && btn(neNote(cpLockId), "Edit") && btn(neNote(cpLockId), "Edit").disabled, cpLock.length]));
+  // An edit opened before a post redraws the list keeps its form, typed text, focus and caret
+  // (tsk-wvf8s7f44vz7). Open the edit first: while a read runs Edit waits, so the keep is for an
+  // edit already open. Detaching the row blurs its field in a browser; the shim's remove does
+  // not, so this case blurs when the kept li is taken out, as Chromium does.
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  const cpKeepField = byId("card-note-edit-nte-0031");
+  const cpKeepLi = neNote("nte-0031");
+  expect(cpKeepField && cpKeepLi.querySelector("form.card-note-edit-form"),
+    "note edit keep: setup opens the edit before the post redraws");
+  cpKeepField.value = "typed while the post redraws";
+  cpKeepField.selectionStart = 6; cpKeepField.selectionEnd = 11; // "while"
+  cpKeepField.focus();
+  expect(document.activeElement === cpKeepField,
+    "note edit keep: setup leaves the focus in the open edit");
+  const cpKeepLiRemove = cpKeepLi.remove.bind(cpKeepLi);
+  cpKeepLi.remove = function () {
+    if (document.activeElement && this.contains(document.activeElement)) document.activeElement = document.body;
+    return cpKeepLiRemove();
+  };
+  const cpKeep = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpKeep.push(() => resolve(asked)));
+  };
+  win.Maity.api.post = (p, b) => {
+    if (!p.endsWith("/notes")) return cpRaceWas(p, b);
+    return cpPost(p, b);
+  };
+  byId("card-note-body").value = "A post that redraws the list";
+  cpForm().dispatch("submit"); await tick();
+  expect(cpKeep.length >= 1 && neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && byId("card-note-edit-nte-0031") === cpKeepField
+    && cpKeepField.value === "typed while the post redraws"
+    && document.activeElement === cpKeepField,
+    "note edit keep: the open edit stays while the post's read is held "
+      + JSON.stringify([cpKeep.length, !!neNote("nte-0031").querySelector("form.card-note-edit-form"), cpKeepField && cpKeepField.value, document.activeElement && document.activeElement.id]));
+  while (cpKeep.length) { cpKeep.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && byId("card-note-edit-nte-0031") === cpKeepField
+    && cpKeepField.value === "typed while the post redraws"
+    && cpNotes().filter((n) => n.includes("A post that redraws the list")).length === 1
+    && document.activeElement === cpKeepField
+    && cpKeepField.selectionStart === 6 && cpKeepField.selectionEnd === 11,
+    "card panel: an open edit, its typed text, focus and caret survive a post's redraw of the list "
+      + JSON.stringify([!!neNote("nte-0031").querySelector("form.card-note-edit-form"), byId("card-note-edit-nte-0031") === cpKeepField, cpKeepField && cpKeepField.value, document.activeElement && document.activeElement.id, cpKeepField && cpKeepField.selectionStart, cpKeepField && cpKeepField.selectionEnd]));
+  // A reader who moved into Add a note during the held read keeps that focus; the edit stays open.
+  // Pin the Add a note field node: activeElement is compared to that same node, not a fresh query.
+  const cpAddBody = byId("card-note-body");
+  cpKeepField.focus();
+  const cpKeepElse = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpKeepElse.push(() => resolve(asked)));
+  };
+  cpAddBody.value = "Another post while the edit is open";
+  cpForm().dispatch("submit"); await tick();
+  cpAddBody.focus();
+  expect(document.activeElement === cpAddBody && cpKeepElse.length >= 1,
+    "note edit keep: setup moves the focus to Add a note during the held read");
+  while (cpKeepElse.length) { cpKeepElse.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && byId("card-note-edit-nte-0031") === cpKeepField
+    && document.activeElement === cpAddBody
+    && document.activeElement !== cpKeepField,
+    "card panel: a reader who left the edit during the read keeps their focus after the redraw "
+      + JSON.stringify([document.activeElement && document.activeElement.id]));
+  // Restore getAll before Cancel: Cancel drops the form then reads the list.
+  win.Maity.api.getAll = cpOverGets;
+  cpKeepLi.remove = cpKeepLiRemove;
+  btn(neNote("nte-0031"), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!neNote("nte-0031").querySelector("form.card-note-edit-form") && btn(neNote("nte-0031"), "Edit"),
+    "card panel: Cancel still ends an edit that outlived a redraw");
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
   // A failed read and then a failed post: Add a note stays, with the text and the refusal in it.
   let cpFailRead = null;
   win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open")

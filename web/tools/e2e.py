@@ -1070,6 +1070,7 @@ def scenario(run: Run, page: Page) -> None:
     asker_links_step(run, page, alpha)
     send_talk_step(run, page, alpha)
     wide_lines_step(run, page, alpha, task["id"])
+    note_edit_survives_redraw_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1353,6 +1354,76 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
     expect_inbox_empty(page)
     no_problems(run, "long lines")
+
+
+def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """An open note edit keeps its form, typed text, focus and caret when the notes list is drawn
+    again (tsk-wvf8s7f44vz7): a post from Add a note redraws the list; Cancel still ends the edit.
+    Desktop and phone, light — the state after load, not a layout fit."""
+    run.step("an open note edit survives a post's redraw of the notes list")
+    seed = "A note whose edit outlives a redraw"
+    run.maity(alpha, "note", "add", card_id, seed)
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "light")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            panel = page.locator("aside.card-panel")
+            expect(panel).to_be_visible()
+            # Pin the note by id before Edit: once the form is open the body text is gone
+            # (only the textarea holds it), so a has_text filter would miss the row.
+            seeded = panel.locator("li.card-note").filter(has_text=seed).first
+            expect(seeded).to_be_visible()
+            note_id = seeded.get_attribute("data-note")
+            assert note_id, f"{where}: the seed note has no data-note"
+            note = panel.locator(f'li.card-note[data-note="{note_id}"]')
+            note.locator("button.card-note-edit").click()
+            form = note.locator("form.card-note-edit-form")
+            expect(form).to_be_visible()
+            field = form.locator("textarea")
+            typed = f"typed across the redraw at {width}"
+            field.fill(typed)
+            field_node = field.evaluate_handle("(el) => el")
+            posted = f"A post that redraws the list at {width}"
+            add = panel.locator("form.card-note-form")
+            add_body = add.locator("#card-note-body")
+            # Set the post text without focusing Add a note, then leave focus and a caret
+            # in the edit and submit: a button click would move focus off the edit before
+            # the redraw, which is not the interaction under test.
+            add_body.evaluate("(el, v) => { el.value = v; }", posted)
+            field.evaluate(
+                "(el) => { el.focus(); el.setSelectionRange(6, 11); }"
+            )
+            expect(field).to_be_focused()
+            add.evaluate("(form) => form.requestSubmit()")
+            expect(panel.locator("li.card-note").filter(has_text=posted)).to_be_visible()
+            expect(form).to_be_visible()
+            expect(field).to_have_value(typed)
+            # Same DOM node, and document.activeElement is that node (not a fresh locator):
+            # detach/reinsert must not hand focus to Add a note.
+            assert field.evaluate(
+                "(el, prev) => el === prev && el.isConnected", field_node
+            ), f"{where}: the edit field was replaced"
+            assert page.evaluate(
+                "(prev) => document.activeElement === prev", field_node
+            ), f"{where}: document.activeElement is not the kept edit node"
+            assert field.evaluate(
+                "(el) => [el.selectionStart, el.selectionEnd]"
+            ) == [6, 11], f"{where}: the caret was not restored"
+            assert add_body.evaluate(
+                "(el) => document.activeElement !== el"
+            ), f"{where}: focus moved to Add a note"
+            form.get_by_role("button", name="Cancel", exact=True).click()
+            expect(note.locator("form.card-note-edit-form")).to_have_count(0)
+            expect(note.locator("button.card-note-edit")).to_be_visible()
+            if width == 390:
+                run.shot(page, "note-edit-survives-redraw-phone")
+        run.a11y(page, "card panel, an open note edit after a post")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "note edit survives redraw")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:

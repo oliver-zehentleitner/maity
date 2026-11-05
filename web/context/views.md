@@ -1396,8 +1396,8 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; contract in `docs/api.md` §6.16, §8.5
-**Revisit when:** the dashboard gets a dialog of its own for reasons, the list is drawn per note, or an open edit has to outlive the list being drawn again
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; PR #1391 (tsk-wvf8s7f44vz7, an open edit kept across a redraw of the list, with its focus and caret restored); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons, or the list is drawn per note
 **See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
 **See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
 
@@ -1417,10 +1417,13 @@ fails there is no form yet, as before). The list stays as drawn while it is
 read, only the latest read replaces it, and its Edit and Remove wait
 meanwhile (`aria-busy`). On a post's success exactly the text sent leaves
 the field; anything typed since stays. After an edit, a removal or a post
-the focus moves on only if it is still where that action left it. Known
-gap: an edit opened before another action draws the list again (a post, a
-removal, a second edit ending) goes with the list, its text too; that was
-so before and waits for its own card (tsk-wvf8s7f44vz7). An edit and a removal name the
+the focus moves on only if it is still where that action left it. An edit
+already open keeps its row across that redraw (a post, a removal, another
+edit ending): the same form and the text typed into it stay, and when the
+edit held the focus at redraw the same field and caret come back, so a post
+does not move them into Add a note; a reader who moved focus elsewhere
+during the read is left alone. Cancel or a successful save drops the form
+before the next read; a note gone as a tombstone ends the edit. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1432,7 +1435,8 @@ holder, the date and the reason, never the old text, none on a removed note.
 refusal for a button that should not have been there; an empty reason is not
 sent, so the edit mark of one's own note stays without one, as §6.16 has it;
 one way of asking a removal's reason in the whole dashboard; a note is posted
-once, however the list is drawn again around its post.
+once, however the list is drawn again around its post; an open edit is the
+writer's draft of that note, so a redraw of the list must not throw it away.
 
 **Rejected alternatives:**
 - Showing Edit to every reader and letting the hub refuse: a button that
@@ -1445,8 +1449,13 @@ once, however the list is drawn again around its post.
   refusal vanished with a failed read. A form drawn once has none of it.
 - Keeping an edit begun on the list being read: the list drawn after the read
   would have to merge it in; Edit and Remove waiting for the read is simpler.
-  This covers only an edit begun during a read, not one already open (the
-  known gap above).
+  That lock covers only an edit begun during a read; an edit already open is
+  kept by holding its row across the redraw (tsk-wvf8s7f44vz7).
+- Making Edit wait while a post or a removal is in flight: disabling Edit
+  only stops a new edit from beginning — it does not stop typing in an
+  already open textarea, and that open edit would still lose its row on the
+  redraw. Keeping the open row lets both run, and restores its focus when it
+  still held it.
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
