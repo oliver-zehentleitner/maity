@@ -1827,6 +1827,10 @@ event = Table(
     # A human who is no member of the project (§8.1: the owner deleting a profile with
     # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
     Column("actor_human_id", String(ID)),
+    # An agent profile that is no member of the project (§8.1, §9.5), with every member
+    # actor column null; `actor_instance` is the instance that wrote, or null.
+    Column("actor_agent_id", String(ID)),
+    Column("actor_instance", String(INSTANCE)),
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
@@ -1976,6 +1980,78 @@ conversation_read = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("last_seq", BIG_ID, nullable=False),
     PrimaryKeyConstraint("reader", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+# A cross-project group chat (§9.5): a room one human holds for agent profiles they own.
+# It is not a project resource. Its messages are rows here, not project events. `next_seq`
+# is the chat's own counter. The chat closes for good when its owner leaves.
+cross_chat = Table(
+    "cross_chat",
+    metadata,
+    _id(primary_key=True),
+    _ref("owner_id", "human.id", nullable=False, index=True),
+    Column("title", String(TITLE)),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("closed_at", UtcDateTime),
+    Column("closed_reason", String(32)),
+    Column("last_message_at", UtcDateTime),
+    Column("next_seq", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# One stay of the owner or an agent profile. A profile who leaves and is added again gets
+# a new row, so its window (§9.5) starts at its latest join. `window_after` is the chat's
+# highest message seq when it joined; `here` marks the open stay (true or NULL).
+cross_chat_participant = Table(
+    "cross_chat_participant",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("conversation_id", "cross_chat.id", nullable=False, index=True),
+    Column("member_id", String(ID), nullable=False, index=True),
+    Column("joined_at", UtcDateTime, nullable=False),
+    Column("window_after", BIG_ID, nullable=False),
+    Column("added_by", String(ID)),
+    Column("left_at", UtcDateTime),
+    Column("removed_by", String(ID)),
+    Column("reason", String(32)),
+    Column("here", Boolean, default=True),
+    UniqueConstraint(
+        "conversation_id", "member_id", "here", name="uq_cross_chat_participant_one_stay"
+    ),
+    CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# A message of a cross-project group chat. `seq` counts inside the chat, from 1.
+# Redaction keeps the row: `body` null, `mentions` empty, `redaction` the tombstone.
+cross_chat_message = Table(
+    "cross_chat_message",
+    metadata,
+    _id(primary_key=True),
+    _ref("conversation_id", "cross_chat.id", nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    Column("author_id", String(ID), nullable=False),
+    Column("from_instance", String(INSTANCE)),
+    Column("body", MARKDOWN_TEXT),
+    Column("sent_at", UtcDateTime, nullable=False),
+    Column("mentions", JSON_VALUE, nullable=False),
+    Column("redacted", Boolean, nullable=False, server_default=false()),
+    Column("redaction", JSON_VALUE),
+    UniqueConstraint("conversation_id", "seq", name="uq_cross_chat_message_conversation_id_seq"),
+    **MYSQL_TABLE,
+)
+
+# How far a participant has read a cross-project group chat (§9.5). The reader is the
+# profile or the owning human, so every credential of one agent shares one cursor.
+cross_chat_read = Table(
+    "cross_chat_read",
+    metadata,
+    Column("member_id", String(ID), nullable=False),
+    _ref("conversation_id", "cross_chat.id", nullable=False, index=True),
+    Column("last_seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("member_id", "conversation_id"),
     **MYSQL_TABLE,
 )
 

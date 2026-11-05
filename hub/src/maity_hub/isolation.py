@@ -139,6 +139,10 @@ def isolate(
     )
     released = release_claims(conn, target.id)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
+    if target.agent_id is not None:
+        from maity_hub import cross_chats
+
+        cross_chats.isolation_settled(conn, target.agent_id, human_id)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
     tell_released(conn, released, actor)
