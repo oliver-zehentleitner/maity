@@ -6807,6 +6807,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!byId("login-handle") && !main.querySelector(".error"), "sign in with the new password returns to the dashboard");
   expect(!frHead() && !frFoot() && !frOn() && frSheets().every((l) => l.disabled === true) && header.hidden === false,
     "frame: signed in, the frame and its stylesheets are gone, the app's header back");
+  // Signing out at the start page's own address (fixture mode, where `/` is a route): nothing changes
+  // there, so the sign-in is drawn in place of the setup the session was held in (§2.8.5).
+  win.MAITY_FIXTURE_ENROLMENT = true;
+  await go("#/"); for (let k = 0; k < 6; k++) await tick();
+  const enrolAtStart = win.location.hash === "#/" && !byId("login-handle");
+  await win.Maity.logout(); for (let k = 0; k < 6; k++) await tick();
+  win.MAITY_FIXTURE_ENROLMENT = false;
+  expect(enrolAtStart && win.location.hash === "#/" && byId("login-handle"), "sign out at the start page's address draws the sign-in there " + win.location.hash);
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!byId("login-handle"), "signed in again after that sign-out");
 
   // Sign-in without a password (§2.6): the code, its QR, the approval by number; the code on the new device; a link by mail.
   const ds = win.Maity.deviceSignIn;

@@ -622,7 +622,7 @@ dashboard's files, would have no script.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; card tsk-7dty3gkegqgc, 2026-11-04; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
 **Revisit when:** a language's file grows so that its load shows on the first paint, or a catalog is complete enough that English need not come with it
 
 `js/i18n/en.js` stays in `index.html`, since a key without a translation reads in English. Another
@@ -637,6 +637,13 @@ The registration sends `interface_language` only for an explicit choice (the pic
 `?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
+`?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
+pickers on `/login` and `/register`, the frame's languages) also writes its tag into an address
+that carries `?lang=`, through `M.route.go` with `quiet`, which replaces the address without
+drawing the view again. The frame's links lead to `/register?lang=<the frame's language>`, and `/register`
+reads the session again when it is drawn: before, its 401 read the older `?lang=` back, and the
+page jumped back to the language it was reached in (tsk-7dty3gkegqgc; on `/login`, a reload did).
+
 **Reason:** the visible language must be known before a view draws its words, and several views read
 the session themselves. A catalog per language keeps nine languages off every page load.
 
@@ -648,6 +655,12 @@ the session themselves. A catalog per language keeps nine languages off every pa
 - Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
 - Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
   the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+- Reading `?lang=` only once, when the dashboard loads: an address with `?lang=` would then say
+  another language than the page, and a reload would still take the choice back.
+- Writing `?lang=` into every address on a choice, also one without it: the choice is already kept in
+  the browser, and an address copied from the page would then fix the language for whoever opens it.
+- `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
+  so what was typed into the form so far would be lost.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 
