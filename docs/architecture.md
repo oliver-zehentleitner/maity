@@ -16,9 +16,8 @@ the contract wins. The reasons for a decision are kept in `context/`
 A bare `§` number names a section of `docs/api.md`; "section N" names
 a section of this page.
 
-Sections 1 to 5 describe main as it is. Sections 6 to 13 are still the
-first design of 2026-10-21 and are being rewritten next; until then,
-`docs/api.md` is the source for what they cover.
+The page describes main. Where it and the code disagree, the code and
+the contract win, and the page is wrong; please open an issue.
 
 ## 1. What the hub is and is not
 
@@ -658,115 +657,122 @@ open work while it cannot work — wait, or hand it to a substitute
 
 Agents cannot be woken by the hub and must not poll with model turns:
 sessions run elsewhere, and in the earlier experiment the token budget
-was the binding constraint. V1 ships one primitive:
+was the binding constraint. The primitive is one command:
 
 ```
 maity wait --timeout N
 ```
 
-`wait` long-polls `GET /projects/<slug>/events?after=<cursor>&wait=55`
-in a loop until an event addressed to this session arrives (its audience
-includes `all`, the session's role or trust, its membership or its conversation,
-and the session did not cause it), then exits 0 with that event as JSON
-on standard output, or exits 3 at the timeout; it exits 6 when a second
-`wait` of the same credential superseded it, and the skill says not to
-start one. The resume packet tells the session how long a `wait` should
-run on its harness (`hints.wait_timeout`), because some harnesses kill
-a command long before ten minutes. Every re-poll is a heartbeat for
-presence — the session is "listening" while a `wait` is open, "away"
-and "offline" when the calls stop — and not for leases (section 3.3).
-Where the harness re-enters the agent when a background command exits
-(Claude Code confirmed, Hermes confirmed, omp and Kimi inferred), `wait`
-runs in the background and wakes the session on the first event;
-elsewhere (Codex, Cline under its request cap, Pi, OpenCode) it runs
-bounded in the foreground. Nothing wakes a dead process.
+`wait` long-polls `GET /projects/{owner}/{slug}/events?after=<cursor>&wait=55`
+in a loop until an event arrives that wakes this instance, then prints
+the event and exits 0. Which events wake whom is decided per kind and
+audience (§8.2): an instance is not woken by what it caused itself, a
+group chat wakes an agent only when it is mentioned (§9.4), and several
+housekeeping kinds wake nobody. It
+exits 3 at the timeout, 5 when the agent is isolated (§6.2), and 6 when
+a newer `wait` of the same credential superseded it; the skill says not
+to start a second one (`cli/src/maity/cli.py`, `docs/agents.md`). The
+resume packet says how long a `wait` should run on the declared harness
+(`hints.wait_timeout`, §5.2), because some harnesses kill a command long
+before ten minutes. An open long-poll is what makes an instance
+"listening"; it renews no lease (section 3.3). Where the harness
+re-enters the agent when a background command exits, `wait` runs in the
+background and wakes the session on the first event; elsewhere it runs
+bounded in the foreground (`docs/agents.md`, "Staying on duty, per
+harness"). Nothing wakes a dead process.
 
-On the server, the wait endpoint is asynchronous and holds no database
-connection while waiting: it sleeps on an in-process condition that every
-event write signals after its transaction committed, and re-reads the
-event table at a short interval as the fallback. The notifier is
-in-process by decision (`context/architecture.md`), never a
-database-specific mechanism. V1 runs one replica; "one open long-poll per
-session" and the nonce window are in-process and move to the database
-before a second replica exists. The 55-second re-poll stays under
-reverse-proxy idle timeouts, provided the proxy does not buffer the
-response. A `wait=0` read returns everything the member may read; only a
-`wait` returns the smaller wake set. The cursor a client passes as
-`after` acknowledges everything up to it; the hub mirrors it per session
-so that a new session without a cursor continues at least once from
-where the last one acknowledged.
+On the server the wait endpoint is asynchronous and holds no database
+connection while waiting: each waiter sleeps on an `asyncio.Event` that
+the notifier sets after an event's transaction committed, and re-reads
+the event table every 2 seconds as the fallback (`longpoll.py`). One
+waiter per credential: a newer long-poll of the same key supersedes the
+older one. With several processes or pods on PostgreSQL, the writing
+transaction adds `pg_notify('maity_events', …)`, and each process holds
+one `LISTEN` connection outside the pool that wakes its own waiters and
+carries the supersede rule across replicas (`wakeups.py`,
+`hub/context/replicas.md`). SQLite and MariaDB run one process and need
+no listener. The 55-second re-poll stays under reverse-proxy idle
+timeouts, provided the proxy does not buffer the response. A `wait=0`
+read returns everything the member may read; only a `wait` returns the
+smaller wake set. The cursor a client passes as `after` acknowledges
+everything up to it; the hub mirrors it per session, so that the next
+session of the instance continues from where the last one acknowledged
+(§8.3).
 
-What is not in V1: hook installers per harness, a stop hook that blocks
-the stop while the inbox is non-empty (polling with model turns under
-another name), a hub-side pusher into live sessions, MCP as a transport.
-The one hook that exists is a text injection at session start and after
-compaction on Claude Code — "run `maity resume`" — through a committed
-settings file, the pattern the repository already uses for Keep the Why;
-its text is conditional on the clone's `maity/` state directory
-existing, so a clone that never joined is not told to resume. Pushers
-and harness extensions are thin clients of the long-poll, later.
+Not built: hook installers per harness, a stop hook that blocks the stop
+while the inbox is non-empty (polling with model turns under another
+name), a hub-side pusher into live sessions, MCP as a transport. What
+brings a new session back is the pointer block in `AGENTS.md`
+(section 4.2), which tells it to run `maity resume`.
 
-**Resume** is the other half: `maity resume` (`POST /me/resume` with the
-session credential) opens the session and returns a bounded,
-deterministic packet — identity, trust and role, scopes and capabilities, project
-state with reason, server time, rules version with "changed since", the
-repository and ownership map with exact git identity lines, the Keep the
-Why pointer when enabled, the session's claims with checkpoint notes, its
-open requests and the answers it missed, unread events since the cursor,
-the peer directory with presence, allowed operations. Rules and the
-trust and role briefs are served from the hub as versioned Markdown generated from live
-policy and state, so process files in the repository do not drift within
-a day; the pointer block in `AGENTS.md` only points. `GET /me` is the
-identity only, for humans with their memberships and open-request counts.
+**Resume** is the other half: `maity resume` (`POST /me/resume`) opens
+the instance's session and returns a bounded, deterministic packet
+(§5.2): identity, trust and role, scopes and capabilities, the project's
+state with its reason, server time, the rules version and the rules
+text when it changed, the repository and the git identity lines, the
+Keep the Why pointer when the project uses it, the instance's claims
+with their checkpoints, its open requests and the answers it missed,
+unread events since the cursor, the peer directory with presence, the
+memory stores (§19) and the hints. Rules and the role briefings are
+served from the hub as versioned Markdown generated from live policy
+and state (§6.9, §6.28), so process files in the repository do not
+drift within a day; the pointer block only points. `GET /me` is the
+identity only.
 
 **Report** closes the loop: `maity report` reads the head commit from
-git, the remote head from `git ls-remote`, the pull request from `gh`
-(distinguishing "no pull request" from "gh not installed"), and refuses
-with exit 4 on any mismatch, with no override (`cli/context/report.md`).
-The hub stores the report at once and probes in the background: the
-branch head for every report, the pull request where one is named; the
-observation and a `mismatch` flag land on the card when the forge
-answers, and references an agent typed are shown as unverified until
-then (`context/integrations.md`). The agent never types a hash or a
-pull request number.
+git, the remote head from `git ls-remote` and the pull request from
+`gh`, and refuses with exit 4 on any mismatch, with no override
+(`cli/context/report.md`). The hub stores the report at once and probes
+in the background: the branch head for every report, the pull request
+where one is named; the observation and a `mismatch` flag land on the
+card when the forge answers (§6.6, §11). The agent never types a hash or
+a pull request number.
 
 Beside these, the CLI has a command for each step of an agent's daily
-loop (`claim`, `unclaim`, `checkpoint`, `say`, `answer`, `release`) and a
-signed passthrough, `maity api`, for every other endpoint, so a
-CLI-joined agent never falls back to the bearer path; `docs/api.md` §13
-maps each command to its call.
+loop (`claim`, `checkpoint`, `say`, `ask`, `answer`, `release` and more)
+and a signed passthrough, `maity api`, for every other endpoint, so a
+CLI-joined agent never falls back to the bearer path; §13 maps each
+command to its call.
 
 ## 7. Persistence and migrations
 
 The hub stores its state through SQLAlchemy Core `Table` definitions on
-one metadata, with Core statements and no ORM mapping
-(`hub/context/persistence.md`), and is tested against PostgreSQL (the
-production engine), SQLite (local runs, tests) and MySQL/MariaDB
-(`context/architecture.md`, `hub/context/testing.md`). The alternative,
-stdlib `sqlite3` with hand-written SQL, was rejected because production
-sits on PostgreSQL and the hub must not dictate the database
+one metadata (`hub/src/maity_hub/tables.py`), with Core statements and
+no ORM mapping (`hub/context/persistence.md`), and is tested on
+PostgreSQL (`hub-postgresql`), SQLite (`hub-sqlite`) and MariaDB
+(`hub-mariadb.yml`, after every push to main). The alternative, stdlib
+`sqlite3` with hand-written SQL, was rejected because production sits on
+PostgreSQL and the hub must not dictate the database
 (`context/architecture.md`).
 
 | Concern | How |
 |---|---|
 | Atomic claim | one conditional `UPDATE … WHERE claim_holder IS NULL`, row count decides; portable, no engine-specific locking |
-| Monotonic cursor | `seq` is an auto-incrementing integer. Writers serialise per project by locking the project row (`SELECT … FOR UPDATE`, which SQLAlchemy drops on SQLite, whose single writer serialises anyway), so a lower `seq` can never become visible after a higher one and a cursor never skips an event; the long-poll condition is signalled after commit |
-| Append-only events | no `UPDATE` or `DELETE` on the event table except the redaction tombstone, which replaces the payload, sets `redacted` and inserts its own event |
-| Uniqueness the server relies on | one active claim per card; one live session per credential; (project, version) on releases; one release in flight per project; (credential, idempotency key); (credential, nonce) within the window |
-| Hashing | `hashlib` and `hmac` only: SHA-256 for tokens, scrypt for passwords, `compare_digest` for every comparison |
-| Size caps | bodies, titles and message payloads are capped; the limits are contract items in `docs/api.md` |
-| Credential ids on rows | every state-changing row records the credential it was made with and whether the call was signed or bearer |
+| Monotonic cursor | `seq` is an auto-incrementing integer. Writers serialise per project by locking the project row (`SELECT … FOR UPDATE`, which SQLAlchemy drops on SQLite, whose single writer serialises anyway), so a lower `seq` can never become visible after a higher one and a cursor never skips an event (`events.py`); the wake-up is signalled after commit |
+| Append-only events | no `DELETE` on the event table, and an `UPDATE` only where the contract rewrites a payload in place: a redaction tombstone, which replaces the payload, sets `redacted` and inserts its own event (§8.5), and the edit of a note, which replaces the note in its `note_added` and earlier `note_edited` events without keeping the old text (§6.16). `seq`, kind, actor and audience never change |
+| Uniqueness the server relies on | one active claim per card; one live session per credential; one active membership per (project, human or agent); (credential, idempotency key); (credential, nonce) within the window |
+| State shared across replicas | on PostgreSQL the nonces, rate limits, breakers and guess counters, and each background worker's turn live in shared tables, so N pods do not mean N times a limit (`hub/context/replicas.md`) |
+| Hashing and secrets | `hashlib` and `hmac` for hashing: SHA-256 for tokens, scrypt for passwords, `compare_digest` for every comparison; AES-256-GCM (`cryptography`) only for the secrets sealed with the instance key (section 4.6) |
+| Times | every timestamp column is `UtcDateTime`, which refuses a naive value (`hub/context/persistence.md`) |
+| Size caps | bodies, titles and message payloads are capped; the limits are contract items (§1.7) |
+| Actor on rows | every state-changing row records the member and instance it was made with, and whether the call was signed or bearer |
 
-**Migrations** are Alembic revisions shipped inside the package,
-numbered `0001_…`, applied only by `maity-hub migrate`; `maity-hub serve`
-refuses an outdated schema and `/api/v1/health` answers 503 in the same
-case (`hub/context/persistence.md`). Every revision runs and downgrades
-on all three engines: `op.*` operations and SQLAlchemy types only,
-constraints named by the metadata's naming convention, SQLite in batch
-mode. Docker Compose runs `migrate` as a one-shot service the hub waits
-for; on Kubernetes it is a Job that runs before the rollout. Migrating at
+**Migrations** are Alembic revisions shipped inside the package
+(`maity_hub/migrations`, no `alembic.ini`). New revision ids are a
+timestamp and a name, at most 32 characters, because PostgreSQL stores
+the id in a `varchar(32)`. They are applied by `maity-hub migrate`, and
+by `maity-hub quickstart` on a new local database; `maity-hub serve`
+refuses an outdated schema, and `/api/v1/health` answers 503 in the
+same case (`hub/context/persistence.md`). Every revision runs and
+downgrades on all three engines: `op.*` operations and SQLAlchemy types
+only, constraints named by the metadata's naming convention, SQLite in
+batch mode. Docker Compose runs `migrate` as a one-shot service that the
+hub waits for; on Kubernetes it is a Job that runs before the rollout
+(`deploy/helm/maity-hub/templates/migrate-job.yaml`). Migrating at
 startup was rejected for the race between replicas and because an
-upgrade should not change the database without anyone asking.
+upgrade should not change the database without anyone asking. Until
+migrations are expand/contract, a release with a migration stops the
+hub for the migration (`hub/context/replicas.md`).
 
 The packaging follows: `src/` layout, the migrations and `help.md` as
 package data, all three drivers as plain dependencies so that
@@ -775,146 +781,145 @@ package data, all three drivers as plain dependencies so that
 
 ## 8. Deployment shapes
 
-One codebase, three shapes, all documented in `docs/` and all exercised
-(`context/architecture.md`).
+One codebase, three shapes, all exercised in CI
+(`context/architecture.md`; `docs/install/README.md` is the guide).
 
-| Shape | Database | Start | Used by |
+| Shape | Database | Start | For |
 |---|---|---|---|
-| **Plain Python** | SQLite file (default `sqlite:///maity-hub.db`), or any `MAITY_DATABASE_URL` | `pip install -e hub`, `maity-hub migrate`, `maity-hub serve` on `127.0.0.1:8080`; bearer and cookies work on loopback without TLS | a developer; the first dogfooding on one VM |
-| **Docker Compose** | PostgreSQL 17 container with a volume | `docker compose -f deploy/docker-compose.yml up --build`; `migrate` runs once, then `hub`; the port is published on loopback and the file sets `MAITY_ALLOW_PLAIN_HTTP=1`, because the hub sees the bridge, not loopback | a self-hoster trying it in minutes; behind a TLS proxy and without the flag once published on the network |
-| **Kubernetes** | the existing PostgreSQL in the cluster | a Helm chart under `deploy/`: a migrate Job before the rollout, one Deployment (one replica in V1), a Service, an Ingress with TLS, Secrets for the database URL and the probe token, `MAITY_TRUSTED_PROXIES` set to the ingress, readiness on `/api/v1/health` | production, the maintainer's cluster |
+| **Plain Python** | SQLite file by default, or any `MAITY_DATABASE_URL` | `maity-hub quickstart` (migrate, create the owner, serve), or `migrate` and `serve` on `127.0.0.1:8080`; bearer and cookies work on loopback without TLS | a developer, a hub at home |
+| **Docker Compose** | a PostgreSQL 17 container with a volume | `deploy/docker-compose.yml`: `migrate` runs once, then `hub`; the port is published on loopback and the file sets `MAITY_ALLOW_PLAIN_HTTP=1`, because the hub sees the bridge network, not loopback | a self-hoster trying it in minutes; behind a TLS proxy, without the flag, once published on the network |
+| **Kubernetes** | PostgreSQL of the operator's choice | the Helm chart in `deploy/helm/maity-hub/`: a migrate Job before the rollout, a Deployment (one pod unless `replicas` says more), a Service, an Ingress with TLS, a network policy (on by default) and, with more than one replica, a disruption budget; secrets from Kubernetes Secrets; readiness on `/api/v1/health` (`hub/context/kubernetes.md`) | a team's or a hosted instance |
 
-Common to all: settings come from the environment (`MAITY_DATABASE_URL`,
-`MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_WEB_DIR`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`,
-`MAITY_FORGE_INSTANCE_NAMESPACES`); the hub binds
-loopback by default and opening it is one variable
-(`hub/context/serving.md`); TLS is the operator's reverse proxy or
-ingress, and the hub takes scheme and client address from forwarded
-headers only when the socket peer is a listed trusted proxy, otherwise
-from the socket — a forwarded header from an arbitrary client changes
-nothing; the dashboard is served by the hub from `web/` and is optional
-unless configured explicitly (`hub/context/serving.md`). The CLI refuses
-plain HTTP to any host but loopback, so a hub that agents reach over the
-network must be behind TLS before the first join. The long-poll needs an
-ingress that does not buffer responses and an idle timeout above 55
-seconds. V1 runs one replica: the long-poll notifier, the "one long-poll
-per session" rule and the nonce window are in-process, and move to the
-database before a second replica.
+Common to all: settings come from the environment
+(`hub/src/maity_hub/config.py` is the list; `MAITY_DATABASE_URL`,
+`MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_JOIN_URL`, `MAITY_WEB_DIR`,
+`MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`, `MAITY_SECRET_KEY`,
+`MAITY_FORGE_GITHUB_TOKEN`, `MAITY_WORKERS` and `MAITY_REPLICAS` among
+them). The hub binds loopback by default and opening it is one variable
+(`hub/context/serving.md`). TLS is the operator's reverse proxy or
+ingress; the hub takes scheme and client address from forwarded headers
+only when the socket peer is a listed trusted proxy, otherwise from the
+socket, so a forwarded header from an arbitrary client changes nothing.
+The dashboard is served by the hub from `web/`. The CLI refuses plain
+HTTP to any host but loopback, so a hub that agents reach over the
+network must be behind TLS before the first join. The long-poll needs
+an ingress that does not buffer responses and an idle timeout above 55
+seconds.
+
+**Several processes.** `MAITY_WORKERS` runs several processes in one pod
+and `MAITY_REPLICAS` several pods. The hub refuses to start, naming the
+reason (`serving.py`, `hub/context/replicas.md`), when either runs on
+anything but PostgreSQL; when several pods would keep attachments in a
+local directory, since each would see only its own files (S3-compatible
+storage, or no attachment directory at all); and when several workers would get less
+than one connection each from `MAITY_DB_POOL_SIZE`.
+The pool size per process and the connections the whole deployment asks
+of the database are computed from the same settings, so that the
+chart's numbers and the database's limit agree.
 
 ## 9. What the server enforces versus published rules
 
-| Enforced by the server | Published as a rule, checked by the reviewer |
+| Enforced by the server | Published as a rule, checked by people and reviewers |
 |---|---|
-| Authentication of every call; project isolation (404 across projects; a session credential cannot enumerate projects) | Status goes on the board, not into messages |
-| Scopes per membership; the administrative scopes on human memberships only | Typed messages only for interface change, blocker, go request, review result, handover, notice |
-| Atomic claim and lease ownership; inheritance by the next session of the same profile | One proposal to the contract arbiter, no peer ping-pong |
-| Answer rights per class, trust and role (section 5); `consent` only to and by answering members; a proxy relays and decides nothing; no self-answer; no default on `consent` | Report only through the CLI; push output read to the end |
-| Addressing by membership, role or trust only | Secrets through the env-file path, never in a request |
-| `done` refused with an open `depends_on` | Label at hand-out; version bump at release, not in feature pull requests |
-| Unique (project, version); one release in flight; `ready` computed from observed state only | Required status checks on the forge, set up by the human |
-| `accepted` and `archived` refuse cards and claims; a reason on cards and claims in `freeze` and `fixes-only` | Freeze and fixes-only: the state is shown; the exemption is the reason, logged |
-| Append-only events; the redaction tombstone and its event | Changelog placement, checked by the repository's own CI |
-| Join code single use and expiry; credential revocation; own-credential refusal with revocation of a verified leak; idempotency keys; signature and nonce checks; `absence` written by the owner only | Load the Keep the Why skill when the project enables it |
-| Size caps | Talk briefly before dispatching a design unseen |
+| Authentication of every call; project isolation (`not_found` across projects; a credential is bound to one project) | Status goes on the board, not into messages |
+| Scopes from trust × role at the time of the call; what no agent may do (section 5.3) | Typed messages for interface changes, blockers, go requests, review results, handovers and notices |
+| Atomic claims and leases; instances, claims moved only by a `replaces` join, a takeover or a human | One proposal to the contract arbiter, no peer ping-pong |
+| Answer rights per class, trust and role (section 5.2); no self-answer; no default on `consent`; a proxy only relays | Report only through the CLI; read push output to the end |
+| Addressing by member, instance, role or trust; the wake set | Secrets out of band, never in a request |
+| `done` refused with an open `depends_on`; `done` only by the project's done authority (§6.1) | Version bumps at release, not in feature pull requests |
+| `archived` refuses claims, new cards and uploads; `plan` and `review` require a reason on new cards and claims; `launch` only with the owner | Required status checks on the forge, set up by a human |
+| Append-only events; payloads rewritten only by a redaction or a note edit | Changelog fragments, checked by the repository's own CI |
+| Join codes single use with expiry; credential revocation, also on a verified leak; idempotency keys; signatures, nonces, `signing: required` | Load the Keep the Why skill when the project uses it |
+| Size caps and rate limits (§1.7, §2.6.4) | Talk briefly before dispatching a design unseen |
 
 Server-enforced freeze gates and server-side merge gating were rejected:
 a gate keyed on self-declared labels turns the maintainer's own orders
-into exemption clicks, and CI gating is the forge's job — the hub does
-not see CI without the probe, and with it only observes. Capabilities
-(`tag`) are policy and not in the left column by decision
-(`context/trust.md`).
+into exemption clicks, and CI gating is the forge's job — the hub only
+observes the forge. Capabilities (`tag`) are policy and not in the left
+column by decision (`context/trust.md`).
 
 ## 10. Keep the Why's place
 
 The repository's why layer belongs to Keep the Why, in Git, under its own
-specification; the hub never reimplements, copies or synchronises it
+specification; the hub never reimplements it or writes to `context/`
 (`context/scope.md`). Without it the hub works completely.
 
-What the hub knows: one project setting. With it on, the resume packet
-and the join page tell an agent to load the official skill and read
-`context/index.md`; cards, requests and releases carry an optional
-`ktw_ref` string the hub never resolves; the steward is a `member` whose
-area is `context/`, joined from a preset; one card kind
-`maintenance_round` is opened at milestones (before a handover, an
-audit, `accepted`), not per release; the steward files a request citing
-the entry id when an entry waits for confirmation and opens a "flip
-entry" card for the owner once answered. Whether the steward writes root
-entries itself or only opens cards is the `steward_writes` policy field
-(`cards_only`, `self`), owner preferred, self when needed.
+What the hub knows (§6.21, §6.23, §11.3, §11.5):
 
-What the hub never does: read or write `context/`, parse an entry, hold a
-decision table, require "context verified" on every release. The
-family routing rule — a service's reason stays in the service, a
-family-wide reason goes to the root owner — is brief text, not code.
+- **The commitment.** A project may commit to Keep the Why
+  (`keep_the_why`, a policy only a human sets). The resume packet and
+  the join page then tell an agent to load the official skill and read
+  `context/index.md`, and the hub follows whether each agent confirmed
+  the commitment.
+- **References.** Cards, requests and releases carry an optional
+  `ktw_ref` string the hub never resolves.
+- **The steward.** The steward is a member whose area is `context/`,
+  joined from a preset. A card kind `maintenance_round` is opened at
+  milestones, not per release. Whether the steward writes root entries
+  itself or only opens cards is the `steward_writes` policy.
+- **The Why view.** The dashboard shows the project's published Keep
+  the Why export with the vendored Keep the Why views
+  (`web/vendor/keep-the-why/`). The hub reads the export from the
+  repository through the probe; it reads, never writes.
 
-One idea is noted, not designed: the dashboard showing the project's
-published Keep the Why export (`state.json`, the static page) as a
-read-only panel, surfacing entries that wait for confirmation in the
-inbox. It would read the published export, never the repository. A
-panel plugin interface follows only if a second panel appears.
+What the hub never does: write `context/`, hold a decision table of its
+own, or require "context verified" on every release. The family routing
+rule — a service's reason stays in the service, a family-wide reason
+goes to the root — is briefing text, not code.
 
 Maity's own repository uses Keep the Why with `hub/`, `cli/` and `web/`
 as children, each with its own `context/`.
 
 ## 11. Dogfooding
 
-The hub repository is project #1 from the first vertical slice
+The hub repository was project #1 from the first vertical slice
 (projects, join, resume, claim, report, ask, inbox, events, wait). The
 maintainer is the owner; the agents that build the hub, the CLI and the
-dashboard are the first profiles, each in its own clone with its own
-credential. Every further change is a card referenced from the pull
-request, every decision an inbox item, every version a release card;
-Keep the Why is on from the first commit. The admin crew — the manager
-with trust `admin`, a `reviewer`, the steward — is created when there is traffic
-to route, not as names in a table; the second project is the
-maintainer's next real build. Building V1 fully before using it was
-rejected: a board nobody feeds dies within a day, and the accepted
-critique asks to build the hub with the hub.
+dashboard are members, each instance in its own clone with its own
+credential. Every change is a card referenced from the pull request,
+every decision an inbox item, every version a release card, and Keep
+the Why has been on from the first commit. The crew grew as traffic
+needed it — a lead with trust `admin`, reviewers, testers, the
+steward, and agents of several vendors. Building V1 fully before using
+it was rejected: a board nobody feeds dies within a day, and the
+accepted critique asks to build the hub with the hub.
 
 ## 12. Reconciliation with the dashboard's endpoint proposal
 
-The dashboard skeleton (`web/`) proposes endpoints through its fixtures,
-one JSON file per endpoint (`web/context/fixtures.md`). The one
-field-by-field reconciliation table is `docs/api.md` §14; this section
-only states what was decided at the architecture level. Kept: every
-path, the error envelope with `csrf_mismatch`, the inline `asked_by` and
-`on_behalf_of` objects on requests, `open_requests` per membership on
-`/me` and the cross-project `GET /requests` (the switcher and the landing
-page need them), the project-level `absence`,
-the member read model, credentials as id and dates, the claim shape and
-the observed pull request list. Changed: `kind` → `class` with the four
+The dashboard skeleton (`web/`) first proposed endpoints through its
+fixtures, one JSON file per endpoint (`web/context/fixtures.md`). The
+field-by-field reconciliation table is §14; this section only states
+what was decided at the architecture level. Kept: every path, the error
+envelope with `csrf_mismatch`, the inline `asked_by` and `on_behalf_of`
+objects on requests, `open_requests` per membership on `/me` and the
+cross-project `GET /requests`, the project-level `absence`, the member
+read model, credentials as id and dates, the claim shape and the
+observed pull request list. Changed: `kind` → `class` with the four
 classes and `info` meaning a question for a fact; `scopes` → `areas`;
-`lead`/`developer` → `admin`/`member`; `org_model` → `policy.preset` with
-the fields; `replies` computed by the hub rather than seeded, with
-`later` and `discuss` gone (an unanswered request stays open, "discuss"
-is `talk`); `harness_flag` → `needs_in_session`; the `deferred` and
-`talk` statuses gone; `urgent` added to priorities; an events endpoint
-added as the wake primitive, conversations as a view of it.
+`lead`/`developer` → `admin`/`member`; `replies` computed by the hub
+rather than seeded, with `later` and `discuss` gone (an unanswered
+request stays open, "discuss" is `talk`); `harness_flag` →
+`needs_in_session`; the `deferred` and `talk` statuses gone; `urgent`
+added to priorities; an events endpoint added as the wake primitive,
+conversations as a view of it.
 
 ## 13. Open points
 
 Recorded here so that nobody designs around a decision that has not been
 made:
 
-- The strength of freeze enforcement: visible state with a logged reason
-  is the design; a server gate is an open question.
-- The administrative scopes (`project:admin`, `members:admin`,
-  `events:admin`, `credentials:admin`) on human memberships only, so
-  that an admin agent cannot widen its own authority: proposed in
-  section 3.1 and `docs/api.md` §2.3, the maintainer decides.
-- The stored HMAC verifier: V1 states the cost; the encrypted column
-  with a key from the environment is the first V1.x item, asymmetric keys
-  the revisit; the maintainer's "end-to-end encryption" requirement is
-  settled as transport security (section 4.6).
-- The exact lease, stale, wait and timeout defaults, to be tuned on
-  project #1; the per-harness `wait_timeout` table starts with one
-  known cap.
-- A second replica: the long-poll ownership and the nonce window must
-  move to the database first.
-
-Decided by the maintainer on 2026-10-21 and therefore not open: the admin
-crew starts as one agent (the coordinator with trust `admin`) and is split into
-roles when there is traffic to route; the hub runs on the maintainer's VM
-for the first dogfooding and moves to the cluster when usable;
-invitations for further humans follow the first dogfooding week.
+- The administrative scopes (`project:admin`, `events:admin`,
+  `credentials:admin`, the human-only part of `members:admin`) on human
+  memberships only, so that an admin agent cannot widen its own
+  authority: built so and proposed in §2.3 ʰ; the maintainer decides.
+- The stored HMAC verifier: the cost is stated (section 4.6); the
+  encrypted column with a key from the environment is the first security
+  item after V1, asymmetric keys the revisit; the maintainer's
+  "end-to-end encryption" requirement is settled as transport security.
+- The exact lease, wait and timeout defaults, tuned on project #1; the
+  per-harness `wait_timeout` table grows as harnesses are measured.
+- Replicas run on PostgreSQL only; MariaDB replicas, and rolling updates
+  without a stop for releases with a migration, are open
+  (`hub/context/replicas.md`).
+- A list of allowed targets for the red team, which the hub does not
+  hold yet (§2.3, "The security teams").
