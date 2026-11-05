@@ -1451,11 +1451,11 @@ writer's draft of that note, so a redraw of the list must not throw it away.
   would have to merge it in; Edit and Remove waiting for the read is simpler.
   That lock covers only an edit begun during a read; an edit already open is
   kept by holding its row across the redraw (tsk-wvf8s7f44vz7).
-- Making Edit wait while a post or a removal is in flight: that only stops
-  a new edit from beginning; an edit already open would still lose its row
-  on the redraw, and the writer could not start another during a slow post.
-  Keeping the open row lets both run, and restores its focus when it still
-  held it.
+- Making Edit wait while a post or a removal is in flight: disabling Edit
+  only stops a new edit from beginning — it does not stop typing in an
+  already open textarea, and that open edit would still lose its row on the
+  redraw. Keeping the open row lets both run, and restores its focus when it
+  still held it.
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the

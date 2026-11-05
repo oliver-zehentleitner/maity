@@ -4112,6 +4112,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "card panel: an open edit, its typed text, focus and caret survive a post's redraw of the list "
       + JSON.stringify([!!neNote("nte-0031").querySelector("form.card-note-edit-form"), byId("card-note-edit-nte-0031") === cpKeepField, cpKeepField && cpKeepField.value, document.activeElement && document.activeElement.id, cpKeepField && cpKeepField.selectionStart, cpKeepField && cpKeepField.selectionEnd]));
   // A reader who moved into Add a note during the held read keeps that focus; the edit stays open.
+  // Pin the Add a note field node: activeElement is compared to that same node, not a fresh query.
+  const cpAddBody = byId("card-note-body");
   cpKeepField.focus();
   const cpKeepElse = [];
   win.Maity.api.getAll = (p) => {
@@ -4119,15 +4121,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const asked = cpOverGets(p);
     return new Promise((resolve) => cpKeepElse.push(() => resolve(asked)));
   };
-  byId("card-note-body").value = "Another post while the edit is open";
+  cpAddBody.value = "Another post while the edit is open";
   cpForm().dispatch("submit"); await tick();
-  byId("card-note-body").focus();
-  expect(document.activeElement === byId("card-note-body") && cpKeepElse.length >= 1,
+  cpAddBody.focus();
+  expect(document.activeElement === cpAddBody && cpKeepElse.length >= 1,
     "note edit keep: setup moves the focus to Add a note during the held read");
   while (cpKeepElse.length) { cpKeepElse.shift()(); for (let k = 0; k < 4; k++) await tick(); }
   expect(neNote("nte-0031").querySelector("form.card-note-edit-form")
     && byId("card-note-edit-nte-0031") === cpKeepField
-    && document.activeElement === byId("card-note-body"),
+    && document.activeElement === cpAddBody
+    && document.activeElement !== cpKeepField,
     "card panel: a reader who left the edit during the read keeps their focus after the redraw "
       + JSON.stringify([document.activeElement && document.activeElement.id]));
   // Restore getAll before Cancel: Cancel drops the form then reads the list.

@@ -1400,15 +1400,20 @@ def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: s
             expect(panel.locator("li.card-note").filter(has_text=posted)).to_be_visible()
             expect(form).to_be_visible()
             expect(field).to_have_value(typed)
-            # Same DOM node, same focus and caret: detach/reinsert must not hand focus to Add a note.
+            # Same DOM node, and document.activeElement is that node (not a fresh locator):
+            # detach/reinsert must not hand focus to Add a note.
             assert field.evaluate(
                 "(el, prev) => el === prev && el.isConnected", field_node
             ), f"{where}: the edit field was replaced"
-            expect(field).to_be_focused()
+            assert page.evaluate(
+                "(prev) => document.activeElement === prev", field_node
+            ), f"{where}: document.activeElement is not the kept edit node"
             assert field.evaluate(
                 "(el) => [el.selectionStart, el.selectionEnd]"
             ) == [6, 11], f"{where}: the caret was not restored"
-            expect(add_body).not_to_be_focused()
+            assert add_body.evaluate(
+                "(el) => document.activeElement !== el"
+            ), f"{where}: focus moved to Add a note"
             form.get_by_role("button", name="Cancel", exact=True).click()
             expect(note.locator("form.card-note-edit-form")).to_have_count(0)
             expect(note.locator("button.card-note-edit")).to_be_visible()
