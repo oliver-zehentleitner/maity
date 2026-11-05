@@ -2241,6 +2241,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(!opened.groups.length && opened.items.length === 8 && JSON.stringify(opened.opened) === JSON.stringify(["coder"])
       && Math.abs(lead.x + lead.w / 2 - (firstC.x + firstC.w / 2 + lastC.x + lastC.w / 2) / 2) < 1 && firstC.y === lastC.y && firstC.y > lead.y,
       "paths: an opened role shows each member in the row below, the lead centred over them");
+    const own = [{ id: "lead", kind: "human", display_name: "Lead", trust: "owner", role: "manager" },
+      { id: "b", kind: "agent", display_name: "Bridge", trust: "member", role: "constructor", role_base: "coder", reports_to: "lead", owner_id: "lead" }];
+    const ownPlace = P.layout(own, new Set());
+    const ownBox = P.draw({ members: own, memberById: { lead: own[0], b: own[1] }, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id },
+      { chip: null, selected: null, open: new Set() });
+    expect(ownPlace.items.length === 2 && ownPlace.boxOf.b === "b" && ownBox.querySelectorAll(".paths-card").length === 2,
+      "paths: a project's own role named like an object's property (constructor) is a role like any other");
     const pctx = { members: many, memberById: {}, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id };
     many.forEach((m) => { pctx.memberById[m.id] = m; });
     const pstate = { chip: null, selected: null, open: new Set() };

@@ -774,7 +774,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .paths-route.usual { stroke-dasharray: 2 4; }
 .paths-arrow-head { fill: var(--route); }
 .paths-report.dim, .paths-route.dim { opacity: 0.15; }
-.paths-node { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; padding: 4px;
+.paths-node { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; padding: 12px 4px 4px;
   background: none; border: 1px solid transparent; text-align: center; overflow: hidden; }
 .paths-node:hover:not(:disabled) { border-color: var(--border); }
 .paths-node.selected { border-color: var(--accent); }

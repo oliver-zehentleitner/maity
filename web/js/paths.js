@@ -18,7 +18,7 @@ window.Maity = window.Maity || {};
   // More members of one role under one lead than this stand as one box until it is opened.
   const GROUP_AT = 6;
   const NODE_W = 104;
-  const NODE_H = 96;
+  const NODE_H = 112;
   const GROUP_W = 196;
   const GROUP_H = 104;
   const GAP = 10;
@@ -133,16 +133,18 @@ window.Maity = window.Maity || {};
     function under(item) {
       const kids = [];
       (item.group ? item.members : [item.member]).forEach((m) => (t.below[m.id] || []).forEach((k) => { if (!placed.has(k.id)) kids.push(k); }));
-      const byRole = {};
-      kids.forEach((k) => { (byRole[k.role || "member"] = byRole[k.role || "member"] || []).push(k); });
+      // A Map, not an object: a role is the team's own word, and one named "constructor" must not
+      // find the object's inherited property.
+      const byRole = new Map();
+      kids.forEach((k) => { const role = k.role || "member"; if (!byRole.has(role)) byRole.set(role, []); byRole.get(role).push(k); });
       const out = [];
       const done = new Set();
       kids.forEach((k) => {
         const role = k.role || "member";
         if (done.has(role)) return;
-        if (byRole[role].length > GROUP_AT && !open.has(role)) {
+        if (byRole.get(role).length > GROUP_AT && !open.has(role)) {
           done.add(role);
-          out.push({ id: "group:" + item.id + ":" + role, group: role, members: byRole[role] });
+          out.push({ id: "group:" + item.id + ":" + role, group: role, members: byRole.get(role) });
         } else {
           out.push({ id: k.id, member: k });
         }
@@ -293,15 +295,15 @@ window.Maity = window.Maity || {};
   // Who stands under one lead, as links; a role with more than GROUP_AT members there is said
   // once, as "Coder × 13", the way the drawing folds it.
   function parts(ctx, list) {
-    const count = {};
-    list.forEach((k) => { count[k.role || "member"] = (count[k.role || "member"] || 0) + 1; });
+    const count = new Map();
+    list.forEach((k) => { const role = k.role || "member"; count.set(role, (count.get(role) || 0) + 1); });
     const shown = new Set();
     return list.map((k) => {
       const role = k.role || "member";
-      if (count[role] <= GROUP_AT) return M.dom.memberRef(ctx, k.id);
+      if (count.get(role) <= GROUP_AT) return M.dom.memberRef(ctx, k.id);
       if (shown.has(role)) return null;
       shown.add(role);
-      return h("span", null, M.t("paths.glance.many", { role: M.trust.roleLabel(role), count: count[role] }));
+      return h("span", null, M.t("paths.glance.many", { role: M.trust.roleLabel(role), count: count.get(role) }));
     }).filter(Boolean);
   }
 

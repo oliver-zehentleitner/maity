@@ -2459,7 +2459,9 @@ PATHS_TEAM = (
         "reports_to": "l", "owner_id": "o"} for i in range(1, 14)]
     + [{"id": k, "kind": "agent", "display_name": k, "trust": "member", "role": role, "reports_to": lead, "owner_id": "o"}
        for k, role, lead in (("ops", "ops", "l"), ("test-team", "tester", "l"), ("grok", "reviewer", "rl"), ("chatgpt", "reviewer", "rl"),
-                             ("antigravity", "reviewer", "rl"), ("designer", "designer", "mh"), ("writer", "writer", "mh"))]
+                             ("antigravity", "reviewer", "rl"), ("designer", "designer", "mh"), ("writer", "writer", "mh"),
+                             # a project's own role whose name is an inherited property of an object
+                             ("x-bridge", "constructor", "mh"))]
 )
 
 # The Paths face against the window: page width, boxes that overlap or leave the canvas, a name
@@ -2482,8 +2484,11 @@ PATHS_MEASURE = """() => {
       if (a.left < canvas.left - 0.5 || a.right > canvas.right + 0.5 || a.top < canvas.top - 0.5 || a.bottom > canvas.bottom + 0.5) out.outside.push(n.dataset.id);
       nodes.slice(i + 1).forEach((m) => { const b = r(m);
         if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) out.overlaps.push(n.dataset.id + '/' + m.dataset.id); });
-      n.querySelectorAll('.paths-name, .paths-sub, .paths-group-label').forEach((t) => {
-        if (t.scrollWidth > t.clientWidth + 1 || r(t).right > a.right + 0.5) out.clipped.push(n.dataset.id + ':' + t.textContent); });
+      // Every part meant to stay visible lies inside its box on all four sides (the box clips).
+      n.querySelectorAll('.paths-shape, .paths-count, .paths-name, .paths-sub, .paths-group-label, .paths-tiles').forEach((t) => {
+        const b = r(t);
+        if ((t.matches('.paths-name, .paths-sub, .paths-group-label') && t.scrollWidth > t.clientWidth + 1) || b.left < a.left - 0.5 || b.right > a.right + 0.5 || b.top < a.top - 0.5 || b.bottom > a.bottom + 0.5)
+          out.clipped.push(n.dataset.id + ':' + (t.className || '') + ':' + t.textContent); });
     });
     out.panelBelow = r(document.querySelector('main .paths-panel')).top >= r(document.querySelector('main .paths-scroll')).bottom - 0.5;
     out.scrollFits = r(document.querySelector('main .paths-scroll')).right <= window.innerWidth + 0.5;
@@ -2540,11 +2545,11 @@ def paths_views(run: Run, browser) -> None:
                                 assert m["wideShown"] and not m["narrowShown"], f"{where}: the drawing is not the face shown"
                                 assert not m["overlaps"], f"{where}: boxes overlap {m['overlaps']}"
                                 assert not m["outside"], f"{where}: boxes leave the canvas {m['outside']}"
-                                assert not m["clipped"], f"{where}: text wider than its box {m['clipped']}"
+                                assert not m["clipped"], f"{where}: parts outside their box or text wider than it {m["clipped"]}"
                                 assert m["panelBelow"] and m["scrollFits"], f"{where}: the panel is not under the drawing, or the drawing's frame leaves the window"
                                 assert (m["reports"] > 0) == lines, f"{where}: {m['reports']} reporting lines drawn"
                                 if team == "maity":
-                                    assert (m["groups"], m["nodes"]) == ((1, 13) if state == "folded" else (0, 25)), f"{where}: {m['groups']} boxes, {m['nodes']} in all"
+                                    assert (m["groups"], m["nodes"]) == ((1, 14) if state == "folded" else (0, 26)), f"{where}: {m['groups']} boxes, {m['nodes']} in all"
                             else:
                                 assert m["narrowShown"] and not m["wideShown"], f"{where}: the list is not the face shown"
                                 assert not m["cardsOut"], f"{where}: cards past the window {m['cardsOut']}"
