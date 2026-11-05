@@ -369,6 +369,10 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
+/* WCAG 2.2 target size: in an entry two links can stand in rows one above the other (the project, who
+   asked). A line is 21.75 px high (15 px at 1.45): 2 px apart their centres were 23.75 px apart, under
+   the 24 px axe asks for; 6 px apart they are 27.75 px. */
+.entry-body .facts { row-gap: 6px; }
 
 .send-status { min-height: 1.2em; margin: 6px 0 0; color: var(--muted); }
 .send-status.failed { color: var(--bad); }
@@ -1187,6 +1191,8 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .bell-counts { margin: 4px 0 8px; font-size: 0.85rem; }
 .bell-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .bell-items li { overflow-wrap: anywhere; font-size: 0.9rem; }
+/* Lines 24 px apart: on a phone a row's link wraps beside Mark read, and its 24 px circle would meet the button (WCAG 2.5.8). */
+.bell-items li a { line-height: 24px; }
 .bell-items li.unread a { font-weight: 600; }
 .bell-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
 .notify-kinds { border: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
@@ -1268,6 +1274,13 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 /* Waiting activity follows the request forms without replacing them. */
 .waiting-group { margin-top: 1.5rem; }
 .waiting-items { list-style: none; padding: 0; }
+/* "Current sessions" on the Notifications page (js/waiting.js): compact, its link a 24 px target. */
+.current-sessions { gap: 6px; }
+.current-sessions h3 { margin: 0; font-size: 1rem; }
+.current-sessions-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.current-sessions-items li { overflow-wrap: anywhere; font-size: 0.9rem; }
+.current-sessions .send-status:empty { display: none; }
+.current-sessions .hint a { display: inline-block; min-height: 24px; line-height: 24px; }
 .waiting-item { display: flex; flex-wrap: wrap; gap: .4rem .7rem; padding: .7rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .waiting-item a { flex: 1 1 18rem; }
 .waiting-item .muted { font-size: .85rem; }
@@ -1737,9 +1750,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .product-line:empty { display: none; }
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
-.product-line a { color: inherit; }
+/* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line
+   wraps at phone width, whatever stands on the row above or below it. */
+.product-line a { color: inherit; display: inline-flex; align-items: center; min-height: 24px; }
 .product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
-.product-icon { display: inline-flex; align-items: center; padding: 2px; border-radius: 3px; }
+.product-icon { justify-content: center; min-width: 24px; border-radius: 3px; }
 .product-heart { color: var(--bad); }
 /* The Maity mark's dark variant (brand/maity-mark-small-dark.svg): CSS over the presentation attributes. */
 @media (prefers-color-scheme: dark) {

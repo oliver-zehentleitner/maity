@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, case, func, select, update
 
-from maity_hub import clock, group_chats, longpoll, placements
+from maity_hub import cards, clock, group_chats, longpoll, placements
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit, lock_project, on_commit
@@ -22,7 +22,6 @@ from maity_hub.views import isolated, member_view
 
 REASON = "membership_isolated"
 BY_HUB = "hub"  # `isolated.by` of an isolation the hub made itself (§6.2)
-CLOSED = ("done", "cancelled")
 
 
 def is_isolated(row: Any) -> bool:
@@ -45,16 +44,14 @@ def release_claims(conn: Connection, membership_id: int) -> list[str]:
     left `in_progress`, for `tell_released` after the caller's own event."""
     moved = (
         conn.execute(
-            select(t.card.c.id).where(
-                t.card.c.claim_holder == membership_id, t.card.c.status == "in_progress"
-            )
+            select(t.card.c.id).where(cards.open_claims(membership_id, status="in_progress"))
         )
         .scalars()
         .all()
     )
     conn.execute(
         update(t.card)
-        .where(t.card.c.claim_holder == membership_id, t.card.c.status.notin_(CLOSED))
+        .where(cards.open_claims(membership_id))
         .values(
             claim_holder=None,
             claim_instance=None,

@@ -81,6 +81,19 @@ directory and the slot files are that account's own; another account gets its ow
 - **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
   starts two.
 
+A branch cut before the run slots (#1302) has no `tools/run_slot.sh`, and
+there `make smoke` and `with_postgres.sh` take no slot by themselves. Merge
+`main` into such a branch only where that is allowed anyway (a conflict, or
+the lead asks for it); otherwise run `main`'s copy of the script, which needs
+nothing else from the checkout, without changing the branch:
+
+```sh
+( slot=$(mktemp) && trap 'rm -f "$slot"' EXIT && git show origin/main:tools/run_slot.sh > "$slot" && bash "$slot" make -C web smoke )
+```
+
+The subshell removes the copy on its way out and still ends with the command's
+status, so a failed run stays a failure.
+
 ## Commits
 
 Imperative, plain English, one concern per commit:

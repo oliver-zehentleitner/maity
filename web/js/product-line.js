@@ -4,7 +4,7 @@
 // sign-in, the invitation and the full maintenance page end with it, whatever
 // replaced <main>; render() draws it again with each view (the language may change).
 //
-// [Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+// [Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
 //
 // The icons are inline SVG with presentation attributes only (§16.13, "The icons");
 // css/app.css switches the Maity mark's fill under a dark theme.
@@ -15,6 +15,8 @@ window.Maity = window.Maity || {};
 (function (M) {
   const SVG = "http://www.w3.org/2000/svg";
   const ISSUES = "https://github.com/oliver-zehentleitner/maity/issues";
+  // Where a vulnerability is reported privately, never as a public issue.
+  const SECURITY = "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md";
   const GITHUB = "https://github.com/oliver-zehentleitner";
   const PROFILE = "https://maity.team/oliver-zehentleitner";
   const NAME = "Oliver Zehentleitner";
@@ -85,6 +87,8 @@ window.Maity = window.Maity || {};
       h("span", { class: "product-part" }, maityMark(), " ", h("span", { translate: "no" }, "Maity"), " ", String(new Date().getFullYear())),
       h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
       h("span", { class: "product-part" }, external(ISSUES, null, M.t("product.bug"))),
+      h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
+      h("span", { class: "product-part" }, external(SECURITY, null, M.t("product.security"))),
       h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
       h("span", { class: "product-part" }, sentence(values)),
     ];

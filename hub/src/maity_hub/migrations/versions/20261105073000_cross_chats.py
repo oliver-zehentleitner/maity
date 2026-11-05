@@ -6,7 +6,7 @@ project event; its author, when an agent profile that is no member of that proje
 is `actor_agent_id` with `actor_instance`.
 
 Revision ID: 20261105073000_cross_chats
-Revises: 20261104000000_required_check
+Revises: 20261104150000_report_request
 Create Date: 2026-11-05
 """
 
@@ -20,7 +20,7 @@ from sqlalchemy.dialects import mysql
 from maity_hub.types import BIG_ID, JSON_VALUE, MARKDOWN_TEXT
 
 revision: str = "20261105073000_cross_chats"
-down_revision: str | None = "20261104000000_required_check"
+down_revision: str | None = "20261104150000_report_request"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

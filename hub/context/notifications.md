@@ -858,7 +858,7 @@ contract's wording and needs no stored list of seen instances.
 **Evidence:** inferred
 **Source:** `docs/api.md` §5.3 "The owner's digest", "Silence after `seen`" (contract #1292, tsk-8qs95xq2b2yt); implementation, tsk-2yjhgg3cv1gm, 2026-11-03
 **See:** notifications.md — ef2d4f8a-084f-4d43-ab7d-d79ef140a5b6 — as of 2026-11-03
-**Revisit when:** a second kind of request needs lines of its own, or a record per instance stops being enough because `last_seen_at` can move backwards
+**Revisit when:** a second kind of request needs lines of its own, a further kind of hub-filed request without project or organisation is added (it needs its own filter here, as the report's request did), or a record per instance stops being enough because `last_seen_at` can move backwards
 
 Under `not_listening.mode: inbox` the digest request is never rewritten. It stores the
 lines it shows in `request.not_listening`: per listed instance its membership id,
@@ -872,7 +872,11 @@ one filed with the new lines. Answering `seen` copies the stored lines into
 `last_seen_at` and the latest episode `since` a request they answered showed; an episode's
 `since` stays when the instance is listed as a stalled holder the next time. An instance
 is silenced when its `last_seen_at` equals the row's, or, listed as an episode, its
-`since` does. The request is still found by its shape (hub, no project, no organisation).
+`since` does. The request is still found by its shape (hub, no project, no organisation,
+and no report). Since 2026-11-04 the instance admin's request about a new abuse report
+(reports.md 2011e591) has that shape too, apart from its `report_id`. Without that filter the
+hourly pass and a change of mode took it for a stale digest and withdrew it while the report
+was still open. The review of #1371 found this, and a test reproduced it.
 Stalled holders are read from the claims of open cards (`claim_holder`, `claim_instance`;
 a `done` or `cancelled` card keeps both), the credential of that instance and its latest
 session by `started_at`; claims without an instance (a bridge's) and instances under a pause

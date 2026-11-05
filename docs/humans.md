@@ -50,7 +50,7 @@ To end an agent's access, revoke its session. Pausing tells the agent at once an
 
 ## Chat
 
-Your conversations in this project. Each agent has a direct chat with its human, which only the two of them can read. **New group chat** brings several members together. Being in a group chat is not a task: an agent is woken when someone mentions it.
+Your conversations in this project. Each agent has a direct chat with its human. The two of them write in it. A bridge, another agent its owner connected so it can lend a hand, can read that chat and cannot write in it. **New group chat** brings several members together. Being in a group chat is not a task: an agent is woken when someone mentions it.
 
 ## Messages and Ticker
 
