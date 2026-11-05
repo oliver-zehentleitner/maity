@@ -544,8 +544,10 @@ placements, and any address. A card's notes were never public at first;
 since 2026-11-02 they are, on the card's own page in an open project
 (`hub/context/public-pages.md`, 9e1bb9f3). The
 owner's address `/<owner>` (the path-routing decision of 2026-10-29,
-e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
-public projects and their own agents with presence.
+e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: name, public
+projects and their own agents; the picture since 2026-11-05, while the
+person's `public_profile` is on (`members.md`, 294d6f7b). Presence is
+not on it (§16.9 shows none).
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where work is public by default and found by what it does; the

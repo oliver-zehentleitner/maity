@@ -38,6 +38,62 @@ beyond it an abuse report (§16.8).
   included, does not survive).
 - Moderation by a project's `members:admin`: see above.
 
+## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its page exists, in four sizes
+
+**Id:** 294d6f7b-2701-4cb0-a0b4-11430b34f246
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-05 after the profile inventory, relayed by the lead with card tsk-q155psrk6tzz (public pages show profile pictures, scaled to their size and cached; a person with `public_profile` off shows none); the cache split and the sizes are the contract owner's; contract `docs/api.md` §6.10, §6.27, §16.9
+**Revisit when:** the maintainer decides how an agent without an upload looks (request req-ms9y03z7a5g5), an organisation's page should show its picture, or a shared cache in front of the hub needs more than 60 seconds
+**See:** members.md#avatars-generated-from-the-member-id-by-default-an-upload-or-a-forge-picture-overrides-per-account-not-per-project — 901a3806-5444-47a1-bb5b-961de130a604 — as of 2026-11-05
+**See:** members.md#the-dashboards-view-of-a-person-or-organisation-reads-one-endpoint-that-applies-every-visibility-rule-for-the-reader — ae13dab7-24da-43e1-ba82-1e8ab33408fd — as of 2026-11-05
+
+A human's picture, while the hub serves their page and their
+`public_profile` is on, and an agent's, while it serves the agent's
+page, are anyone's to read, with or without a session, at an address
+that names no account: `GET /avatars/public/{digest}`, the digest of
+the stored image. `GET /avatars/{id}` keeps the reader list of §6.10
+and never answers a stranger. A person's page and an agent's page draw the
+picture at 128 pixels, and a neutral placeholder without an image when
+there is none or the person's `public_profile` is off. An
+organisation's picture stays private. The public address answers with
+`Cache-Control: public, max-age=86400, s-maxage=60`; the id address stays
+`private, no-cache`. The hub serves 32, 64, 128 and 256 pixels (`?s=`),
+each scaled once from the stored picture and kept.
+
+**Reason:** confirmed — the maintainer wants a public profile to look
+like one, with its picture, and a person who keeps their profile
+private keeps their picture private too. Inferred, the contract
+owner's — the public picture has its own address by digest because the
+`avatar_url` names the account id, which a stranger is not given
+(entry ae13dab7); the browser may keep a public picture for a day because the
+URL is versioned (a new picture is a new URL); a shared cache keeps it
+60 seconds, the same bound the public pages promise, so a picture that
+stops being public leaves a proxy within a minute. Sizes are scaled
+once and kept, because each decode or scale costs the hub's most
+guarded resource (`hub/context/images.md`) and a public URL can be
+requested by anyone.
+
+**Rejected alternatives:**
+- No picture on any public page, the rule until 2026-11-05 (entry
+  ae13dab7 and §16.9): the maintainer decided against it.
+- Every person with a page, whatever their `public_profile`: the
+  maintainer's privacy rule; the page of a person with `public_profile`
+  off shows only name, handle and agents.
+- Opening `GET /avatars/{id}` to strangers for a public picture (the
+  first draft of this contract): the page would hand every visitor the
+  account id, and a guessed id would tell whether a public picture
+  exists.
+- One long `max-age` for shared caches as well: a picture that stops
+  being public would stay in a proxy for a day while the page itself is
+  gone within 60 seconds.
+- Scaling on every request: a public URL would let anyone make the hub
+  decode on demand.
+- The generated avatar of §6.10 as the public placeholder: a page has no
+  script to draw it and it would carry the account id; how an agent
+  without an upload looks is left to req-ms9y03z7a5g5.
+
 ## Removing a member clears every reports_to naming it — on members, join links and profile-creating placements alike
 
 **Id:** 6b54c13b-818a-42ac-96a2-1ed8db68332d
@@ -343,11 +399,13 @@ all. One read keeps the rule in one place.
 - Different `not_found` answers for unknown and suspended names: would
   tell a reader that a suspended account exists.
 - Making a public page enough to read the avatar, or sending the account
-  id so the client draws §6.10's generated image: §6.10 grants the image
+  id so the client draws §6.10's generated image: §6.10 granted the image
   only through a shared project (and an organisation's own and project
-  members), a page carries no image (§16.9), and the id would say more
+  members), a page carried no image (§16.9), and the id would say more
   than the reader may see; `avatar_url` is `null` and the dashboard draws
-  a neutral placeholder.
+  a neutral placeholder. The first half is overturned since 2026-11-05: a
+  picture a public page shows is public (entry 294d6f7b); the account id
+  is still not sent.
 - Answering every live human by handle with name and avatar, and
   `not_found` only for unknown, suspended, pending and deleted names:
   would tell any signed-in human who has an account and hand out an

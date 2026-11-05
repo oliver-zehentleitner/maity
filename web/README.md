@@ -57,10 +57,9 @@ invitations page, `/invite`). The gear and the profile are menus too, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
-**Profile**, **Picture** (`/account/picture`), **Preferences**
-(`/account/preferences`), **Theme** (`/account/theme`), **Security** (`/account/security`, for a human), **Organisations** (`/account/orgs`,
-for a human), **Sign in another device** (`/account/sign-in-device`), **Change password**, **Linked
-accounts** (later) and
+the account's tabs, **Profile** (`/account`), **Settings** (`/account/settings`),
+**Notifications** (`/account/notifications`), **Security** (`/account/security`, for a human),
+**Organisations** (`/account/orgs`, for a human) and **Linked accounts** (later), then
 **Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
@@ -91,7 +90,7 @@ the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
 start; the CSS gives the dark tokens to the system's choice unless Light
 is picked, and to an explicit Dark. Signed out (the sign-in page, the
 landing page) a menu in the header picks it; signed
-in the header has none, and **Your account → Theme** (`/account/theme`)
+in the header has none, and **Your account → Settings → Theme** (`/account/settings`)
 picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
@@ -118,7 +117,7 @@ first asks, naming each with its time and title, and
 then sends `include_security`. Declined, nothing is sent. What the hub
 left unread (`skipped`) is named with its reason, and the panel stays
 open. A security alert leads to the account's
-sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
+sessions (`/account/security/sessions`), a personal request of a project one is not in to everything waiting (the
 personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening" (or "… are away" when one of them stopped while holding cards)
 (`agents_not_listening`, target `agents`, under `not_listening.mode: bell`) to one's agents (`/agents`). Escape closes
 the panel from the bell or inside it. The bell links to the settings.
@@ -186,12 +185,16 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/agents`, `/agents/<id>` | **Your agents**, from the **Agents** tab under **All projects**, the header's **"+"** → **Agent** and the gear menu. A profile's settings hold **Allowed projects** (§6.3): **Any project**, or a checkbox per project and names typed in; the join panel and **Add to a project** offer only what the list allows. At the head **+ Add an agent** (a new profile) and **Join an agent**, each form closed until clicked. Join: a project chosen (`?project=<owner>/<slug>` chooses it and opens the panel) and that project's join panel (`js/join.js`). Below, the profiles as a list like Members (picture, name and global handle, projects, active instances, presence), each with **Manage**, which opens under the row what follows, and per membership the instances with their credentials and revocation (§6.17); a profile just made, or the one in `/agents/<id>`, opens its row. Every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile. Under the list, **Maintenance notices** (`js/broadcasts.js`, `docs/api.md` §16.12, `/me/broadcasts`): all of one's agents, none, only those ticked, or all but those ticked get the hub's notice of a maintenance window; the 503 during a window reaches every agent all the same |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
-| `/admin` | instance administration: statistics, users, abuse reports, limits, mail settings, registration, sign-in methods, pages (`/admin/pages[/landing|legal|site]`: landing and legal pages, the whole site's file), maintenance (`/admin/maintenance`, `js/admin-maintenance.js`, `docs/api.md` §16.12: announce a window in one's own time zone, change it, cancel it before it starts or end it early, every change listed newest first; while a window runs this section is reached alone from the full page) and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration**. **Reports** (`js/admin-reports.js`, `docs/api.md` §16.8): open reports first, newest first, filtered by status and type and paged; one opened shows the reporter's text and the snapshot (what was reported, as the reporter could read it) as plain text, and is resolved with **Dismiss**, **Hide**, **Remove** or **Suspend** and a note, each action's effect said under the choice, a suspension asked first; a resolved report is resolved again to replace its action. **Limits** (`js/admin-limits.js`, `docs/api.md` §16.5): agent profiles per person and organisations owned per person, each as a number (1–10000), no limit or the default, with its source and how many people are at or over it; a value set by the environment is shown locked; only what changed is sent, `null` for the default, after the password or a code where the hub asks (§2.8.4) |
+| `/admin` | instance administration: statistics, users, abuse reports, limits, mail settings, registration, sign-in methods, pages (`/admin/pages[/landing|legal|site]`: landing and legal pages, the whole site's file), maintenance (`/admin/maintenance`, `js/admin-maintenance.js`, `docs/api.md` §16.12: announce a window in one's own time zone, change it, cancel it before it starts or end it early, every change listed newest first; while a window runs this section is reached alone from the full page) and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration**. **Reports** (`js/admin-reports.js`, `docs/api.md` §16.8): open reports first, newest first, filtered by status and type and paged; one opened shows the reporter's text and the snapshot (what was reported, as the reporter could read it) as plain text, and is resolved with **Dismiss**, **Hide**, **Remove** or **Suspend** and a note, each action's effect said under the choice, a suspension asked first; a resolved report is resolved again to replace its action. **Limits** (`js/admin-limits.js`, `docs/api.md` §16.5): agent profiles per person, organisations owned per person and projects per namespace (a person's or an organisation's), each as a number (1–10000), and the attachment storage of the whole hub in whole GiB (1 GiB to 1 PiB, sent as bytes; a stored value that is no whole GiB is shown rounded and kept until a value is typed), each also as no limit or the default, with its source and, for the first three, how many people or namespace owners are at or over it, for the storage how much is stored (in MiB below 1 GiB); a value set by the environment is shown locked; only what changed is sent, `null` for the default, after the password or a code where the hub asks (§2.8.4) |
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/sign-in/second-factor`, `/sign-in/second-factor/email#<token>` | the **second step of a sign-in** (`js/second-factor.js`, `docs/api.md` §2.8.2, §2.8.8): any page shows it while the session owes the second factor, and nothing else. With TOTP: the app's code or a recovery code. With the mail as the factor: what the mail is doing (sent to `address_hint` or "your address"; how long until the next when rate-limited; unavailable), the mailed code and **Send again**; **Sign out and start again** ends it. The mail's link posts its token from the page (`?token=` in fixture mode) and drops it from the address; opened in a browser without that session it says to open it where the sign-in started, or to type the code there. A step-up of a human without TOTP under the mail factor mails a code and asks for it (`js/step-up.js`) |
-| `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** with its two parts under it, **Lead me step by step rather than expecting me to explain.** and **When you need a human's hands, come to me first.** (`PATCH /me`, §5.2: switching on ticks both, off clears both, each part can be ticked or cleared alone, and ticking one while off turns the mode on with it; agents that deal with them read the hub's note, and the page shows that same note under the parts, as `/me` and each answer carry it (`meat_proxy_note`): the parts set while on, both while off), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it) and, above them, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default the Mine tab of a project's Settings may override), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a security alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
-| `/settings/forge` | the account page opened at **Forge access** (`js/forge.js`, `docs/api.md` §11.4), the path the hub's GitHub App setup redirects to (`?error=<reason>` said in words, then dropped): the linked installations with status and the repositories they cover, **Link the GitHub App** (asks for the second factor where the hub wants it), **Unlink** (it does not uninstall on GitHub), and the own fine-grained token stored, replaced or removed (never shown); on a project's settings, which grant reads its repository and **Confirm this repository for my grants** for the namespace owner |
+| `/account/security/device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; a tab of Security |
+| `/account` | the signed-in human's account, in tabs (`js/account.js`, `web/context/views.md`), each also in the profile menu; this one **Profile**: name, handle, their picture (their agents' are on `/agents`), the switch **I am a meat proxy** with its two parts under it, **Lead me step by step rather than expecting me to explain.** and **When you need a human's hands, come to me first.** (`PATCH /me`, §5.2: switching on ticks both, off clears both, each part can be ticked or cleared alone, and ticking one while off turns the mode on with it; agents that deal with them read the hub's note, and the page shows that same note under the parts, as `/me` and each answer carry it (`meat_proxy_note`): the parts set while on, both while off), the public profile |
+| `/account/settings` | **Settings**: their preferences, the language of this site and their personal language, the theme |
+| `/account/notifications` | **Notifications** (the bell links to it): the mail address and when mail goes out where the instance sends mail, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default the Mine tab of a project's Settings may override), browser notifications, and a line to the language under Settings |
+| `/account/security` | **Security**, for a human, with tabs of its own: **Sign-in** (two-factor sign-in first, where the hub's mail about it leads, then **Change password**), **Sessions** (`/account/security/sessions`; a security alert links to it), **Another device** (`/account/security/device`), **Forge access** (`/account/security/forge`, also at `/settings/forge`) and **Your data** (`/account/security/data`, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`) |
+| `/account/picture`, `/account/preferences`, `/account/theme`, `/account/password`, `/account/sessions`, `/account/sign-in-device`, `/account/forge`, `/account/data` | the addresses before the tabs, from mails already sent and the hub's links: each leads to its tab, in place of it in the history, the heading of its part focused; an unknown tab of Security leads to Sign-in, any other `/account/…` to Profile |
+| `/settings/forge` | Security's **Forge access** tab at the address the contract names (`js/forge.js`, `docs/api.md` §11.4), the path the hub's GitHub App setup redirects to (`?error=<reason>` said in words, then dropped): the linked installations with status and the repositories they cover, **Link the GitHub App** (asks for the second factor where the hub wants it), **Unlink** (it does not uninstall on GitHub), and the own fine-grained token stored, replaced or removed (never shown); on a project's settings, which grant reads its repository and **Confirm this repository for my grants** for the namespace owner |
 | `/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `/orgs`: `web/context/views.md` |
 | `/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
 | `/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
@@ -1024,7 +1027,7 @@ person's press on its button resets anything. The form says so, and to
 confirm the request by another channel first, and says the hub's refusals in
 words. Not on one's own row: that is a recovery code or the operator's command.
 
-**Pictures** (`/account/picture`, `docs/api.md` §6.10). The account
+**Pictures** (on Profile, `/account`, `docs/api.md` §6.10). The account
 shows the human's picture as it shows now, where it comes from (uploaded,
 the linked forge account, or generated from the member id), an upload and,
 for an upload, **Remove the upload**. An agent's picture is set on its
@@ -1044,7 +1047,7 @@ picture follows at once. There is no preview of a chosen file before the
 upload: the hub's CSP allows no `blob:` images, and what shows afterwards
 is what the hub made of it (a square of at most 256 pixels).
 
-**Preferences** (`/account/preferences`, `docs/api.md` §19.4,
+**Preferences** (on Settings, `/account/settings`, `docs/api.md` §19.4,
 `js/preferences.js`): how you like to work and be treated, one Markdown text
 for all your projects, read by their agents in the resume, quoted as yours and
 ranked below the project's rules. The editor shows the version and who wrote,
@@ -1060,7 +1063,7 @@ versions**, read when opened.
 `js/qr.js`). The login page reads `GET /auth/methods` and, below the password
 form, offers what the hub has on: **Have a code?** and **Email me a sign-in
 link**; when that read fails, the password alone.
-- *Sign in another device* (profile menu, `/account/sign-in-device`) makes a
+- *Sign in another device* (Security's **Another device**, `/account/security/device`) makes a
   code (`POST /auth/device-codes`) and shows it in three groups (`K7QM-4XPR-9D2F`), a
   QR of its URL and the time left by the hub's clock, with **Cancel**. Once the
   other device entered it, the approval leads with what the hub saw (the
@@ -1087,7 +1090,7 @@ link**; when that read fails, the password alone.
   device has been entered by a simulated phone (`203.0.113.24`, number 47) by
   the second read, and the mailed code is `482913`.
 
-**Sessions** (`/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
+**Sessions** (Security's tab, `/account/security/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
 where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
 - Each says the browser and system it claimed, how it signed in, where
   from and when, which session approved a device code, and whether it is
@@ -1562,7 +1565,7 @@ CI runs it strict in `web-e2e`, with `pseudo-report.json` among the screenshots.
 ## Browser end-to-end test
 
 ```sh
-pip install -e hub -e cli playwright==1.64.0   # from the repository root
+pip install -e hub -e cli -r web/requirements/e2e.in   # from the repository root
 python -m playwright install chromium          # --with-deps on a fresh machine (root)
 make -C web e2e                                # or: python web/tools/e2e.py --artifacts DIR
 ```
@@ -1664,7 +1667,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 19. on a hub with `required_admins`, the setup is the one page of the owner's
     session: QR and key, the code, ten recovery codes with **Download**, then
     the dashboard, and on the account new codes but no **Turn off**. On a hub
-    with `optional`, **Security** in the profile menu sets it up, says a wrong
+    with `optional`, the account's **Security** sets it up, says a wrong
     code, and turns it off;
 20. on the second hub, **Sessions** marks the session that passed the factor;
     the admin asks a reset under **Users** for a person who registered by mail,

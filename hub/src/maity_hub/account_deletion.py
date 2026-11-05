@@ -393,6 +393,9 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
             conn, agent_id, actor_in=lambda _project_id: HUB, by=human_id, credential_id=None,
             via=None,
         )  # fmt: skip
+    from maity_hub import cross_chats
+
+    cross_chats.remove_owned(conn, human_id)
     # Every profile's git identity and soul with its versions go, the tombstones of
     # profiles deleted before included: §6.3 keeps those, the account's deletion not.
     if owned:

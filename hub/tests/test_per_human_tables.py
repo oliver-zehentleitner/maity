@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, export, org_invitations
+from maity_hub import account_deletion, avatars, cross_chats, export, org_invitations
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -45,6 +45,8 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
     ("conversation_participant", "added_by"): True,
     ("conversation_participant", "removed_by"): True,
+    ("cross_chat_participant", "added_by"): True,  # a principal id, as on a project group chat
+    ("cross_chat_participant", "removed_by"): True,
     ("credential", "ktw_acknowledge_by"): False,  # a deadline
     ("credential", "dormant_by"): True,
     ("credential", "paused_by"): True,
@@ -98,6 +100,8 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 # removal does", "as §6.3 deletes a profile", "as DELETE /runners/{id} removes it").
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
+    "cross_chat": cross_chats,  # remove_owned, which account_deletion calls
+    "cross_chat_participant": cross_chats,
     "membership": members,  # apply_remove
     "org_invitation": org_invitations,  # withdraw_by_inviter_everywhere, withdraw_for_human
     "runner": runners,  # remove
@@ -144,6 +148,8 @@ KEPT_THOUGH_READ = {"project"}
 # Tables the export reads through another module rather than in `export.py` itself.
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
+    "cross_chat": cross_chats,  # export_of, which export.py calls
+    "cross_chat_participant": cross_chats,
     "notification_settings": notification_preferences,
     "recovery_code": second_factor,  # only how many are left, never a code
     "second_factor": second_factor,  # only whether one is enrolled, never a secret
