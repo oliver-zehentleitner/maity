@@ -48,7 +48,8 @@ window.Maity = window.Maity || {};
   const byHub = (req) => !req.asked_by && req.filed_by === "hub";
   // The not-listening digest (§5.3): the hub's, personal, about no project
   // and no organisation; it leads to one's agents.
-  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org;
+  // A report's request (§16.8) is the hub's too, without project or organisation, but no digest.
+  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org && !req.report;
 
   function asker(req) {
     const by = req.asked_by ? req.asked_by.display_name : byHub(req) ? "Maity" : "—";
@@ -117,6 +118,8 @@ window.Maity = window.Maity || {};
   function hiddenLabel(req, names) {
     const name = names.project(req) || (req.org ? "@" + req.org.handle : "");
     if (!req.personal) return M.t("inbox.label.project", { name });
+    // Neither project nor organisation (a report's request, §16.8): Personal alone.
+    if (!name) return M.t("inbox.label.personal_alone");
     return req.project && req.org ? M.t("inbox.label.personal_into", { name, org: req.org.handle }) : M.t("inbox.label.personal", { name });
   }
 
@@ -390,7 +393,10 @@ window.Maity = window.Maity || {};
     // Inside a project the trust is known: only the owner answers an action (§2.3).
     const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
     if (notOwner) append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only")));
-    const noField = preference || unread || notOwner;
+    // The instance admin's request about a new abuse report (§16.8) has no answer: it closes
+    // when the report is resolved, under Admin → Reports, after its snapshot was read.
+    const reportReq = !!req.report;
+    const noField = preference || unread || notOwner || reportReq;
     const replies = noField ? [] : req.replies || [];
     const withText = (payload) => {
       const value = text.value.trim();
@@ -411,8 +417,9 @@ window.Maity = window.Maity || {};
     const hintId = textId + "-hint";
     // A takeover's request needs one of its replies (§6.19): the hub refuses `talk` as it refuses the words alone.
     const talkable = canTalk(ctx, req) && !notOwner && !req.takeover_id;
-    // Not where no answer is possible yet: a call for the owner alone, a request not read in full.
-    const showTalk = !notOwner && !unread;
+    // Not where no answer is possible yet: a call for the owner alone, a request not read in full;
+    // nor on a report's request, which has no answer at all (§16.8).
+    const showTalk = !notOwner && !unread && !reportReq;
     const talkWhy = talkable || !showTalk ? null : req.takeover_id ? M.t("inbox.talk_takeover")
       : req.filed_by === "hub" ? M.t("inbox.talk_hub") : M.t("inbox.talk_not_yours");
     // No reason for a Send that is not there (no field: a preference review, an unread or a call for the owner alone).
@@ -449,8 +456,14 @@ window.Maity = window.Maity || {};
         // Talk on every request one can answer; where the hub takes `talk` from nobody here it stays,
         // disabled, and says why (§7).
         showTalk ? talk : null,
-        // Its human may withdraw a personal request, as nobody else can (§7).
-        req.personal ? h("button", {
+        // Its human may withdraw a personal request, as nobody else can (§7); a report
+        // request only closes with its report (§16.8).
+        reportReq ? h("a", {
+          // a.button: a link drawn as the buttons beside it are.
+          class: "button primary reply open-report",
+          href: "/admin/reports/" + encodeURIComponent(req.report.id),
+        }, M.t("inbox.open_report")) : null,
+        req.personal && !reportReq ? h("button", {
           type: "button",
           class: "reply withdraw",
           onclick: () => {

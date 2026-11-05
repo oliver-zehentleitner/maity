@@ -98,3 +98,29 @@ leaves the page. `form-action 'self'` is new: the old policy did not restrict wh
   so that every page without a session ends the same way as the framed `/login`.
 - `'unsafe-inline'` for the fallback, as the legal pages have: it would allow every inline style on
   a page with a token in its address, where a hash allows the one block the hub writes.
+
+## The pages of §18.6 share the sign-in link page's frame and policy through one helper
+
+**Id:** 78d58e3b-259a-4530-a970-c907027e5f7c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-w62n5p0v9d47 and lotse#wtwy's go on its plan (2026-11-05); contract `docs/api.md` §16.7.5, §18.6 (#1394); `link_frame.py`, `routes/mail_links.py`; why the policy changed is the root's context/security.md, 8191d964
+
+The four pages of `routes/mail_links.py` and the sign-in link's page are drawn by one helper,
+`link_frame.page`, which reads the frame's model and answers with `link_frame.HEADERS`
+(`render.DOOR_CSP`, `Referrer-Policy: no-referrer`). The four pages of `mail_links.py` keep their
+words, statuses, the GET that changes nothing and the one button, and their content stands in a
+`.link-page` block of the door's column, which `public-pages.css` gives paragraph spacing and the
+quote's rule. The sign-in link's page keeps its own content and its GET's form cookie, as above. A test
+pins the policy string and fetches each stylesheet the page names with the test client: served
+200 as `text/css` with `nosniff`, and every `url(...)` in it relative, the hub's own (no browser
+applies the policy there).
+
+**Reason:** one helper keeps the five link pages under one policy and one frame, so a change to
+either reaches all of them. The `.link-page` scope keeps the new rules off the dashboard's own
+door pages, which share the stylesheet.
+
+**Rejected alternatives:**
+- A second copy of the sign-in page's `_page` in `mail_links.py`: two places to keep alike.
+- Unscoped `.door-form p` rules: they would reach the dashboard's sign-in paragraphs as well.

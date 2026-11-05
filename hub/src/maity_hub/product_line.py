@@ -7,8 +7,8 @@ of the platform's own interface, on the hub's own pages as on the dashboard's, a
 The hub's pages load no file, so the icons are inline SVG with presentation attributes only.
 The line's look is one fixed block, `STYLE`: centred and muted. A page whose policy allows
 inline style (the registration page) puts it into its own stylesheet, with `DARK` for its
-dark theme. The pages whose policy is the hub's `default-src 'self'` (the mail link pages,
-the join page, the `503` maintenance page) put `HEAD` into their
+dark theme. The pages whose policy is the hub's `default-src 'self'` (the join page and the
+`503` maintenance page; the mail link pages stand in the frame instead) put `HEAD` into their
 `<head>` and answer with `HEADERS`: that policy allows exactly this block by its hash, never
 `'unsafe-inline'`, and those pages have no dark theme, so the mark keeps its light fill.
 """

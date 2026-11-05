@@ -187,7 +187,7 @@ the hub itself comes from the Helm chart, whose
 - cert-manager with a Let's Encrypt ClusterIssuer (HTTP-01)
 - PostgreSQL 17 as a StatefulSet on the instance's disk, reachable only
   by the hub and the backup Job
-- a daily `pg_dump` CronJob
+- a daily `pg_dump` CronJob, encrypted to a key whose private half stays off the instance
 - the hub chart with a NetworkPolicy that admits only Traefik
 
 **1. The instance.**
@@ -252,6 +252,21 @@ rm mail-signing-key smtp-password   # keep secret-key outside the cluster, then 
 A new `secret-key` leaves everything sealed with the old one unreadable, and a
 new `mail-signing-key` voids the links still out in mails.
 
+The backups are encrypted with gpg to a key pair you make **off the
+instance**, on the machine where you will restore from. Only the public key
+goes into the cluster. Without it the backup Job fails every night, and
+it fails the same way if the Secret holds a private key:
+
+```sh
+gpg --quick-gen-key "maity backups <you@example.org>" default default never   # asks for a passphrase
+gpg --armor --export "maity backups" > backup.pub
+kubectl -n maity create secret generic maity-backup-key --from-file=backup.pub=./backup.pub
+gpg --armor --export-secret-keys "maity backups" > maity-backup-private.asc   # keep it safe, away from the instance
+```
+
+Without the private key, no backup can be restored. Keep its copy where you keep
+`secret-key`, and keep it off the instance.
+
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
 `uploads.yaml` and `hub-values.yaml` first (and drop the join host from
 `cert.yaml` and `hub-values.yaml` if you run without one):
@@ -291,35 +306,68 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 ```
 
 **Backups on this setup:**
-- **Where the dumps are.** The CronJob writes `maity-<UTC time>.dump`
+- **Where the dumps are.** The CronJob writes `maity-<UTC time>.dump.gpg`
   every night into the volume `maity-backups`, on the same disk as the
-  database. That protects against a bad upgrade, not against losing the
-  instance. Copy them off the host. k3s's local-path storage keeps the
-  volume under `/var/lib/rancher/k3s/storage/pvc-…_maity_maity-backups/`.
+  database, encrypted to `maity-backup-key` and readable only by their owner (0600).
+  k3s's local-path storage keeps the volume under
+  `/var/lib/rancher/k3s/storage/pvc-…_maity_maity-backups/`.
+- **Copy them off the instance, every night.** On the instance they protect against a bad upgrade, not against losing
+  it. Pull the `.gpg` files to another machine, for example with `rsync` from a cron job there; the files are 0600 and
+  owned by the containers' users under k3s's storage path, so the account that reads them needs root on the instance.
+  They are encrypted, so the
+  copy needs no further protection, but the private key must never be stored with them.
+- **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
+  `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
+  you need, then delete them from the volume.
+- **A lost or exposed backup.** A backup holds the verifiers of every agent credential. Encrypted, it is safe as long as
+  the private key is. If the private key or an unencrypted backup was exposed, revoke the agent sessions it holds in the
+  running hub ([Backups](#backups)), make a new key pair, and replace the Secret.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
   (an older version of the script reported "Complete" for a dump that never happened). After a dump you rely on, the Job's log lists
-  the line `dump ok: /backups/maity-<UTC time>.dump <bytes> attachments <bytes>` (`attachments` is only there with the attachment backup). Read the log of the pod
+  the line `dump ok: /backups/maity-<UTC time>.dump.gpg <bytes> attachments <bytes> (encrypted; plain bytes: …)`. The first sizes are the encrypted files' sizes, the last ones the sizes before encryption.
+  A Job that fails with `backup failed: no public key` has no `maity-backup-key` (step 4). Read the log of the pod
   that succeeded, not of a failed earlier try:
   `kubectl -n maity logs "$(kubectl -n maity get pod -l job-name=<job> --field-selector=status.phase=Succeeded -o name | head -1)"`
   (`kubectl logs` takes no `--field-selector`, `get pod` does).
 - **The attachment files are backed up with the database.** They are not in it (docs/api.md §8.7), so the same Job tars the volume
-  `maity-attachments` into `maity-<UTC time>.attachments.tar` next to `maity-<UTC time>.dump`, with the same time stamp and the same rotation, and the
+  `maity-attachments` into `maity-<UTC time>.attachments.tar.gpg` next to `maity-<UTC time>.dump.gpg`, with the same time stamp and the same rotation, and the
   `dump ok:` line carries both sizes. A restore of the database alone leaves messages whose files are missing.
 - **Room for the backups.** The size of `maity-backups` (5 GiB) is not enforced by k3s's local-path storage: the limit is the node's disk, which
   PostgreSQL is on. Fourteen nights keep fourteen dumps and fourteen tars of the attachment volume, so plan with `14 × (the volume's size + a dump)`
   against the free disk, and look at it when the attachments grow (the backup Job refuses to write a tar that would not fit twice). Images and
   most files are compressed already, so the tar is not compressed.
-- **To restore:**
+- **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk:
   1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
-  2. Feed the dump to `pg_restore --clean --if-exists -d maity` inside
-     the postgres pod
-     (`kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump`).
-  3. Put the files of the same night back, replacing the volume's contents (the hub is still at 0 from step 1):
-     `sed 's/@TS@/<the time stamp of the dump>/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -`, wait for the Job, delete it.
+  2. Decrypt the dump to a file on this machine, read all of it with `pg_restore -f /dev/null` (which fails on a wrong key, a
+     cut-off file or anything that is not a dump; `pg_restore --list` reads only the start), and only then feed it to
+     `pg_restore --clean --if-exists` inside the postgres pod, which drops what it restores. Run it as one block, which stops
+     at the first failure and keeps the decrypted file for a second try; `pg_restore` here must be 17 or later:
+     ```sh
+     sh -eu -c '
+       gpg -d "$1" > maity.dump
+       pg_restore -f /dev/null maity.dump
+       kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
+       rm maity.dump
+     ' restore maity-<UTC time>.dump.gpg
+     ```
+  3. Put the files of the same night back, replacing the volume's contents (the hub is still at 0 from step 1). The commands
+     are at the top of `deploy/k3s-single/restore-attachments.yaml`, as one `sh -eu` block that stops at the first failure:
+     decrypt the tar locally and check that GNU tar reads it without an error and reaches its end-of-archive block, apply
+     the Job, then stream the tar into it with `kubectl exec -i` together with its SHA-256. Run it as that block, not line
+     by line: the Job empties the volume before it unpacks, so it must only ever get a tar that was read whole first, and
+     it unpacks only what arrived with that digest.
   4. Scale the hub back to 1.
+- **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
+  `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
+  attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
+  (GNU tar). That proves the key and the whole file together; a listing alone (`pg_restore --list`, `tar -tf`) passes a
+  cut-off file: `pg_restore --list` reads only the start, and `tar -tf` accepts a tar cut off between two files.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
   migrates first ([Upgrades](#upgrades)). An installation set up before
   `uploads.yaml` existed applies it once, with its host name, like step 5.
+  One whose backups were not yet encrypted creates the Secret
+  `maity-backup-key` first (step 4) and applies the new `backup.yaml`
+  after it: without the key every night's Job fails.
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new
   major version needs a dump and a restore.
 
@@ -400,7 +448,8 @@ Back up before every upgrade.
 1. Read the `CHANGELOG.md` section of the new version.
 2. **Back up.** When the release has `attachments.existingClaim`, apply `deploy/k3s-single/attachments.yaml` and `backup.yaml` first (without the claim
    a hub pod stays Pending, and the old backup script has no tar) and run the upgrade script with `DUMP_REQUIRES_ATTACHMENTS=1`: it then stops
-   unless the dump's mark carries the tar.
+   unless the dump's mark carries the tar. The backups are encrypted, so create the Secret `maity-backup-key` first
+   (step 4 of the k3s setup), or the backup job fails.
 3. **Migrate, then serve.** `serve` refuses a database that is not at its
    own schema version, and migrations never run on their own.
    - Plain Python: stop the hub, update the checkout, reinstall from the
