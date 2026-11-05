@@ -2489,11 +2489,11 @@
   },
   "cardpanel.notes.edit.reason_needed": {
     "en": "7e7dafee0da8b8ce",
-    "text": "1b814771c8200c19"
+    "text": "03fcf7a1407fe2f9"
   },
   "cardpanel.notes.edit.reason_required": {
     "en": "8b58467a6b4e27dd",
-    "text": "9d069f3a77147cdf"
+    "text": "0ec8e3dded377108"
   },
   "cardpanel.notes.edit.save": {
     "en": "c1db83d165ed908a",
@@ -2545,7 +2545,7 @@
   },
   "cardpanel.notes.remove.already": {
     "en": "f3dcfb0722aee6d5",
-    "text": "181c4b982783d984"
+    "text": "6763875d287e8bbc"
   },
   "cardpanel.notes.remove.ask": {
     "en": "95b35bc6708d27a3",
@@ -11949,7 +11949,7 @@
   },
   "paths.legend.rule": {
     "en": "b6bdaec3686c8ccc",
-    "text": "75dde758740ef99a"
+    "text": "020d5305ebbe6d66"
   },
   "paths.legend.selected": {
     "en": "4a504e540e190001",
@@ -11997,7 +11997,7 @@
   },
   "paths.route.note.review_result": {
     "en": "f299a30d6e94c841",
-    "text": "6852aac2738adf11"
+    "text": "e42ba0aa53788039"
   },
   "paths.route.title": {
     "en": "e539002a5eeb85dd",
@@ -18097,7 +18097,7 @@
   },
   "why.lib.stale": {
     "en": "5fff5c1f76c7a2bd",
-    "text": "597d003dc2779e31"
+    "text": "16029417e30e1f66"
   },
   "why.no_read": {
     "en": "f5124f350b2f5ae8",
