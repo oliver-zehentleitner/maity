@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import stat
 import subprocess
 from collections.abc import Sequence
@@ -94,13 +95,24 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
 def test_a_file_for_the_agents_side_is_written_without_gnu_install(
     tmp_path: Path, fake_sudo: Path
 ) -> None:
-    """A host whose `install` refuses `-D`, as one macOS host did, still gets the file: 0600,
-    in a new 0700 directory, replacing a link planted at the path (to a file or a directory) instead
-    of writing through it, and refusing a directory at the path."""
+    """A host whose `install` refuses `-D` and whose `chmod` reads no options after the mode,
+    as on one macOS host, still gets the file: 0600, in a new 0700 directory, replacing a link
+    planted at the path (to a file or a directory) instead of writing through it, and refusing
+    a directory at the path."""
     bsd = fake_sudo.parent / "sbin" / "install"  # first on the fixture's PATH
     bsd.write_text('#!/bin/sh\ncase " $* " in *" -D "*) echo "install: illegal option -- D" >&2;'
                    ' exit 64;; esac\nexec /usr/bin/install "$@"\n')  # fmt: skip
     bsd.chmod(0o755)
+    # BSD `chmod` reads options only up to the mode; a `--` after the mode is a file to it.
+    bsd_chmod = fake_sudo.parent / "sbin" / "chmod"
+    bsd_chmod.write_text(
+        "#!/bin/sh\n"
+        "check() { while [ $# -gt 0 ]; do case $1 in --) shift; break;; -?*) shift;;"
+        ' *) break;; esac; done; shift; for f; do [ "$f" = -- ] && return 1; done; return 0; }\n'
+        'check "$@" || { echo "chmod: --: No such file or directory" >&2; exit 1; }\n'
+        f'exec {shutil.which("chmod")} "$@"\n'
+    )
+    bsd_chmod.chmod(0o755)
     as_user = AsUser("maity-agent")
     target = tmp_path / "agent" / "new" / "file"
     assert as_user.write(target, "one\n") == target

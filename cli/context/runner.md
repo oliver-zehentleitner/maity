@@ -723,7 +723,7 @@ one version, not a contract.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user; a tester's macOS run, where that host's `install` refused `-D` for every write on the agents' side, and the reviews of #1411, 2026-11-05
+**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user; a tester's macOS run, where that host's `install` refused `-D` for every write on the agents' side, its rerun, where `chmod` took a `--` after the mode for a file, and the reviews of #1411, 2026-11-05
 **See:** runner.md — 2bdc5809-b08b-4fa2-97bc-004d37c4cddb — as of 2026-10-22
 **Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), a live run shows a harness writing where the agents' user cannot, or a target host lacks one of the tools the agents' side writes with
 
@@ -757,7 +757,9 @@ makes the file's own directory 0700 if missing, writes the text from
 stdin into a `mktemp` file next to the path, sets it 0600 and renames it
 over the path. A link at the path, to a file or a directory, is removed
 first, and a directory at the path is refused. The text never appears in
-an argument, and the path never holds a half-written file.
+an argument, and the path never holds a half-written file. Each `--`
+comes before a command's first operand (`chmod -- 600`, not `chmod 600 --`):
+BSD tools read no options after the first operand.
 
 **Reason:** the layout exists so that agents, and any repository code
 they run, cannot read the runner's credential or state. That only holds

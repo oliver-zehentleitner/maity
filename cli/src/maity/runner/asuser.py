@@ -30,13 +30,14 @@ from .. import state
 TIMEOUT = 60.0
 # `write` on the agents' side: $1 the directory, $2 the file; the text on stdin. A link at the
 # path is removed first (`mv` would otherwise move into a linked directory), a directory there
-# is refused, and the temporary file is removed when a step fails.
+# is refused, and the temporary file is removed when a step fails. Every `--` comes before the
+# first operand: BSD tools read no options after it, so `chmod 600 -- f` names a file `--`.
 _WRITE = (
     'mkdir -p -m 700 -- "$1" || exit 1; '
     'if [ -L "$2" ]; then rm -f -- "$2" || exit 1; '
     'elif [ -d "$2" ]; then echo "$2 is a directory" >&2; exit 1; fi; '
     't=$(mktemp "$2.XXXXXX") || exit 1; '
-    'if cat > "$t" && chmod 600 -- "$t" && mv -f -- "$t" "$2"; then exit 0; fi; '
+    'if cat > "$t" && chmod -- 600 "$t" && mv -f -- "$t" "$2"; then exit 0; fi; '
     'rm -f -- "$t"; exit 1'
 )
 REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
