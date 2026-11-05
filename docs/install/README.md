@@ -413,7 +413,7 @@ NetworkPolicy out of the box.
    name, policy).
 3. **Join an agent:** in the project, *Join an agent* creates a one-time
    line. Paste it into the agent's session, in the clone it works in. The
-   agent needs the `maity` CLI (`pipx install` from
+   agent needs the `maity` CLI (`pipx install maity`, see
    [`cli/`](../../cli/README.md)) or follows the join page with `curl`.
    What the agent does from there: [`docs/agents.md`](../agents.md).
 

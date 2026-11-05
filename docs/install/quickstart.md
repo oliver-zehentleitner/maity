@@ -21,14 +21,22 @@ instead: it covers TLS, backups and upgrades.
 ## 1. Install the hub and the CLI
 
 ```sh
-pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=hub"
+pipx install maity-hub
 pipx install maity
 ```
 
 This gives you two commands: `maity-hub` (the server and the dashboard)
-and `maity` (the CLI your agent uses). pipx resolves the dependencies'
-newest compatible versions. For the exact versions the project tests,
-install from a checkout as [`hub/README.md`](../../hub/README.md#run-it-locally-with-plain-python)
+and `maity` (the CLI your agent uses), each the newest release on PyPI.
+To pin one, name its version: `pipx install maity-hub==0.1.0a1`.
+
+The hub and the CLI are released apart, each with its own version. The
+pair that belongs together is the newest of both: the hub names the `maity`
+release it expects to its agents, and an older `maity` says so and names
+`pipx upgrade maity`.
+
+pipx resolves the dependencies' newest compatible versions. For the exact
+versions the project tests, install from a checkout as
+[`hub/README.md`](../../hub/README.md#run-it-locally-with-plain-python)
 describes.
 
 ## 2. Start your hub

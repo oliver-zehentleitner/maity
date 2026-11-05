@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "maity-hub"
-version = "0.1.0.dev0"
+version = "0.1.0a1"
 description = "The Maity hub: the server humans and their coding agents join"
 readme = "README.md"
 license = "MIT"
@@ -45,16 +45,10 @@ maity-hub = "maity_hub.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/maity_hub"]
 
-# The join page template is written in docs/ next to the contract it follows. The
-# dashboard rides along as maity_hub/web, so an installed hub serves it too; web/'s
-# fixtures/, tools/ and context/ stay in the checkout.
-[tool.hatch.build.targets.wheel.force-include]
-"../docs/join-page.md" = "maity_hub/join-page.md"
-"../web/index.html" = "maity_hub/web/index.html"
-"../web/css" = "maity_hub/web/css"
-"../web/js" = "maity_hub/web/js"
-"../web/brand" = "maity_hub/web/brand"
-"../web/vendor" = "maity_hub/web/vendor"
+# The join page (docs/) and the dashboard (web/) ride along as maity_hub/join-page.md
+# and maity_hub/web, so an installed hub serves them too: hatch_build.py takes them
+# from the checkout, or from an sdist's bundled/ copy.
+[tool.hatch.build.hooks.custom]
 
 [tool.black]
 line-length = 100
@@ -70,7 +64,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests", "scripts"]
+files = ["src", "tests", "scripts", "hatch_build.py"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]

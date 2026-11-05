@@ -102,13 +102,17 @@ def test_an_installed_package_serves_the_dashboard_it_carries(
 
 @pytest.mark.wheel
 def test_the_wheel_carries_the_dashboard_from_web() -> None:
-    import tomllib
+    import ast
 
     hub = Path(__file__).resolve().parents[1]
-    pyproject = tomllib.loads((hub / "pyproject.toml").read_text())
-    included = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
-    web = {k: v for k, v in included.items() if v.startswith("maity_hub/web")}
+    tree = ast.parse((hub / "hatch_build.py").read_text())
+    (bundled,) = (
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "BUNDLED"
+    )
+    web = {k: v for k, v in bundled.items() if v.startswith("maity_hub/web")}
     assert "maity_hub/web/index.html" in web.values()
     for source in web:
-        assert (hub / source).exists(), source
+        assert (hub.parent / source).exists(), source
         assert not {"fixtures", "tools", "context"} & set(Path(source).parts)

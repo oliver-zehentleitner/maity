@@ -53,7 +53,7 @@ jobs:
           "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../tools/requirements/site.txt \
             --require-hashes --disable-pip --progress-spinner off --desc on || status=1
           echo "::endgroup::"
-          for lock in runtime dev build tools; do
+          for lock in runtime dev build tools release; do
             echo "::group::requirements/$lock.txt"
             "$RUNNER_TEMP/audit/bin/pip-audit" --requirement "requirements/$lock.txt" \
               --require-hashes --disable-pip --progress-spinner off --desc on || status=1

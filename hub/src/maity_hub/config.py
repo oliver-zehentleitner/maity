@@ -674,7 +674,7 @@ def derive_public_url(host: str, port: int) -> str:
 
 def checkout_web_dir() -> Path | None:
     """`web/` beside `hub/` when running from a checkout, else the dashboard an installed
-    package carries (`maity_hub/web`, built in by `pyproject.toml`), else nothing."""
+    package carries (`maity_hub/web`, built in by `hatch_build.py`), else nothing."""
     package = Path(__file__).resolve().parent
     hub = package.parents[1]
     if package.parent.name == "src" and (hub / "pyproject.toml").is_file():
