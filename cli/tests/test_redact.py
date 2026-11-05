@@ -115,7 +115,7 @@ def test_a_gh_error_that_repeats_the_url_loses_the_token(clone: Path, bin_dir: P
 
 def test_a_git_error_that_repeats_the_url_loses_the_token(clone: Path) -> None:
     git(clone, "config", "branch.work.remote", TOKEN_URL)  # no insteadOf: ls-remote fails
-    git(clone, "config", "protocol.https.allow", "never")  # without touching the network
+    git(clone, "config", "http.proxy", "http://127.0.0.1:9")  # without touching the network
     with pytest.raises(gitfacts.FactsError) as raised:
         gitfacts.collect(clone)
     assert str(raised.value).startswith("git ls-remote failed:")
