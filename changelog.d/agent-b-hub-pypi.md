@@ -7,8 +7,6 @@
   (`make release-check`): the bundled dashboard and join page, a wheel rebuilt from the sdist,
   and an install outside the checkout that serves the dashboard. The `hub-dist` CI job runs
   both on every pull request that touches `hub/`, `web/` or the join page.
-- docs: `hub/README.md` describes the release (tag, version scheme, `make release-build` and
-  `make release-check`); the install guide names `pipx install maity` for the agent's CLI.
 
 ### Fixed
 
