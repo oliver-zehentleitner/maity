@@ -95,6 +95,19 @@ elif [ -n "$bytes" ] && [ -n "$cap" ] && [ "$bytes" -gt $(( cap * 1024 * 1024 ))
 else
     bad "ingress: proxy-body-size '$size' not above the hub's attachment cap '${cap}' MiB"
 fi
+grep -q "nginx.ingress.kubernetes.io/limit-" <<<"$out" && bad "ingress: a request limit while it is off" \
+    || ok "ingress: no request limit by default"
+expect "ingress: the request limit on, as ingress-nginx annotations" \
+    "$(render -f "$ingress" --set ingress.requestLimit.enabled=true)" \
+    'nginx.ingress.kubernetes.io/limit-rps: "50"' 'nginx.ingress.kubernetes.io/limit-burst-multiplier: "4"' \
+    'nginx.ingress.kubernetes.io/limit-connections: "100"' "cert-manager.io/cluster-issuer: letsencrypt"
+expect "ingress: a burst that is no multiple of the rate rounds up" \
+    "$(render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.burst=120)" \
+    'nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"'
+render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.burst=10 >/dev/null 2>&1 \
+    && bad "ingress: a burst below the rate accepted" || ok "ingress: a burst below the rate refused"
+render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.inFlight=0 >/dev/null 2>&1 \
+    && bad "ingress: no open request allowed accepted" || ok "ingress: inFlight below 1 refused"
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
 expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \

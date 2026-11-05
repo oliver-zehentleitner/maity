@@ -235,6 +235,27 @@
             "type": "string"
           }
         },
+        "requestLimit": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "perSecond": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "burst": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "inFlight": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
         "tls": {
           "type": "object",
           "additionalProperties": false,

@@ -12,7 +12,7 @@ from maity_hub.config import KTW_SKILL_GUIDE, KTW_SKILL_SOURCE, ConfigError, Set
 from tests import flow
 from tests.conftest import ClientFactory
 
-SOURCE = "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why"
+SOURCE = "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
 
 
 @pytest.fixture
@@ -116,9 +116,9 @@ def test_the_packet_tells_the_agent_how_to_load_the_skill(
     assert block["enabled"] is True
     assert block["skill"]["name"] == "keep-the-why"
     assert block["skill"]["source"] == SOURCE
-    assert block["skill"]["install"][0] == f"npx skills add {SOURCE} -g -y"
+    assert block["skill"]["install"][0] == f"npx skills@1.7.6 add {SOURCE} -g -y"
     assert block["skill"]["install"][1].startswith(
-        "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why"
+        "git clone --depth 1 --branch v0.20.3 https://github.com/oliver-zehentleitner/keep-the-why"
     )
     assert "Skill tool" in block["skill"]["load"]
     assert block["skill"]["guide"] == KTW_SKILL_GUIDE

@@ -21,7 +21,7 @@ from maity_hub.mail.environment import MailEnvironment
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
 KTW_SKILL_SOURCE = (
-    "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why"
+    "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
 )
 KTW_SKILL_GUIDE = "https://keepthewhy.com/installation/"
 
@@ -141,6 +141,9 @@ class Settings:
     max_agents_per_human: int | str | None = None
     max_orgs_per_human: int | str | None = None
     max_projects_per_owner: int | str | None = None
+    # MAITY_MAX_ATTACHMENT_STORAGE (§16.5, §8.7): bytes of attachments the whole instance may
+    # store, from 1 GiB to 1 PiB, or `unlimited`; None leaves it to the instance admin.
+    max_attachment_storage: int | str | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -148,6 +151,8 @@ class Settings:
     public_pages_render: str = "on_change"
     public_pages_interval_hours: int = 6
     public_pages_snapshot_minutes: int = 5
+    public_pages_startup_seconds: int = 30
+    public_pages_render_seconds: int = 2
     # MAITY_ROUTE_LIMITS: limits on single routes the operator sets in an emergency, counted per
     # client address in each process; empty, no route has one beyond its own (§1.7).
     route_limits: tuple[RouteLimit, ...] = ()
@@ -249,9 +254,18 @@ class Settings:
             public_pages_snapshot_minutes=parse_whole(
                 env, "MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", 5, 1, 60
             ),
+            public_pages_startup_seconds=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_STARTUP_SECONDS", 30, 1, 600
+            ),
+            public_pages_render_seconds=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_RENDER_SECONDS", 2, 1, 60
+            ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
             max_projects_per_owner=parse_limit(env, "MAITY_MAX_PROJECTS_PER_OWNER"),
+            max_attachment_storage=parse_limit(
+                env, "MAITY_MAX_ATTACHMENT_STORAGE", 1024**3, 1024**5
+            ),
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
@@ -467,16 +481,18 @@ def parse_whole(env: dict[str, str], name: str, default: int, minimum: int, maxi
     return int(value)
 
 
-def parse_limit(env: dict[str, str], name: str) -> int | str | None:
-    """A cap (§16.5): a whole number from 1 to 10000, or `unlimited`; an unset or empty
+def parse_limit(
+    env: dict[str, str], name: str, low: int = 1, high: int = 10000
+) -> int | str | None:
+    """A cap (§16.5): a whole number from `low` to `high`, or `unlimited`; an unset or empty
     variable is None, the instance admin's to decide, anything else stops the hub."""
     value = env.get(name, "").strip()
     if not value:
         return None
     if value == "unlimited":
         return value
-    if not value.isdigit() or not 1 <= int(value) <= 10000:
-        raise ConfigError(f"{name} must be a number from 1 to 10000, or unlimited")
+    if not value.isdigit() or not low <= int(value) <= high:
+        raise ConfigError(f"{name} must be a number from {low} to {high}, or unlimited")
     return int(value)
 
 

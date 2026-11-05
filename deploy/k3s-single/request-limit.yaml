@@ -1,0 +1,68 @@
+# One limit per client address for every request, at Traefik (README.md in
+# deploy/helm/maity-hub, "Ingress controllers"). The hub has no general request
+# budget of its own. Off until you switch it on: apply this file, uncomment the
+# line in hub-values.yaml, and swap the middlewares line in uploads.yaml for
+# the commented one above it. Do that only once
+# every agent runs a `maity` that retries a 429 in `maity wait`; an older one
+# ends its wait on the first 429.
+#
+# - The address is the connection's: traefik-config.yaml keeps the client's
+#   own (externalTrafficPolicy: Local). An IPv6 client counts per /64.
+# - Every agent on one machine shares that machine's address, so the values
+#   leave room for a whole team: 50 requests a second, bursts of 200, and 100
+#   open at a time (each `maity wait` holds one for up to 55 seconds).
+# - Traefik keeps a count per router: the upload route (uploads.yaml) and the
+#   join host each count apart from the rest of the host, so one address may
+#   reach the values once on each.
+# - Past a limit Traefik answers 429; the rate limit adds Retry-After.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: request-rate, namespace: maity}
+spec:
+  rateLimit:
+    average: 50
+    period: 1s
+    burst: 200
+    sourceCriterion:
+      ipStrategy: {ipv6Subnet: 64}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: request-inflight, namespace: maity}
+spec:
+  inFlightReq:
+    amount: 100
+    sourceCriterion:
+      ipStrategy: {ipv6Subnet: 64}
+---
+# The upload (docs/api.md §8.7) is up to 10 MiB that the hub holds in memory
+# while it checks it: at most 4 at a time per address, and 10 in all for the
+# host, 100 MiB of bodies against the hub's 512 MiB memory limit. The cap for
+# the host counts after the buffering, so it holds only the bodies on their way
+# to the hub: a slow upload still being read takes no slot from anyone else.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: upload-inflight, namespace: maity}
+spec:
+  inFlightReq:
+    amount: 4
+    sourceCriterion:
+      ipStrategy: {ipv6Subnet: 64}
+---
+# The host name the upload route matches is not case-sensitive, the count per
+# host is: one spelling for every upload, so the 10 hold for the host.
+# Replace maity.example.org with your host name.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: upload-host, namespace: maity}
+spec:
+  headers:
+    customRequestHeaders: {Host: maity.example.org}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: upload-inflight-all, namespace: maity}
+spec:
+  inFlightReq:
+    amount: 10
+    sourceCriterion: {requestHost: true}
