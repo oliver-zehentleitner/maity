@@ -315,7 +315,8 @@ Since they have the landing page's header and footer, the legal pages and their 
 `/assets/landing/landing.css`, `public-pages.css` and the fonts the stylesheet names, each under its
 digest, and answer with `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self';
 img-src 'self'; base-uri 'none'; frame-ancestors 'none'`, the last two as on the landing page. There is still no `script-src`, so `default-src 'none'` forbids every script, and the
-page holds none. `img-src 'self'` is for the favicon and the pictures `public-pages.css` names
+page holds none. `img-src 'self'` is for the browser's own favicon request (the page links no icon)
+and the pictures `public-pages.css` names
 (`brand/`); the legal text itself never holds an image. If the stylesheets cannot be read, the page
 carries the old inline style. Those two pictures, `brand/door-art.svg` and `brand/door-mail.svg`, are
 the designer's files unchanged, checked before they were taken in for anything active (no script, no
