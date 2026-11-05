@@ -4939,6 +4939,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-new1");
   expect(text(hcState()).startsWith("Taken: your agent Agent New has @agent-new1"), "handle check: after the create it is taken, by the new profile " + JSON.stringify(text(hcState())));
   win.Maity.api.post = hcPost; win.Maity.api.getAll = hcAll;
+  // Creating a join needs the second factor when the hub asks for it (§2.8.4,
+  // tsk-trb99kkhv1rk): the code is asked in the form and the join sent again;
+  // a bare members:admin refusal names the missing right; the project is named.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".join-panel .join-project") && text(main.querySelector(".join-panel .join-project")).includes("maintainer/maity"),
+    "join step-up: the panel names the project the join is for");
+  const suJoins = [];
+  const suVerified = [];
+  let suStepped = false;
+  let suRefuse = "step_up";
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify") { suVerified.push(b); suStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+    if (p !== "/projects/maintainer/maity/joins") return hcPost(p, b);
+    suJoins.push(b);
+    if (suRefuse === "admin") return Promise.reject(new win.Maity.api.ApiError("this needs members:admin", 403, p, "forbidden", { scope: "members:admin" }));
+    if (!suStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+    return Promise.resolve({ id: "join-su", agent_id: "agt-su1", paste_lines: { windows: "maity join su-line", posix: "maity join su-line" }, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-11-05T00:00:00Z" });
+  };
+  const suForm = () => main.querySelector("form.join-form");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-su1"); byId("join-display").value = "Agent SU";
+  suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".join-panel form.step-up") && text(main).includes("needs your second factor") && !text(main).includes("No join created"),
+    "join step-up: the second factor is asked in the form, not said as a refusal");
+  btn(main.querySelector(".join-panel form.step-up"), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector(".join-panel form.step-up") && !text(main).includes("No join created") && suJoins.length === 1, "join step-up: Cancel ends quietly");
+  suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  byId("step-up-step_up_required").value = "123 456"; main.querySelector(".join-panel form.step-up").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+  expect(JSON.stringify(suVerified) === JSON.stringify([{ code: "123456" }]) && suJoins.length === 3 && main.querySelector(".join-result"),
+    "join step-up: after the code the join is sent again and its line shown");
+  btn(main.querySelector(".join-result"), "Join another").click(); await tick();
+  suRefuse = "admin";
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-su2"); byId("join-display").value = "Agent SU2";
+  suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("No join created: you have no admin rights in this project (members:admin)"),
+    "join step-up: a bare members:admin refusal names the missing right " + JSON.stringify(text(main).slice(0, 0)));
+  win.Maity.api.post = hcPost;
   await go("#/maintainer/maity/inbox");
   await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");

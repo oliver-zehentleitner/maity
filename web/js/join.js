@@ -336,6 +336,9 @@ window.Maity = window.Maity || {};
 
     // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
     const create = h("button", { type: "submit", class: "primary" }, M.t("join.create"));
+    // Where the second factor is asked for when the hub wants it for the join.
+    const stepSlot = h("div", { class: "step-up-slot" });
+    stepSlot.hidden = true;
     const form = h("form", {
       class: "join-form",
       onsubmit: async (e) => {
@@ -388,8 +391,11 @@ window.Maity = window.Maity || {};
         create.disabled = true;
         let j;
         try {
-          j = await M.api.post(ctx.base + "/joins", req);
+          // Creating a join is a sensitive call (§2.8.4): the hub asks for the
+          // second factor first, by app or by mail, and the join is sent again.
+          j = await M.stepUp.run(() => M.api.post(ctx.base + "/joins", req), stepSlot, M.t("join.step_up"));
         } catch (err) {
+          if (err.code === "cancelled") { status.done(); return; }
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
           const d = err.details || {};
@@ -401,6 +407,8 @@ window.Maity = window.Maity || {};
             : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
               field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
             : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
+            // No members:admin and the member's way closed (§3.1): say which right is missing.
+            : err.code === "forbidden" && !d.reason && d.scope === "members:admin" ? { message: M.t("join.failed.no_admin") }
             : err);
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (takeover || d.field === "takes_over") (takeover === "handover" ? handover : takesOver).focus();
@@ -471,13 +479,14 @@ window.Maity = window.Maity || {};
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
         h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+    stepSlot,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
     function showForm() { append(clear(body), form); }
     showForm();
     showAgent();
-    append(clear(panel), panelHead(() => close(true), own), body);
+    append(clear(panel), panelHead(ctx, () => close(true), own), body);
 
     let opener = null;
     // Opened, it reads the members again: an agent's instances and its team's
@@ -610,11 +619,16 @@ window.Maity = window.Maity || {};
     else el.focus();
   }
 
-  function panelHead(onClose, own) {
+  // The project the join is for, by name and full name: with several
+  // projects open it must not be guessed from the tab.
+  function panelHead(ctx, onClose, own) {
+    const project = ctx.project || {};
+    const full = project.full_name || ctx.slug || "";
     return [
       h("div", { class: "join-head" },
         h("h3", { id: "join-title" }, own ? M.t("join.title.own") : M.t("join.title")),
         h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
+      h("p", { class: "join-project" }, M.t("join.project", { name: project.name || ctx.slug || full, full })),
       h("p", { class: "muted" }, M.t("join.intro")),
     ];
   }
@@ -656,7 +670,7 @@ window.Maity = window.Maity || {};
             } else retry.disabled = false;
           },
         }, M.t("join.retry"));
-        append(clear(panel), panelHead(failedClose, !!hooks.member),
+        append(clear(panel), panelHead(ctx, failedClose, !!hooks.member),
           h("p", { class: "error", role: "alert" }, M.t("join.read_failed_text", { reason: err.message || err.code || M.t("join.an_error") })), retry);
         listStatus.fail(M.t("join.read_failed"), err);
         return false;
