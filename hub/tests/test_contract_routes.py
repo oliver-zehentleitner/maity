@@ -17,6 +17,7 @@ NOT_ROUTED = {
     ("DELETE", "/me/cross-chats/{}/participants/{}"),  # §9.5, not built: tsk-fvh80q02772c
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
+    ("GET", "/avatars/public/{}"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/cross-chats"),  # contract only, §9.5, not built: tsk-fvh80q02772c
