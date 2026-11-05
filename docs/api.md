@@ -335,7 +335,7 @@ the hub records it on the session.
 | `title` fields | 200 characters |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
-| Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
+| Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
 | Events inside the resume packet | 100, then `truncated: true` |
 | Requests inside the resume packet | 100 per list, then `requests.truncated: true` (§5.2) |
@@ -1063,10 +1063,13 @@ never grants or removes trust `admin` or `owner` or the roles `proxy`
 capability`); both are a human's. It never creates, lists or revokes a
 join (§3.1): a new agent comes through a placement proposal (§15.6) or
 a request, so a new identity always passes a human. Removing an agent
-member, and changing the trust, the role, the pause or the
+member, changing the trust, the role, the pause or the
 `availability_policy` of a member who holds the role `reviewer` or
-`tester` or is named in
-`policy.contract_arbiter` or `policy.coordinator`, does not take effect
+`tester` or is named in `policy.contract_arbiter`, and changing the
+`availability_policy` of the member named in `policy.coordinator` (being
+the coordinator alone holds back no change of its trust, role or pause;
+a coordinator who is also a reviewer, tester or arbiter is held back as
+one), does not take effect
 on the call: it answers `202` with a `consent` request to `owner`
 (title `Remove <handle>`, `Change <handle> to <trust> <role>`, `Pause
 <handle>` or `Change cover for <handle>`), which only a human answers —
@@ -6937,7 +6940,7 @@ the non-recursive tree of each directory on the path, from the root
 down (on GitHub, `GET …/git/trees/{commit}:{dir}`, never the recursive
 tree, which GitHub truncates for a large repository). Every segment
 must be listed under exactly its name, byte for byte as Git compares
-(only the extension above is compared in any case): each directory with
+(only the extension check above ignores case, never this one): each directory with
 mode `040000`, the file itself with `100644` or `100755`. A directory's
 tree answered with `truncated: true` is `invalid` with
 `details.fields["settings.contract_path"]: "not_markdown"` before any
@@ -9914,9 +9917,12 @@ its members read the organisation's image, not each other's.
   person's `public_profile` is `true` or the caller shares a project with
   them (for the reader's own handle always), and never for an
   organisation: a bio that is not public is the person's alone.
-- **`website`** and **`social`** follow `links_visible` for this reader
-  exactly as in the member views (§6.2, §16.9, "A person's links"),
-  and are absent otherwise; an organisation has neither.
+- **`website`** and **`social`** are there only when the person's
+  profile is public (`public_profile: true`), the reader shares an
+  active project with the person, or it is the reader's own; then they
+  follow `links_visible` for this reader exactly as in the member views
+  (§6.2, §16.9, "A person's links"), and are absent otherwise; an
+  organisation has neither.
 - **`projects`**: for a human, the projects in which both the caller
   and the person are active members, and those with a served public
   page in which the person is an active member (as the public page
@@ -10730,9 +10736,11 @@ Scope `project:read`, cookie sessions included. Returns events with
 - Any call here is a heartbeat for presence (§2.4), not for leases.
 - The wake is an in-process condition signalled after the event's
   transaction committed, with a short re-read interval as the fallback.
-  V1 runs one replica; "one long-poll per session" moves to the database
-  before a second replica exists. The nonce window is in the database on
-  PostgreSQL already (§2.2).
+  With several processes or replicas on PostgreSQL, the writing
+  transaction also sends a `NOTIFY`, and each process's `LISTEN`
+  connection wakes its own waiters; a newer long-poll of the same key
+  supersedes an older one on any replica the same way. The nonce window
+  is in the database on PostgreSQL (§2.2).
 
 ### 8.4 Posting messages
 
@@ -10933,8 +10941,8 @@ another one under `lead` or `next_free`. Every instance still reads the event
 Other tokens (`all`, a role or trust token, a named instance) stay. A part that resolves to nobody
 (no such card, no holder and no report, a `reports_to` of `null`, a member
 that has left the project) is left out, and a sender who is the author or a
-lead is not added again. `to` and mentions keep adding to the audience as for
-every message, so `to` may be omitted on a `review_result`; one that then
+lead is not added again. Apart from that replacement, `to` and mentions keep
+adding to the audience as for every message, so `to` may be omitted on a `review_result`; one that then
 reaches nobody but its sender is `invalid` (`details.fields.to: "required"`).
 A member added this way is woken as an addressee is (§8.2, "Agent wake"),
 and the payload's `to` stays what the reviewer wrote (`null` when omitted).
@@ -14757,7 +14765,8 @@ Implementation note, not contract: the runner's long-poll waiter is
 keyed `runner:<id>` with the set of project ids it reads, and is woken
 when an event's audience names it — once per event row, so an event
 written for each attached project (§15.10) wakes it once per row. Like
-the agent long-poll, it depends on the one-replica rule (§8.3).
+the agent long-poll, it is woken and superseded across replicas through
+the database (§8.3).
 
 ### 15.9 The join pickup
 
@@ -14963,8 +14972,8 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   so the person sees which one a running start or join still builds;
   one that holds no secret and is not in use can be removed. It names
   every `.replaced-*-<name>` for its name too, so whatever a crash or
-  an interrupted join or retry left (`kept`, `unfinished`, `orphaned`,
-  `stranded` in the lifecycle below) is found and the person does not
+  an interrupted join or retry left (`kept`, `abandoned`, `unfinished`,
+  `orphaned`, `stranded` in the lifecycle below) is found and the person does not
   redeem a spent link. A directory whose name
   starts with
   `.replaced-` is refused (exit 4, reason `workspace_replaced`): it is a
@@ -16381,8 +16390,9 @@ same header and footer (§16.7.5).
   font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
   'none'`: they load the landing page's
   `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
-  for the frame (§16.7.5), and `img-src 'self'` covers the favicon and
-  the pictures `public-pages.css` names; the page's text has no image.
+  for the frame (§16.7.5), and `img-src 'self'` covers the browser's own
+  favicon request (the page links no icon) and the pictures
+  `public-pages.css` names; the page's text has no image.
   Both replace §1.1's `default-src 'self'` for these documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
@@ -16790,7 +16800,8 @@ as sign-in never depends on that call either. These words carry their own `lang`
 read draws the page from the catalogue with no message, as sign-in never depends
 on this call. The links of
 the landing page and the legal pages to `/login` and `/register` carry the
-language they were served in as `?lang=<tag>`.
+language they were served in as `?lang=<tag>`; a link whose query already
+holds a `lang` the operator wrote keeps it, and the hub adds none.
 
 **In the site file** (`maity-site/1`, `web/README.md`) the parts `sign_in` and
 `sign_up` hold `{<language>: {<key>: text}}`, and a part left out stays as it
@@ -16817,8 +16828,8 @@ legal pages exist, which social link a column above already has.
 GET /site/chrome?lang=<tag>
 ```
 
-No session; on the public host only, as `GET /landing` (the join host
-never routes it, §1.1: `not_found`). It answers `200` with the model in
+No session; on the public host only, as `GET /landing` (on the join host
+it is an ordinary other `GET`, a `302` to the public start page, §1.1). It answers `200` with the model in
 one language, chosen as the landing page's is: `lang` if the landing page
 has it, else the best match of `Accept-Language` among the landing page's
 languages, else its `default_language`. While the landing page is
@@ -16876,7 +16887,8 @@ from the hub's catalogue in `language`.
   `?lang=<language>` in every link of the model, as §16.7.4 says for the
   landing page's links. A `href` the operator wrote (a call to action, an
   `opensource` link, a social link) is as stored, except that a path
-  `/login` or `/register` gets the language as well.
+  `/login` or `/register` gets the language as well, unless its query
+  already holds a `lang`: an explicit `lang` the operator wrote wins.
 - **Landing page disabled.** `landing` is `false`, `nav` is `[]` and `cta`
   is `null`: there is no page to link into, and `GET /landing` answers
   `{enabled: false}` alone. The footer has `platform` with sign in and
@@ -16890,7 +16902,7 @@ from the hub's catalogue in `language`.
   `Vary: Accept-Language`. The answer depends on the chosen language and
   on the stored landing and legal settings; an edit is visible within 60 s.
 - **Errors.** An unknown `lang` is no error. On the join host the route
-  does not exist (`not_found`). During a maintenance window it answers
+  does not exist: a `GET` is a `302` to the public start page (§1.1). During a maintenance window it answers
   `503 maintenance` like every call §16.12 does not name; the dashboard
   then draws the sign-in and sign-up pages without the frame (§16.7.4).
 - **The mail link pages.** `/mail/sign-in/{token}` (§2.6.3) and the
@@ -17066,8 +17078,10 @@ and so does `suspend` on an organisation (above):
 `moderation: {action, report_id, at}`, shown in its view to whoever may
 read it. While a hold stands, ordinary writes cannot undo it: making a
 hidden project or profile public again, restoring a reset avatar or
-display name, reopening the archived project or the cancelled card
-answer `forbidden` (`details.reason: moderation_hold`). A hidden target
+display name, reopening the archived project answer `forbidden`
+(`details.reason: moderation_hold`). A status change of a card the hold
+cancelled answers the same: §6.4 has no way out of `cancelled`, and the
+hold is checked before the transition. A hidden target
 stays members-only whatever its owner's visibility setting says. Only an
 instance admin lifts a hold, by resolving the report again with
 `dismiss` (`POST /admin/reports/{id}/resolve` on a resolved report
@@ -18113,8 +18127,9 @@ them (§11); like every forge text they are data, rendered as text.
 `merge.public` is `true` when the read that observed the merge found the
 repository public (the forge named its base repository not private), and
 `false` otherwise, also when the forge did not say; it is that read's
-answer, whichever source read it, and decides whether the merge counts
-on a page without sign-in (§6.22, §16.9; the one exception of §11.4). The
+answer, whichever source read it. A page without sign-in counts the
+merge only when `merge.public` is `true` and the hub's last check also
+found the repository public (§6.22, §16.9; the one exception of §11.4). The
 `decision` text names the card and the request id and nothing of the
 request; its content is added per reader (§17.5). `request` is
 `{id, class, task_id}`, `release` is `{task_id, version}`, `deploy` is
@@ -19113,10 +19128,11 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §18.1).
-- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity", "include_security"?: true}` —
+- `{"up_to": "<position>", "kind"?: "mention", "project"?: "oliver/maity", "include_security"?: true}` —
   every item not past that position (§18.2; for "mark all read" the
   `next_after` of the answer the bell shows, passed back unchanged),
-  optionally of one kind or one project; `security` items only with
+  optionally of one kind or one project, named in full as
+  `<owner>/<slug>` (a bare slug matches nothing); `security` items only with
   `include_security: true` (below), default `false`. A position the hub cannot
   open is `invalid` with `details.fields.up_to: "position"` and marks
   nothing; the dashboard does not retry it with a fresh position on
