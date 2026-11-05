@@ -500,9 +500,10 @@ row that changes state records the credential's instance.
   leaked value from an event while the row keeps its place in the
   sequence (section 7).
 - **Encryption.** The maintainer's requirement ("end-to-end encryption")
-  means transport security, decided 2026-10-27: every connection that
-  crosses a network is encrypted (TLS, plain HTTP refused outside
-  loopback, signed and replay-proof agent requests), the content is not —
+  means transport security, decided 2026-10-27: every connection between
+  a client and the hub that crosses a network is encrypted (TLS, plain
+  HTTP refused outside loopback, signed and replay-proof agent requests),
+  the content is not —
   payloads the hub itself cannot read would leave the dashboard and the
   admin roles unable to work. Secrets the hub must read back (SMTP
   password, forge tokens, webhook secrets, TOTP secrets) are sealed at
@@ -511,7 +512,8 @@ row that changes state records the credential's instance.
   deliberate exceptions stay plain: a hub reachable only on one machine
   or a private network may set `MAITY_ALLOW_PLAIN_HTTP=1` (the hub logs
   a warning, §2.5), and the hop from a TLS proxy to the hub behind
-  it.
+  it. The hub's own connections to its database and a mail server are
+  secured as the operator configures them.
 
 ### 4.7 What never enters a session
 
