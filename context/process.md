@@ -1398,3 +1398,36 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+
+## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
+
+**Id:** 671ac5db-2e5e-4cd3-ba80-bd1f4a2d0f4b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405
+**Revisit when:** the CLI gets a hashed dev lock of its own (then the hook takes the CLI's tools from it), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
+
+`tools/hooks/pre-push` runs `tools/pre_push.py` once a clone sets `git config core.hooksPath tools/hooks`
+(CONTRIBUTING.md). For each of `hub/` and `cli/` that the pushed commits touch, it runs CI's own `make lint
+typecheck`, without the tests, with the Python of the hub's environment, which `make -C hub install` fills from
+the hashed lock. Before that it compares black, ruff and mypy there with the pins in `hub/requirements/dev.txt` and
+stops on a difference: the point is the same result as CI, and a local environment drifts (on the machine where the
+hook was written, ruff was 0.17.3 against the lock's 0.17.1). It checks the working tree, so it also stops when
+HEAD is not the pushed commit or a touched package has uncommitted changes.
+
+**Rejected alternatives:**
+- A hook that is on for everyone (installed by a setup step, or a check in CI that it is set): the card asked for
+  opt-in, and a contributor without the hub's environment could not push at all.
+- The tests in the hook as well: the shared machine's memory limits heavy runs (the entry above), and the tests are
+  what CI is for; lint and types are the cheap part.
+- A copy of the hook into `.git/hooks`: it would have to be copied again after every change and per clone, and
+  `core.hooksPath` with a relative path works in every worktree of the clone. The cost: hooks in `.git/hooks`
+  do not run while it is set.
+- The tools from wherever `black`/`ruff`/`mypy` are found on PATH: an unpinned version passes or fails other
+  code than CI does, which is the round the hook is meant to save.
+- The pushed commit checked out into a temporary tree instead of the working tree: mypy needs the environment the
+  hub's editable install points at, which is the working tree; checking there and stopping when it differs from
+  the push is simpler and says so.
+- The CLI's tools from the CLI's own environment: the `cli` CI job installs its dev extra unpinned, so there is no
+  lock to compare with yet; until a CLI dev lock exists the hook checks the CLI with the hub lock's versions.
