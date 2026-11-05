@@ -435,10 +435,13 @@ window.Maity = window.Maity || {};
   // (main's padding, the product line of §16.13). Measuring from the
   // header's bottom left out what stands between (a banner, the toolbar's
   // margin) and everything below, so the page scrolled past the composer
-  // (tsk-j10w2hsm1h90). Measured again on a resize and when the page around
-  // it changes; the visual viewport shrinks with a phone's on-screen
-  // keyboard, 100dvh does not everywhere.
-  // The lines of history an open chat keeps in view however small the screen.
+  // (tsk-j10w2hsm1h90). When the fixed chrome plus a history floor would run
+  // past the window, the height stops at the window edge so the input stays
+  // on screen (tsk-df4tcq83pnf6); the product line may then sit just below
+  // the fold. Measured again on a resize and when the page around it
+  // changes; the visual viewport shrinks with a phone's on-screen keyboard,
+  // 100dvh does not everywhere.
+  // Preferred lines of history above the product line when the window has room.
   const HISTORY_LEAST = 60;
   function fitToScreen(layout) {
     let watcher = null, swaps = null, frame = 0;
@@ -492,8 +495,35 @@ window.Maity = window.Maity || {};
         watched = parts;
       }
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
-      const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
-      const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
+      // Floor is the pane's non-history chrome only. A +HISTORY_LEAST floor that
+      // is taller than the window put the composer past the bottom edge on a
+      // short phone (tsk-df4tcq83pnf6); the page scrolled and the input was off
+      // screen. Prefer keeping the composer in the window when that chrome fits.
+      const floor = Number.isFinite(fixed) ? fixed : 0;
+      const toFooter = Math.floor(height - (box.top + scrolled) - below);
+      const toWindow = Math.floor(height - (box.top + scrolled));
+      let px;
+      if (toFooter >= floor + HISTORY_LEAST) {
+        // History has room above the product line; the page need not scroll.
+        px = toFooter;
+      } else if (toWindow >= floor + HISTORY_LEAST) {
+        // Preferred history still fits in the window. Keep that floor and let
+        // the product line sit just below the fold rather than shrinking the
+        // message list (composer 3x / tall chrome with a banner).
+        px = Math.max(toFooter, floor + HISTORY_LEAST);
+      } else if (toWindow >= floor) {
+        // Fixed chrome fits, but not with HISTORY_LEAST: stop at the window
+        // edge so the input stays on screen; history may shrink below the
+        // preferred floor (short phone, tsk-df4tcq83pnf6).
+        px = toWindow;
+      } else {
+        // Fixed chrome taller than the window below the layout (a tall banner
+        // on a short phone, or a group's Manage chrome): keep a history floor
+        // so the composer is not clipped under the product line; the page may
+        // scroll.
+        px = Math.max(240, floor + HISTORY_LEAST, toFooter);
+      }
+      const value = Math.max(0, px) + "px";
       if (layout.style.getPropertyValue && layout.style.getPropertyValue("--chat-h") === value) return;
       layout.style.setProperty("--chat-h", value);
     };
