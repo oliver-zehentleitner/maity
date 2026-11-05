@@ -90,6 +90,7 @@ window.Maity = window.Maity || {};
     request_not_open: () => M.tOwn("error.request_not_open"),
     request_timeout: () => M.tOwn("error.request_timeout"),
     resolve_the_report: () => M.tOwn("error.resolve_the_report"),
+    restricted_quota: () => M.tOwn("error.restricted_quota"),
     role_unknown: () => M.tOwn("error.role_unknown"),
     runner_not_attached: () => M.tOwn("error.runner_not_attached"),
     runner_revoked: () => M.tOwn("error.runner_revoked"),

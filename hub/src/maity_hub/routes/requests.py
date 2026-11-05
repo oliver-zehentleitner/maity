@@ -39,6 +39,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.cards import CLOSED
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -579,7 +580,7 @@ def create_request(
             and body.while_open == "wait"
             and holder is not None  # an unheld card is nobody's to block
             and holder in (mine.id, on_behalf)
-            and card.status not in ("blocked", "done", "cancelled")
+            and card.status not in ("blocked", *CLOSED)
         ):
             # The asker waits: the card shows it, and remembers where it was (§6.4).
             conn.execute(

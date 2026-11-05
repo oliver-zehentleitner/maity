@@ -99,12 +99,11 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   `X-Content-Type-Options: nosniff` and, on documents the hub renders
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`; a page the hub renders whole with the product
-  line in its head (§16.13: the join page, the mail link pages, the
-  `503` page) adds
+  line in its head (§16.13: the join page and the `503` page) adds
   `style-src 'sha256-…'`, the hash of that line's one `<style>` block
   and of no other. The dashboard draws the line with its own stylesheet
-  and sends no hash. The sign-in link page answers with its own policy
-  (§16.7.5). The one exception to `no-store` is the images —
+  and sends no hash. The mail link pages (§2.6.3, §18.6; not
+  registration's, §2.7.1) answer with the frame's policy (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
   by `ETag`, and the project
@@ -242,7 +241,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `forge_app_missing` | linking a GitHub App installation while the instance has no App configured (§11.4) |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `restricted_quota` | a card's restricted text would make the 201st card of the project with one (§6.4); `details.max` |
-| 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
+| 409 | `attachment_quota` | an attachment upload would take the project over its quota, the uploading membership over its pending cap, or the instance over its attachment storage (§8.7, §16.5); `details.scope` (`project`, `pending` or `instance`), `details.used`, `details.quota` for `project` and `pending`, and `details.count`, `details.max` for `pending`; `instance` carries no numbers |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
 | 409 | `maintenance_running` | `DELETE /admin/maintenance` on a running window, which `POST /admin/maintenance/end` ends instead (§16.12) |
 | 409 | `maintenance_not_running` | `POST /admin/maintenance/end` while no window is running (§16.12) |
@@ -358,6 +357,7 @@ the hub records it on the session.
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
 | Attachment uploads | 30 and 100 MiB per membership in 10 minutes (§8.7) |
 | Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
+| Attachments stored on the instance | `max_attachment_storage`, default `unlimited`, all projects and pending uploads together (§8.7, §16.5) |
 | Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
 | `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters, a stored vector behind a handle when the inline form would not fit (§18.2) |
@@ -11566,6 +11566,21 @@ ones free their bytes. An upload that would exceed it is
 is stored. The project view (§6.1) shows `attachments: {used, quota}` to
 callers with `project:admin`; for others it is `null`.
 
+**Instance storage.** All projects together hold at most the limit
+`max_attachment_storage` (§16.5), counted the same way: every stored
+attachment of the instance, pending ones included, after re-encoding,
+deleted ones not. An upload that would exceed it is `attachment_quota`
+with `details: {"scope": "instance"}` and nothing is stored; the
+instance's total is the operator's to see (§16.5), not the member's, so
+the refusal names no numbers. The project's quota and the pending cap are
+checked first. The check runs under the project's lock, as the project's
+quota does, not under one lock for the instance: concurrent uploads into
+different projects (at most one per project between its check and its
+commit) may together pass the limit by at most the stored sizes of the
+other uploads in flight when the last of them to be accepted was checked.
+Lowering the limit deletes nothing; uploads are refused until deletions
+bring the total under it.
+
 **Limits.** At most 10 MiB per file, before re-encoding — the body cap
 of §1.7 does not apply to this call, the file cap does
 (`payload_too_large`, checked against `Content-Length` before the body
@@ -11613,7 +11628,7 @@ pixels on a side or 40 megapixels, by the header or after decoding, or a
 decoded size that differs from the header) and `undecodable` (an image
 whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
-`attachment_quota` (`details.scope` `project` or `pending`);
+`attachment_quota` (`details.scope` `project`, `pending` or `instance`);
 `rate_limited`; `project_closed` in an `archived` project.
 Every call: `not_found` for a runner credential. While the instance has
 no attachment store, `attachments_not_configured`: on `GET` and `DELETE`
@@ -15966,8 +15981,9 @@ no notification.
 ### 16.5 Limits
 
 The admin area's section "Limits": the caps the operator puts on what
-one account may hold. Plans (§2.7, part two) will set these per plan;
-until then there is one value for every account.
+one account may hold, and one limit for the whole instance, its
+attachment storage. Plans (§2.7, part two) will set the caps per account
+per plan; until then there is one value for every account.
 
 ```
 GET, PATCH /admin/settings/limits
@@ -15981,6 +15997,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
@@ -15988,7 +16005,9 @@ values with the source rules of §16.2, as in §16.4.
   "max_orgs_per_human": { "value": 5, "source": "default" },
   "humans_at_org_limit": 0,
   "max_projects_per_owner": { "value": 10, "source": "default" },
-  "owners_at_project_limit": 0 }
+  "owners_at_project_limit": 0,
+  "max_attachment_storage": { "value": "unlimited", "source": "default" },
+  "attachment_storage_used": 734003200 }
 ```
 
 `null` keeps the meaning of §16.2 here too: a `PATCH` with
@@ -15998,7 +16017,9 @@ value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, and
 `owners_at_project_limit` for `max_projects_per_owner`, which take
-`null` and `unlimited` the same way.
+`null` and `unlimited` the same way. `attachment_storage_used` is
+read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
+under every value, `unlimited` included.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -16032,12 +16053,19 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
   frees no place (of the periodic runs, it only takes the project out
   of the availability sweep and stops new jour-fixe rounds, §6.1). A project transferred out
   frees its place.
+- **What `max_attachment_storage` gates.** An attachment upload (§8.7)
+  alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
+  the three above it caps the instance, not an account: the disk and the
+  blob store are the operator's, whatever the accounts hold. Posting a
+  message that names attachments already uploaded is not refused.
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or
   receives) no new one until they are under it again (the tolerant rule
-  of `context/scope.md`). `humans_at_limit` and `humans_at_org_limit`
-  count the humans at or over each value, `owners_at_project_limit` the
-  namespace owners (humans and organisations), for the admin's eye.
+  of `context/scope.md`); over a lowered `max_attachment_storage`,
+  uploads are refused until deletions bring the total under it (§8.7).
+  `humans_at_limit` and `humans_at_org_limit` count the humans at or over
+  each value, `owners_at_project_limit` the namespace owners (humans and
+  organisations), for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway
   creation and the mistakes of scripts, and the seat of the hosted
   offering is the human, never the agent (`context/scope.md`); a limit
@@ -16769,8 +16797,8 @@ is. `registration`, the settings of §16.4, stays a part of its own.
 The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
-pages (§16.7.1), the sign-in link's page `/mail/sign-in/{token}` with the
-page for a link that no longer works (§2.6.3), and the dashboard's
+pages (§16.7.1), the mail link pages, which are the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the
+pages of §18.6, each with its page for a link that no longer works, and the dashboard's
 `/login` and `/register` (§16.7.4).
 The dashboard's sign-in stands in the frame wherever it is drawn without
 a session, not only at `/login`: at the root after a sign-out, and at an
@@ -16861,19 +16889,30 @@ from the hub's catalogue in `language`.
   does not exist (`not_found`). During a maintenance window it answers
   `503 maintenance` like every call §16.12 does not name; the dashboard
   then draws the sign-in and sign-up pages without the frame (§16.7.4).
-- **The sign-in link's page.** `/mail/sign-in/{token}` (§2.6.3) stands in
+- **The mail link pages.** `/mail/sign-in/{token}` (§2.6.3) and the
+  pages of §18.6 (`/mail/verify/…`, `/mail/unsubscribe/…`,
+  `/mail/second-factor-reset/…`, `/mail/account-deletion/…`) stand in
   the model's header and footer around the door of `public-pages.css`,
-  its panel empty, in the human's interface language (§6.2); the page
-  for a link that no longer works is in the best match of
-  `Accept-Language` among §16.7's languages, else `en`. Its footer has no
+  its panel empty, the page's own content (title, text, quote, link,
+  button) in the form's column. Each keeps its words, its statuses and
+  its one explicit button: only the look is the frame's. A page is in
+  the human's interface language (§6.2); the sign-in link's page for a
+  link that no longer works is in the best match of
+  `Accept-Language` among §16.7's languages, else `en`; a §18.6 page
+  for one is, as before, in the human's language where the token is the
+  hub's own, else `en`, saying nothing about whom a forged token names. Its footer has no
   language switch (`languages` is `[]`): the page's language is the
-  person's, not the address's, and the address holds the token. The page
-  has no script; its policy is `default-src 'none'`, the hub's own
+  person's, not the address's, and the address holds the token. The pages
+  have no script; their policy, the same string on each, is `default-src 'none'`, the hub's own
   stylesheets, fonts and images and the fallback style by its hash,
   `form-action 'self'`, `base-uri 'none'`
   and `frame-ancestors 'none'`, with `Referrer-Policy: no-referrer`.
-  Registration's link page (§2.7.1) and the other `/mail/…` pages
-  (§18.6) stay outside the frame, with the product line (§16.13).
+  The frame's stylesheets are the hub's own files (`/assets/landing/…`,
+  §16.7), never a third party's. A hash source cannot allow them, as it
+  admits only an inline block, so the §18.6 pages leave the product
+  line's `style-src 'sha256-…'` (§1.1) for this policy, which is
+  stricter in every other part. Registration's link page (§2.7.1) stays
+  outside the frame, with the product line (§16.13).
 
 ### 16.8 Abuse reports
 
@@ -17961,14 +18000,14 @@ back to the English sentence.
 |---|---|
 | every page the dashboard draws (`web/`): the signed-in views, the sign-in and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
 | the hub's `503 maintenance` page (§16.12) | yes |
-| the pages behind the links in mails, `/mail/…` (§2.7.1, §2.9, §18.6), except the sign-in link's | yes |
-| the sign-in link's page `/mail/sign-in/{token}` and its page for a link that no longer works (§2.6.3), in the frame of §16.7.5 | no: the frame's footer |
+| registration's link page `/mail/register/{token}` (§2.7.1) | yes |
+| the mail link pages in the frame of §16.7.5: the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the pages of §18.6 (§2.9 among them), each with its page for a link that no longer works | no: the frame's footer |
 | the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
 | the join page for an agent, the Markdown answer (§3.2) | no |
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
 
-The sign-in link's page is the hub's own page in that frame, so it has
+The mail link pages are the hub's own pages in that frame, so they have
 no line either. Where the dashboard draws the sign-in or `/register`
 without a session, the frame of §16.7.5 has the landing page's footer,
 and it stands in the line's place: while the frame stands, and while
@@ -19455,8 +19494,9 @@ happens when the address changes or is removed. An unsubscribe token
 for a kind this hub does not know counts as invalid. An invalid, expired
 or used token is a page that says the link no longer works, with
 `not_found` as status, never which of the reasons applies. The pages
-are rendered in the human's interface language (§6.2), carry the headers of §1.1, and
-the request log masks the token as `…`.
+are rendered in the human's interface language (§6.2), stand in the
+frame of §16.7.5 under its policy and with `Referrer-Policy:
+no-referrer`, and the request log masks the token as `…`.
 
 ### 18.7 Delivery failures
 

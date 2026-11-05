@@ -16,6 +16,7 @@ from sqlalchemy import Connection, and_, or_, select, update
 from maity_hub import clock, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
+from maity_hub.cards import CLOSED, open_claims
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit
 from maity_hub.scopes import counts_as, has_scope, in_admin_team
@@ -171,7 +172,7 @@ def _cover_set(conn: Connection, project: Any, row: Any) -> tuple[list[Any], lis
             t.card.c.project_id == project.id,
             t.card.c.cover.is_(None),
             or_(
-                and_(t.card.c.claim_holder == row.id, t.card.c.status.in_(HELD)),
+                open_claims(row.id, status=HELD),
                 and_(
                     t.card.c.assigned_to == row.id,
                     t.card.c.status == "open",
@@ -418,7 +419,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if cover.get("touched") or card.status in ("done", "cancelled"):
+        if cover.get("touched") or card.status in CLOSED:
             kept.append(card.id)
         else:
             returned.append(card.id)

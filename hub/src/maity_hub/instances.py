@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import Field
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import clock, commitment, namespace
+from maity_hub import cards, clock, commitment, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -460,11 +460,7 @@ def _claim_counts(conn: Connection, membership_ids: list[int]) -> dict[tuple[int
     claims: dict[tuple[int, str], int] = {}
     for holder, instance, count in conn.execute(
         select(t.card.c.claim_holder, t.card.c.claim_instance, func.count())
-        .where(
-            t.card.c.claim_holder.in_(membership_ids),
-            t.card.c.claim_instance.is_not(None),
-            t.card.c.status.notin_(("done", "cancelled")),
-        )
+        .where(cards.open_claims(membership_ids, instance=cards.SOME_INSTANCE))
         .group_by(t.card.c.claim_holder, t.card.c.claim_instance)
     ):
         claims[(holder, instance)] = count
