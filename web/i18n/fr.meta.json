@@ -5301,7 +5301,7 @@
   },
   "inbox.talk_not_yours": {
     "en": "cc8fdbfb13a422cb",
-    "text": "2661bca0f95875ec"
+    "text": "ef4adc4809ab679d"
   },
   "inbox.talk_takeover": {
     "en": "0dfdb94f4f6e7997",
@@ -8633,7 +8633,7 @@
   },
   "mail.kind.chat": {
     "en": "70132db1e9c6612a",
-    "text": "d9f2f6a021d6bf95"
+    "text": "725ff528fbea0a34"
   },
   "mail.kind.inbox": {
     "en": "847f0edf5fd1f88e",
@@ -11909,7 +11909,7 @@
   },
   "paths.chip.request_human": {
     "en": "678e1f7346bf5660",
-    "text": "95be6e3897066c37"
+    "text": "18b522998ed500df"
   },
   "paths.chip.review_result": {
     "en": "418956222063aa85",
@@ -11957,7 +11957,7 @@
   },
   "paths.legend.human": {
     "en": "11e25bab0df4bb9f",
-    "text": "f8287fed8cb24397"
+    "text": "bdf6f4607322bd22"
   },
   "paths.legend.reports": {
     "en": "638663337be53eb5",
@@ -16429,7 +16429,7 @@
   },
   "swarm.messages": {
     "en": "2977f5ebddd21011",
-    "text": "8e4d35a1566c2726"
+    "text": "055966edd47ae46f"
   },
   "swarm.not_seen": {
     "en": "c0d5d398a4ca6f8a",
@@ -17833,7 +17833,7 @@
   },
   "waiting.sessions.signed_in": {
     "en": "2f0edbda6873da04",
-    "text": "df3207bbd860c741"
+    "text": "b423152c21d0df13"
   },
   "waiting.sessions.this_session": {
     "en": "ffc51cd1194d39a8",
