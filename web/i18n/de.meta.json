@@ -3879,6 +3879,10 @@
     "en": "573787aef85bae91",
     "text": "564d1d19b0a06055"
   },
+  "error.resolve_the_report": {
+    "en": "801abed453bd5d19",
+    "text": "b7f241a707bffef2"
+  },
   "error.role_unknown": {
     "en": "93981d3d18c2300e",
     "text": "051f707138cd3060"
@@ -14270,10 +14274,6 @@
   "sessions.address.too_new": {
     "en": "ceb846c9f1e324a3",
     "text": "7d9146beda4e820c"
-  },
-  "sessions.alert_unread": {
-    "en": "4182ae122ff51775",
-    "text": "86229e9007935500"
   },
   "sessions.banner.approved": {
     "en": "36d355755805147c",

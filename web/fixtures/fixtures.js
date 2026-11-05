@@ -4152,6 +4152,7 @@ window.MAITY_FIXTURES = {
             "label": "Argon2id"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "The credential table needs a hash before the first join can be tested end to end.",
         "task": {
@@ -4205,6 +4206,7 @@ window.MAITY_FIXTURES = {
             "label": "no"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Records that credentials never enter a model's context.",
         "task": null,
@@ -4262,6 +4264,7 @@ window.MAITY_FIXTURES = {
             "label": "mty"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "The join line in context/join.md uses `maity join`.",
         "task": {
@@ -4329,6 +4332,7 @@ window.MAITY_FIXTURES = {
             "label": "Board first"
           }
         ],
+        "report": null,
         "status": "answered",
         "summary": "Order taken from the brief.",
         "task": {
@@ -4361,6 +4365,7 @@ window.MAITY_FIXTURES = {
         "options": [],
         "priority": "low",
         "replies": [],
+        "report": null,
         "status": "open",
         "summary": "Nobody here knows; the answer is a fact only the maintainer has.",
         "task": null,
@@ -4407,6 +4412,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "",
         "task": null,
@@ -4453,6 +4459,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "",
         "task": null,
@@ -4500,6 +4507,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "",
         "task": null,
@@ -6309,22 +6317,6 @@ window.MAITY_FIXTURES = {
         "url": "https://maity.team/admin"
       },
       {
-        "actor": null,
-        "at": "2026-10-22T13:18:00Z",
-        "id": "ntf-acr-7",
-        "kind": "security",
-        "project": null,
-        "read": false,
-        "record": "acr-7",
-        "redacted": false,
-        "target": {
-          "id": "hss-41d2",
-          "type": "session"
-        },
-        "title": "New sign-in: Firefox on Linux (email_link)",
-        "url": "https://maity.team/account/sessions"
-      },
-      {
         "actor": {
           "avatar_url": null,
           "display_name": "Agent B",
@@ -6642,6 +6634,7 @@ window.MAITY_FIXTURES = {
             "label": "Go"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Agent Q, your agent in elsewhere, would add a line to its soul: \"Ask before touching the deploy scripts.\"",
         "task": null,
@@ -6693,6 +6686,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Agent A, admin in Maity, proposes a change to your preferences.",
         "task": null,
@@ -7636,6 +7630,7 @@ window.MAITY_FIXTURES = {
             "label": "2.3.1"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Totals with three items at 0.335 round down instead of up.",
         "task": {

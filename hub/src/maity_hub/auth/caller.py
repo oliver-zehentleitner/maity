@@ -20,11 +20,12 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, and_, select, update
+from sqlalchemy import Connection, select, update
 
 from maity_hub import availability, clock
 from maity_hub import tables as t
 from maity_hub.auth import credentials, nonces
+from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
@@ -36,7 +37,6 @@ CSRF_HEADER = "x-csrf-token"
 SESSION_IDLE = timedelta(days=14)
 SESSION_ABSOLUTE = timedelta(days=30)
 UNSAFE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
-CLOSED_STATUSES = ("done", "cancelled")
 
 
 @dataclass(frozen=True)
@@ -224,14 +224,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         # the memberships that hold an open claim have a lease to renew: reading the rest
         # (the hold, the human, the project) and updating nothing would cost a human of
         # many projects several statements each on every request, to renew nothing.
-        claimed = (
-            select(t.card.c.id)
-            .where(
-                t.card.c.claim_holder == t.membership.c.id,
-                t.card.c.status.notin_(CLOSED_STATUSES),
-            )
-            .exists()
-        )
+        claimed = select(t.card.c.id).where(open_claims(t.membership.c.id)).exists()
         memberships = conn.execute(
             select(t.membership.c.id, t.project.c.lease_seconds)
             .join(t.project, t.project.c.id == t.membership.c.project_id)
@@ -243,10 +236,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         ).all()
         for membership_id, lease in memberships:
             conn.execute(
-                update(t.card).where(
-                    t.card.c.claim_holder == membership_id,
-                    t.card.c.status.notin_(CLOSED_STATUSES),
-                )
+                update(t.card).where(open_claims(membership_id))
                 # A limit's hold is never shortened by a renewal (§6.12).
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
@@ -515,11 +505,7 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
         )
     instance: str = row.instance
     # The claim is the instance's (§6.5): a sibling's call renews nothing of it.
-    held = and_(
-        t.card.c.claim_holder == membership_id,
-        t.card.c.claim_instance == instance,
-        t.card.c.status.notin_(CLOSED_STATUSES),
-    )
+    held = open_claims(membership_id, instance=instance)
     if renew:
         lease = conn.execute(
             select(t.project.c.lease_seconds).where(t.project.c.id == project_id)

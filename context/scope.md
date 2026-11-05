@@ -1032,9 +1032,10 @@ page offers an instance nobody has to host.
 **Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); contract `docs/api.md` §16.13
 **See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 
-The dashboard and the hub's own pages (the maintenance page, the pages
-behind links in mails, the join page in a browser) end with one small
-line: the Maity icon, "Maity" and the current year, "Found a bug?" to the
+The dashboard and the hub's own pages (the maintenance page,
+registration's link page, the join page in a browser) end with one small
+line (the other pages behind links in mails stand in the frame of the
+public pages and end with its footer instead, §16.13): the Maity icon, "Maity" and the current year, "Found a bug?" to the
 project's GitHub issues, "Found a vulnerability?" to the project's
 `SECURITY.md`, and "Made with ♥ by Oliver Zehentleitner on"
 two icons: GitHub's, linked to the maintainer's GitHub profile, and

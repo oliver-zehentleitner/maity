@@ -606,7 +606,6 @@ def _from_records(
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:
     """The items of these account records (§18.1)."""
     waiting = _waiting_registrations(conn, rows)
-    open_reports = _open_reports(conn, rows)
     # Only the newest `agents_not_listening` record can be open; the older ones ended. Read
     # from the table, not from `rows`: a paged read hands over one chunk, which may hold an
     # older record without the newest (`_records_paged`).
@@ -806,28 +805,6 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                         open=True,
                     )
                 )
-        elif row.type == "report_open":
-            # Listed while the report is open, however old, and read once it is resolved or
-            # expired (§16.8, §18.1); no read mark closes it.
-            report = str(data.get("report"))
-            pending = report in open_reports
-            if not pending and row.at < now - WINDOW:
-                continue
-            items.append(
-                Item(
-                    kind="inbox",
-                    at=row.at,
-                    record=row.n,
-                    title=_cut(
-                        where.say("reported", reason=data.get("reason"), type=data.get("type"))
-                    ),
-                    target={"type": "report", "id": report},
-                    url=_url(where, f"/admin/reports/{report}"),
-                    read=not pending,
-                    record_type=row.type,
-                    open=pending,
-                )
-            )
         elif row.type == "moderation_applied" and row.at >= now - WINDOW:
             # The affected account's notice of an action on its content (§16.8): the
             # action and the note, never the reporter. Read by a read mark as any notice:
@@ -867,20 +844,6 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                 )
             )
     return items
-
-
-def _open_reports(conn: Connection, rows: Sequence[Any]) -> set[str]:
-    """The reports of these `report_open` records that are still open (§16.8)."""
-    wanted = {str((row.data or {}).get("report")) for row in rows if row.type == "report_open"}
-    if not wanted:
-        return set()
-    return set(
-        conn.execute(
-            select(t.abuse_report.c.id).where(
-                t.abuse_report.c.id.in_(wanted), t.abuse_report.c.status == "open"
-            )
-        ).scalars()
-    )
 
 
 def _waiting_registrations(conn: Connection, rows: Sequence[Any]) -> set[str]:
