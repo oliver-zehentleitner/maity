@@ -480,9 +480,11 @@ written before the change, read or not, drop out the same way without a migratio
 alone asks for them (`items.derive(sign_ins=True)`), for the sign-in mail of the `security`
 mode, which stays. `sessions_rev` (§18.2) is `acr-<n>` of the newest live `session_created` or
 `session_ended` record (`records.sessions_rev`), the number the session list already gives as
-`created.record`; a held long-poll also answers when it moves, though it lists no item. A
-confirm writes no record and so moves nothing: another tab's banner of that sign-in goes at its
-next read of the sessions, not at once.
+`created.record`; a held long-poll also answers when it moves, though it lists no item; a
+session record already past `after` when the request comes answers at once, as an item past
+`after` does, so a sign-in between two answers is not seen only after the full wait. A confirm
+writes no record and so moves nothing: another tab's banner of that sign-in goes at its next
+read of the sessions, not at once.
 
 The pinned block (`items.pinned`) reads the unread security records alone, newest first, up to
 50. Security items come only from account records, so it reads no project's events. The 50 are
