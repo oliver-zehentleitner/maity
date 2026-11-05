@@ -88,8 +88,11 @@ the lead asks for it); otherwise run `main`'s copy of the script, which needs
 nothing else from the checkout, without changing the branch:
 
 ```sh
-slot=$(mktemp) && git show origin/main:tools/run_slot.sh > "$slot" && bash "$slot" make -C web smoke; rm -f "$slot"
+( slot=$(mktemp) && trap 'rm -f "$slot"' EXIT && git show origin/main:tools/run_slot.sh > "$slot" && bash "$slot" make -C web smoke )
 ```
+
+The subshell removes the copy on its way out and still ends with the command's
+status, so a failed run stays a failure.
 
 ## Commits
 
