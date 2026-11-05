@@ -992,6 +992,7 @@
   "error.repository_not_offered": "Esse runner não oferece o repositório deste projeto.",
   "error.request_claimed": "Outro admin já pegou esta solicitação.",
   "error.request_not_open": "Esta solicitação não está mais aberta.",
+  "error.resolve_the_report": "Este pedido corresponde a uma denúncia de abuso: resolva a denúncia para fechá-lo.",
   "error.role_unknown": "A função que isto indica não existe mais.",
   "error.runner_not_attached": "Esse runner não está conectado a este projeto.",
   "error.runner_revoked": "Esse runner foi revogado.",

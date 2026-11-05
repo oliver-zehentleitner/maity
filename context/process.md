@@ -1277,9 +1277,10 @@ lose agreed designs.
 
 `tools/site_docs.py` renders every page `docs/nav.yml` lists when the site
 deploys, with GitHub's anchors, so links from the repository and from the
-site are the same. A section `hide` names on a split page gets no page, and
-`docs/architecture.md` stays out of the list until it is rewritten, as it
-still describes the first design of 2026-10-21 (the lead's call on #1095).
+site are the same. A section `hide` names on a split page gets no page.
+`docs/architecture.md` stayed out of the list while it still described the
+first design of 2026-10-21 (the lead's call on #1095); since its rewrite to
+main (#1389, #1396) it is listed under Reference as "Architecture".
 
 **Reason:** the repository and the site would otherwise drift apart, and
 each command is checked only once.

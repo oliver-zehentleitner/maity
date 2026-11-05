@@ -23,7 +23,7 @@ from sqlalchemy import Connection, Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.cards import CLOSED as CLOSED_CARDS
+from maity_hub.cards import SOME_INSTANCE, open_claims
 from maity_hub.events import emit, lock_project, transaction
 
 log = logging.getLogger(__name__)
@@ -37,11 +37,10 @@ def _held(conn: Connection, membership_id: int, instance: str | None) -> list[An
     """The cards the holder holds in its project, oldest id first: an instance's, or with
     `instance` None the claims a bridge holds for the agent."""
     c = t.card.c
-    where = c.claim_instance == instance if instance is not None else c.claim_instance.is_(None)
     return list(
         conn.execute(
             select(c.id, c.title, c.lease_until)
-            .where(c.claim_holder == membership_id, where, c.status.notin_(CLOSED_CARDS))
+            .where(open_claims(membership_id, instance=instance))
             .order_by(c.id)
         )
     )
@@ -141,11 +140,7 @@ def limit_started(conn: Connection, membership_id: int) -> None:
     """A limit started for the agent: one event per instance that holds a claim (§6.5)."""
     instances = conn.execute(
         select(t.card.c.claim_instance)
-        .where(
-            t.card.c.claim_holder == membership_id,
-            t.card.c.claim_instance.is_not(None),
-            t.card.c.status.notin_(CLOSED_CARDS),
-        )
+        .where(open_claims(membership_id, instance=SOME_INSTANCE))
         .distinct()
         .order_by(t.card.c.claim_instance)
     ).scalars()
@@ -176,8 +171,7 @@ def expire(engine: Engine, now: datetime | None = None) -> None:
             select(c.claim_holder, c.claim_instance, t.membership.c.project_id)
             .join(t.membership, t.membership.c.id == c.claim_holder)
             .where(
-                c.claim_holder.is_not(None),
-                c.status.notin_(CLOSED_CARDS),  # a closed card keeps its holder's columns
+                open_claims(None),
                 c.lease_until.is_not(None),
                 c.lease_until < now,
                 (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),
@@ -192,14 +186,11 @@ def expire(engine: Engine, now: datetime | None = None) -> None:
 
 def _expire_one(conn: Connection, membership_id: int, instance: str | None, now: datetime) -> None:
     c = t.card.c
-    where = c.claim_instance == instance if instance is not None else c.claim_instance.is_(None)
     cards = list(
         conn.execute(
             select(c.id, c.title, c.lease_until)
             .where(
-                c.claim_holder == membership_id,
-                where,
-                c.status.notin_(CLOSED_CARDS),
+                open_claims(membership_id, instance=instance),
                 c.lease_until.is_not(None),
                 c.lease_until < now,
                 (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),

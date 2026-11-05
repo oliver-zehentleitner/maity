@@ -992,6 +992,7 @@
   "error.repository_not_offered": "Ese runner no ofrece el repositorio de este proyecto.",
   "error.request_claimed": "Otra persona administradora ya se hizo cargo de esta solicitud.",
   "error.request_not_open": "Esta solicitud ya no está abierta.",
+  "error.resolve_the_report": "Esta solicitud corresponde a una denuncia de abuso: resuelve la denuncia para cerrarla.",
   "error.role_unknown": "El rol al que se refiere esto ya no existe.",
   "error.runner_not_attached": "Ese runner no está conectado a este proyecto.",
   "error.runner_revoked": "Ese runner se ha revocado.",

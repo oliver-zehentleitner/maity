@@ -2211,6 +2211,105 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members").getAttribute("aria-current") === "page"
     && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Organisation"),
     "org tree by areas, policy preset, on the Team page's Organisation tab; the Members tab marked in the header, no tab of its own there");
+  // Paths (js/paths.js, tsk-j9ktmj7e4fxq): each chip's route from the member view alone, as
+  // docs/api.md §8.2 and §8.4 address the event; `usual` only where the rule hangs on the card.
+  {
+    const P = win.Maity.paths;
+    const pm = [
+      { id: "o", kind: "human", display_name: "Owner", trust: "owner", role: "manager" },
+      { id: "ad", kind: "agent", display_name: "Admin agent", trust: "admin", role: "coder", reports_to: "o", owner_id: "o" },
+      { id: "px", kind: "agent", display_name: "Proxy", trust: "admin", role: "proxy", owner_id: "o" },
+      { id: "c1", kind: "agent", display_name: "Coder", trust: "member", role: "coder", reports_to: "ad", owner_id: "o" },
+      { id: "r", kind: "agent", display_name: "Reviewer", trust: "member", role: "reviewer", reports_to: "ad", owner_id: "o" },
+      { id: "f", kind: "agent", display_name: "Foreign", trust: "member", role: "coder", owner_id: "hum-elsewhere" }];
+    const said = (chip) => P.routes(chip, pm).map((e) => e.from + ">" + e.to + (e.usual ? "~" : "")).join(" ");
+    expect(said("review_result") === "r>ad", "paths: a review result from a reviewer to its reports_to " + said("review_result"));
+    expect(said("not_listening") === "ad>o px>ad px>o c1>ad c1>o r>ad r>o f>ad",
+      "paths: not listening to the reports_to, the admins but no proxy, the owner when a member " + said("not_listening"));
+    expect(said("request_human") === "ad>o px>o c1>o r>o", "paths: a request to a human from an agent to its own owner, none outside the project " + said("request_human"));
+    expect(said("card_assigned") === "o>ad~ ad>c1~ ad>o~ ad>r~", "paths: card assigned from the lead, to the assignee and its owner, all usual " + said("card_assigned"));
+    const many = [{ id: "lead", kind: "human", display_name: "Lead", trust: "owner", role: "manager" }]
+      .concat([1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: "c" + n, kind: "agent", display_name: "Coder " + n, trust: "member", role: "coder", reports_to: "lead", owner_id: "lead" })));
+    const folded = P.layout(many, new Set());
+    expect(folded.groups.length === 1 && folded.items.length === 2 && folded.boxOf.c7 === "group:lead:coder"
+      && folded.at["group:lead:coder"].y > folded.at.lead.y && P.onBoxes(P.reportLines(many), folded.boxOf).length === 1,
+      "paths: more than " + P.GROUP_AT + " of one role under one lead are one box below it, their seven lines one line");
+    const opened = P.layout(many, new Set(["coder"]));
+    const lead = opened.at.lead;
+    const firstC = opened.at.c1;
+    const lastC = opened.at.c7;
+    expect(!opened.groups.length && opened.items.length === 8 && JSON.stringify(opened.opened) === JSON.stringify(["coder"])
+      && Math.abs(lead.x + lead.w / 2 - (firstC.x + firstC.w / 2 + lastC.x + lastC.w / 2) / 2) < 1 && firstC.y === lastC.y && firstC.y > lead.y,
+      "paths: an opened role shows each member in the row below, the lead centred over them");
+    const own = [{ id: "lead", kind: "human", display_name: "Lead", trust: "owner", role: "manager" },
+      { id: "b", kind: "agent", display_name: "Bridge", trust: "member", role: "constructor", role_base: "coder", reports_to: "lead", owner_id: "lead" }];
+    const ownPlace = P.layout(own, new Set());
+    const ownBox = P.draw({ members: own, memberById: { lead: own[0], b: own[1] }, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id },
+      { chip: null, selected: null, open: new Set() });
+    expect(ownPlace.items.length === 2 && ownPlace.boxOf.b === "b" && ownBox.querySelectorAll(".paths-card").length === 2,
+      "paths: a project's own role named like an object's property (constructor) is a role like any other");
+    const pctx = { members: many, memberById: {}, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id };
+    many.forEach((m) => { pctx.memberById[m.id] = m; });
+    const pstate = { chip: null, selected: null, open: new Set() };
+    const pbox = P.draw(pctx, pstate);
+    const group = pbox.querySelectorAll(".paths-group");
+    expect(group.length === 1 && text(group[0]).includes("Coder · 7 members") && pbox.querySelectorAll(".paths-tile").length === 7
+      && text(pbox.querySelector(".paths-glance")).includes("Lead > Coder × 7"),
+      "paths: the folded box counts its members, and the panel names them as one item " + group.map(text));
+    group[0].click();
+    expect(pbox.querySelectorAll(".paths-node").length === 8 && pbox.querySelectorAll(".paths-fold").length === 1 && pstate.open.has("coder"),
+      "paths: a click opens the column, and a Fold button takes it back");
+    pbox.querySelectorAll(".paths-fold")[0].click();
+    expect(pbox.querySelectorAll(".paths-group").length === 1, "paths: Fold folds the column again");
+    const pcards = pbox.querySelectorAll(".paths-card");
+    expect(pcards.length === 8 && pcards[0].attrs["data-id"] === "lead" && pcards[1].attrs["data-id"] === "c1"
+      && text(pcards[0]).includes("> Coder × 7") && !text(pcards[0]).includes("Coder 1"),
+      "paths: the phone's list in the tree's order, a large group under its lead said once " + (pcards[0] ? text(pcards[0]) : "none"));
+    const canvas = pbox.querySelectorAll(".paths-canvas")[0];
+    expect(canvas && canvas.attrs.style === undefined && /^\d+px$/.test(canvas.style.width)
+      && pbox.querySelectorAll(".paths-node").every((n) => n.attrs.style === undefined && /px$/.test(n.style.left)),
+      "paths: sizes through the style object, no style attribute (CSP)");
+  }
+  await go("#/maintainer/maity/organisation"); for (let k = 0; k < 4; k++) await tick();
+  {
+    const faces = main.querySelectorAll(".org-face");
+    expect(JSON.stringify(faces.map((b) => [text(b), b.attrs["aria-pressed"]])) === JSON.stringify([["Tree", "true"], ["Paths", "false"]]),
+      "paths: the Organisation tab opens on the tree, Paths beside it " + faces.map(text));
+    faces[1].click();
+    expect(!main.querySelector(".org-tree") && main.querySelector(".paths") && main.querySelectorAll(".org-face")[1].attrs["aria-pressed"] === "true",
+      "paths: Paths replaces the tree");
+    const chips = main.querySelectorAll(".paths-chip");
+    const reports = () => main.querySelectorAll("path").filter((p) => /\bpaths-report\b/.test(p.attrs.class));
+    expect(JSON.stringify(chips.map((c) => [text(c), c.attrs["aria-pressed"]])) === JSON.stringify([["Reporting lines", "true"], ["Review result", "false"],
+      ["Not listening", "false"], ["Request to a human", "false"], ["Card assigned", "false"]])
+      && main.querySelectorAll("path").filter((p) => /\bpaths-route\b/.test(p.attrs.class)).length === 0 && reports().length === 4,
+      "paths: the reporting lines on, four event chips off, no route until one is chosen " + reports().length);
+    chips[0].click();
+    expect(reports().length === 0 && main.querySelectorAll(".paths-chip")[0].attrs["aria-pressed"] === "false", "paths: Reporting lines turns the grey lines off");
+    main.querySelectorAll(".paths-chip")[0].click();
+    expect(reports().length === 4, "paths: and on again");
+    main.querySelectorAll(".paths-chip")[2].click();
+    const lines = () => main.querySelectorAll("path").filter((p) => /\bpaths-(route|report)\b/.test(p.attrs.class));
+    const drawn = lines().filter((p) => /\bpaths-route\b/.test(p.attrs.class));
+    const listed = main.querySelectorAll(".paths-route-list li");
+    expect(drawn.length > 0 && drawn.length === listed.length && main.querySelectorAll(".paths-chip")[2].attrs["aria-pressed"] === "true"
+      && text(main.querySelector(".paths-panel")).includes("Route: Not listening") && text(main.querySelector(".paths-panel")).includes("docs/api.md §8.2"),
+      "paths: a chip draws its route, lists it in the panel and names the full rule " + [drawn.length, listed.length]);
+    const reviewer = main.querySelectorAll(".paths-node").find((n) => text(n).includes("Reviewer"));
+    reviewer.click();
+    const dimmed = lines().filter((p) => /\bdim\b/.test(p.attrs.class));
+    const lit = lines().filter((p) => !/\bdim\b/.test(p.attrs.class));
+    expect(lit.length > 0 && dimmed.length > 0 && lit.every((p) => p.attrs["data-from"] === "agt-r" || p.attrs["data-to"] === "agt-r")
+      && reports().filter((p) => /\bon\b/.test(p.attrs.class)).length === 1
+      && main.querySelectorAll(".paths-node").find((n) => text(n).includes("Reviewer")).attrs["aria-pressed"] === "true",
+      "paths: clicking a member keeps only its lines " + lit.map((p) => p.attrs["data-from"] + ">" + p.attrs["data-to"]));
+    const cards = main.querySelectorAll(".paths-card");
+    const agentA = cards.find((c) => c.attrs["data-id"] === "agt-a");
+    expect(cards.length === 6 && agentA && text(agentA).includes("reports to Maintainer") && text(agentA).includes("> Agent B · Agent C · Reviewer")
+      && text(agentA).includes("gets Not listening from"), "paths: the phone's list, one card per member with what reaches it " + (agentA ? text(agentA) : "none"));
+    main.querySelectorAll(".org-face")[0].click();
+    expect(main.querySelector(".org-tree") && !main.querySelector(".paths"), "paths: Tree brings the tree back");
+  }
   await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".org-tree"), "org: no longer in the Overview");
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
@@ -4065,6 +4164,81 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !btn(neNote(cpLockId), "Edit").disabled && !neNote(cpLockId).querySelector("form.card-note-edit-form"),
     "card panel: while the list is read its Edit waits, no edit begins on the old list; after the read it is free "
       + JSON.stringify([cpLockMid, cpLockList.getAttribute("aria-busy"), neNote(cpLockId) && btn(neNote(cpLockId), "Edit") && btn(neNote(cpLockId), "Edit").disabled, cpLock.length]));
+  // An edit opened before a post redraws the list keeps its form, typed text, focus and caret
+  // (tsk-wvf8s7f44vz7). Open the edit first: while a read runs Edit waits, so the keep is for an
+  // edit already open. Detaching the row blurs its field in a browser; the shim's remove does
+  // not, so this case blurs when the kept li is taken out, as Chromium does.
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  const cpKeepField = byId("card-note-edit-nte-0031");
+  const cpKeepLi = neNote("nte-0031");
+  expect(cpKeepField && cpKeepLi.querySelector("form.card-note-edit-form"),
+    "note edit keep: setup opens the edit before the post redraws");
+  cpKeepField.value = "typed while the post redraws";
+  cpKeepField.selectionStart = 6; cpKeepField.selectionEnd = 11; // "while"
+  cpKeepField.focus();
+  expect(document.activeElement === cpKeepField,
+    "note edit keep: setup leaves the focus in the open edit");
+  const cpKeepLiRemove = cpKeepLi.remove.bind(cpKeepLi);
+  cpKeepLi.remove = function () {
+    if (document.activeElement && this.contains(document.activeElement)) document.activeElement = document.body;
+    return cpKeepLiRemove();
+  };
+  const cpKeep = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpKeep.push(() => resolve(asked)));
+  };
+  win.Maity.api.post = (p, b) => {
+    if (!p.endsWith("/notes")) return cpRaceWas(p, b);
+    return cpPost(p, b);
+  };
+  byId("card-note-body").value = "A post that redraws the list";
+  cpForm().dispatch("submit"); await tick();
+  expect(cpKeep.length >= 1 && neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && byId("card-note-edit-nte-0031") === cpKeepField
+    && cpKeepField.value === "typed while the post redraws"
+    && document.activeElement === cpKeepField,
+    "note edit keep: the open edit stays while the post's read is held "
+      + JSON.stringify([cpKeep.length, !!neNote("nte-0031").querySelector("form.card-note-edit-form"), cpKeepField && cpKeepField.value, document.activeElement && document.activeElement.id]));
+  while (cpKeep.length) { cpKeep.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && byId("card-note-edit-nte-0031") === cpKeepField
+    && cpKeepField.value === "typed while the post redraws"
+    && cpNotes().filter((n) => n.includes("A post that redraws the list")).length === 1
+    && document.activeElement === cpKeepField
+    && cpKeepField.selectionStart === 6 && cpKeepField.selectionEnd === 11,
+    "card panel: an open edit, its typed text, focus and caret survive a post's redraw of the list "
+      + JSON.stringify([!!neNote("nte-0031").querySelector("form.card-note-edit-form"), byId("card-note-edit-nte-0031") === cpKeepField, cpKeepField && cpKeepField.value, document.activeElement && document.activeElement.id, cpKeepField && cpKeepField.selectionStart, cpKeepField && cpKeepField.selectionEnd]));
+  // A reader who moved into Add a note during the held read keeps that focus; the edit stays open.
+  // Pin the Add a note field node: activeElement is compared to that same node, not a fresh query.
+  const cpAddBody = byId("card-note-body");
+  cpKeepField.focus();
+  const cpKeepElse = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpKeepElse.push(() => resolve(asked)));
+  };
+  cpAddBody.value = "Another post while the edit is open";
+  cpForm().dispatch("submit"); await tick();
+  cpAddBody.focus();
+  expect(document.activeElement === cpAddBody && cpKeepElse.length >= 1,
+    "note edit keep: setup moves the focus to Add a note during the held read");
+  while (cpKeepElse.length) { cpKeepElse.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && byId("card-note-edit-nte-0031") === cpKeepField
+    && document.activeElement === cpAddBody
+    && document.activeElement !== cpKeepField,
+    "card panel: a reader who left the edit during the read keeps their focus after the redraw "
+      + JSON.stringify([document.activeElement && document.activeElement.id]));
+  // Restore getAll before Cancel: Cancel drops the form then reads the list.
+  win.Maity.api.getAll = cpOverGets;
+  cpKeepLi.remove = cpKeepLiRemove;
+  btn(neNote("nte-0031"), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!neNote("nte-0031").querySelector("form.card-note-edit-form") && btn(neNote("nte-0031"), "Edit"),
+    "card panel: Cancel still ends an edit that outlived a redraw");
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
   // A failed read and then a failed post: Add a note stays, with the text and the refusal in it.
   let cpFailRead = null;
   win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open")
@@ -9115,8 +9289,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");
   const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };
-  // Unread on the bell: every kind but the open requests (the inbox shows those); a sign-in alert counts.
-  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "3 new notifications" && text(bellBtn()).includes("3")
+  // Unread on the bell: every kind but the open requests (the inbox shows those); a sign-in is no bell item.
+  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "2 new notifications" && text(bellBtn()).includes("2")
     && tabCountOf("Chat") === "1", "notifications: the bell says how many are new; the chat tab its unread chats");
   // The header's right block (the maintainer, 2026-10-31): Chat, Lead, "+", the gear, Notifications, the profile;
   // the Chat badge is the hub's unread chat messages.
@@ -9442,28 +9616,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bellItem = (title) => bellPanel().querySelectorAll(".bell-items li").find((li) => text(li).includes(title));
   const bellLinks = bellPanel().querySelectorAll(".bell-items a").map((a) => a.getAttribute("href"));
   expect(!bellPanel().hidden && bellBtn().getAttribute("aria-expanded") === "true"
-    && JSON.stringify(bellLinks) === JSON.stringify(["#/account/sessions", "#/admin/registration", "#/maintainer/maity/tasks/tsk-0004", "#/maintainer/maity/chat/agt-a", "#/all", "#/maintainer/sample/inbox/req-s001"])
-    && bellPanel().querySelectorAll(".bell-items li.unread").length === 5 && text(bellPanel()).includes("Mentions 1"),
-    "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked; the pinned alert once, on top " + JSON.stringify(bellLinks));
-  // The unread security alerts stand pinned on top (§18.2), This was me where this session may confirm (§18.8).
+    && JSON.stringify(bellLinks) === JSON.stringify(["#/admin/registration", "#/maintainer/maity/tasks/tsk-0004", "#/maintainer/maity/chat/agt-a", "#/all", "#/maintainer/sample/inbox/req-s001"])
+    && bellPanel().querySelectorAll(".bell-items li.unread").length === 4 && text(bellPanel()).includes("Mentions 1"),
+    "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked " + JSON.stringify(bellLinks));
+  // A sign-in is no bell item and nothing is pinned for it (§2.6.5): the waiting page and Profile → Sessions show it.
   const bellPinned = () => bellPanel().querySelector(".bell-pinned");
-  expect(bellPinned() && text(bellPinned()).includes("Security alerts") && text(bellPinned()).includes("New sign-in") && btn(bellPinned(), "This was me")
-    && !bellPanel().querySelectorAll("ul.bell-items").filter((ul) => ul.parentNode !== bellPinned()).some((ul) => text(ul).includes("New sign-in")),
-    "notifications: the sign-in alert stands pinned with This was me, not again in the list");
+  expect(!bellPinned() && !text(bellPanel()).includes("New sign-in") && !btn(bellPanel(), "This was me"),
+    "notifications: a sign-in is no bell item; with no security alert nothing stands pinned");
   // Escape closes it with the focus still on the bell.
   bellBtn().dispatch("keydown", { key: "Escape" });
   expect(bellPanel().hidden && bellBtn().getAttribute("aria-expanded") === "false", "notifications: Escape on the bell closes the panel");
   bellBtn().click(); await tick(); await tick();
   const maityBefore = Number(chipCount("Maity"));
   bellItem("Agent A in agent-a").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "2 new notifications"
+  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "1 new notification"
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
-  // A sign-in alert is never confirmed by opening it, nor by marking it read (§2.6.5, §18.3).
-  bellBtn().click(); await tick(); await tick();
-  expect(text(bellPinned()).includes("does not confirm it") && text(bellPinned()).includes("This was me"),
-    "notifications: the pinned block says marking read does not confirm; This was me does");
-  bellItem("New sign-in").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "2 new notifications", "notifications: opening a sign-in alert marks nothing");
   // Unread only: the list read again with the filter, the switch says it is on.
   const nGets2 = [];
   win.Maity.api.get = (p) => { if (p.startsWith("/me/notifications")) nGets2.push(p); return nGet0(p); };
@@ -9475,45 +9642,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(bellPanel(), "Unread only").click(); for (let k = 0; k < 4; k++) await tick();
   expect(nGets2[2] === "/me/notifications?limit=20" && btn(bellPanel(), "Unread only").getAttribute("aria-pressed") === "false", "notifications: Unread only off reads all again");
   win.Maity.api.get = nGet0;
-  // This was me on the pinned alert: its own call (§2.6.5), the panel stays open and says so.
-  const nConfirm = win.Maity.api.post;
-  const nConfirms = [];
-  win.Maity.api.post = (p, b) => (p.startsWith("/auth/sessions/") ? (nConfirms.push([p, b]), Promise.resolve({ id: "hss-41d2" })) : nConfirm(p, b));
-  btn(bellPinned(), "This was me").click(); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(nConfirms) === JSON.stringify([["/auth/sessions/hss-41d2/confirm", {}]]) && !bellPanel().hidden && text(bellPanel()).includes("Confirmed: Firefox on Linux is yours."),
-    "notifications: This was me on the pinned sign-in posts its confirm; the panel says it " + JSON.stringify(nConfirms));
-  win.Maity.api.post = nConfirm;
-  // Mark all read with a security alert pinned: asked first; declined, nothing is sent.
+  // Mark all read with no security alert pinned: nothing asked, sent without include_security (§18.3).
   const nAsked = [];
   const nConfirmWin = win.confirm;
   win.confirm = (q) => { nAsked.push(q); return false; };
-  btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(nAsked.length === 1 && nAsked[0].includes("1 security alert is included") && nAsked[0].includes("New sign-in") && nPosts.length === 1,
-    "notifications: Mark all read asks first when a security alert is pinned, and names it; declined, nothing is sent " + JSON.stringify(nAsked));
-  // Accepted: sent with include_security (§18.3); what the hub left is said, the panel stays.
-  win.confirm = (q) => { nAsked.push(q); return true; };
   const nMarkAll = win.Maity.api.post;
   const nSent = [];
-  win.Maity.api.post = (p, b) => (nSent.push([p, b]), b && b.include_security
-    ? nMarkAll(p, { up_to: b.up_to }).then((r) => Object.assign({}, r, { skipped: [{ id: "ntf-acr-7", reason: "not_in_good_standing" }] }))
-    : nMarkAll(p, b));
+  win.Maity.api.post = (p, b) => (nSent.push([p, b]), nMarkAll(p, b));
   btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 6; k++) await tick();
   const maityOpen = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
-  expect(JSON.stringify(nSent) === JSON.stringify([["/me/notifications/read", { up_to: "4239.8", include_security: true }]]) && bellBtn().getAttribute("aria-label") === "1 new notification"
+  expect(!nAsked.length && JSON.stringify(nSent) === JSON.stringify([["/me/notifications/read", { up_to: "4239.8" }]]) && bellBtn().getAttribute("aria-label") === "Notifications"
     && Number(chipCount("Maity")) === maityOpen,
-    "notifications: Mark all read, accepted, sends include_security up to the bell's position; the project's count is its open requests again " + JSON.stringify(nSent) + bellBtn().getAttribute("aria-label"));
-  expect(!bellPanel().hidden && text(bellPanel()).includes("1 alert was left unread: New sign-in") && text(bellPanel()).includes(": this session's own sign-in is not confirmed yet")
-    && bellItem("New sign-in"), "notifications: what the hub left unread is named with its reason; the alert stays pinned " + text(bellPanel()));
+    "notifications: Mark all read with nothing pinned asks nothing and sends up to the bell's position; the project's count is its open requests again " + JSON.stringify(nSent) + bellBtn().getAttribute("aria-label"));
   win.Maity.api.post = nMarkAll;
   win.confirm = nConfirmWin;
   bellBtn().dispatch("keydown", { key: "Escape" });
   win.Maity.api.post = nPost;
-  // Only an alert without a session pinned (a second factor changed): the sessions are still
-  // read, ended ones too, and it gets Mark read, sent by its id (§18.3, §18.8).
+  // A second-factor alert pinned: the sessions are read, ended ones too, and it gets
+  // Mark read, sent by its id (§18.3, §18.8).
   const alertOf = (id, title, target, at) => ({ id, record: id.slice(4), kind: "security", at, project: null, actor: null,
     title, target, url: "https://maity.team/account", read: false, redacted: false });
   const twoFactor = alertOf("ntf-sfc-1", "Second factor changed", { type: "settings", id: "security" }, "2026-10-30T09:00:00Z");
-  const endedSignIn = alertOf("ntf-acr-2", "New sign-in: Chrome on Windows (password)", { type: "session", id: "hss-3f90" }, "2026-10-10T07:00:00Z");
   const pinGet = win.Maity.api.get;
   const pinGets = [];
   let pinnedNow = [twoFactor];
@@ -9541,15 +9690,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(bellPanel()).includes("Marked read."),
     "notifications: a Mark read the hub skips says why and claims nothing " + text(bellPanel()).slice(0, 200));
   bellBtn().dispatch("keydown", { key: "Escape" });
-  // A sign-in alert of a session ended since: Mark all read names its place, read from the ended sessions.
-  pinnedNow = [endedSignIn];
+  // Mark all read with it pinned: asked first, naming it; declined, nothing is sent.
   const pinAsked = [];
   const pinConfirm = win.confirm;
   win.confirm = (q) => { pinAsked.push(q); return false; };
   bellBtn().click(); for (let k = 0; k < 4; k++) await tick();
   btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(pinAsked.length === 1 && pinAsked[0].includes("Chrome on Windows") && pinAsked[0].includes("198.51.100.40"),
-    "notifications: the question before Mark all read names an ended session's place " + JSON.stringify(pinAsked));
+  expect(pinAsked.length === 1 && pinAsked[0].includes("1 security alert is included") && pinAsked[0].includes("Second factor changed") && pinPosts.length === 2,
+    "notifications: Mark all read asks first when a security alert is pinned, and names it; declined, nothing is sent " + JSON.stringify(pinAsked));
+  // Accepted: sent with include_security (§18.3); what the hub left is said with its reason, the panel stays.
+  win.confirm = (q) => { pinAsked.push(q); return true; };
+  btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(pinPosts[2]) === JSON.stringify(["/me/notifications/read", { up_to: "4300.1", include_security: true }])
+    && !bellPanel().hidden && text(bellPanel()).includes("1 alert was left unread: Second factor changed: only a session older than it may mark it"),
+    "notifications: Mark all read, accepted, sends include_security; what the hub left unread is named with its reason " + JSON.stringify(pinPosts) + text(bellPanel()).slice(0, 300));
   win.confirm = pinConfirm;
   bellBtn().dispatch("keydown", { key: "Escape" });
   win.Maity.api.get = pinGet;
@@ -9910,7 +10064,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(sesRow("hss-41c7")).includes("approved from Firefox on Linux"),
     "sessions: the active ones, newest first, this browser marked, how each signed in");
   expect(text(sesBox().querySelector("details.sessions-ended")).includes("Chrome on Windows, signed out"), "sessions: the ended ones of the last 30 days");
-  expect(text(sesRow("hss-41d2")).includes("Its sign-in alert is unread.") && btn(sesRow("hss-41d2"), "This was me") && !btn(sesRow("hss-41c7"), "This was me"),
+  expect(!text(sesRow("hss-41d2")).includes("sign-in alert") && btn(sesRow("hss-41d2"), "This was me") && !btn(sesRow("hss-41c7"), "This was me"),
     "sessions: This was me on an active sign-in that is not confirmed, none on one in good standing");
   // An ended sign-in is confirmed by nobody (§2.6.5): the banner, which may stand for an ended mail
   // sign-in whose approved session lives on, offers no This was me for it.
@@ -9964,7 +10118,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
   const sesEnded = sesBox().querySelector("details.sessions-ended");
   const sesEndedRow = sesEnded.querySelectorAll("li").find((li) => li.getAttribute("data-session") === "hss-41d2");
-  expect(sesEnded.attrs.open !== undefined && sesEndedRow && !btn(sesEndedRow, "This was me"), "sessions: an ended session has no This was me");
+  expect(sesEnded.attrs.open === undefined && sesEndedRow && !btn(sesEndedRow, "This was me"), "sessions: an ended session has no This was me; the ended ones stay folded");
   win.Maity.api.get = sesGet;
   // The banner follows the sessions, not the alert's read flag: it stays with no
   // security alert left in the counts, and goes at once when the sign-in stands in good standing.
@@ -10717,6 +10871,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(wrBefore !== JSON.stringify(wrState.byProject) && (text(main).includes("1 new request.") || text(main).includes("What waits for you changed")),
     "inbox: a personal request about the project, counted only in by_project, reloads the list or offers it");
   win.Maity.api.get = wrGet;
+  // Current sessions on /notifications: a sign-in is no notification (§2.6.5), the active sessions stand
+  // here, newest first, read again when the hub's sessions_rev moves (§18.2).
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  const csBox = () => main.querySelector("section.current-sessions");
+  const csRows = () => csBox().querySelectorAll("li");
+  // Earlier cases confirmed and ended some of the fixture's sessions: the two left active stand here.
+  expect(csBox() && text(csBox()).includes("Current sessions") && csRows().length === 2
+    && text(csRows()[0]).includes("a link by mail") && !text(csRows()[0]).includes("this session") && text(csRows()[1]).includes("this session")
+    && csBox().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/account/sessions"),
+    "notifications: the active sessions stand on the page, newest first, this one marked, linked to Sessions " + (csBox() ? text(csBox()) : ""));
+  const csGet = win.Maity.api.get;
+  const csGets = [];
+  const csMany = Array.from({ length: 7 }, (_, i) => ({ id: "hss-cs" + i, method: "password", created_at: "2026-10-2" + i + "T10:00:00Z", last_seen_at: null,
+    browser: "Safari", os: "iOS", ip: "192.0.2.1" + i, approved_by: null, good_standing: i !== 5, current: i === 0, created: null, ended_at: null, ended_by: null }));
+  win.Maity.api.get = (p) => (p === "/auth/sessions" ? (csGets.push(p), Promise.resolve({ items: csMany })) : csGet(p));
+  win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
+  expect(!csGets.length, "notifications: the sessions are not read again while sessions_rev stands");
+  const csRev = win.Maity.notify.state.sessionsRev;
+  win.Maity.notify.state.sessionsRev = "acr-999";
+  win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
+  expect(csGets.length === 1 && csRows().length === 6 && text(csRows()[0]).includes("Oct 26") && text(csRows()[1]).includes("not confirmed") && !text(csRows()[0]).includes("not confirmed")
+    && text(csRows()[5]).includes("and 2 more"),
+    "notifications: a moved sessions_rev reads them again; newest first, five shown, the rest counted, the unconfirmed marked " + text(csBox()));
+  win.Maity.api.get = (p) => (p === "/auth/sessions" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : csGet(p));
+  win.Maity.notify.state.sessionsRev = "acr-1000";
+  win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(csBox()).includes("Could not read your sessions: down") && csRows().length === 6, "notifications: a failed read of the sessions is said, the rows stay");
+  // The failed read counts as not read: the bell's next change tries again, with sessions_rev unmoved.
+  csGets.length = 0;
+  win.Maity.api.get = (p) => (p === "/auth/sessions" ? (csGets.push(p), Promise.resolve({ items: csMany })) : csGet(p));
+  win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
+  expect(csGets.length === 1 && !text(csBox()).includes("Could not read") && csRows().length === 6,
+    "notifications: after a failed read the bell's next change reads the sessions again, sessions_rev unmoved " + text(csBox()));
+  // The mail sign-in banner follows a moved sessions_rev at once, from any answer the bell reads
+  // (here its counts read outside the 60-second round), not only in that round.
+  const bnGets = [];
+  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? csGet(p).then((a) => Object.assign({}, a, { sessions_rev: "acr-1001" }))
+    : (p === "/auth/sessions?ended=true" && bnGets.push(p), csGet(p)));
+  await win.Maity.notify.read(); for (let k = 0; k < 4; k++) await tick();
+  expect(bnGets.length >= 1 && win.Maity.notify.state.sessionsRev === "acr-1001",
+    "banner: a sessions_rev moved outside the counts round builds the banner again " + bnGets.length);
+  bnGets.length = 0;
+  await win.Maity.notify.read(); for (let k = 0; k < 4; k++) await tick();
+  expect(!bnGets.length, "banner: the same sessions_rev again builds nothing " + bnGets.length);
+  win.Maity.api.get = csGet;
+  win.Maity.notify.state.sessionsRev = csRev;
   // All notifications (/notifications): unread in bold with a dot, as on the bell, and Mark all read up to the first page's head.
   const waitWrites = [];
   win.Maity.api.post = (p, b) => { if (p === "/me/notifications/read") waitWrites.push(b); return waitPost(p, b); };
@@ -10731,16 +10931,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(waitWrites.length === 1 && "up_to" in waitWrites[0] && !("ids" in waitWrites[0])
     && !waitItems().some((li) => li.classList.contains("unread") && !/sign-in|address/i.test(text(li))),
     "notifications: Mark all read marks up to the first page's head; the list is read again " + JSON.stringify(waitWrites));
-  // Mark all read stays in place, off with nothing left to mark; sign-in alerts said to stay (tsk-bt2p3rem8tbj).
-  expect(btn(main, "Mark all read") && btn(main, "Mark all read").disabled && text(main).includes("Mark all read leaves sign-in and address alerts unread"),
-    "notifications: Mark all read stays, off while nothing it marks is unread; sign-in and address alerts said to stay unread");
+  // Mark all read stays in place, off with nothing left to mark; security alerts said to stay (tsk-bt2p3rem8tbj).
+  expect(btn(main, "Mark all read") && btn(main, "Mark all read").disabled && text(main).includes("Mark all read leaves security alerts unread"),
+    "notifications: Mark all read stays, off while nothing it marks is unread; security alerts said to stay unread");
   // Mark read per item, without opening it (tsk-bt2p3rem8tbj): the chat item unread again here, and an open report
-  // (report_open, target report) added; a sign-in alert only where this session may confirm it (§2.6.5).
+  // (report_open, target report) added.
   const waitReport = { id: "ntf-acr-90", record: "acr-90", kind: "inbox", at: "2026-10-22T13:19:30Z", project: null, actor: null,
     title: "A report waits for you", target: { type: "report", id: "rep-0001" }, url: "https://maity.team/admin", read: false, redacted: false };
   let waitCurrent = "hss-41c0";
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50") && waitWrites.length === 1
-    ? waitGet(p).then((r) => Object.assign({}, r, { items: [waitReport].concat(r.items.map((x) => (x.id === "ntf-4237" || x.id === "ntf-acr-7" ? Object.assign({}, x, { read: false }) : x))) }))
+    ? waitGet(p).then((r) => Object.assign({}, r, { items: [waitReport].concat(r.items.map((x) => (x.id === "ntf-4237" ? Object.assign({}, x, { read: false }) : x))) }))
     : p === "/auth/sessions?ended=true" ? waitGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, { current: x.id === waitCurrent })) }))
     : waitGet(p));
   await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
@@ -10749,27 +10949,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(waitMark("ntf-4237") && waitMark("ntf-4237").getAttribute("aria-label").startsWith("Mark read: ") && !btn(main, "Mark all read").disabled
     && waitRow("ntf-acr-90") && !waitMark("ntf-acr-90") && !waitMark("ntf-acr-8"),
     "notifications: Mark read on an unread item; none on an open matter (a report, a registration)");
-  // From an older, confirmed session the sign-in alert of a newer one may be confirmed here.
-  expect(waitMark("ntf-acr-7"), "notifications: Mark read on a sign-in alert where this session may confirm it (older, in good standing)");
-  waitMark("ntf-acr-7").click(); for (let k = 0; k < 8; k++) await tick();
-  expect(JSON.stringify(waitWrites[1]) === JSON.stringify({ ids: ["ntf-acr-7"] }) && waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"),
-    "notifications: the sign-in alert's Mark read sends its id " + JSON.stringify(waitWrites));
   // The chat item marked in place: the row stays, read, its button gone; the pages read so far stay.
   const waitBefore = waitItems().length;
   const wfProto = Object.getPrototypeOf(main), wfFocus = wfProto.focus;
   wfProto.focus = function () { document.activeElement = this; };
   waitMark("ntf-4237").click(); for (let k = 0; k < 8; k++) await tick();
   wfProto.focus = wfFocus;
-  expect(JSON.stringify(waitWrites[2]) === JSON.stringify({ ids: ["ntf-4237"] }) && waitRow("ntf-4237").classList.contains("read")
+  expect(JSON.stringify(waitWrites[1]) === JSON.stringify({ ids: ["ntf-4237"] }) && waitRow("ntf-4237").classList.contains("read")
     && !text(waitRow("ntf-4237")).includes("(unread)") && !waitMark("ntf-4237") && waitItems().length === waitBefore,
     "notifications: Mark read marks the row in place, its button and its (unread) gone, the list kept " + JSON.stringify(waitWrites));
   // The button is gone, so the focus goes to the row's link, not to the page.
   expect(document.activeElement === waitRow("ntf-4237").querySelector("a"), "notifications: after Mark read the focus is on the row's link");
   document.activeElement = undefined;
-  // From the reported session itself the alert is not offered.
+  // The cases below run from the newer, unconfirmed session.
   waitCurrent = "hss-41d2"; waitWrites.length = 1;
-  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
-  expect(waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"), "notifications: no Mark read on a sign-in alert from the session it reports on");
   // Another kind of security alert (a second factor changed) may be marked from any session (§18.3), this
   // unconfirmed one too; an id the hub skips is said, the row stays unread.
   const waitFactor = { id: "ntf-sfc-9", record: "sfc-9", kind: "security", at: "2026-10-22T13:30:00Z", project: null, actor: null,

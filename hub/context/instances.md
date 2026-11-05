@@ -541,3 +541,34 @@ member below, and an event per lead for each of those changes would be noise.
 - The SQL condition written out in `landing_stats` next to the views' rule: the two drifted at once (pause
   and isolation were missing in review).
 - `manages` in the member view of every event: see above.
+
+## Every reader of claims asks one condition, `cards.open_claims`, and `cards` stays a leaf
+
+**Id:** 26da61ef-7a92-423d-937d-35d06834d009
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe 2026-11-04, adopted as card tsk-kvb1vg685zqj; the bugs found in #1304 and #1305; the implementation, 2026-11-05
+**Revisit when:** a closed card stops keeping its holder's columns, or a status is added that also counts as closed
+
+The closed statuses are written down once, `cards.CLOSED`, and every query that reads what a
+member or an instance holds builds its condition with `cards.open_claims(holder, instance=,
+status=)`: the lease renewals, the resume packet, a replacement's move, the release on
+isolation, the instance and jour-fixe counts, the owner's digest, `holder_stalled` and
+`claim_expired`, the swarm and the cover set. `hub/tests/test_open_claims.py` fails when a
+module outside the migrations keeps its own copy of the tuple. `cards` imports `access` only
+for type annotations, so it depends on nothing that reads claims and every module can import it
+at the top. Before, `card_watches.py` kept its own copy because of the cycle (its comment said
+so), and `auth/caller.py` and `availability.py`, which `cards` reached through `access`, kept
+theirs too. The migrations keep theirs: they never import the application.
+
+**Reason:** a `done` or `cancelled` card keeps `claim_holder` and `claim_instance` as a record,
+so a reader that forgets the status test counts closed cards as held. #1304 and #1305 each made
+that mistake on their own; one condition makes the test impossible to forget, and the source
+check keeps new copies out.
+
+**Rejected alternatives:**
+- A separate leaf module for the tuple and the condition, re-exported by `cards`: a second
+  place to look, when one import under `TYPE_CHECKING` already breaks the cycle.
+- Imports inside the functions, as `card_watches` was reached before: every new reader would
+  have to know the cycle exists.
