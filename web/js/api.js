@@ -564,7 +564,7 @@ window.Maity = window.Maity || {};
   }
   // Another owner's agent (§6.2): what its owner decides waits for them, a
   // personal request to that human (to: human:<id>), as the hub files it.
-  const FOREIGN_FIELDS = ["trust", "role", "areas", "capabilities", "briefing", "availability_policy", "dormant"];
+  const FOREIGN_FIELDS = ["trust", "role", "areas", "capabilities", "briefing", "availability_policy", "dormant", "paused"];
   const ownerOf = (x) => (x.kind === "agent" ? x.owner_id : x.id);
   const foreignTo = (who, target) => (target.kind === "agent" && target.owner_id !== ownerOf(who) ? "human:" + target.owner_id : null);
   function foreignConsent(slug, who, target, summary) {
@@ -4281,7 +4281,7 @@ window.Maity = window.Maity || {};
         target.briefing_by = { kind: me().member.kind, id: me().member.id, handle: me().member.handle };
         target.briefing_version = (target.briefing_version || 1) + 1;
       }
-      if ("paused" in body) {
+      if (applies("paused")) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
