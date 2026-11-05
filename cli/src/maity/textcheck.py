@@ -2,9 +2,9 @@
 names only what stands at its head", §13)
 
 The cites are checked by `citecheck`; reviews still passed with prose that named tests, keys or
-files that were not there. This reads the message's text in the same clone and looks for three
-forms: a file and line, a name in a code span, an object hash. It catches names that are not
-there, not wrong claims.
+files that were not there. This reads the message's text in the same clone and looks for four
+forms: a file and line, a name in a code span, an object hash, and a quotation from a file that
+the text ties to that file. It catches names and quotes that are not there, not wrong claims.
 """
 
 from __future__ import annotations
@@ -30,6 +30,22 @@ _HUB_ID = re.compile(r"[a-z]+-[0-9a-z]{12}")
 _UUID = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}")
 _CORE = re.compile(r"[A-Za-z_][A-Za-z0-9_./-]{2,}")
 _SKIP_CHARS = set("#@{}<>")
+# Form 4: a quotation, between "…" or “…”, of four words or more.
+_QUOTE = re.compile(r'"[^"]*"|“[^“”]*”|„[^„“”]*[“”]')
+_GAP_STOPS = set('.;!?|"“”„')  # `|`: a table's cell is no sentence of its own
+# One backslash (or any odd number) before a quote mark masks it; two (or any even number) are
+# backslashes in the text, and the quote mark after them closes the quote.
+_ESCAPED_QUOTE = re.compile(r'(?<!\\)(?:\\\\)*\\"')
+# A comment marker at a line's start, so that a quote of a wrapped comment matches.
+_COMMENT = re.compile(r"^[ \t]*(?:#+|//+|/?\*+/?|--|;+)[ \t]?", re.MULTILINE)
+# "…" (path:n): the place in brackets, on the same line or the paragraph's next one.
+_AFTER_GAP = re.compile(r"[ \t]*\n?[ \t]*\([ \t]*`?")
+_QUOTE_WORDS = 4
+_CUT = re.compile(r"…|\.\.\.")
+_HEADING_TEXT = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*(?:#+[ \t]*)?$")
+_PATH_IN_HEADING = re.compile(
+    r"(?<![\w./-])((?:[\w-][\w.-]*/)*[\w-][\w-]*(?:\.[\w-]+)*\.[A-Za-z0-9]+)"
+)
 _DEFAULT_BRANCH = "origin/HEAD"
 
 
@@ -75,11 +91,12 @@ def checked_text(body: str) -> str:
     return "\n".join(kept)
 
 
-def code_spans(text: str) -> list[str]:
-    """What stands between single backticks, paired as CommonMark pairs them: a run of n
-    backticks closes at the next run of exactly n; a run that never closes is text."""
+def _span_ranges(text: str) -> list[tuple[int, int, int]]:
+    """(start, end, width) of each code span, backticks included, paired as CommonMark pairs
+    them: a run of n backticks closes at the next run of exactly n; a run that never closes is
+    text."""
     runs = list(_TICKS.finditer(text))
-    spans: list[str] = []
+    ranges: list[tuple[int, int, int]] = []
     index = 0
     while index < len(runs):
         opening = runs[index]
@@ -90,10 +107,14 @@ def code_spans(text: str) -> list[str]:
         if closing is None:
             index += 1
             continue
-        if width == 1:
-            spans.append(text[opening.end() : runs[closing].start()])
+        ranges.append((opening.start(), runs[closing].end(), width))
         index = closing + 1
-    return spans
+    return ranges
+
+
+def code_spans(text: str) -> list[str]:
+    """What stands between single backticks (see `_span_ranges`)."""
+    return [text[start + 1 : end - 1] for start, end, width in _span_ranges(text) if width == 1]
 
 
 def _unquote(span: str) -> str:
@@ -123,6 +144,7 @@ class _Repo:
         if default.returncode == 0 and default.stdout.strip() != head:
             self.revs.append(default.stdout.strip())
         self._files: dict[str, list[str]] = {}
+        self._flat: dict[str, tuple[str, ...]] = {}
 
     def _git(self, *args: str) -> subprocess.CompletedProcess[str]:
         return proc.run([*proc.GIT, "--literal-pathspecs", *args], self.cwd)
@@ -161,6 +183,19 @@ class _Repo:
 
     def has_object(self, word: str) -> bool:
         return self._git("cat-file", "-e", word).returncode == 0
+
+    def flat_text(self, rev: str, path: str) -> tuple[str, ...]:
+        """The file with every run of whitespace as one space, so that a quote of wrapped
+        prose matches, once as it is and once without the comment markers at the lines'
+        starts, so that a quote of a wrapped comment does too; nothing for a missing file."""
+        key = f"{rev}:{path}"
+        if key not in self._flat:
+            shown = self._git("show", key)
+            text = shown.stdout
+            self._flat[key] = (
+                (_flat(text), _flat(_COMMENT.sub("", text))) if shown.returncode == 0 else ()
+            )
+        return self._flat[key]
 
 
 def _file_lines(repo: _Repo, head: str, text: str) -> list[str]:
@@ -204,6 +239,118 @@ def _name(repo: _Repo, span: str) -> str | None:
     return "not found as text or as a file name"
 
 
+def _flat(text: str) -> str:
+    """Whitespace runs as one space and no backticks, so that a quote of wrapped prose matches
+    and one that dropped the code marks of `.flag` does too."""
+    return " ".join(text.replace("`", "").split())
+
+
+def _blank_spans(text: str) -> str:
+    """The text with each code span's characters but newlines as spaces, so that a `"` in a
+    span opens no quote while positions stay those of the text."""
+    out = list(text)
+    for start, end, _ in _span_ranges(text):
+        for i in range(start, end):
+            if out[i] != "\n":
+                out[i] = " "
+    return "".join(out)
+
+
+@dataclasses.dataclass(frozen=True)
+class Quotation:
+    text: str  # whitespace runs as one space
+    files: list[str]  # it stands in one of them
+    by_line: bool  # tied by a file and line (head only), else by its section
+
+
+def _next_to(gap: str, words: int) -> bool:
+    """Does a file and line stand right before a quote, with only `gap` between? Nothing that
+    ends a sentence or quotes, and at most `words` words (`says`, `reads:`)."""
+    return not (set(gap) & _GAP_STOPS) and len(gap.split()) <= words and len(gap) <= 24
+
+
+def quotations(text: str, files: list[str]) -> list[Quotation]:
+    """Each quotation the text ties to a file of the head.
+
+    A quote lies between `"` and the next `"`, `“` and the next `”`, or `„` and the next `“`
+    or `”`, within one paragraph and outside code spans, and has four words or more. It is
+    tied to a file by a file and line (form 1) right before it (`path:n says "…"`) or right
+    after it in brackets (`"…" (path:n)`), also on the paragraph's next line, when those places
+    name one file between them; with no file and line next to it, to the file of the section it sits
+    in: the nearest heading above that names a file at the head, when it names exactly one.
+    A quote mark after an odd number of backslashes closes no quote."""
+    quotes: list[Quotation] = []
+    section: list[tuple[int, list[str]]] = []  # (level, files at the head) of the headings
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if not paragraph:
+            return
+        para = "\n".join(paragraph)
+        blanked = _ESCAPED_QUOTE.sub(lambda m: " " * len(m.group()), _blank_spans(para))
+        lines = [m for m in _FILE_LINE.finditer(para) if m.group(1) in files]
+        nearest = next((named for _, named in reversed(section) if named), [])
+        here = nearest[0] if len(nearest) == 1 else None
+        used = -1  # the end of the brackets the last quote took: no place before the next one
+        for match in _QUOTE.finditer(blanked):
+            quote = para[match.start() + 1 : match.end() - 1]
+            if len(quote.split()) < _QUOTE_WORDS:
+                continue
+            before = [m for m in lines if m.end() <= match.start()]
+            after = [m for m in lines if m.start() >= match.end()]
+            named = []
+            if (
+                before
+                and before[-1].start() > used
+                and _next_to(para[before[-1].end() : match.start()], 2)
+            ):
+                named.append(before[-1].group(1))
+            if after and _AFTER_GAP.fullmatch(para[match.end() : after[0].start()]):
+                close = para.find(")", after[0].end())
+                used = close if close != -1 else len(para)
+                inside = para[after[0].start() : used]
+                named.extend(m.group(1) for m in _FILE_LINE.finditer(inside))
+            if named:
+                # Places of two files next to one quote name no one source: it is tied to none.
+                if len(set(named)) == 1:
+                    quotes.append(Quotation(_flat(quote), named[:1], True))
+            elif here is not None:
+                quotes.append(Quotation(_flat(quote), [here], False))
+        paragraph.clear()
+
+    for line in text.splitlines():
+        heading = _HEADING_TEXT.match(line)
+        if heading:
+            flush()
+            level = len(heading.group(1))
+            while section and section[-1][0] >= level:
+                section.pop()
+            named = {m.group(1) for m in _PATH_IN_HEADING.finditer(heading.group(2))}
+            section.append((level, sorted(f for f in named if f in files)))
+        elif line.strip():
+            paragraph.append(line)
+        else:
+            flush()
+    flush()
+    return quotes
+
+
+def _quote_stands(repo: _Repo, revs: list[str], quote: str, path: str) -> bool:
+    """`\\"` in the quote may be Markdown's escape of `"` or the file's own text: both count."""
+    for text in dict.fromkeys([quote, quote.replace('\\"', '"')]):
+        parts = [part.strip() for part in _CUT.split(text)]
+        parts[-1] = parts[-1].rstrip(".,;:!?")
+        for rev in revs:
+            for flat in repo.flat_text(rev, path):
+                if all(part in flat for part in parts if part):
+                    return True
+    return False
+
+
+def _short(quote: str) -> str:
+    return quote if len(quote) <= 80 else quote[:79] + "…"
+
+
 def check(cwd: Path, head: str, body: str) -> Result:
     """`cwd` is the top of a clone that has `head` (the caller made sure of both)."""
     repo = _Repo(cwd, head)
@@ -222,4 +369,10 @@ def check(cwd: Path, head: str, body: str) -> Result:
     for word in sorted(set(_HEX.findall(text))):
         if is_object_hash(word) and not repo.has_object(word):
             bad.append(f"body: {word}: no such object in this clone")
+    for quote in quotations(text, repo.files(head)):
+        revs = [head] if quote.by_line else repo.revs
+        if not any(_quote_stands(repo, revs, quote.text, path) for path in quote.files):
+            where = "the head" if len(revs) == 1 else "the head nor the default branch"
+            names = " nor ".join(quote.files)
+            bad.append(f'body: "{_short(quote.text)}": not in {names} at {where}, verbatim')
     return Result(bad)

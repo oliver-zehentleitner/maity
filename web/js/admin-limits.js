@@ -20,6 +20,8 @@ window.Maity = window.Maity || {};
       atWords: (n) => M.t("limits.agents.at", { count: n }) },
     { key: "max_orgs_per_human", at: "humans_at_org_limit", label: () => M.t("limits.orgs.label"), hint: () => M.t("limits.orgs.hint"),
       atWords: (n) => M.t("limits.orgs.at", { count: n }) },
+    { key: "max_projects_per_owner", at: "owners_at_project_limit", label: () => M.t("limits.projects.label"), hint: () => M.t("limits.projects.hint"),
+      atWords: (n) => M.t("limits.projects.at", { count: n }) },
   ];
   const SOURCES = { default: () => M.t("limits.source.default"), admin: () => M.t("limits.source.admin"), env: () => M.t("limits.source.env") };
   const sourceOf = (s) => (Object.hasOwn(SOURCES, s) ? SOURCES[s]() : s);

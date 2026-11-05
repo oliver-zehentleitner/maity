@@ -49,9 +49,21 @@ window.Maity = window.Maity || {};
   function remember(tag) {
     try { window.localStorage.setItem(STORED, tag); } catch { /* the page still follows it */ }
   }
+  // A choice made on the page writes its tag into an address's ?lang=, so a reload or a copied
+  // address says the same; without ?lang= the address stays as it is. Nothing is drawn again:
+  // the page that asked draws itself in the language (js/route.js, go with quiet).
+  function carry(tag) {
+    const route = M.route;
+    if (!route) return;
+    const at = route.current();
+    if (!at.query.has("lang") || at.query.get("lang") === tag) return;
+    at.query.set("lang", tag);
+    route.go(at.path + "?" + at.query.toString(), { quiet: true });
+  }
 
   // Without an account's language: ?lang= (which then stays the choice), the
-  // explicit choice, the browser's list, English.
+  // explicit choice, the browser's list, English. A choice made on the page writes ?lang=
+  // too (carry), or a view drawn again would read the older one back.
   // What the person chose themselves, or null: only this may go on an account.
   function explicitChoice() {
     const asked = window.location ? closest(new URLSearchParams(window.location.search).get("lang")) : null;
@@ -196,7 +208,7 @@ window.Maity = window.Maity || {};
   // The account's interface language, or null: the rule without an account.
   i18n.follow = (tag) => use(closest(tag) || browserChoice());
   // A choice made on a page before sign-in.
-  i18n.choose = (tag) => { remember(tag); return use(tag); };
+  i18n.choose = (tag) => { remember(tag); carry(tag); return use(tag); };
   // A key's English text, for a translation that may not be used (the product line's
   // sentence with a placeholder missing or twice, docs/api.md §16.13).
   i18n.english = (key) => {

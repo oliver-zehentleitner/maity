@@ -949,7 +949,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "device.code.open": "有代码？",
   "device.code.title": "用代码登录",
   "device.expires": "{time}后过期。",
-  "device.mail.address": "你的地址",
+  "device.mail.address": "邮箱地址",
   "device.mail.check": "查收你的邮件",
   "device.mail.code": {
     "other": "{count} 位验证码"
@@ -1062,6 +1062,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "error.probe_unavailable": "代码托管平台没有响应。",
   "error.profile_in_use": "此智能体仍在某个项目中活跃。",
   "error.project_closed": "此项目已归档。",
+  "error.project_limit": "此命名空间中的项目数量已达此 hub 允许的上限。",
   "error.rate_limited": "刚才的请求过多。请稍后再试。",
   "error.reason.humans_only": "只有人可以这样做。",
   "error.reason.method_disabled": "这种登录方式已关闭。",
@@ -2146,6 +2147,11 @@ window.MAITY_I18N["zh-Hans"] = {
   },
   "limits.orgs.hint": "一个人担任所有者的组织数量；再创建一个会被拒绝。",
   "limits.orgs.label": "每人拥有的组织数",
+  "limits.projects.at": {
+    "other": "有 {count} 个所有者已达到或超过此上限。"
+  },
+  "limits.projects.hint": "一个人或一个组织的命名空间中的项目数量，包括已归档的；再创建或转入一个会被拒绝。",
+  "limits.projects.label": "每个所有者的项目数",
   "limits.save": "保存上限",
   "limits.saved": "已保存。",
   "limits.saving": "正在保存…",
@@ -2355,6 +2361,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "member.silent_unknown": "无响应 · 上次调用未知",
   "memberpage.actions": "操作",
   "memberpage.actions.label": "{name} 的操作",
+  "memberpage.activity.cursor_stuck": "hub 的事件游标没有越过 {after}",
   "memberpage.activity.failed": "无法读取动态：{reason}",
   "memberpage.activity.hint": "对方在此项目中做过的事，最新的在前。",
   "memberpage.activity.hint_cut": {
@@ -2660,8 +2667,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "menu.sign_in_device": "在另一台设备上登录",
   "menu.sign_out": "退出登录",
   "menu.theme": "主题",
-  "messages.cursor_stuck": "hub 的事件游标没有越过 {after}",
-  "messages.cut": "只显示 hub 最近 {window} 个事件（所有项目合计）之内的消息；更早的消息不在此读取。",
   "messages.filter.every_type": "所有类型",
   "messages.filter.type": "类型",
   "messages.from_to": "{from} 至 {to}",
@@ -2669,14 +2674,19 @@ window.MAITY_I18N["zh-Hans"] = {
   "messages.new": {
     "other": "{count} 条新消息。"
   },
+  "messages.new_failed": "无法读取新消息：",
   "messages.none": "暂无项目消息。",
   "messages.none_of_type": "没有此类型的消息。",
+  "messages.not_read_yet": "目前已读取的页面中没有；较早的消息尚未读取。",
+  "messages.older": "更早的消息",
+  "messages.read_failed": "无法读取消息：",
   "messages.remove": "移除",
   "messages.remove.ask": "对所有能阅读的人移除这条消息吗？其文字和文件会被一条说明取代。请说明原因：",
   "messages.remove.busy": "正在移除…",
   "messages.remove.done": "已移除。",
   "messages.remove.failed": "未移除：",
   "messages.remove.label": "对所有人移除这条消息",
+  "messages.removed": "此消息已被删除。",
   "messages.review.more": {
     "other": "另外 {count} 处"
   },
@@ -3323,6 +3333,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "product.bug": "发现了 bug？",
   "product.love": "爱",
   "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
+  "product.security": "发现了安全漏洞？",
   "profile_delete.busy": "正在删除…",
   "profile_delete.done": "个人资料 @{handle} 已删除。",
   "profile_delete.done_ended": "个人资料 @{handle} 已删除；其成员资格已终止。",
@@ -3532,7 +3543,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "reg.terms.version": "版本",
   "reg.title": "注册",
   "reg.unchanged": "未作任何更改。",
-  "register.address": "你的地址",
+  "register.address": "邮箱地址",
   "register.check_mail": "请查收邮件",
   "register.closed": "此 hub 不接受按请求创建新账户。",
   "register.closed_sign_in": "如果你已有账户，请{link}。",

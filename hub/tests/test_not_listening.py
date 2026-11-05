@@ -259,18 +259,129 @@ def test_the_start_wakes_the_member_it_reports_to_and_the_end_nobody(setup: Setu
     assert not events.wakes(ended, reader, s.agent.id)
 
 
-def test_a_supervised_session_is_never_not_listening(setup: Setup) -> None:
-    s = setup
+def _supervise(s: Setup) -> None:
     with s.engine.begin() as conn:
         conn.execute(
             update(t.agent_session)
             .where(t.agent_session.c.credential_id == s.agent.credential_id)
             .values(supervisor="maity-runner/0.1.0")
         )
+
+
+def _place(s: Setup, make_client: ClientFactory) -> str:
+    """An active placement on a paired runner that names the agent's credential, as the
+    pickup sets it (§15.9)."""
+    from tests.test_runner_stream import attach, hello
+    from tests.test_runners import paired
+
+    repository = {"url": "https://github.com/oliver-zehentleitner/maity"}
+    patched = s.owner.patch(BASE, {"repository": repository})
+    assert patched.status_code == 200, patched.text
+    runner = paired(make_client, s.owner)
+    attach(s.owner, runner)
+    assert hello(make_client(), runner).status_code == 200
+    response = s.owner.post(
+        f"{BASE}/placements",
+        {"agent": {"id": s.agent.id}, "runner": runner.id, "harness": "claude-code"},
+    )
+    assert response.status_code == 201, response.text
+    placement_id: str = response.json()["id"]
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == placement_id)
+            .values(credential_id=s.agent.credential_id)
+        )
+    return placement_id
+
+
+def test_a_supervised_session_an_active_placement_names_is_never_not_listening(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    s = setup
+    _place(s, make_client)
+    _supervise(s)
     s.message()
     s.at(11)
     s.sweep()
-    assert s.session().not_listening_since is None and s.notices() == []
+    assert s.session().not_listening_since is None and s.events() == []
+
+
+def test_a_supervised_session_no_placement_names_is_not_listening(setup: Setup) -> None:
+    """Local mode (§15.13): a runner supervises the session, no placement names its
+    credential, and nobody reports its stop but this check (§5.3)."""
+    s = setup
+    _supervise(s)
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is not None
+    [started] = s.events()
+    assert started.payload["ended"] is False
+
+
+def test_a_closed_placement_no_longer_leaves_a_supervised_session_out(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    s = setup
+    placement_id = _place(s, make_client)
+    _supervise(s)
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is None
+    # Closed at once: the runner never acted on it (§15.5).
+    closed = s.owner.delete(f"{BASE}/placements/{placement_id}")
+    assert closed.status_code == 200 and closed.json()["active"] is False, closed.text
+    s.at(12)
+    s.sweep()
+    assert s.session().not_listening_since is not None
+
+
+def test_a_placement_naming_the_credential_ends_the_episode(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """An exclusion that begins ends the episode (§5.3)."""
+    s = setup
+    _supervise(s)
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is not None
+    _place(s, make_client)
+    s.at(12)
+    s.sweep()
+    assert s.session().not_listening_since is None
+    started, ended = s.events()
+    assert (started.payload["ended"], ended.payload["ended"]) == (False, True)
+
+
+def test_a_runner_revoke_under_stop_leaves_a_due_revocation_out(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """Under `stop` the placement closes and the credential's revocation is only due; the
+    agent may never call again to have it written (§15.3), so it counts as revoked."""
+    s = setup
+    placement_id = _place(s, make_client)
+    _supervise(s)
+    policy = {"policy": {"on_runner_revoke": "stop"}, "reason": "the runner's agents"}
+    assert s.owner.patch(BASE, policy).status_code == 200
+    with s.engine.connect() as conn:
+        runner_id = conn.execute(
+            select(t.placement.c.runner_id).where(t.placement.c.id == placement_id)
+        ).scalar_one()
+    revoked = s.owner.post(f"/runners/{runner_id}/revoke", {})
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["on_runner_revoke"][0]["stopped"] == [placement_id]
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is None and s.events() == []
+    with s.engine.connect() as conn:
+        credential = conn.execute(
+            select(t.credential).where(t.credential.c.id == s.agent.credential_id)
+        ).one()
+    assert credential.revoked_at is None and credential.revoke_due_at is not None
 
 
 def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
