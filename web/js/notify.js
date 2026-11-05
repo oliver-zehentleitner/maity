@@ -63,22 +63,21 @@ window.Maity = window.Maity || {};
   // Read only on purpose: a security alert by Mark read (§18.3), and an
   // item that asks for an action (a registration to decide, an address to
   // set again) closes with the matter, not by opening it (§18.1).
-  // The four open matters of §18.3 (registration_pending, mail_disabled,
-  // report_open, agents_not_listening), by their targets (registration,
-  // settings, report, agents), read as read only once the matter is closed,
-  // never by opening or marking them: the hub ignores their ids.
-  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings", "report", "agents"].includes((x.target || {}).type);
+  // The three open matters of §18.3 (registration_pending, mail_disabled,
+  // agents_not_listening), by their targets (registration, settings,
+  // agents), read as read only once the matter is closed, never by opening or
+  // marking them: the hub ignores their ids. A new abuse report is a personal
+  // request to the instance admin (§16.8, §7), listed in the inbox.
+  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings", "agents"].includes((x.target || {}).type);
 
   function linkOf(item) {
     const t0 = item.target || {};
-    if (t0.type === "session" || item.kind === "security") return "/account/sessions";
+    if (t0.type === "session" || item.kind === "security") return "/account/security/sessions";
     if (t0.type === "settings") return "/account/notifications";
     // Agent instances not listening (agents_not_listening, §5.3): one's agents.
     if (t0.type === "agents") return "/agents";
-    // A registration waiting for the instance admin (§16.4): Admin → Registration;
-    // a new abuse report (§16.8): Admin → Reports with that report opened.
+    // A registration waiting for the instance admin (§16.4): Admin → Registration.
     if (t0.type === "registration") return "/admin/registration";
-    if (t0.type === "report") return "/admin/reports/" + encodeURIComponent(t0.id);
     const full = item.project && item.project.full_name;
     if (!full || item.project.member === false) return "/all";
     const base = "/" + M.api.projectPath(full) + "/";

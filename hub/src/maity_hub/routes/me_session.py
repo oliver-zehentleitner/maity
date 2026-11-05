@@ -18,6 +18,7 @@ from maity_hub import (
     bridges,
     clock,
     commitment,
+    cross_chats,
     environment,
     events,
     group_chats,
@@ -680,6 +681,7 @@ def _packet(
         },
         **_handover(conn, mine, caller, cursor, events_cursor),
         "conversations": conversation_packet(conn, mine, caller),
+        "cross_chats": cross_chats.resume_packet(conn, caller.agent_id or ""),
         "peers": peers,
         "operations": operations(
             project, mine.trust, mine.role_base, namespace.full_name(conn, project)

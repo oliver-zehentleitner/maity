@@ -1301,6 +1301,8 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-head { display: flex; align-items: center; gap: 8px; }
 .join-head h3 { margin: 0; }
 .join-head .join-close { margin-inline-start: auto; }
+/* A project's name and full name may be one long word (a 63-character slug). */
+.join-project { overflow-wrap: anywhere; }
 .join-columns { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
 .join-fields { flex: 1 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
 /* One column that a wide select cannot stretch, and rows at their own height: a taller neighbour in the row must not stretch the label and the control. */
@@ -1718,6 +1720,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+/* The account's tabs (js/account.js): one row that scrolls sideways on a phone, not wrapped. */
+.view-tabs.account-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.account-tabs .view-tab { white-space: nowrap; flex: 0 0 auto; }
+.account-tabs .view-tab.later { color: var(--muted); cursor: default; }
+/* The row scrolls, so it clips what stands outside it: the focus ring drawn inside the tab. */
+.account-tabs .view-tab:focus-visible { outline-offset: -2px; }
+/* Security's own tabs, under the account's: smaller, no line of their own. */
+.view-tabs.security-tabs { border-bottom: none; margin-top: -4px; font-size: 0.92rem; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
 /* The instance an address's #id leads to (tsk-bczgjkfpw1wg). */

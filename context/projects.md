@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests with the oldest one's time (`oldest_open_at`) and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
 **Revisit when:** the ticker's merge items are added to `reports`, or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{owner}/{slug}`: name,
@@ -411,7 +411,7 @@ hands out instructions and a path, and the settings stay in
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
-**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: `hub/src/maity_hub/namespace.py` resolves an owner's handle to a human or an organisation (`resolve_owner`; a project stores which one in `owner_human_id` or `owner_org_id`), as the paragraph below and the organisation entry (33f520b9) say; addressing stays `<owner>/<slug>`
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: `hub/src/maity_hub/namespace.py` resolves an owner's handle to a human or an organisation (`resolve_owner`; a project stores which one in `owner_human_id` or `owner_org_id`, beside `owner_id`, the one id every reader uses and `resolve` compares), as the paragraph below and the organisation entry (33f520b9) say; addressing stays `<owner>/<slug>`
 **Revisit when:** the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6), or a third kind of namespace owner is added
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
@@ -544,8 +544,10 @@ placements, and any address. A card's notes were never public at first;
 since 2026-11-02 they are, on the card's own page in an open project
 (`hub/context/public-pages.md`, 9e1bb9f3). The
 owner's address `/<owner>` (the path-routing decision of 2026-10-29,
-e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
-public projects and their own agents with presence.
+e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: name, public
+projects and their own agents; the picture since 2026-11-05, while the
+person's `public_profile` is on (`members.md`, 294d6f7b). Presence is
+not on it (§16.9 shows none).
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where work is public by default and found by what it does; the

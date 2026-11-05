@@ -37,12 +37,27 @@ YOUNG = timedelta(hours=1)
 
 # What a browser says about itself, matched in this order: Edge and Opera name Chrome
 # too, Chrome names Safari, and every iOS browser is Safari underneath.
+_VERSION = re.compile(r"\bVersion/[\d.]")
+_SAFARI = re.compile(r"\bSafari/")
+
+
+def _safari(text: str) -> object:
+    """`Version/<digits or dots>` and, later on the same line, `Safari/`: two searches per
+    line, so the work grows with the header's length. The single pattern it replaces,
+    `\\bVersion/[\\d.]+.*\\bSafari/`, tried every split between its two runs."""
+    for line in text.split("\n"):
+        version = _VERSION.search(line)
+        if version and _SAFARI.search(line, version.end()):
+            return True
+    return None
+
+
 _BROWSERS = (
-    ("Edge", re.compile(r"\bEdg(?:e|A|iOS)?/")),
-    ("Opera", re.compile(r"\bOPR/|\bOpera\b")),
-    ("Firefox", re.compile(r"\b(?:Firefox|FxiOS)/")),
-    ("Chrome", re.compile(r"\b(?:Chrome|CriOS|Chromium)/")),
-    ("Safari", re.compile(r"\bVersion/[\d.]+.*\bSafari/")),
+    ("Edge", re.compile(r"\bEdg(?:e|A|iOS)?/").search),
+    ("Opera", re.compile(r"\bOPR/|\bOpera\b").search),
+    ("Firefox", re.compile(r"\b(?:Firefox|FxiOS)/").search),
+    ("Chrome", re.compile(r"\b(?:Chrome|CriOS|Chromium)/").search),
+    ("Safari", _safari),
 )
 _SYSTEMS = (
     ("iOS", re.compile(r"\b(?:iPhone|iPad|iPod)\b")),
@@ -58,7 +73,7 @@ def describe(user_agent: str | None) -> tuple[str | None, str | None]:
     """(browser, operating system) from a `User-Agent`, each None when unknown. A name
     from the list only, never text from the header: the list is shown to the human."""
     text = user_agent or ""
-    browser = next((name for name, pattern in _BROWSERS if pattern.search(text)), None)
+    browser = next((name for name, found in _BROWSERS if found(text)), None)
     system = next((name for name, pattern in _SYSTEMS if pattern.search(text)), None)
     return browser, system
 

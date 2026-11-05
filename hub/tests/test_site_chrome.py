@@ -182,7 +182,11 @@ def test_it_is_cached_as_the_landing_page(owner: flow.Human, make_client: Client
 def test_the_join_host_never_serves_it(owner: flow.Human, make_client: ClientFactory) -> None:
     publish(owner)
     answer = join_client(make_client).get(CHROME, follow_redirects=False)
-    assert answer.status_code in (302, 404)
+    # §16.7.5, §1.1: an ordinary other `GET` on the join host, sent to the public start page.
+    assert answer.status_code == 302
+    assert (
+        answer.headers["location"].endswith("/") and "site/chrome" not in answer.headers["location"]
+    )
     assert "Maity, Austria" not in answer.text
 
 

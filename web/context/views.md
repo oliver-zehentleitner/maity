@@ -737,14 +737,17 @@ button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
 off while nothing it marks is unread, with a line that sign-in and
 address alerts stay unread. **Mark read** is not offered on one of the
-four open matters of §18.3 — `registration_pending`, `mail_disabled`,
-`report_open`, `agents_not_listening`, told by their targets
-(`registration`, `settings`, `report`, `agents`, `M.notify.keepsUnread`)
+open matters of §18.3 — `registration_pending`, `mail_disabled`,
+`agents_not_listening`, told by their targets
+(`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
 — which read as read once the matter is closed, nor on a sign-in or
 address alert unless this session may confirm it (`M.sessions.mayConfirm`,
 §2.6.5): the hub skips such an id without saying so, and a button that
 does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item.
+when the page shows an unread security item. Until 2026-11-04 a fourth
+matter, `report_open` (target `report`), stood among them; a new report
+is now the instance admin's personal request instead (entry
+f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
 
 Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
 6e357e0c "An inbox answer carries a note with any button", §7) each open
@@ -1320,7 +1323,7 @@ save: it fixes the jump but not the place the maintainer found odd.
 The theme menu (System, Light, Dark) shows in the header only on the
 pages one sees signed out: the sign-in page and the landing page (the
 public swarm page went with the contract #697). Signed in, the header has none; Your account has a
-Theme section (`/account/theme`, also in the profile menu) with the
+Theme section (on its Settings tab, `/account/settings`; `/account/theme` leads there) with the
 same three choices as radio buttons and a line that the choice is kept
 in this browser only. It is the same per-browser value either way, so a
 pick made signed out holds after signing in.
@@ -2018,7 +2021,7 @@ line, because a display at the fields only would swallow it (merge of
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration, a `report_open` item to the report in Admin → Reports) and the review of #778, 2026-10-31
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration; until 2026-11-04 a `report_open` item to the report in Admin → Reports, since then a report's request in the inbox, §16.8) and the review of #778, 2026-10-31
 **Revisit when:** a section other than Registration and Reports needs a link of its own, or the area grows past one row of buttons
 
 `/admin` reads every section as before, then shows one: a row of
@@ -2027,9 +2030,10 @@ page opens on the first, Statistics. A section whose read fails says so
 in its place (until 2026-10-30 a section the hub did not serve left the
 row, e1699490). The others stay
 in the page, hidden, so a form half filled in keeps what was typed.
-The two sections a notification leads into have an address:
-`/admin/registration`, and `/admin/reports/<id>`, which opens that
-report as well. The page is the same, opened on that section; the
+The two sections a notification or a request leads into have an
+address: `/admin/registration`, and `/admin/reports/<id>`, which opens
+that report as well (the target of a report's request, entry
+f50ed8ee-5948-43c8-817a-d1b008bf1f5a). The page is the same, opened on that section; the
 section is found by the hub path it reads, not by its label, which is
 translated.
 
@@ -2039,7 +2043,7 @@ under each other hid all but the first below the fold.
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
 shorter. A route for every section (`/admin/users`): only the two
-sections a notification names need a link. The older Users page at `/admin/users` was removed
+sections a notification or a request names need a link. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
@@ -2806,7 +2810,9 @@ summary lists the instances. The bell's `agents_not_listening` item
 opened: like `registration_pending` and `mail_disabled` it asks for an
 action (resume or end the instances) and is read once the matter is
 closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
-names its target `agents`.
+names its target `agents`. A report's request (entry f50ed8ee-5948-43c8-817a-d1b008bf1f5a) has the
+digest's shape, filed by the hub, personal, without project or
+organisation, but is no digest and gets no such link.
 
 **Reason:** "—" as an asker reads as a missing name, not as the hub;
 and "the agent waits for the answer" would be false. The instances
@@ -2921,7 +2927,7 @@ from Members in its favour: that reverses the maintainer's own choice
 **Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
 **See:** rendering.md#a-picture-is-uploaded-on-the-account-checked-as-the-hub-checks-it-with-no-preview-of-the-chosen-file — 3ec853f0-4141-4e81-acdf-c0fee94c920b — as of 2026-10-28
 
-The account (`/account/picture`) sets the human's own picture. An
+The account's Profile tab (`/account`; `/account/picture` leads there) sets the human's own picture. An
 agent's picture is set where the agent is managed: in its row on
 Members, under **Details** or **Manage**, for its owner only, as §6.10
 allows. The picture is read from one's agent profiles (`GET /agents`)
@@ -3331,6 +3337,8 @@ The cross-project inbox takes a personal request whose `project` is
 organisation where the request carries `org`, and nothing links into a
 project. A request with `project` and `org` (a transfer into an
 organisation) names the project and the organisation it would move into.
+One with neither (a report's request, §16.8) is labelled Personal alone,
+its hidden name "Personal: " rather than "Personal, : ".
 
 **Reason:** an invitation into an organisation belongs to no project,
 and the inbox read `project.full_name` on every request, so one such
@@ -3338,6 +3346,40 @@ request broke the whole list.
 
 **Rejected alternative:** filling in an empty project: it shows a
 project that is not there, and the links behind it lead nowhere.
+
+## A report's request in the inbox only opens the report
+
+**Id:** f50ed8ee-5948-43c8-817a-d1b008bf1f5a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.8 ("Who is told"), §7 (`report`, `resolve_the_report`), §1.3; the card tsk-xz3yt6yz1b2b and the coordinator's approval of variant A, 2026-11-04 (the request cannot be answered, resolving stays in Admin → Reports; Open report must work from the all-projects inbox); hub/context/reports.md 2011e591
+**Revisit when:** the hub lets the request itself resolve its report, or a report's request reaches someone other than the instance admin
+
+A new abuse report reaches the instance admin as a personal request
+without project or organisation, filed by the hub, carrying `report`
+(`id`, `reason`, `type`). In the inbox such a request shows no text
+field, no replies, no Withdraw and no digest's link to one's agents,
+only **Later** and **Open report**, a link to `/admin/reports/<id>`,
+where the admin reads the snapshot and resolves it. Resolving or expiry
+withdraws the request on the hub's side; the inbox drops it on its next
+read. The fixture hub does the same: it lists such requests for the open
+reports, refuses answering or withdrawing them with `resolve_the_report`,
+and withdraws one when its report is resolved. The bell's `report`
+target (`report_open`) is gone from `M.notify`.
+
+**Reason:** the hub refuses every answer and withdrawal of a report's
+request (409 `resolve_the_report`), so a field or button there could only
+fail; the decision needs the snapshot and the actions of Admin → Reports.
+
+**Rejected alternatives:**
+- Resolving in the inbox (the card's variant B): a second place for the
+  same action, without the snapshot beside it.
+- Keeping the bell's `report_open` item beside the request: every report
+  shown, and mailed, twice.
+- The digest's link to one's agents, which its shape alone would give
+  (hub-filed, personal, no project, no organisation): it says nothing
+  about a report.
 
 ## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
 
@@ -3872,8 +3914,8 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 **Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
 **Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
 
-**Forge access** is a section of the account page, next to the
-sessions. It shows:
+**Forge access** is a tab of the account's Security
+(`/account/security/forge`), next to the sessions. It shows:
 - the linked installations of the instance's GitHub App, each with its
   status and the repositories it covers;
 - **Link the GitHub App**, offered only where `app_configured`;
@@ -3883,8 +3925,8 @@ sessions. It shows:
   with a hint naming the read permissions the probe needs.
 
 A token is never shown, only that one is set, its login and its status.
-`/settings/forge`, the path the hub's setup redirect lands on, is the
-same account page opened at that section. Its `?error=<reason>` is said
+`/settings/forge`, the path the hub's setup redirect lands on, shows
+that same tab at its own address. Its `?error=<reason>` is said
 in words and dropped from the address. A project's settings say which
 grant reads its repository (`probe_via` in words) and whether the
 namespace owner confirmed it, with **Confirm this repository for my
@@ -4963,3 +5005,85 @@ The Team page's Organisation tab has two faces, Tree and Paths, the choice kept 
 **Reason:** a picture of the routing that the hub does not do is worse than none; the members list is what the dashboard already reads, and the usual edges answer the question readers ask (who hears about this) without claiming the hub computed them.
 
 **Rejected alternatives:** a routing table of the dashboard's own, kept beside §8: a second copy that drifts from the hub. Leaving out the edges the members list cannot settle: card assignment, the most asked about, would show nothing. A force layout: it moves on every redraw and hides who reports to whom; the draft's tidy tree keeps the hierarchy readable.
+
+## Join an agent asks for the second factor in its form, and names the project and the missing right
+
+**Id:** 2e60e51f-5e0e-4bd0-bc46-365b3c050d13
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's reports on tsk-trb99kkhv1rk (an owner could not create a join and saw only "you lack the rights"; the maintainer saw "this call needs your second factor first" with the second factor set to mail for everyone), 2026-11-05; hub/src/maity_hub/routes/joins.py (`create_join` calls `require_step_up`), docs/api.md §2.8.4; web/js/step-up.js
+**Revisit when:** the hub stops treating join creation as a sensitive call, or the dashboard gets one step-up place for every view
+
+Creating a join goes through `M.stepUp.run`, the same as every other
+sensitive call in the dashboard: on `step_up_required` the form asks for
+the code (by app, or the mailed code under the mail factor) and sends the
+join again; Cancel ends without a refusal. A bare `forbidden` with
+`scope: members:admin` (no admin rights, and members may not bring
+agents) is said in words that name the right. The panel names the project
+the join is for, by name and full name.
+
+**Reason:** the hub has always asked for the second factor on
+`POST …/joins`, but the join form showed it as a refusal: in English
+the hub's own sentence, translated as the generic "you do not have the
+rights for this", so an owner who had done nothing wrong could not add an
+agent at all. With several projects open the target project was only the
+tab's.
+
+**Rejected:** a hub change (the hub's rule is right; a sole owner may not
+make themselves admin either, the maintainer confirmed); a generic words
+entry for `step_up_required` in js/errors.js alone, which would say the
+cause but still leave no way to give the code.
+
+## The account is in tabs, each at an address of its own; the addresses before them lead to their tab
+
+**Id:** 36bfb48e-ae7c-41f4-9e73-b0abfef34bce
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3banvfzv3nvs (the maintainer and the lead, 2026-11-05): the tabs Profile, Settings, Notifications, Security and Organisations, Linked accounts shown as to come, the profile menu as the tabs, a sideways-scrolling row on a phone, the hub unchanged; Security's own tabs proposed to the lead on the card (2026-11-05); the scroll carried over from the page before, reproduced on main (`/account` opened at 2481 of 4535 px)
+**Revisit when:** linked accounts arrive, the hub's mails and redirects name the new addresses, or a tab grows long enough to want tabs of its own
+
+The account page is in tabs (`js/account.js`), each tab at its own address. The profile menu is
+the same list as the tabs, followed by Sign out.
+
+| Tab | Address | What it holds |
+|---|---|---|
+| Profile | `/account` | name, handle, picture, meat proxy, public profile |
+| Settings | `/account/settings` | preferences, the site's and the personal language, theme |
+| Notifications | `/account/notifications` | mail, when mail goes out, agents that stop listening, browser notifications; a line leads to the language under Settings |
+| Security | `/account/security` | its own tabs: Sign-in (second factor, then password), Sessions (`/sessions`), Another device (`/device`), Forge access (`/forge`), Your data (`/data`) |
+| Organisations | `/account/orgs` | `js/orgs.js`, as before |
+| Linked accounts | none | greyed, to come |
+
+Security and Organisations are a human's alone, as in the menu before. On Sign-in the second
+factor stands above the password form: the hub's mail and bell item about a changed or failed
+second factor link to `/account/security` (`hub/src/maity_hub/notifications/mailer.py`,
+`items.py`), and the hub stays unchanged on this card.
+
+The addresses of the single page before the tabs are still reached from mails already sent, the
+bell and the hub's links:
+- `/account/picture`, `/account/preferences`, `/account/theme`, `/account/password`,
+  `/account/sessions`, `/account/sign-in-device`, `/account/forge` and `/account/data` each lead
+  to their tab. The new address replaces the old one in the history, the query goes along, and
+  the heading of that part is focused.
+- An unknown address leads to Profile, and an unknown tab of Security leads to Sign-in.
+- `/settings/forge` is no old address: the contract names it as the setup's return (§16.11), so
+  it shows Forge access itself (see the Forge access entry, 861705c6).
+
+A change of view starts at the page's top (`js/app.js`, the route listener). Before, the
+browser kept the scroll position of the page one came from. The board and an opened card count
+as one view, so the card panel and the board's place on return stay as they were.
+
+**Reason:** the account was a single page of eleven parts. One looked for a part by scrolling,
+and the menu's entries were anchors into that page. Tabs show one part at a time, and each one
+can be linked.
+
+**Rejected alternatives:**
+- Keeping the single page with the menu's anchors: this is what the card replaces.
+- Letting the hub send the new addresses: the card leaves the hub unchanged, and mails already
+  sent carry the old addresses anyway.
+- Wrapping the tab rows: on a phone they would take two or three lines. The card asks for one
+  row that scrolls, with the fade on the side that has more.
+- Resetting the scroll on every change of address: opening a card on the board would jump to
+  the top, and the board's place on return would be lost.

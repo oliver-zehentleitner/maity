@@ -295,6 +295,56 @@ long-lived PyPI token out of the repository's secrets.
 - Publishing on the hub's `v*` tags: CLI and hub do not release
   together.
 
+## The CLI's sdist and wheel are built from hashed, pinned tools in a job apart from the checks
+
+**Id:** a8dd1473-5aff-4f32-a3fe-89c0498a208d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04; plan approved by the team lead); `.github/workflows/release-cli.yml`, `cli/requirements/release.in`, `cli/Makefile`
+**Revisit when:** the CLI gains runtime dependencies, the build backend changes, or PyPI's trusted publishing starts attesting how the files were built
+**See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-04
+
+What goes to PyPI is built only with `cli/requirements/release.txt`:
+`build`, `twine` and the build backend `setuptools`, locked with hashes
+by the uv that `hub/requirements/tools.txt` pins (`make lock`). The
+release workflow's `build` job installs that lock alone, with
+`--require-hashes`, into a fresh environment and builds without
+isolation (`make release-build`). The checks run in a separate `check`
+job with the unpinned dev tools; `publish` needs both and uploads only
+the `build` job's artifact. `[build-system]` names the same exact
+`setuptools` as the lock, so a build from the sdist uses the backend
+the release was made with. The `cli` job of ci.yml runs `make
+lock-check` (lock recompiled without its hashes, all three pins compared)
+and `make release-build` on Python 3.11, and the audit workflow checks
+the lock against the known advisories with the hub's locks. The lock
+installs as wheels only (`--only-binary :all:`). The interpreter that
+setup-python provides, with the pip it bundles (which checks the
+hashes), is the trusted base and is not in the lock. The dev extra pins
+the same `setuptools`, since the tests build without isolation in the
+dev environment, where Python 3.11 bundles an older one; `lock-check`
+compares all three pins.
+
+**Reason:** the uploaded files are what every agent installs. Built
+with whatever `build`, `twine` and `setuptools` PyPI served on the day
+of the tag, a changed or replaced tool could change them unseen. A
+hashed lock makes the build tools the reviewed ones. The build runs
+without isolation: with it, `build` would set up its own environment and
+fetch the backend again, without hashes. Keeping
+the checks in their own job means nothing their dev tools install
+shares the environment the files are built in. The hub already locks
+its dependencies the same way (`hub/Makefile`), so the CLI reuses its
+pinned uv instead of a second tool.
+
+**Rejected alternatives:**
+- Pinning only the build backend in `[build-system]`, building with
+  isolation: `build` and `twine` themselves stay unpinned, and the
+  isolated environment is resolved again on every run without hashes.
+- One job for checks and build, as before: the dev tools, unpinned,
+  run in the environment the files come from.
+- Locking the dev tools too: they do not touch what is uploaded once
+  the build is a job of its own; alternatives beyond that: unknown.
+
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
 **Id:** 11b7ed4d-100d-490f-ab34-c68ace8b5f80
@@ -489,6 +539,42 @@ already knows what it deploys.
 - A `sitemap.xml` committed to `docs/`: it lists pages by hand and drifts.
 - Listing every `.html` file as the card first said: it would put the brand's loader fragment
   into the sitemap.
+
+## The docs site is built from a hashed lock in a job with read access only; a second job that installs nothing publishes it
+
+**Id:** b2e1d100-43c0-4655-aec2-b39ed2703d88
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3t1tvkd5ktxs, pull request #1402 (plan approved by the team lead, the reasons below are the author's and the reviewers'); `.github/workflows/pages.yml`, `tools/requirements/site.in`, `tools/Makefile`
+**See:** process.md — 7e78b0e4-e8b4-4ce2-9a83-f9457153cd5b — as of 2026-11-05
+**Revisit when:** the site needs a tool without wheels, GitHub Pages deploys without an OIDC token, or pip installs from a standard lock (`pylock.toml`) without uv
+
+The pages workflow has two jobs. `build` has `contents: read` only, checks out without stored
+credentials, installs nothing but `tools/requirements/site.txt` (the Keep the Why dashboard,
+Markdown, PyYAML; `--require-hashes --no-deps --only-binary :all:`) into a fresh environment,
+makes the site and uploads it as the Pages artifact. `deploy` needs `build`, has no checkout and
+installs nothing; of the two jobs only it holds `pages: write` and `id-token: write`. The lock is
+compiled from `site.in` with the uv that `hub/requirements/tools.txt` pins (`make -C tools lock`);
+`make -C tools lock-check` recompiles a copy without its hashes and fails on any difference. It
+runs in ci.yml's `changelog` job, which installs uv from the tools lock the same way (hashed, no
+dependency resolution, wheels only) and runs the docs renderer's tests from the site lock. The
+audit workflow checks the site lock against the known advisories.
+
+**Reason:** the rights to publish the site belong to the one step that publishes it, so the job
+that holds them runs no code from the checkout and installs no package. The job that runs the
+tools installs exactly the reviewed, hashed versions, and those change only when the lock
+does. Wheels only, because an sdist would be built with build tools that are not in the lock. The
+lock uses the same recipe as the hub's locks, so there is no second locking tool.
+
+**Rejected alternatives:**
+- One job with `pages: write` and `id-token: write`, as before: every step and every installed
+  package ran with the rights to publish the site.
+- Exact pins without hashes (`pip install markdown==… PyYAML==…`, the dashboard unpinned): pip
+  installs whatever file the index serves for that version, and the dashboard's version could
+  change on any push without a repository change.
+- Installing the lock into setup-python's environment: whatever else is there shares it; a fresh
+  environment holds exactly the lock.
 
 ## The database CI jobs may run on the maintainer's machine; a fork's code reaches it only through an approval
 
@@ -1293,13 +1379,13 @@ each command is checked only once.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
 
-## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+## Docs images and diagrams live in `docs/img/`; screenshots are of fixture mode, and the site points a relative image at the deployed file
 
 **Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there)
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there). Pull request #1353 on card tsk-dremqrfz48jq, 2026-11-05: the designer's statement that the diagrams are drawn by the designer, take the same 256-colour and oxipng reduction as the screenshots, and that their source stays with the designer
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 
@@ -1327,6 +1413,11 @@ wide and reduced to 256 colours (libimagequant, then oxipng level 4)
 before it is committed: about 290 KB for three instead of 734 KB, since
 every version stays in the history. The designer's script is not in
 the repository yet.
+
+Diagrams in the same directory are drawn by the designer, and their
+source stays with the designer. They take the same reduction as the
+screenshots: 256 colours with libimagequant, then oxipng level 4. The
+repository does not redraw them or change their width.
 
 **Reason:** a page and its pictures come from the same place, like the
 text (the entry linked above), and fixture data is the one dashboard
@@ -1398,3 +1489,119 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+
+## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
+
+**Id:** 671ac5db-2e5e-4cd3-ba80-bd1f4a2d0f4b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405
+**Revisit when:** the CLI gets a hashed dev lock of its own (then the hook takes the CLI's tools from it), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
+
+`tools/hooks/pre-push` runs `tools/pre_push.py` once a clone sets `git config core.hooksPath tools/hooks`
+(CONTRIBUTING.md). For each of `hub/` and `cli/` that the pushed commits touch, it runs CI's own `make lint
+typecheck`, without the tests, with the Python of the hub's environment, which `make -C hub install` fills from
+the hashed lock. Before that it compares black, ruff and mypy there with the pins in `hub/requirements/dev.txt` and
+stops on a difference: the point is the same result as CI, and a local environment drifts (on the machine where the
+hook was written, ruff was 0.17.3 against the lock's 0.17.1). It checks the working tree, so it also stops when
+HEAD is not the pushed commit or a touched package has uncommitted changes.
+
+**Rejected alternatives:**
+- A hook that is on for everyone (installed by a setup step, or a check in CI that it is set): the card asked for
+  opt-in, and a contributor without the hub's environment could not push at all.
+- The tests in the hook as well: the shared machine's memory limits heavy runs (the entry above), and the tests are
+  what CI is for; lint and types are the cheap part.
+- A copy of the hook into `.git/hooks`: it would have to be copied again after every change and per clone, and
+  `core.hooksPath` with a relative path works in every worktree of the clone. The cost: hooks in `.git/hooks`
+  do not run while it is set.
+- The tools from wherever `black`/`ruff`/`mypy` are found on PATH: an unpinned version passes or fails other
+  code than CI does, which is the round the hook is meant to save.
+- The pushed commit checked out into a temporary tree instead of the working tree: mypy needs the environment the
+  hub's editable install points at, which is the working tree; checking there and stopping when it differs from
+  the push is simpler and says so.
+- The CLI's tools from the CLI's own environment: the `cli` CI job installs its dev extra unpinned, so there is no
+  lock to compare with yet; until a CLI dev lock exists the hook checks the CLI with the hub lock's versions.
+
+## The Keep the Why skill is pinned to the release the context is on, and a check holds every copy to it
+
+**Id:** ac5eadee-18cd-4250-8384-cae3b4459971
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04); the scope and the rejected pin chosen by the team lead on the plan, 2026-11-04; `tools/ktw_pin.py`, `AGENTS.md`, `hub/src/maity_hub/config.py`, `hub/src/maity_hub/ktw_skill.py`, `.github/workflows/ktw-lint.yml`
+**Revisit when:** a Keep the Why release is adopted (bump every copy with `context-schema`), the skill gains a signed or hashed release format, or the project decides to vendor the skill
+
+The install instructions in `AGENTS.md`, the hub's default
+`MAITY_KTW_SKILL_SOURCE` and the Git fallback it derives name the skill's
+release tree `tree/v<context-schema>`, not the moving `latest`. The skills
+installer is named as `npx skills@<version>`, the version kept once in
+`ktw_skill.py` (`SKILLS_INSTALLER`). The linter action is pinned by commit
+SHA, its tag in a comment. `-g -y` stays: where the skill lands is
+unchanged. `tools/ktw_pin.py`, run in the changelog job of ci.yml, fails
+when any copy names another release than `.keep-the-why`'s
+`context-schema`, another installer version, or the action by tag. It
+reads every form a copy is written in: the full tree URL, a bare
+`tree/<ref>`, the hub README's "`<ref>` release tree", and
+`skills@<version>` with or without `npx`, each with any ref, so a short
+form naming `latest` fails too, as does a `skills` in backticks without a
+version. The `.keep-the-why` files of `hub/`, `cli/` and `web/` must exist
+and name the root's `context-schema`. That the action's SHA is the
+commit of the tag in its comment it cannot check offline: on a bump the
+author and the reviewers check it (`git ls-remote` on the tag).
+
+**Reason:** what these lines install is an instruction set every agent in
+the project follows, and the installer runs code on the agent's machine.
+A moving tag changes both without a change here. `context-schema` already
+says which release the context was migrated to, so tying the pins to it
+keeps the installed skill and the context on one version. Whoever migrates
+the context bumps the pins in the same pull request, and the check names
+every line that was missed.
+
+**Rejected alternatives:**
+- `pinned-version` with `pinned-path` in `.keep-the-why`: the skill
+  supports it only with a vendored copy in the repository. Every agent
+  whose installed version differs would then follow that copy, or stop
+  hard without it, which changes how every agent works.
+- Dropping `-g` to install per project: changes where the skill lands
+  for every agent; the pin is about the version only.
+- Pins without a check: the next release would be bumped in some copies
+  and not others.
+
+## The browser end-to-end test and the join smoke install only from hashed locks, the CLI in an environment of its own
+
+**Id:** 9a0ed6f7-694b-4036-8b78-16ff53aa760a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `.github/workflows/ci.yml` (`web-e2e`, `join-smoke`), `web/requirements/e2e.in`, `web/Makefile`
+**Revisit when:** the CLI gets a hashed dev lock of its own (then that environment can serve), the hub's runtime lock stops constraining Playwright's dependencies (the e2e lock would then need its own environment), or pip installs from a standard lock (`pylock.toml`) without uv
+
+`web-e2e` installs the hub from `hub/requirements/runtime.txt` and `build.txt` and Playwright from
+`web/requirements/e2e.txt`, all with hashes, then the hub editable without build isolation.
+`e2e.txt` is compiled from `e2e.in` with the hub's runtime lock as constraints (`make -C web lock`),
+and `web-e2e` checks it with `make -C web lock-check` first. `join-smoke` installs the hub the same
+way, without Playwright. In both jobs the CLI goes into a virtual environment of its own, from
+`cli/requirements/release.txt`, editable without build isolation, and only its `maity` is linked
+into a directory on `PATH`. Before, `web-e2e` ran `pip install -e hub -e cli playwright==1.64.0`,
+and `join-smoke` ran `pip install -e cli`.
+
+**Reason:**
+- The hub's and the CLI's editable installs each need their build backend. With build isolation pip
+  fetches it for every run without a hash (hatchling with only a lower bound); without it, it comes
+  from a hashed lock.
+- The CLI's build backend is setuptools, pinned in `cli/requirements/release.txt`, which a lock-check
+  holds equal to the CLI's `[build-system]`. That lock is compiled without the hub's pins, so it gets
+  an environment of its own rather than meeting the hub's locks in one.
+- Only `maity` goes on `PATH`: the CLI environment's own `python` and `pip` would otherwise come
+  before the hub's, and the e2e tools run on the hub's Python, where Playwright is.
+- With the hub's runtime pins as constraints, a package both locks name (today `typing-extensions`)
+  has the same version and hashes in both, so pip installs the three files together.
+
+**Rejected alternatives:**
+- setuptools into the hub's environment from the CLI's release lock: two locks compiled apart in
+  one environment.
+- A lock of its own for setuptools alone: a further lock for one package that the release lock
+  already pins and checks.
+- `e2e.txt` without the shared packages (`--no-emit-package`): the lock would not stand on its
+  own, and pip already accepts the same pin twice.

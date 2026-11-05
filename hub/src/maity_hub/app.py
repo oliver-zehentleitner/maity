@@ -51,6 +51,7 @@ from maity_hub import (
     registration_accounts,
     reports,
     request_stats,
+    route_limits,
     rules,
     shared_budget,
     shared_counts,
@@ -88,6 +89,7 @@ from maity_hub.routes import (
     briefing_view,
     contract_text,
     conversations,
+    cross_chats,
     device_codes,
     email_sign_in,
     forge_links,
@@ -458,6 +460,7 @@ def create_app(
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(cross_chats.router, prefix=prefix)
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
@@ -487,6 +490,10 @@ def create_app(
             "links in /help use %s",
             settings.public_url,
         )
+    # Resolved once the routes are in: a limit on a route the hub lacks stops it (§1.7).
+    app.state.route_limits = route_limits.resolve(app.routes, settings.route_limits)
+    public_pages.BY_ADDRESS.configure(*settings.public_page_limit)
+    badges.BY_ADDRESS.configure(*settings.badge_limit)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
     if settings.allow_plain_http:
         log.warning(

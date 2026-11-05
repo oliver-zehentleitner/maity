@@ -1,0 +1,3 @@
+# What web/tools/ needs beyond the hub and the CLI: the browser driver for e2e.py,
+# vendor_csp.py and pseudo_run.py (ci.yml, web-e2e). `make -C web lock` after a change here.
+playwright==1.64.0

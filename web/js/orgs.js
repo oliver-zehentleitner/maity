@@ -57,8 +57,9 @@ window.Maity = window.Maity || {};
 
   // The list and the form for a new one.
   async function listPage(ctx, root) {
-    const heading = h("h2", { id: "orgs-heading", tabindex: "-1" }, M.t("orgs.title"));
-    append(root, heading, h("p", { class: "hint" }, M.t("orgs.intro")));
+    // A tab of the account (js/account.js): its heading and tab row first.
+    const heading = h("h3", { id: "orgs-heading", tabindex: "-1" }, M.t("orgs.title"));
+    append(root, M.accountTabs.head(ctx, "orgs"), heading, h("p", { class: "hint" }, M.t("orgs.intro")));
     const { items } = await M.api.get("/orgs");
     append(root, items.length
       ? h("ul", { class: "org-list" }, items.map((o) => h("li", { class: "org-item" },

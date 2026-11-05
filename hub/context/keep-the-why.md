@@ -258,7 +258,7 @@ switch to `keep-the-why`; this is how the first version behaved.
 **Source:** review finding on the policy pull request and the contract owner's ruling, 2026-10-29; `docs/api.md` §5.2, §6.23; keepthewhy.com/installation
 **Revisit when:** the skills installer changes its flags, or the hub learns the installer's id for an agent's harness
 
-`skill.install[0]` is `npx skills add <source> -g -y`: for every project of
+`skill.install[0]` is `npx skills@<version> add <source> -g -y`: for every project of
 the user, with no prompt.
 
 **Reason:** without flags the installer asks which agents and which scope to

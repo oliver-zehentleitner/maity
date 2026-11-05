@@ -252,7 +252,8 @@ own, read-only: the hub reads the file a project setting names
 the default branch's commit and answers it whole, with a table of
 contents and an anchor per heading, under an `ETag` over the
 repository, the path and the file's bytes. The setting names a Markdown
-file only (`not_markdown` otherwise, the extension in any case), which
+file only (`not_markdown` otherwise; the extension is checked in any
+case, while every path segment must match byte for byte), which
 keeps it from exposing arbitrary repository files to every
 `project:read` holder, guests included; a symlink is refused too, since
 the name says nothing about the file it points to: the hub reads the

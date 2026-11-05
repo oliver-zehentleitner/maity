@@ -92,6 +92,66 @@
         "name": "Elsewhere",
         "state": "build"
       }
+    },
+    {
+      "id": "req-r003",
+      "class": "info",
+      "title": "Report: prompt_injection — message",
+      "summary": null,
+      "tried": null,
+      "options": [],
+      "replies": [],
+      "priority": "normal",
+      "to": "human:hum-maintainer",
+      "asked_by": null,
+      "on_behalf_of": null,
+      "task_id": null,
+      "task": null,
+      "while_open": "wait",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "personal": true,
+      "filed_by": "hub",
+      "report": {
+        "id": "rpt-0003",
+        "reason": "prompt_injection",
+        "type": "message"
+      },
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-29T09:10:00Z",
+      "answered_at": null,
+      "project": null
+    },
+    {
+      "id": "req-r002",
+      "class": "info",
+      "title": "Report: spam — profile",
+      "summary": null,
+      "tried": null,
+      "options": [],
+      "replies": [],
+      "priority": "normal",
+      "to": "human:hum-maintainer",
+      "asked_by": null,
+      "on_behalf_of": null,
+      "task_id": null,
+      "task": null,
+      "while_open": "wait",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "personal": true,
+      "filed_by": "hub",
+      "report": {
+        "id": "rpt-0002",
+        "reason": "spam",
+        "type": "profile"
+      },
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-28T15:00:00Z",
+      "answered_at": null,
+      "project": null
     }
   ],
   "next_cursor": null

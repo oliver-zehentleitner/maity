@@ -95,6 +95,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "jour_fixe_answers",
         "pinned_conversations",
         "restricted_texts",
+        "cross_chats",
     }
     account = body["account"]
     assert (account["handle"], account["id"]) == ("maintainer", owner.id)

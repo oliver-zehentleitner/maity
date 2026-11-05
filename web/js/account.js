@@ -1,9 +1,10 @@
-// The signed-in human's account (/account): who they are, their picture
-// (/account/picture, docs/api.md §6.10; their agents' are on /agents), their
-// preferences (/account/preferences, js/preferences.js), your data
-// (/account/data, js/your-data.js), and
-// changing the password (§2.1, POST /auth/password). A password change
-// ends every other session of this human; this one stays signed in.
+// The signed-in human's account (/account), in tabs (tsk-3banvfzv3nvs): Profile (who they are,
+// their picture, docs/api.md §6.10, the public profile, the meat proxy), Settings
+// (/account/settings: preferences, js/preferences.js, the languages, the theme), Notifications
+// (/account/notifications, js/notify-settings.js), Security (/account/security and its own tabs:
+// the password, §2.1, and the second factor, sessions, another device, forge access, your data)
+// and Organisations (/account/orgs, js/orgs.js). A password change ends every other session of
+// this human; this one stays signed in.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -209,9 +210,63 @@ window.Maity = window.Maity || {};
   // Set by a change; the next drawing of the view says it.
   let pictureNote = null;
 
-  M.views.account = async function (ctx, root, args) {
-    // /account/sign-in-device (the profile menu's Sign in another device).
-    if (args && args[0] === "sign-in-device" && M.deviceSignIn) { await M.deviceSignIn.anotherDevice(ctx, root); return; }
+  // The account's tabs (tsk-3banvfzv3nvs): one settings page whose tabs are the profile menu's
+  // entries, each at an address of its own; the menu is drawn from this list too. Security and
+  // Organisations are a human's alone, as in the menu before; Linked accounts is to come, shown
+  // without an address. Security has tabs of its own.
+  const TABS = [
+    { key: "profile", path: "/account", label: () => M.t("menu.profile") },
+    { key: "settings", path: "/account/settings", label: () => M.t("menu.settings") },
+    { key: "notifications", path: "/account/notifications", label: () => M.t("menu.notifications") },
+    { key: "security", path: "/account/security", label: () => M.t("menu.security"), human: true },
+    { key: "orgs", path: "/account/orgs", label: () => M.t("menu.orgs"), human: true },
+    { key: "linked", label: () => M.t("menu.linked_accounts"), later: true },
+  ];
+  const SECURITY = [
+    { key: "sign-in", path: "/account/security", label: () => M.t("account.security.sign_in") },
+    { key: "sessions", path: "/account/security/sessions", label: () => M.t("account.security.sessions") },
+    { key: "device", path: "/account/security/device", label: () => M.t("account.security.device") },
+    { key: "forge", path: "/account/security/forge", label: () => M.t("account.security.forge") },
+    { key: "data", path: "/account/security/data", label: () => M.t("account.security.data") },
+  ];
+  // The addresses of the one long page before the tabs, and the hub's (mails, the bell, the
+  // forge's setup redirect, §11.4): each to its tab, the heading of its part focused there.
+  // `/settings/forge` arrives here as ["forge"] too (js/app.js parseRoute), but is no old address:
+  // the contract names it as the setup's return (§16.11), so it shows Forge access itself.
+  const MOVED = {
+    picture: ["/account", "picture"],
+    preferences: ["/account/settings", "preferences"],
+    theme: ["/account/settings", "theme"],
+    password: ["/account/security", "password"],
+    sessions: ["/account/security/sessions", "sessions"],
+    "sign-in-device": ["/account/security/device", "device"],
+    forge: ["/account/security/forge", "forge"],
+    data: ["/account/security/data", "data"],
+  };
+  // The heading a moved address asked for, focused once its tab is drawn.
+  let wantedHeading = null;
+
+  const shownTabs = (ctx) => TABS.filter((t) => !t.human || ctx.me.kind === "human");
+  // The profile menu's entries: the tabs, Linked accounts greyed (js/app.js).
+  const menuItems = (ctx) => shownTabs(ctx).map((t) => (t.later
+    ? { label: t.label(), disabled: true, why: M.t("menu.later") }
+    : { label: t.label(), href: t.path, current: ctx.scope === "orgs" ? t.key === "orgs" : null }));
+
+  // A row of tabs: links, the current one marked; one to come greyed, with no address. It scrolls
+  // sideways where it is wider than the window, the current tab in sight: js/app.js sets that up
+  // once the view is in the page (a row not yet in it has no width).
+  function tabRow(list, chosen, label, extra) {
+    const nav = h("nav", { class: "view-tabs account-tabs" + (extra ? " " + extra : ""), "aria-label": label },
+      list.map((t) => (t.later
+        ? h("span", { class: "view-tab later", "aria-disabled": "true", title: M.t("menu.later") }, t.label())
+        : h("a", { href: t.path, class: "view-tab", "aria-current": t.key === chosen ? "page" : null }, t.label()))));
+    return nav;
+  }
+  // What stands on every tab: the page's heading and the tab row.
+  const head = (ctx, chosen) => [h("h2", null, M.t("account.title")), tabRow(shownTabs(ctx), chosen, M.t("account.tabs.label"))];
+
+  // The password form (§2.1, POST /auth/password), on Security's Sign-in.
+  function passwordPart() {
     const field = (id, label, autocomplete, hint) => {
       const input = h("input", { id, type: "password", autocomplete, required: true, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
@@ -272,25 +327,41 @@ window.Maity = window.Maity || {};
         }
       },
     }, current.nodes, fresh.nodes, repeat.nodes, submit, status.el);
+    const heading = h("h3", { id: "password-heading", tabindex: "-1" }, M.t("password.title"));
+    return { el: [heading, h("p", { class: "muted" }, M.t("password.hint")), form], heading };
+  }
 
+  // Profile: who one is, the picture, the public profile, the meat proxy.
+  async function profileTab(ctx, root) {
     // A changed picture redraws the whole page: the header's own picture
     // and /me come back with the hub's new avatar_url.
     const changed = (answer, words) => { pictureNote = words; ctx.refresh(); };
     const pictureHeading = h("h3", { class: "picture-heading", tabindex: "-1" }, M.t("account.picture"));
     const note = pictureNote ? h("p", { class: "ok", role: "status" }, pictureNote) : null;
     pictureNote = null;
-    // The agents' pictures, names and deletion are on the Agents page
-    // (/agents, js/agents-page.js): one place for one's agents.
     const meatProxy = await meatProxySection(ctx);
     const publicProfile = M.publicPage ? await M.publicPage.profileSection(ctx) : null;
-    const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
-    const security = M.security ? await M.security.section() : null;
-    const sessions = M.sessions ? await M.sessions.section(ctx) : null;
-    // Your data (§2.9): the export and the deletion of the account.
-    const yourData = M.yourData ? await M.yourData.section(ctx) : null;
-    // Forge access (§11.4): the grants one's projects read their repositories with.
-    const forge = M.forge ? await M.forge.section(ctx) : null;
+    append(root,
+      h("dl", { class: "facts" },
+        h("dt", null, M.t("account.name")), h("dd", null, ctx.me.display_name),
+        h("dt", null, M.t("account.handle")), h("dd", null, "@" + ctx.me.handle)),
+      M.handles.editor(ctx.me, "/me", M.t("handles.what_own"), changed),
+      pictureHeading,
+      h("p", { class: "muted" }, M.t("account.picture_hint")),
+      note,
+      pictureEditor(ctx.me, "/me/avatar", true, changed),
+      // The agents' pictures, names and deletion are on the Agents page
+      // (/agents, js/agents-page.js): one place for one's agents.
+      h("p", { class: "muted" }, M.tn("account.agents_hint", { link: h("a", { href: "/agents" }, M.t("account.agents_link")) })),
+      meatProxy,
+      publicProfile ? publicProfile.el : null);
+    return { picture: pictureHeading };
+  }
+
+  // Settings: one's preferences, the languages, the theme.
+  async function settingsTab(ctx, root) {
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
+    const language = M.notifySettings ? await M.notifySettings(ctx, "language") : null;
     // The theme (js/theme.js): signed in, it is chosen here, not in the
     // header (the maintainer's instruction). Per browser, as before: what
     // was picked while signed out stays until it is changed here.
@@ -302,43 +373,83 @@ window.Maity = window.Maity || {};
         input.addEventListener("change", () => { if (input.checked) M.theme.set(t); });
         return h("label", { class: "check", for: "theme-" + t }, input, " " + ((M.THEME_WORDS || {})[t] || t));
       })) : null;
-    append(root, h("h2", null, M.t("account.title")),
-      h("dl", { class: "facts" },
-        h("dt", null, M.t("account.name")), h("dd", null, ctx.me.display_name),
-        h("dt", null, M.t("account.handle")), h("dd", null, "@" + ctx.me.handle)),
-      M.handles.editor(ctx.me, "/me", M.t("handles.what_own"), changed),
-      pictureHeading,
-      h("p", { class: "muted" }, M.t("account.picture_hint")),
-      note,
-      pictureEditor(ctx.me, "/me/avatar", true, changed),
-      h("p", { class: "muted" }, M.tn("account.agents_hint", { link: h("a", { href: "/agents" }, M.t("account.agents_link")) })),
-      meatProxy,
-      publicProfile ? publicProfile.el : null,
-      themeBox ? [themeHeading, h("p", { class: "muted" }, M.t("account.theme_hint")), themeBox] : null,
+    append(root,
       preferences ? preferences.el : null,
-      notify ? notify.el : null,
-      security ? security.el : null,
-      sessions ? sessions.el : null,
-      forge ? forge.el : null,
-      yourData ? yourData.el : null,
-      h("h3", null, M.t("password.title")),
-      h("p", { class: "muted" }, M.t("password.hint")),
-      form);
-    // /account/picture (the profile menu's Picture) starts at the picture.
-    if (args && args[0] === "picture") window.setTimeout(() => pictureHeading.focus(), 0);
-    // /account/theme (the profile menu's Theme) starts there.
-    if (themeBox && args && args[0] === "theme") window.setTimeout(() => themeHeading.focus(), 0);
-    // /account/notifications (the bell's settings link) starts there.
-    if (notify && args && args[0] === "notifications") window.setTimeout(() => notify.heading.focus(), 0);
-    // /account/preferences (the profile menu's Preferences) starts there.
-    if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
-    // /account/security (the profile menu's Security) starts there.
-    if (security && args && args[0] === "security") window.setTimeout(() => security.heading.focus(), 0);
-    // /account/sessions (a security alert's link, the Current sessions box's) starts at the sessions.
-    if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
-    // /account/data (the mail's link to the export, §2.9) starts at Your data.
-    if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);
-    // /settings/forge (the hub's redirect after an installation, §11.4) starts at Forge access.
-    if (forge && args && args[0] === "forge") window.setTimeout(() => forge.heading.focus(), 0);
+      language ? language.el : null,
+      themeBox ? [themeHeading, h("p", { class: "muted" }, M.t("account.theme_hint")), themeBox] : null);
+    return { preferences: preferences && preferences.heading, theme: themeBox && themeHeading };
+  }
+
+  // Notifications: mail, when it goes out, agents that stop listening, the browser's.
+  async function notificationsTab(ctx, root) {
+    const notify = M.notifySettings ? await M.notifySettings(ctx, "notifications") : null;
+    if (notify) append(root, notify.el);
+    return { notifications: notify && notify.heading };
+  }
+
+  // Security, with tabs of its own: sign-in, sessions, another device, forge access, your data.
+  async function securityTab(ctx, root, sub) {
+    const chosen = SECURITY.find((t) => t.key === sub) || SECURITY[0];
+    append(root, tabRow(SECURITY, chosen.key, M.t("account.security.tabs.label"), "security-tabs"));
+    if (chosen.key === "device") {
+      const device = M.deviceSignIn ? await M.deviceSignIn.anotherDevice(ctx, root) : null;
+      return { device: device && device.heading };
+    }
+    if (chosen.key === "sessions") {
+      const sessions = M.sessions ? await M.sessions.section(ctx) : null;
+      if (sessions) append(root, sessions.el);
+      return { sessions: sessions && sessions.heading };
+    }
+    if (chosen.key === "forge") {
+      // Forge access (§11.4): the grants one's projects read their repositories with.
+      const forge = M.forge ? await M.forge.section(ctx) : null;
+      if (forge) append(root, forge.el);
+      return { forge: forge && forge.heading };
+    }
+    if (chosen.key === "data") {
+      // Your data (§2.9): the export and the deletion of the account.
+      const yourData = M.yourData ? await M.yourData.section(ctx) : null;
+      if (yourData) append(root, yourData.el);
+      return { data: yourData && yourData.heading };
+    }
+    // The second factor first: the hub's mail and bell item about it link to /account/security
+    // (hub notifications), so it is what that address shows at the top.
+    const password = passwordPart();
+    const security = M.security ? await M.security.section() : null;
+    append(root, security ? security.el : null, password.el);
+    return { password: password.heading, security: security && security.heading };
+  }
+
+  M.views.account = async function (ctx, root, args) {
+    if (M.route.current().path === "/settings/forge") args = ["security", "forge"];
+    const first = (args && args[0]) || "";
+    // An address of the long page before the tabs, or the hub's: to its tab, in place of it in
+    // the history; the view is drawn again there. One the page does not know: the profile.
+    const moved = Object.hasOwn(MOVED, first) ? MOVED[first] : null;
+    const tab = TABS.find((t) => !t.later && t.key !== "orgs" && t.path === "/account/" + first);
+    const known = !first || (tab && (first === "security" ? !args[1] || SECURITY.some((t) => t.key === args[1] && t.key !== "sign-in") : !args[1]));
+    if (moved || !known || (tab && tab.human && ctx.me.kind !== "human")) {
+      // The query goes along: the forge's setup redirect says a failure in it (js/forge.js).
+      const query = M.route.current().query.toString();
+      // An unknown tab of Security leads to Security, any other unknown address to the profile.
+      const back = first === "security" && ctx.me.kind === "human" ? "/account/security" : "/account";
+      const to = (moved ? moved[0] : back) + (query ? "?" + query : "");
+      wantedHeading = moved ? moved[1] : null;
+      if (M.route.go(to, { replace: true })) return;
+    }
+    const chosen = first ? first : "profile";
+    append(root, head(ctx, chosen));
+    let headings = {};
+    if (chosen === "profile") headings = await profileTab(ctx, root);
+    else if (chosen === "settings") headings = await settingsTab(ctx, root);
+    else if (chosen === "notifications") headings = await notificationsTab(ctx, root);
+    else if (chosen === "security") headings = await securityTab(ctx, root, args[1]);
+    // The part a moved address asked for starts in sight, its heading focused. The view is put in
+    // the page when this returns (js/app.js), before the timeout runs, so the focus holds.
+    const wanted = wantedHeading;
+    wantedHeading = null;
+    const heading = wanted && headings[wanted];
+    if (heading) window.setTimeout(() => heading.focus(), 0);
   };
+  M.accountTabs = { head, menuItems };
 })(window.Maity);

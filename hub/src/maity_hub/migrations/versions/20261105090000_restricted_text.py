@@ -5,7 +5,7 @@ list of readers a restricted-text event carries. No card had a restricted text b
 nothing needs carrying over. The downgrade drops all three, and the texts with them.
 
 Revision ID: 20261105090000_restricted_text
-Revises: 20261104150000_report_request
+Revises: 20261105073000_cross_chats
 Create Date: 2026-11-05
 """
 
@@ -18,7 +18,7 @@ from alembic import op
 from maity_hub.types import BIG_ID, UtcDateTime
 
 revision: str = "20261105090000_restricted_text"
-down_revision: str | None = "20261104150000_report_request"
+down_revision: str | None = "20261105073000_cross_chats"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
