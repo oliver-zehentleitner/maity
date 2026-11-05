@@ -339,6 +339,9 @@ window.Maity = window.Maity || {};
     // Where the second factor is asked for when the hub wants it for the join.
     const stepSlot = h("div", { class: "step-up-slot" });
     stepSlot.hidden = true;
+    // Counts the submissions: closing the panel starts a new count, so a submission
+    // still waiting for its code is not sent once the panel was closed.
+    let submission = 0;
     const form = h("form", {
       class: "join-form",
       onsubmit: async (e) => {
@@ -393,7 +396,9 @@ window.Maity = window.Maity || {};
         try {
           // Creating a join is a sensitive call (§2.8.4): the hub asks for the
           // second factor first, by app or by mail, and the join is sent again.
-          j = await M.stepUp.run(() => M.api.post(ctx.base + "/joins", req), stepSlot, M.t("join.step_up"));
+          const mine = ++submission;
+          j = await M.stepUp.run(() => (mine === submission ? M.api.post(ctx.base + "/joins", req)
+            : Promise.reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled"))), stepSlot, M.t("join.step_up"));
         } catch (err) {
           if (err.code === "cancelled") { status.done(); return; }
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
@@ -505,6 +510,10 @@ window.Maity = window.Maity || {};
       rereadMembers().then(() => { if (!panel.hidden) showAgent(); });
     }
     function close(refocus) {
+      // A code question still open belongs to the submission being closed: it ends
+      // with it, and the next submission sends the fields then shown.
+      submission++;
+      M.stepUp.cancel(stepSlot);
       panel.hidden = true;
       showForm();
       if (hooks.opened) hooks.opened(false);

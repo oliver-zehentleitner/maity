@@ -2383,13 +2383,40 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     if not panel.is_visible():
         add.click()
     expect(panel.locator(".join-project")).to_contain_text(f"Joins into the project E2E Mail ({OWNER}/e2e-mail)")
+    create = page.get_by_role("button", name="Create join line", exact=True)
+    question = panel.locator("form.step-up")
+    # Closing the panel while the code is asked ends that submission (#1399 review): reopened,
+    # no question is left, the button is free, and only the fields then shown make the join.
     page.locator("#join-agent").select_option("")  # "A new agent profile…"
+    page.locator("#join-handle").fill("e2e-mail-cancelled")
+    page.locator("#join-display").fill("E2E Mail Cancelled")
+    seen = len(catcher.mails)
+    create.click()
+    expect(question).to_contain_text("Confirm with a code by mail")
+    # Its mail is in before the next question asks for one of its own.
+    newest_mail(catcher, MAIL_ADDRESS, seen)
+    panel.locator(".join-form .actions").get_by_role("button", name="Cancel", exact=True).click()
+    expect(panel).to_be_hidden()
+    add.click()
+    expect(question).to_have_count(0)
+    expect(create).to_be_enabled()
+    # A project's full name may be one long word: at phone width the panel's line wraps it.
+    page.set_viewport_size({"width": 390, "height": 844})
+    long_slug = "p" * 63
+    widths = panel.locator(".join-project").evaluate(
+        "(el, label) => { const was = el.textContent; el.textContent = label;"
+        " const w = [document.documentElement.scrollWidth, document.documentElement.clientWidth];"
+        " el.textContent = was; return w; }",
+        f"Joins into the project {long_slug} ({OWNER}/{long_slug})",
+    )
+    assert widths[0] <= widths[1], f"a 63-character project name widens the page at 390px: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator("#join-agent").select_option("")
     page.locator("#join-handle").fill("e2e-mail-agent")
     page.locator("#join-display").fill("E2E Mail Agent")
     page.locator("#join-role").select_option("coder")
     seen = len(catcher.mails)
-    page.get_by_role("button", name="Create join line", exact=True).click()
-    question = panel.locator("form.step-up")
+    create.click()
     expect(question).to_contain_text("Confirm with a code by mail")
     expect(panel.locator(".join-result")).to_have_count(0)
     run.shot(page, "mail-factor-join-step-up")
@@ -2401,6 +2428,7 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     expect(page.locator(".paste-line")).to_be_visible()
     expect(question).to_have_count(0)
     expect(page.locator("article.seat", has_text="E2E Mail Agent").first).to_contain_text("coder")
+    expect(page.locator("article.seat", has_text="E2E Mail Cancelled")).to_have_count(0)
     # The join's first refusal is what opens the question.
     run.problems = [p for p in run.problems if "/joins answered 403" not in p]
     no_problems(run, "mail factor: Join an agent with the mailed code")
