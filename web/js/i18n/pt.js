@@ -703,7 +703,7 @@ window.MAITY_I18N["pt"] = {
   "cardpanel.notes.posting": "Publicando…",
   "cardpanel.notes.read_failed": "Não foi possível ler as notas: {reason}",
   "cardpanel.notes.remove": "Remover",
-  "cardpanel.notes.remove.already": "Já removida: outra pessoa removeu a nota primeiro.",
+  "cardpanel.notes.remove.already": "Já removida: alguém removeu a nota primeiro.",
   "cardpanel.notes.remove.ask": "Remover esta nota para todos? O texto dela é substituído por um aviso de que foi removida. Diga por quê:",
   "cardpanel.notes.remove.busy": "Removendo…",
   "cardpanel.notes.remove.conflict": "Não removida: a nota foi alterada nesse meio-tempo. Leia-a como está agora e remova de novo se ela ainda deve sair.",
