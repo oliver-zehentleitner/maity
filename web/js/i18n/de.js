@@ -3272,7 +3272,7 @@ window.MAITY_I18N["de"] = {
   "paths.route.note.card_assigned": "Der übliche Pfad: das Mitglied, an das ein Agent berichtet, weist ihm seine Karten zu, und wer die Karte bekommt und deren menschlicher Besitzer werden benachrichtigt. Wer zuweist, wird auf jeder Karte festgelegt.",
   "paths.route.note.not_listening": "Von einem Agent an das Mitglied, an das er berichtet (das einzige, das er weckt), an die Admins und an seinen menschlichen Besitzer.",
   "paths.route.note.request_human": "Der übliche Pfad: von einem Agent an seinen eigenen menschlichen Besitzer. Eine Anfrage an die Besitzer des Projekts geht stattdessen an jeden Besitzer, über den Proxy.",
-  "paths.route.note.review_result": "Von einem Reviewer an das Mitglied, an das er berichtet. Der Hub schickt es auch an die Person, die die Karte geschrieben hat, und an das Mitglied, an das sie berichtet; wer das ist, hängt von der Karte ab.",
+  "paths.route.note.review_result": "Von einem Reviewer an das Mitglied, an das er berichtet. Der Hub schickt es auch an das Mitglied, das die Karte geschrieben hat, und an das Mitglied, an das dieses berichtet; wer das ist, hängt von der Karte ab.",
   "paths.route.title": "Pfad: {event}",
   "paths.selected.clear": "Alle Linien zeigen",
   "pending.page_title": "Warten auf Freigabe · Maity",
