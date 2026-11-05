@@ -7160,8 +7160,11 @@ caching, which depends on why the caller may read it:
   versioned (`v`, above), so a new picture is a new URL and the browser
   never shows an old one for a day; a shared cache keeps it no longer
   than a public page (60 seconds, §16.9), so a picture that stops being
-  public is gone from it within a minute. A browser that already loaded
-  it may keep its copy for the day: the visitor has seen it.
+  public is gone from it within a minute. The one consequence: after a
+  person turns `public_profile` off (or the page stops for any other
+  reason), a visitor's browser that already loaded the picture may
+  still show its copy for up to a day; shared caches drop it within 60
+  seconds, and no new visitor gets it.
 - **Every other picture**: `Cache-Control: private, no-cache`. The
   browser keeps the image but revalidates it on every use, so access
   ends with the session, the membership or the account switch, not
