@@ -156,7 +156,7 @@ def patch_member(
     with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, actor_role = _locked_actor(conn, row.id, human_id)
-        item: dict[str, Any] = orgs.set_role(conn, locked, actor_role, member, body.role)
+        item: dict[str, Any] = orgs.set_role(conn, locked, actor_role, member, body.role, human_id)
         return JSONResponse(item)
 
 

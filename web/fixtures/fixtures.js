@@ -4078,6 +4078,7 @@ window.MAITY_FIXTURES = {
         "CHANGELOG has a section for this version",
         "live version equals the tag"
       ],
+      "restricted_access": null,
       "ticker": {
         "contract_files": [
           "docs/api.md"
@@ -7636,7 +7637,8 @@ window.MAITY_FIXTURES = {
       "release_checklist": [
         "CHANGELOG has a section for this version",
         "live version equals the tag"
-      ]
+      ],
+      "restricted_access": null
     },
     "setup": {
       "cards": [],
