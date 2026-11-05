@@ -2107,7 +2107,6 @@ window.MAITY_I18N["fr"] = {
   "login.busy": "Connexion…",
   "login.failed": "Non connecté : ",
   "login.fixtures": "Données de test",
-  "login.handle": "Identifiant",
   "login.page_title": "Se connecter · Maity",
   "login.password": "Mot de passe",
   "login.public_page": "Ce projet a une page publique : la voir sans se connecter",

@@ -2152,7 +2152,6 @@
   "login.busy": "正在登录…",
   "login.failed": "未登录： ",
   "login.fixtures": "示例数据",
-  "login.handle": "用户名",
   "login.page_title": "登录 · Maity",
   "login.password": "密码",
   "login.public_page": "此项目有一个公开页面：无需登录即可查看",

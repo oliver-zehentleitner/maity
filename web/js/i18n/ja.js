@@ -2068,7 +2068,6 @@ window.MAITY_I18N["ja"] = {
   "login.busy": "サインイン中…",
   "login.failed": "サインインできませんでした: ",
   "login.fixtures": "フィクスチャ",
-  "login.handle": "ハンドル",
   "login.page_title": "サインイン · Maity",
   "login.password": "パスワード",
   "login.public_page": "このプロジェクトには公開ページがあります。サインインせずに表示できます",

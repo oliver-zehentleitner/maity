@@ -2164,7 +2164,6 @@ window.MAITY_I18N["de"] = {
   "login.busy": "Anmeldung läuft …",
   "login.failed": "Nicht angemeldet: ",
   "login.fixtures": "Fixtures",
-  "login.handle": "Handle",
   "login.page_title": "Anmelden · Maity",
   "login.password": "Passwort",
   "login.public_page": "Dieses Projekt hat eine öffentliche Seite: ohne Anmeldung ansehen",

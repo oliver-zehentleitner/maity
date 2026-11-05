@@ -339,7 +339,7 @@ window.Maity = window.Maity || {};
     renderLogin(document.getElementById("main"), M.t("login.session_ended"));
   };
 
-  let keptHandle = "";
+  let keptEmail = "";
   function renderLogin(main, note) {
     document.title = M.t("login.page_title");
     // The app's bar stands where the frame cannot be read (§16.7.4); js/site-chrome.js hides it meanwhile.
@@ -347,13 +347,14 @@ window.Maity = window.Maity || {};
       brandTitle(false, "div"),
       M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
-    const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
-    handle.value = keptHandle;
-    keptHandle = "";
-    // The page's language (§6.2), as on /register: the form is drawn again in it, the handle kept, the password not.
+    // The verified address signs in (§2.1); `username` is what password managers fill.
+    const email = h("input", { id: "login-email", name: "email", type: "email", autocomplete: "username", required: true });
+    email.value = keptEmail;
+    keptEmail = "";
+    // The page's language (§6.2), as on /register: the form is drawn again in it, the address kept, the password not.
     const site = M.interfacePicker ? M.interfacePicker("login-interface", M.i18n.language, false) : null;
     if (site) site.addEventListener("change", async () => {
-      keptHandle = handle.value;
+      keptEmail = email.value;
       await M.i18n.choose(site.value);
       renderLogin(main, note);
       // The page is drawn here, not through `render`: the banner of a window follows the language too.
@@ -369,7 +370,7 @@ window.Maity = window.Maity || {};
         status.busy(M.t("login.busy"));
         try {
           const next = routeNext();
-          const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
+          const answer = await M.api.post("/auth/login", Object.assign({ email: email.value.trim(), password: password.value }, next ? { next } : {}));
           password.value = "";
           goNext(answer && answer.next);
         } catch (err) {
@@ -378,7 +379,7 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    h("label", { for: "login-handle" }, M.t("login.handle")), handle,
+    h("label", { for: "login-email" }, M.t("login.email")), email,
     h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),

@@ -2165,7 +2165,6 @@ window.MAITY_I18N["ko"] = {
   "login.busy": "로그인 중…",
   "login.failed": "로그인하지 못했어요: ",
   "login.fixtures": "픽스처",
-  "login.handle": "핸들",
   "login.page_title": "로그인 · Maity",
   "login.password": "비밀번호",
   "login.public_page": "이 프로젝트에는 공개 페이지가 있어요. 로그인하지 않고 보기",

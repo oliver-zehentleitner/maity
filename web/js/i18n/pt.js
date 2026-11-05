@@ -2107,7 +2107,6 @@ window.MAITY_I18N["pt"] = {
   "login.busy": "Entrando…",
   "login.failed": "Não foi possível entrar: ",
   "login.fixtures": "Fixtures",
-  "login.handle": "Identificador",
   "login.page_title": "Entrar · Maity",
   "login.password": "Senha",
   "login.public_page": "Este projeto tem uma página pública: veja-a sem entrar",

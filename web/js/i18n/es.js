@@ -2107,7 +2107,6 @@ window.MAITY_I18N["es"] = {
   "login.busy": "Iniciando sesión…",
   "login.failed": "No se inició sesión: ",
   "login.fixtures": "Fixtures",
-  "login.handle": "Identificador",
   "login.page_title": "Iniciar sesión · Maity",
   "login.password": "Contraseña",
   "login.public_page": "Este proyecto tiene una página pública: verla sin iniciar sesión",

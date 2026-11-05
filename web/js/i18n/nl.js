@@ -2107,7 +2107,6 @@ window.MAITY_I18N["nl"] = {
   "login.busy": "Inloggen…",
   "login.failed": "Niet ingelogd: ",
   "login.fixtures": "Fixtures",
-  "login.handle": "Handle",
   "login.page_title": "Inloggen · Maity",
   "login.password": "Wachtwoord",
   "login.public_page": "Dit project heeft een publieke pagina: bekijk haar zonder in te loggen",

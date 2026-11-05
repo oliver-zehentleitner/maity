@@ -2107,7 +2107,6 @@ window.MAITY_I18N["it"] = {
   "login.busy": "Accesso in corso…",
   "login.failed": "Accesso non effettuato: ",
   "login.fixtures": "Fixtures",
-  "login.handle": "Handle",
   "login.page_title": "Accedi · Maity",
   "login.password": "Password",
   "login.public_page": "Questo progetto ha una pagina pubblica: guardala senza accedere",

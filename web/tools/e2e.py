@@ -69,6 +69,7 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
+OWNER_EMAIL = "owner@e2e.example"  # `owner create --email` stores it as verified (§2.1)
 TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
 COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
 TRACE_ANSWERS = 12  # the page's latest API answers shown when a step fails
@@ -368,7 +369,10 @@ def start_hub(
         for args, stdin in (
             (["migrate"], None),
             (
-                ["owner", "create", "--handle", OWNER, "--display-name", "Owner"],
+                [
+                    "owner", "create", "--handle", OWNER, "--display-name", "Owner",
+                    "--email", OWNER_EMAIL,
+                ],  # fmt: skip
                 OWNER_PASSWORD + "\n",
             ),
         ):
@@ -817,7 +821,7 @@ def scenario(run: Run, page: Page) -> None:
     assert page.locator(".door-page").evaluate("e => getComputedStyle(e).display") == "grid"
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
-    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-email").fill(OWNER_EMAIL)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
     expect(page.get_by_role("heading", name="No projects yet", exact=True)).to_be_visible()
@@ -1996,7 +2000,7 @@ def signed_in_page(run: Run, browser):
     page = context.new_page()
     watch_page(run, page)
     page.goto(run.base + "/")
-    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-email").fill(OWNER_EMAIL)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
     return context, page
@@ -2114,7 +2118,7 @@ def language_choice_step(run: Run, browser) -> None:
     choice, also where the address came with another ?lang=, and across a reload."""
     run.step("signed out: the language chosen on login and register stays, also after a reload")
     for path, picker, field in (
-        ("/login", "#login-interface", "#login-handle"),
+        ("/login", "#login-interface", "#login-email"),
         ("/register", "#register-interface", "#register-address"),
     ):
         context = browser.new_context(viewport={"width": 1280, "height": 900}, locale="de-DE")
@@ -2200,7 +2204,7 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     page = context.new_page()
     watch_page(run, page)
     page.goto(run.base + "/")
-    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-email").fill(OWNER_EMAIL)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
     step = page.locator("form.second-factor")
@@ -2277,7 +2281,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     other.close()
 
     page.goto(run.base + "/")
-    page.locator("#login-handle").fill(handle)
+    page.locator("#login-email").fill(address)
     page.locator("#login-password").fill(password)
     page.get_by_role("button", name="Sign in", exact=True).click()
     expect(page.get_by_role("heading", name="Set up two-factor sign-in", exact=True)).to_be_visible()
@@ -2287,7 +2291,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     context.close()
 
 
-MAIL_ADDRESS = "owner@e2e.example"
+MAIL_ADDRESS = OWNER_EMAIL
 
 
 def newest_mail(catcher: MailCatcher, to: str, seen: int, timeout: float = 20) -> str:
@@ -2310,31 +2314,19 @@ def password_sign_in(run: Run, browser, offers_link: bool):
     watch_page(run, page)
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Email me a sign-in link", exact=True)).to_have_count(1 if offers_link else 0)
-    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-email").fill(OWNER_EMAIL)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
     return context, page
 
 
 def verify_address(run: Run, page, catcher: MailCatcher) -> None:
-    """The owner's own address, verified by the mail's link: the code of the switch goes there."""
-    seen = len(catcher.mails)
-    page.evaluate("""(password) => window.Maity.api.post("/auth/reauthenticate", { password })""", OWNER_PASSWORD)
-    # Set in the account's Mail section (§18.4), the form against the real hub.
+    """The owner's own address, the one `owner create --email` stored as verified (§2.1): the
+    account's Mail section shows it, and the code of the switch goes there."""
     page.goto(f"{run.base}/account/notifications")
-    section = page.locator("section.mail-address")
-    expect(section.locator(".mail-address-state")).to_have_text("No mail address yet: Maity sends you no mail.")
-    page.locator("#mail-address").fill(MAIL_ADDRESS)
-    section.get_by_role("button", name="Save the address", exact=True).click()
-    expect(section).to_contain_text(f"A link to confirm it went to {MAIL_ADDRESS}.")
-    expect(section.locator(".mail-address-state")).to_have_text(f"Not confirmed yet: follow the link sent to {MAIL_ADDRESS}.")
-    # The hub's signed token is `<body>.<mac>`, both base64url (notifications/tokens.py).
-    token = re.search(r"/mail/verify/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
-    assert token, "no verification link in the mail"
-    page.evaluate("""(token) => window.Maity.api.post("/me/notification-settings/email/verify", { token })""", token.group(1))
     settings = page.evaluate("""() => window.Maity.api.get("/me/notification-settings")""")
     assert settings["email"]["address_status"] == "verified", settings["email"]
-    page.reload()
+    assert settings["email"]["address"] == MAIL_ADDRESS, settings["email"]
     expect(page.locator("section.mail-address .mail-address-state")).to_have_text(f"Mail goes to {MAIL_ADDRESS}.")
 
 
@@ -3078,7 +3070,7 @@ def visitor_step(run: Run, page: Page) -> None:
     expect(guest.locator("h1")).to_have_text("Public projects")
     guest.locator('a[href="/owner/e2e-alpha"]').click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
-    expect(guest.locator("#login-handle")).to_have_count(0)
+    expect(guest.locator("#login-email")).to_have_count(0)
     # The dashboard draws the page, read-only, with the way to sign in.
     expect(guest.locator("section.view-visitor")).to_be_visible()
     expect(guest.locator("section.view-visitor button")).to_have_count(0)
@@ -3088,12 +3080,12 @@ def visitor_step(run: Run, page: Page) -> None:
     expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
     # The way to sign in leads to the form, and the address it came from is kept.
     guest.locator(".visitor-sign-in").click()
-    expect(guest.locator("#login-handle")).to_be_visible()
+    expect(guest.locator("#login-email")).to_be_visible()
     assert "next=" in guest.url, guest.url
     # A hub page whose data cannot be read stays readable, with its links working.
     guest.route("**/api/v1/public/pages/**", lambda route: route.abort())
     guest.goto(f"{run.base}/owner/e2e-alpha/board")
-    expect(guest.locator("#login-handle")).to_have_count(0)
+    expect(guest.locator("#login-email")).to_have_count(0)
     expect(guest.locator("#main h1")).to_be_visible()
     assert guest.locator("#main > [inert]").count() == 0
     guest.unroute("**/api/v1/public/pages/**")
@@ -3101,9 +3093,9 @@ def visitor_step(run: Run, page: Page) -> None:
     assert "x-robots-tag" not in served.headers, served.headers
     guest.goto(f"{run.base}/owner/e2e-alpha/")
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
-    expect(guest.locator("#login-handle")).to_have_count(0)
+    expect(guest.locator("#login-email")).to_have_count(0)
     guest.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    expect(guest.locator("#login-handle")).to_be_visible()
+    expect(guest.locator("#login-email")).to_be_visible()
     guest.locator(".public-page-link a").click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     # What the dashboard reads for someone who is no member: the same answer without a session.
@@ -4159,7 +4151,7 @@ def start_page_step(run: Run, page: Page) -> None:
     def on_landing(seen: Page, where: str) -> None:
         # The hub's landing page: its own HTML, no dashboard and no sign-in form in it.
         expect(seen.locator("main#main")).to_have_count(0)
-        expect(seen.locator("#login-handle")).to_have_count(0)
+        expect(seen.locator("#login-email")).to_have_count(0)
         expect(seen.locator("main .hero, main section").first).to_be_visible()
         assert not seen.evaluate("!!(window.Maity && window.Maity.route)"), f"{where}: the dashboard is still loaded"
 
@@ -4194,7 +4186,7 @@ def start_page_step(run: Run, page: Page) -> None:
             # Without the frame (its read failed), the app's own logo leads to the same start page.
             seen.route("**/api/v1/site/chrome**", lambda r: r.abort())
             seen.goto(f"{run.base}/login")
-            expect(seen.locator("#login-handle")).to_be_visible()
+            expect(seen.locator("#login-email")).to_be_visible()
             expect(seen.locator("header.site-header")).to_have_count(0)
             seen.locator("#header a.brand-home").click()
             expect(seen).to_have_url(f"{run.base}/")
@@ -4206,7 +4198,7 @@ def start_page_step(run: Run, page: Page) -> None:
         leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
         out = leaving.new_page()
         out.goto(f"{run.base}/login")
-        out.locator("#login-handle").fill(OWNER)
+        out.locator("#login-email").fill(OWNER_EMAIL)
         out.locator("#login-password").fill(OWNER_PASSWORD)
         out.get_by_role("button", name="Sign in", exact=True).click()
         expect(out.locator("header .me")).to_contain_text("Owner")
@@ -4617,7 +4609,7 @@ def invitations_step(run: Run, page: Page) -> None:
         expect(card.get_by_role("link", name="Create one", exact=True)).to_have_count(0)
         run.a11y(guest, "invitation page, signed out")
         card.get_by_role("link", name="Sign in to accept", exact=True).click()
-        guest.locator("#login-handle").fill(OWNER)
+        guest.locator("#login-email").fill(OWNER_EMAIL)
         guest.locator("#login-password").fill(OWNER_PASSWORD)
         guest.locator("form.login").get_by_role("button", name="Sign in", exact=True).click()
         expect(guest).to_have_url(re.compile(rf"/invite/{token}$"))
@@ -4844,7 +4836,7 @@ def change_password(run: Run, page: Page) -> None:
     other = page.context.browser.new_context()
     second = other.new_page()
     second.goto(run.base + "/")
-    second.locator("#login-handle").fill(OWNER)
+    second.locator("#login-email").fill(OWNER_EMAIL)
     second.locator("#login-password").fill(OWNER_PASSWORD)
     second.get_by_role("button", name="Sign in", exact=True).click()
     expect(second.locator("header .me")).to_contain_text("Owner")
@@ -4879,7 +4871,7 @@ def change_password(run: Run, page: Page) -> None:
 
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
     page.get_by_role("menuitem", name="Sign out", exact=True).click()
-    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-email").fill(OWNER_EMAIL)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
     expect(page.locator("main")).to_contain_text("wrong")
