@@ -9,9 +9,7 @@ from typing import Any
 from sqlalchemy import Connection, or_, select
 
 from maity_hub import tables as t
-
-# A dependent card watches only while it is open; cards.CLOSED, which imports events.
-_CLOSED = ("done", "cancelled")
+from maity_hub.cards import CLOSED
 
 
 def _dependents(card_ids: Sequence[str]) -> Any:
@@ -22,7 +20,7 @@ def _dependents(card_ids: Sequence[str]) -> Any:
         .where(
             t.card_edge.c.to_card.in_(card_ids),
             t.card_edge.c.kind == "depends_on",
-            t.card.c.status.not_in(_CLOSED),
+            t.card.c.status.not_in(CLOSED),
         )
     )
 

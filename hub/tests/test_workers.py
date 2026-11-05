@@ -71,16 +71,21 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
 
 
 @pytest.mark.parametrize(
-    ("workers", "pool", "refused"), [(8, 16, False), (9, 16, True), (17, 16, True), (2, 3, True)]
+    ("workers", "pool", "refused"),
+    [(8, 16, False), (16, 16, False), (2, 3, False), (17, 16, True), (3, 2, True)],
 )
-def test_workers_whose_share_of_the_pool_is_too_small_are_refused(
+def test_workers_whose_share_of_the_pool_would_be_zero_are_refused(
     workers: int, pool: int, refused: bool
 ) -> None:
-    """A request may hold one connection while a shared count takes a second (pmwg, #1276): a
-    worker with one would wait on itself until the pool's timeout."""
+    """The minimum share of one (tsk-zm2z04ep2cma): no request handler in the measured tests held
+    two serving connections at once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no
+    limit at all."""
     settings = replace(_settings(), workers=workers, db_pool_size=pool)
-    reason = serving.refusal(settings) or ""
-    assert (f"needs MAITY_DB_POOL_SIZE of at least {2 * workers}" in reason) is refused
+    reason = serving.refusal(settings)
+    if refused:
+        assert reason is not None and f"needs MAITY_DB_POOL_SIZE of at least {workers}" in reason
+    else:
+        assert reason is None
 
 
 def test_a_worker_that_cannot_build_its_app_stops_the_supervisor(
@@ -321,12 +326,15 @@ def test_the_connection_budget_counts_every_pod_and_process() -> None:
     settings = _settings(
         MAITY_REPLICAS="3", MAITY_WORKERS="2", MAITY_DB_POOL_SIZE="10", MAITY_DB_MAX_OVERFLOW="5"
     )
-    # 3 pods and the surge pod; per pod 2 × (5 + 2 + 1 listener) + 1 health.
-    assert serving.connections(settings) == 4 * (2 * (5 + 2 + 1) + 1)
+    # 3 pods and the surge pod; per pod 2 × (5 + 2 + 2 shared + 1 listener) + 1 health.
+    assert serving.connections(settings) == 4 * (2 * (5 + 2 + 2 + 1) + 1)
     assert serving.budget_warning(settings, 100, 3) is None
     warning = serving.budget_warning(settings, 50, 3) or ""
-    assert "68 database connections" in warning and "takes 47" in warning
-    assert serving.connections(_settings()) == 16 + 16 + 1 + 1  # the single-server hub, no surge
+    assert "84 database connections" in warning and "takes 47" in warning
+    assert "overflow 2 + 2 shared + 1 listener" in warning  # the text adds up to the number
+    assert (
+        serving.connections(_settings()) == 16 + 16 + 2 + 1 + 1
+    )  # the single-server hub, no surge
 
 
 @pytest.mark.parametrize(
@@ -342,7 +350,7 @@ def test_the_budget_is_what_the_workers_hold(
         _settings(), replicas=replicas, workers=workers, db_pool_size=pool, db_max_overflow=overflow
     )
     share = serving.per_worker(settings)
-    held = workers * (share.db_pool_size + share.db_max_overflow + 1) + 1
+    held = workers * (share.db_pool_size + share.db_max_overflow + 2 + 1) + 1
     assert serving.connections(settings) == serving.pods_at_most(settings) * held
     assert serving.pods_at_most(settings) == replicas + (replicas > 1)
 

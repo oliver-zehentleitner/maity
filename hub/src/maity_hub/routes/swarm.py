@@ -13,13 +13,13 @@ from sqlalchemy import Connection, func, select
 from maity_hub import clock, swarm
 from maity_hub import tables as t
 from maity_hub.access import membership
+from maity_hub.cards import open_claims
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.namespace import ProjectRoute
 from maity_hub.views import member_views
 
 router = APIRouter(route_class=ProjectRoute)
 DAYS = Query(default=30, ge=1, le=90)
-HELD = ("done", "cancelled")  # a card in neither, with a holder, is held
 BOARD = ("open", "in_progress", "review", "blocked")  # `board`: the statuses before closing
 
 
@@ -42,11 +42,7 @@ def _live(
     held: dict[int, list[dict[str, Any]]] = {r.id: [] for r in rows}
     for card in conn.execute(
         select(t.card.c.id, t.card.c.title, t.card.c.claim_holder, t.card.c.claim_since)
-        .where(
-            t.card.c.project_id == project_id,
-            t.card.c.claim_holder.isnot(None),
-            t.card.c.status.notin_(HELD),
-        )
+        .where(t.card.c.project_id == project_id, open_claims(None))
         .order_by(t.card.c.claim_since, t.card.c.id)
     ):
         if card.claim_holder in held:

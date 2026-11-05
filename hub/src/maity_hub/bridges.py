@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, or_, select, update
 
-from maity_hub import clock, longpoll, namespace, policy, proposals
+from maity_hub import cards, clock, longpoll, namespace, policy, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -728,7 +728,6 @@ def _renew_carried(conn: Connection, served: int, project_id: str | None) -> Non
     """A call through the bridge renews the leases of what the served agent holds through a
     bridge, the claims without an instance (§6.5): the bridge's own call renewed only its
     own. `claim_session_id` stays: a session belongs to the bridge's membership."""
-    from maity_hub.auth.caller import CLOSED_STATUSES
     from maity_hub.availability import renewed_lease
 
     lease = conn.execute(
@@ -736,10 +735,6 @@ def _renew_carried(conn: Connection, served: int, project_id: str | None) -> Non
     ).scalar_one()
     conn.execute(
         update(t.card)
-        .where(
-            t.card.c.claim_holder == served,
-            t.card.c.claim_instance.is_(None),
-            t.card.c.status.notin_(CLOSED_STATUSES),
-        )
+        .where(cards.open_claims(served, instance=None))
         .values(lease_until=renewed_lease(conn, served, clock.now(), lease))
     )

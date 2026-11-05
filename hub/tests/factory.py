@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from sqlalchemy import Engine, insert, inspect, select
+from sqlalchemy import Connection, Engine, insert, inspect, select
 
 from maity_hub import clock, handle_register, namespace
 from maity_hub import tables as t
@@ -68,10 +68,13 @@ def _maintainer(engine: Engine) -> str:
     return found if isinstance(found, str) else human(engine, "maintainer")
 
 
-def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
+def project(
+    engine: Engine, slug: str | None = None, conn: Connection | None = None, **values: Any
+) -> str:
     """A project row. Its namespace owner (§6.25) is `owner_id` when given, else the human
     `maintainer`, made here when missing: the owner `tests/flow.py` creates projects with,
-    so that a test's paths are `/projects/maintainer/<slug>` either way."""
+    so that a test's paths are `/projects/maintainer/<slug>` either way. With `conn`, the row
+    is inserted in that open transaction (a race test's side) instead of one of its own."""
     project_id = new_id("project")
     if "owner_id" not in values and _namespaced(engine):
         values = {**values, "owner_id": _maintainer(engine)}
@@ -105,8 +108,11 @@ def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
             "maity_badge": False,
             "cards": [],
         }
-    with engine.begin() as conn:
+    if conn is not None:
         conn.execute(insert(t.project).values({**row, **values}))
+        return project_id
+    with engine.begin() as own:
+        own.execute(insert(t.project).values({**row, **values}))
     return project_id
 
 
