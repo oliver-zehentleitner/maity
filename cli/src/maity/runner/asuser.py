@@ -28,6 +28,11 @@ from pathlib import Path
 from .. import state
 
 TIMEOUT = 60.0
+# `write` on the agents' side: $1 the directory, $2 the file; the text on stdin.
+_WRITE = (
+    'mkdir -p -m 700 -- "$1" && t=$(mktemp "$2.XXXXXX") && { cat > "$t" && chmod 600 -- "$t"'
+    ' && mv -f -- "$t" "$2" || { rm -f -- "$t"; exit 1; }; }'
+)
 REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
@@ -98,10 +103,12 @@ class AsUser:
         return Path(pwd.getpwnam(str(self.user)).pw_dir)
 
     def write(self, path: Path, text: str) -> Path:
-        """A file 0600 for the agents' side."""
+        """A file 0600 for the agents' side, its directory made 0700 if missing. POSIX tools only
+        (BSD `install` has no `-D`): a temporary file next to it, renamed over the path, so a
+        link planted there is replaced, not followed."""
         if self.direct:
             return state.write_file(path, text)
-        done = self.run(["install", "-D", "-m", "600", "/dev/stdin", str(path)], input=text)
+        done = self.run(["sh", "-c", _WRITE, "sh", str(path.parent), str(path)], input=text)
         if done.returncode != 0:
             raise OSError(f"cannot write {path} for the agents: {done.stderr.strip()[:200]}")
         return path
