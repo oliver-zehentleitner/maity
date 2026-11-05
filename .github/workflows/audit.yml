@@ -41,6 +41,11 @@ jobs:
       - name: Audit the locks
         run: |
           status=0
+          # The docs site's lock (tools/requirements/site.txt, pages.yml).
+          echo "::group::tools/requirements/site.txt"
+          "$RUNNER_TEMP/audit/bin/pip-audit" --requirement ../tools/requirements/site.txt \
+            --require-hashes --disable-pip --progress-spinner off --desc on || status=1
+          echo "::endgroup::"
           for lock in runtime dev build tools; do
             echo "::group::requirements/$lock.txt"
             "$RUNNER_TEMP/audit/bin/pip-audit" --requirement "requirements/$lock.txt" \
