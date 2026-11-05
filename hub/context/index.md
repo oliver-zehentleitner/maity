@@ -43,7 +43,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 
 ## F
-- [foreign-agent.md](foreign-agent.md) — a change of another owner's agent is one personal consent request, filed on the call and applied whole at go
+- [foreign-agent.md](foreign-agent.md) — a change of another owner's agent is one personal consent request, a `reports_to` inside that owner included, applied whole at go; a cross-owner edge stays the two-owner pair and is listed only on the answer that filed it
 
 ## G
 

@@ -274,6 +274,9 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "report": _report_view(conn, row),  # set by the hub only (§16.8)
     }
     shown = proposals.view(conn, row) if with_proposal else {}
+    if with_proposal and "agent_change" not in shown:
+        # The request read carries it; a list and an event do not (§6.2, §7).
+        shown = {**shown, "agent_change": None}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
         raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
     # A deleted account in the stored mentions or answer is shown as one (§2.9).
@@ -326,10 +329,29 @@ def _is_agent(conn: Connection, membership_id: int | None) -> bool:
 
 
 def load_request(conn: Connection, request_id: str) -> dict[str, Any]:
+    """The request as a read returns it, and as an answer's `200` replays (§1.5).
+
+    The member PATCH that files the owner's consent uses `load_member_patch`. That `202`
+    is the only body that lists a cross-owner pair filed beside it (§6.2)."""
     return request_view(conn, _row(conn, request_id))
 
 
+def load_member_patch(conn: Connection, request_id: str) -> dict[str, Any]:
+    """The `202` of `PATCH …/members/{id}` when it files the owner's consent.
+
+    When that change also filed a cross-owner pair, the body lists those ids. A later
+    read of the request, and a replay of the owner's answer, do not (§6.2)."""
+    row = _row(conn, request_id)
+    view = request_view(conn, row)
+    proposal = row.proposal or {}
+    pair = proposal.get("cross_owner_reports_to")
+    if proposal.get("kind") == "foreign_agent_change" and pair:
+        view = {**view, "cross_owner_reports_to": list(pair)}
+    return view
+
+
 idempotency.LOADERS["request"] = idempotency.plain(load_request)
+idempotency.LOADERS["member_patch"] = idempotency.plain(load_member_patch)
 
 
 def _row(conn: Connection, request_id: str) -> Any:
