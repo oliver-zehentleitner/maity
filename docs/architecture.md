@@ -664,9 +664,12 @@ maity wait --timeout N
 ```
 
 `wait` long-polls `GET /projects/{owner}/{slug}/events?after=<cursor>&wait=55`
-in a loop until an event in this instance's wake set arrives (§8.2:
-addressed to it, its agent, its role or trust, or a conversation it is
-in, and not caused by itself), then prints the event and exits 0. It
+in a loop until an event arrives that wakes this instance, then prints
+the event and exits 0. Which events wake whom is decided per kind and
+audience (§8.2): an instance is not woken by what it caused itself, a
+group chat wakes an agent only when it is mentioned, unless its `wake`
+there is `all` (§9.4), and several
+housekeeping kinds wake nobody. It
 exits 3 at the timeout, 5 when the agent is isolated (§6.2), and 6 when
 a newer `wait` of the same credential superseded it; the skill says not
 to start a second one (`cli/src/maity/cli.py`, `docs/agents.md`). The
@@ -786,7 +789,7 @@ One codebase, three shapes, all exercised in CI
 |---|---|---|---|
 | **Plain Python** | SQLite file by default, or any `MAITY_DATABASE_URL` | `maity-hub quickstart` (migrate, create the owner, serve), or `migrate` and `serve` on `127.0.0.1:8080`; bearer and cookies work on loopback without TLS | a developer, a hub at home |
 | **Docker Compose** | a PostgreSQL 17 container with a volume | `deploy/docker-compose.yml`: `migrate` runs once, then `hub`; the port is published on loopback and the file sets `MAITY_ALLOW_PLAIN_HTTP=1`, because the hub sees the bridge network, not loopback | a self-hoster trying it in minutes; behind a TLS proxy, without the flag, once published on the network |
-| **Kubernetes** | PostgreSQL of the operator's choice | the Helm chart in `deploy/helm/maity-hub/`: a migrate Job before the rollout, a Deployment (one pod unless `replicas` says more), a Service, an Ingress with TLS, a network policy and, with replicas, a disruption budget; secrets from Kubernetes Secrets; readiness on `/api/v1/health` (`hub/context/kubernetes.md`) | a team's or a hosted instance |
+| **Kubernetes** | PostgreSQL of the operator's choice | the Helm chart in `deploy/helm/maity-hub/`: a migrate Job before the rollout, a Deployment (one pod unless `replicas` says more), a Service, an Ingress with TLS, a network policy (on by default) and, with more than one replica, a disruption budget; secrets from Kubernetes Secrets; readiness on `/api/v1/health` (`hub/context/kubernetes.md`) | a team's or a hosted instance |
 
 Common to all: settings come from the environment
 (`hub/src/maity_hub/config.py` is the list; `MAITY_DATABASE_URL`,
