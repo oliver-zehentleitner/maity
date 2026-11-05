@@ -5005,3 +5005,32 @@ The Team page's Organisation tab has two faces, Tree and Paths, the choice kept 
 **Reason:** a picture of the routing that the hub does not do is worse than none; the members list is what the dashboard already reads, and the usual edges answer the question readers ask (who hears about this) without claiming the hub computed them.
 
 **Rejected alternatives:** a routing table of the dashboard's own, kept beside §8: a second copy that drifts from the hub. Leaving out the edges the members list cannot settle: card assignment, the most asked about, would show nothing. A force layout: it moves on every redraw and hides who reports to whom; the draft's tidy tree keeps the hierarchy readable.
+
+## Join an agent asks for the second factor in its form, and names the project and the missing right
+
+**Id:** 2e60e51f-5e0e-4bd0-bc46-365b3c050d13
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's reports on tsk-trb99kkhv1rk (an owner could not create a join and saw only "you lack the rights"; the maintainer saw "this call needs your second factor first" with the second factor set to mail for everyone), 2026-11-05; hub/src/maity_hub/routes/joins.py (`create_join` calls `require_step_up`), docs/api.md §2.8.4; web/js/step-up.js
+**Revisit when:** the hub stops treating join creation as a sensitive call, or the dashboard gets one step-up place for every view
+
+Creating a join goes through `M.stepUp.run`, the same as every other
+sensitive call in the dashboard: on `step_up_required` the form asks for
+the code (by app, or the mailed code under the mail factor) and sends the
+join again; Cancel ends without a refusal. A bare `forbidden` with
+`scope: members:admin` (no admin rights, and members may not bring
+agents) is said in words that name the right. The panel names the project
+the join is for, by name and full name.
+
+**Reason:** the hub has always asked for the second factor on
+`POST …/joins`, but the join form showed it as a refusal: in English
+the hub's own sentence, translated as the generic "you do not have the
+rights for this", so an owner who had done nothing wrong could not add an
+agent at all. With several projects open the target project was only the
+tab's.
+
+**Rejected:** a hub change (the hub's rule is right; a sole owner may not
+make themselves admin either, the maintainer confirmed); a generic words
+entry for `step_up_required` in js/errors.js alone, which would say the
+cause but still leave no way to give the code.
