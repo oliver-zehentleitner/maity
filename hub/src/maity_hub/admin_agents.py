@@ -297,8 +297,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if active is None:
             values["reports_to"] = None
     given, reason = proposal["pause"]
-    # A cross-owner boss waits for both owners: the other fields apply now, the consent
-    # requests are filed now (§6.2, "PATCH").
+    # A cross-owner boss waits for both owners. The other fields wait for the agent's
+    # owner when the caller must; a `reports_to` that stays inside that owner waits with
+    # them. The pair is not also a field of that request (§6.2, "PATCH").
     cross_boss = None
     if values.get("reports_to") is not None:
         boss_row = conn.execute(
@@ -306,7 +307,6 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         ).one()
         if cross_owner.owners(conn, target, boss_row) is not None:
             cross_boss = boss_row
-            del values["reports_to"]
     instance = proposal.get("instance")
     caller = (
         Caller(
@@ -329,12 +329,15 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         # (§6.2, "Another owner's agent"); the rest applies now.
         mine = Membership(project, proposer, "agent")
         foreign_agent.withdraw_open(conn, target.id, change.actor, "superseded")
+        held = foreign_agent.for_consent(values, cross_reports_to=cross_boss is not None)
         consent_id = foreign_agent.file(
-            conn, project, mine, caller, target, values, (bool(given), reason), instance
+            conn, project, mine, caller, target, held, (bool(given), reason), instance
         )
         if consent_id is not None:
-            values = {k: v for k, v in values.items() if k not in foreign_agent.FIELDS}
+            values = foreign_agent.without_consent(values, held)
             given, reason, instance = False, None, None
+    if cross_boss is not None:
+        values.pop("reports_to", None)
     old = members.apply_patch(
         conn, change, target, values, (bool(given), reason), instance=instance
     )
@@ -343,7 +346,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
             announce(conn, change, target, field, old[field], values[field], request.id)
     if cross_boss is not None and proposer is not None and caller is not None:
         mine = Membership(project, proposer, "agent")
-        cross_owner.file(conn, project, mine, caller, target, cross_boss)
+        asked = cross_owner.file(conn, project, mine, caller, target, cross_boss)
+        if consent_id is not None and asked:
+            foreign_agent.remember_pair(conn, consent_id, asked)
 
 
 # The approver could make the change themselves: a human with `members:admin` (§2.3 ᵃ).
