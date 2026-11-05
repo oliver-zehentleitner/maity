@@ -1567,3 +1567,41 @@ every line that was missed.
   for every agent; the pin is about the version only.
 - Pins without a check: the next release would be bumped in some copies
   and not others.
+
+## The browser end-to-end test and the join smoke install only from hashed locks, the CLI in an environment of its own
+
+**Id:** 9a0ed6f7-694b-4036-8b78-16ff53aa760a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `.github/workflows/ci.yml` (`web-e2e`, `join-smoke`), `web/requirements/e2e.in`, `web/Makefile`
+**Revisit when:** the CLI gets a hashed dev lock of its own (then that environment can serve), the hub's runtime lock stops constraining Playwright's dependencies (the e2e lock would then need its own environment), or pip installs from a standard lock (`pylock.toml`) without uv
+
+`web-e2e` installs the hub from `hub/requirements/runtime.txt` and `build.txt` and Playwright from
+`web/requirements/e2e.txt`, all with hashes, then the hub editable without build isolation.
+`e2e.txt` is compiled from `e2e.in` with the hub's runtime lock as constraints (`make -C web lock`),
+and `web-e2e` checks it with `make -C web lock-check` first. `join-smoke` installs the hub the same
+way, without Playwright. In both jobs the CLI goes into a virtual environment of its own, from
+`cli/requirements/release.txt`, editable without build isolation, and only its `maity` is linked
+into a directory on `PATH`. Before, `web-e2e` ran `pip install -e hub -e cli playwright==1.64.0`,
+and `join-smoke` ran `pip install -e cli`.
+
+**Reason:**
+- The hub's and the CLI's editable installs each need their build backend. With build isolation pip
+  fetches it for every run without a hash (hatchling with only a lower bound); without it, it comes
+  from a hashed lock.
+- The CLI's build backend is setuptools, pinned in `cli/requirements/release.txt`, which a lock-check
+  holds equal to the CLI's `[build-system]`. That lock is compiled without the hub's pins, so it gets
+  an environment of its own rather than meeting the hub's locks in one.
+- Only `maity` goes on `PATH`: the CLI environment's own `python` and `pip` would otherwise come
+  before the hub's, and the e2e tools run on the hub's Python, where Playwright is.
+- With the hub's runtime pins as constraints, a package both locks name (today `typing-extensions`)
+  has the same version and hashes in both, so pip installs the three files together.
+
+**Rejected alternatives:**
+- setuptools into the hub's environment from the CLI's release lock: two locks compiled apart in
+  one environment.
+- A lock of its own for setuptools alone: a further lock for one package that the release lock
+  already pins and checks.
+- `e2e.txt` without the shared packages (`--no-emit-package`): the lock would not stand on its
+  own, and pip already accepts the same pin twice.

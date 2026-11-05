@@ -23,7 +23,7 @@ a11y.json and a11y.txt in the artifacts.
 Needs `maity-hub` and `maity` on PATH and Playwright for Python with its
 Chromium (see web/README.md, "Browser end-to-end test"):
 
-  pip install -e hub -e cli playwright==1.64.0
+  pip install -e hub -e cli -r web/requirements/e2e.in
   python -m playwright install chromium
   python web/tools/e2e.py --artifacts /path/to/screenshots
 

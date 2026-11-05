@@ -411,7 +411,7 @@ and the image ships is pinned, with hashes, in `requirements/`:
 
 | File | Holds | Used by |
 |---|---|---|
-| `runtime.txt` | the hub's dependencies | the image, the join smoke in CI |
+| `runtime.txt` | the hub's dependencies | the image, the join smoke and the browser end-to-end test in CI |
 | `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |

@@ -1565,7 +1565,7 @@ CI runs it strict in `web-e2e`, with `pseudo-report.json` among the screenshots.
 ## Browser end-to-end test
 
 ```sh
-pip install -e hub -e cli playwright==1.64.0   # from the repository root
+pip install -e hub -e cli -r web/requirements/e2e.in   # from the repository root
 python -m playwright install chromium          # --with-deps on a fresh machine (root)
 make -C web e2e                                # or: python web/tools/e2e.py --artifacts DIR
 ```
