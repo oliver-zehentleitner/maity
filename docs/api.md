@@ -455,7 +455,8 @@ for the per-address lock (`hub/context/notifications.md`).
 The address itself is never stored. That makes a fingerprint
 pseudonymous, not anonymous: whoever holds the key, or without
 `MAITY_SECRET_KEY` a copy of the whole database, can still test a
-guessed address against it, and a source address is easy to guess. A
+guessed address against it (the whole IPv4 range is few enough to
+try). A
 fingerprint goes 30 days after its last sign-in and with the account
 (§2.9). Setting, changing or removing `MAITY_SECRET_KEY` changes the
 key, so every fingerprint stops matching: each account has no known
