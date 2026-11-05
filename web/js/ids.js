@@ -5,7 +5,8 @@
 // looked up, the page it opens says when there is no such thing. The
 // link's text is the id as written, and outside the id's project a card's
 // or request's carries the project's full name before it (docs/api.md
-// §6.25: oliver/maity/tsk-…, display only, never parsed); nothing else of
+// §6.25: oliver/maity/tsk-…; the hub never parses the prefix, the
+// dashboard reads it as a link); nothing else of
 // the text changes, and no mention is made (§8.6 is the hub's). Code stays
 // plain, except a code span that is one id alone (only()); fenced blocks
 // are never passed here.

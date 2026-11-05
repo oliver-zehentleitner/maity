@@ -951,10 +951,12 @@ def scenario(run: Run, page: Page) -> None:
         free.press("Escape")
         expect(picker).to_be_hidden()
         # The one field stands above the buttons; a reply takes its text along (§7).
-        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        # Talk beside the replies (the owner's agent asked), and Send for the words alone: disabled
+        # while the field is empty.
         current = page.locator("li.entry.current")
-        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
-        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+        free.fill("")
+        expect(current.get_by_role("button", name="Send", exact=True)).to_be_disabled()
         free.fill("Ship it, with this note.")
         current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
@@ -1065,6 +1067,9 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    asker_links_step(run, page, alpha)
+    send_talk_step(run, page, alpha)
+    wide_lines_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1149,6 +1154,7 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    start_page_step(run, page)
     legal_json_step(run, page)
     auth_pages_step(run, page)
     site_json_step(run, page)
@@ -1158,6 +1164,195 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
+    """Who asked, as links (tsk-3re8qp89hc18, docs/api.md §7): in the inbox of all projects too, the
+    asker's handle leads to the member's page in the request's project, the #instance beside it to
+    that instance on it, chosen."""
+    run.step("inbox: Asked by links to the member and the instance, across projects too")
+    out = run.maity(alpha, "ask", "Who asked this?\nThe asker's links are the point.", "--to", "human", "--class", "info")
+    request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+    asked = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")["asked_by"]
+    member_id, instance = asked["member_id"], asked.get("instance")
+    assert instance, f"the request names no instance: {asked}"
+    for inbox in ("/all", "/owner/e2e-alpha/inbox"):
+        page.goto(f"{run.base}{inbox}")
+        entry = page.locator(f"li.entry[data-request='{request_id}']")
+        if entry.locator(".entry-body").count() == 0:
+            entry.locator(".entry-head").first.click()
+        facts = entry.locator(".entry-body dd").filter(has=page.locator(f"a.member-ref[data-member='{member_id}']")).first
+        handle = facts.locator(f"a.member-ref[data-member='{member_id}']")
+        expect(handle).to_have_attribute("href", f"/owner/e2e-alpha/members/{member_id}")
+        mark = facts.locator("a.member-instance")
+        expect(mark).to_have_text(f"#{instance}")
+        if inbox == "/all":
+            run.shot(page, "inbox-asker-links")
+            # The project's link and the asker's in the rows one above the other: 24 px apart (WCAG 2.2).
+            run.a11y(page, "/all, the asker's links under the project's")
+        handle.click()
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}$"))
+        expect(page.locator(".member-head")).to_contain_text("E2E Agent")
+        page.go_back()
+        entry = page.locator(f"li.entry[data-request='{request_id}']")
+        if entry.locator(".entry-body").count() == 0:
+            entry.locator(".entry-head").first.click()
+        entry.locator(".entry-body a.member-instance").first.click()
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}/sessions/{instance}$"))
+        expect(page.locator(f"#member-instance-{instance}")).to_have_attribute("aria-current", "true")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+    current = page.locator("li.entry.current")
+    current.locator("textarea").fill("Seen.")
+    current.get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    no_problems(run, "asker links")
+
+
+def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
+    """Send and Talk on every request one can answer (docs/api.md §7, tsk-nx6hm8qjzm3z): on a decision
+    with options Send takes the words alone, Ctrl+Enter the same, and is disabled while the field is
+    empty; on a consent it stays disabled and says why, the words go only with a reply. Talk for the
+    owner's own agent. Wide and light, narrow and dark."""
+    run.step("inbox: Send beside the options takes the words alone; a consent's Send says why it cannot")
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            out = run.maity(
+                alpha, "ask", f"Which name at {width} px?\nTwo to choose from, or your own.",
+                "--to", "human", "--class", "decision", "--option", "Maity", "--option", "Hub",
+            )
+            request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+            current = page.locator("li.entry.current")
+            expect(current).to_contain_text(f"Which name at {width} px?")
+            send = current.get_by_role("button", name="Send", exact=True)
+            expect(send).to_be_disabled()
+            expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+            expect(current.locator(".reply-hint")).to_have_count(0)
+            free = current.locator(".free-text textarea")
+            free.fill("Neither: maity-hub.")
+            expect(send).to_be_enabled()
+            run.shot(page, f"send-beside-options-{width}-{scheme}")
+            free.press("Control+Enter")
+            expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+            got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+            answer = got.get("answer") or {}
+            assert answer.get("text") == "Neither: maity-hub." and not answer.get("reply_id") and not answer.get("talk"), (
+                f"{where}: Ctrl+Enter sends the words alone {answer}"
+            )
+
+        # A consent: the words alone would read as No (§15.6), so Send stays disabled and says why.
+        out = run.maity(alpha, "ask", "May the alpha agent tag 0.2.0?", "--to", "human", "--class", "consent")
+        request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_contain_text("May the alpha agent tag 0.2.0?")
+        send = current.get_by_role("button", name="Send", exact=True)
+        hint = current.locator(".reply-hint")
+        expect(hint).to_contain_text("Choose one of the answers")
+        expect(send).to_have_attribute("aria-describedby", hint.get_attribute("id") or "")
+        free = current.locator(".free-text textarea")
+        free.fill("Tag it after the notes.")
+        expect(send).to_be_disabled()
+        free.press("Control+Enter")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        run.shot(page, "send-consent-disabled")
+        run.a11y(page, "inbox, a consent with Send disabled and its reason")
+        page.locator("li.entry.current").get_by_role("button", name="go", exact=True).click()
+        expect_inbox_empty(page)
+        got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+        answer = got.get("answer") or {}
+        assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "send and talk")
+
+
+def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """A long unbroken line keeps the page inside the window (tsk-6bn80bppb5e5): a request with a
+    600-character code line and long card links, open in the inbox of all projects above a collapsed
+    one, a card note and a project message with the same text, and a card link of 300 characters. The
+    code scrolls in its own block, the links wrap, every row keeps the page's width; desktop and phone,
+    light and dark."""
+    run.step("a long line in a request and in a card note stays inside the window")
+    line = ("for f in $(git ls-files 'web/i18n/*.json'); do " + "python3 -m json.tool \"$f\" >/dev/null && " * 20)[:600]
+    links = " ".join(f"{run.base}/owner/e2e-alpha/tasks/{card_id}?from={'x' * 60}{i}" for i in range(4))
+    text = f"Run this first:\n\n```sh\n{line}\n```\n\nThe cards: {links}"
+    asked = [
+        re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", title + "\n" + text, "--to", "human", "--class", "info")).group(0)
+        for title in ("A request with a long line", "A short one below it")
+    ]
+    run.maity(alpha, "note", "add", card_id, text)
+    run.maity(alpha, "say", "all", text, "--type", "notice")
+    # A link without a label shows its URL: 300 characters with no place to break.
+    long_url = f"https://github.com/owner/e2e-alpha/blob/main/{'x' * 255}"
+    link = run.api(alpha, "POST", f"/projects/owner/e2e-alpha/tasks/{card_id}/links", {"kind": "url", "url": long_url})
+
+    def inside(where: str) -> None:
+        sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert sw <= iw, f"{where}: the page is {sw} px wide in a {iw} px window"
+
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (2560, 1200, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/all")
+            wide = page.locator(f"li.entry[data-request='{asked[0]}']")
+            expect(wide).to_be_visible()
+            wide.locator(".entry-head").first.click()
+            block = wide.locator(".entry-body .md-code")
+            expect(block).to_be_visible()
+            inside(f"the inbox at {where}")
+            rows = page.evaluate("Array.from(document.querySelectorAll('li.entry')).map((e) => e.getBoundingClientRect().right)")
+            assert rows and max(rows) <= width, f"the inbox at {where}: rows end at {max(rows)} px"
+            client, scroll = block.evaluate("(b) => [b.clientWidth, b.scrollWidth]")
+            assert scroll > client, f"the inbox at {where}: the code line does not scroll in its block ({client}/{scroll})"
+            wider = wide.evaluate(
+                "(r) => Array.from(r.querySelectorAll('.entry-body p')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the inbox at {where}: text wider than its box {wider}"
+            if width == 390:
+                run.shot(page, f"inbox-long-line-{scheme}")
+
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
+            expect(note.locator(".md-code")).to_be_visible()
+            expect(page.locator(f"aside.card-panel .card-links a[href='{long_url}']")).to_be_visible()
+            inside(f"the card's notes at {where}")
+            right = note.evaluate("(n) => n.querySelector('.md-code').getBoundingClientRect().right")
+            assert right <= width, f"the card's notes at {where}: the code block ends at {right} px"
+            # The links wrap: no text of the note but its code block wider than its box, the panel unscrolled.
+            wider = note.evaluate(
+                "(n) => Array.from(n.querySelectorAll('p, li')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.tagName, e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the card's notes at {where}: text wider than its box {wider}"
+            panel = page.evaluate("(() => { const p = document.querySelector('aside.card-panel'); return [p.clientWidth, p.scrollWidth]; })()")
+            assert panel[1] <= panel[0], f"the card panel at {where} scrolls sideways ({panel[0]}/{panel[1]})"
+
+            # The project's messages: the same text, no panel around it to hide a wide line.
+            page.goto(f"{run.base}/owner/e2e-alpha/messages")
+            said = page.locator("li.pmsg").filter(has_text="Run this first").first
+            expect(said.locator(".md-code")).to_be_visible()
+            inside(f"the project's messages at {where}")
+        run.a11y(page, "card notes, a long code line")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+        run.api(alpha, "DELETE", f"/projects/owner/e2e-alpha/tasks/{card_id}/links/{link['id']}")
+    for request_id in asked:
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        current.locator("textarea").fill("Seen.")
+        current.get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    expect_inbox_empty(page)
+    no_problems(run, "long lines")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
@@ -1835,10 +2030,38 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         context, page = sign_in_with_totp(run, browser, secret, used)
         reset_by_mail(run, browser, catcher, page)
         context.close()
+        language_choice_step(run, browser)
     finally:
         stop_hub(hub)
         catcher.close()
         run.base = first_base
+
+
+def language_choice_step(run: Run, browser) -> None:
+    """The page's language chosen on /login and /register before sign-in (§6.2) stays the
+    choice, also where the address came with another ?lang=, and across a reload."""
+    run.step("signed out: the language chosen on login and register stays, also after a reload")
+    for path, picker, field in (
+        ("/login", "#login-interface", "#login-handle"),
+        ("/register", "#register-interface", "#register-address"),
+    ):
+        context = browser.new_context(viewport={"width": 1280, "height": 900}, locale="de-DE")
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        page.goto(f"{run.base}{path}?lang=de")
+        expect(page.locator("html")).to_have_attribute("lang", "de")
+        page.locator(field).fill("kim@e2e.example")
+        page.locator(picker).select_option("fr")
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        expect(page.locator(field)).to_have_value("kim@e2e.example")
+        assert page.url.endswith(f"{path}?lang=fr"), page.url
+        page.reload()
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        no_problems(run, f"the language on {path}")
+        context.close()
 
 
 def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
@@ -3694,6 +3917,103 @@ def landing_variants_step(run: Run, page: Page) -> None:
     saved = save()
     assert saved["variants"] == {} and saved["campaigns"] == [], (saved["variants"], saved["campaigns"])
     no_problems(run, "landing variants")
+
+
+def start_page_step(run: Run, page: Page) -> None:
+    """The way to `/` from the sign-in page leaves the dashboard (docs/api.md §16.7, tsk-fmdn6vb2zs19):
+    the hub, not the dashboard, decides per request what `/` shows, so the frame's logo, a section link
+    and the app's own logo are page loads. Only a served page shows it: fixture mode has no click
+    handler. Wide and light, narrow and dark."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("start page: from the sign-in page the logo and a section link open the landing page")
+    page.goto(f"{run.base}/admin/pages/landing")
+    io = page.locator("details.lp-json")
+    io.locator("summary").click()
+    landing = json.loads((WEB / "tools" / "site-fixture.json").read_text(encoding="utf-8"))["landing"]
+    body = {**landing, "enabled": True, "footer": {**landing["footer"], "operator": "Example operator"}}
+    page.locator("#lp-json").fill(json.dumps(body))
+    page.once("dialog", lambda d: d.accept())
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    section = page.locator("#admin-landing-page")
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    form = page.locator("form.lp-form")
+    form.get_by_role("button", name="Save the landing page", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+    assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is True
+
+    def on_landing(seen: Page, where: str) -> None:
+        # The hub's landing page: its own HTML, no dashboard and no sign-in form in it.
+        expect(seen.locator("main#main")).to_have_count(0)
+        expect(seen.locator("#login-handle")).to_have_count(0)
+        expect(seen.locator("main .hero, main section").first).to_be_visible()
+        assert not seen.evaluate("!!(window.Maity && window.Maity.route)"), f"{where}: the dashboard is still loaded"
+
+    try:
+        for width, height, scheme in ((1280, 800, "light"), (390, 844, "dark")):
+            visitor = page.context.browser.new_context(
+                viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme
+            )
+            seen = visitor.new_page()
+            seen.goto(f"{run.base}/login")
+            frame = seen.locator("header.site-header")
+            expect(frame).to_be_visible()
+            frame.locator("a.brand").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the frame's logo at {width} px {scheme}")
+            run.shot(seen, f"start-page-{width}-{scheme}")
+
+            # A section link (`/?lang=en#sN`): the header's where it shows, else the footer's platform column.
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("header.site-header")).to_be_visible()
+            links = seen.locator("header.site-header a[href*='#s'], footer.site-footer a[href*='#s']")
+            shown = links.evaluate_all("(all) => all.findIndex((a) => a.offsetParent !== null)")
+            assert shown >= 0, f"no section link shows at {width} px"
+            nav = links.nth(shown)
+            href = nav.get_attribute("href")
+            assert href and href.startswith("/?lang=") and "#s" in href, href
+            nav.click()
+            expect(seen).to_have_url(f"{run.base}{href}")
+            on_landing(seen, f"a section link at {width} px {scheme}")
+            expect(seen.locator(f"#{href.split('#', 1)[1]}")).to_be_attached()
+
+            # Without the frame (its read failed), the app's own logo leads to the same start page.
+            seen.route("**/api/v1/site/chrome**", lambda r: r.abort())
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("#login-handle")).to_be_visible()
+            expect(seen.locator("header.site-header")).to_have_count(0)
+            seen.locator("#header a.brand-home").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the app's logo at {width} px {scheme}")
+            visitor.close()
+
+        # Signing out leaves for the start page too: a page load, so the landing page, not the
+        # dashboard's sign-in form under `/`. A second session of the owner's, this one stays.
+        leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
+        out = leaving.new_page()
+        out.goto(f"{run.base}/login")
+        out.locator("#login-handle").fill(OWNER)
+        out.locator("#login-password").fill(OWNER_PASSWORD)
+        out.get_by_role("button", name="Sign in", exact=True).click()
+        expect(out.locator("header .me")).to_contain_text("Owner")
+        out.goto(f"{run.base}/all")
+        out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+        out.get_by_role("menuitem", name="Sign out", exact=True).click()
+        expect(out).to_have_url(f"{run.base}/")
+        on_landing(out, "after signing out")
+        run.shot(out, "start-page-signed-out")
+        leaving.close()
+    finally:
+        # Off again: a landing page that is on would greet the signed-out steps after this one.
+        page.goto(f"{run.base}/admin/pages/landing")
+        enabled = page.locator("#lp-enabled")
+        if enabled.is_checked():
+            enabled.uncheck()
+        form.get_by_role("button", name="Save the landing page", exact=True).click()
+        expect(section.locator(".send-status").first).to_contain_text("Saved.")
+        assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is False
+    no_problems(run, "start page")
 
 
 def auth_pages_step(run: Run, page: Page) -> None:

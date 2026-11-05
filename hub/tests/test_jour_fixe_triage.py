@@ -191,6 +191,21 @@ def test_a_closed_project_finishes_the_round_but_opens_no_card(reporting: Round)
     assert built["proposals_not_carded"] == [{"proposal_id": "r1", "reason": "project_closed"}]
 
 
+def test_a_round_open_when_the_project_is_archived_still_gets_its_report(
+    reporting: Round,
+) -> None:
+    """§20.6: a round that has opened runs to its end, a closing project included; the
+    jour-fixe worker still acts on its deadlines while the project is archived."""
+    closed = reporting.owner.patch(
+        "/projects/maintainer/maity", {"state": "archived", "reason": "done"}
+    )
+    assert closed.status_code == 200, closed.text
+    reporting.tick(timedelta(hours=13))
+    view = reporting.get()
+    assert view["status"] == "reported"
+    assert view["report"]["source"] == "hub"
+
+
 def test_a_report_replay_answers_only_a_member(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:

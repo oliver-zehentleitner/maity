@@ -30,6 +30,7 @@ from maity_hub import (
     images,
     ktw,
     languages,
+    limits,
     moderation,
     namespace,
     onboarding,
@@ -713,6 +714,10 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         if body.slug in words:
             raise invalid({"slug": "reserved"}, "this slug is a word of the API's routes")
         owner_id, org, org_role = _creation_owner(conn, caller, body.owner)
+        # At most `max_projects_per_owner` in the namespace, archived ones counted (§16.5).
+        limits.refuse_project_over(
+            conn, owner_id, limits.of(conn, settings_of(request), "max_projects_per_owner")
+        )
         if namespace.taken(conn, owner_id, body.slug):
             raise invalid({"slug": "taken"}, "this namespace has a project with this slug")
         # The page is the namespace owner's (§16.9): `on` is theirs to give or leave as the
@@ -1209,7 +1214,8 @@ def transfer_project(
         # the second factor; `transfer` checks it again for its other callers.
         project_names.authority(conn, mine)
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
-        request_id = project_names.transfer(conn, mine, caller, body.to)
+        limit = limits.of(conn, settings_of(request), "max_projects_per_owner")
+        request_id = project_names.transfer(conn, mine, caller, body.to, limit)
         if request_id is None:  # the move happened in the call: the project as it is now (§6.26)
             return idempotency.Outcome(
                 200, "project", mine.project.id, load_project(conn, mine.project.id, request)

@@ -23,8 +23,36 @@ window.Maity = window.Maity || {};
   };
   const presenceWords = (x) => (Object.hasOwn(PRESENCE, x) ? PRESENCE[x]() : x);
   // The Activity tab lists at most this many of the member's events, newest
-  // first, from the window the project's messages read (js/messages.js).
+  // first, from the hub's latest WINDOW events.
   const ACTIVITY_SHOWN = 50;
+  const PAGE = 200;
+  // How far back the Activity reads, said when cut: a window of the hub's
+  // event numbers (`seq` counts across every project, §8.3), so it holds
+  // fewer of this project's events the busier the rest of the hub is; the
+  // hub has no reading backwards by project, and no filter by actor. The
+  // message listing (§8.8) holds only messages, so it is no way round.
+  const WINDOW = 5000;
+  const MAX_PAGES = Math.ceil(WINDOW / PAGE) + 1;
+
+  // The project's events within the hub's latest WINDOW numbers, oldest
+  // first, those `keep` takes; null when the page was left, and loud on a
+  // cursor that does not move.
+  async function recentEvents(ctx, keep, stillHere) {
+    const head = (await M.api.get(ctx.base + "/events?after=latest&wait=0")).cursor;
+    const start = Math.max(0, head - WINDOW);
+    const kept = [];
+    let after = start;
+    for (let n = 0; n < MAX_PAGES; n++) {
+      if (!stillHere()) return null;
+      const page = await M.api.get(ctx.base + "/events?after=" + after + "&wait=0&limit=" + PAGE);
+      kept.push(...page.items.filter(keep));
+      if (page.items.length < PAGE) return { kept, cut: start > 0 };
+      const next = page.items[page.items.length - 1].seq;
+      if (!(next > after)) throw new Error(M.t("memberpage.activity.cursor_stuck", { after: String(after) }));
+      after = next;
+    }
+    return { kept, cut: true };
+  }
   // An event in words: its kind, and the card or message it is about.
   const KIND_WORDS = {
     task_created: () => M.t("memberpage.kind.task_created"), task_claimed: () => M.t("memberpage.kind.task_claimed"),
@@ -100,7 +128,7 @@ window.Maity = window.Maity || {};
     try {
       // The hub has no filter by actor (§8.3): the window is read and filtered here.
       const here = M.route.current().path;
-      const read = await M.recentEvents(ctx, (e) => e.actor && e.actor.member_id === m.id && !e.redacted, () => M.route.current().path === here);
+      const read = await recentEvents(ctx, (e) => e.actor && e.actor.member_id === m.id && !e.redacted, () => M.route.current().path === here);
       if (!read) return;
       items = read.kept.slice(-ACTIVITY_SHOWN).reverse();
       cut = read.cut;
@@ -108,7 +136,7 @@ window.Maity = window.Maity || {};
       append(clear(box), h("p", { class: "send-status failed" }, M.t("memberpage.activity.failed", { reason: err.message })));
       return;
     }
-    append(clear(box), h("p", { class: "hint" }, cut ? M.t("memberpage.activity.hint_cut", { count: M.recentEvents.WINDOW }) : M.t("memberpage.activity.hint")),
+    append(clear(box), h("p", { class: "hint" }, cut ? M.t("memberpage.activity.hint_cut", { count: WINDOW }) : M.t("memberpage.activity.hint")),
       items.length
         ? h("ul", { class: "member-activity" }, items.map((e) => {
           const subject = e.subject && e.subject.type === "task" ? h("a", { href: ctx.link("tasks", e.subject.id) }, h("span", { class: "mono" }, e.subject.id)) : null;
