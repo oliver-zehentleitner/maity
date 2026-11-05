@@ -1357,7 +1357,7 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
 
 
 def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
-    """An open note edit keeps its form and the text typed into it when the notes list is drawn
+    """An open note edit keeps its form, typed text, focus and caret when the notes list is drawn
     again (tsk-wvf8s7f44vz7): a post from Add a note redraws the list; Cancel still ends the edit.
     Desktop and phone, light — the state after load, not a layout fit."""
     run.step("an open note edit survives a post's redraw of the notes list")
@@ -1384,15 +1384,31 @@ def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: s
             field = form.locator("textarea")
             typed = f"typed across the redraw at {width}"
             field.fill(typed)
+            field_node = field.evaluate_handle("(el) => el")
             posted = f"A post that redraws the list at {width}"
             add = panel.locator("form.card-note-form")
-            add.locator("#card-note-body").fill(posted)
-            add.get_by_role("button", name="Post the note", exact=True).click()
+            add_body = add.locator("#card-note-body")
+            # Set the post text without focusing Add a note, then leave focus and a caret
+            # in the edit and submit: a button click would move focus off the edit before
+            # the redraw, which is not the interaction under test.
+            add_body.evaluate("(el, v) => { el.value = v; }", posted)
+            field.evaluate(
+                "(el) => { el.focus(); el.setSelectionRange(6, 11); }"
+            )
+            expect(field).to_be_focused()
+            add.evaluate("(form) => form.requestSubmit()")
             expect(panel.locator("li.card-note").filter(has_text=posted)).to_be_visible()
             expect(form).to_be_visible()
             expect(field).to_have_value(typed)
-            # Same DOM node: the keep holds the open li across the redraw.
-            assert field.evaluate("(el) => el.isConnected"), f"{where}: the edit field was replaced"
+            # Same DOM node, same focus and caret: detach/reinsert must not hand focus to Add a note.
+            assert field.evaluate(
+                "(el, prev) => el === prev && el.isConnected", field_node
+            ), f"{where}: the edit field was replaced"
+            expect(field).to_be_focused()
+            assert field.evaluate(
+                "(el) => [el.selectionStart, el.selectionEnd]"
+            ) == [6, 11], f"{where}: the caret was not restored"
+            expect(add_body).not_to_be_focused()
             form.get_by_role("button", name="Cancel", exact=True).click()
             expect(note.locator("form.card-note-edit-form")).to_have_count(0)
             expect(note.locator("button.card-note-edit")).to_be_visible()

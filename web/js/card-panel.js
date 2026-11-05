@@ -361,9 +361,20 @@ window.Maity = window.Maity || {};
       if (read !== notesRead) return false;
       notesList.removeAttribute("aria-busy");
       // Keep each open edit's li (form and typed text) when that note is still there.
+      // Detaching the row blurs its field; remember focus and selection so a post's
+      // "focus Add a note when free" does not steal them when the edit still held them.
       const openEdits = new Map();
+      let restoreEdit = null;
       Array.from(notesList.querySelectorAll("li.card-note")).forEach((li) => {
         if (li.querySelector("form.card-note-edit-form")) {
+          const a = document.activeElement;
+          if (a && li.contains(a)) {
+            restoreEdit = {
+              el: a,
+              start: typeof a.selectionStart === "number" ? a.selectionStart : null,
+              end: typeof a.selectionEnd === "number" ? a.selectionEnd : null,
+            };
+          }
           openEdits.set(li.getAttribute("data-note"), li);
           li.remove();
         }
@@ -384,6 +395,20 @@ window.Maity = window.Maity || {};
         noteFormEl = null;
       } else if (!noteFormEl) {
         append(notesBox, noteFormEl = noteForm());
+      }
+      // Put the caret back only when that edit was kept and still owns the node; a
+      // reader who moved focus elsewhere during the read is left alone (restoreEdit
+      // is set only when the edit held focus at redraw).
+      if (restoreEdit && restoreEdit.el.isConnected !== false && notesList.contains(restoreEdit.el)) {
+        restoreEdit.el.focus();
+        if (restoreEdit.start !== null && restoreEdit.end !== null) {
+          if (typeof restoreEdit.el.setSelectionRange === "function") {
+            restoreEdit.el.setSelectionRange(restoreEdit.start, restoreEdit.end);
+          } else {
+            restoreEdit.el.selectionStart = restoreEdit.start;
+            restoreEdit.el.selectionEnd = restoreEdit.end;
+          }
+        }
       }
       return true;
     }
