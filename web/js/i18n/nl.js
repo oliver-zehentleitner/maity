@@ -366,15 +366,15 @@ window.MAITY_I18N["nl"] = {
     "other": "Vermeldingen {count}"
   },
   "bell.count.security": {
-    "one": "Beveiligingsmeldingen {count}",
-    "other": "Beveiligingsmeldingen {count}"
+    "one": "Beveiligingswaarschuwingen {count}",
+    "other": "Beveiligingswaarschuwingen {count}"
   },
   "bell.filter.unread": "Alleen ongelezen",
   "bell.item.unread": "(ongelezen)",
   "bell.kind.chat": "Chats",
   "bell.kind.inbox": "Verzoeken",
   "bell.kind.mention": "Vermeldingen",
-  "bell.kind.security": "Beveiligingsmeldingen",
+  "bell.kind.security": "Beveiligingswaarschuwingen",
   "bell.mark_all": "Alles als gelezen markeren",
   "bell.mark_all.ask": {
     "one": "Er zit {count} beveiligingswaarschuwing bij. Als gelezen markeren bevestigt die niet. Toch alles als gelezen markeren?",
@@ -391,13 +391,13 @@ window.MAITY_I18N["nl"] = {
   "bell.pinned": "Beveiligingswaarschuwingen",
   "bell.read_failed": "Je meldingen konden niet worden gelezen: ",
   "bell.removed": "Verwijderd",
-  "bell.security_hint": "Een beveiligingsmelding als gelezen markeren bevestigt die niet. Logins zijn geen meldingen: bevestig er een met Dit was ik onder Sessies in je account.",
+  "bell.security_hint": "Een beveiligingswaarschuwing als gelezen markeren bevestigt die niet. Logins zijn geen waarschuwingen: bevestig er een met Dit was ik onder Sessies in je account.",
   "bell.settings": "Meldingsinstellingen",
   "bell.skipped": {
     "one": "{count} waarschuwing bleef ongelezen: ",
     "other": "{count} waarschuwingen bleven ongelezen: "
   },
-  "bell.skipped.not_earlier": "alleen een sessie die ouder is dan die mag haar markeren",
+  "bell.skipped.not_earlier": "alleen een oudere sessie mag die markeren",
   "bell.skipped.not_in_good_standing": "de eigen login van deze sessie is nog niet bevestigd",
   "bell.title": "Meldingen",
   "bell.unread": {
@@ -4826,7 +4826,7 @@ window.MAITY_I18N["nl"] = {
   "visitor.why.family": "Familie",
   "visitor.why.unread": "De Keep the Why van dit project is niet openbaar, of nog niet gelezen.",
   "waiting.mark_all": "Alles als gelezen markeren",
-  "waiting.mark_all.hint": "Alles als gelezen markeren laat beveiligingsmeldingen ongelezen: markeer ze elk afzonderlijk als gelezen.",
+  "waiting.mark_all.hint": "Alles als gelezen markeren laat beveiligingswaarschuwingen ongelezen: markeer ze elk afzonderlijk als gelezen.",
   "waiting.mark_read": "Als gelezen markeren",
   "waiting.mark_read.label": "Als gelezen markeren: {title}",
   "waiting.marking": "Markeren…",

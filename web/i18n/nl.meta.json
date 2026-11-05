@@ -1253,7 +1253,7 @@
   },
   "bell.count.security": {
     "en": "f32eb6996b31d45a",
-    "text": "36c9a0c487952d6b"
+    "text": "e4a2d28189afff58"
   },
   "bell.filter.unread": {
     "en": "04614120f0eac6f4",
@@ -1277,7 +1277,7 @@
   },
   "bell.kind.security": {
     "en": "47b51100337c547d",
-    "text": "f1ca6a0b2ec5ebfd"
+    "text": "690baa5ffa69a892"
   },
   "bell.mark_all": {
     "en": "52944225c164ecd4",
@@ -1333,7 +1333,7 @@
   },
   "bell.security_hint": {
     "en": "b0f7f9f10ddbdfbe",
-    "text": "684188afa215f22a"
+    "text": "cfec598dffe963ea"
   },
   "bell.settings": {
     "en": "c749ce622125ec2a",
@@ -1345,7 +1345,7 @@
   },
   "bell.skipped.not_earlier": {
     "en": "e16a4fb0ade57655",
-    "text": "44d9ae05fa7d981d"
+    "text": "480e6b3d95a09b43"
   },
   "bell.skipped.not_in_good_standing": {
     "en": "04b3f48eb85a82ff",
@@ -17765,7 +17765,7 @@
   },
   "waiting.mark_all.hint": {
     "en": "71d943260f98496a",
-    "text": "7eae32dc051e942d"
+    "text": "461373a10dfce0f8"
   },
   "waiting.mark_read": {
     "en": "6672cefeda1b8f2f",
