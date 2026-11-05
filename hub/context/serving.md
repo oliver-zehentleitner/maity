@@ -444,3 +444,67 @@ still be on its way.
   ends never reaches it.
 - **The deadline on attachment uploads only:** every body is read by the same
   function, and a small body needs far less than 120 seconds.
+
+## An emergency limit on single routes comes from the environment and counts in each process; the public read limits stay, configurable
+
+**Id:** f3198c35-b163-4fce-b3ad-683d8b825555
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision on card tsk-h238y7cpk23m and the plan the team lead approved, 2026-11-04 (confirmed: no general budget in the hub, an emergency limit per route by configuration, no runtime setting yet, the public read limits kept and configurable); reading the routes from the router rather than from the OpenAPI document came from the review of the first version, where a path converter matched one segment only (reproduced by a test, red before and green after); that `iter_route_contexts` yields the routes in the router's order is inferred from FastAPI matching with the same walk, and is checked by one test on a literal route ahead of a template
+**Revisit when:** a runtime setting for route limits is built, `fastapi.routing.iter_route_contexts` changes or goes away, or the deployments' ingress limit has been tested and the public read limits are reassessed
+
+The hub has no general request budget; the ingress holds the limit per
+client. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API for an
+emergency, `<METHOD> <route> = <count>/<seconds>` with the route as
+`/api/v1/openapi.json` lists it. When the app is built, each entry is checked
+against that document, and one the document does not list with that method
+stops the hub. The routes are read from the app's router with FastAPI's
+public `iter_route_contexts`, which walks the included routers with their
+prefixes in the order the router matches in; each is named by its path as
+the document lists it and matched by the pattern compiled from its declared
+path (`starlette.routing.compile_path`), so a path converter such as
+`{path:path}` matches as many segments as the route serves. A request
+counts against the first route whose method and pattern it fits, so a
+literal route ahead of a template counts as itself. The
+check runs in the middleware after the maintenance check and before the body
+is read or the caller looked up. It counts per client address in the process
+(`Limiter(local=True)`) and answers `rate_limited` with `Retry-After`. Without
+an entry nothing is matched at all, and the OpenAPI document is not built for it.
+
+The read limits of the public pages and the badges (60 per minute per
+address) stay. `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` set them as
+`<count>/<seconds>`, applied with `Limiter.configure` when the app is built.
+Configuring forgets only this process's counts and reads no database: the
+app is built before the database may be reachable, and the counts shared
+between replicas belong to the limit, not to one build of the app.
+
+**Reason:** an emergency limit exists for the minutes a route is being
+hammered, so it has to cost as little as possible: a count in the database
+on every call of the route would add a write to exactly the load it is
+meant to shed. Per process, several replicas each let through their own
+share; for an emergency limit that is close enough, and the operator
+divides by the replicas. Checking the names at startup keeps a typo from
+leaving the operator believing a limit holds. The public read limits stay
+because a hub run with Compose and no ingress has no other limit on them;
+configurable, because 60 a minute is tight for an office behind one
+address.
+
+**Rejected alternatives:**
+- **Counting in the shared counts like the other limits:** a write per
+  request, see above.
+- **A runtime admin setting instead of the environment:** no restart, but a
+  setting, its contract and its page; left for later. A change now takes a
+  restart, which is slow while the hub renders its public pages at start.
+- **Matching against the templates of the OpenAPI document:** the
+  document lists a converter path such as `{path:path}` as `{path}`, and a
+  pattern compiled from that matches one segment, so a limit on such a route
+  missed every address with a slash in it.
+- **Walking the route objects of an included router directly:** this
+  FastAPI keeps them in private objects (`_IncludedRouter`);
+  `iter_route_contexts` is the public walk over them.
+- **Counting every route whose pattern a request fits:** a literal route
+  such as `/api/v1/runners/enrollments` would count against
+  `/api/v1/runners/{runner_id}`.
+- **Removing the public read limits now that the ingress limits every
+  client:** without an ingress they are the only limit on those reads.

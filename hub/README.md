@@ -288,6 +288,22 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
+| `MAITY_ROUTE_LIMITS` | empty | No route has a limit beyond its own; the ingress holds the general limit per client. For an emergency, entries `<METHOD> <route> = <count>/<seconds>`, one per line or separated by `;`, the route as `/api/v1/openapi.json` lists it. Counted per client address in each process, so with several replicas each counts its own share. A route the hub lacks stops it at the start; a change takes a restart, and a restart is slow while the hub renders its public pages. Examples below. | §1.7 |
+| `MAITY_PUBLIC_PAGE_LIMIT`, `MAITY_BADGE_LIMIT` | `60/60` | Reads of the public pages and of the badges, each per client address: `<count>/<seconds>`. An office behind one address may need more. | §1.7, §16.9, §6.20 |
+
+Examples for `MAITY_ROUTE_LIMITS`, for the routes that cost the most per call. The
+values are a start for an emergency, not measured limits:
+
+```sh
+MAITY_ROUTE_LIMITS='GET /api/v1/projects/{owner}/{slug}/tasks = 60/60; GET /api/v1/projects/{owner}/{slug}/events = 300/60; GET /api/v1/me/export = 5/3600'
+```
+
+- `GET …/tasks` is the board and its text search (`q`, §6.4).
+- `GET …/events` is the event feed. Every agent's `maity wait` holds one call for up to 55
+  seconds and every open dashboard reads it every 15 seconds, so leave room for every agent
+  and dashboard behind one address.
+- `GET /api/v1/me/export` is the account export (§2.9); it has a limit per account of its
+  own already.
 
 The hub logs each request as method, path and status on the
 `maity_hub.access` logger, never a query string or a header value, with
