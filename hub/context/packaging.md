@@ -300,8 +300,8 @@ serves its page and every file the page names. The `hub-dist` job of
 ci.yml runs the same two targets on every pull request that touches
 `hub/`, `web/` or the join page, so a tag never finds them broken.
 
-**Reason:** the quickstart installed the hub from the Git URL, so the
-version a person ran was whatever main held that day and could not be
+**Reason:** the quickstart installs the hub from the Git URL, so the
+version a person runs is whatever main holds that day and cannot be
 named or pinned. The image already releases on `v*`, and its check
 holds the tag to the version the hub reports; a second tag prefix for
 the package would give one hub version two tags that can point at
@@ -315,7 +315,12 @@ prefers any final release to pre-releases, so while `0.0.0` stands,
 `pipx install maity-hub` installs the placeholder, not `0.1.0a1`
 (checked with pip against a local index holding both); a yanked
 release is skipped unless pinned exactly, so the placeholder is yanked
-before the first tag.
+before the first tag. For the same reason the quickstart keeps the Git
+URL until `0.1.0a1` is on PyPI: merging the workflow publishes nothing,
+and `pipx install maity-hub` before the first release installs the
+placeholder, which has no `maity-hub` command (the review of this change).
+The quickstart switches to `pipx install maity-hub` in a pull request of
+its own once the release is verified.
 
 **Rejected alternatives:**
 - A tag prefix of its own, `hub-v*`, as the CLI has `cli-v*`: two tags
