@@ -1,0 +1,3 @@
+### Fixed
+
+- docs: the collected P3 notes of the docs roll-up (tsk-bxyhjqfsqxf3): exit code 5 in `docs/agents.md`; the unit of the 16 KiB body cap (§1.7); the order of the getting-started steps; §18.3's project as `<owner>/<slug>`; `abandoned` in §15.13's leftovers; the case rule in §6.8; §8.4's mentions; replicas in §8.3 and §15.8; `merge.public` in §17.2; the favicon reason; §6.27's website and social links; an operator's `lang` on a sign-in link wins (§16.7.4, §16.7.5); the join host answers `GET /site/chrome` with the `302` of §1.1; the moderation hold on a cancelled card; the coordinator under §2.3 ᵃ; three KTW wordings (`context/messages.md`, `context/projects.md`).
