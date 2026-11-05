@@ -7138,13 +7138,7 @@ runner credential is `forbidden` (§15.1).
 - an instance admin (§16), for a human's avatar;
 - for an organisation's avatar (`org-…`, §6.26): the members of the
   organisation and the members of every project it owns, and nobody
-  else;
-- **anyone**, with or without a session, for a picture a public page
-  shows (§16.9, the maintainer's decision of 2026-11-05): a human's while
-  the hub serves their page and their `public_profile` is `true`, and an
-  agent's while the hub serves its page. A person who sets
-  `public_profile` to `false` shows no picture to anyone outside the
-  cases above. An organisation's picture is never public.
+  else.
 
 Any other caller gets `not_found`, as for an id that does not exist: the
 endpoint does not tell whether an account exists. The hub authorizes
@@ -7153,39 +7147,55 @@ the image gets `not_found`, never `304`. The answer has the headers of a
 logo (§11.2) — `Content-Type: image/png`, `X-Content-Type-Options:
 nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag` — except the
-caching, which depends on why the caller may read it:
+caching: `Cache-Control: private, no-cache`. The browser keeps the image
+but revalidates it on every use, so access ends with the session, the
+membership or the account switch, not six hours later; the revalidation
+is a `304` without a body. It is served from what the hub stored and
+never reads through to the forge.
 
-- **A public picture** (the last case above, whoever asks):
-  `Cache-Control: public, max-age=86400, s-maxage=60`. The URL is
-  versioned (`v`, above), so a new picture is a new URL and the browser
-  never shows an old one for a day; a shared cache keeps it no longer
-  than a public page (60 seconds, §16.9), so a picture that stops being
-  public is gone from it within a minute. The one consequence: after a
-  person turns `public_profile` off (or the page stops for any other
-  reason), a visitor's browser that already loaded the picture may
-  still show its copy for up to a day; shared caches drop it within 60
-  seconds, and no new visitor gets it.
-- **Every other picture**: `Cache-Control: private, no-cache`. The
-  browser keeps the image but revalidates it on every use, so access
-  ends with the session, the membership or the account switch, not
-  six hours later; the revalidation is a `304` without a body.
+**A public picture.** A picture a public page shows is anyone's to read
+(§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
+serves their page and their `public_profile` is `true`, and an agent's
+while the hub serves its page. A person who sets `public_profile` to
+`false` shows no picture to anyone outside the cases above; an
+organisation's picture is never public. It is read at an address of its
+own that names no account:
 
-Either way the image is served from what the hub stored and never reads
-through to the forge.
+```
+GET /avatars/public/{digest}
+```
 
-**Sizes.** `GET /avatars/{id}?s=<size>` serves the picture at `s` × `s`
-pixels, `s` one of `32`, `64`, `128` and `256`; without `s` it is
-`256`, the stored size. Another `s` is `invalid`
-(`details.fields.s: "unsupported"`). A picture smaller than `s` (an
-upload under 256 pixels, never scaled up, below) is served at its own
-size for every larger `s`. The hub scales each size once from the
-stored image, when it stores it or at the first request for that size,
-keeps it next to the stored image and serves the kept bytes; it never
-scales on a request it has served before. Each size has its own `ETag`
-(a digest of its bytes); `v` stays the stored image's, so one
-`avatar_url` names every size and a client adds `&s=<size>` for the
-size it draws. A new upload or a delete drops the kept sizes with the
-image they were made from.
+`{digest}` is the stored image's `ETag` without quotes, the `v` of its
+`avatar_url`. The address answers, with or without a session, while a
+picture whose stored image has that digest is public, and `not_found`
+otherwise, as for a digest no picture has. Two members whose pictures
+are the same bytes share the digest; the address answers while either
+is public, with the same bytes. It never answers for
+`GET /avatars/{id}`'s readers alone: the id address keeps the list
+above, so a guessed id never shows a picture to a stranger and the
+public address never names the id. The headers are those above except
+`Cache-Control: public, max-age=86400, s-maxage=60`. The address changes
+with the picture, so a browser never shows an old one for a day; a
+shared cache keeps it no longer than a public page (60 seconds, §16.9),
+so a picture that stops being public is gone from it within a minute.
+The one consequence: after a person turns `public_profile` off (or the
+page stops for any other reason), a visitor's browser that already
+loaded the picture may still show its copy for up to a day; shared
+caches drop it within 60 seconds, and no new visitor gets it.
+
+**Sizes.** Both addresses take `?s=<size>` and serve the picture at
+`s` × `s` pixels, `s` one of `32`, `64`, `128` and `256`; without `s`
+it is `256`, the stored size. Another `s` is `invalid`
+(`details.fields.s: "unsupported"`), checked after the authorization.
+A picture smaller than `s` (an upload under 256 pixels, never scaled
+up, below) is served at its own size for every larger `s`. The hub
+scales each size once from the stored image, when it stores it or at
+the first request for that size, keeps it next to the stored image and
+serves the kept bytes; it never scales on a request it has served
+before. Each size has its own `ETag` (a digest of its bytes); the
+digest in the address stays the stored image's, so one address names
+every size and a client adds `s` for the size it draws. A new upload or
+a delete drops the kept sizes with the image they were made from.
 
 **Upload.** `PUT` with the raw image as the body — no JSON, no multipart
 — and `Content-Type: image/png`, `image/jpeg` or `image/webp`. The rules of the logo's
@@ -7286,7 +7296,8 @@ and the admin's dashboard shows the new picture when it next reads the
 member list, which carries the current URL on every read.
 
 Errors, `GET`: `not_found` when there is no image or the caller may not
-see the member; `invalid` with `details.fields.s: "unsupported"` for a
+see the member, and on the public address for a digest no public
+picture has; `invalid` with `details.fields.s: "unsupported"` for a
 size not listed under **Sizes**, checked after the authorization, so
 it tells nothing to a caller who may not see the image. `PUT`: `invalid` with `details.fields.body` one of
 `unsupported_type` (not PNG, JPEG or WebP by its bytes, or a `Content-Type` that
@@ -9936,11 +9947,12 @@ everything of its own shown (as in `GET /me`).
 `avatar_url` follows §6.10 ("Who may read an image"): it is the
 image's address only where the caller may read it (a shared project,
 the organisation's own members and its projects' members, the caller's
-own, and a picture a public page shows); otherwise `null`, and the
-dashboard draws a neutral placeholder (not §6.10's generated avatar,
-which needs the account id this answer does not give). A public
-picture (§6.10: a person with a page and `public_profile` `true`) is
-the image's address for every reader. The same holds
+own); otherwise, for a public picture (§6.10: a person with a page and
+`public_profile` `true`), its public address
+`/api/v1/avatars/public/{digest}`, which names no account; otherwise
+`null`, and the dashboard draws a neutral placeholder (not §6.10's
+generated avatar, which needs the account id this answer does not
+give). The same holds
 for each `avatar_url` in `members`: an organisation's membership lets
 its members read the organisation's image, not each other's.
 
@@ -13690,6 +13702,7 @@ and `resolveEntry`, and any write.
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
+| GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page) | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
 | GET | `/admin/users` | `instance:admin`, human only | 16 |
@@ -17375,8 +17388,9 @@ it out; the person is still named on the public pages of their projects
 (above), and the members of a project they share read the rest in the
 dashboard (§6.27). No address, no session, no presence. **The
 picture**: while `public_profile` is `true` the page shows the person's
-picture at 128 × 128 pixels (`<img>` from `avatar_url` with `&s=128`,
-§6.10, an empty `alt` since the name follows), and a neutral
+picture at 128 × 128 pixels (`<img>` from its public address with
+`?s=128`, §6.10, never the `avatar_url` that names the account; an
+empty `alt` since the name follows), and a neutral
 placeholder of the same size, drawn with inline style and no image,
 when the person has none; with `public_profile` `false` it shows the
 placeholder. Not the generated avatar of §6.10: a page carries no
@@ -17384,7 +17398,7 @@ script to draw it, and it would name the account id. A picture is an
 input of the page that shows it, the person's or the agent's: an
 upload, a delete or a moderation reset renders that page again under
 `MAITY_PUBLIC_PAGES_RENDER` (below; a removal at once), so a stored
-page names the current `avatar_url`.
+page names the current picture's address.
 
 **Online on public pages.** `PATCH /me` (human only) also sets
 `public_presence` (`true` or `false`, anything else `null` included
