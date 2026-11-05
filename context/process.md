@@ -521,8 +521,8 @@ lock uses the same recipe as the hub's locks, so there is no second locking tool
 - One job with `pages: write` and `id-token: write`, as before: every step and every installed
   package ran with the rights to publish the site.
 - Exact pins without hashes (`pip install markdown==… PyYAML==…`, the dashboard unpinned): pip
-  installs whatever file the index serves for that version, and the dashboard's version moved
-  with every push.
+  installs whatever file the index serves for that version, and the dashboard's version could
+  change on any push without a repository change.
 - Installing the lock into setup-python's environment: whatever else is there shares it; a fresh
   environment holds exactly the lock.
 
