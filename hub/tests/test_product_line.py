@@ -225,10 +225,11 @@ def test_every_mail_link_page_answers_the_pinned_policy_and_its_sheets_load_unde
         assert served.status_code == 200, sheet
         assert served.headers["content-type"].startswith("text/css")
         assert served.headers["x-content-type-options"] == "nosniff"
-        # What the sheet loads is the hub's own as well: font-src and img-src 'self'.
+        # What the sheet loads is the hub's own as well: font-src and img-src 'self', which a
+        # `data:` url does not match either.
         for url in re.findall(r"url\(([^)]+)\)", served.text):
             url = url.strip("'\"")
-            assert not re.match(r"[a-z]+:|//", url) or url.startswith("data:"), url
+            assert not re.match(r"[a-z]+:|//", url), url
 
 
 def test_a_page_whose_words_the_language_lacks_has_an_english_line(

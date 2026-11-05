@@ -113,7 +113,9 @@ The four pages of `routes/mail_links.py` and the sign-in link's page are drawn b
 words, statuses, the GET that changes nothing and the one button, and their content stands in a
 `.link-page` block of the door's column, which `public-pages.css` gives paragraph spacing and the
 quote's rule. The sign-in link's page keeps its own content and its GET's form cookie, as above. A test
-pins the policy string and loads each stylesheet the page names under it.
+pins the policy string and fetches each stylesheet the page names with the test client: served
+200 as `text/css` with `nosniff`, and every `url(...)` in it relative, the hub's own (no browser
+applies the policy there).
 
 **Reason:** one helper keeps the five link pages under one policy and one frame, so a change to
 either reaches all of them. The `.link-page` scope keeps the new rules off the dashboard's own
