@@ -23,7 +23,7 @@ a11y.json and a11y.txt in the artifacts.
 Needs `maity-hub` and `maity` on PATH and Playwright for Python with its
 Chromium (see web/README.md, "Browser end-to-end test"):
 
-  pip install -e hub -e cli playwright==1.64.0
+  pip install -e hub -e cli -r web/requirements/e2e.in
   python -m playwright install chromium
   python web/tools/e2e.py --artifacts /path/to/screenshots
 
@@ -768,6 +768,10 @@ def main() -> int:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
+                    chat_height_views(run, browser)
+                    paths_views(run, browser)
+                    notification_sessions_layout(run, browser)
+                    account_tabs_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -950,10 +954,12 @@ def scenario(run: Run, page: Page) -> None:
         free.press("Escape")
         expect(picker).to_be_hidden()
         # The one field stands above the buttons; a reply takes its text along (§7).
-        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        # Talk beside the replies (the owner's agent asked), and Send for the words alone: disabled
+        # while the field is empty.
         current = page.locator("li.entry.current")
-        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
-        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+        free.fill("")
+        expect(current.get_by_role("button", name="Send", exact=True)).to_be_disabled()
         free.fill("Ship it, with this note.")
         current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
@@ -1064,6 +1070,10 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    asker_links_step(run, page, alpha)
+    send_talk_step(run, page, alpha)
+    wide_lines_step(run, page, alpha, task["id"])
+    note_edit_survives_redraw_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1126,7 +1136,7 @@ def scenario(run: Run, page: Page) -> None:
         lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
         assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
         run.shot(page, f"phone-{view}")
-        run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+        run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     # The create form: its preset select has long option labels.
     page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
     expect(page.locator("main section.view-new")).to_be_visible()
@@ -1148,6 +1158,7 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    start_page_step(run, page)
     legal_json_step(run, page)
     auth_pages_step(run, page)
     site_json_step(run, page)
@@ -1157,6 +1168,265 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
+    """Who asked, as links (tsk-3re8qp89hc18, docs/api.md §7): in the inbox of all projects too, the
+    asker's handle leads to the member's page in the request's project, the #instance beside it to
+    that instance on it, chosen."""
+    run.step("inbox: Asked by links to the member and the instance, across projects too")
+    out = run.maity(alpha, "ask", "Who asked this?\nThe asker's links are the point.", "--to", "human", "--class", "info")
+    request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+    asked = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")["asked_by"]
+    member_id, instance = asked["member_id"], asked.get("instance")
+    assert instance, f"the request names no instance: {asked}"
+    for inbox in ("/all", "/owner/e2e-alpha/inbox"):
+        page.goto(f"{run.base}{inbox}")
+        entry = page.locator(f"li.entry[data-request='{request_id}']")
+        if entry.locator(".entry-body").count() == 0:
+            entry.locator(".entry-head").first.click()
+        facts = entry.locator(".entry-body dd").filter(has=page.locator(f"a.member-ref[data-member='{member_id}']")).first
+        handle = facts.locator(f"a.member-ref[data-member='{member_id}']")
+        expect(handle).to_have_attribute("href", f"/owner/e2e-alpha/members/{member_id}")
+        mark = facts.locator("a.member-instance")
+        expect(mark).to_have_text(f"#{instance}")
+        if inbox == "/all":
+            run.shot(page, "inbox-asker-links")
+            # The project's link and the asker's in the rows one above the other: 24 px apart (WCAG 2.2).
+            run.a11y(page, "/all, the asker's links under the project's")
+        handle.click()
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}$"))
+        expect(page.locator(".member-head")).to_contain_text("E2E Agent")
+        page.go_back()
+        entry = page.locator(f"li.entry[data-request='{request_id}']")
+        if entry.locator(".entry-body").count() == 0:
+            entry.locator(".entry-head").first.click()
+        entry.locator(".entry-body a.member-instance").first.click()
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}/sessions/{instance}$"))
+        expect(page.locator(f"#member-instance-{instance}")).to_have_attribute("aria-current", "true")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+    current = page.locator("li.entry.current")
+    current.locator("textarea").fill("Seen.")
+    current.get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    no_problems(run, "asker links")
+
+
+def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
+    """Send and Talk on every request one can answer (docs/api.md §7, tsk-nx6hm8qjzm3z): on a decision
+    with options Send takes the words alone, Ctrl+Enter the same, and is disabled while the field is
+    empty; on a consent it stays disabled and says why, the words go only with a reply. Talk for the
+    owner's own agent. Wide and light, narrow and dark."""
+    run.step("inbox: Send beside the options takes the words alone; a consent's Send says why it cannot")
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            out = run.maity(
+                alpha, "ask", f"Which name at {width} px?\nTwo to choose from, or your own.",
+                "--to", "human", "--class", "decision", "--option", "Maity", "--option", "Hub",
+            )
+            request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+            current = page.locator("li.entry.current")
+            expect(current).to_contain_text(f"Which name at {width} px?")
+            send = current.get_by_role("button", name="Send", exact=True)
+            expect(send).to_be_disabled()
+            expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+            expect(current.locator(".reply-hint")).to_have_count(0)
+            free = current.locator(".free-text textarea")
+            free.fill("Neither: maity-hub.")
+            expect(send).to_be_enabled()
+            run.shot(page, f"send-beside-options-{width}-{scheme}")
+            free.press("Control+Enter")
+            expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+            got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+            answer = got.get("answer") or {}
+            assert answer.get("text") == "Neither: maity-hub." and not answer.get("reply_id") and not answer.get("talk"), (
+                f"{where}: Ctrl+Enter sends the words alone {answer}"
+            )
+
+        # A consent: the words alone would read as No (§15.6), so Send stays disabled and says why.
+        out = run.maity(alpha, "ask", "May the alpha agent tag 0.2.0?", "--to", "human", "--class", "consent")
+        request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_contain_text("May the alpha agent tag 0.2.0?")
+        send = current.get_by_role("button", name="Send", exact=True)
+        hint = current.locator(".reply-hint")
+        expect(hint).to_contain_text("Choose one of the answers")
+        expect(send).to_have_attribute("aria-describedby", hint.get_attribute("id") or "")
+        free = current.locator(".free-text textarea")
+        free.fill("Tag it after the notes.")
+        expect(send).to_be_disabled()
+        free.press("Control+Enter")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        run.shot(page, "send-consent-disabled")
+        run.a11y(page, "inbox, a consent with Send disabled and its reason")
+        page.locator("li.entry.current").get_by_role("button", name="go", exact=True).click()
+        expect_inbox_empty(page)
+        got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+        answer = got.get("answer") or {}
+        assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "send and talk")
+
+
+def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """A long unbroken line keeps the page inside the window (tsk-6bn80bppb5e5): a request with a
+    600-character code line and long card links, open in the inbox of all projects above a collapsed
+    one, a card note and a project message with the same text, and a card link of 300 characters. The
+    code scrolls in its own block, the links wrap, every row keeps the page's width; desktop and phone,
+    light and dark."""
+    run.step("a long line in a request and in a card note stays inside the window")
+    line = ("for f in $(git ls-files 'web/i18n/*.json'); do " + "python3 -m json.tool \"$f\" >/dev/null && " * 20)[:600]
+    links = " ".join(f"{run.base}/owner/e2e-alpha/tasks/{card_id}?from={'x' * 60}{i}" for i in range(4))
+    text = f"Run this first:\n\n```sh\n{line}\n```\n\nThe cards: {links}"
+    asked = [
+        re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", title + "\n" + text, "--to", "human", "--class", "info")).group(0)
+        for title in ("A request with a long line", "A short one below it")
+    ]
+    run.maity(alpha, "note", "add", card_id, text)
+    run.maity(alpha, "say", "all", text, "--type", "notice")
+    # A link without a label shows its URL: 300 characters with no place to break.
+    long_url = f"https://github.com/owner/e2e-alpha/blob/main/{'x' * 255}"
+    link = run.api(alpha, "POST", f"/projects/owner/e2e-alpha/tasks/{card_id}/links", {"kind": "url", "url": long_url})
+
+    def inside(where: str) -> None:
+        sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert sw <= iw, f"{where}: the page is {sw} px wide in a {iw} px window"
+
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (2560, 1200, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/all")
+            wide = page.locator(f"li.entry[data-request='{asked[0]}']")
+            expect(wide).to_be_visible()
+            wide.locator(".entry-head").first.click()
+            block = wide.locator(".entry-body .md-code")
+            expect(block).to_be_visible()
+            inside(f"the inbox at {where}")
+            rows = page.evaluate("Array.from(document.querySelectorAll('li.entry')).map((e) => e.getBoundingClientRect().right)")
+            assert rows and max(rows) <= width, f"the inbox at {where}: rows end at {max(rows)} px"
+            client, scroll = block.evaluate("(b) => [b.clientWidth, b.scrollWidth]")
+            assert scroll > client, f"the inbox at {where}: the code line does not scroll in its block ({client}/{scroll})"
+            wider = wide.evaluate(
+                "(r) => Array.from(r.querySelectorAll('.entry-body p')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the inbox at {where}: text wider than its box {wider}"
+            if width == 390:
+                run.shot(page, f"inbox-long-line-{scheme}")
+
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
+            expect(note.locator(".md-code")).to_be_visible()
+            expect(page.locator(f"aside.card-panel .card-links a[href='{long_url}']")).to_be_visible()
+            inside(f"the card's notes at {where}")
+            right = note.evaluate("(n) => n.querySelector('.md-code').getBoundingClientRect().right")
+            assert right <= width, f"the card's notes at {where}: the code block ends at {right} px"
+            # The links wrap: no text of the note but its code block wider than its box, the panel unscrolled.
+            wider = note.evaluate(
+                "(n) => Array.from(n.querySelectorAll('p, li')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.tagName, e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the card's notes at {where}: text wider than its box {wider}"
+            panel = page.evaluate("(() => { const p = document.querySelector('aside.card-panel'); return [p.clientWidth, p.scrollWidth]; })()")
+            assert panel[1] <= panel[0], f"the card panel at {where} scrolls sideways ({panel[0]}/{panel[1]})"
+
+            # The project's messages: the same text, no panel around it to hide a wide line.
+            page.goto(f"{run.base}/owner/e2e-alpha/messages")
+            said = page.locator("li.pmsg").filter(has_text="Run this first").first
+            expect(said.locator(".md-code")).to_be_visible()
+            inside(f"the project's messages at {where}")
+        run.a11y(page, "card notes, a long code line")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+        run.api(alpha, "DELETE", f"/projects/owner/e2e-alpha/tasks/{card_id}/links/{link['id']}")
+    for request_id in asked:
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        current.locator("textarea").fill("Seen.")
+        current.get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    expect_inbox_empty(page)
+    no_problems(run, "long lines")
+
+
+def note_edit_survives_redraw_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """An open note edit keeps its form, typed text, focus and caret when the notes list is drawn
+    again (tsk-wvf8s7f44vz7): a post from Add a note redraws the list; Cancel still ends the edit.
+    Desktop and phone, light — the state after load, not a layout fit."""
+    run.step("an open note edit survives a post's redraw of the notes list")
+    seed = "A note whose edit outlives a redraw"
+    run.maity(alpha, "note", "add", card_id, seed)
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "light")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            panel = page.locator("aside.card-panel")
+            expect(panel).to_be_visible()
+            # Pin the note by id before Edit: once the form is open the body text is gone
+            # (only the textarea holds it), so a has_text filter would miss the row.
+            seeded = panel.locator("li.card-note").filter(has_text=seed).first
+            expect(seeded).to_be_visible()
+            note_id = seeded.get_attribute("data-note")
+            assert note_id, f"{where}: the seed note has no data-note"
+            note = panel.locator(f'li.card-note[data-note="{note_id}"]')
+            note.locator("button.card-note-edit").click()
+            form = note.locator("form.card-note-edit-form")
+            expect(form).to_be_visible()
+            field = form.locator("textarea")
+            typed = f"typed across the redraw at {width}"
+            field.fill(typed)
+            field_node = field.evaluate_handle("(el) => el")
+            posted = f"A post that redraws the list at {width}"
+            add = panel.locator("form.card-note-form")
+            add_body = add.locator("#card-note-body")
+            # Set the post text without focusing Add a note, then leave focus and a caret
+            # in the edit and submit: a button click would move focus off the edit before
+            # the redraw, which is not the interaction under test.
+            add_body.evaluate("(el, v) => { el.value = v; }", posted)
+            field.evaluate(
+                "(el) => { el.focus(); el.setSelectionRange(6, 11); }"
+            )
+            expect(field).to_be_focused()
+            add.evaluate("(form) => form.requestSubmit()")
+            expect(panel.locator("li.card-note").filter(has_text=posted)).to_be_visible()
+            expect(form).to_be_visible()
+            expect(field).to_have_value(typed)
+            # Same DOM node, and document.activeElement is that node (not a fresh locator):
+            # detach/reinsert must not hand focus to Add a note.
+            assert field.evaluate(
+                "(el, prev) => el === prev && el.isConnected", field_node
+            ), f"{where}: the edit field was replaced"
+            assert page.evaluate(
+                "(prev) => document.activeElement === prev", field_node
+            ), f"{where}: document.activeElement is not the kept edit node"
+            assert field.evaluate(
+                "(el) => [el.selectionStart, el.selectionEnd]"
+            ) == [6, 11], f"{where}: the caret was not restored"
+            assert add_body.evaluate(
+                "(el) => document.activeElement !== el"
+            ), f"{where}: focus moved to Add a note"
+            form.get_by_role("button", name="Cancel", exact=True).click()
+            expect(note.locator("form.card-note-edit-form")).to_have_count(0)
+            expect(note.locator("button.card-note-edit")).to_be_visible()
+            if width == 390:
+                run.shot(page, "note-edit-survives-redraw-phone")
+        run.a11y(page, "card panel, an open note edit after a post")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "note edit survives redraw")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
@@ -1834,10 +2104,38 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         context, page = sign_in_with_totp(run, browser, secret, used)
         reset_by_mail(run, browser, catcher, page)
         context.close()
+        language_choice_step(run, browser)
     finally:
         stop_hub(hub)
         catcher.close()
         run.base = first_base
+
+
+def language_choice_step(run: Run, browser) -> None:
+    """The page's language chosen on /login and /register before sign-in (§6.2) stays the
+    choice, also where the address came with another ?lang=, and across a reload."""
+    run.step("signed out: the language chosen on login and register stays, also after a reload")
+    for path, picker, field in (
+        ("/login", "#login-interface", "#login-handle"),
+        ("/register", "#register-interface", "#register-address"),
+    ):
+        context = browser.new_context(viewport={"width": 1280, "height": 900}, locale="de-DE")
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        page.goto(f"{run.base}{path}?lang=de")
+        expect(page.locator("html")).to_have_attribute("lang", "de")
+        page.locator(field).fill("kim@e2e.example")
+        page.locator(picker).select_option("fr")
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        expect(page.locator(field)).to_have_value("kim@e2e.example")
+        assert page.url.endswith(f"{path}?lang=fr"), page.url
+        page.reload()
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        no_problems(run, f"the language on {path}")
+        context.close()
 
 
 def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
@@ -2075,6 +2373,68 @@ def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     no_problems(run, "mail factor: the admin's switch")
 
 
+def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
+    """tsk-trb99kkhv1rk: creating a join is a sensitive call (§2.8.4). Under Mail for everyone
+    the join form asks for the mailed code itself and then creates the join, instead of ending
+    in a refusal; the panel names the project the join is for."""
+    page.goto(run.base + f"/{OWNER}/e2e-mail/agents")
+    panel = page.locator(".join-panel")
+    add = page.get_by_role("button", name="Join an agent", exact=True)
+    expect(panel.or_(add).first).to_be_visible()
+    if not panel.is_visible():
+        add.click()
+    expect(panel.locator(".join-project")).to_contain_text(f"Joins into the project E2E Mail ({OWNER}/e2e-mail)")
+    create = page.get_by_role("button", name="Create join line", exact=True)
+    question = panel.locator("form.step-up")
+    # Closing the panel while the code is asked ends that submission (#1399 review): reopened,
+    # no question is left, the button is free, and only the fields then shown make the join.
+    page.locator("#join-agent").select_option("")  # "A new agent profile…"
+    page.locator("#join-handle").fill("e2e-mail-cancelled")
+    page.locator("#join-display").fill("E2E Mail Cancelled")
+    seen = len(catcher.mails)
+    create.click()
+    expect(question).to_contain_text("Confirm with a code by mail")
+    # Its mail is in before the next question asks for one of its own.
+    newest_mail(catcher, MAIL_ADDRESS, seen)
+    panel.locator(".join-form .actions").get_by_role("button", name="Cancel", exact=True).click()
+    expect(panel).to_be_hidden()
+    add.click()
+    expect(question).to_have_count(0)
+    expect(create).to_be_enabled()
+    # A project's full name may be one long word: at phone width the panel's line wraps it.
+    page.set_viewport_size({"width": 390, "height": 844})
+    long_slug = "p" * 63
+    widths = panel.locator(".join-project").evaluate(
+        "(el, label) => { const was = el.textContent; el.textContent = label;"
+        " const w = [document.documentElement.scrollWidth, document.documentElement.clientWidth];"
+        " el.textContent = was; return w; }",
+        f"Joins into the project {long_slug} ({OWNER}/{long_slug})",
+    )
+    assert widths[0] <= widths[1], f"a 63-character project name widens the page at 390px: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator("#join-agent").select_option("")
+    page.locator("#join-handle").fill("e2e-mail-agent")
+    page.locator("#join-display").fill("E2E Mail Agent")
+    page.locator("#join-role").select_option("coder")
+    seen = len(catcher.mails)
+    create.click()
+    expect(question).to_contain_text("Confirm with a code by mail")
+    expect(panel.locator(".join-result")).to_have_count(0)
+    run.shot(page, "mail-factor-join-step-up")
+    run.a11y(page, "mail factor: Join an agent asks for the mailed code")
+    code = re.search(r"(\d{3} ?\d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    assert code, "no step-up code in the mail"
+    page.locator("#step-up-step_up_mail").fill(code.group(1))
+    question.get_by_role("button", name="Confirm", exact=True).click()
+    expect(page.locator(".paste-line")).to_be_visible()
+    expect(question).to_have_count(0)
+    expect(page.locator("article.seat", has_text="E2E Mail Agent").first).to_contain_text("coder")
+    expect(page.locator("article.seat", has_text="E2E Mail Cancelled")).to_have_count(0)
+    # The join's first refusal is what opens the question.
+    run.problems = [p for p in run.problems if "/joins answered 403" not in p]
+    no_problems(run, "mail factor: Join an agent with the mailed code")
+
+
 def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     """Mail for everyone (§2.8.7, §2.8.8) on a hub of its own: the owner verifies an address and
     turns it on in Admin → Sign-in, and the page signs in by the mail's link and by its code,
@@ -2097,10 +2457,15 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     run.base = f"http://127.0.0.1:{port}"
     run.step(f"mail factor hub on {run.base}: the admin verifies an address and turns it on")
     hub = start_hub(third, artifacts, port, extra, "hub-mail-factor.log")
-    older_context = None
+    older_context = joiner_context = None
     try:
         older_context, older = sign_in(run, browser)
         verify_address(run, older, catcher)
+        # A second session from before the switch, for the join: the export's step-up below
+        # must not have passed on it (the factor counts for 10 minutes on its session, §2.8.4).
+        joiner_context, joiner = sign_in(run, browser)
+        joiner.get_by_role("link", name="Create a project", exact=True).click()
+        create_project(run, joiner, "E2E Mail", "e2e-mail")
         # Before the switch the login page offers the link by mail.
         first, _ = password_sign_in(run, browser, offers_link=True)
         first.close()
@@ -2160,7 +2525,12 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         # The export's first refusal is what opens the question.
         run.problems = [p for p in run.problems if "/me/export answered 403" not in p]
         no_problems(run, "mail factor: the step-up")
+
+        run.step("mail factor: Join an agent asks for the mailed code in its form, then creates the join")
+        mail_factor_join(run, joiner, catcher)
     finally:
+        if joiner_context is not None:
+            joiner_context.close()
         if older_context is not None:
             older_context.close()
         stop_hub(hub)
@@ -2171,7 +2541,7 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
 def fixture_views(run: Run, browser) -> None:
     """Views whose richer states the hub here cannot reach, in fixture mode (file://):
     the Why view with the published maity.dev family, one part failing, the root unreadable."""
-    run.step("fixtures: the Why view as the published family shows it, and its failure states")
+    run.step("fixtures: the Why view mounts the Keep the Why views, and says when the export is unreadable")
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
     errors: list[str] = []
@@ -2179,32 +2549,629 @@ def fixture_views(run: Run, browser) -> None:
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     index = (WEB / "index.html").as_uri()
     try:
-        for query, name, says in (
-            ("", "why", "1 entry needs attention · 71 entries in 4 parts of the project"),
-            (
-                "?ktw=member_failed",
-                "why-part-failed",
-                "Could not be read: its state.json did not answer in time",
-            ),
-            ("?ktw=unavailable", "why-root-unreadable", "Shown is its last good read"),
-        ):
-            page.goto(f"{index}{query}#/maintainer/maity/why")
-            expect(page.locator("main section.view-why")).to_contain_text(says)
-            assert not errors, errors  # the page's own errors, before axe runs
-            run.shot(page, f"fixtures-{name}")
-            run.a11y(page, f"fixtures: {name}")
-            # axe reads stylesheets by XHR, which file:// refuses; that is axe's, not the page's.
-            errors.clear()
-        # The family at phone width: the summary, the entries, the table that scrolls.
+        # The library itself, loaded on the first visit (js/ktw-host.js): the overview, the graph
+        # on its canvas, a topic with its entries, all in mounts marked translate="no".
+        page.goto(f"{index}#/maintainer/maity/why")
+        main = page.locator("main .why-main.ktw-root")
+        expect(main).to_be_visible()
+        expect(main).to_have_attribute("translate", "no")
+        expect(main).not_to_be_empty()
+        assert page.evaluate("!!(window.KeepTheWhy && window.KeepTheWhy.views.pages)")
+        assert not errors, errors
+        run.shot(page, "fixtures-why")
+        run.a11y(page, "fixtures: why")
+        errors.clear()
+        page.goto(f"{index}#/maintainer/maity/why/graph")
+        expect(page.locator("main .why-main canvas")).to_have_count(1)
+        page.goto(f"{index}#/maintainer/maity/why/topic/api.md")
+        expect(page.locator("main .why-main")).to_contain_text("The API is versioned in the path")
+        assert not errors, errors
+        run.shot(page, "fixtures-why-topic")
+        errors.clear()
+        # The timeline's selected controls are the library's white on the accent, which Maity
+        # writes in its own text for the accent (css/app.css); axe checks them in both themes.
+        page.goto(f"{index}#/maintainer/maity/why/timeline")
+        expect(page.locator("main .why-main .ktw-stage-seg button.ktw-on").first).to_be_visible()
+        assert not errors, errors
+        run.shot(page, "fixtures-why-timeline")
+        run.a11y(page, "fixtures: why timeline")
+        errors.clear()
+        page.goto(f"{index}?ktw=unavailable#/maintainer/maity/why")
+        expect(page.locator("main")).to_contain_text("shown is its last good read")
+        expect(page.locator("main .why-main")).not_to_be_empty()
+        run.shot(page, "fixtures-why-last-good")
+        errors.clear()
+        # The view at phone width: nothing wider than the screen.
         page.set_viewport_size({"width": 390, "height": 844})
         page.goto(f"{index}#/maintainer/maity/why")
-        expect(page.locator("main section.view-why")).to_contain_text("1 entry needs attention")
+        expect(page.locator("main .why-main")).not_to_be_empty()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
         assert not errors, errors
         run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
+
+
+PATHS_TEAM = (
+    [{"id": "o", "kind": "human", "display_name": "oliver", "trust": "owner", "role": "manager"},
+     {"id": "w", "kind": "human", "display_name": "wolfgang", "trust": "member", "role": "manager"},
+     {"id": "l", "kind": "agent", "display_name": "lotse", "trust": "admin", "role": "manager", "reports_to": "o", "owner_id": "o",
+      "instances": [{"id": "a"}, {"id": "b"}]},
+     {"id": "rl", "kind": "agent", "display_name": "review-team-lead", "trust": "admin", "role": "manager", "reports_to": "o", "owner_id": "o"},
+     {"id": "mh", "kind": "agent", "display_name": "marketing-head", "trust": "member", "role": "manager", "reports_to": "o", "owner_id": "o"}]
+    + [{"id": f"c{i}", "kind": "agent", "display_name": f"maity-coder-claude-{i:03d}", "trust": "member", "role": "coder",
+        "reports_to": "l", "owner_id": "o"} for i in range(1, 14)]
+    + [{"id": k, "kind": "agent", "display_name": k, "trust": "member", "role": role, "reports_to": lead, "owner_id": "o"}
+       for k, role, lead in (("ops", "ops", "l"), ("test-team", "tester", "l"), ("grok", "reviewer", "rl"), ("chatgpt", "reviewer", "rl"),
+                             ("antigravity", "reviewer", "rl"), ("designer", "designer", "mh"), ("writer", "writer", "mh"),
+                             # a project's own role whose name is an inherited property of an object
+                             ("x-bridge", "constructor", "mh"))]
+)
+
+# The Paths face against the window: page width, boxes that overlap or leave the canvas, a name
+# wider than its box, the panel under the drawing, the phone's cards.
+PATHS_MEASURE = """() => {
+  const r = (el) => el.getBoundingClientRect();
+  const wide = document.querySelector('main .paths-wide');
+  const narrow = document.querySelector('main .paths-narrow');
+  const out = { page: [document.documentElement.scrollWidth, window.innerWidth], wideShown: !!(wide && wide.offsetParent),
+    narrowShown: !!(narrow && narrow.offsetParent), overlaps: [], outside: [], clipped: [], chipsOut: [], cardsOut: [],
+    reports: document.querySelectorAll('main .paths-lines path.paths-report').length,
+    nodes: document.querySelectorAll('main .paths-canvas .paths-node').length,
+    groups: document.querySelectorAll('main .paths-canvas .paths-group').length };
+  document.querySelectorAll('main .paths-chip').forEach((c) => { if (r(c).right > window.innerWidth + 0.5) out.chipsOut.push(c.textContent); });
+  if (out.wideShown) {
+    const canvas = r(document.querySelector('main .paths-canvas'));
+    const nodes = Array.from(document.querySelectorAll('main .paths-canvas .paths-node'));
+    nodes.forEach((n, i) => {
+      const a = r(n);
+      if (a.left < canvas.left - 0.5 || a.right > canvas.right + 0.5 || a.top < canvas.top - 0.5 || a.bottom > canvas.bottom + 0.5) out.outside.push(n.dataset.id);
+      nodes.slice(i + 1).forEach((m) => { const b = r(m);
+        if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) out.overlaps.push(n.dataset.id + '/' + m.dataset.id); });
+      // Every part meant to stay visible lies inside its box on all four sides (the box clips).
+      n.querySelectorAll('.paths-shape, .paths-count, .paths-name, .paths-sub, .paths-group-label, .paths-tiles').forEach((t) => {
+        const b = r(t);
+        if ((t.matches('.paths-name, .paths-sub, .paths-group-label') && t.scrollWidth > t.clientWidth + 1) || b.left < a.left - 0.5 || b.right > a.right + 0.5 || b.top < a.top - 0.5 || b.bottom > a.bottom + 0.5)
+          out.clipped.push(n.dataset.id + ':' + (t.className || '') + ':' + t.textContent); });
+    });
+    out.panelBelow = r(document.querySelector('main .paths-panel')).top >= r(document.querySelector('main .paths-scroll')).bottom - 0.5;
+    out.scrollFits = r(document.querySelector('main .paths-scroll')).right <= window.innerWidth + 0.5;
+  }
+  if (out.narrowShown) document.querySelectorAll('main .paths-card').forEach((c) => { if (r(c).right > window.innerWidth + 0.5 || r(c).left < -0.5) out.cardsOut.push(c.dataset.id); });
+  return out;
+}"""
+
+
+def paths_views(run: Run, browser) -> None:
+    """The Organisation tab's Paths face (tsk-j9ktmj7e4fxq) in fixture mode, every state the layout
+    has: 2560, 1280 and 390 px wide; with and without the sign-in banner; the fixture team and a
+    team shaped like Maity's (26 members, 13 coders under one lead, one role of its own) folded
+    and opened; the reporting lines on and off. Nothing overlaps, leaves the canvas or the window, no name is wider
+    than its box, and the panel stands under the drawing."""
+    run.step("fixtures: the Paths face fits at every width, with or without the banner, folded and opened")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for team in ("fixture", "maity"):
+                for banner in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en#/maintainer/maity/organisation")
+                    page.locator("main .org-faces").get_by_role("button", name="Paths", exact=True).click()
+                    if team == "maity":
+                        page.evaluate("""(members) => {
+                          const M = window.Maity; const c = { members, memberById: {}, link: (...p) => '/maintainer/maity/' + p.join('/'), nameOf: (id) => id };
+                          members.forEach((m) => { c.memberById[m.id] = m; });
+                          const box = document.querySelector('main .org-box'); while (box.firstChild) box.removeChild(box.firstChild);
+                          box.appendChild(M.paths.draw(c, { chip: null, selected: null, open: new Set(), lines: true }));
+                        }""", PATHS_TEAM)
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                    page.locator("main .paths-chips").get_by_role("button", name="Card assigned", exact=True).click()
+                    states = [("folded", None)]
+                    if team == "maity" and width > 700:
+                        states.append(("opened", "main .paths-canvas .paths-group"))
+                    for state, opener in states:
+                        if opener:
+                            page.locator(opener).click()
+                        for lines in (True, False):
+                            if not lines:
+                                page.locator("main .paths-chips").get_by_role("button", name="Reporting lines", exact=True).click()
+                            m = page.evaluate(PATHS_MEASURE)
+                            where = f"{team} team, {state}, lines {'on' if lines else 'off'}, at {width}x{height}" + (" with the banner" if banner else "")
+                            assert not errors, f"{where}: {errors}"
+                            assert m["page"][0] <= m["page"][1], f"{where}: the page is {m['page'][0]} px wide"
+                            assert not m["chipsOut"], f"{where}: chips past the window {m['chipsOut']}"
+                            if width > 700:
+                                assert m["wideShown"] and not m["narrowShown"], f"{where}: the drawing is not the face shown"
+                                assert not m["overlaps"], f"{where}: boxes overlap {m['overlaps']}"
+                                assert not m["outside"], f"{where}: boxes leave the canvas {m['outside']}"
+                                assert not m["clipped"], f"{where}: parts outside their box or text wider than it {m['clipped']}"
+                                assert m["panelBelow"] and m["scrollFits"], f"{where}: the panel is not under the drawing, or the drawing's frame leaves the window"
+                                assert (m["reports"] > 0) == lines, f"{where}: {m['reports']} reporting lines drawn"
+                                if team == "maity":
+                                    assert (m["groups"], m["nodes"]) == ((1, 14) if state == "folded" else (0, 26)), f"{where}: {m['groups']} boxes, {m['nodes']} in all"
+                            else:
+                                assert m["narrowShown"] and not m["wideShown"], f"{where}: the list is not the face shown"
+                                assert not m["cardsOut"], f"{where}: cards past the window {m['cardsOut']}"
+                            if not lines:
+                                page.locator("main .paths-chips").get_by_role("button", name="Reporting lines", exact=True).click()
+                    run.shot(page, f"fixtures-paths-{team}-{width}" + ("-banner" if banner else ""))
+            if width == 1280:
+                run.a11y(page, "fixtures: organisation paths")
+            page.goto(f"{index}?lang=en#/maintainer/maity/organisation")
+            page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
+        finally:
+            context.close()
+
+
+CHAT_MEASURE = """() => {
+  const box = (sel) => { const el = document.querySelector(sel); if (!el) return null;
+    const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, height: b.height }; };
+  return { overflow: document.scrollingElement.scrollHeight - window.innerHeight,
+    history: box('.chat-layout.open .chat-pane .messages'), compose: box('.chat-layout.open .chat-pane .compose'),
+    footer: box('#product-line'), errors: window.__errors.slice() };
+}"""
+
+
+def chat_height_views(run: Run, browser) -> None:
+    """The open chat against the window (tsk-j10w2hsm1h90), in fixture mode: on a project's Chat
+    tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and after the pane
+    grew or shrank inside (the composer folded, shown, three times its rows, a group's Manage opened). Without the sign-in banner the
+    page ends at the window's bottom edge; with it (a phone has no room then) the page scrolls, but
+    the history keeps some height and the composer never runs under the product line. A
+    ResizeObserver loop is reported on window only, so a collector there counts it as an error."""
+    run.step("fixtures: the open chat ends at the window's bottom edge, the composer above the product line")
+    index = (WEB / "index.html").as_uri()
+    # 375 x 667 is too small for a composer and 60 px of history: there the page scrolls, never overlaps.
+    for width, height, fits in ((1280, 800, True), (390, 844, True), (375, 667, False)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        context.add_init_script(
+            "window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));"
+        )
+        # The elements the chat's fitting observer (the one on the body) watches, connected or not.
+        context.add_init_script("""(() => { const R = window.ResizeObserver; if (!R) return; const all = [];
+          window.ResizeObserver = class extends R {
+            constructor(cb) { super(cb); this.__t = new Set(); all.push(this); }
+            observe(t, o) { this.__t.add(t); super.observe(t, o); }
+            unobserve(t) { this.__t.delete(t); super.unobserve(t); }
+            disconnect() { this.__t.clear(); super.disconnect(); } };
+          window.__fitTargets = () => all.filter((o) => o.__t.has(document.body))
+            .map((o) => ({ all: o.__t.size, gone: Array.from(o.__t).filter((t) => !t.isConnected).length })); })();""")
+        page = context.new_page()
+        errors: list[str] = []
+        # Page errors only: on file:// Chromium refuses the pictures the page loads (CORS) and says so on the console.
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for route in (
+                "#/maintainer/maity/chat/agt-a",
+                "#/maintainer/maity/chat/cnv-0007",
+                "#/chats/maintainer/maity/agt-a",
+                "#/chats/maintainer/maity/cnv-0007",
+            ):
+                for banner in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en{route}")
+                    page.locator(".chat-layout.open .chat-pane .compose").wait_for()
+                    page.wait_for_timeout(800)
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        page.wait_for_timeout(300)
+                    m = page.evaluate(CHAT_MEASURE)
+                    where = f"{route} at {width}x{height}" + (" with the sign-in banner" if banner else "")
+                    assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
+                    assert m["history"]["height"] >= 56, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
+                        f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
+                    )
+                    if fits and not banner:
+                        assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
+                    toggle = page.locator(".chat-layout.open .chat-pane .compose-toggle")
+                    if toggle.is_visible():
+                        # Folding the composer changes the pane's fixed part, not the body: measured again.
+                        toggle.click()
+                        page.wait_for_timeout(300)
+                        folded = page.evaluate(CHAT_MEASURE)
+                        toggle.click()  # kept by the browser for every chat: open again for the next case
+                        page.wait_for_timeout(300)
+                        assert folded["overflow"] <= max(1, m["overflow"] - 100), (
+                            f"{where}, composer folded: the page scrolls {folded['overflow']} px past the window"
+                        )
+                        unfolded = page.evaluate(CHAT_MEASURE)
+                        assert unfolded["history"]["height"] >= 56 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
+                            f"{where}, composer folded and shown again: {unfolded}"
+                        )
+                    # What grows inside the pane after it was fitted: the composer three times its
+                    # rows (a wide screen), a group's "Manage or leave" opened.
+                    grown = []
+                    three = page.locator(".chat-layout.open .chat-pane .compose-size button[data-size='3']")
+                    if three.is_visible():
+                        three.click()
+                        grown.append(("composer 3x", lambda: page.locator(".chat-layout.open .chat-pane .compose-size button[data-size='1']").click()))
+                    manage = page.locator(".chat-layout.open .chat-pane details.group-manage > summary")
+                    if manage.count() and manage.first.is_visible():
+                        manage.first.click()
+                        grown.append(("Manage or leave opened", lambda: manage.first.click()))
+                    if grown:
+                        page.wait_for_timeout(300)
+                        g = page.evaluate(CHAT_MEASURE)
+                        for _, undo in grown:
+                            undo()
+                        page.wait_for_timeout(300)
+                        back = page.evaluate(CHAT_MEASURE)
+                        what = ", ".join(n for n, _ in grown)
+                        assert g["history"]["height"] >= 56 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
+                        # And back: the pane shrinks again by itself, as a fresh fit (a window resize) would size it.
+                        page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+                        page.wait_for_timeout(300)
+                        fresh = page.evaluate(CHAT_MEASURE)
+                        assert abs(back["overflow"] - fresh["overflow"]) <= 1, (
+                            f"{where}, {what} undone: the page scrolls {back['overflow']} px, a fresh fit {fresh['overflow']}"
+                        )
+            # On Chats a group chat takes the place of a direct one in the same layout.
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/chats/maintainer/maity/agt-a")
+            page.locator(".chat-layout.open .chat-pane .compose").wait_for()
+            page.wait_for_timeout(500)
+            page.evaluate("() => { location.hash = '#/chats/maintainer/maity/cnv-0007'; }")
+            page.locator(".chat-layout.open .chat-pane.group-chat .compose").wait_for()
+            page.wait_for_timeout(800)
+            m = page.evaluate(CHAT_MEASURE)
+            where = f"Chats with the sign-in banner, agt-a then cnv-0007, at {width}x{height}"
+            assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
+            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+            page.wait_for_timeout(300)
+            fresh = page.evaluate(CHAT_MEASURE)
+            assert abs(m["overflow"] - fresh["overflow"]) <= 1, f"{where}: the page scrolls {m['overflow']} px, a fresh fit {fresh['overflow']}"
+            # Switching back and forth: the observer watches the current pane's parts, not every pane's.
+            for chat in ("agt-a", "cnv-0007") * 5:
+                page.evaluate(f"() => {{ location.hash = '#/chats/maintainer/maity/{chat}'; }}")
+                page.wait_for_timeout(250)
+            page.wait_for_timeout(500)
+            targets = page.evaluate("() => window.__fitTargets()")
+            assert len(targets) == 1 and targets[0]["gone"] == 0 and targets[0]["all"] <= 16, f"{where}, ten switches: {targets}"
+            run.shot(page, f"fixtures-chat-{width}")
+        finally:
+            context.close()
+
+
+# Every element in the lines of `selector` (the Current sessions box, the bell's pinned block):
+# inside its line and the window, no two parts of a line over each other, and every link and
+# button a 24 px target, or one whose 24 px circle meets no other target (WCAG 2.5.8); a badge
+# 2 px at least from the text beside it.
+LINES_MEASURE = """(selector) => {
+  const problems = [], vw = document.documentElement.clientWidth, eps = 0.5;
+  const name = (el) => el.tagName.toLowerCase() + (el.className ? "." + String(el.className).trim().split(/\\s+/).join(".") : "")
+    + " '" + (el.textContent || "").trim().slice(0, 40) + "'";
+  if (document.documentElement.scrollWidth > window.innerWidth) problems.push("the page is " + document.documentElement.scrollWidth + " px wide");
+  const boxes = Array.from(document.querySelectorAll(selector));
+  if (!boxes.length) problems.push("no " + selector);
+  const targets = [];
+  for (const box of boxes) {
+    const b = box.getBoundingClientRect();
+    if (b.left < -eps || b.right > vw + eps) problems.push(name(box) + " leaves the window: " + b.left + ".." + b.right);
+    for (const el of box.querySelectorAll("*")) {
+      for (const r of el.getClientRects()) {
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.left < b.left - eps || r.right > b.right + eps) problems.push(name(el) + " runs out of " + name(box));
+      }
+      if (el.matches("a[href], button")) targets.push(el);
+    }
+    for (const li of box.querySelectorAll("li")) {
+      const l = li.getBoundingClientRect();
+      const parts = Array.from(li.children).map((el) => [el, Array.from(el.getClientRects())]);
+      for (const [el, rects] of parts) for (const r of rects)
+        if (r.left < l.left - eps || r.right > l.right + eps || r.top < l.top - eps || r.bottom > l.bottom + eps) problems.push(name(el) + " runs out of its line");
+      for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++)
+        for (const p of parts[i][1]) for (const q of parts[j][1]) {
+          const w = Math.min(p.right, q.right) - Math.max(p.left, q.left), h = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+          if (w > eps && h > eps) problems.push(name(parts[i][0]) + " and " + name(parts[j][0]) + " overlap");
+          // A badge's pill never touches the text beside it on its line: 2 px at least.
+          else if (h > eps && w > -2 && (parts[i][0].matches(".badge") || parts[j][0].matches(".badge")))
+            problems.push(name(parts[i][0]) + " and " + name(parts[j][0]) + " touch");
+        }
+    }
+  }
+  const rects = targets.map((el) => [el, el.getBoundingClientRect()]);
+  const centre = (r) => [(r.left + r.right) / 2, (r.top + r.bottom) / 2];
+  for (const [el, r] of rects) {
+    if (r.width >= 24 && r.height >= 24) continue;
+    const [x, y] = centre(r);
+    for (const [other, s] of rects) {
+      if (other === el) continue;
+      const small = s.width < 24 || s.height < 24;
+      const [ox, oy] = centre(s);
+      const dx = Math.max(s.left - x, 0, x - s.right), dy = Math.max(s.top - y, 0, y - s.bottom);
+      const near = small ? Math.hypot(ox - x, oy - y) < 24 - eps : Math.hypot(dx, dy) < 12 - eps;
+      if (near) problems.push(name(el) + " is " + Math.round(r.width) + "x" + Math.round(r.height) + " px and too close to " + name(other));
+    }
+  }
+  return { problems, shown: boxes.map((box) => box.querySelectorAll("li").length) };
+}"""
+
+# The fixtures the page reads (fixtures/fixtures.js sets window.MAITY_FIXTURES), changed before
+# any script reads them: the active sessions kept (all, or the tab's own alone, or seven more),
+# and unread security alerts added for the bell's pinned block.
+SESSIONS_FIXTURE = """(() => { let f; Object.defineProperty(window, "MAITY_FIXTURES", { configurable: true,
+  get() { return f; },
+  set(v) { f = v; const want = %s; const s = f["sessions.json"];
+    if (want.sessions === "one") s.items = s.items.filter((x) => x.id === s.current || x.ended_at);
+    if (want.sessions === "many") for (let i = 0; i < 7; i++) s.items.push(Object.assign({}, s.items[1], { id: "hss-e2e" + i,
+      created_at: "2026-10-2" + i + "T09:00:00Z", browser: i %% 2 ? "Firefox Developer Edition" : "Chrome", os: "Windows 11 Pro for Workstations",
+      good_standing: i !== 3 }));
+    if (want.alerts) f["notifications.json"].items.unshift(
+      { id: "ntf-acr-e2e1", record: "acr-e2e1", kind: "security", at: "2026-10-22T13:30:00Z", project: null, actor: null,
+        title: "Your sign-in address was changed to a.very.long.address.for.this.test@example.org", target: { type: "settings", id: "notifications" },
+        url: null, read: false, redacted: false, open_matter: false },
+      { id: "ntf-acr-e2e2", record: "acr-e2e2", kind: "security", at: "2026-10-22T13:25:00Z", project: null, actor: null,
+        title: "Your address was changed", target: { type: "settings", id: "notifications" },
+        url: null, read: false, redacted: false, open_matter: false });
+  } }); })();"""
+
+
+def notification_sessions_layout(run: Run, browser) -> None:
+    """The Notifications page's Current sessions box and the bell's pinned block (tsk-0baaez2895sb),
+    in fixture mode, at 1280 x 900 and 390 x 844: the box with the tab's own session alone, with the
+    fixtures' three active ones (the mail sign-in banner on, and removed) and with ten (five shown,
+    the rest counted; long browser and system names); the bell opened and closed again, with two
+    unread security alerts pinned (one with a long title) and with none. Every element of the box's
+    lines and of the pinned rows is measured (LINES_MEASURE), the page never wider than the window,
+    the banner never over the box. The page folds nothing else here: the bell's panel is its one
+    fold."""
+    run.step("fixtures: Current sessions and the bell's pinned block at 1280 and 390 px, banner on and off")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844)):
+        for sessions, alerts in (("one", False), ("all", True), ("many", True), ("many", False)):
+            context = browser.new_context(viewport={"width": width, "height": height})
+            context.add_init_script(SESSIONS_FIXTURE % json.dumps({"sessions": sessions, "alerts": alerts}))
+            page = context.new_page()
+            errors: list[str] = []
+            # Page errors only: on file:// Chromium refuses the pictures the page loads (CORS) and says so on the console.
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                page.goto(f"{index}?lang=en#/notifications")
+                box = page.locator("main section.current-sessions")
+                expect(box.locator("li").first).to_be_visible()
+                rows = {"one": 1, "all": 3, "many": 6}[sessions]
+                expect(box.locator("li")).to_have_count(rows)
+                banner = page.locator("main .signin-banner")
+                for with_banner in (True, False) if sessions != "one" else (False,):
+                    where = f"{sessions} session(s), alerts {alerts}, at {width}x{height}" + (" with the sign-in banner" if with_banner else "")
+                    if with_banner:
+                        expect(banner).to_be_visible()
+                        b, s = banner.bounding_box(), box.bounding_box()
+                        assert b and s and b["y"] + b["height"] <= s["y"] + 0.5, f"{where}: the banner {b} runs over the box {s}"
+                    else:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        expect(banner).to_have_count(0)
+                    m = page.evaluate(LINES_MEASURE, "main section.current-sessions")
+                    assert not m["problems"] and not errors, f"{where}, the box: {m['problems'] + errors}"
+                    # The link to Sessions stands alone on its line, so the spacing rule alone would pass a
+                    # 19 px link: the box keeps it a full 24 px target (WCAG 2.5.8's size, not its exception).
+                    link = box.locator(".hint a").bounding_box()
+                    assert link and link["height"] >= 23.5, f"{where}: the link to Sessions is {link} high, under 24 px"
+                    run.shot(page, f"fixtures-current-sessions-{sessions}-{width}" + ("-banner" if with_banner else ""))
+                    bell = page.locator("#header button.bell")
+                    bell.click()
+                    expect(bell).to_have_attribute("aria-expanded", "true")
+                    pinned = page.locator("#bell-panel .bell-pinned li")
+                    if alerts:
+                        expect(pinned).to_have_count(2)
+                        expect(pinned.first.locator("button")).to_have_text("Mark read")
+                        m = page.evaluate(LINES_MEASURE, "#bell-panel .bell-pinned")
+                        assert not m["problems"] and not errors, f"{where}, the pinned block: {m['problems'] + errors}"
+                    else:
+                        expect(page.locator("#bell-panel .bell-pinned")).to_have_count(0)
+                    m = page.evaluate(LINES_MEASURE, "#bell-panel")
+                    assert not m["problems"] and not errors, f"{where}, the bell: {m['problems'] + errors}"
+                    run.shot(page, f"fixtures-bell-pinned-{sessions}-{width}" + ("-banner" if with_banner else ""))
+                    # Folded again (Escape: at 390 px the open panel covers the bell), the box measured the same.
+                    page.keyboard.press("Escape")
+                    expect(bell).to_have_attribute("aria-expanded", "false")
+                    m = page.evaluate(LINES_MEASURE, "main section.current-sessions")
+                    assert not m["problems"] and not errors, f"{where}, the bell folded again: {m['problems'] + errors}"
+                if sessions == "many" and alerts and width == 1280:
+                    run.a11y(page, "fixtures: notifications with current sessions")
+            finally:
+                context.close()
+
+
+# The account's tab rows (tsk-3banvfzv3nvs): each row inside the window and on one line, every tab a
+# 24 px target with its text inside it, no two tabs over each other, the current one in sight in
+# its row, the fade on a row that scrolls and on no other, the heading above the row, the row
+# above the tab's first part, and the sign-in banner, if shown, above all of it.
+TABS_MEASURE = """() => {
+  const problems = [], eps = 0.5, vw = document.documentElement.clientWidth;
+  const name = (el) => el.tagName.toLowerCase() + "." + String(el.className).trim().split(/\\s+/).join(".") + " '" + el.textContent.trim().slice(0, 30) + "'";
+  if (document.documentElement.scrollWidth > window.innerWidth) problems.push("the page is " + document.documentElement.scrollWidth + " px wide");
+  const rows = Array.from(document.querySelectorAll("main nav.account-tabs"));
+  if (!rows.length) problems.push("no tab row");
+  const heading = rows.length && rows[0].previousElementSibling && rows[0].previousElementSibling.matches("h2") ? rows[0].previousElementSibling : null;
+  const banner = document.querySelector("main .signin-banner");
+  let above = heading ? heading.getBoundingClientRect().bottom : null;
+  if (!heading) problems.push("no heading");
+  if (banner && heading && banner.getBoundingClientRect().bottom > heading.getBoundingClientRect().top + eps) problems.push("the banner runs over the heading");
+  for (const nav of rows) {
+    const n = nav.getBoundingClientRect();
+    if (n.left < -eps || n.right > vw + eps) problems.push(name(nav) + " leaves the window: " + n.left + ".." + n.right);
+    if (above !== null && n.top < above - eps) problems.push(name(nav) + " starts above what stands before it");
+    above = n.bottom;
+    const tabs = Array.from(nav.children);
+    const tops = new Set(tabs.map((t) => Math.round(t.getBoundingClientRect().top + nav.scrollTop)));
+    if (tops.size > 1) problems.push(name(nav) + " wraps onto " + tops.size + " lines");
+    for (const t of tabs) {
+      const r = t.getBoundingClientRect();
+      if (r.height < 24 - eps || r.width < 24 - eps) problems.push(name(t) + " is " + Math.round(r.width) + "x" + Math.round(r.height));
+      if (t.scrollWidth > t.clientWidth + 1) problems.push(name(t) + "'s text is wider than the tab");
+    }
+    for (let i = 0; i + 1 < tabs.length; i++) {
+      const a = tabs[i].getBoundingClientRect(), b = tabs[i + 1].getBoundingClientRect();
+      if (b.left < a.right - eps) problems.push(name(tabs[i]) + " and " + name(tabs[i + 1]) + " overlap");
+    }
+    const cur = nav.querySelector('[aria-current="page"]');
+    if (!cur) problems.push(name(nav) + " marks no tab");
+    else {
+      const c = cur.getBoundingClientRect();
+      if (c.left < n.left - eps || c.right > n.right + eps) problems.push(name(cur) + " is out of sight in its row");
+    }
+    const scrolls = nav.scrollWidth > nav.clientWidth + 1;
+    const faded = nav.classList.contains("more-after") || nav.classList.contains("more-before");
+    if (scrolls !== faded) problems.push(name(nav) + (scrolls ? " scrolls without the fade" : " fades without scrolling"));
+  }
+  const last = rows[rows.length - 1];
+  const next = last && last.nextElementSibling;
+  if (next && next.getBoundingClientRect().top < last.getBoundingClientRect().bottom - eps) problems.push(name(next) + " runs over the tab row");
+  return { problems, scrollY: window.scrollY,
+    tabs: rows.map((nav) => Array.from(nav.children).map((t) => (t.getAttribute("aria-current") ? "*" : "") + t.textContent.trim())) };
+}"""
+
+ACCOUNT_TABS = (
+    ("/account", "Profile", None, "Your picture"),
+    ("/account/settings", "Settings", None, "Theme"),
+    ("/account/notifications", "Notifications", None, "When mail goes out"),
+    ("/account/security", "Security", "Sign-in", "Change password"),
+    ("/account/security/sessions", "Security", "Sessions", "Sessions"),
+    ("/account/security/device", "Security", "Another device", "Sign in another device"),
+    ("/account/security/forge", "Security", "Forge access", "Forge access"),
+    ("/account/security/data", "Security", "Your data", "Your data"),
+    ("/account/orgs", "Organisations", None, "Organisations"),
+    # The setup's return (§11.4, §16.11): Forge access at its own address, no redirect.
+    ("/settings/forge", "Security", "Forge access", "Forge access"),
+)
+# The addresses before the tabs (the menu's, the hub's mails and redirects, §11.4): where each
+# leads, in place of it in the history, and the heading focused there; None, none.
+ACCOUNT_MOVED = (
+    ("/account/picture", "/account", "Your picture"),
+    ("/account/preferences", "/account/settings", "Your preferences"),
+    ("/account/theme", "/account/settings", "Theme"),
+    ("/account/password", "/account/security", "Change password"),
+    ("/account/sessions", "/account/security/sessions", "Sessions"),
+    ("/account/sign-in-device", "/account/security/device", "Sign in another device"),
+    ("/account/forge", "/account/security/forge", "Forge access"),
+    ("/account/data", "/account/security/data", "Your data"),
+    ("/account/unknown", "/account", None),
+    ("/account/security/unknown", "/account/security", None),
+)
+
+
+def account_tabs_layout(run: Run, browser) -> None:
+    """The account's tabs (tsk-3banvfzv3nvs) in fixture mode, every state the layout has: each tab
+    and each of Security's own at 2560, 1280 and 390 px, with the sign-in banner and without
+    (TABS_MEASURE on every row and tab); switching by a click (the address, the marked tab, the
+    page's top, the history); the profile menu, folded and opened, naming the tabs; and every
+    address before the tabs leading to its tab, its heading focused, in place of it in the history."""
+    run.step("fixtures: the account's tabs at 2560, 1280 and 390 px, banner on and off, switched, the old addresses led on")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for path, tab, sub, part in ACCOUNT_TABS:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#{path}")
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                expect(page.locator("main .signin-banner")).to_be_visible()
+                if path == "/account/security":
+                    # The hub's mail and bell item about the second factor lead here: it comes first.
+                    expect(page.locator("main h3").first).to_have_text("Two-factor sign-in")
+                for banner in (True, False):
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                    where = f"{path} at {width}x{height}" + (" with the banner" if banner else "")
+                    m = page.evaluate(TABS_MEASURE)
+                    assert not m["problems"] and not errors, f"{where}: {m['problems'] + errors}"
+                    want = [t if t != tab else "*" + t for t in ("Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts")]
+                    assert m["tabs"][0] == want, f"{where}: the tabs are {m['tabs'][0]}"
+                    if sub:
+                        assert "*" + sub in m["tabs"][1] and len(m["tabs"]) == 2, f"{where}: Security's tabs are {m['tabs'][1:]}"
+                    else:
+                        assert len(m["tabs"]) == 1, f"{where}: {len(m['tabs'])} tab rows"
+                    run.shot(page, "fixtures-account-tabs" + path.replace("/", "-") + f"-{width}" + ("-banner" if banner else ""))
+                # The focus ring of a tab whole, inside its row, which clips what stands outside it.
+                page.locator("main nav.account-tabs a.view-tab").first.focus()
+                ring = page.evaluate("""() => { const a = document.activeElement, nav = a.closest('nav');
+                  const cs = getComputedStyle(a), out = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
+                  const r = a.getBoundingClientRect(), n = nav.getBoundingClientRect();
+                  return { style: cs.outlineStyle, top: r.top - out - n.top, bottom: n.top + nav.clientHeight - (r.bottom + out) }; }""")
+                assert ring["style"] != "none" and ring["top"] >= -0.5 and ring["bottom"] >= -0.5, f"{path} at {width}: the focus ring is cut by its row {ring}"
+                if width == 1280 and path in ("/account", "/account/security/sessions"):
+                    run.a11y(page, f"fixtures: account {path}")
+            # Switching: from far down a tab, a click on another shows it from its top, a new entry in the history.
+            page.goto(f"{index}?lang=en#/account/settings")
+            expect(page.locator("main h3", has_text="Theme")).to_be_visible()
+            page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            row = page.locator("main nav.account-tabs").first
+            for path, tab, sub, part in ACCOUNT_TABS:
+                if path == "/settings/forge":
+                    continue  # reached from the hub, not by a tab
+                if sub not in (None, "Sign-in"):
+                    page.locator("main nav.security-tabs").get_by_role("link", name=sub, exact=True).click()
+                else:
+                    row.get_by_role("link", name=tab, exact=True).click()
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                assert page.url.endswith("#" + path), f"switched to {tab}/{sub} at {width}: {page.url}"
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors and m["scrollY"] == 0, f"switched to {path} at {width}: {m['problems'] + errors}, scrollY {m['scrollY']}"
+                page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            page.go_back()
+            expect(page.locator("main h3", has_text="Your data")).to_be_visible()
+            assert page.url.endswith("#/account/security/data"), f"back at {width}: {page.url}"
+            # The profile menu, folded and opened: the tabs, Linked accounts to come, then Sign out.
+            menu = page.locator("#header .profile-menu")
+            menu.click()
+            items = page.locator("#header ul.menu:visible .menu-item")
+            expect(items).to_have_text(["Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts · later", "Sign out"])
+            m = page.evaluate(LINES_MEASURE, "#header ul.menu:not([hidden])")
+            assert not m["problems"] and not errors, f"the profile menu at {width}: {m['problems'] + errors}"
+            run.shot(page, f"fixtures-account-menu-{width}")
+            items.nth(2).click()
+            expect(page.locator("main h3", has_text="When mail goes out")).to_be_visible()
+            m = page.evaluate(TABS_MEASURE)
+            assert not m["problems"] and "*Notifications" in m["tabs"][0], f"the menu's Notifications at {width}: {m}"
+            # Answers that take time, as a hub's do (the fixtures answer at once): the view is put in
+            # the page only once its parts are read, so the rows are measured, the current tab
+            # brought into sight and a heading focused after that, not before (review of #1409).
+            page.goto(f"{index}?lang=en#/all")
+            page.evaluate("""() => { const api = window.Maity.api;
+              for (const name of ["get", "post"]) { const call = api[name];
+                api[name] = (...a) => new Promise((ok) => window.setTimeout(ok, 150)).then(() => call.apply(api, a)); } }""")
+            for path, tab, sub, part in ACCOUNT_TABS:
+                page.evaluate("(p) => { location.hash = '#' + p; }", path)
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors, f"{path} at {width}, slow answers: {m['problems'] + errors}"
+            for old, new, focused in ACCOUNT_MOVED:
+                page.evaluate("() => { location.hash = '#/all'; }")
+                expect(page.locator("main nav.account-tabs")).to_have_count(0)
+                page.evaluate("(p) => { location.hash = '#' + p; }", old)
+                page.wait_for_function("(p) => location.hash === '#' + p", arg=new)
+                expect(page.locator("main nav.account-tabs").first).to_be_visible()
+                if focused:
+                    expect(page.locator("main h3:focus")).to_have_text(focused)
+                # In place of the old address in the history: Back leads to the page before it.
+                page.go_back()
+                page.wait_for_function("() => location.hash === '#/all'")
+            # The addresses before the tabs.
+            for old, new, focused in ACCOUNT_MOVED:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#{old}")
+                page.wait_for_function("(p) => location.hash === '#' + p", arg=new)
+                expect(page.locator("main nav.account-tabs").first).to_be_visible()
+                if focused:
+                    expect(page.locator("main h3:focus")).to_have_text(focused)
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors, f"{old} at {width}: {m['problems'] + errors}"
+                page.go_back()
+                page.wait_for_function("() => location.href === 'about:blank'")
+        finally:
+            context.close()
 
 
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
@@ -2895,7 +3862,7 @@ def notifications_step(run: Run, page: Page) -> None:
         run.a11y(page, "all projects, " + name)
     # These projects have no Keep the Why export: the hub says so with a 409, and the page says it too.
     expect(page.locator("main section.view-all-why")).to_contain_text("publishes no Keep the Why export")
-    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     page.locator("header nav.views a").nth(0).click()
     expect(page).to_have_url(re.compile(r"/all$"))
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
@@ -2927,7 +3894,7 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     )
     expect(page.locator("main")).to_contain_text("It needs a repository first")
     # The hub's 409 ktw_not_configured is the expected answer here.
-    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
     run.shot(page, "why-not-configured")
     run.a11y(page, "why, not configured")
     no_problems(run, "why")
@@ -3548,6 +4515,103 @@ def landing_variants_step(run: Run, page: Page) -> None:
     no_problems(run, "landing variants")
 
 
+def start_page_step(run: Run, page: Page) -> None:
+    """The way to `/` from the sign-in page leaves the dashboard (docs/api.md §16.7, tsk-fmdn6vb2zs19):
+    the hub, not the dashboard, decides per request what `/` shows, so the frame's logo, a section link
+    and the app's own logo are page loads. Only a served page shows it: fixture mode has no click
+    handler. Wide and light, narrow and dark."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("start page: from the sign-in page the logo and a section link open the landing page")
+    page.goto(f"{run.base}/admin/pages/landing")
+    io = page.locator("details.lp-json")
+    io.locator("summary").click()
+    landing = json.loads((WEB / "tools" / "site-fixture.json").read_text(encoding="utf-8"))["landing"]
+    body = {**landing, "enabled": True, "footer": {**landing["footer"], "operator": "Example operator"}}
+    page.locator("#lp-json").fill(json.dumps(body))
+    page.once("dialog", lambda d: d.accept())
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    section = page.locator("#admin-landing-page")
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    form = page.locator("form.lp-form")
+    form.get_by_role("button", name="Save the landing page", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+    assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is True
+
+    def on_landing(seen: Page, where: str) -> None:
+        # The hub's landing page: its own HTML, no dashboard and no sign-in form in it.
+        expect(seen.locator("main#main")).to_have_count(0)
+        expect(seen.locator("#login-handle")).to_have_count(0)
+        expect(seen.locator("main .hero, main section").first).to_be_visible()
+        assert not seen.evaluate("!!(window.Maity && window.Maity.route)"), f"{where}: the dashboard is still loaded"
+
+    try:
+        for width, height, scheme in ((1280, 800, "light"), (390, 844, "dark")):
+            visitor = page.context.browser.new_context(
+                viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme
+            )
+            seen = visitor.new_page()
+            seen.goto(f"{run.base}/login")
+            frame = seen.locator("header.site-header")
+            expect(frame).to_be_visible()
+            frame.locator("a.brand").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the frame's logo at {width} px {scheme}")
+            run.shot(seen, f"start-page-{width}-{scheme}")
+
+            # A section link (`/?lang=en#sN`): the header's where it shows, else the footer's platform column.
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("header.site-header")).to_be_visible()
+            links = seen.locator("header.site-header a[href*='#s'], footer.site-footer a[href*='#s']")
+            shown = links.evaluate_all("(all) => all.findIndex((a) => a.offsetParent !== null)")
+            assert shown >= 0, f"no section link shows at {width} px"
+            nav = links.nth(shown)
+            href = nav.get_attribute("href")
+            assert href and href.startswith("/?lang=") and "#s" in href, href
+            nav.click()
+            expect(seen).to_have_url(f"{run.base}{href}")
+            on_landing(seen, f"a section link at {width} px {scheme}")
+            expect(seen.locator(f"#{href.split('#', 1)[1]}")).to_be_attached()
+
+            # Without the frame (its read failed), the app's own logo leads to the same start page.
+            seen.route("**/api/v1/site/chrome**", lambda r: r.abort())
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("#login-handle")).to_be_visible()
+            expect(seen.locator("header.site-header")).to_have_count(0)
+            seen.locator("#header a.brand-home").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the app's logo at {width} px {scheme}")
+            visitor.close()
+
+        # Signing out leaves for the start page too: a page load, so the landing page, not the
+        # dashboard's sign-in form under `/`. A second session of the owner's, this one stays.
+        leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
+        out = leaving.new_page()
+        out.goto(f"{run.base}/login")
+        out.locator("#login-handle").fill(OWNER)
+        out.locator("#login-password").fill(OWNER_PASSWORD)
+        out.get_by_role("button", name="Sign in", exact=True).click()
+        expect(out.locator("header .me")).to_contain_text("Owner")
+        out.goto(f"{run.base}/all")
+        out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+        out.get_by_role("menuitem", name="Sign out", exact=True).click()
+        expect(out).to_have_url(f"{run.base}/")
+        on_landing(out, "after signing out")
+        run.shot(out, "start-page-signed-out")
+        leaving.close()
+    finally:
+        # Off again: a landing page that is on would greet the signed-out steps after this one.
+        page.goto(f"{run.base}/admin/pages/landing")
+        enabled = page.locator("#lp-enabled")
+        if enabled.is_checked():
+            enabled.uncheck()
+        form.get_by_role("button", name="Save the landing page", exact=True).click()
+        expect(section.locator(".send-status").first).to_contain_text("Saved.")
+        assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is False
+    no_problems(run, "start page")
+
+
 def auth_pages_step(run: Run, page: Page) -> None:
     """Instance administration → Pages → Sign up (docs/api.md §16.7.4): the admin writes a pitch, the
     hub stores it, and a visitor's call gets exactly that language's keys."""
@@ -3619,7 +4683,8 @@ def legal_json_step(run: Run, page: Page) -> None:
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
-    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    opens it from the request in the all-projects inbox, reads the report and its snapshot as
+    text, and resolves it with hide and a note, which withdraws the request."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     if not me.get("instance_admin"):
         return
@@ -3632,11 +4697,20 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
         {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
     )
     assert filed.get("id"), filed
-    # The admin is told (§16.8), and the item names the report the bell links to (§18.2).
-    told = page.request.get(f"{run.base}/api/v1/me/notifications?limit=20").json()["items"]
-    assert any((i.get("target") or {}) == {"type": "report", "id": filed["id"]} for i in told), told
-    # Where the report_open notification leads (§18.2): the section, that report opened.
-    page.goto(f"{run.base}/admin/reports/{filed['id']}")
+    # The admin is told by a personal request without a project (§16.8, §7), in the
+    # all-projects inbox: no answer, no withdrawal, only Open report.
+    mine = page.request.get(f"{run.base}/api/v1/requests").json()["items"]
+    [asked] = [r for r in mine if (r.get("report") or {}).get("id") == filed["id"]]
+    assert (asked["personal"], asked["project"], asked["replies"]) == (True, None, []), asked
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+    entry = page.locator("li.entry", has_text="Report: spam — card")
+    entry.locator("button.entry-head").click()
+    expect(entry.locator("textarea")).to_have_count(0)
+    expect(entry.get_by_role("button", name="Withdraw", exact=True)).to_have_count(0)
+    entry.get_by_role("link", name="Open report", exact=True).click()
+    # Where it leads: the section, that report opened.
+    expect(page).to_have_url(re.compile(r"/admin/reports/" + re.escape(filed["id"]) + "$"))
     section = page.locator("section.admin-section[aria-label='Reports']")
     expect(section).to_be_visible()
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_be_visible()
@@ -3650,6 +4724,9 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     opened.get_by_role("button", name="Resolve", exact=True).click()
     expect(section).to_contain_text("Resolved: Hide.")
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_have_count(0)
+    # Resolving withdrew the request (§16.8).
+    shown = page.request.get(f"{run.base}/api/v1/requests/{asked['id']}").json()
+    assert shown["status"] == "withdrawn", shown
     run.shot(page, "reports-admin")
     run.a11y(page, "reports admin")
     no_problems(run, "reports admin")
@@ -4079,6 +5156,15 @@ def members_step(run: Run, page: Page) -> None:
     expect(page.locator(".member-instances li.chosen")).to_have_count(1)
     page.go_back()
     expect(page.locator("main .org-tree")).to_be_visible()
+    # Paths (tsk-j9ktmj7e4fxq): the same members drawn, and one chip's route from the hub's member views.
+    page.locator("main .org-faces").get_by_role("button", name="Paths", exact=True).click()
+    page.locator("main .paths-chips").get_by_role("button", name="Not listening", exact=True).click()
+    expect(page.locator("main .paths-panel .paths-route-list")).to_contain_text("E2E Agent ⇢ Owner")
+    expect(page.locator("main .paths-lines path.paths-route").first).to_be_attached()
+    run.a11y(page, "team page, organisation paths")
+    run.shot(page, "organisation-paths")
+    page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
+    expect(page.locator("main .org-tree")).to_be_visible()
     view_tab(page, "Members").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.
     table.get_by_role("button", name="Manage Owner").click()
@@ -4106,11 +5192,15 @@ def members_step(run: Run, page: Page) -> None:
 
 
 def picture_step(run: Run, page: Page) -> None:
-    """docs/api.md §6.10: the owner's picture, from the profile menu; uploaded where the hub has it."""
+    """docs/api.md §6.10: the owner's picture, on the account's Profile from the profile menu, and at
+    the address before the tabs, /account/picture, which leads there; uploaded where the hub has it."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
-    page.get_by_role("menuitem", name="Picture", exact=True).click()
-    expect(page).to_have_url(re.compile(r"/account/picture$"))
+    page.get_by_role("menuitem", name="Profile", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account$"))
+    expect(page.locator(".picture-heading")).to_be_visible()
+    page.goto(run.base + "/account/picture")
+    expect(page).to_have_url(re.compile(r"/account$"))
     expect(page.locator(".picture-heading")).to_be_focused()
     run.a11y(page, "account picture")
     page.locator("#avatar-file-" + page.evaluate("Maity.api.get('/me').then((m) => m.member.id)")).set_input_files(
@@ -4170,11 +5260,16 @@ def change_password(run: Run, page: Page) -> None:
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
-    page.get_by_role("menuitem", name="Change password", exact=True).click()
-    expect(page).to_have_url(re.compile(r"/account$"))
-    # The sessions (§2.6.5): the list, this session in it.
+    page.get_by_role("menuitem", name="Security", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/security$"))
+    # The sessions (§2.6.5), Security's tab of their own: the list, this session in it.
+    tabs = page.locator("main nav.security-tabs")
+    tabs.get_by_role("link", name="Sessions", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/security/sessions$"))
     sessions = page.locator("section.sessions")
     expect(sessions.locator("li.session.current")).to_be_visible()
+    tabs.get_by_role("link", name="Sign-in", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/security$"))
     page.locator("#password-current").fill("not the password")
     page.locator("#password-new").fill(new_password)
     page.locator("#password-repeat").fill(new_password)

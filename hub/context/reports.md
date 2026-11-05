@@ -7,7 +7,8 @@ way they are.
 
 **Id:** 3d31dece-721f-4df2-85dc-40378b31d1df
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 2011e591-b7b0-4a95-8138-cffddd87155c
 **Evidence:** confirmed
 **Source:** the coordinator's ruling on the first part of the card, 2026-10-29 (an inbox record instead of a personal request, and mailed)
 **Revisit when:** a request can belong to no project, or the instance has more than one admin and they need to see who of them took a report
@@ -28,6 +29,46 @@ and target type, never the content.
 - Never mailing it, as `registration_pending`: that item is never mailed
   because an anonymous registration must not trigger mail; a report is
   never anonymous.
+
+## The instance admin hears of a report through a personal request without a project, which closes only when the report is resolved or expires
+
+**Id:** 2011e591-b7b0-4a95-8138-cffddd87155c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-11-04 (request req-qxjd85y7b4p0: the admin is told by mail and in the inbox, because reports have to be handled and checked); the team lead's choice on the plan, 2026-11-04 (no answer from the inbox); card tsk-xz3yt6yz1b2b
+**See:** reports.md#the-instance-admin-hears-of-a-report-through-an-account-record-mailed — 3d31dece-721f-4df2-85dc-40378b31d1df — as of 2026-11-04
+**Revisit when:** the instance has more than one admin and they need to see who of them took a report, or reports get resolved from somewhere else than `/admin/reports`
+
+A new report files, in its transaction, a personal request to the
+instance admin (`to: human:<admin>`, `filed_by: hub`, class `info`, no
+project, no asker), carrying `report: {id, reason, type}` and no
+replies. Its record `personal_request_created` makes the `inbox` item,
+mailed by the admin's `inbox` mode, and it is listed in the personal
+inbox (`GET /requests`) beside the other requests the admin has to
+answer. An answer or a withdrawal by the admin is refused
+(`resolve_the_report`, 409); the hub withdraws the request when the
+report is resolved or expires. The
+account record `report_open` is gone.
+
+**Reason:** a report is work the admin has to do, and the maintainer
+wants it where the other open work is, not only among notifications.
+Requests without a project exist since an organisation's invitations (§6.26), and the owner's digest (§5.3) is one too, so
+the old reason against a request (it would need a project) no longer
+holds. The admin resolves after reading the snapshot, under
+`/admin/reports/{id}`, the one path into moderation, so the request
+cannot be answered: an answer from the inbox would resolve without the
+snapshot, or close the request with the report still open.
+
+**Rejected alternatives:**
+- The request's replies as the actions (`dismiss`, `hide`, `remove`,
+  `suspend`), the answer resolving the report: faster, but it resolves
+  without the snapshot in view and adds a second write path into
+  moderation.
+- A request beside the account record `report_open`: the admin would
+  see and get every report twice, as an item and as a request.
+- One `seen` option, as the digest has: answering it would close the
+  request while the report is still open.
 
 ## A report reads its target through the read paths, so a refusal is the read's `not_found`
 
@@ -114,10 +155,10 @@ the record that a target was reported and how it was resolved.
 
 **Id:** f0b94c9e-f06a-40ba-bfa7-c12f6b4e2b3a
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's rulings on the second part of the card, 2026-10-29 (an account record instead of a personal request; a suspension mailed whatever the mode; an ordinary notice, no open matter)
-**Revisit when:** a request can belong to no project, or a suspended account gets a way to read its notices
+**Source:** the coordinator's rulings on the second part of the card, 2026-10-29 (an account record instead of a personal request; a suspension mailed whatever the mode; an ordinary notice, no open matter); re-checked against the maintainer's decision of 2026-11-04 (the affected account stays as it is, by mail), card tsk-xz3yt6yz1b2b
+**Revisit when:** a suspended account gets a way to read its notices, or the affected account gets something to answer
 
 Every action but `dismiss` writes the account record
 `moderation_applied` `{report, action, type, note}` for the account the
@@ -130,9 +171,10 @@ way it learns what happened (`Item.urgent`, `mailer._mode`).
 
 **Rejected alternatives:**
 - A personal request (§7, `info`, filed by the hub), as the contract
-  first said: a request belongs to a project, and an action on a
-  profile or a suspension has none; the same reason as for
-  `report_open` (3d31dece-721f-4df2-85dc-40378b31d1df).
+  first said: nothing in it is the account's to answer, and a suspended
+  account signs in no more, so it reads no inbox. (The reason first
+  given, that a request needs a project, no longer holds since requests
+  without one exist; the instance admin's report request is one.)
 - An open matter, as `report_open` is: it would count in `inbox` and
   stay unread until closed, but the account can close nothing; only an
   instance admin lifts a hold.
@@ -182,7 +224,7 @@ members that the contract waives only for this one change.
 `hide` and `remove` write a row in `moderation_hold` (report, target
 type, stable target id, action); resolving the report again replaces
 it and `dismiss` deletes it. Ordinary writes that would undo it ask
-`moderation.refuse_held`: turning a project's badge on, reopening an archived project or a cancelled card, renaming an agent
+`moderation.refuse_held`: turning a project's badge on, reopening an archived project, a status change of a held cancelled card (checked before the transition, which §6.4 refuses anyway), renaming an agent
 or uploading a picture over a reset one. Since the public pages, the hold also decides what they serve: a held project,
 profile or organisation has no page (`moderation.hold` in `public_projects`, `public_people`, `public_orgs`,
 `public_agents`). A message is public nowhere, so its hold changes nothing yet. A suspension is no hold: only the operator's

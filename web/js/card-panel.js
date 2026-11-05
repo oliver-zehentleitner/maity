@@ -234,6 +234,8 @@ window.Maity = window.Maity || {};
       const editStatus = M.statusLine();
       let saving = false;
       const back = () => {
+        // Drop the form before the redraw so notes() does not keep this edit (Cancel / save).
+        form.remove();
         notes().then((drawn) => {
           const b = drawn && noteItem(n.id) && noteItem(n.id).querySelector("button.card-note-edit");
           if (b && focusFree(form)) b.focus();
@@ -342,7 +344,8 @@ window.Maity = window.Maity || {};
 
     async function notes() {
       // The list stays as drawn while it is read; the latest read alone replaces it.
-      // Meanwhile its Edit and Remove wait: an edit begun on it would go with it.
+      // Meanwhile its Edit and Remove wait: an edit begun on the old list would go with it.
+      // An edit already open stays: its li is kept across the redraw (tsk-wvf8s7f44vz7).
       const read = ++notesRead;
       notesList.setAttribute("aria-busy", "true");
       notesList.querySelectorAll("button.card-note-edit, button.card-note-remove").forEach((b) => { b.disabled = true; });
@@ -357,14 +360,55 @@ window.Maity = window.Maity || {};
       }
       if (read !== notesRead) return false;
       notesList.removeAttribute("aria-busy");
+      // Keep each open edit's li (form and typed text) when that note is still there.
+      // Detaching the row blurs its field; remember focus and selection so a post's
+      // "focus Add a note when free" does not steal them when the edit still held them.
+      const openEdits = new Map();
+      let restoreEdit = null;
+      Array.from(notesList.querySelectorAll("li.card-note")).forEach((li) => {
+        if (li.querySelector("form.card-note-edit-form")) {
+          const a = document.activeElement;
+          if (a && li.contains(a)) {
+            restoreEdit = {
+              el: a,
+              start: typeof a.selectionStart === "number" ? a.selectionStart : null,
+              end: typeof a.selectionEnd === "number" ? a.selectionEnd : null,
+            };
+          }
+          openEdits.set(li.getAttribute("data-note"), li);
+          li.remove();
+        }
+      });
+      const rows = list.map((n) => {
+        const kept = openEdits.get(n.id);
+        if (kept && !removedNote(n)) {
+          openEdits.delete(n.id);
+          return kept;
+        }
+        return noteLine(n);
+      });
       append(clear(notesList), list.length
-        ? h("ul", { class: "card-note-list" }, list.map(noteLine))
+        ? h("ul", { class: "card-note-list" }, rows)
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
       if (closed()) {
         if (noteFormEl) noteFormEl.remove();
         noteFormEl = null;
       } else if (!noteFormEl) {
         append(notesBox, noteFormEl = noteForm());
+      }
+      // Put the caret back only when that edit was kept and still owns the node; a
+      // reader who moved focus elsewhere during the read is left alone (restoreEdit
+      // is set only when the edit held focus at redraw).
+      if (restoreEdit && restoreEdit.el.isConnected !== false && notesList.contains(restoreEdit.el)) {
+        restoreEdit.el.focus();
+        if (restoreEdit.start !== null && restoreEdit.end !== null) {
+          if (typeof restoreEdit.el.setSelectionRange === "function") {
+            restoreEdit.el.setSelectionRange(restoreEdit.start, restoreEdit.end);
+          } else {
+            restoreEdit.el.selectionStart = restoreEdit.start;
+            restoreEdit.el.selectionEnd = restoreEdit.end;
+          }
+        }
       }
       return true;
     }

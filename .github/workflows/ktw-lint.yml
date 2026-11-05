@@ -18,7 +18,8 @@ jobs:
         path: [".", "hub", "cli", "web"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oliver-zehentleitner/keep-the-why@lint-latest   # rolling; @lint-v<version> pins action and linter together
+      # Pinned with the skill: the tag's version is .keep-the-why's context-schema (tools/ktw_pin.py)
+      - uses: oliver-zehentleitner/keep-the-why@1af21fcc16a52e2971083ffb96d92b0f1f008399 # lint-v0.20.3.1
         with:
           path: ${{ matrix.path }}
           strict: "false"    # "true" turns warnings into failures

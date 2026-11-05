@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import cli
+from maity_hub import cli, paths
 from maity_hub import loadtest as seed
 from maity_hub import tables as t
 from maity_hub.auth import credentials
@@ -234,6 +234,8 @@ def test_the_seeds_secrets_go_to_a_new_file_only_its_owner_reads(
     assert cli.main(["loadtest", "seed", "--humans", "2", "--out", str(new)]) == 0
     assert new.stat().st_mode & 0o777 == 0o600
     assert [h["handle"] for h in json.loads(new.read_text())] == ["lt-0", "lt-1"]
+    # Reserved for a person, and written anyway: the seed does not ask `handle_reserved`.
+    assert paths.handle_reserved("lt-1")
     again = tmp_path / "again.json"
     assert cli.main(["loadtest", "seed", "--humans", "1", "--out", str(again)]) == 0
     assert [h["handle"] for h in json.loads(again.read_text())] == ["lt-2"]

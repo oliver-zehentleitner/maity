@@ -2,6 +2,7 @@
 // (/<owner>/<slug>/organisation; the maintainer, 2026-10-30; it was a
 // section of the Overview): an indented tree computed from reports_to and
 // area ownership on every render; nothing chart-shaped is stored or fetched.
+// Its second face, Paths, is js/paths.js.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -121,16 +122,36 @@ window.Maity = window.Maity || {};
     return h("ul", { class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)), deeper);
   }
 
-  // The tab: the tree, drawn again from the members when one changes.
+  // Tree or Paths (js/paths.js), kept per browser like the other per-reader choices; a
+  // browser that keeps nothing starts at the tree.
+  const FACE = "maity.org.face";
+  function storedFace() {
+    try { return window.localStorage.getItem(FACE) === "paths" ? "paths" : "tree"; } catch { return "tree"; }
+  }
+  function keepFace(face) {
+    try { window.localStorage.setItem(FACE, face); } catch { /* the tab still switches */ }
+  }
+
+  // The tab: the tree or the paths, drawn again from the members when one changes. The paths'
+  // chip, selection and opened columns stay across that redraw.
   M.views.organisation = async function (ctx, root) {
     const status = M.statusLine();
     const box = h("div", { class: "org-box" });
+    const paths = { chip: null, selected: null, open: new Set() };
+    let face = storedFace();
+    const faces = h("div", { class: "org-faces", role: "group", "aria-label": M.t("org.face.label") });
+    const draw = () => {
+      append(clear(faces), ["tree", "paths"].map((f) => h("button", { type: "button", class: "org-face",
+        "data-face": f, "aria-pressed": face === f ? "true" : "false",
+        onclick: () => { if (face === f) return; face = f; keepFace(f); draw(); } }, (f === "paths" ? M.t("org.face.paths") : M.t("org.face.tree")))));
+      append(clear(box), face === "paths" ? M.paths.draw(ctx, paths) : drawTree(ctx));
+    };
     append(root, M.teamTabs(ctx, "organisation"), h("h2", null, M.t("team.tab.organisation")),
-      h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), status.el, box);
-    append(box, drawTree(ctx));
+      h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), faces, status.el, box);
+    draw();
     ctx.onEvents((events) => {
       if (!events.some((e) => /^member_/.test(e.kind))) return;
-      M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); append(clear(box), drawTree(ctx)); status.done(); },
+      M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(); status.done(); },
         (err) => status.fail(M.t("org.reread_failed"), err));
     });
   };

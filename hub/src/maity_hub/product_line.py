@@ -1,14 +1,14 @@
 """The product line (docs/api.md §16.13): one small line about Maity at the end of every page
 of the platform's own interface, on the hub's own pages as on the dashboard's, always shown.
 
-    [Maity icon] Maity 2026 · Found a bug? ·
+    [Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? ·
     Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
 
 The hub's pages load no file, so the icons are inline SVG with presentation attributes only.
 The line's look is one fixed block, `STYLE`: centred and muted. A page whose policy allows
 inline style (the registration page) puts it into its own stylesheet, with `DARK` for its
-dark theme. The pages whose policy is the hub's `default-src 'self'` (the mail link pages,
-the sign-in link page, the join page, the `503` maintenance page) put `HEAD` into their
+dark theme. The pages whose policy is the hub's `default-src 'self'` (the join page and the
+`503` maintenance page; the mail link pages stand in the frame instead) put `HEAD` into their
 `<head>` and answer with `HEADERS`: that policy allows exactly this block by its hash, never
 `'unsafe-inline'`, and those pages have no dark theme, so the mark keeps its light fill.
 """
@@ -23,6 +23,8 @@ from html import escape
 from maity_hub import catalog, clock
 
 ISSUES = "https://github.com/oliver-zehentleitner/maity/issues"
+# Where a vulnerability is reported privately, never as a public issue.
+SECURITY = "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md"
 GITHUB = "https://github.com/oliver-zehentleitner"
 PROFILE = "https://maity.team/oliver-zehentleitner"
 NAME = "Oliver Zehentleitner"
@@ -115,10 +117,11 @@ def html(language: str, section: str | None = None) -> str:
     the language has none for it yet, the page is English and so is its line."""
     if section is not None and not catalog.speaks(section, language):
         language = "en"
-    bug = catalog.section("product", language)["bug"]
+    words = catalog.section("product", language)
     parts = (
         f"{_MAITY_MARK} Maity {clock.now().year}",
-        _link(ISSUES, escape(bug)),
+        _link(ISSUES, escape(words["bug"])),
+        _link(SECURITY, escape(words["security"])),
         _sentence(language),
     )
     # The separators are drawn, not read, as on the dashboard.

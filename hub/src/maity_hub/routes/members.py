@@ -958,6 +958,10 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    if removed.agent_id is not None:
+        from maity_hub import cross_chats
+
+        cross_chats.membership_ended(conn, removed.agent_id, change.by)
     pins.prune(conn, change.project.id)  # its direct chats go with it (§9.1, §9.3)
     attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)

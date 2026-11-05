@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -161,6 +163,56 @@ def make_engine(
         event.listen(engine, "connect", _sqlite_pragmas)
         event.listen(engine, "begin", _sqlite_begin_immediate)
     return engine
+
+
+SHARED_POOL_SIZE = 2
+
+# One shared-counter engine per process, database, timeouts and recycle age. `shared_counts` and
+# `shared_budget` hold only the engine configured last, so an engine per app would leave every
+# earlier app's pool holding its connections until that app stops; a process that builds many
+# apps (the tests do, one per client) would run the database out of connection slots. The
+# process id keeps a forked worker from reusing its parent's sockets.
+_shared_engines: dict[tuple[int, str, float, float, int], Engine] = {}
+# Two first calls at once would otherwise each build an engine, and the one left out of the
+# cache would hold its own connections until its app stops.
+_shared_engines_lock = threading.Lock()
+
+
+def make_shared_engine(
+    engine: Engine,
+    *,
+    statement_timeout: float = 0,
+    idle_in_transaction_timeout: float = 0,
+    pool_recycle: int = POOL_RECYCLE_SECONDS,
+) -> Engine | None:
+    """Short counter/budget transactions must not wait for a request's pool connection.
+    No extra engine off PostgreSQL: those backends keep their counters in the process. The
+    same engine for every app of this process on this database (above), under a lock, so two
+    first calls at once build one; disposing it at an
+    app's stop only closes its idle connections, and it opens new ones when next used."""
+    if engine.dialect.name != "postgresql":
+        return None
+    url = engine.url.render_as_string(hide_password=False)
+    key = (
+        os.getpid(),
+        url,
+        float(statement_timeout),
+        float(idle_in_transaction_timeout),
+        int(pool_recycle),
+    )
+    with _shared_engines_lock:
+        shared = _shared_engines.get(key)
+        if shared is None:
+            shared = _shared_engines[key] = make_engine(
+                url,
+                pool_size=SHARED_POOL_SIZE,
+                max_overflow=0,
+                pool_recycle=pool_recycle,
+                statement_timeout=statement_timeout,
+                idle_in_transaction_timeout=idle_in_transaction_timeout,
+                application_name="maity-shared",
+            )
+    return shared
 
 
 def make_listener_engine(url: str) -> Engine:

@@ -77,6 +77,37 @@ expect "ingress: TLS host, defaults merged with the operator's annotation, diges
     "@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
     "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"' \
     "name: MAITY_FORGE_INSTANCE_NAMESPACES" 'value: "maity-org"'
+# The default body size for ingress-nginx lets the largest upload the hub takes through. Its
+# value is bytes, or k, m or g (any case); 0 means no limit.
+size="$(sed -n 's/^ *nginx.ingress.kubernetes.io\/proxy-body-size: "\{0,1\}\([0-9][0-9]*[kKmMgG]\{0,1\}\)"\{0,1\}$/\1/p' <<<"$out")"
+cap="$(sed -n 's/^ATTACHMENT_CAP = \([0-9]*\) \* 1024 \* 1024$/\1/p' "$chart/../../../hub/src/maity_hub/middleware.py")"
+bytes=""
+case "$size" in
+    *[kK]) bytes=$(( 10#${size%?} * 1024 )) ;;
+    *[mM]) bytes=$(( 10#${size%?} * 1024 * 1024 )) ;;
+    *[gG]) bytes=$(( 10#${size%?} * 1024 * 1024 * 1024 )) ;;
+    [0-9]*) bytes=$(( 10#$size )) ;;
+esac
+if [ -n "$bytes" ] && [ -n "$cap" ] && [ "$bytes" -eq 0 ]; then
+    ok "ingress: proxy-body-size 0, no limit at the ingress"
+elif [ -n "$bytes" ] && [ -n "$cap" ] && [ "$bytes" -gt $(( cap * 1024 * 1024 )) ]; then
+    ok "ingress: proxy-body-size $size above the hub's attachment cap of ${cap} MiB"
+else
+    bad "ingress: proxy-body-size '$size' not above the hub's attachment cap '${cap}' MiB"
+fi
+grep -q "nginx.ingress.kubernetes.io/limit-" <<<"$out" && bad "ingress: a request limit while it is off" \
+    || ok "ingress: no request limit by default"
+expect "ingress: the request limit on, as ingress-nginx annotations" \
+    "$(render -f "$ingress" --set ingress.requestLimit.enabled=true)" \
+    'nginx.ingress.kubernetes.io/limit-rps: "50"' 'nginx.ingress.kubernetes.io/limit-burst-multiplier: "4"' \
+    'nginx.ingress.kubernetes.io/limit-connections: "100"' "cert-manager.io/cluster-issuer: letsencrypt"
+expect "ingress: a burst that is no multiple of the rate rounds up" \
+    "$(render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.burst=120)" \
+    'nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"'
+render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.burst=10 >/dev/null 2>&1 \
+    && bad "ingress: a burst below the rate accepted" || ok "ingress: a burst below the rate refused"
+render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.inFlight=0 >/dev/null 2>&1 \
+    && bad "ingress: no open request allowed accepted" || ok "ingress: inFlight below 1 refused"
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
 expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \

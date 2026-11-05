@@ -252,7 +252,8 @@ own, read-only: the hub reads the file a project setting names
 the default branch's commit and answers it whole, with a table of
 contents and an anchor per heading, under an `ETag` over the
 repository, the path and the file's bytes. The setting names a Markdown
-file only (`not_markdown` otherwise, the extension in any case), which
+file only (`not_markdown` otherwise; the extension is checked in any
+case, while every path segment must match byte for byte), which
 keeps it from exposing arbitrary repository files to every
 `project:read` holder, guests included; a symlink is refused too, since
 the name says nothing about the file it points to: the hub reads the
@@ -500,3 +501,119 @@ every redaction is easier to keep right than a second, looser one.
 - The reason visible to every reader of the note: it would publish the
   description of what was removed, and set notes apart from every other
   redaction (§8.5).
+
+## A card's restricted text is read only by a set the project names, closed by default; access control, not encryption
+
+**Id:** b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request of 2026-11-04 (card tsk-g8ts5vxhj1md); the coordinator's rulings the same day on the contract draft and on the review findings of its pull request (#1380), each review round; contract in `docs/api.md` §6.1 "Restricted access", §6.4 "Restricted text"
+**Revisit when:** the text must stay unreadable to the instance's operators, an owner or admin needs to read every text without entering the set, or the hub learns which instance of an agent acts
+**See:** cards.md#cards-carry-links-an-edit-history-and-notes-a-note-never-changes-the-card — 4e1208f1-4ca9-45ad-9005-3327b2638a0c — as of 2026-11-04
+
+A card may carry one small plain-text value outside every card field,
+read and written only by the members of a set the project names in
+`settings.restricted_access` (`nobody_except` or `all_except` a list).
+Without the setting nobody is in the set, owners and admins included;
+a human with `project:admin` and a step-up changes it, the hub's own
+narrowing on an owner change excepted. The set is per
+membership, never per instance. Under `all_except` an agent is in it
+only while its owner is, and every way into the set (the setting, a
+join — the memberships the hub makes for an organisation's owners
+included — a guest raised, an isolation ended, an agent's owner changed)
+tells the set with a `restricted_changed` event. Under `nobody_except`
+there is no owner gate, so whoever controls a listed agent reads
+through it; a listed agent whose owner changes leaves the list, and an
+admin lists it again. The list is otherwise never pruned. The routes
+answer `Cache-Control: no-store` and the dashboard keeps the text in
+memory only. Writes are capped per membership and, for `PUT`, per
+card; a `DELETE` is never held by the card's cap. Notifications are
+capped at one per card and human, and one for the set per human and
+project, in 10 minutes. A person's export carries only the texts whose
+current version they wrote, of projects whose set they are in.
+
+**Reason:** the request was a place on a card for what not every member
+may read. Closed by default means no existing project changes what
+anyone reads when the feature arrives. The hub stores the text as other
+project data and limits who reads it; it does not claim more, and the
+dashboard says so, because an admin can add themselves, the operators
+hold the data and an agent passes what it reads to its owner and its
+model provider. An instance has no identity the trust model rests on,
+a membership does. Under `all_except` an agent that read without its
+owner would let a human left out read through a new agent of their
+own, and a set that grows without a change of the setting would grow
+unseen without the event. A pruned list would let a removed member
+excluded under `all_except` back in when it joins again. The see-all
+of owners and admins would tell them which cards have a text and who
+changes it, which is what the set keeps to itself. An export of texts
+others wrote, or of a project whose set one left, would carry them out
+of the hub past the set. An agent's owner change is a way in like the
+others: under `all_except` it can bring an agent in with no change of
+the setting, so it is told the same way. Under `nobody_except` the
+admin confirmed the agent with the owner it had, and the new owner
+would read through it unconfirmed; taking it off the list keeps the
+set closed by default, and only narrows, so it does not bring back
+what pruning risks under `all_except`. The memberships the hub makes
+or raises for an organisation's owners are joins and trust raises like
+any other: under `all_except` they bring a human, and their agents that
+are not guests, isolated or listed, into the set with no change of the setting. A `left` is written only for an agent that was
+in the set: one that was not has left nothing, and the list change is
+told by `project_updated` either way. A browser cache, storage or
+history outlives the session and the set: a member taken out of the
+set, or the next person at a shared machine, would still find the
+text, so nothing is kept outside the page's memory. The write caps
+keep a member in the set — an agent in a loop above all — from
+filling the history, the events and the notifications; the card's cap
+keeps many members from doing that on one card. A shared card cap
+counting `DELETE` would let one looping member block for up to an
+hour everyone's clearing of a text pasted by mistake, which is the
+write that most needs to go through; a `DELETE` changes at most once
+per text, so leaving it to the membership's cap costs little. The
+10-minute notification caps keep a burst of edits, or of members
+entering, from becoming a burst of mail and push; the events stay
+readable, so suppressing the further notices loses nothing that the
+set cannot see.
+
+**Rejected alternatives:**
+- Encrypting the text: the hub, its operators and every agent in the
+  set would still hold the key or the plain text, so it would promise
+  a protection it cannot keep.
+- Open by default, or owners and admins always in the set: every
+  existing project would change who reads the moment the feature
+  arrives, and the set could not leave an owner out.
+- A set of instances: an instance is a session of a membership, with
+  no standing of its own in the trust model.
+- Under `all_except`, agents in the set whatever their owner, or
+  telling the set nothing when it grows without a change of the
+  setting: a human left out could read through their own new agent,
+  and the set would not learn who reads with it.
+- Pruning the list when a member leaves: a member left out under
+  `all_except` would be in the set when it joins again.
+- The owners' and admins' see-all over its events, or a see-all view
+  of the texts: it would show outside the set which cards carry a text.
+- Exporting every text the person can read: the export would carry
+  texts out of the hub that others wrote or the person may no longer
+  read.
+- Under `nobody_except`, a listed agent staying in the set when its
+  owner changes, with only an event to the set: its new owner would
+  read until an admin acts. Keeping the owner each agent was listed
+  with and checking it on every call: a second state to store and
+  show, for the same outcome as taking the id off the list.
+- A `left` on every owner change of a listed agent, in the set or not:
+  it would tell the set of a member leaving that never read with it.
+- An owner gate under `nobody_except` as under `all_except`: there the
+  admin names each agent on purpose, and the gate would make listing
+  an agent of an owner who is not listed pointless; the contract says
+  instead that whoever controls a listed agent reads through it.
+- Ordinary caching, or keeping the text in the browser for speed or
+  offline use: the copy would outlive the set and the session.
+- No write caps, or a cap per membership only: a looping agent, or
+  several members on one card, could flood the history, the events and
+  every human's notifications.
+- `DELETE` under the card's cap: one looping member could keep
+  everyone from clearing a text pasted by mistake.
+- A notification for every change, or a digest instead of dropping the
+  further ones within 10 minutes: every change would be a mail or a
+  push, and a digest would be a second kind of notice to build and
+  keep for what the events already show.

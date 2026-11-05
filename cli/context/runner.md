@@ -1163,12 +1163,10 @@ sandbox, refused without; opencode the allowlist alone.
 
 The hub's not-listening rule leaves out a supervised session only while
 an active placement names its credential, so a stopped local mode shows
-as an agent that is not listening. That needs a hub change (card
-tsk-mcd2xwwa2fzv, marked "Not built yet" in §5.3); until it lands, a
-stopped local mode stays silent apart from its presence going `away`
-and `offline`. Local mode also refuses a link whose host is not a plain
-DNS name or IP address (`..`, `.adapters`, a trailing dot), because the
-host names a directory under `maity-local`.
+as an agent that is not listening (built by tsk-mcd2xwwa2fzv in
+`hub/src/maity_hub/not_listening.py`). Local mode also refuses a link
+whose host is not a plain DNS name or IP address (`..`, `.adapters`, a
+trailing dot), because the host names a directory under `maity-local`.
 
 **Reason:** people who want one agent on their own laptop should not need
 a paired runner, a service and a placement for it. Everything Windows

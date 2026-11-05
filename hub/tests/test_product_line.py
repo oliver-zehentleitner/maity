@@ -13,9 +13,18 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, update
 
-from maity_hub import catalog, clock, maintenance, product_line, render
+from maity_hub import (
+    catalog,
+    clock,
+    landing,
+    landing_files,
+    legal,
+    maintenance,
+    product_line,
+    render,
+)
 from maity_hub import tables as t
-from maity_hub.routes import email_sign_in, register_page
+from maity_hub.routes import register_page
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import ask, mail, setup
@@ -24,6 +33,7 @@ from tests.test_mail_links import link, mail_hub, stored
 
 LINKS = [
     "https://github.com/oliver-zehentleitner/maity/issues",
+    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
     "https://github.com/oliver-zehentleitner",
     "https://maity.team/oliver-zehentleitner",
 ]
@@ -44,15 +54,16 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
     line = product_line.html("en")
     assert text_of(line) == (
-        "Maity 2031 · Found a bug? · Made with ♥ by Oliver Zehentleitner on &"
+        "Maity 2031 · Found a bug? · Found a vulnerability? · "
+        "Made with ♥ by Oliver Zehentleitner on &"
     )  # the year from the hub's clock, never a fixed one
     assert re.findall(r'<a href="([^"]+)"', line) == LINKS  # absolute, the Maity page without @
-    assert line.count('target="_blank" rel="noopener noreferrer"') == 3
+    assert line.count('target="_blank" rel="noopener noreferrer"') == 4
     assert 'aria-label="GitHub"' in line and 'aria-label="Maity"' in line
     assert '<span role="img" aria-label="love">♥</span>' in line
-    # Three icons and the two separators, which are drawn, not read.
-    assert line.count("<svg") == 3 and line.count('aria-hidden="true"') == 5
-    assert line.count('<span aria-hidden="true"> · </span>') == 2
+    # Three icons and the three separators, which are drawn, not read.
+    assert line.count("<svg") == 3 and line.count('aria-hidden="true"') == 6
+    assert line.count('<span aria-hidden="true"> · </span>') == 3
     # Presentation attributes only: the pages' policies allow no inline style (§16.13).
     for forbidden in ("style=", "<style", "<use", "<title", "<img"):
         assert forbidden not in line
@@ -140,8 +151,7 @@ def test_the_maintenance_page_ends_with_the_line_and_sends_no_referrer() -> None
     assert response.headers["Retry-After"]
 
 
-def test_the_link_pages_end_with_the_line() -> None:
-    strict(email_sign_in._dead())
+def test_the_registration_link_page_ends_with_the_line() -> None:
     page = bytes(register_page._dead().body).decode()
     assert 'class="product-line"' in page
     # Its policy allows its stylesheet: the line centred and muted, the mark follows a dark
@@ -151,17 +161,75 @@ def test_the_link_pages_end_with_the_line() -> None:
     assert "Einen Fehler gefunden?" in german  # in the page's language
 
 
-def test_a_mail_page_ends_with_the_line_in_its_language(
+def test_a_mail_link_page_stands_in_the_frame_in_the_humans_language(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
+    # §16.7.5, §18.6: the frame and its footer instead of the product line; words as before.
     client = make_client(mail=mail_hub().mail)
-    assert "Found a bug?" in strict(client.get("/mail/unsubscribe/garbage"))
+    dead = client.get("/mail/unsubscribe/garbage")
+    assert dead.status_code == 404
+    assert "<h1>This link no longer works.</h1>" in framed(dead) and "<form" not in dead.text
     human_id = factory.human(migrated, "maintainer")
     stored(migrated, human_id, {"email": {"language": "de"}})
-    page = strict(client.get(f"/mail/unsubscribe/{link(human_id)}"))
-    assert "Einen Fehler gefunden?" in page and "Found a bug?" not in page
+    page = framed(client.get(f"/mail/unsubscribe/{link(human_id)}"))
+    assert '<html lang="de">' in page and "Einen Fehler gefunden?" not in page
+    # The one explicit button, in the door's look; the GET changed nothing (§18.6).
+    assert page.count("<form") == 1 and page.count("<button") == 1
+    assert '<form method="post"><button type="submit" class="btn btn-primary">' in page
     stored_dead = client.get(f"/mail/unsubscribe/{link(human_id, epoch=7)}")
-    assert stored_dead.status_code == 404 and "Einen Fehler gefunden?" in strict(stored_dead)
+    assert stored_dead.status_code == 404 and '<html lang="de">' in framed(stored_dead)
+    done = client.post(f"/mail/unsubscribe/{link(human_id)}")
+    assert done.status_code == 200 and "<form" not in framed(done)
+
+
+# The mail link pages' one policy, written out: a change to it is a change to this line
+# (tsk-w62n5p0v9d47). Only the hub's own sheets, fonts and images, the fallback by its hash.
+PINNED = (
+    "default-src 'none'; style-src 'self' 'sha256-{fallback}'; font-src 'self'; "
+    "img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+)
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("get", "/mail/verify/garbage"),
+        ("post", "/mail/verify/garbage"),
+        ("get", "/mail/unsubscribe/garbage"),
+        ("post", "/mail/unsubscribe/garbage"),
+        ("get", "/mail/second-factor-reset/garbage"),
+        ("post", "/mail/second-factor-reset/garbage"),
+        ("get", "/mail/account-deletion/garbage"),
+        ("post", "/mail/account-deletion/garbage"),
+        ("get", "/mail/sign-in/garbage"),
+    ],
+)
+def test_every_mail_link_page_answers_the_pinned_policy_and_its_sheets_load_under_it(
+    make_client: ClientFactory, method: str, path: str
+) -> None:
+    fallback = base64.b64encode(hashlib.sha256(render.STYLE.encode()).digest()).decode()
+    assert PINNED.format(fallback=fallback) == render.DOOR_CSP
+    client = make_client(mail=mail_hub().mail)
+    response = getattr(client, method)(path)
+    assert response.status_code == 404
+    assert response.headers["Content-Security-Policy"] == PINNED.format(fallback=fallback)
+    page = framed(response)
+    # Each stylesheet is the hub's own, same origin ('self'), and is served as a stylesheet.
+    sheets = re.findall(r'<link rel="stylesheet" href="([^"]+)">', page)
+    assert [s.split("?")[0] for s in sheets] == [
+        "/assets/landing/landing.css",
+        "/assets/landing/public-pages.css",
+    ]
+    for sheet in sheets:
+        served = client.get(unescape(sheet))
+        assert served.status_code == 200, sheet
+        assert served.headers["content-type"].startswith("text/css")
+        assert served.headers["x-content-type-options"] == "nosniff"
+        # What the sheet loads is the hub's own as well: font-src and img-src 'self', which a
+        # `data:` url does not match either.
+        for url in re.findall(r"url\(([^)]+)\)", served.text):
+            url = url.strip("'\"")
+            assert not re.match(r"[a-z]+:|//", url), url
 
 
 def test_a_page_whose_words_the_language_lacks_has_an_english_line(
@@ -175,16 +243,100 @@ def test_a_page_whose_words_the_language_lacks_has_an_english_line(
     assert "Einen Fehler gefunden?" in product_line.html("de", "sign_in")
 
 
-def test_the_sign_in_link_page_ends_with_the_line_in_the_humans_language(
+def framed(response: Any) -> str:
+    """A sign-in link page in the frame (§16.7.5): the landing page's header, door and footer
+    under the landing page's stylesheets, no script, no inline style, no product line, and its
+    policy and no referrer (the token is in the address)."""
+    page = str(response.text)
+    assert response.headers["Content-Security-Policy"] == render.DOOR_CSP
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert page.count('<header class="site-header') + page.count("<header lang=") == 1
+    assert page.count('class="site-footer"') == 1 and 'class="door-page"' in page
+    # The panel without a pitch, as the dashboard's door() draws it: empty, so public-pages.css
+    # shows the art large and hides the panel at phone width.
+    assert '<aside class="door-panel" aria-hidden="true"></aside>' in page
+    for sheet in ("landing.css", "public-pages.css"):
+        assert f'href="/assets/landing/{sheet}?v=' in page
+    assert "<script" not in page and "<style" not in page
+    # Not even the header mark's style attributes: the policy would block them (§16.7.5).
+    assert "style=" not in page and 'class="mark"' in page
+    # The frame's footer stands in the line's place, as on the framed /login (req-5k1gvfsmcg9k).
+    assert "product-line" not in page and "Found a bug?" not in page
+    return page
+
+
+def test_the_sign_in_link_page_stands_in_the_frame_in_the_humans_language(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     client, human = setup(make_client, migrated)
     with migrated.begin() as conn:
-        conn.execute(update(t.human).where(t.human.c.id == human).values(interface_language="de"))
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == human)
+            .values(interface_language="de", display_name='<b>Ada & "Co"</b>')
+        )
     ask(client)
     url, _ = mail(migrated)
-    page = strict(client.get(url))
-    assert "Einen Fehler gefunden?" in page
+    page = framed(client.get(url, headers={"accept-language": "fr"}))
+    assert '<html lang="de">' in page
+    title = "Bei Maity anmelden als &lt;b&gt;Ada &amp; &quot;Co&quot;&lt;/b&gt; (ada)"
+    assert f"<title>{title}</title>" in page and f"<h1>{title}</h1>" in page
+    assert "<b>Ada" not in page
+    # One explicit button, the GET's form field next to its cookie (§2.6.3).
+    assert page.count("<button") == 1 and page.count("<form") == 1
+    assert '<form method="post">' in page
+    assert ">Auf diesem Gerät anmelden</button>" in page
+    form = re.search(r'name="form" value="([^"]+)"', page)
+    assert form is not None and form[1] == client.cookies.get("maity_form")
+
+
+def test_the_dead_sign_in_link_stands_in_the_frame_in_the_browsers_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    dead = client.get("/mail/sign-in/garbage", headers={"accept-language": "de, en;q=0.5"})
+    assert dead.status_code == 404
+    page = framed(dead)
+    assert '<html lang="de">' in page and "<h1>Dieser Link funktioniert nicht mehr.</h1>" in page
+    assert "<form" not in page and "<button" not in page
+    english = framed(client.get("/mail/sign-in/garbage"))
+    assert "<h1>This link no longer works.</h1>" in english
+    # A used link is the same page (never which reason).
+    ask(client)
+    url, _ = mail(migrated)
+    form = re.search(r'name="form" value="([^"]+)"', client.get(url).text)
+    assert form is not None
+    done = client.post(
+        url,
+        data={"form": form[1]},
+        headers={"sec-fetch-site": "same-origin"},
+        follow_redirects=False,
+    )
+    assert done.status_code == 303
+    again = client.get(url)
+    assert again.status_code == 404 and "<h1>This link no longer works.</h1>" in framed(again)
+
+
+def test_a_door_page_without_the_stylesheets_carries_the_style_its_policy_allows(
+    monkeypatch: pytest.MonkeyPatch, migrated: Engine
+) -> None:
+    digest = base64.b64encode(hashlib.sha256(render.STYLE.encode()).digest()).decode()
+    assert f"style-src 'self' 'sha256-{digest}';" in render.DOOR_CSP
+    assert "unsafe-inline" not in render.DOOR_CSP and "script-src" not in render.DOOR_CSP
+    assert "form-action 'self'" in render.DOOR_CSP
+    monkeypatch.setattr(landing_files, "url", lambda name: None)
+    with migrated.connect() as conn:
+        setting, served = landing.stored(conn), legal.public(legal.stored(conn))
+    page = render.door_document(
+        lang="en",
+        title="t",
+        content="<h1>t</h1>",
+        setting=setting,
+        legal=served,
+        stats=None,
+        accept_language=None,
+    )
+    assert f"<style>{render.STYLE}</style>" in page and "<link" not in page
 
 
 def test_the_join_page_in_a_browser_ends_with_the_line_and_sends_no_referrer(

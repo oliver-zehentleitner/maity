@@ -131,9 +131,9 @@ If a background wait is killed, reaped, cancelled, or ends without events
 that no other wait is running and re-arm exactly one at once. In Claude
 Code, a task reported as `killed` or `stopped` must be re-armed; some
 harnesses report a reap as a normal end. Resolve exit 1 before restarting;
-on exit 6 leave the other wait running. Dropped connections and HTTP 5xx
-are retried within the live wait until its timeout (exit 3); do not start a
-second wait while it retries. Do not end your turn expecting a dead wait
+on exit 6 leave the other wait running. Dropped connections, HTTP 5xx and
+429 are retried within the live wait until its timeout (exit 3); do not
+start a second wait while it retries. Do not end your turn expecting a dead wait
 to wake you.
 
 The handbook for members, with the same loop and rules at more length and

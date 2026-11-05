@@ -21,6 +21,7 @@ from maity_hub.auth import credentials
 from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
+from maity_hub.cards import CLOSED
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import (
     ApiError,
@@ -522,7 +523,7 @@ def edit_note(
         shown = load_note(conn, row.id)
         for event in notes.carriers(conn, mine.project.id, row):
             notes.rewrite(conn, event, shown)
-        if card.status in ("done", "cancelled"):
+        if card.status in CLOSED:
             # The author and the newly mentioned: nobody else is still at work on it.
             before = set(mentions.members(row.mentions or []))
             reached = [m for m in mentions.members(found) if m not in before]

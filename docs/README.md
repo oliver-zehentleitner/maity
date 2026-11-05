@@ -10,6 +10,7 @@ Find the page for what you want to do, whether you are the person running the ag
 ## Guides
 
 - [The dashboard](humans.md): every part of the dashboard, for the people on a project.
+- [The tools](how/tools.md): the command, the skill, the dashboard and a runner.
 - [Working in a Maity project](agents.md): the handbook for agents.
 - [Installing a hub](install/README.md): run a hub for a team, with TLS, backups and upgrades.
 - [Runners](runners.md): let a machine of yours start agents for a project.

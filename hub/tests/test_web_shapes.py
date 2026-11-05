@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,10 +34,22 @@ WEB_TOOLS = Path(__file__).resolve().parents[2] / "web" / "tools"
 SHAPES = WEB_TOOLS / "hub-shapes.json"
 
 
-def shape(value: Any, maps: frozenset[str] = frozenset(), at: str = "") -> Any:
+ID = re.compile(r"\b[a-z]{3}-[0-9a-z]+\b")
+
+
+def shape(
+    value: Any,
+    maps: frozenset[str] = frozenset(),
+    at: str = "",
+    forms: frozenset[str] = frozenset(),
+) -> Any:
     """A value's form: "string", "number", "boolean", "null", {"object": {key: form}},
     {"array": form of every item merged, or null when empty}, or, at a path named in
-    `maps` (keys that are data, as section numbers), {"map": form of every value merged}."""
+    `maps` (keys that are data, as section numbers), {"map": form of every value merged}.
+    At a path named in `forms` a string keeps its value with every id as `<id>`
+    ({"form": "human:<id>"}): where the value's kind is the contract, as a request's `to`."""
+    if isinstance(value, str) and at in forms:
+        return {"form": ID.sub("<id>", value)}
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, int | float):
@@ -48,13 +61,13 @@ def shape(value: Any, maps: frozenset[str] = frozenset(), at: str = "") -> Any:
     merged: Any = None
     if isinstance(value, list):
         for item in value:
-            merged = merge(merged, shape(item, maps, at + "[]"))
+            merged = merge(merged, shape(item, maps, at + "[]", forms))
         return {"array": merged}
     if at in maps:
         for item in value.values():
-            merged = merge(merged, shape(item, maps, at + "{}"))
+            merged = merge(merged, shape(item, maps, at + "{}", forms))
         return {"map": merged}
-    return {"object": {k: shape(v, maps, f"{at}.{k}") for k, v in sorted(value.items())}}
+    return {"object": {k: shape(v, maps, f"{at}.{k}", forms) for k, v in sorted(value.items())}}
 
 
 def merge(a: Any, b: Any) -> Any:
@@ -105,6 +118,16 @@ def test_web_check_computes_the_same_forms() -> None:
             assert check.merge_shapes(shape(a, maps), shape(b, maps)) == merge(
                 shape(a, maps), shape(b, maps)
             ), (a, b)
+    forms = frozenset({".to", ".items[].to"})
+    named: list[Any] = [
+        {"to": "human:hum-k2x9q8w7v6u5"},
+        {"to": "owner"},
+        {"to": None, "by": "agt-a"},
+        {"items": [{"to": "human:hum-anna"}, {"to": "agt-b"}, {"to": "role:reviewer"}]},
+    ]
+    for value in named:
+        assert check.shape_of(value, maps, forms=forms) == shape(value, maps, forms=forms), value
+    assert shape(named[0], maps, forms=forms) == {"object": {"to": {"form": "human:<id>"}}}
 
 
 def _ok(answer: Any) -> Any:
@@ -190,14 +213,48 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
             "/api/v1/admin/maintenance", json=window, headers={"X-CSRF-Token": owner.csrf}
         )
     )
+    project_id = _ok(owner.get(base))["id"]
     ids = {
         "project": "maintainer/maity",
         "agent": agent.id,
         "group": group["id"],
         "task": first["id"],
         "runner": runner.id,
+        "foreign_project": "maintainer/maity",
+        "mine": other.id,
+        "foreign": _foreign_agent(migrated, project_id, make_client),
     }
     return owner, ids
+
+
+def _foreign_agent(engine: Any, project_id: str, make_client: ClientFactory) -> str:
+    """An agent of another human in the owner's project: a change of its fields and a
+    bridge to it wait for that human's consent (§6.2, §2.3), the hub answering 202."""
+    friend = flow.human(make_client, engine, "neighbour")
+    return factory.agent(engine, project_id, friend.id).agent_id
+
+
+def _filled(value: Any, ids: dict[str, str]) -> Any:
+    """A body with its {placeholders} filled, as the path is."""
+    if isinstance(value, str):
+        return value.format(**ids)
+    if isinstance(value, dict):
+        return {k: _filled(v, ids) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_filled(v, ids) for v in value]
+    return value
+
+
+def _send(owner: flow.Human, method: str, path: str, body: Any) -> Any:
+    """One request of the list, a write with its `body` as it stands."""
+    if method == "GET":
+        return owner.get(path)
+    if method == "DELETE":
+        return owner.delete(path)
+    if method == "POST":
+        return owner.post(path, body)
+    assert method == "PATCH", method
+    return owner.patch(path, body)
 
 
 def test_the_recorded_shapes_are_the_hubs(make_client: ClientFactory, migrated: Any) -> None:
@@ -206,11 +263,19 @@ def test_the_recorded_shapes_are_the_hubs(make_client: ClientFactory, migrated: 
     maps = frozenset(spec["maps"])
     recorded = {}
     for request in spec["requests"]:
+        # A 202 is the answer the request is listed for: a consent filed, not the change.
+        assert request.get("status", 200) in (200, 201, 202), request
+    methods = [request["method"] for request in spec["requests"]]
+    first_write = next((i for i, m in enumerate(methods) if m != "GET"), len(methods))
+    assert "GET" not in methods[first_write:], "a read after a write reads a changed seed"
+    for request in spec["requests"]:
         path = request["path"].format(**ids)
-        call = owner.delete if request["method"] == "DELETE" else owner.get
-        answer = call(path)
+        answer = _send(owner, request["method"], path, _filled(request.get("body"), ids))
         assert answer.status_code < 300, (path, answer.status_code, answer.text)
-        recorded[f'{request["method"]} {request["path"]}'] = shape(answer.json(), maps)
+        if "status" in request:
+            assert answer.status_code == request["status"], (path, answer.status_code, answer.text)
+        forms = frozenset(request.get("forms", []))
+        recorded[f'{request["method"]} {request["path"]}'] = shape(answer.json(), maps, "", forms)
     text = json.dumps(recorded, indent=1, sort_keys=True) + "\n"
     if os.environ.get("MAITY_WRITE_SHAPES"):
         SHAPES.write_text(text)
