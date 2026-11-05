@@ -3392,8 +3392,8 @@
     "text": "35343572afa46f61"
   },
   "device.mail.address": {
-    "en": "a0e9230cd85dd0a5",
-    "text": "1dc2a94be79e8f08"
+    "en": "c6394f33e6b9bb97",
+    "text": "a6da3e7bfa4566f3"
   },
   "device.mail.check": {
     "en": "87408a1b980a558e",
@@ -12407,6 +12407,10 @@
     "en": "3c4acf7ac90b37e1",
     "text": "f19cb47cd1354ba0"
   },
+  "product.security": {
+    "en": "32548671ddc1415a",
+    "text": "e0b121d8a91bbf42"
+  },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",
     "text": "d3dc5d8371ec743e"
@@ -13188,8 +13192,8 @@
     "text": "89afae945f632a91"
   },
   "register.address": {
-    "en": "a0e9230cd85dd0a5",
-    "text": "1dc2a94be79e8f08"
+    "en": "c6394f33e6b9bb97",
+    "text": "a6da3e7bfa4566f3"
   },
   "register.check_mail": {
     "en": "87408a1b980a558e",

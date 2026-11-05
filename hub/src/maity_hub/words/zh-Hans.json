@@ -101,6 +101,7 @@
   "product.bug": "发现了 bug？",
   "product.love": "爱",
   "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
+  "product.security": "发现了安全漏洞？",
   "register_page.button": "创建账户",
   "register_page.closed": "注册已关闭。",
   "register_page.dead": "此链接已失效。",

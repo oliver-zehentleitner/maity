@@ -949,7 +949,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "device.code.open": "有代码？",
   "device.code.title": "用代码登录",
   "device.expires": "{time}后过期。",
-  "device.mail.address": "你的地址",
+  "device.mail.address": "邮箱地址",
   "device.mail.check": "查收你的邮件",
   "device.mail.code": {
     "other": "{count} 位验证码"
@@ -3332,6 +3332,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "product.bug": "发现了 bug？",
   "product.love": "爱",
   "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
+  "product.security": "发现了安全漏洞？",
   "profile_delete.busy": "正在删除…",
   "profile_delete.done": "个人资料 @{handle} 已删除。",
   "profile_delete.done_ended": "个人资料 @{handle} 已删除；其成员资格已终止。",
@@ -3541,7 +3542,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "reg.terms.version": "版本",
   "reg.title": "注册",
   "reg.unchanged": "未作任何更改。",
-  "register.address": "你的地址",
+  "register.address": "邮箱地址",
   "register.check_mail": "请查收邮件",
   "register.closed": "此 hub 不接受按请求创建新账户。",
   "register.closed_sign_in": "如果你已有账户，请{link}。",
