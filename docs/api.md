@@ -18030,21 +18030,16 @@ it off, and it is no part of the landing setting or of the frame of
 §16.7.5.
 
 ```
-[Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability?
 ```
 
-**The parts**, in this order, separated by ` · `:
+**The parts**, in this order, separated by ` · ` (the credit right after
+the year is the maintainer's order of 2026-11-05):
 
 - the Maity icon, followed by `Maity` and the current year. The icon is
   decorative (`aria-hidden="true"`). The year is never stored or built
   in: the hub takes it from its clock (UTC) when it renders the page, the
   dashboard from the browser's clock when it draws it;
-- **Found a bug?**, a link to
-  `https://github.com/oliver-zehentleitner/maity/issues`;
-- **Found a vulnerability?**, a link to
-  `https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md`,
-  which says how to report one privately, never as a public issue (the
-  maintainer's addition of 2026-11-04);
 - **Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity
   icon]**. The name is plain text, no link. The heart is a symbol with
   the accessible name "love" (`role="img"`, `aria-label`). Each of the
@@ -18058,6 +18053,12 @@ it off, and it is no part of the landing setting or of the frame of
   The accessible name is the link's `aria-label`, and the icon inside it
   is `aria-hidden="true"`. `GitHub` and `Maity` are names and are not
   translated.
+- **Found a bug?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Found a vulnerability?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md`,
+  which says how to report one privately, never as a public issue (the
+  maintainer's addition of 2026-11-04).
 
 Every link is absolute and the same on every instance. The Maity link
 names maity.team, not the instance's own host: the maintainer's page
