@@ -1292,13 +1292,13 @@ each command is checked only once.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
 
-## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+## Docs images and diagrams live in `docs/img/`; screenshots are of fixture mode, and the site points a relative image at the deployed file
 
 **Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there)
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there). Pull request #1353 on card tsk-dremqrfz48jq, 2026-11-05: the designer's statement that the diagrams are drawn by the designer, take the same 256-colour and oxipng reduction as the screenshots, and that their source stays with the designer
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 

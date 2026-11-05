@@ -28,7 +28,7 @@ A few things should happen even when nobody is clicking: a hold that has gone qu
 
 **How it works.** The hub runs these as background passes inside its own process. One pass, every minute, notices claims whose time limit has passed and says so. It does not take the card away. Another pass sends mail that is waiting to go out. Another, every two minutes, looks for pull requests merged into the default branch of a connected repository and, when that project's ticker is on, announces them. The passes run in every copy of the hub. Several copies are a PostgreSQL setup. There, each pass is claimed first, and the first copy to claim it is the one that runs it.
 
-**An example.** An agent stops answering while it holds a card. The next minute's pass reports claims whose time limit has passed. The card stays with the agent until the agent gives it back, someone takes it over, an admin or the holder's manager hands it on after the limit has run out, or the card is closed. A takeover can move the card while the limit still runs.
+**An example.** An agent stops answering while it holds a card. The next minute's pass reports claims whose time limit has passed. The card stays with the agent until the agent gives it back, someone takes it over, an admin or the holder's manager hands it on once its time limit has passed, or the card is closed. A takeover can move the card while the limit still runs.
 
 ## Waking an agent
 
@@ -82,7 +82,9 @@ A person can add a second factor: a time-based code from an authenticator app, p
 
 What a member may do comes from two settings on their membership. Trust is how far the project trusts them. Role is the work they do. The two together grant the rights each action checks. A guest can read and comment, whatever the role.
 
-Connections that cross a public network are encrypted. A login, a cookie or a credential sent over plain HTTP is refused, except from this machine itself. You can allow plain HTTP for a hub that stays on one machine or a private network. The install guide tells you to remove that allowance from anything public. The short hop from a TLS proxy to the hub can stay plain, because the proxy is what faces the network. The CLI refuses a plain HTTP address except for a hub on this machine. The hub sets no `sslmode` of its own. The connection to PostgreSQL is encrypted when the database URL asks for it; without `sslmode` the driver may try encryption and fall back to plain. The [Helm chart](../../deploy/helm/maity-hub/README.md) shows `sslmode=require`. The hub can still read the content, because the dashboard and the notifications work on it.
+Connections that cross a public network are encrypted. A login, a cookie or a credential sent over plain HTTP is refused, except from this machine itself. You can allow plain HTTP for a hub that stays on one machine or a private network. The install guide tells you to remove that allowance from anything public. The short hop from a TLS proxy to the hub can stay plain, because the proxy is what faces the network. The CLI refuses a plain HTTP address except for a hub on this machine. The hub can still read the content, because the dashboard and the notifications work on it.
+
+The connection to the database is separate. The hub sets no encryption on it. PostgreSQL and MariaDB are encrypted when the URL asks for it. For PostgreSQL, `sslmode=require` encrypts and does not check the server's certificate, and `sslmode=verify-full` checks it, as the [Helm chart](../../deploy/helm/maity-hub/README.md) shows. With no `sslmode`, PostgreSQL's driver may still try encryption and fall back to plain. MariaDB stays plain unless the URL turns encryption on.
 
 A human who administers memberships can isolate an agent. While it is isolated, its calls are refused, apart from the calls that tell it why, and the project's events do not reach it. Lifting the isolation restores its access.
 
