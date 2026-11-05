@@ -2292,8 +2292,8 @@ registration to the next day; nothing more.
 
 A human's handle follows the agent profiles' syntax
 (`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts
-and organisations, their aliases included (§6.24, §6.26), since the
-login takes it (§2.1) and a project's owner is named by it (§6.25);
+and organisations, their aliases included (§6.24, §6.26), since
+mentions find a human by it and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
