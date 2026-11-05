@@ -73,7 +73,7 @@ production.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02
+**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02; card tsk-zhypjk5k6h60 (jour fixe proposal req-grd7hspd3ke5, adopted 2026-11-05) for the 202 answers and value forms
 **Revisit when:** the hub declares response models on its routes — then the check can read the models' schema instead of a recorded file
 
 `hub/tests/test_web_shapes.py` seeds a project, sends the requests listed
@@ -85,9 +85,20 @@ again. `tools/check.py` sends the same requests to the fixture hub
 (`tools/fixture_answers.js`, which runs `js/api.js` on the fixtures) and
 reports every difference that is not in
 `tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
-does not, a key the hub has and the fixture lacks, another type. The
-baseline holds today's differences and only shrinks (`make fixtures`
-drops what no longer differs). It started with about ten routes; more
+does not, a key the hub has and the fixture lacks, another type. A
+request may name the `status` the hub must answer it with, so a listed
+`202` is a consent filed instead of the change, never the change itself;
+and `forms`, paths where a string is compared by its value with every id
+written `<id>`, so a request's `to` of `owner` and one of `human:<id>`
+differ (they reach different people) while two ids of either side do not.
+A `{placeholder}` in a body is filled like one in a path. The
+baseline holds today's differences; for a request already listed it only
+shrinks (`make fixtures` drops what no longer differs); a request added
+to the list has its differences written into the baseline by hand, since
+`--write` only drops entries. Writes (`POST` and `PATCH` with the
+request's `body`, and `DELETE`) come after every read in the list, and
+the hub test fails on a read after a write: both sides send the requests
+in order to one seed, so a read sees the seed before any write changed it. It started with about ten routes; more
 come one at a time, and a test keeps the two copies of the form functions
 (the hub test's and `check.py`'s, which uses the standard library only)
 equal.
@@ -104,14 +115,21 @@ unchanged and compares what each side actually answers.
 above. Comparing the fixture JSON files with `docs/api.md` — the
 contract is prose, and the files are not the answers. Treating every
 missing key as a finding at once — about 80 today; the baseline lets the
-check land and the fixtures catch up route by route.
+check land and the fixtures catch up route by route. Comparing every
+string by its value — ids, times and texts differ between any two seeds,
+so nearly every string would differ. Keys and types alone — they cannot
+tell a consent the fixture addresses to `owner` from the hub's to
+`human:<id>`, a string either way, the case the card names.
 
 **Consequence:** a key the hub sends only in some states is missing
 from the record when the seed lacks that state, and an empty list says
 nothing about its items. So the seed fills what is cheap: settings,
 mentions, a note, a link, a dependency, a request. `banner.etag` and
 `logo.etag` (only with an image) stay in the baseline as keys "the hub
-sends no such key"; a personal request from a project the reader is no
+sends no such key", and so does `owner_preferences` in the answer to
+`PATCH …/members/{agent}`: §6.2 puts it in the member view where
+`briefing` is, but the hub builds that answer without the view's
+`details`, so the gap there is the hub's; a personal request from a project the reader is no
 member of is seeded because only its notification carries
 `project.member`; without that state the record reads as if the hub never
 sent the key, and a fixture "fixed" to match would be wrong.

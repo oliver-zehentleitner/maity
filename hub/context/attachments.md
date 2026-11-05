@@ -353,3 +353,69 @@ operator wrote down.
 **Rejected alternative:**
 - **Python's `is_private`, as first written:** it also counts the
   documentation ranges (203.0.113.0/24 and others) as private.
+
+## A large body's caller is checked from its headers before the body is read
+
+**Id:** ea27e3d7-14b1-40ab-8158-b86ab575583e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; its extension to every large body on card tsk-vc82k2khj74a, asked for by the team lead the same day; `docs/api.md` §1.7, §8.7 and §2; implementation sessions, 2026-11-04
+**Revisit when:** a call that takes no caller, other than the forge webhook, is given a body larger than the 64 KiB cap, the signed scheme gains a part that covers no body, or uploads are streamed to the store instead of read whole
+
+The middleware reads a body whole before any route runs, because the
+credential filter of §2.2 scans it. For every call whose body may be larger
+than the 64 KiB default (`_body_cap` above `BODY_CAP`: `POST …/attachments` up to
+10 MiB, a logo, banner or avatar up to 1 MiB, the landing, legal and sign-in
+pages' settings and their previews up to 512 KiB), it first scans the query
+with that filter, so that a credential leaked
+there is refused with `credential_in_payload` and revoked whoever sends it.
+Then it runs `caller.precheck`: these checks of `authenticate`, in the same
+order and with the same refusals. That is a credential or
+a session cookie at all; for a bearer credential the transport, the credential
+and its secret; for a session cookie the transport, `Sec-Fetch-Site` and a live
+session; for a signed call the headers' shape, the time window and that the
+credential exists. A call that fails one gets that refusal, and its body is
+never read, so it is not scanned either. The rest, the revocation of a bearer
+credential and `X-CSRF-Token` among them, run at the route after the body is
+read. A call that passes is authenticated in full by its route as
+before, so a revoked credential, a signature that does not verify and every
+later check keep their order and their answers; the pre-check renews nothing
+and spends no nonce. When the database cannot answer the pre-check, the call
+goes on and fails at its route as any call does. On the join host, where only
+the join is served and nothing takes a caller, every body is held to the 64 KiB
+default instead: a larger one is refused with `payload_too_large` unread, and the
+rest is answered there as before.
+
+**Reason:** on the routes that take a caller, the hub reads a large body only
+for a caller who can authenticate (on the join host, never), and each refusal
+is the one the full check gives. Every one of these calls takes a caller, so
+the pre-check refuses no one the route would accept. The forge webhook is the
+one large body without a caller: the middleware hands it to its own handler
+before any of this, which holds it to its own limit and checks the signature
+(§17.4), so it is outside the cap table and the pre-check. The
+rule follows the cap, not a list of routes, so a call later given a larger cap
+gets the pre-check with it. One answer is new, and
+better: a `maity_session` cookie that is not ASCII gets `401 unauthenticated`
+from the pre-check, where the full check fails with `500 internal`, because
+it hashes the value as ASCII.
+
+**Rejected alternatives:**
+- **A body cap at the ingress alone:** the hub's own cap for this call is
+  10 MiB, so an ingress cap above it changes nothing for this call and one
+  below it breaks uploads the contract allows.
+- **Writing the body to disk while it is read:** it moves the bytes from memory
+  to disk but still reads them for every caller, and it is more code than this
+  change needs.
+- **A list of the routes to pre-check, apart from the caps:** a call given a
+  larger cap would have to be named in two places, and one forgotten would read
+  its large body for anyone.
+- **Every call pre-checked, the 64 KiB ones too:** a small body costs little to
+  read, and its scan is what finds a credential leaked in it (§2.2) before
+  anything else answers.
+- **The pre-check before the whole credential filter:** its 401 would hide a
+  credential leaked in the query, which the contract says is revoked at once,
+  from every caller (§2.2).
+- **A limit on concurrent connections in the server (`limit_concurrency`):** it
+  refuses every call above the limit, the events long-poll (§5) included, which
+  every agent holds open, and the right number depends on the instance's size.

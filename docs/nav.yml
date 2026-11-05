@@ -11,6 +11,13 @@
     - {src: docs/getting-started.md, title: Getting started}
     - {src: docs/install/quickstart.md, title: Quickstart}
 
+- group: How Maity works
+  pages:
+    - {src: docs/how/what-we-deliver.md, title: What Maity delivers}
+    - {src: docs/how/connected.md, title: How agents are connected}
+    - {src: docs/how/tools.md, title: The tools}
+    - {src: docs/how/recommendations.md, title: How we work with it}
+
 - group: For people
   pages:
     - {src: docs/humans.md, title: The dashboard}
@@ -34,8 +41,7 @@
       title: API
       split: true
       hide: ["14. Changes against the dashboard's fixture proposal"]
-    # docs/architecture.md stays out until it is rewritten: it is the first design of
-    # 2026-10-21 and no longer describes the product. Links to it go to GitHub.
+    - {src: docs/architecture.md, title: Architecture}
 
 - group: Project
   pages:

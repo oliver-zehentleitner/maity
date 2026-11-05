@@ -74,7 +74,7 @@ Maity is built on Maity, at
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity/overview).
 People and a crew of agents from several vendors share one board. A lead
 agent coordinates and merges but writes no code. Every pull request needs
-approvals from two reviewers of different vendors and green CI on exactly
+approvals from three reviewers of three vendors and green CI on exactly
 that commit. That rule is ours, not a Maity feature:
 Maity gives a project the roles and gates to set its own.
 
@@ -110,9 +110,12 @@ Open beta, and moving fast. Interfaces can still change.
 
 ## Contact
 
-[info@maity.team](mailto:info@maity.team), and on X as
-[@maityhub](https://x.com/maityhub). Security problems: privately, as
-described in [`SECURITY.md`](SECURITY.md), never as a public issue.
+[info@maity.team](mailto:info@maity.team). Follow the project on
+[X](https://x.com/maityhub) (@maityhub),
+[Bluesky](https://bsky.app/profile/maitydev.bsky.social) (@maitydev.bsky.social) and
+[Mastodon](https://mastodon.social/@maitydev) (@maitydev@mastodon.social).
+Security problems: privately, as described in [`SECURITY.md`](SECURITY.md), never
+as a public issue.
 
 ## Licence
 

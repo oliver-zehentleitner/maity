@@ -858,6 +858,63 @@ so that a route such as `/api/v1/events` is not refused.
 - Running the text check when the cites were not checked: without the commit there is nothing to
   read the names at.
 
+## A quote in a review's text is checked only where the text ties it to one file
+
+**Id:** ee1f9aff-4675-4821-a689-4630ea801826
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-6s087f17bvd7 (decided by the maintainer in req-02c4xjbn1sep); contract `docs/api.md` §8.4 ("A review's text names only what stands at its head", form 4)
+**Revisit when:** reviewers report a quote refused that was no quotation (a delta review quoting removed text next to its line is the known case), or a misquote passes because its file and line stood a few words away
+
+A review had sent two quoted sentences that the reviewed head did not hold; the cites in its JSON
+were right, and the text check read only code spans. The maintainer decided that quotes are
+checked too, with few false alarms. Not every phrase in double quotes is a quotation: reviews
+quote their own proposals, a command's output, a mutation they applied, the text a page renders.
+So a quote is checked only where the text ties it to one file: a file and line right before it
+(`path:n says "…"`) or in brackets right after it (`"…" (path:n)`), or a section whose heading
+names one file. It must then stand in that file, compared with whitespace runs as one space and
+without backticks, since prose wraps and reviewers drop code marks.
+
+Run over 124 saved review results of this project against their heads, the first draft, which
+tied every quote in a paragraph to every file and line the paragraph named, refused 60 of 194
+quotes, nearly all of them proposals and claims followed by their evidence. With the tie right
+next to the quote, 5 of 120 were refused, none of them a misquote: a mutation, an output, a
+rendered text, one ambiguous, and a delta review's correct quote of the text its change removed,
+set next to the line that replaced it. A reviewer's own run over 138 of its results found 7 of
+231 tied quotes refused, again no misquote: outputs and a rendered text, a removed text as
+above, and two correct quotes of a comment and of a string literal wrapped over lines. A wrapped
+comment now matches the file without its comment markers; the others are written in a code
+span. Neither sample holds a misquote, so the check rests on the incident (a quoted sentence the
+head never held) and the maintainer's decision, not on misquotes found in old reviews, and its
+cost is that rule for reviewers.
+
+When the places next to a quote name two files, it is tied to none: either file could be the
+wrong source. Brackets may stand on the paragraph's next line, as a wrapped review sets them, and
+the brackets one quote took are no place before the next, so that `"x" (a:1) and "y" (b:2)` ties
+each quote to its own file.
+
+A quote tied by a file and line has to stand at the head, as the line refers to the head
+(form 1). A quote tied only by its section may also stand on the default branch, so that a
+review can quote what the change removed.
+
+**Rejected alternatives:**
+- Tying a quote to every file and line in its paragraph: the measured 60 of 194 false alarms;
+  a single-line review paragraph names many files.
+- Tying a quote whose places name two files to each of them: one of them is always the wrong
+  source, so a correct quote of one file is refused against the other.
+- `)` as a stop between a place and the next quote: reviews also write `(path:n) says "…"`,
+  and a reviewer's run over 175 of its texts lost four such ties that way; skipping the
+  brackets a quote took changed no other tie there.
+- `"…": path:n` as a tie: in the reviews it is a claim followed by the line that backs it, and
+  the claim is the reviewer's summary, not a quote from that line.
+- Checking every quote of four words or more against the whole head: proposals and outputs
+  would all be refused.
+- `„…“` left out: German reviews use it, and its closing `“` would otherwise open a quote.
+- Letting a quote tied by a file and line also stand at the review's base, for a delta review
+  that quotes what it replaced: the review result carries no base, and `origin/HEAD` is not the
+  delta's base either.
+
 ## `proc.run` reads git and gh as UTF-8, whatever the machine's locale
 
 **Id:** 32eaf285-a878-4717-8fc1-34b73027d5c7
@@ -943,7 +1000,7 @@ the same way. Inside the quote a `"` shows as `\"` and a backslash as
 `\\`, as in JSON: otherwise a reason could close the quote itself and
 the rest of it would stand outside, as if the command had said it.
 `maity wait` raises it at once like any other refusal; only dropped
-connections and `5xx` are retried. On `maity resume` the packet's
+connections, `5xx` and `429` are retried. On `maity resume` the packet's
 `membership.isolated` comes first, before a pause, and the next step is
 to stop; the empty-board check is skipped, since that read would be
 refused.
@@ -1318,6 +1375,40 @@ deadline is what the deadline promises, not an outage.
   more per agent and window than before, while prod was under database
   load, and the last ones were cut off anyway. An event that arrives
   while `wait` rests is returned by the next call.
+
+## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After`
+
+**Id:** 6288d23f-c0fb-477d-a120-8e862ae10628
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built
+**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, or a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule
+
+A `429` on the events long-poll is retried with the same cursor, as a
+`5xx` or a dropped connection is: the first one prints `hub answered
+429, retrying until the timeout`, and the pause is the backoff (2 s up
+to 30 s) or the answer's `Retry-After`, whichever is longer, never past
+the deadline. A `429` without `Retry-After`, as a limit on open
+requests sends it, gets the backoff alone. A wait whose deadline comes
+first ends as any timeout does, with exit 3, so the loop around it
+re-arms. Every other `4xx` still ends `wait` with exit 1.
+
+**Reason:** a `429` says "not now", not "this request is wrong": a
+rate limit in front of the hub (an ingress or a proxy) or in it answers
+it to a client that is otherwise fine. Exit 1 tells an agent to
+inspect and resolve the error before re-arming, and there is nothing to
+resolve, so a busy moment would drop agents out of their wait loops.
+`runner serve` already backs off on a `429` the same way.
+
+**Rejected alternatives:**
+- Keep the `429` an error with exit 1, as it was grouped with the other
+  `4xx` when the retry was built: the agent would stop listening for
+  something that passes on its own.
+- Sleep exactly `Retry-After` and ignore the backoff: a limit that keeps
+  answering `Retry-After: 1` would be asked again every second.
+- Exit 3 at once on a `429`: the loop re-arms at once, the same pace as
+  retrying without any pause.
 
 ## `join` ends with how to put `maity` on PATH
 

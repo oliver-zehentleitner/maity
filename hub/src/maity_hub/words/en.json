@@ -101,6 +101,7 @@
   "product.bug": "Found a bug?",
   "product.love": "love",
   "product.made_by": "Made with {heart} by {name} on {github} & {maity}",
+  "product.security": "Found a vulnerability?",
   "register_page.button": "Create account",
   "register_page.closed": "Registration is closed.",
   "register_page.dead": "This link no longer works.",

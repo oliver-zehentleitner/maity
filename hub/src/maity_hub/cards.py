@@ -6,15 +6,18 @@ inside one transaction.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Collection
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Connection, delete, insert, select
+from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.access import Membership
 from maity_hub.errors import ApiError, forbidden, invalid
 from maity_hub.scopes import ROLES
+
+if TYPE_CHECKING:  # access imports the caller, which reads the claims below: cards stays a leaf
+    from maity_hub.access import Membership
 
 KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
@@ -22,10 +25,60 @@ LABELS = ("fix", "feature", "chore")
 # that does a card's work, which the proxy and the manager do not.
 NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager"))
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
+# The one list of closed statuses. A closed card keeps its holder's columns as a record, so
+# every reader of claims leaves these out; `open_claims` does it for them.
 CLOSED = ("done", "cancelled")
 CREATE_STATUSES = ("proposed", "open")
 # The two signatures under `done_authority: reviewer_and_tester` and their scopes (§6.4).
 SIGNATURES = {"review": "tasks:review", "test": "tasks:test"}
+
+
+class _Instances:
+    """How `open_claims` picks by instance, besides one named instance or None."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __repr__(self) -> str:
+        return self.name
+
+
+EITHER = _Instances("EITHER")  # with an instance or without one
+SOME_INSTANCE = _Instances("SOME_INSTANCE")  # an instance's, none a bridge holds
+
+
+def open_claims(
+    holder: int | Collection[int] | ColumnElement[Any] | None,
+    *,
+    instance: str | None | _Instances = EITHER,
+    status: str | Collection[str] | None = None,
+) -> ColumnElement[bool]:
+    """The cards held and not closed (§6.5), as a condition on `card`. A closed card keeps its
+    holder's columns, so a reader without the status test counts them as held (#1304, #1305).
+
+    `holder`: a membership id, several, a column to compare with, or None for any holder.
+    `instance`: one instance's claims, None for those a bridge holds (no instance),
+    `SOME_INSTANCE` for any instance's, `EITHER` (the default) for all.
+    `status`: only these of the open statuses."""
+    c = t.card.c
+    where: list[ColumnElement[bool]] = [c.status.not_in(CLOSED)]
+    if holder is None:
+        where.append(c.claim_holder.is_not(None))
+    elif isinstance(holder, int | ColumnElement):
+        where.append(c.claim_holder == holder)
+    else:
+        where.append(c.claim_holder.in_(list(holder)))
+    if instance is SOME_INSTANCE:
+        where.append(c.claim_instance.is_not(None))
+    elif instance is None:
+        where.append(c.claim_instance.is_(None))
+    elif isinstance(instance, str):
+        where.append(c.claim_instance == instance)
+    if isinstance(status, str):
+        where.append(c.status == status)
+    elif status is not None:
+        where.append(c.status.in_(list(status)))
+    return and_(*where)
 
 
 def invalid_transition(current: str, wanted: str) -> ApiError:
@@ -128,6 +181,9 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
     simple = {("proposed", "open"), ("open", "proposed")}
     if (current, wanted) in simple:
         return
+    if (current, wanted) == ("blocked", "done") and merged_in_review(mine.project, card):
+        # A merged report waits behind a request: the merge is what review asked for (§6.6).
+        current = "review"
     if (current, wanted) in {("review", "done"), ("review", "in_progress")}:
         if has_done_authority(mine, card):
             refuse_same_team_review(mine, card)
@@ -140,6 +196,18 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
             return
         raise ApiError(409, "not_holder", "only the holder moves this card to done")
     raise invalid_transition(current, wanted)
+
+
+def merged_in_review(project: Any, card: Any) -> bool:
+    """`blocked` from `review` with the report's pull request observed merged, under a
+    policy that closes with one move (two signatures stay a `review→done`, §6.4)."""
+    from maity_hub import merged  # merged reads cards
+
+    return (
+        card.status_before_block == "review"
+        and merged.merged(card.report)
+        and not two_signatures(project)
+    )
 
 
 def refuse_same_team_review(mine: Membership, card: Any) -> None:

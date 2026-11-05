@@ -1,0 +1,3 @@
+#!/bin/sh
+# Opt-in: `git config core.hooksPath tools/hooks` (CONTRIBUTING.md, "Lint and types before a push").
+exec python3 "$(git rev-parse --show-toplevel)/tools/pre_push.py" "$@"

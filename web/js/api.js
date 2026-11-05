@@ -543,11 +543,33 @@ window.Maity = window.Maity || {};
     if (body && ("capabilities" in body || ("trust" in body && !AGENT_TRUSTS.includes(body.trust))
       || ("role" in body && !AGENT_ROLES.includes(body.role)))) human();
   }
+  // A consent request as the hub answers it with 202 (§7): the whole request view,
+  // so a page reads the same keys here as from the hub (tools/shape-requests.json).
+  // `to` is "owner" for the project's owner, "human:<id>" for one human in person.
+  function consentRequest(slug, who, to, title, summary) {
+    const mine = ((fixtures()[slug + "/members.json"] || { items: [] }).items).find((x) => x.id === who.id) || who;
+    return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to, holder: to, title, summary,
+      personal: to !== "owner", humans_only: true, priority: "normal", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
+      asked_by: { member_id: who.id, display_name: who.display_name, role: mine.role || "member", trust: mine.trust || "member",
+        instance: null, session_id: null, avatar_url: null },
+      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], jour_fixe: null, ktw_ref: null,
+      mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, report: null, takeover_id: null, task: null, task_id: null,
+      tried: null, while_open: "wait", created_at: nowIso() };
+  }
   // Changing the role of or pausing a reviewer or the contract arbiter, and
   // any removal, by an agent waits for a human's go: 202 with the request.
-  function consentFor(who, title) {
+  function consentFor(slug, who, title) {
     if (who.kind !== "agent") return null;
-    return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
+    return consentRequest(slug, who, "owner", title, title);
+  }
+  // Another owner's agent (§6.2): what its owner decides waits for them, a
+  // personal request to that human (to: human:<id>), as the hub files it.
+  const FOREIGN_FIELDS = ["trust", "role", "areas", "capabilities", "briefing", "availability_policy", "dormant", "paused"];
+  const ownerOf = (x) => (x.kind === "agent" ? x.owner_id : x.id);
+  const foreignTo = (who, target) => (target.kind === "agent" && target.owner_id !== ownerOf(who) ? "human:" + target.owner_id : null);
+  function foreignConsent(slug, who, target, summary) {
+    const to = foreignTo(who, target);
+    return to && consentRequest(slug, who, to, "Change " + target.handle + " in " + project(slug, "").name, summary);
   }
   // A security team counts as its base here (§2.3): purple team as reviewer, red team as tester.
   const guarded = (slug, target) => ["reviewer", "tester", "purple-team", "red-team"].includes(target.role)
@@ -1365,26 +1387,31 @@ window.Maity = window.Maity || {};
     if (youngerThanHour(cur) && Date.parse(s.created_at) < Date.parse(cur.created_at)) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
   }
   // Ending one ends the sessions it approved by device code, and theirs.
+  // `sessions_rev` (§18.2): the number of the newest session record, here the
+  // highest `created.record` of the fixture's sessions, raised by every end.
+  let sessionRecord = null;
+  function sessionsRev() {
+    if (sessionRecord === null) {
+      const numbers = fixtures()["sessions.json"].items.map((s) => Number(((s.created || {}).record || "acr-0").slice(4)));
+      sessionRecord = Math.max(0, ...numbers);
+    }
+    return sessionRecord ? "acr-" + sessionRecord : null;
+  }
   function endSession(s, by) {
+    sessionsRev();
+    sessionRecord += 1; // its session_ended record
     Object.assign(s, { ended_at: nowIso(), ended_by: by });
     activeSessions().filter((x) => x.approved_by === s.id).forEach((x) => endSession(x, by));
   }
-  // A security item is marked read only from a session in good standing that
-  // existed before what it reports, never from the reported session (§18.3).
   // Why this session may not mark a security item read, or null (§18.3):
-  // only a sign-in and an address change are guarded, `not_earlier` before
-  // `not_in_good_standing`, as the hub checks them.
+  // only an address change is guarded, from a session in good standing that
+  // existed before it, `not_earlier` before `not_in_good_standing`, as the hub
+  // checks them. A sign-in is no item (§2.6.5).
   function securityRefusal(x) {
     const cur = currentSession();
     const t0 = x.target || {};
-    const address = t0.type === "settings" && t0.id === "notifications";
-    if (t0.type !== "session" && !address) return null;
-    let since = Date.parse(x.at);
-    if (t0.type === "session") {
-      if (cur && t0.id === cur.id) return "not_earlier";
-      const reported = fixtures()["sessions.json"].items.find((s) => s.id === t0.id);
-      if (reported) since = Date.parse(reported.created_at);
-    }
+    if (!(t0.type === "settings" && t0.id === "notifications")) return null;
+    const since = Date.parse(x.at);
     if (!cur || !(Date.parse(cur.created_at) < since)) return "not_earlier";
     return cur.good_standing ? null : "not_in_good_standing";
   }
@@ -1486,6 +1513,7 @@ window.Maity = window.Maity || {};
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
+    max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
   };
 
   // §16.12 The fixture hub's maintenance window: none at first; ?maintenance=upcoming or
@@ -1748,8 +1776,8 @@ window.Maity = window.Maity || {};
       endSession(s, s.id === fixtures()["sessions.json"].current ? "logout" : "revoked");
       return { ended: true };
     }],
-    // §2.6.5: "This was me", checked in the hub's order; it marks the
-    // sign-in's alert read as well.
+    // §2.6.5: "This was me", checked in the hub's order; it marks nothing
+    // read, as a sign-in is no bell item.
     ["POST", /^\/auth\/sessions\/([^/]+)\/confirm$/, (m, body, path) => {
       const all = fixtures()["sessions.json"];
       const s = all.items.find((x) => x.id === m[1]);
@@ -1759,9 +1787,6 @@ window.Maity = window.Maity || {};
       if (s.id === cur.id || !(Date.parse(cur.created_at) < Date.parse(s.created_at))) refuse("not_earlier");
       if (!cur.good_standing) refuse("not_in_good_standing");
       if (!s.good_standing) Object.assign(s, { good_standing: true, confirmed_at: nowIso(), confirmed_by: cur.id });
-      fixtures()["notifications.json"].items.forEach((x) => {
-        if (x.target && x.target.type === "session" && x.target.id === s.id) x.read = true;
-      });
       return Object.assign({ current: false }, s);
     }],
     ["POST", /^\/auth\/sessions\/end-others$/, (m, body, path) => {
@@ -1842,7 +1867,7 @@ window.Maity = window.Maity || {};
       const after = query.get("after");
       const head = headOf(n.items);
       if (after !== null) {
-        if (!limit) return { counts, by_project: byProject, items: [], next_cursor: null, next_after: after, server_time: nowIso() };
+        if (!limit) return { counts, by_project: byProject, items: [], sessions_rev: sessionsRev(), next_cursor: null, next_after: after, server_time: nowIso() };
         const past = items.filter((x) => pastOf(x, after)).sort(inOrder);
         const listed = past.slice(0, limit);
         const [a, b] = parts(after);
@@ -1851,7 +1876,7 @@ window.Maity = window.Maity || {};
         const next = past.length > limit
           ? Math.max(a, ...listed.filter((x) => !x.record).map((x) => x.seq)) + "." + Math.max(b, ...listed.filter((x) => x.record).map(recordNo))
           : Math.max(a, ha) + "." + Math.max(b, hb);
-        return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: next, server_time: nowIso() };
+        return { counts, by_project: byProject, items: listed.map(view), sessions_rev: sessionsRev(), next_cursor: null, next_after: next, server_time: nowIso() };
       }
       const offset = Number(query.get("cursor") || 0);
       const ordered = items.slice().sort(inOrder).reverse();
@@ -1861,7 +1886,7 @@ window.Maity = window.Maity || {};
       const pinned = n.items.filter((x) => x.kind === "security" && !x.read)
         .sort(inOrder).reverse().slice(0, 50);
       return { counts, by_project: byProject, items: listed.map(view),
-        pinned: pinned.map(view),
+        pinned: pinned.map(view), sessions_rev: sessionsRev(),
         next_cursor: limit && offset + limit < ordered.length ? String(offset + limit) : null,
         next_after: head, server_time: nowIso() };
     }],
@@ -2323,6 +2348,9 @@ window.Maity = window.Maity || {};
       if (r.status === "expired") fail(409, "invalid_transition", "the report expired", path, { from: "expired", to: "resolved" });
       // Resolved again, the report keeps when it first closed (§16.8); the answer carries the snapshot, as the hub's.
       Object.assign(r, { status: "resolved", action: body.action, note: body.note || null, resolved_at: nowIso(), closed_at: r.closed_at || nowIso() });
+      // Its request to the instance admin is withdrawn with it (§16.8, §7).
+      personalRequests().filter((x) => x.report && x.report.id === r.id && x.status === "open")
+        .forEach((x) => Object.assign(x, { status: "withdrawn", answered_at: nowIso() }));
       return Object.assign({}, r);
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
@@ -2334,9 +2362,9 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5 };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10 };
       Object.entries(body).forEach(([k, v]) => {
-        if (k === "humans_at_limit" || k === "humans_at_org_limit") fields[k] = "read_only";
+        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit"].includes(k)) fields[k] = "read_only";
         else if (!(k in defaults)) fields[k] = "extra_forbidden";
         else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
         else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= 1 && v <= 10000))) fields[k] = "invalid";
@@ -2718,6 +2746,8 @@ window.Maity = window.Maity || {};
       const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      // A report's request closes with the report alone (§16.8): resolved or expired.
+      if (req.report) fail(409, "resolve_the_report", "resolve the report", path, { report: req.report.id });
       if (m[2] === "answer") checkAnswer(req, body, path, null);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
       const edited = "markdown" in body || "base_version" in body;
@@ -3853,7 +3883,51 @@ window.Maity = window.Maity || {};
       card.watching = false;
       return card;
     }],
-    ["GET", /^\/projects\/([^/]+)\/messages$/, () => ({ items: [], next_cursor: null })],
+    // §8.8: the project's messages but chats, newest first from the log,
+    // a removed one as its tombstone; `after` reads oldest first.
+    ["GET", /^\/projects\/([^/]+)\/messages$/, (m, body, path, query) => {
+      project(m[1], path);
+      const LISTED = ["interface_change", "blocker", "go_request", "review_result", "handover", "notice", "update"];
+      const errors = {};
+      const types = query.getAll("type").flatMap((x) => x.split(","));
+      if (types.some((x) => !LISTED.includes(x))) errors.type = "unknown";
+      const limit = query.get("limit") === null ? 50 : Number(query.get("limit"));
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) errors.limit = "invalid";
+      const bound = (k) => { const v = query.get(k); if (v !== null && !/^\d+$/.test(v)) errors[k] = "invalid"; return v === null ? null : Number(v); };
+      const after = bound("after");
+      const before = bound("before");
+      if (after !== null && before !== null) errors.after = "invalid";
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid query", path, { fields: errors });
+      const filter = types.length ? [...new Set(types)].sort() : null;
+      const filterKey = [query.get("after") || "", query.get("before") || "", (filter || []).join(",")].join("|");
+      const item = (e) => {
+        const tomb = e.redacted || !e.payload || e.payload.redacted;
+        const x = { id: "evt-" + e.seq, seq: e.seq, from: e.actor.member_id, from_instance: e.actor.instance || null, sent_at: e.at };
+        if (tomb) {
+          const p = e.payload || {};
+          return Object.assign(x, { type: null, to: null, task_id: null, body: null, mentions: [], attachments: [], review: null,
+            redacted: true, redaction: { at: p.at || null, by: p.by || null, reason: p.reason || null } });
+        }
+        const p = e.payload;
+        return withTombstones(m[1], Object.assign(x, { type: p.type, to: p.to === undefined ? null : p.to, task_id: p.task_id || null, body: p.body,
+          mentions: p.mentions || [], attachments: p.attachments || [], review: p.type === "review_result" ? p.review || null : null, redacted: false, redaction: null }));
+      };
+      let items = eventsOf(m[1]).filter((e) => e.kind === "message" && !e._conversation && !(e.payload && e.payload.type === "chat") && readable(m[1], e))
+        .map(item).filter((x) => (filter ? !x.redacted && filter.includes(x.type) : true));
+      const upward = after !== null;
+      items = upward ? items.filter((x) => x.seq > after).sort((a, b) => a.seq - b.seq)
+        : items.filter((x) => before === null || x.seq < before).sort((a, b) => b.seq - a.seq);
+      const cursor = query.get("cursor");
+      if (cursor !== null) {
+        // Opaque to the page: "<seq>~<the query it was made for>".
+        const at = cursor.indexOf("~");
+        const seqOf = Number(cursor.slice(0, at));
+        if (at < 1 || !Number.isInteger(seqOf) || cursor.slice(at + 1) !== filterKey) fail(400, "invalid", "a cursor for other filters", path, { fields: { cursor: "invalid" } });
+        items = items.filter((x) => (upward ? x.seq > seqOf : x.seq < seqOf));
+      }
+      const page = items.slice(0, limit);
+      return { items: page, next_cursor: items.length > limit ? page[page.length - 1].seq + "~" + filterKey : null };
+    }],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
     ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
@@ -3999,6 +4073,25 @@ window.Maity = window.Maity || {};
       Object.assign(item, body.done ? { done: true, by: me().member.id, at: nowIso() } : { done: false, by: null, at: null });
       return card;
     }],
+    // §11.5: the project's own export whole (the root only; a member, a named repository and
+    // a lean export's bodies are the real hub's to show).
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/export$/, (m, body, path, query) => {
+      if (!project(m[1], path).keep_the_why_export) {
+        fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);
+      }
+      if (query.get("canonical") || query.get("root")) {
+        fail(404, "not_found", "not a repository of this project's family", path, { reason: "not_in_family" });
+      }
+      const answer = JSON.parse(JSON.stringify(file(m[1], "keep-the-why-export.json", path)));
+      if (fixtureKtw === "unavailable") {
+        fail(503, "ktw_unavailable", "the Keep the Why export could not be read", path,
+          { reason: "forge_unavailable", last: Object.assign(answer, { fresh: false }) });
+      }
+      return answer;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/bodies$/, (m, body, path) => {
+      fail(404, "not_found", "this export carries its bodies inline", path, { reason: "no_bodies_file" });
+    }],
     ["GET", /^\/projects\/([^/]+)\/keep-the-why$/, (m, body, path, query) => {
       if (!project(m[1], path).keep_the_why_export) {
         fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);
@@ -4074,7 +4167,7 @@ window.Maity = window.Maity || {};
         if (body.instance && !inst) errors.instance = "not_an_instance";
         if (inst && body.dormant && (target.team || {}).lead_instance === inst.id) errors.dormant = "lead";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
-        if (!own) return consentFor(who.member, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
+        if (!own) return foreignConsent(m[1], who.member, target, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
         inst.dormant = body.dormant ? { since: nowIso(), by: who.member.id } : null;
         // Every active instance at rest: the team is limited (§6.12, source dormant, no until).
         const active = target.instances.filter((i) => !i.revoked_at);
@@ -4165,25 +4258,29 @@ window.Maity = window.Maity || {};
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       if (guarded(m[1], target)) {
         const consent = ("role" in body && body.role !== target.role) || ("trust" in body && body.trust !== target.trust)
-          ? consentFor(who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
-          : body.paused ? consentFor(who.member, "Pause " + target.handle) : null;
+          ? consentFor(m[1], who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
+          : body.paused ? consentFor(m[1], who.member, "Pause " + target.handle) : null;
         if (consent) return consent;
       }
-      if ("trust" in body) target.trust = body.trust;
-      if ("role" in body) target.role = body.role;
+      // Another owner's agent: its owner's fields wait for them, the rest applies at once (§6.2).
+      const held = foreignTo(who.member, target) ? FOREIGN_FIELDS.filter((k) => k in body) : [];
+      const foreign = held.length ? foreignConsent(m[1], who.member, target, who.member.handle + " asks to change " + held.join(", ") + " of " + target.handle + ".") : null;
+      const applies = (k) => k in body && !held.includes(k);
+      if (applies("trust")) target.trust = body.trust;
+      if (applies("role")) target.role = body.role;
       if ("reports_to" in body) target.reports_to = body.reports_to;
-      if ("areas" in body) target.areas = [...new Set(body.areas)];
-      if ("capabilities" in body) target.capabilities = [...new Set(body.capabilities)];
-      if ("briefing" in body) {
+      if (applies("areas")) target.areas = [...new Set(body.areas)];
+      if (applies("capabilities")) target.capabilities = [...new Set(body.capabilities)];
+      if (applies("briefing")) {
         target.briefing = body.briefing || null;
         target.briefing_by = { kind: me().member.kind, id: me().member.id, handle: me().member.handle };
         target.briefing_version = (target.briefing_version || 1) + 1;
       }
-      if ("paused" in body) {
+      if (applies("paused")) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
-      return target;
+      return foreign || target;
     }],
     // §11.4: the namespace owner confirms the repository for their grants, only
     // the URL the project carries now; a changed one is a conflict.
@@ -4274,7 +4371,7 @@ window.Maity = window.Maity || {};
       }
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, null, path);
-      const consent = consentFor(who.member, "Remove " + target.handle);
+      const consent = consentFor(m[1], who.member, "Remove " + target.handle);
       if (consent) return consent;
       if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
         fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
@@ -4606,8 +4703,8 @@ window.Maity = window.Maity || {};
       if (!purpose || purpose.length > 200) fields.purpose = "invalid";
       if (Object.keys(fields).length) fail(400, "invalid", "the connection is not valid", path, { fields });
       if (bridge.owner_id !== served.owner_id) {
-        return { id: "req-bridge" + Date.now().toString(36), class: "consent", to: bridge.owner_id, status: "open",
-          title: "Bridge " + bridge.handle + " for " + served.handle + ": " + purpose };
+        return consentRequest(m[1], who, "human:" + bridge.owner_id, "Bridge " + bridge.handle + " for " + served.handle,
+          who.handle + " asks to connect " + bridge.handle + " for " + served.handle + ": " + purpose);
       }
       const id = "brg-" + Math.random().toString(36).slice(2, 10);
       served.bridges = (served.bridges || []).concat([{ id, member_id: bridge.id, handle: bridge.handle, purpose, cross_owner: false }]);

@@ -102,11 +102,12 @@ loop answers, which a TCP check would not.
 The chart's Ingress is a plain `networking.k8s.io/v1` object that any
 controller serves through `ingress.className`. Its default annotations
 carry the long-poll settings for ingress-nginx: 75 s read and send
-timeouts, buffering off. They merge with the operator's annotations and can
+timeouts, buffering off; and, since a later change (5eb8e035, this file),
+the body size an attachment upload needs. They merge with the operator's annotations and can
 each be set to null. The chart README says that upstream ingress-nginx has
 been retired since March 2026, with no further releases or security fixes,
 and that a new cluster should use a maintained controller with its own
-equivalents of the three settings.
+equivalents of these settings.
 
 **Reason:** the hub needs only what every Ingress controller offers, plus
 two properties of the long-poll: at least 55 s per request, and an
@@ -325,6 +326,10 @@ The restore extracts with `--strip-components=1`: the tar's first entry, `./`, i
 and not to the restoring user, so tar's attempt to set its time and mode failed with exit 2 after the files were back. A cut-off tar is found by
 listing it before the volume is emptied.
 
+Changed on 2026-11-04: the files are now encrypted, `maity-<time stamp>.dump.gpg` and `.attachments.tar.gpg`, and the restore streams the tar,
+decrypted and listed off the instance, into a Job that waits for it ("The k3s backups are encrypted with gpg", below). The `dump ok:` line keeps
+its shape, with the encrypted sizes first, so `helm-upgrade.sh` reads it as before.
+
 Changed on 2026-11-01: the migrate Job used to mount the claim too, only because it shares the hub's environment and `MAITY_ATTACHMENT_DIR` must name a
 writable directory. No migration reads the store. On a two-node cluster the Job landed on the other node than the running hub, the `ReadWriteOnce` claim
 gave a Multi-Attach error and the upgrade ran into its deadline, so the Job now has neither the variable nor the mount. A wrong directory is now found
@@ -345,3 +350,109 @@ when the hub starts, after the migration, not before it, and the hub is down unt
   the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
 
+## The k3s backups are encrypted with gpg to a public key in a Secret, and the Job fails without it
+
+**Id:** f6cd5dc1-f718-4490-92fc-285f88085514
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04); the tool and the failure rule chosen by the team lead on the plan, 2026-11-04; `deploy/k3s-single/backup.yaml`, `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md
+**See:** kubernetes.md#attachments-on-the-k3s-setup-a-volume-the-chart-mounts-and-a-tar-in-the-same-backup-run — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-11-04
+**Revisit when:** the postgres image stops shipping gnupg, the backups move to an object store with its own encryption, or `age` ships in an image the setup already trusts
+
+Both containers of the backup Job pipe their output (`pg_dump -Fc`, the
+tar of the attachment volume) through `gpg --encrypt --recipient-file`
+under `umask 077`, so the night's files are `maity-<ts>.dump.gpg` and
+`maity-<ts>.attachments.tar.gpg`, mode 0600, and nothing unencrypted
+reaches the disk. The public key comes from the Secret
+`maity-backup-key` (`backup.pub`), mounted as optional. The init
+container checks it first: missing, a private key, or no public key
+ends the Job as failed with a `backup failed:` line, before anything
+is written. A restore decrypts where the private key is: the dump is
+decrypted to a file there and read whole with `pg_restore -f /dev/null`
+before it goes to `pg_restore --clean` over `kubectl exec` (a listing reads
+only the start and passes a cut-off dump), and the tar is checked to
+read without an error and to reach its end-of-archive block (`tar -tR`
+with GNU tar, its listing written to a file since `sh` has no
+`pipefail`; a plain listing passes a tar cut off between two files)
+and streamed with its SHA-256
+into a restore Job that waits for it. Both run as one block each that
+stops before the cluster when the decryption or the check of the file
+fails. The Job keeps the stream in a scratch volume and empties the
+attachment volume only when what arrived has that digest, so a wrong
+key, a backup cut off or a stream cut off on the way leaves the files
+in place. Backups written before encryption
+are left alone and counted in every night's log.
+
+**Reason:** a backup holds the verifiers of every agent credential, and
+it sits on the node next to the database and is copied elsewhere. With
+the private key off the cluster, neither the node's disk nor a copy
+can be read. gpg is already in the pinned `postgres:17.10` image, so no
+other image enters the backup path. A backup must never stop silently:
+a volume for a missing Secret would leave the pod waiting with no
+failed Job, so the volume is optional and the script refuses instead.
+`dd` counts the bytes before encryption, since an encrypted empty
+stream is not empty. The shell has no `pipefail`, so a failure before
+gpg leaves a mark the script checks.
+
+**Rejected alternatives:**
+- `age`: not in the postgres image, and there is no official image of
+  it. A second step would bring in a third-party image or an install
+  at run time.
+- A symmetric key or passphrase in a Secret: the key to read the
+  backups would then be on the node they protect against.
+- Deleting the old unencrypted backups automatically: it removes what
+  might be the only copy of a night. The operator deletes them after
+  copying them off.
+- A restore Job that reads the private key from a temporary Secret:
+  simpler to run, but it puts the private key on the cluster.
+- Checking only the tar's first header in the Job before emptying the
+  volume: a tar or stream cut off between two files still unpacks
+  without an error, so the volume ends up with part of the files.
+- Staging the stream in the attachment volume itself: the volume
+  would need room for its contents twice; the scratch volume uses the
+  node's disk once.
+
+## The ingress lets a 10 MiB upload through: 11m for ingress-nginx, a buffered route of its own on Traefik
+
+**Id:** 5eb8e035-d2f3-4eed-872b-7e21bd473792
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; ingress-nginx's documented default `proxy-body-size` of 1m and Traefik's documented buffering middleware (not reproduced on a cluster); `docs/api.md` §8.7; implementation session, 2026-11-04
+**Revisit when:** the hub's attachment cap changes, Traefik can buffer a request without its response (a `disableResponseBuffer` option in a release k3s ships), or the k3s setup moves off Traefik
+**See:** kubernetes.md#the-ingress-is-a-plain-networkingk8siov1-ingress-ingress-nginx-annotations-are-only-defaults — adc362f5-08ef-41e0-ab34-05f07cd5fa26 — as of 2026-11-04
+
+The chart's default annotations gain
+`nginx.ingress.kubernetes.io/proxy-body-size: "11m"` for the whole host, and
+`deploy/helm/check.sh` checks that the value stays above the hub's
+`ATTACHMENT_CAP`. The k3s setup sets that key to null and applies
+`deploy/k3s-single/uploads.yaml`: a Traefik `IngressRoute` that matches only
+`POST …/attachments`, with a `buffering` middleware of at most 11 MiB.
+
+**Reason:** the hub takes a 10 MiB attachment (§8.7), but ingress-nginx
+refuses a body over 1 MiB by default, so an upload between the two caps
+fails at the ingress. 11 MiB leaves room above the hub's cap: a file just
+over it, up to 11 MiB, gets the hub's own `payload_too_large`, and a larger
+one the ingress's own 413. The hub caps every other body itself, at 1 MiB at
+most: 64 KiB by default, 512 KiB for the landing, legal, sign-in and sign-up
+pages' settings and their previews, 1 MiB for an image upload (logo, banner,
+avatar) and for a forge webhook delivery. A host-wide limit therefore needs
+no finer split. Traefik has no body limit by default, so on k3s an upload
+would pass without the route too. The route is there to bound the upload at
+the edge as ingress-nginx's value does, and to have Traefik take the whole
+body, on disk past 1 MiB, before it passes the request on: a slow upload
+then waits at Traefik, and reaches the hub whole and at once.
+
+**Rejected alternatives:**
+- **One buffering middleware for the whole host on Traefik:** Traefik's
+  buffering holds back the response as well, and the event long-poll's answer
+  must reach the client unbuffered (§8); the option to buffer only the
+  request is not in a release k3s ships.
+- **A separate Ingress with its own `proxy-body-size` for the upload path in
+  the chart:** an Ingress path cannot match the method or the
+  `{owner}/{slug}` segments without regex annotations, and the hub already
+  caps the other bodies, so a second Ingress object adds nothing over one
+  host-wide value.
+- **A 2m host-wide limit plus 11m for the upload path:** the same second
+  object for limits the hub already enforces itself.

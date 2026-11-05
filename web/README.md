@@ -106,18 +106,18 @@ items when it opens, unread ones marked, each a link to where it happened. The l
 built from the item's `target`, never from its `url`. Opening an item
 marks it read, except a security alert (`security`): the unread ones
 stand pinned on top in a block of their own (`pinned`, §18.2), each
-once, and opening one only leads to it. Reading never confirms
-(§2.6.5, §18.3): a sign-in this session may confirm has **This was me**
-(`POST /auth/sessions/{id}/confirm`), every other one **Mark read** where
-this session may mark it (a sign-in or address alert from a confirmed
-session older than it, every other kind from any session). For that the
-bell reads the sessions, ended ones too, whenever an alert is pinned.
+once, and opening one only leads to it. A sign-in is no item (§2.6.5):
+it is confirmed with **This was me** on the banner or under Sessions.
+Reading never confirms (§18.3). Each pinned alert has **Mark read** where
+this session may mark it (an address change from a confirmed session
+older than it, every other kind from any session). For that the bell
+reads the sessions, ended ones too, whenever an alert is pinned.
 **Mark all read** marks everything up to that answer's position
 (`next_after`, passed back unchanged); with security alerts pinned it
-first asks, naming each with its time, title (the device) and place, and
+first asks, naming each with its time and title, and
 then sends `include_security`. Declined, nothing is sent. What the hub
 left unread (`skipped`) is named with its reason, and the panel stays
-open. A sign-in or an address change leads to the account's
+open. A security alert leads to the account's
 sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
 personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening" (or "… are away" when one of them stopped while holding cards)
 (`agents_not_listening`, target `agents`, under `not_listening.mode: bell`) to one's agents (`/agents`). Escape closes
@@ -190,7 +190,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/sign-in/second-factor`, `/sign-in/second-factor/email#<token>` | the **second step of a sign-in** (`js/second-factor.js`, `docs/api.md` §2.8.2, §2.8.8): any page shows it while the session owes the second factor, and nothing else. With TOTP: the app's code or a recovery code. With the mail as the factor: what the mail is doing (sent to `address_hint` or "your address"; how long until the next when rate-limited; unavailable), the mailed code and **Send again**; **Sign out and start again** ends it. The mail's link posts its token from the page (`?token=` in fixture mode) and drops it from the address; opened in a browser without that session it says to open it where the sign-in started, or to type the code there. A step-up of a human without TOTP under the mail factor mails a code and asks for it (`js/step-up.js`) |
 | `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** with its two parts under it, **Lead me step by step rather than expecting me to explain.** and **When you need a human's hands, come to me first.** (`PATCH /me`, §5.2: switching on ticks both, off clears both, each part can be ticked or cleared alone, and ticking one while off turns the mode on with it; agents that deal with them read the hub's note, and the page shows that same note under the parts, as `/me` and each answer carry it (`meat_proxy_note`): the parts set while on, both while off), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it) and, above them, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default the Mine tab of a project's Settings may override), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
+| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** with its two parts under it, **Lead me step by step rather than expecting me to explain.** and **When you need a human's hands, come to me first.** (`PATCH /me`, §5.2: switching on ticks both, off clears both, each part can be ticked or cleared alone, and ticking one while off turns the mode on with it; agents that deal with them read the hub's note, and the page shows that same note under the parts, as `/me` and each answer carry it (`meat_proxy_note`): the parts set while on, both while off), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it) and, above them, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default the Mine tab of a project's Settings may override), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a security alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
 | `/settings/forge` | the account page opened at **Forge access** (`js/forge.js`, `docs/api.md` §11.4), the path the hub's GitHub App setup redirects to (`?error=<reason>` said in words, then dropped): the linked installations with status and the repositories they cover, **Link the GitHub App** (asks for the second factor where the hub wants it), **Unlink** (it does not uninstall on GitHub), and the own fine-grained token stored, replaced or removed (never shown); on a project's settings, which grant reads its repository and **Confirm this repository for my grants** for the namespace owner |
 | `/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `/orgs`: `web/context/views.md` |
 | `/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
@@ -215,9 +215,9 @@ A member is always clickable: wherever a view names one (the overview's
 members and reports, an inbox entry's asker, addressee and answerer, chat
 authors and people, project messages, ticker items, the members list,
 agent cards, the organisation), the name is a link to that member's row
-in Members, with the full name as tooltip (`M.dom.memberRef`). A member
-the project does not list, a personal request's people and anyone in a
-read-along view are plain text.
+in Members, with the full name as tooltip (`M.dom.memberRef`), in the
+inbox of all projects too, into the request's own project. A member the
+project does not list and anyone in a read-along view are plain text.
 
 Every role picker (a member's form, an invitation, a join, a member's own
 agent) offers the roles of `docs/api.md` §2.3 from one list (`js/trust.js`):
@@ -630,9 +630,12 @@ too.
    `<handle>#<id> · <presence>`, sent as `to_instance` (§9.1); the whole
    team still reads every message. The choice is kept per chat in this
    tab, a message sent to one instance says "to <handle>#<id>", and an
-   agent with one instance gets no choice. The open chat fills the screen below the header
-   (the visual viewport, so a phone's keyboard counts): its history
-   scrolls, the composer stays at the bottom, and a new message keeps the
+   agent with one instance gets no choice. The open chat fills the window from where it
+   starts down to its bottom edge, less what stands below it (the product line), on a
+   project's Chat tab and on Chats alike (the visual viewport, so a phone's keyboard
+   counts): the page does not scroll, its history and the chat list scroll on their own,
+   and on a screen too small for the heading, the composer and a few lines of history the
+   page scrolls instead of the composer running under the product line; the composer stays at the bottom with "Sending…" in its row of buttons, and a new message keeps the
    history at its end unless the human scrolled up. Whether the reader is
    at the end follows their own scrolling, so content that grows after it
    was drawn (an image loading, the pane resized) keeps them there too; a
@@ -809,23 +812,21 @@ too.
    without a reload; for a minute after it expired it keeps **Revoke**,
    and the hub decides, then it moves to the record. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
-8. **Why** (`/<owner>/<slug>/why`, `docs/api.md` §11.3): the project's published Keep the Why dashboard
-   state as the hub read it, read-only. A headline says how many entries
-   need attention (open, needs review, pending confirmation) out of how
-   many, in how many parts of the family (the repository's root and the
-   children its `.keep-the-why` names), with the linter's counts and when
-   the hub read it; **Read again** asks for a fresh read (`max_age=0`), in
-   every state, and is off while its read runs.
-   The entries that need attention follow, grouped by part, each linking
-   to its entry in the published dashboard (only a link under that part's
-   own dashboard is used); then one row per part with its
-   counts and a link to its dashboard. A part that could not be read is
-   named with the reason in words and its last good read. When the root
-   cannot be read, the last good answer is shown and said so; when the
-   project publishes none (`ktw_not_configured`), the view says what the
-   hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
-   string from an export is text; a link is used only when it is plain
-   `https`.
+8. **Why** (`/<owner>/<slug>/why` and paths below it, `docs/api.md` §11.5): Keep the Why's own
+   views — overview, graph, timeline, thoughts, family, topics, entries, search — mounted from
+   the vendored library (`vendor/keep-the-why/`, loaded on the first visit to Why and kept for
+   the page's life; `js/ktw-host.js`). A row of links leads to the main places; the library's own
+   links are the dashboard's paths (`/why/graph`, `/why/topic/<file>`, `/why/entry/<uuid>`, …).
+   It reads the project's export and its family's through the hub (`…/keep-the-why/export`,
+   `…/bodies`); a repository outside the family, a private one or a spent forge budget is said
+   where the library would show it. Its colours are Maity's (`--ktw-*` in `css/app.css`), its
+   settings kept in the browser (`maity-ktw-<key>`). The library's own words are English for now
+   and marked `translate="no"` (`context/views.md`); entry text is the repository's and shown
+   as text. When the hub cannot read the export, its last good read is shown with the reason;
+   **Read again** drops what the page holds and reads anew; a link from an export is used only
+   when plain https. When the project publishes no export (`ktw_not_configured`) the view says what the
+   hub reads (the root `.keep-the-why`'s `dashboard-state` line). The family's summary as the
+   hub reads it (§11.3) stays on **All projects → Why**.
 9. **Runners** (`/<owner>/<slug>/runners`, owner and admin, no tab of its
    own: linked from the project's Settings, whose tab stands for it; `docs/api.md`
    §15.4): the runners allowed to start agents for this project, by name,
@@ -1400,8 +1401,13 @@ fails while the bundle is stale.
 `make check` also compares the fixture hub's answers to the requests in
 `tools/shape-requests.json` with the hub's, recorded in
 `tools/hub-shapes.json`: a key or type the hub does not send is a
-finding, unless `tools/fixture-shapes-baseline.json` lists it, which only
-shrinks. After a change to the hub's answers, run `make shapes`
+finding, unless `tools/fixture-shapes-baseline.json` lists it. A request
+there may name the `status` the hub answers with (`202`: a consent filed
+instead of the change) and `forms`, paths whose strings are compared by
+value with ids as `<id>` (a consent's `to`: `owner` or `human:<id>`). For a
+request already in the list the baseline only shrinks; a request added to
+the list has its differences written into the baseline by hand, since
+`python3 tools/check.py --write` only drops entries. After a change to the hub's answers, run `make shapes`
 (`HUB_PYTHON=` a Python with the hub's test requirements) and commit the
 file (`context/fixtures.md`).
 
@@ -1740,6 +1746,7 @@ web/
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
 ├── js/org.js         (5) the organisation tree, a section of the Overview
+├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
@@ -1821,8 +1828,12 @@ report, agents not listening; a security alert only where this session
 may mark it, as on the bell, §18.3), and **Mark all
 read**, always there and off while nothing it marks is unread, marking up
 to the head of the first page (§18.3); the page says that it leaves
-sign-in and address alerts unread. Marking one read confirms nothing:
-a sign-in is confirmed with **This was me**. An id the hub skips
+security alerts unread. Above the list, **Current sessions** shows the
+active sessions (newest first, five and "and N more", this session and
+the unconfirmed ones marked) with a link to Profile → Sessions, and no
+buttons; it reads them again when `sessions_rev` moves (§18.8). Marking
+an item read confirms nothing: a sign-in is no item, it is confirmed
+with **This was me** under Sessions. An id the hub skips
 (`skipped`) is said, and its row stays unread.
 
 Language settings follow the API's English/Deutsch choices. In **Project

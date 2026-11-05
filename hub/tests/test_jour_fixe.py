@@ -457,6 +457,41 @@ def test_the_schedule_opens_skips_and_records_a_missed_slot(
     )
 
 
+def test_an_archived_project_records_its_slot_as_project_closed(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§20.1, §6.1: a slot while the project is archived is skipped with project_closed, at the
+    slot, not a missed hub_down after unarchiving; unarchived, the next slot opens a round."""
+    lead, member = team(owner, make_client)
+    daily_utc = {**DAILY, "timezone": "UTC"}
+    sid = series_id(owner)
+    owner.patch(f"{BASE}/jour-fixe/series/{sid}", {**daily_utc, "reason": "t"})
+    next_at = datetime.fromisoformat(
+        owner.get("/projects/maintainer/maity/jour-fixe").json()["series"][0]["next_at"]
+    )
+    closed = owner.patch(BASE, {"state": "archived", "reason": "done"})
+    assert closed.status_code == 200, closed.text
+    now[0] = next_at + timedelta(seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    skipped = [
+        (e.payload["status"], e.payload["skip_reason"])
+        for e in events(migrated, "jour_fixe_skipped")
+    ]
+    assert skipped == [("skipped", "project_closed")]
+    assert owner.patch(BASE, {"state": "build", "reason": "back"}).status_code == 200
+    now[0] = next_at + timedelta(days=1, seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    assert len(events(migrated, "jour_fixe_skipped")) == 1  # no missed/hub_down for the archive
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.jour_fixe_round).order_by(t.jour_fixe_round.c.scheduled_for))
+        found = [(r.status, r.skip_reason) for r in rows]
+    assert found == [("skipped", "project_closed"), ("answering", None)]
+
+
 # --- the moderator order and the observer (§20.2, §20.7) -----------------------------------------
 
 

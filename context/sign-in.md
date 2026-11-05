@@ -88,7 +88,9 @@ and, in its first hour, no older session at all;
 (Since 2026-11-02 reading an alert no longer confirms a sign-in:
 "This was me" is its own call, good standing follows from it, and
 "mark all read" may include security alerts after a confirm —
-notifications.md, d01ba62b-7acc-471c-b8d0-65c6d60209cc.)
+notifications.md, d01ba62b-7acc-471c-b8d0-65c6d60209cc. Since 2026-11-04
+a sign-in is no notification at all; the banner, the mail and "This was
+me" stay — notifications.md, feb34f93-e450-4c29-abc2-b525f20e7bb7.)
 changing the verified address needs the account password in the same
 request, or, for a human without a password, approval from a session
 in good standing at least a day old for exactly the change it was

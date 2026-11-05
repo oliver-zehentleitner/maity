@@ -18,6 +18,7 @@ from sqlalchemy.dialects import postgresql
 
 from maity_hub import availability, clock
 from maity_hub import tables as t
+from maity_hub.cards import open_claims
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
@@ -66,10 +67,7 @@ def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[di
     claims: dict[tuple[int, str], int] = {}
     for holder, instance, count in conn.execute(
         select(t.card.c.claim_holder, t.card.c.claim_instance, func.count())
-        .where(
-            t.card.c.claim_holder.in_(membership_ids),
-            t.card.c.status.notin_(("done", "cancelled")),
-        )
+        .where(open_claims(membership_ids))
         .group_by(t.card.c.claim_holder, t.card.c.claim_instance)
     ):
         claims[(holder, instance)] = count

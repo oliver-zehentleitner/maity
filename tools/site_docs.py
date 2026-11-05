@@ -192,7 +192,37 @@ def rewrite_links(page: Page, by_src: dict[str, Page], anchors: dict[tuple[str, 
         kind = "tree" if path.endswith("/") or "." not in posixpath.basename(src) else "blob"
         return f"{GITHUB}/{kind}/main/{src}" + (f"#{frag}" if frag else "")
 
-    return re.sub(r'href="([^"]*)"', lambda m: f'href="{html.escape(target(m.group(1)))}"', page.body)
+    def image(src: str) -> str:
+        """A relative image: one under docs/ is deployed beside the pages (pages.yml copies
+        docs/ to the site's root), anything else is GitHub's raw file."""
+        src = html.unescape(src)
+        if re.match(r"^[a-z][a-z0-9+.-]*:", src, re.I) or src.startswith("/"):
+            return src
+        # Only the path is normalised; a query or fragment stays as written.
+        rel, rest = re.match(r"([^?#]*)(.*)", src, re.S).groups()
+        path = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), rel))
+        if path.startswith("docs/"):
+            return "/" + path.removeprefix("docs/") + rest
+        return f"{GITHUB}/raw/main/{path}{rest}"
+
+    body = re.sub(r'href="([^"]*)"', lambda m: f'href="{html.escape(target(m.group(1)))}"', page.body)
+    # An <img> is read attribute by attribute, so a quote inside another value (an alt text
+    # that mentions src='…') is never taken for the src; Markdown quotes with ", raw HTML
+    # either way.
+    attr = re.compile(r"""(\s+)([^\s"'>/=]+)(?:(\s*=\s*)("[^"]*"|'[^']*'|[^\s"'>]+))?""")
+
+    def img(m: re.Match[str]) -> str:
+        def one(a: re.Match[str]) -> str:
+            if a.group(2).lower() != "src" or a.group(4) is None:
+                return a.group(0)
+            value = a.group(4)
+            if value[:1] in "\"'":
+                value = value[1:-1]
+            return f'{a.group(1)}src="{html.escape(image(value))}"'
+
+        return m.group(1) + attr.sub(one, m.group(2)) + m.group(3)
+
+    return re.sub(r"""(<img\b)((?:"[^"]*"|'[^']*'|[^'">])*?)(\s*/?>)""", img, body, flags=re.I)
 
 
 def nav_html(nav: list[dict], by_src: dict[str, Page], current: Page) -> str:

@@ -1586,6 +1586,9 @@ request = Table(
     # (`{membership_id, instance, kind, since, last_seen_at, cards, reason}`), compared on the
     # hour and recorded when the owner answers `seen`; null for every other request.
     Column("not_listening", JSON_VALUE),
+    # The instance admin's request about a new abuse report (§16.8): the report it stands for,
+    # whose resolution or expiry withdraws it; null for every other request.
+    _ref("report_id", "abuse_report.id", index=True),
     Column("status", String(16), nullable=False),
     Column("answer", JSON_VALUE),
     _membership_ref("answered_by"),
