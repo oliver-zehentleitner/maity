@@ -279,3 +279,62 @@ able to close a card.
 **Rejected alternatives:** for the downgrade, `admin` loosens nothing, but only admins could close a card then; it was
 named in review, and leaving the team unable to close weighs more for a downgrade that is an emergency step. The others are
 unknown: they were the first reading, not chosen against others.
+
+## The restricted-text routes check access before the body and before an idempotent replay
+
+**Id:** 7ff16130-3082-4fd9-b8f6-87a83cb4db5b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part A), on the check order of docs/api.md §6.4 and the coordinator's go on the plan
+**See:** https://github.com/oliver-zehentleitner/maity — b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9 — as of 2026-11-05
+**Revisit when:** the contract lets a caller outside the set learn anything about a card's restricted text, or idempotency replays move into the middleware
+
+`GET`, `PUT` and `DELETE` on `…/tasks/{id}/restricted` resolve the
+card, refuse a bridged call, check that the caller is in the set and,
+for a human, that the session is in good standing, before they read the
+body. The body is parsed by hand after those checks, not by a pydantic
+model on the route, so a caller outside the set gets the same
+`restricted` answer for any body and whether or not a text exists. On
+`PUT` and `DELETE` the access check runs in its own transaction before
+`idempotency.run`, so a stored answer is replayed only to a caller who
+is still in the set; a key used before leaving the set replays nothing.
+
+**Reason:** the text is the one value on a card some members must not
+learn; a validation error, a `404` against a `200`, or a replayed
+answer that carries the text would each tell an outsider something
+about it.
+
+**Rejected alternatives:**
+- A pydantic body model on the route: FastAPI validates it before the
+  handler runs, so an outsider would see `invalid` details first.
+- Leaving the check to the handler inside `idempotency.run`: a replay
+  answers before the handler runs and would hand the stored text to a
+  member who has since left the set.
+
+## The restricted-text write caps count the text's own history rows
+
+**Id:** b316fc8a-66b3-4fcd-b718-6a596864ee4f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part A), on the caps of docs/api.md §6.4 (20 writes an hour per membership, 10 sets an hour per card)
+**See:** https://github.com/oliver-zehentleitner/maity — b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9 — as of 2026-11-05
+**Revisit when:** the history is trimmed to fewer than an hour of writes, or the hub gets a general rate limiter the caps can use
+
+Every set and every clear writes a row to `task_restricted_history`
+(author, action, time) in the same transaction as the text. The caps
+count those rows of the last hour — set and cleared per membership, set
+only per card — and `Retry-After` is the time until the oldest counted
+row leaves the hour. No separate counter is kept.
+
+**Reason:** the history is already written for every change and has an
+index on author and time; counting it keeps the cap exact across
+replicas and restarts and in the same transaction as the write, with no
+second table to keep in step.
+
+**Rejected alternatives:**
+- An in-memory limiter: wrong as soon as two replicas serve the hub, and
+  reset by every restart.
+- A counter table per membership and card: a second write per change
+  that says nothing the history does not.
