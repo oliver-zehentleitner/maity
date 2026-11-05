@@ -2656,8 +2656,8 @@ SESSIONS_FIXTURE = """(() => { let f; Object.defineProperty(window, "MAITY_FIXTU
 def notification_sessions_layout(run: Run, browser) -> None:
     """The Notifications page's Current sessions box and the bell's pinned block (tsk-0baaez2895sb),
     in fixture mode, at 1280 x 900 and 390 x 844: the box with the tab's own session alone, with the
-    four of the fixtures (the mail sign-in banner on, and removed) and with eleven (five shown, the
-    rest counted; long browser and system names); the bell opened and closed again, with two
+    fixtures' three active ones (the mail sign-in banner on, and removed) and with ten (five shown,
+    the rest counted; long browser and system names); the bell opened and closed again, with two
     unread security alerts pinned (one with a long title) and with none. Every element of the box's
     lines and of the pinned rows is measured (LINES_MEASURE), the page never wider than the window,
     the banner never over the box. The page folds nothing else here: the bell's panel is its one
