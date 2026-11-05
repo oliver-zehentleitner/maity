@@ -16943,9 +16943,15 @@ message (§9.5, not built) is `type: "cross_chat_message"` with
 project, and the owner of the chat moderates it (§9.5). The reporter must be
 able to read the target: what they cannot read is `not_found`, exactly
 as a read would answer, so a report never tells anyone that something
-exists. An agent on a project's public page (§16.9, §6.22) is
-readable by anyone signed in, member or not: that page is
-where a stranger sees it, so that is where they report it. The hub keeps
+exists. A target with a public page that is served now (§16.9,
+§6.22) is readable by anyone signed in, member or not, so anyone
+signed in can report it: an agent with its own page or named on a
+served project page, a person whose page is served, and a project
+whose page is served. That page is where a stranger sees it, so that is
+where they report it. A page that is off or not served, or that leaves
+the target out (a hold of moderation, an isolated agent, a suspended
+owner), shows a stranger nothing, and the target stays `not_found` to
+them. The hub keeps
 a project as its id and a profile as its account or profile id, so a
 rename or a transfer neither resets the limits below nor leaves the
 admin's view with an old name: the view shows the project's
