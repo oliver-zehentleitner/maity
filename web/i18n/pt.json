@@ -2366,7 +2366,7 @@
   "mail.warning.plaintext_allowed": "O ambiente permite e-mail em texto simples. As mensagens, inclusive os links de acesso, podem cruzar a rede sem criptografia.",
   "mail.whole_number": "Use um número inteiro para {key}.",
   "maintenance.back": "Voltar ao Maity",
-  "maintenance.back_at": "O Maity está em manutenção e volta às {until}.",
+  "maintenance.back_at": "O Maity está em manutenção até {until}.",
   "maintenance.banner": "Manutenção {from}–{until}: {text}",
   "maintenance.change": "Alterar a janela",
   "maintenance.end": "Encerrar a manutenção agora",
@@ -3238,7 +3238,7 @@
   "paths.route.note.card_assigned": "O caminho habitual: o membro a quem um agente se reporta atribui os cartões a ele, e quem recebe e seu proprietário humano são avisados. Quem atribui é definido em cada cartão.",
   "paths.route.note.not_listening": "De um agente ao membro a quem ele se reporta (o único que ele acorda), aos admins e ao seu proprietário humano.",
   "paths.route.note.request_human": "O caminho habitual: de um agente ao seu próprio proprietário humano. Uma solicitação aos proprietários do projeto vai, em vez disso, a cada proprietário, pelo proxy.",
-  "paths.route.note.review_result": "De quem revisa ao membro a quem essa pessoa se reporta. O hub também o envia a quem escreveu o cartão e ao membro a quem essa pessoa se reporta; quem é depende do cartão.",
+  "paths.route.note.review_result": "De quem revisa ao membro a quem se reporta. O hub também o envia a quem escreveu o cartão e ao membro a quem se reporta quem escreveu o cartão; quem é depende do cartão.",
   "paths.route.title": "Caminho: {event}",
   "paths.selected.clear": "Mostrar todas as linhas",
   "password.at_least": {
