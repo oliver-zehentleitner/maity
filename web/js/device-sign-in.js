@@ -200,6 +200,7 @@ window.Maity = window.Maity || {};
     const panel = h("section", { class: "sign-in-mail", "aria-labelledby": "sign-in-mail-title" });
     const status = M.statusLine();
     const address = h("input", { id: "sign-in-address", type: "email", autocomplete: "email", required: true });
+    const send = h("button", { type: "submit", class: "btn btn-secondary" }, M.t("device.mail.send"));
     const ask = h("form", {
       class: "sign-in-form",
       onsubmit: async (e) => {
@@ -218,7 +219,7 @@ window.Maity = window.Maity || {};
     },
     h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.title")),
     h("label", { for: "sign-in-address" }, M.t("device.mail.address")), address,
-    h("button", { type: "submit", class: "btn btn-secondary" }, M.t("device.mail.send")), status.el);
+    send, status.el);
     function codeForm() {
       const code = h("input", { id: "sign-in-mail-code", inputmode: "numeric", autocomplete: "one-time-code", "aria-describedby": "sign-in-mail-sent" });
       const status2 = M.statusLine();
@@ -247,6 +248,13 @@ window.Maity = window.Maity || {};
     const open = h("button", { type: "button", class: "link-button", "aria-expanded": "false",
       onclick: () => { append(clear(panel), ask); address.focus(); } }, M.t("device.mail.send"));
     append(panel, open);
+    // The password form's refusal `email_link` (§2.1, §2.6.7): the form opened with the
+    // address the human typed there, ready to send.
+    panel.openWith = (value) => {
+      if (!ask.isConnected) append(clear(panel), ask);
+      address.value = value;
+      send.focus();
+    };
     return panel;
   }
 

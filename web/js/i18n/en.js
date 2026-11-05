@@ -2235,6 +2235,7 @@ window.MAITY_I18N["en"] = {
   "login.fixtures": "Fixtures",
   "login.page_title": "Sign in · Maity",
   "login.password": "Password",
+  "login.paused": "Signing in with the password is paused here for a while. Try again in about {minutes} min.",
   "login.public_page": "This project has a public page: view it without signing in",
   "login.session_ended": "Your session has ended. Sign in again to go on where you were.",
   "login.title": "Sign in",

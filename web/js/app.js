@@ -363,6 +363,9 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const pitch = M.authPages.pitch("sign_in", M.t("login.title"));
+    // A code from another device or a link by mail, as the hub offers them
+    // (js/device-sign-in.js), on this page's own timers.
+    const options = M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null;
     const form = h("form", {
       class: "login",
       onsubmit: async (e) => {
@@ -375,7 +378,17 @@ window.Maity = window.Maity || {};
           goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
-          status.fail(M.t("login.failed"), err);
+          const reason = err && err.details && err.details.reason;
+          if (reason === "password_paused") {
+            // §2.1, §2.6.7: when the password goes through again, from `retry_after`.
+            const minutes = M.secondFactor.minutes(err.details.retry_after);
+            status.fail("", { message: M.t("login.paused", { minutes }) });
+          } else {
+            status.fail(M.t("login.failed"), err);
+            // §2.6.7: the link by mail offered with the address filled in.
+            const mail = reason === "email_link" && options ? options.querySelector(".sign-in-mail") : null;
+            if (mail && mail.openWith) mail.openWith(email.value.trim());
+          }
         }
       },
     },
@@ -384,8 +397,6 @@ window.Maity = window.Maity || {};
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),
     status.el);
-    // A code from another device or a link by mail, as the hub offers them
-    // (js/device-sign-in.js), on this page's own timers.
     // A dashboard address of a project with a public page (§16.11): that page is one link away.
     const publicLink = h("p", { class: "public-page-link", hidden: true });
     const parts = M.route.current().path.split("/").filter(Boolean);
@@ -401,7 +412,7 @@ window.Maity = window.Maity || {};
     const legal = M.legal ? M.legal.links() : null;
     append(clear(main), M.authPages.door(pitch.panel, [
       note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, pitch.title, form, publicLink,
-      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
+      options,
       legal]));
     M.siteChrome.enter("/login", () => { if (legal) legal.remove(); });
   }

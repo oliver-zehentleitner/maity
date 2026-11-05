@@ -6972,6 +6972,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A link by mail, and its six-digit code.
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
+  // §2.1, §2.6.7: past the limit the login says when the password goes through again, or opens
+  // the link by mail with the typed address.
+  const lpPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/auth/login"
+    ? Promise.reject(new win.Maity.api.ApiError("paused", 401, p, "unauthenticated", { reason: "password_paused", retry_after: 150 })) : lpPost(p, b));
+  byId("login-email").value = "Maintainer@Example.org"; byId("login-password").value = "a long new password";
+  main.querySelector("form.login").dispatch("submit"); await dsSettle();
+  const lpPaused = text(main.querySelector("form.login .send-status"));
+  expect(lpPaused === "Signing in with the password is paused here for a while. Try again in about 3 min." && byId("login-password").value === ""
+    && !byId("sign-in-address"), "login: password_paused says when to try again (retry_after 150 s: about 3 min) " + lpPaused);
+  win.Maity.api.post = (p, b) => (p === "/auth/login"
+    ? Promise.reject(new win.Maity.api.ApiError("link", 401, p, "unauthenticated", { reason: "email_link" })) : lpPost(p, b));
+  byId("login-email").value = " maintainer@example.org "; byId("login-password").value = "a long new password";
+  main.querySelector("form.login").dispatch("submit"); await dsSettle();
+  const lpLink = byId("sign-in-address"), lpSaid = text(main.querySelector("form.login .send-status"));
+  expect(lpLink && lpLink.value === "maintainer@example.org" && lpSaid === "Not signed in: link",
+    "login: email_link opens the link by mail with the typed address filled in " + (lpLink && lpLink.value) + " | " + lpSaid);
+  win.Maity.api.post = lpPost;
+  await go("#/maintainer/maity/inbox"); await go("#/"); await dsSettle();
   btn(main.querySelector(".sign-in-mail"), "Email me a sign-in link").click(); await tick();
   byId("sign-in-address").value = "maintainer@example.org";
   main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
