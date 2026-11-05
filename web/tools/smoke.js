@@ -1198,6 +1198,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(noInst.status === 400 && noInst.details.fields.instance === "required", "dormant: without an instance it is invalid, as the hub answers");
     const ghost = await win.Maity.api.patch(drPath, { dormant: true, instance: "zzzz" }).catch((e) => e);
     expect(ghost.status === 400 && ghost.details.fields.instance === "not_an_instance", "dormant: an unknown instance is invalid");
+    // Another owner's agent (§6.2): a briefing and a pause both wait for its owner, nothing applies at once.
+    const fgPath = "/projects/maintainer/sample/members/agt-s2";
+    const fgOf = async () => (await win.Maity.api.get("/projects/maintainer/sample/members")).items.find((x) => x.id === "agt-s2");
+    const fgBefore = await fgOf();
+    const fgAsk = await win.Maity.api.patch(fgPath, { briefing: "Checks a pause.", paused: { reason: "Checks a pause." } });
+    const fgAfter = await fgOf();
+    expect(fgAsk.class === "consent" && /^human:/.test(fgAsk.to) && !fgAfter.paused && fgAfter.briefing === fgBefore.briefing,
+      "foreign agent: a briefing with a pause is a consent to its owner, neither applied " + JSON.stringify([fgAsk.to, fgAfter.paused]));
+    const fgPause = await win.Maity.api.patch(fgPath, { paused: { reason: "Checks a pause." } });
+    const fgPaused = await fgOf();
+    expect(fgPause.class === "consent" && /^human:/.test(fgPause.to) && !fgPaused.paused,
+      "foreign agent: a pause alone is a consent to its owner, not applied " + JSON.stringify([fgPause.to, fgPaused.paused]));
   }
   // The team's rulebook (§6.18, tsk-xzbk67raztm0): in the agent's row, for its owner; the active count beside the limit.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();

@@ -1,6 +1,6 @@
 {
-  "about": "The requests whose answers the fixtures must shape like the hub's (tools/check.py, hub/tests/test_web_shapes.py), in this order: the writes come last, so the reads see the seed as it is. {placeholders} are filled by each side with its own ids; a body is sent as it stands.",
-  "fixture_ids": {"project": "maintainer/maity", "agent": "agt-a", "group": "cnv-0007", "task": "tsk-0001", "runner": "rnr-0002"},
+  "about": "The requests whose answers the fixtures must shape like the hub's (tools/check.py, hub/tests/test_web_shapes.py), in this order: the writes come last, so the reads see the seed as it is. {placeholders} in a path or a body are filled by each side with its own ids; the body is sent as it stands otherwise. A request with `status` must get that status from the hub (202: a consent filed instead of the change), and at the paths in its `forms` a string is compared by its value with every id as <id>, so `to: owner` and `to: human:<id>` differ.",
+  "fixture_ids": {"project": "maintainer/maity", "agent": "agt-a", "group": "cnv-0007", "task": "tsk-0001", "runner": "rnr-0002", "foreign_project": "maintainer/sample", "mine": "agt-s1", "foreign": "agt-s2"},
   "maps": [".settings.ticker.contract_implementers", ".by_project"],
   "requests": [
     {"method": "GET", "path": "/auth/session"},
@@ -29,6 +29,8 @@
     {"method": "POST", "path": "/projects/{project}/tasks/{task}/notes", "body": {"body": "A shape note."}},
     {"method": "POST", "path": "/projects/{project}/conversations/{agent}/messages", "body": {"body": "A shape message."}},
     {"method": "POST", "path": "/projects/{project}/conversations/{group}/messages", "body": {"body": "A shape message."}},
-    {"method": "PATCH", "path": "/projects/{project}/members/{agent}", "body": {"briefing": "Checks the shapes."}}
+    {"method": "PATCH", "path": "/projects/{project}/members/{agent}", "body": {"briefing": "Checks the shapes."}},
+    {"method": "PATCH", "path": "/projects/{foreign_project}/members/{foreign}", "body": {"briefing": "Checks a consent."}, "status": 202, "forms": [".class", ".to"]},
+    {"method": "POST", "path": "/projects/{foreign_project}/members/{mine}/bridges", "body": {"bridge": "{foreign}", "purpose": "Checks a consent."}, "status": 202, "forms": [".class", ".to"]}
   ]
 }
