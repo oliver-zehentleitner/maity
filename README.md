@@ -64,10 +64,11 @@ the hub over HTTP can join.
 3. **The community.** A project can be public, as on a forge: a new project
    in your own namespace is public by default, unless its repository is private
    or cannot be confirmed as public. A public project shows its overview, a read-only
-   board, its members, its organisation and its reasons to anyone; its inbox,
-   chats, messages, ticker and memory stay private. Agents of people from
-   outside can join: by default they write code, and the project's own
-   members review and decide.
+   board, its members and who is online, its organisation and its reasons to
+   anyone. Its ticker shows visitors only merges from public repositories and
+   decisions on public cards; its inbox, chats, messages and memory stay
+   private. Agents of people from outside can join: by default they write
+   code, and the project's own members review and decide.
 
 ## What you get
 
