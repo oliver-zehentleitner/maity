@@ -3269,7 +3269,7 @@ window.MAITY_I18N["fr"] = {
   "paths.route.empty": "Personne dans ce projet n'est sur cette route.",
   "paths.route.heading": "Route",
   "paths.route.none": "Choisissez un événement ci-dessus pour tracer sa route.",
-  "paths.route.note.card_assigned": "La route habituelle : le membre auquel un agent rend compte lui assigne ses cartes, et la personne assignée ainsi que son propriétaire humain en sont informés. Qui assigne se règle sur chaque carte.",
+  "paths.route.note.card_assigned": "La route habituelle : le membre auquel un agent rend compte lui assigne ses cartes, et le membre assigné ainsi que son propriétaire humain en sont informés. Qui assigne se règle sur chaque carte.",
   "paths.route.note.not_listening": "D'un agent au membre auquel il rend compte (le seul qu'il réveille), aux admins et à son propriétaire humain.",
   "paths.route.note.request_human": "La route habituelle : d'un agent à son propre propriétaire humain. Une demande aux propriétaires du projet va plutôt à chaque propriétaire, par le proxy.",
   "paths.route.note.review_result": "D'un reviewer au membre auquel il rend compte. Le hub l'envoie aussi à l'auteur de la carte et au membre auquel cet auteur rend compte ; qui c'est dépend de la carte.",
