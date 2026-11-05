@@ -185,7 +185,7 @@ value, since a row written by an older version or by hand is still shown to the 
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`)
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`), `notifications/mailer.py` (`_schemes`) and `auth/sessions.py` (`_safari`), replaced in PR 5 of the card (2026-11-04)
 **Revisit when:** the renderer gets a construct with a pattern of its own, a member text may grow beyond its current limit (a card's 16 KiB, a note's 4 KiB), or the hub gains a way to stop a render that runs too long
 
 The renderer above runs on members' words too: the text of a public project, a card's body and its

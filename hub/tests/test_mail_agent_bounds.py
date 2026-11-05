@@ -34,11 +34,20 @@ def timed(read: Callable[[], Any]) -> float:
     "read",
     [
         lambda: mailer.defang("a." * (LONG // 2)),
+        # A run that ends in a scheme mark and holds no scheme: the scan back over it and the
+        # look for a letter after `+`, `.` or `-` both go over the whole run, the longest path.
+        lambda: mailer.defang("1." * (LONG // 2) + "://"),
         lambda: mailer.defang("a-" * (LONG // 2) + ":/"),
         lambda: sessions.describe("Version/" + "1" * LONG),
         lambda: sessions.describe("Version/1 " * (LONG // 10)),
     ],
-    ids=["scheme-dots", "scheme-dashes", "safari-digits", "safari-versions"],
+    ids=[
+        "scheme-dots",
+        "scheme-dots-then-mark",
+        "scheme-dashes",
+        "safari-digits",
+        "safari-versions",
+    ],
 )
 def test_a_long_text_is_read_in_bounded_time(read: Callable[[], Any]) -> None:
     took = timed(read)
