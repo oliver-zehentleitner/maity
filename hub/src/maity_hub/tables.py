@@ -1844,6 +1844,10 @@ event = Table(
     # A human who is no member of the project (§8.1: the owner deleting a profile with
     # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
     Column("actor_human_id", String(ID)),
+    # An agent profile that is no member of the project (§8.1, §9.5), with every member
+    # actor column null; `actor_instance` is the instance that wrote, or null.
+    Column("actor_agent_id", String(ID)),
+    Column("actor_instance", String(INSTANCE)),
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
@@ -1993,6 +1997,90 @@ conversation_read = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("last_seq", BIG_ID, nullable=False),
     PrimaryKeyConstraint("reader", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+# A cross-project group chat (§9.5): a room one human holds for agent profiles they own.
+# It is not a project resource. Its messages are rows here, not project events. `next_seq`
+# is the chat's own counter. The chat closes for good when its owner leaves.
+cross_chat = Table(
+    "cross_chat",
+    metadata,
+    _id(primary_key=True),
+    _ref("owner_id", "human.id", nullable=False, index=True),
+    Column("title", String(TITLE)),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("closed_at", UtcDateTime),
+    Column("closed_reason", String(32)),
+    Column("last_message_at", UtcDateTime),
+    Column("next_seq", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# One stay of the owner or an agent profile. A profile who leaves and is added again gets
+# a new row, so its window (§9.5) starts at its latest join. `window_after` is the chat's
+# highest message seq when it joined; `here` marks the open stay (true or NULL).
+cross_chat_participant = Table(
+    "cross_chat_participant",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("conversation_id", "cross_chat.id", nullable=False, index=True),
+    Column("member_id", String(ID), nullable=False, index=True),
+    Column("joined_at", UtcDateTime, nullable=False),
+    Column("window_after", BIG_ID, nullable=False),
+    Column("added_by", String(ID)),
+    Column("left_at", UtcDateTime),
+    Column("removed_by", String(ID)),
+    Column("reason", String(32)),
+    Column("here", Boolean, default=True),
+    UniqueConstraint(
+        "conversation_id", "member_id", "here", name="uq_cross_chat_participant_one_stay"
+    ),
+    CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# A message of a cross-project group chat. `seq` counts inside the chat, from 1.
+# Redaction keeps the row: `body` null, `mentions` empty, `redaction` the tombstone.
+cross_chat_message = Table(
+    "cross_chat_message",
+    metadata,
+    _id(primary_key=True),
+    _ref("conversation_id", "cross_chat.id", nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    Column("author_id", String(ID), nullable=False),
+    Column("from_instance", String(INSTANCE)),
+    Column("body", MARKDOWN_TEXT),
+    Column("sent_at", UtcDateTime, nullable=False),
+    Column("mentions", JSON_VALUE, nullable=False),
+    Column("redacted", Boolean, nullable=False, server_default=false()),
+    Column("redaction", JSON_VALUE),
+    UniqueConstraint("conversation_id", "seq", name="uq_cross_chat_message_conversation_id_seq"),
+    **MYSQL_TABLE,
+)
+
+# Who a cross-chat message mentions, one row per mentioned participant other than the
+# author. `mentions_unread` counts from here, so a chat's quiet history is not read.
+cross_chat_mention_for = Table(
+    "cross_chat_mention_for",
+    metadata,
+    _ref("conversation_id", "cross_chat.id", nullable=False),
+    Column("member_id", String(ID), nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("conversation_id", "member_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# How far a participant has read a cross-project group chat (§9.5). The reader is the
+# profile or the owning human, so every credential of one agent shares one cursor.
+cross_chat_read = Table(
+    "cross_chat_read",
+    metadata,
+    Column("member_id", String(ID), nullable=False),
+    _ref("conversation_id", "cross_chat.id", nullable=False, index=True),
+    Column("last_seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("member_id", "conversation_id"),
     **MYSQL_TABLE,
 )
 
@@ -2599,5 +2687,49 @@ public_page = Table(
     Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
     Column("indexed", Boolean, nullable=False, server_default=true()),  # false: `noindex`
     Index("ix_public_page_target", "kind", "target_id"),
+    **MYSQL_TABLE,
+)
+
+# A card's restricted text (docs/api.md §6.4 "Restricted text"): at most one per card, in
+# its own table so that no read of the card (its view, search, history, events, export,
+# public page) can carry it by accident. `text` is null once cleared; `version` counts every
+# changing write. Deleted with the card or the project, which the hub never deletes.
+task_restricted = Table(
+    "task_restricted",
+    metadata,
+    _ref("task_id", "card.id", primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("text", String(1000)),
+    Column("version", Integer, nullable=False),
+    _membership_ref("updated_by", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Every changing write of a restricted text (§6.4): who set or cleared it, when, never the
+# text. The view shows the last 50; the write caps count the last hour's rows.
+task_restricted_history = Table(
+    "task_restricted_history",
+    metadata,
+    _ref("task_id", "card.id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("action", String(8), nullable=False),  # set | cleared
+    _membership_ref("author", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("task_id", "version"),
+    Index("ix_task_restricted_history_author_at", "author", "at"),
+    **MYSQL_TABLE,
+)
+
+# The private list of a restricted-text event (§6.4, §7.1): the memberships that were in the
+# card's set when the event was written, the only readers of that event. An account's
+# deletion takes it off every list (§2.9).
+restricted_event_list = Table(
+    "restricted_event_list",
+    metadata,
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    PrimaryKeyConstraint("seq", "membership_id"),
+    Index("ix_restricted_event_list_membership", "membership_id"),
     **MYSQL_TABLE,
 )

@@ -8,7 +8,7 @@ this migration makes no key. The downgrade drops the table: until a sign-in comp
 source is known, and the password waits out the window from everywhere.
 
 Revision ID: 20261105120000_known_source
-Revises: 20261104150000_report_request
+Revises: 20261105090000_restricted_text
 Create Date: 2026-11-05
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261105120000_known_source"
-down_revision: str | None = "20261104150000_report_request"
+down_revision: str | None = "20261105090000_restricted_text"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

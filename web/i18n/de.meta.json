@@ -4951,6 +4951,10 @@
     "en": "09ce28c5fbadb304",
     "text": "4df972b3d7af56d8"
   },
+  "inbox.label.personal_alone": {
+    "en": "f872d2297c5f8e77",
+    "text": "b86f1ed056c99fba"
+  },
   "inbox.label.personal_into": {
     "en": "1ecc511a1fbfc2fb",
     "text": "45dac274590a19cc"
@@ -4986,6 +4990,10 @@
   "inbox.note_label": {
     "en": "5aac3b2989bdadeb",
     "text": "568d870c8bb2e2cd"
+  },
+  "inbox.open_report": {
+    "en": "074964d062492852",
+    "text": "5799fbcd128d8902"
   },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
@@ -6643,6 +6651,10 @@
     "en": "d4db3dec5f3106ce",
     "text": "1a695fc004abb6f1"
   },
+  "join.failed.no_admin": {
+    "en": "4641d9d8fbec8dec",
+    "text": "53dc767d6c510617"
+  },
   "join.failed.project_not_allowed": {
     "en": "82aad411db255b20",
     "text": "648690ead69827e8"
@@ -6839,6 +6851,10 @@
     "en": "34f895fb60829706",
     "text": "8be7ac1898233919"
   },
+  "join.project": {
+    "en": "0ddd96140a4e9f8d",
+    "text": "2879c24a205f4ad6"
+  },
   "join.quota.active": {
     "en": "ca8fdb9858229298",
     "text": "77968a53a28eac15"
@@ -6970,6 +6986,10 @@
   "join.state_dir.where": {
     "en": "a54827d5e1fb0ca8",
     "text": "ea3e6196c0bc78fb"
+  },
+  "join.step_up": {
+    "en": "0365bc43945f8179",
+    "text": "4129bab0c9388617"
   },
   "join.takes_over.both": {
     "en": "ebfd426a5da19bf1",
@@ -9911,10 +9931,6 @@
     "en": "21cf98a292e94015",
     "text": "21cf98a292e94015"
   },
-  "menu.change_password": {
-    "en": "22d7685ba44f1925",
-    "text": "b56091339d2d9ce3"
-  },
   "menu.instance_admin": {
     "en": "ba4c3985e0e7fe45",
     "text": "0fdf8cc8a0eadb13"
@@ -9930,14 +9946,6 @@
   "menu.orgs": {
     "en": "b58edddaa8f66d6d",
     "text": "049fbbe8b52bc9f2"
-  },
-  "menu.picture": {
-    "en": "3ee270463954f502",
-    "text": "acc9387ab6a346bc"
-  },
-  "menu.preferences": {
-    "en": "83adb5c50b2303db",
-    "text": "e94e0e45ef8f0aaa"
   },
   "menu.profile": {
     "en": "96ad4bd0f7baa40e",
@@ -9959,17 +9967,9 @@
     "en": "83909f82446ee9c3",
     "text": "e94e0e45ef8f0aaa"
   },
-  "menu.sign_in_device": {
-    "en": "ec9e69bb1c719132",
-    "text": "7d1de21b1362fc65"
-  },
   "menu.sign_out": {
     "en": "d46969bdd3258d1d",
     "text": "a55b3e0ba979772c"
-  },
-  "menu.theme": {
-    "en": "888560be416ca928",
-    "text": "888560be416ca928"
   },
   "messages.filter.every_type": {
     "en": "e07a1390aa248806",

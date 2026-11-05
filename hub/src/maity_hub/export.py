@@ -23,7 +23,17 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, group_chats, inbox, maintenance, namespace, reports
+from maity_hub import (
+    avatars,
+    clock,
+    cross_chats,
+    group_chats,
+    inbox,
+    maintenance,
+    namespace,
+    reports,
+    restricted,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import second_factor
@@ -82,6 +92,8 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "card_notes": _card_notes(conn, my_ids, names, titles),
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
         "pinned_conversations": _pinned_conversations(conn, human_id),
+        "restricted_texts": _restricted_texts(conn, readers, names),
+        "cross_chats": cross_chats.export_of(conn, human_id),
     }
 
 
@@ -954,6 +966,39 @@ def _card_notes(
         else:
             item.update(body=row.body, redacted=False)
         out.append(item)
+    return out
+
+
+def _restricted_texts(
+    conn: Connection, readers: dict[str, Membership], names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """The one exception for restricted text (§6.4, §2.9): the texts whose current version
+    the caller wrote, of projects whose set the caller is in now, with the project, the
+    card's id, the version and when. Never another member's text, never one of a project
+    whose set the caller left."""
+    out: list[dict[str, Any]] = []
+    for project_id, mine in sorted(readers.items()):
+        if not restricted.in_set(conn, mine.project, mine.id):
+            continue
+        rows = conn.execute(
+            select(t.task_restricted)
+            .where(
+                t.task_restricted.c.project_id == project_id,
+                t.task_restricted.c.updated_by == mine.id,
+                t.task_restricted.c.text.is_not(None),
+            )
+            .order_by(t.task_restricted.c.updated_at, t.task_restricted.c.task_id)
+        ).all()
+        out += [
+            {
+                "project": names.get(project_id),
+                "card_id": row.task_id,
+                "version": row.version,
+                "updated_at": ts(row.updated_at),
+                "text": row.text,
+            }
+            for row in rows
+        ]
     return out
 
 

@@ -60,6 +60,10 @@
 .door-form .flag.session-ended{position:relative;margin:0 0 20px;padding:12px 14px 12px 40px;border-radius:12px;background:var(--flag-bg,#fff6dd);font-size:.92rem;border:0}
 :root[data-theme="dark"] .door-form .flag.session-ended{--flag-bg:#2d2610}
 .door-form .flag.session-ended::before{content:"";position:absolute;left:16px;top:1.05em;width:10px;height:10px;border-radius:50%;background:#d29922;box-shadow:0 0 0 4px rgba(210,153,34,.25)}
+/* the hub's mail link pages (§18.6): text, the admin's quoted reason, a link to the export */
+.door-form .link-page p{margin:12px 0 0;overflow-wrap:anywhere}
+.door-form .link-page p a{color:var(--accent)}
+.door-form .link-page blockquote{margin:12px 0 0;padding:10px 14px;border-left:3px solid var(--border);color:var(--muted);overflow-wrap:anywhere}
 /* code fields: easy to read and compare */
 .door-form #device-code,.door-form #sf-code,.door-form #sign-in-mail-code{font-family:var(--font-mono);font-size:1.15rem;letter-spacing:.12em}
 /* the other ways in */

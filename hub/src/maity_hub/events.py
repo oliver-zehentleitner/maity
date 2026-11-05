@@ -15,7 +15,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +27,7 @@ from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
 _AFTER = "maity_after_commit"
+_SCRATCH = "maity_transaction_scratch"
 log = logging.getLogger(__name__)
 
 
@@ -41,6 +42,9 @@ class Actor:
     runner_id: str | None = None
     human_id: str | None = None  # a human who is no member of the project (§8.1)
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
+    # An agent profile that is no member of the project the event is written in (§8.1, §9.5).
+    agent_id: str | None = None
+    agent_instance: str | None = None
     # The bridge that made the call for the member (§2.3): `{member_id, instance, bridge_id}`.
     bridge: dict[str, str | None] | None = None
 
@@ -112,17 +116,20 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     pending: list[tuple[str, int]] = []
     undo: list[Callable[[], None]] = []
     after: list[Callable[[], None]] = []
+    scratch: dict[str, Any] = {}
     try:
         with engine.begin() as conn:
             conn.info[_PENDING] = pending
             conn.info[_UNDO] = undo
             conn.info[_AFTER] = after
+            conn.info[_SCRATCH] = scratch
             try:
                 yield conn
             finally:
                 conn.info.pop(_PENDING, None)
                 conn.info.pop(_UNDO, None)
                 conn.info.pop(_AFTER, None)
+                conn.info.pop(_SCRATCH, None)
     except BaseException:
         for step in reversed(undo):
             step()
@@ -134,6 +141,22 @@ def transaction(engine: Engine) -> Iterator[Connection]:
             step()
         except Exception:  # committed already: a failed clean-up is the sweep's to retry
             log.exception("a step after the commit failed")
+
+
+def in_transaction(conn: Connection) -> bool:
+    """Whether `conn` is the connection of an open `transaction`, so `on_commit` and
+    `scratch` may be used."""
+    return _AFTER in conn.info
+
+
+def scratch(conn: Connection) -> dict[str, Any]:
+    """A dict that lives as long as the caller's `transaction`: what a module gathers for its
+    `on_commit` step. Not `conn.info` itself, which belongs to the pooled connection and
+    outlives the transaction."""
+    found = conn.info.get(_SCRATCH)
+    if found is None:
+        raise RuntimeError("events.scratch outside events.transaction()")
+    return cast(dict[str, Any], found)
 
 
 def on_commit(conn: Connection, step: Callable[[], None]) -> None:
@@ -270,6 +293,8 @@ def emit(
             actor_runner_id=actor.runner_id if actor else None,
             actor_human_id=actor.human_id if actor else None,
             actor_report_id=actor.report_id if actor else None,
+            actor_agent_id=actor.agent_id if actor else None,
+            actor_instance=actor.agent_instance if actor else None,
             actor_bridge=actor.bridge if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
@@ -639,6 +664,9 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
+    if row.kind == "cross_chat_mention":
+        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5).
+        return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:

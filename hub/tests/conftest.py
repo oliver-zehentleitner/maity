@@ -358,6 +358,10 @@ def _fresh_process_state() -> Iterator[None]:
     shared_budget.configure(None)
     listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
     listening.reset()
+    # The limits are the module's, set by the last app built: back to the defaults, so a test
+    # that built an app with its own limit leaves none behind.
+    badges.BY_ADDRESS.configure(*Settings.badge_limit)
+    public_pages.BY_ADDRESS.configure(*Settings.public_page_limit)
     badges.BY_ADDRESS.reset()
     public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
     badges.NOT_SERVED.reset()

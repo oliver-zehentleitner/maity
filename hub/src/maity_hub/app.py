@@ -51,6 +51,7 @@ from maity_hub import (
     registration_accounts,
     reports,
     request_stats,
+    route_limits,
     rules,
     shared_budget,
     shared_counts,
@@ -89,6 +90,7 @@ from maity_hub.routes import (
     briefing_view,
     contract_text,
     conversations,
+    cross_chats,
     device_codes,
     email_sign_in,
     forge_links,
@@ -142,6 +144,7 @@ from maity_hub.routes import people as people_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
+from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
@@ -458,12 +461,14 @@ def create_app(
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(board.router, prefix=prefix)
+    app.include_router(restricted_routes.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
     app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(overview.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(cross_chats.router, prefix=prefix)
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
@@ -493,6 +498,10 @@ def create_app(
             "links in /help use %s",
             settings.public_url,
         )
+    # Resolved once the routes are in: a limit on a route the hub lacks stops it (§1.7).
+    app.state.route_limits = route_limits.resolve(app.routes, settings.route_limits)
+    public_pages.BY_ADDRESS.configure(*settings.public_page_limit)
+    badges.BY_ADDRESS.configure(*settings.badge_limit)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
     if settings.allow_plain_http:
         log.warning(

@@ -179,7 +179,7 @@ window.Maity = window.Maity || {};
           if (err.code === "forbidden" && err.details && err.details.reason === "not_in_good_standing") {
             status.fail(M.t("notify.not_saved"), { message: "" });
             append(status.el, M.tn("mail.address.forbidden.not_in_good_standing", {
-              link: h("a", { href: "/account/sessions" }, M.t("mail.address.held_link")) }));
+              link: h("a", { href: "/account/security/sessions" }, M.t("mail.address.held_link")) }));
           } else {
             status.fail(err.code === "mail_not_configured" ? M.t("mail.address.not_configured") : M.t("notify.not_saved"), err);
           }
@@ -212,7 +212,7 @@ window.Maity = window.Maity || {};
       }
       if (email.address_change) {
         lines.push(h("p", { class: "hint mail-address-held" }, M.tn("mail.address.held_hint", {
-          link: h("a", { href: "/account/sessions" }, M.t("mail.address.held_link")) })));
+          link: h("a", { href: "/account/security/sessions" }, M.t("mail.address.held_link")) })));
       }
       append(clear(box),
         h("h3", { id: "mail-address-title" }, M.t("mail.address.title")),
@@ -395,11 +395,17 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint" }, M.t("language.interface.hint")), button, status.el);
   }
 
-  M.notifySettings = async function (ctx) {
-    const box = h("section", { class: "notify-settings", "aria-labelledby": "notify-heading" });
-    const heading = h("h3", { id: "notify-heading", class: "notify-heading", tabindex: "-1" }, M.t("notify.title"));
+  // The account's notification settings. With a part, one of the account's tabs (js/account.js):
+  // "language" the site's and the mail's language (Settings), "notifications" the rest, with a
+  // line to the mail's language; without one, all of it.
+  M.notifySettings = async function (ctx, part) {
+    const languagePart = part !== "notifications";
+    const box = h("section", part === "language"
+      ? { class: "notify-settings language-settings" }
+      : { class: "notify-settings", "aria-labelledby": "notify-heading" });
+    const heading = part === "language" ? null : h("h3", { id: "notify-heading", class: "notify-heading", tabindex: "-1" }, part === "notifications" ? M.t("menu.notifications") : M.t("notify.title"));
     const status = M.statusLine();
-    append(box, heading);
+    if (heading) append(box, heading);
     let settings;
     try {
       settings = await M.api.get("/me/notification-settings");
@@ -408,8 +414,13 @@ window.Maity = window.Maity || {};
       return { el: box, heading };
     }
 
+    // The mail's language is chosen under Settings; here a line leads there.
+    if (!languagePart && settings.email && "language" in settings.email) {
+      append(box, h("p", { class: "hint mail-language-link" },
+        M.tn("notify.language.elsewhere", { link: h("a", { href: "/account/settings" }, M.t("menu.settings")) })));
+    }
     // Language belongs to the account, even without mail or browser notifications.
-    if (settings.email && "language" in settings.email) {
+    if (languagePart && settings.email && "language" in settings.email) {
       // Each language by its own name, as its readers write it: no key.
       const picker = M.languagePicker("personal-language", settings.email.language);
       const language = picker.select;
@@ -433,6 +444,7 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("notify.language.hint")),
       button, languageStatus.el));
     }
+    if (part === "language") return { el: box, heading };
     // Mail only where the instance sends it (`mail_available`); the language above stays without it.
     if (settings.mail_available && settings.email) {
       append(box, mailAddressForm(settings, (now) => { settings = now; }));

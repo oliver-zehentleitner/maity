@@ -1,5 +1,5 @@
-// Forge access (docs/api.md §11.4) on the account, also at /settings/forge,
-// where the hub sends the browser back after a GitHub App installation:
+// Forge access (docs/api.md §11.4) on the account's Security (/account/security/forge), also at
+// /settings/forge, where the hub sends the browser back after a GitHub App installation:
 // the human's links of the instance's GitHub App and their own token, the
 // grants every project they own reads its repository with. Starting a link
 // and storing a token ask for the password or a code (§2.8.4); an unlink and
@@ -75,7 +75,7 @@ window.Maity = window.Maity || {};
     const back = where.query.get("error");
     let note = carried || (back ? { error: Object.hasOwn(BACK, back) ? BACK[back]() : back } : null);
     carried = null;
-    if (where.path === "/settings/forge" && back) { carried = note; M.route.go("/settings/forge", { replace: true }); }
+    if ((where.path === "/settings/forge" || where.path === "/account/security/forge") && back) { carried = note; M.route.go(where.path, { replace: true }); }
 
     async function act(busy, done, call) {
       status.busy(busy + "…");
@@ -221,7 +221,7 @@ window.Maity = window.Maity || {};
         ? M.t("forge.confirmed", { handle: by && by.handle ? "@" + by.handle : "" })
         : M.t("forge.unconfirmed")),
       confirm, ask, status.el,
-      h("p", { class: "hint" }, M.tn("forge.settings_hint", { link: h("a", { href: "/settings/forge" }, M.t("forge.settings_link")) })));
+      h("p", { class: "hint" }, M.tn("forge.settings_hint", { link: h("a", { href: "/account/security/forge" }, M.t("forge.settings_link")) })));
   }
 
   M.forge = { section, repositoryPart };

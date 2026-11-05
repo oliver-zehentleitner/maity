@@ -27,13 +27,32 @@ EXACT_UP_TO = 20
 
 
 class Limiter:
-    def __init__(self, limit: int, window_seconds: float, *, name: str) -> None:
+    def __init__(
+        self, limit: int, window_seconds: float, *, name: str, local: bool = False
+    ) -> None:
         self.limit = limit
         self.window = window_seconds
         self.name = name  # the bucket the counts share across replicas
         self.exact = limit <= EXACT_UP_TO  # across replicas: a row per attempt
+        # Counted in this process only, never in `shared_counts`: a limit asked of every call
+        # of a route (MAITY_ROUTE_LIMITS) would otherwise write to the database each time.
+        self.local = local
         self._hits: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+
+    def configure(self, limit: int, window_seconds: float) -> None:
+        """A new limit and window from the settings, when the app is built: what this process
+        counted is forgotten. The shared counts stay, and nothing reads the database here:
+        every worker and replica builds its app, and one starting must not clear what the
+        others count; the shared rows age out with the window."""
+        self.limit = limit
+        self.window = window_seconds
+        self.exact = limit <= EXACT_UP_TO
+        with self._lock:
+            self._hits.clear()
+
+    def _shared(self) -> bool:
+        return not self.local and shared_counts.active()
 
     def hit(self, key: str) -> int:
         """Record an attempt; 0 when allowed, else the seconds until the next one is."""
@@ -45,7 +64,7 @@ class Limiter:
         is at most the limit: more never fits, and no wait would be true."""
         if count > self.limit:
             raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
-        if shared_counts.active():
+        if self._shared():
             return self._shared_take(key, count)[0]
         return self._take_at(key, count, time.monotonic())
 
@@ -106,7 +125,7 @@ class Limiter:
         `release` to give back exactly those later: work that did not happen after all."""
         if count > self.limit:
             raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
-        if shared_counts.active():
+        if self._shared():
             wait, start = self._shared_take(key, count)
             return wait, (None if wait else start)
         now = time.monotonic()
@@ -138,10 +157,10 @@ class Limiter:
 
     def blocked(self, key: str) -> int:
         """Like `hit`, without recording an attempt."""
-        if shared_counts.active() and self.exact:
+        if self._shared() and self.exact:
             log = shared_counts.log_read(self.name, key, self.window)
             return 0 if log.total + 1 <= self.limit else self._log_wait(log, 1)
-        if shared_counts.active():
+        if self._shared():
             window = shared_counts.read(self.name, key, self.window)
             one_more = shared_counts.Window(  # as if one more attempt were taken now
                 window.current + 1, window.previous, window.elapsed, window.start
@@ -173,7 +192,7 @@ class Limiter:
     def reset(self) -> None:
         with self._lock:
             self._hits.clear()
-        if shared_counts.active():
+        if self._shared():
             shared_counts.clear(self.name)
 
 

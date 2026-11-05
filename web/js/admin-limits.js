@@ -1,9 +1,11 @@
 // Limits, a section of /admin (docs/api.md §16.5; js/instance-admin.js
 // shows it to the instance admin only): the caps on what one human may
 // hold — agent profiles and organisations owned — with each value's
-// source (§16.2) and how many humans are at or over it. A value is a
-// number (1–10000), no limit, or the default; one set by the environment
-// is shown and not changed here. Only what changed is sent, and a change
+// source (§16.2) and how many humans are at or over it, and the
+// attachment storage of the whole hub with what is stored now. A value is
+// a number (1–10000; the storage in GiB, sent as bytes), no limit, or the
+// default; one set by the environment is shown and not changed here, and
+// a number left as it was is not sent again. Only what changed is sent, and a change
 // asks for the password or a code where the hub requires it (§2.8.4).
 // Lowering a value deletes and pauses nothing (§16.5).
 "use strict";
@@ -14,14 +16,23 @@ window.Maity = window.Maity || {};
   const { h, append, clear } = M.dom;
 
   const PATH = "/admin/settings/limits";
-  const MAX = 10000;
+  const GIB = 1024 * 1024 * 1024;
+  const MIB = 1024 * 1024;
+  // What is stored: in MiB below 1 GiB, so a hub with a few files does not read as empty.
+  // Rounded to a tenth of a MiB first, so a total just under 1 GiB does not read as 1,024 MiB.
+  const stored = (bytes) => (Math.round((bytes / MIB) * 10) / 10 < 1024
+    ? M.t("limits.storage.used_mib", { size: M.fmt.number(bytes / MIB, { maximumFractionDigits: 1 }) })
+    : M.t("limits.storage.used", { size: M.fmt.number(bytes / GIB, { maximumFractionDigits: 2 }) }));
   const FIELDS = [
     { key: "max_agents_per_human", at: "humans_at_limit", label: () => M.t("limits.agents.label"), hint: () => M.t("limits.agents.hint"),
-      atWords: (n) => M.t("limits.agents.at", { count: n }) },
+      atWords: (n) => M.t("limits.agents.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
     { key: "max_orgs_per_human", at: "humans_at_org_limit", label: () => M.t("limits.orgs.label"), hint: () => M.t("limits.orgs.hint"),
-      atWords: (n) => M.t("limits.orgs.at", { count: n }) },
+      atWords: (n) => M.t("limits.orgs.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
     { key: "max_projects_per_owner", at: "owners_at_project_limit", label: () => M.t("limits.projects.label"), hint: () => M.t("limits.projects.hint"),
-      atWords: (n) => M.t("limits.projects.at", { count: n }) },
+      atWords: (n) => M.t("limits.projects.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
+    // The whole hub's, not a person's (§8.7): in GiB here, bytes for the hub, 1 GiB to 1 PiB.
+    { key: "max_attachment_storage", at: "attachment_storage_used", label: () => M.t("limits.storage.label"), hint: () => M.t("limits.storage.hint"),
+      atWords: (n) => stored(n), unit: GIB, max: 1024 * 1024, invalid: () => M.t("limits.error.invalid_storage") },
   ];
   const SOURCES = { default: () => M.t("limits.source.default"), admin: () => M.t("limits.source.admin"), env: () => M.t("limits.source.env") };
   const sourceOf = (s) => (Object.hasOwn(SOURCES, s) ? SOURCES[s]() : s);
@@ -49,14 +60,19 @@ window.Maity = window.Maity || {};
           h("option", { value: "unlimited" }, M.t("limits.mode.unlimited")),
           h("option", { value: "default" }, M.t("limits.mode.default")));
         mode.value = v.source === "default" ? "default" : v.value === "unlimited" ? "unlimited" : "number";
-        const number = h("input", { id, type: "number", min: "1", max: String(MAX), step: "1", disabled: locked ? true : null,
+        const number = h("input", { id, type: "number", min: "1", max: String(f.max), step: "1", disabled: locked ? true : null,
           "aria-describedby": id + "-hint " + id + "-error" });
-        number.value = typeof v.value === "number" ? String(v.value) : "";
+        // A stored value that is no whole GiB (set in bytes) is shown rounded and kept unless edited.
+        const shown = typeof v.value === "number" ? String(f.unit === 1 ? v.value : Math.round((v.value / f.unit) * 100) / 100) : "";
+        number.value = shown;
         const showNumber = () => { number.hidden = mode.value !== "number"; };
         mode.addEventListener("change", showNumber);
         showNumber();
+        // Typed into: then the number counts even when it equals the rounded value shown.
+        let touched = false;
+        number.addEventListener("input", () => { touched = true; });
         const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-        return { f, v, mode, number, error, locked, nodes: h("fieldset", { class: "limits-field field-stack" },
+        return { f, v, mode, number, shown, touched: () => touched, error, locked, nodes: h("fieldset", { class: "limits-field field-stack" },
           h("legend", null, f.label()),
           h("label", { for: id + "-mode" }, M.t("limits.mode")), mode,
           h("label", { for: id, class: "visually-hidden" }, f.label()), number,
@@ -67,6 +83,9 @@ window.Maity = window.Maity || {};
       const save = h("button", { type: "submit" }, M.t("limits.save"));
       append(body, h("form", {
         class: "inline-form admin-limits",
+        // The script checks each field itself: a stored storage value that is no whole GiB,
+        // shown rounded, must not let the browser's step check stop the whole form.
+        novalidate: true,
         onsubmit: async (e) => {
           e.preventDefault();
           const patch = {};
@@ -78,15 +97,16 @@ window.Maity = window.Maity || {};
             let want;
             if (p.mode.value === "default") want = null;
             else if (p.mode.value === "unlimited") want = "unlimited";
+            else if (typeof p.v.value === "number" && p.v.source !== "default" && !p.touched() && p.number.value === p.shown) return;
             else {
               const n = Number(p.number.value);
-              if (!Number.isInteger(n) || n < 1 || n > MAX) {
-                p.error.textContent = M.t("limits.error.invalid");
+              if (!Number.isInteger(n) || n < 1 || n > p.f.max) {
+                p.error.textContent = p.f.invalid();
                 p.number.setAttribute("aria-invalid", "true");
                 bad = bad || p.number;
                 return;
               }
-              want = n;
+              want = n * p.f.unit;
             }
             const now = p.v.source === "default" ? null : p.v.value;
             if (want !== now) patch[p.f.key] = want;
@@ -108,7 +128,7 @@ window.Maity = window.Maity || {};
               formStatus.done();
               atField.forEach((p) => {
                 const why = fields[p.f.key];
-                p.error.textContent = Object.hasOwn(REASONS, why) ? REASONS[why]() : why;
+                p.error.textContent = why === "invalid" ? p.f.invalid() : Object.hasOwn(REASONS, why) ? REASONS[why]() : why;
               });
               return;
             }
