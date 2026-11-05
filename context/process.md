@@ -1327,6 +1327,11 @@ before it is committed: about 290 KB for three instead of 734 KB, since
 every version stays in the history. The designer's script is not in
 the repository yet.
 
+Diagrams in the same directory are drawn by the designer, and their
+source stays with the designer. They take the same reduction as the
+screenshots: 256 colours with libimagequant, then oxipng level 4. The
+repository does not redraw them or change their width.
+
 **Reason:** a page and its pictures come from the same place, like the
 text (the entry linked above), and fixture data is the one dashboard
 state that holds nothing private.
