@@ -73,8 +73,9 @@ window.Maity = window.Maity || {};
       const rows = items.slice(0, SESSIONS_SHOWN).map((s) => h("li", null,
         h("span", null, M.sessions.device(s)),
         h("span", { class: "muted" }, " · " + M.sessions.methodOf(s) + " · " + M.t("waiting.sessions.signed_in", { when: formatAgo(s.created_at) })),
-        s.current ? h("span", { class: "badge" }, " " + M.t("waiting.sessions.this_session")) : null,
-        s.good_standing ? null : h("span", { class: "badge" }, " " + M.t("sessions.unconfirmed_badge"))));
+        // The space outside the badge: inside it, the pill touches the text before it.
+        s.current ? [" ", h("span", { class: "badge" }, M.t("waiting.sessions.this_session"))] : null,
+        s.good_standing ? null : [" ", h("span", { class: "badge" }, M.t("sessions.unconfirmed_badge"))]));
       const more = items.length - SESSIONS_SHOWN;
       append(clear(list), rows, more > 0 ? h("li", { class: "muted" }, M.t("waiting.sessions.more", { count: more })) : null);
     }

@@ -366,15 +366,15 @@ window.MAITY_I18N["en"] = {
     "other": "Mentions {count}"
   },
   "bell.count.security": {
-    "one": "Sign-ins and address {count}",
-    "other": "Sign-ins and address {count}"
+    "one": "Security alerts {count}",
+    "other": "Security alerts {count}"
   },
   "bell.filter.unread": "Unread only",
   "bell.item.unread": "(unread)",
   "bell.kind.chat": "Chats",
   "bell.kind.inbox": "Requests",
   "bell.kind.mention": "Mentions",
-  "bell.kind.security": "Sign-ins and address",
+  "bell.kind.security": "Security alerts",
   "bell.mark_all": "Mark all read",
   "bell.mark_all.ask": {
     "one": "{count} security alert is included. Marking it read does not confirm it. Mark all read anyway?",

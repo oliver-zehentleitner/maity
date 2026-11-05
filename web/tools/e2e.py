@@ -769,6 +769,7 @@ def main() -> int:
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
                     chat_height_views(run, browser)
+                    notification_sessions_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -2576,6 +2577,143 @@ def chat_height_views(run: Run, browser) -> None:
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()
+
+
+# Every element in the lines of `selector` (the Current sessions box, the bell's pinned block):
+# inside its line and the window, no two parts of a line over each other, and every link and
+# button a 24 px target, or one whose 24 px circle meets no other target (WCAG 2.5.8); a badge
+# 2 px at least from the text beside it.
+LINES_MEASURE = """(selector) => {
+  const problems = [], vw = document.documentElement.clientWidth, eps = 0.5;
+  const name = (el) => el.tagName.toLowerCase() + (el.className ? "." + String(el.className).trim().split(/\\s+/).join(".") : "")
+    + " '" + (el.textContent || "").trim().slice(0, 40) + "'";
+  if (document.documentElement.scrollWidth > window.innerWidth) problems.push("the page is " + document.documentElement.scrollWidth + " px wide");
+  const boxes = Array.from(document.querySelectorAll(selector));
+  if (!boxes.length) problems.push("no " + selector);
+  const targets = [];
+  for (const box of boxes) {
+    const b = box.getBoundingClientRect();
+    if (b.left < -eps || b.right > vw + eps) problems.push(name(box) + " leaves the window: " + b.left + ".." + b.right);
+    for (const el of box.querySelectorAll("*")) {
+      for (const r of el.getClientRects()) {
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.left < b.left - eps || r.right > b.right + eps) problems.push(name(el) + " runs out of " + name(box));
+      }
+      if (el.matches("a[href], button")) targets.push(el);
+    }
+    for (const li of box.querySelectorAll("li")) {
+      const l = li.getBoundingClientRect();
+      const parts = Array.from(li.children).map((el) => [el, Array.from(el.getClientRects())]);
+      for (const [el, rects] of parts) for (const r of rects)
+        if (r.left < l.left - eps || r.right > l.right + eps || r.top < l.top - eps || r.bottom > l.bottom + eps) problems.push(name(el) + " runs out of its line");
+      for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++)
+        for (const p of parts[i][1]) for (const q of parts[j][1]) {
+          const w = Math.min(p.right, q.right) - Math.max(p.left, q.left), h = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+          if (w > eps && h > eps) problems.push(name(parts[i][0]) + " and " + name(parts[j][0]) + " overlap");
+          // A badge's pill never touches the text beside it on its line: 2 px at least.
+          else if (h > eps && w > -2 && (parts[i][0].matches(".badge") || parts[j][0].matches(".badge")))
+            problems.push(name(parts[i][0]) + " and " + name(parts[j][0]) + " touch");
+        }
+    }
+  }
+  const rects = targets.map((el) => [el, el.getBoundingClientRect()]);
+  const centre = (r) => [(r.left + r.right) / 2, (r.top + r.bottom) / 2];
+  for (const [el, r] of rects) {
+    if (r.width >= 24 && r.height >= 24) continue;
+    const [x, y] = centre(r);
+    for (const [other, s] of rects) {
+      if (other === el) continue;
+      const small = s.width < 24 || s.height < 24;
+      const [ox, oy] = centre(s);
+      const dx = Math.max(s.left - x, 0, x - s.right), dy = Math.max(s.top - y, 0, y - s.bottom);
+      const near = small ? Math.hypot(ox - x, oy - y) < 24 - eps : Math.hypot(dx, dy) < 12 - eps;
+      if (near) problems.push(name(el) + " is " + Math.round(r.width) + "x" + Math.round(r.height) + " px and too close to " + name(other));
+    }
+  }
+  return { problems, shown: boxes.map((box) => box.querySelectorAll("li").length) };
+}"""
+
+# The fixtures the page reads (fixtures/fixtures.js sets window.MAITY_FIXTURES), changed before
+# any script reads them: the active sessions kept (all, or the tab's own alone, or seven more),
+# and unread security alerts added for the bell's pinned block.
+SESSIONS_FIXTURE = """(() => { let f; Object.defineProperty(window, "MAITY_FIXTURES", { configurable: true,
+  get() { return f; },
+  set(v) { f = v; const want = %s; const s = f["sessions.json"];
+    if (want.sessions === "one") s.items = s.items.filter((x) => x.id === s.current || x.ended_at);
+    if (want.sessions === "many") for (let i = 0; i < 7; i++) s.items.push(Object.assign({}, s.items[1], { id: "hss-e2e" + i,
+      created_at: "2026-10-2" + i + "T09:00:00Z", browser: i %% 2 ? "Firefox Developer Edition" : "Chrome", os: "Windows 11 Pro for Workstations",
+      good_standing: i !== 3 }));
+    if (want.alerts) f["notifications.json"].items.unshift(
+      { id: "ntf-acr-e2e1", record: "acr-e2e1", kind: "security", at: "2026-10-22T13:30:00Z", project: null, actor: null,
+        title: "Your sign-in address was changed to a.very.long.address.for.this.test@example.org", target: { type: "settings", id: "notifications" },
+        url: null, read: false, redacted: false, open_matter: false },
+      { id: "ntf-acr-e2e2", record: "acr-e2e2", kind: "security", at: "2026-10-22T13:25:00Z", project: null, actor: null,
+        title: "Your address was changed", target: { type: "settings", id: "notifications" },
+        url: null, read: false, redacted: false, open_matter: false });
+  } }); })();"""
+
+
+def notification_sessions_layout(run: Run, browser) -> None:
+    """The Notifications page's Current sessions box and the bell's pinned block (tsk-0baaez2895sb),
+    in fixture mode, at 1280 x 900 and 390 x 844: the box with the tab's own session alone, with the
+    four of the fixtures (the mail sign-in banner on, and removed) and with eleven (five shown, the
+    rest counted; long browser and system names); the bell opened and closed again, with two
+    unread security alerts pinned (one with a long title) and with none. Every element of the box's
+    lines and of the pinned rows is measured (LINES_MEASURE), the page never wider than the window,
+    the banner never over the box. The page folds nothing else here: the bell's panel is its one
+    fold."""
+    run.step("fixtures: Current sessions and the bell's pinned block at 1280 and 390 px, banner on and off")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844)):
+        for sessions, alerts in (("one", False), ("all", True), ("many", True), ("many", False)):
+            context = browser.new_context(viewport={"width": width, "height": height})
+            context.add_init_script(SESSIONS_FIXTURE % json.dumps({"sessions": sessions, "alerts": alerts}))
+            page = context.new_page()
+            errors: list[str] = []
+            # Page errors only: on file:// Chromium refuses the pictures the page loads (CORS) and says so on the console.
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                page.goto(f"{index}?lang=en#/notifications")
+                box = page.locator("main section.current-sessions")
+                expect(box.locator("li").first).to_be_visible()
+                rows = {"one": 1, "all": 3, "many": 6}[sessions]
+                expect(box.locator("li")).to_have_count(rows)
+                banner = page.locator("main .signin-banner")
+                for with_banner in (True, False) if sessions != "one" else (False,):
+                    where = f"{sessions} session(s), alerts {alerts}, at {width}x{height}" + (" with the sign-in banner" if with_banner else "")
+                    if with_banner:
+                        expect(banner).to_be_visible()
+                        b, s = banner.bounding_box(), box.bounding_box()
+                        assert b and s and b["y"] + b["height"] <= s["y"] + 0.5, f"{where}: the banner {b} runs over the box {s}"
+                    else:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        expect(banner).to_have_count(0)
+                    m = page.evaluate(LINES_MEASURE, "main section.current-sessions")
+                    assert not m["problems"] and not errors, f"{where}, the box: {m['problems'] + errors}"
+                    run.shot(page, f"fixtures-current-sessions-{sessions}-{width}" + ("-banner" if with_banner else ""))
+                    bell = page.locator("#header button.bell")
+                    bell.click()
+                    expect(bell).to_have_attribute("aria-expanded", "true")
+                    pinned = page.locator("#bell-panel .bell-pinned li")
+                    if alerts:
+                        expect(pinned).to_have_count(2)
+                        expect(pinned.first.locator("button")).to_have_text("Mark read")
+                        m = page.evaluate(LINES_MEASURE, "#bell-panel .bell-pinned")
+                        assert not m["problems"] and not errors, f"{where}, the pinned block: {m['problems'] + errors}"
+                    else:
+                        expect(page.locator("#bell-panel .bell-pinned")).to_have_count(0)
+                    m = page.evaluate(LINES_MEASURE, "#bell-panel")
+                    assert not m["problems"] and not errors, f"{where}, the bell: {m['problems'] + errors}"
+                    run.shot(page, f"fixtures-bell-pinned-{sessions}-{width}" + ("-banner" if with_banner else ""))
+                    # Folded again (Escape: at 390 px the open panel covers the bell), the box measured the same.
+                    page.keyboard.press("Escape")
+                    expect(bell).to_have_attribute("aria-expanded", "false")
+                    m = page.evaluate(LINES_MEASURE, "main section.current-sessions")
+                    assert not m["problems"] and not errors, f"{where}, the bell folded again: {m['problems'] + errors}"
+                if sessions == "many" and alerts and width == 1280:
+                    run.a11y(page, "fixtures: notifications with current sessions")
+            finally:
+                context.close()
 
 
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
