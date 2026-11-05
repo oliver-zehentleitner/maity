@@ -2,7 +2,7 @@
 
 Maity is where people and their coding agents share a project. This page is about the tools they use to do that: one command, a short skill the agent reads, the dashboard in the browser, and a runner on a machine you control.
 
-![The tools: you in a browser, the hub serving the API and the dashboard from one process, your agent on your machine with maity, the skill and the credential file, the repository's Keep the Why export read by the hub, and an optional runner that starts Claude Code or Codex after an approved placement.](../img/how-tools.png)
+![The tools: you in a browser, the hub serving the API and the dashboard from one process, your agent on your machine with maity, the skill and the credential file, the repository's Keep the Why export read by the hub, and an optional runner that starts an agent on a machine you control after an approved placement.](../img/how-tools.png)
 
 ## The command line
 
@@ -12,7 +12,7 @@ An agent that can run a shell command works in a Maity project through one comma
 
 - `maity resume`, at the start of a session, says who the agent is, what is open and what it missed.
 - `maity wait` is for when the agent has nothing to do until something happens. It holds an open request until an event arrives or the time runs out.
-- `maity claim` takes a card. A card is one piece of work on the project's board. The hold has a time limit. When that limit runs out the hub, the server the project lives on, says so, and the card stays with the agent until the agent gives it back, someone takes it over, an admin hands it on after the limit has run out, or the card is closed. A takeover can move the card while the limit still runs.
+- `maity claim` takes a card. A card is one piece of work on the project's board. The hold has a time limit. When that limit runs out the hub, the server the project lives on, says so, and the card stays with the agent until the agent gives it back, someone takes it over, an admin or the holder's manager hands it on after the limit has run out, or the card is closed. A takeover can move the card while the limit still runs.
 - `maity checkpoint` records where the work stands, for the next session. The branch and the latest commit come from git.
 - `maity report` sends the completion report. For code, the head commit comes from git, the remote head from a query of that branch's upstream, and the pull request from the `gh` command when it is installed. The agent does not type them. The report is refused while git and the remote don't agree, for example with uncommitted changes or a commit that isn't pushed.
 - `maity ask` puts a question in an inbox, addressed to a person, an agent or a role.
@@ -40,7 +40,7 @@ The agent should not need the manual pasted in again at the start of every sessi
 
 A chat log is a poor place for a secret. The session's credential stays in a file the CLI reads, so a copy of the chat is not a copy of the access.
 
-**How it works.** On join, the CLI writes the credential to a file in the clone's Git directory and never prints it. For an ordinary clone that file is `.git/maity/credential`, readable only by the account that owns the clone. The code that sends a request is what reads it. The skill tells the agent never to read, print or paste that file, and never to put it on a command line. The join line you paste holds two secrets, the link's token and the code. They work once. By default they last 15 minutes, and never more than an hour. The CLI signs each request, so what reaches the hub are signed requests, and those secrets do not have to appear in the command. The CLI refuses to send a request that contains a string in the credential format, and the hub refuses such a string from a signed-in caller.
+**How it works.** On join, the CLI writes the credential to a file in the clone's Git directory and never prints it. For an ordinary clone that file is `.git/maity/credential`, readable only by the account that owns the clone. The code that sends a request is what reads it. The skill tells the agent never to read, print or paste that file, and never to put it on a command line. The join line you paste holds two secrets, the link's token and the code. They work once. By default they last 15 minutes, and never more than an hour. After the join, the CLI signs each request with the credential, so the credential itself never has to appear in a command. The CLI refuses to send a request that contains a string in the credential format, and the hub refuses such a string from a signed-in caller.
 
 **An example.** You paste `maity join https://…/9fK2… --code …` once. After that the agent runs `maity resume` and `maity wait`. The credential stays in `.git/maity/credential`. Later commands do not print it, and the agent is told not to open the file.
 
@@ -48,7 +48,7 @@ A chat log is a poor place for a secret. The session's credential stays in a fil
 
 Agents that a runner starts run on a machine you control. Starting one spends compute and a model budget, so by default a person says yes first.
 
-**How it works.** A runner is a small service you install on a machine of yours. The hub never starts an agent process. It stores what should be running, and the runner on your machine does the starting. A project works without a runner: pasting a join line into a session you start yourself needs none.
+**How it works.** A runner is a small service you install on a machine of yours. The hub never starts an agent process. It stores what should be running, and the runner on a machine you control does the starting. A project works without a runner: pasting a join line into a session you start yourself needs none.
 
 Pairing is how the machine joins. You create a pairing line under **Runners** in the dashboard and run it on the machine. The exchange uses a one-time code. The runner's credential is written to a file on that machine and never printed.
 
