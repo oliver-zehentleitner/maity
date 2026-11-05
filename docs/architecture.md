@@ -1,316 +1,264 @@
 # Maity architecture
 
-How Maity fits together: the parts, the domain model, identity and
-credentials, the trust model, how agents wake, how state is stored and
-deployed, what the server enforces and what stays a rule. Written for
-contributors and for the agents that work on or with the hub.
+How Maity is built: the parts and how they talk, the domain model,
+identity and credentials, authority and trust, how agents wake, how state
+is stored, how the hub is deployed, what the server enforces and what
+stays a rule. Written for contributors, for people who run their own hub,
+and for the agents that work on Maity or with it.
 
-Status: design, 2026-10-21. The hub, CLI and dashboard exist as skeletons
-(`hub/`, `cli/`, `web/`); the API contract in `docs/api.md` is the
-binding shape of every field and endpoint named here. A separate
-security document is planned and does not exist yet; until
-it does, the security design is §4 and §5 here, the wire rules are
-`docs/api.md` §1.5 and §2, and the recorded rationale is
-`context/security.md`. Where a decision is recorded
-in `context/` it is named by file; everything else comes from the design
-work that preceded the skeletons and is recorded in `context/` as it
-lands in code. Nothing here is a promise about schedule.
+The pages of [How Maity works](how/what-we-deliver.md) explain the same
+system for someone meeting it for the first time; this page is the
+technical depth behind them. `docs/api.md` is the contract: every field
+and endpoint named here is specified there, and where the two disagree,
+the contract wins. The reasons for a decision are kept in `context/`
+(Keep the Why) and are named by file where they matter.
+
+Sections 1 to 5 describe main as it is. Sections 6 to 13 are still the
+first design of 2026-10-21 and are being rewritten next; until then,
+`docs/api.md` is the source for what they cover.
 
 ## 1. What the hub is and is not
 
-Maity is a self-hosted hub that humans and their independently running
-coding agents join. An agent that joins gets a persistent identity with a
-trust and a role, the project's state and rules, a task board with atomic claims,
-messages with every member, and a way to put a question into a human's
-inbox. The human gets one queue of what the agents want from them.
+Maity is a hub that people and their independently running coding agents
+join. An agent that joins gets a lasting identity with a trust level and
+a role, the project's state and rules, a board of cards it can claim
+atomically, messages with every member, and a way to put a question into
+a person's inbox. The person gets one queue of what the agents want from
+them.
 
 | The hub is | The hub is not |
 |---|---|
-| A coordination layer: identity, roles, cards, claims, requests, events | A runtime: it never starts, sandboxes, schedules, bills or owns an agent process (`context/scope.md`) |
-| The human's decision inbox, first; chat beside it (`context/scope.md`) | A chat product: conversations exist, the project is not run through them |
-| A holder of operative state: who is who, what is claimed, what is open, what happened | A memory of why: that is Keep the Why in the repository, external and optional (`context/scope.md`) |
-| A reader of the forge: pull request, check and tag state, observed by a read-only probe (`context/integrations.md`) | A writer to git or the forge: no merge, tag, push, workflow dispatch, merge queue, changelog assembly or deploy stage machine |
-| A place where rights are visible, granted per membership and auditable | A sandbox: hard limits live in the accounts agents act with — forge permissions, deploy credentials (`context/trust.md`) |
-| One Python process with a database, in a cluster or on a laptop | A platform: no proprietary dependency, no account, no telemetry |
+| A coordination layer: identities, roles, cards, claims, requests, events | A runtime: the hub never starts an agent process. An operator's runner may start one on a machine the operator controls, after a person's go by default (`context/scope.md`, §2 below) |
+| A person's decision inbox first, with chat beside it (`context/scope.md`) | A chat product: conversations exist, but the project is not run through them |
+| A holder of operative state: who is who, what is claimed, what is open, what happened | A memory of why: that is Keep the Why in the repository, outside the hub (`context/scope.md`) |
+| A reader of the forge: pull requests, checks, branch heads and tags, observed by the hub itself (`docs/api.md` §11) | A writer to git or the forge: no merge, tag, push, comment or workflow run. Its one write to the forge is asking GitHub for a short-lived token of the instance's GitHub App (`hub/src/maity_hub/github_app.py`) |
+| A place where rights are visible, granted per membership and logged | A sandbox: hard limits live in the accounts agents act with, such as forge permissions and deploy credentials (`context/trust.md`) |
+| One Python program with a database, on a laptop or in a cluster | A platform with a lock-in: no proprietary dependency and no tracking; usage is counted from what the hub already holds (`context/scope.md`) |
 
-The intelligence comes from the human and the model; the hub is a
-turntable and a toolbox.
+The judgement comes from the people and the models. The hub keeps the
+shared state and checks the rules.
 
 ## 2. The parts and how they talk
 
-| Part | Directory | What it is | Talks to |
+| Part | Where | What it is | Talks to |
 |---|---|---|---|
-| Hub server | `hub/` | One Python process: FastAPI, the REST API under `/api/v1`, `/api/v1/help` as Markdown, OpenAPI at `/api/v1/openapi.json` (the machine form only; the interactive page would load a third-party script onto the hub's origin and is off), the static dashboard at `/`, the forge probe as a worker thread in the same process | The database; the forge, read-only |
-| Agent CLI and skill | `cli/` | `maity`, a standard-library Python command run inside the agent's clone; the agent skill that tells a session when to run what | The hub, over HTTPS, with signed requests |
-| Dashboard | `web/` | Static HTML, vanilla JavaScript, CSS; no framework, no build step; served by the hub, opens from the file system against fixtures | The hub's API on the same origin, with a cookie session |
-| Forge probe | inside `hub/` | A read-only poller for the project's repository: pull request state, head SHA, branch heads, checks, merge time, tags | The forge's API with a read-only token from the operator's environment |
+| Hub | `hub/` | One Python program (FastAPI): the REST API under `/api/v1`, the agents' manual at `/api/v1/help`, the OpenAPI document at `/api/v1/openapi.json` (the machine form only; the interactive page is off), the dashboard's files, the landing and legal pages, and the public pages it renders as static HTML. Its background work runs as threads in the same process: the forge probe, wake-ups, reports, takeovers, images, public pages, the not-listening digest and others (`hub/src/maity_hub/*.py`) | The database; the forge, for reads; the operator's mail server |
+| Agent CLI and skill | `cli/` | `maity`, a Python command with no dependency beyond the standard library, run inside the agent's checkout; the agent skill (`cli/skill/maity/SKILL.md`) that tells a session when to run what | The hub, over HTTPS, with signed requests |
+| Runner | `cli/src/maity/runner/` | `maity runner serve`, an optional service a person pairs with the hub. It starts and stops agents on placements a person approved, on its own machine or on hosts it reaches over SSH (`docs/api.md` §15) | The hub, with a runner credential; its machines |
+| Dashboard | `web/` | Static HTML, vanilla JavaScript and CSS: no framework, no build step, no Node toolchain. It also opens from the file system against fixtures (`web/README.md`) | The hub's API on the same origin, with a cookie session |
+| Keep the Why views | `web/vendor/keep-the-why/` | The views library of the Keep the Why dashboard, vendored from a pinned release, which the dashboard's Why view mounts (`web/tools/vendor_ktw.py`) | The hub, which reads the project's Keep the Why export from the repository (`docs/api.md` §11.3, §11.5) |
+| Forge reads | inside `hub/` | The probe: a read-only view of the project's repository on GitHub, such as pull request state, head SHA, branch heads, checks, merge time and tags. A signed webhook only asks the probe to look now; its body is never taken as a fact (`hub/src/maity_hub/probe.py`, `forge_webhook.py`) | GitHub, through the instance's GitHub App, the namespace owner's token or the operator's token (`docs/api.md` §11.4) |
 
 ```
- human ── browser ── dashboard (web/, served at /) ── cookie, same origin ──▶ hub API /api/v1
+ person ── browser ── dashboard (web/) ── cookie, same origin ────────────▶ hub API /api/v1
  agent session ── maity CLI (signed) or plain HTTPS (bearer) ──────────────▶ hub API /api/v1
-                                                      hub ── read-only token ──▶ forge (GitHub)
-                                                      hub ── SQLAlchemy Core ──▶ PostgreSQL | SQLite | MySQL/MariaDB
+ runner (paired) ── runner credential ─────────────────────────────────────▶ hub API /api/v1
+                                       hub ── reads ──▶ GitHub (App, owner's or operator's token)
+                                       hub ── SQLAlchemy Core ──▶ PostgreSQL | SQLite | MySQL/MariaDB
+                                       hub ── SMTP ──▶ the operator's mail server
 ```
 
-Three protocols, one API:
+One API, reached in three ways:
 
 - **Agents** call `/api/v1` with a session credential. With the CLI every
-  request is signed; without it, over the page-driven join, the agent
-  calls the same endpoints with a bearer credential over TLS
-  (`context/join.md`, `context/security.md`). The wake primitive is a
+  request is signed. Without it, for example after the join page, an
+  agent calls the same endpoints with the credential as a bearer token,
+  over TLS only, unless the project's policy requires signed calls
+  (`docs/api.md` §2.2). The agent's way of waiting for work is a
   long-poll on the events endpoint (section 6).
-- **Humans** use the dashboard, which calls the same API with a cookie
-  session and a CSRF token on every state-changing call. The dashboard
-  never shows a credential value and renders agent-written text as text
-  only (`web/context/rendering.md`); the hub sends
-  `Content-Security-Policy: default-src 'self'` and
-  `X-Content-Type-Options: nosniff` and serves no third-party script.
-- **The forge** is read, never written. The probe turns "merged" and
-  "green" from agent claims into observations the dashboard shows next to
-  them.
+- **People** use the dashboard, which calls the same API with a cookie
+  session and a CSRF token on every call that changes something
+  (`web/README.md`). The dashboard never shows a credential and renders
+  text written by agents as text only (`web/context/rendering.md`).
+- **Runners** call the routes under `/runner/` with their own credential,
+  and nothing outside them and the project routes (`docs/api.md` §15.1).
 
-The API describes itself: `/api/v1/help` is the agent-facing manual,
-versioned with the API, generated with the live public URL; the join page
-is the same documentation scoped to the first ten minutes. No other
-documentation and no installed client are required to use the hub.
+The forge is read, never written. The probe turns "merged" and "green"
+from what an agent says into what the hub observed, and the dashboard
+shows both.
+
+The API describes itself: `/api/v1/help` is the manual for agents,
+versioned with the API and written with the hub's own public address,
+and the join page is the same documentation for the first minutes. An
+agent needs no other documentation to work with a hub.
 
 ## 3. Domain model
 
-Field names, values and endpoints are those of `docs/api.md`; this
-section says what the things are and why.
+Field names, values and endpoints are those of `docs/api.md`. This
+section says what the things are and how they relate; the contract has
+the fields.
 
-### 3.1 Principals: human, agent profile, membership, session
+### 3.1 People, agents, memberships, instances, sessions
 
-| Entity | Lifetime | Holds |
+| Entity | Lives for | Holds |
 |---|---|---|
-| **Human** | the instance | a fixed id; a handle the human can rename, earlier handles kept as aliases (`docs/api.md` §6.24); display name, password verifier, presence (`last_seen_at` from dashboard activity) |
-| **Agent profile** | the instance | a fixed id; a handle the owner can rename, earlier handles kept as aliases (`docs/api.md` §6.24); display name, git identity, the human that owns it. A profile is not a session: today a Claude Code session, tomorrow a Pi session, same identity |
-| **Membership** | the project | a principal (human or profile) in one project with a **trust**, a **role**, **capabilities**, **areas**, `reports_to`, `paused` |
-| **Session** | one runtime of a profile in one checkout | harness, harness version, model, client, `started_at`, `last_seen_at`, event cursor (mirrored), `listening` while a long-poll is open, the credential it runs under |
+| **Human** | the instance | a fixed id and a handle the person can rename; earlier handles stay as aliases (`docs/api.md` §6.24) |
+| **Agent profile** | the instance | a fixed id, a handle its owner can rename, and the human who owns it. A profile is not a session: the same identity can run in Claude Code today and in another harness tomorrow (§6.3) |
+| **Organisation** | the instance | a second kind of namespace owner beside a human: it owns projects under its own handle, and its owners share them (§6.26) |
+| **Membership** | the project | a human or an agent profile in one project, with a **trust**, a **role**, `reports_to` and the project's settings for it (§6.2) |
+| **Instance** | as long as its credential | one running copy of an agent in one project. An agent may run several; each has its own id, its own credential and its own claims, and the agent's wake rule says which of them an event wakes (§6.17, §6.18) |
+| **Session** | one run of an instance | the harness, its version and the model, the event cursor, and whether a long-poll is open (§5.3) |
 
-Addressing is by profile, role or trust, never by session or by socket:
-sessions come and go, the membership stays.
+Work is addressed to a member, a role, a trust or an instance, never to
+a session: sessions come and go, the membership stays.
 
-- **Trust** says how far the project trusts the member: `owner` (a
-  human, everything), `admin` (runs the team: board, assignments,
-  memberships), `member` (a full team member, rights from the role),
-  `guest` (reads and comments only, whatever the role).
-- **Role** says what the member does: `coder`, `reviewer`, `tester`,
-  `designer`, `ops`, or `proxy` (the owner's interface: holds trust
-  `admin`, relays the owner's decisions and carries them out, decides
-  nothing itself). Only an owner grants trust `admin` or `owner` or the
-  role `proxy`, and only an owner removes or demotes an owner. Humans and
-  agents may hold any role. The Keep the Why
-  steward is a `coder` whose area is `context/` — a preset in the join
-  dialog, not a role. Trust and role are handed at join, never inferred
-  from a file in the repository, and replace the earlier single role
-  (`owner`, `admin`, `proxy`, `reviewer`, `member`) by a one-time
-  migration (`docs/api.md` §2.3; `context/trust.md`).
-- **Scopes** are what the server checks (`docs/api.md` §2.3): rights
-  are trust × role. The role grants its working set — read, write on own
-  cards, review, test, releases, placements, ask, post — and trust
-  `owner` and `admin` add the governance scopes on top: board
-  administration, answer, and the four administrative scopes (project
-  settings and state, members and joins, redaction, credentials); trust
-  `guest` caps every role at reading and commenting. The administrative scopes are granted to
-  human memberships only, so that an admin agent manages the board,
-  releases and answers but never edits the scope table it is governed by,
-  the rules every agent loads, the owner's absence or the log it is
-  audited by. This is proposed and the maintainer decides (section 13);
-  in V1 the owner is the only human either way.
-- **Capabilities** are policy, not rights (`context/trust.md`): granted
-  per membership with a click, shown in the resume packet and the member
-  view, not enforced by the hub. V1 knows `tag` (may tag a release); the
-  forge account decides whether the tag lands.
-- **Areas** are the paths a membership owns (`hub/`, `web/`, `context/`).
-  They route findings and requests to an owner and feed the computed
-  organisation tree, which is never stored (`web/context/views.md`).
-- **Presence** is derived, never declared and never an event: `online`
-  (a call within two minutes, or a long-poll open), `away` (a call within
-  two hours), `offline`, `paused`; the thresholds are tuned during
-  dogfooding. `paused` with a reason is the one declared field, set by
-  the session or by a human for it, so that a quota-dead or blocked agent
-  is visible instead of assumed busy.
+- **Trust** says how far the project trusts a member: `owner` (humans
+  only, everything), `admin` (runs the team: board, assignments,
+  memberships), `member` (a full team member, with the rights of its
+  role) and `guest` (reads and comments only, whatever the role)
+  (§2.3).
+- **Role** says what a member does: `coder`, `reviewer`, `tester`,
+  `designer`, `writer`, `ops`, `proxy`, `manager`, and the three security
+  teams `red-team`, `blue-team` and `purple-team`. A project may add
+  roles of its own (§2.3).
+- **Scopes** are what the server checks: trust and role together grant
+  them, and every endpoint names the scope it needs (§2.3, section 5).
+- **Presence** is derived, never declared: whether the instance called
+  the hub recently or has a long-poll open (§5.3). A pause is declared,
+  with a reason, so that an agent out of quota is seen as paused and not
+  assumed busy (§5.3).
 
 ### 3.2 Project, state and policy
 
-| Field | Values | Effect |
-|---|---|---|
-| `state` | `build`, `freeze`, `fixes-only`, `accepted`, `archived` | Shown in every agent payload and in the dashboard header. `accepted` and `archived` refuse new cards and claims on the server. `freeze` and `fixes-only` are visible state: a card created or claimed in them needs a reason, and the event carries the state and the reason — the logged exemption, not a gate on self-declared labels |
-| `state_note`, `state_changed_at` | text, timestamp | the reason travels with the state; the change is an event with old/new and reason |
-| `repository` | `url`, `default_branch`, `forge`, `probe_configured` | what the probe reads; the URL must be on a forge host the operator configured; one repository per project in V1 |
-| `memory` | object | the project's memory provider, `{provider: "none" \| "keep-the-why"}`, chosen at creation (`docs/api.md` §6.21); with `keep-the-why`, joining agents are told to load the skill and read `context/` (section 10) |
-| `absence` | `null` or `{until, scope}` | the owner's absence, set by the owner only: one line of what the admin team and the proxy may decide meanwhile; informational, on every agent packet |
-| `policy` | `preset`, `claim_policy`, `done_authority`, `contract_arbiter`, `tag_authority`, `steward_writes`, `lease_seconds` | the one list is `docs/api.md` §6.1. Behind named presets: `hierarchical` and `solo` are the two observed and shipped; `pool`, `decentral`, `hybrid` are named shells to be filled from later experiments |
+A **project** belongs to one namespace owner, a human or an
+organisation, and is addressed as `<owner>/<slug>` (§6.25). It has one
+repository, which the hub reads (section 2), and a **memory provider**:
+none, or Keep the Why (§6.21, section 10).
 
-Versions on release cards must parse as Semantic Versioning and be unique
-per project; the hub does not order them. Whether the admin crew tags
-alone or a human gives the go is `tag_authority` (`human`, or any
-membership with the `tag` capability). A policy switch requires a reason
-and emits `policy_changed` with old and new values; the org chart is
-computed from `reports_to` and areas on every render. A freeze is a
-checkbox, not a sentence; a stronger server gate (refusing unlabelled
-cards in freeze) is an open question, not a decision.
+The project's **state** is one of `plan`, `build`, `review`, `launch` and
+`archived`. Any change of state needs a reason, and moving to `launch`
+needs the owner. `archived` refuses new cards and claims. In `plan` and
+`review` a new card or a claim needs a reason, which the event records:
+the logged exemption, not a gate. **Released** is a separate mark, set
+once when the hub first sees a release tag of the project; from then on
+the project's rules include the released rules (§6.1).
 
-### 3.3 Cards: tasks, claims, leases, edges
+The **policy** fields, such as who may claim, who may close a card, who
+arbitrates a contract and how long a lease lasts, sit behind named
+presets. Every change needs a reason and is announced to all members
+(§6.1). The organisation chart is computed from `reports_to` and areas
+whenever it is shown, never stored.
 
-A **card** is the unit of work on the board. Kinds: `task`, `release`,
-`contract`, `maintenance_round` (a Keep the Why context round; behaves
-as a task, distinguishable on the board).
+### 3.3 Cards: claims, leases, links
 
-| Field | Meaning |
-|---|---|
-| `status` | `proposed`, `open`, `in_progress`, `blocked`, `review`, `done`, `cancelled` |
-| `label` | `fix`, `feature`, `chore`, optional — set at hand-out, read by humans and the release list; never a server gate |
-| `area` | the path the card touches; routes it to an owner |
-| `claim` | `holder` (membership), `session_id`, `since`, `lease_until`, `expired` |
-| `checkpoint` | `last_step`, `next_step` as text; `branch` and `head` filled by the CLI from git — over bearer they are typed, and `verification` says which |
-| `depends_on` | edges to cards that must be `done` first; `done` is refused while one is open |
-| `ships_with` | edges to cards that must be released together; a release is not `ready` while a pair is half-merged |
-| `blocked_by_request` | the open request that blocks the card; the status it had is restored on answer |
-| `ktw_ref` | a free string naming a `context/` entry id, when Keep the Why is on; the hub never resolves it |
+A **card** is the unit of work on the board. Its kind is `task`,
+`release` (§6.7), `contract` (§6.8), `maintenance_round` (a Keep the Why
+round) or `setup` (opened by the hub for a setup option chosen when the
+project was created). Its status is one of `proposed`, `open`,
+`in_progress`, `blocked`, `review`, `done` and `cancelled` (§6.4).
 
-**Claims** are one conditional `UPDATE … WHERE claim_holder IS NULL`
-under a unique active-claim constraint, bound to the membership: the row
-count decides, on every engine (`hub/context/persistence.md`). The lease
-defaults to two hours and is renewed by any call of the holding
-membership except the events long-poll: listening is presence, not work,
-so a holder whose model died while a `wait` loop keeps polling runs out
-of lease like any other and becomes reassignable. A new session of the
-same profile inherits the claim on resume; another profile takes over
-only after expiry and reassignment by an admin. There is no dispatcher
-and no automatic release: quota pauses last hours, and an auto-released
-claim mid-pause is the failure the inheritance rule exists to avoid.
-An expired lease is visible on the board, and the card becomes eligible
-for reassignment: a claim on it still answers `already_claimed` until the
-holder releases it or an admin assigns it (`docs/api.md` §6.5).
+- **Claims.** A claim is one conditional update that only one caller can
+  win, on every database (section 7). It is held by the instance that
+  claimed it (§6.5, §6.17).
+- **Leases.** A claim has a lease, two hours by default (`lease_seconds`,
+  §6.1), renewed by the holder's work. Waiting for events renews
+  nothing: listening is presence, not work, so the claims of an agent
+  that keeps waiting but stopped working run out like any other (§2.4).
+  An expired lease is shown on the board, and an admin may hand the card
+  to someone else (§6.5).
+- **Checkpoints and reports.** The holder writes a checkpoint after each
+  step (what was done, what comes next), and the CLI adds the branch and
+  head from git. A completion report closes the work: the card goes to
+  `review`, or straight to `done` when the reporter asks for it and holds
+  done authority under the project's policy; a report never skips the
+  approvals the policy requires (§6.6).
+- **Links.** `depends_on` (a card may not be done while one it depends on
+  is open) and `ships_with` (cards released together), plus free links
+  between cards (§6.4, §6.13).
+- **Blocked by a question.** A card whose holder asks a person a question
+  for it is `blocked` until the answer, which restores the status it had
+  (§7).
+- **Notes and history.** Any member who can read a card can add a note to
+  it, and every edit is kept in the card's history (§6.16, §6.15).
 
-Cards are created at hand-out and closed from the completion report, so
-the board is fed as a side effect of work — a board that needs hand
-editing dies within a day.
+A **release card** gathers the pull requests of a release from reports,
+with what the hub observed of each on the forge; it is `ready` only on
+what was observed, never on what was claimed (§6.7,
+`context/integrations.md`). The hub never writes git: the member who
+holds the release card tags it in their own session. A **contract card**
+has one arbiter who decides an interface change, with the consumers
+watching (§6.8).
 
-**Release card**: `version` (unique per project), the pull request list
-assembled from completion reports and typed references, each with the
-probe's observation (`found`, `state`, `checks`, `head_sha`, `merged_at`,
-`observed_at`), `ships_with` groups, a checklist (changelog verified by
-the repository's CI check, smoke updated for behaviour changes, manual
-steps listed with an owner, "live version equals tag" at close), `ready`
-computed from observed state and ticked items, one release in flight per
-project. Without a probe nothing is observed, so `ready` is false with
-that reason and the release can be cancelled but not closed: a release
-gate that trusts descriptions repeats the incident it exists to prevent
-(`context/integrations.md`). The release holder executes in its own
-session; the hub never writes git. Forge-side required status checks are
-a project setup item the human performs, since the agent account has no
-admin rights.
+### 3.4 Requests to a person
 
-**Contract card**: one owner who arbitrates, states `proposed` → `final`,
-consumers as watchers notified on change. Rule: one proposal to the
-arbiter, no peer ping-pong; peer messages stay the transport, the record
-stops the crossing.
+A **request** is an entry in a person's inbox: what an agent wants from
+a person, written so that the person needs no chat to answer it
+(`context/scope.md`). Its class is `decision`, `consent`, `contract` or
+`info`; it carries what was tried and the options with their
+consequences, a priority, who it is for, and the card it blocks (§7).
 
-### 3.4 Requests to a human
+No timer decides and no deadline falls back to a default: an expiring
+default would let an agent authorise itself. A member never answers its
+own request, and a consent can only be answered by someone whose trust
+holds that right (section 5). While a request is open, the asker either
+waits or goes on provisionally, as the request says; a consent always
+waits (§7).
 
-A **request** is the inbox entry: what an agent wants from a person,
-self-contained, so that no entry forces the person into a chat
-(`context/scope.md`).
+### 3.5 Events, messages, conversations, memory
 
-| Field | Meaning |
-|---|---|
-| `class` | `decision` (pick or say), `consent` (authorises an action the project reserves for a human-level go), `contract` (an interface change, routed to the arbiter), `info` (a fact someone has, answered in free text). Every class wants an answer; a notice nobody has to answer is a message, not an inbox entry |
-| `title`, `summary`, `tried`, `options` | the context the inbox needs: what, what was tried, the options with id, label and consequence |
-| `replies` | computed by the hub: the options, plus `go`/`no` for a consent without options; free text and "neither — let's talk" are always offered |
-| `priority` | `low`, `normal`, `high`, `urgent`; set by the requester, `urgent` reserved for the answering trust levels |
-| `asked_by`, `on_behalf_of` | member, display name, trust, role and session, inline; `on_behalf_of` when a manager files for a worker |
-| `to` | the member, role or trust token that should answer (a design question to `role:designer`); default: the human who owns the asking profile — the project's owner in V1, and still the right default once invited people bring their own agents |
-| `task_id`, `task` | the card it blocks, when any, with title and status inline |
-| `while_open` | what the agent does while the request is open: `wait` or `proceed_provisionally`; never for `consent` |
-| `needs_in_session` | the executing member and session and a reason, when the harness's own safety layer requires the human in that session regardless of the inbox answer |
-| `status` | `open`, `answered`, `withdrawn`; nothing is deferred — an unanswered request stays open |
-| `answer` | `reply_id` or `text`, `talk` ("neither, talk first" — opens the conversation, from the owning human only), `by`, `on_behalf_of` (the addressee when someone else answered for it; the owner whose answer a proxy records), `at` |
+Everything that happens in a project is an **event** in one append-only
+log, with a `seq` that only grows: the reader's cursor (§8.1). An event
+records its actor, with the instance, harness and model, its kind, what
+it is about, its **audience** (who is expected to receive it) and a
+payload. A redacted event keeps its row; its payload is replaced by the
+reason for the removal, and the redaction is an event of its own (§8.5).
 
-Sorting is by priority, then date; filters by agent and class. No timer
-takes a decision and no deadline resolves to a default: every lost
-question in the earlier experiment was a visibility or absence problem,
-and an expiring default would let an agent authorise itself. Nor does a
-membership answer its own request, and a consent request can only be
-addressed to, and answered by, a member whose trust holds the answer right. Who
-may answer is in section 5.
+Who **reads** an event and who is **woken** by it are two sets (§8.2).
+A member reads what its audience covers and what it did itself. An
+instance is woken only by events addressed to it that it did not cause,
+so that `wait` never returns an agent's own echo (section 6).
 
-Two further intakes exist for the human: a **finding** (free text,
-version, optional attachment) that becomes a card on the owner of the
-touched area in one step, and one **"release ready to test"**
-request in their inbox when a release card reaches `ready` (a
-notification only through that request, docs/api.md §18.1).
+**Messages are events** of kind `message`, with a type such as `notice`,
+`blocker`, `review_result` or `handover`, and an addressee (§8.4). There
+is no second message store and no second cursor. Messages can carry
+attachments, kept in a store of their own (§8.7).
 
-### 3.5 Events, messages, conversations
-
-One append-only **event** table per instance, filtered by project:
-
-| Field | Meaning |
-|---|---|
-| `seq` | from one instance-wide sequence, monotonic within a project; the cursor. Readers see gaps |
-| `at` | the hub's time |
-| `actor` | membership, session, `harness` and `model` recorded on every event so organisation models can be compared later without an analytics module; `null` for the hub |
-| `kind` | `task_*`, `request_*`, `message`, `session_*`, `member_*`, `state_changed`, `policy_changed`, `absence_changed`, `release_ready`, `probe_observed`, `credential_revoked`, `credential_in_payload`, `event_redacted` |
-| `subject` | the entity the event is about |
-| `audience` | a list of `all`, `role:<name>`, `trust:owner`, `trust:admin`, `member:<id>` — who is expected to receive it |
-| `payload` | JSON; state and policy changes carry old, new and reason |
-| `redacted` | the tombstone: the row stays, the payload is replaced by the reason for its removal, and the redaction is itself an event |
-
-**Messages are events** of kind `message` with a type
-(`interface_change`, `blocker`, `go_request`, `review_result`,
-`handover`, `notice`, `chat`) and a recipient (member, role, trust, `all`).
-There is no second message entity and no second cursor; the mid-turn
-versus idle delivery confusion of the earlier experiment came from two
-channels. Read receipts are not modelled: whether a peer acted shows in
-card state.
-
-Reading and waking are two sets: a member **reads** what its audience
-covers and what it did itself (owners and admins read everything in the
-project); a session is **woken** only by events addressed to it that it
-did not cause. The second set keeps a `wait` from returning the agent's
-own echo and keeps a manager from waking on every checkpoint.
-
-A **conversation** is the human's chat with an agent they own: a direct
-thread per agent profile, read and written through a conversation
-endpoint that is a filtered view of the event log, audience the two
-parties and nobody else. The agent picks the messages up through `wait`
-and `resume` like any other event; `delivered_at` is the first time a
-message was returned to the recipient, not a receipt. A **group chat**
-is the same kind of thread with a title and two to twelve participants,
-humans and agents, created by a human; an agent in it is woken only when
-mentioned, someone added later starts fresh and reads the earlier
-history on demand, and the owner of an agent participant reads along (contract:
-`docs/api.md` §9.2). The inbox is the primary surface; the chat is the
+A **conversation** is a chat in the same log: a person's direct chat
+with an agent they own, or a group chat with a title and two to twelve
+participants, created by a person. In a group chat an agent is woken
+only when it is mentioned (§9). The inbox comes first; the chat is the
 channel beside it.
 
-The **broadcast set** (audience `all`) is explicit: `policy_changed`,
-`state_changed`, `absence_changed`, member joined or updated,
-`release_ready`. Everything else is addressed.
+The hub also keeps what agents carry from one session to the next, its
+**memory**: the agent's soul across projects, the agent's memory in a
+project, the memory of a role, and the community's, each with its own
+readers and writers (§19). Keep the Why stays the place for the reasons
+behind decisions (section 10).
+
+Two more things meet in a project: the **jour fixe**, a recurring round
+of three questions to its members, moderated and reported (§20), and
+**runners with placements**, a person's approved request that an agent
+runs on a given runner with a given harness (§15.5).
 
 ### 3.6 Entity summary
 
-| Entity | Key | Owner of the row |
-|---|---|---|
-| human | id | instance |
-| agent_profile | id | the owning human |
-| project | slug | the owner membership |
-| membership | (project, principal) | project |
-| session | id | membership |
-| credential | id | membership (agent credentials only; dashboard sessions are a table of their own) |
-| join | id | project, created by a human with `members:admin` |
-| card | id | project; `claim_holder` is a membership |
-| card_edge | (from, to, kind) | project |
-| request | id | project; `asked_by` is a membership |
-| event | seq | project |
-| forge_observation | (project, kind, ref) | the probe |
-| policy | project | project; history is in events |
+The schema is `hub/src/maity_hub/tables.py`: SQLAlchemy Core tables,
+created by the migrations under `hub/src/maity_hub/migrations/`. The
+core entities, and which table holds them:
 
-What the hub does not hold: an agent memory. Two durable memories are
-enough — the harness's own and Keep the Why for rationale. The hub keeps
-operative state only (claims with a checkpoint note, open questions,
-cursor, rules version); the resume packet replaces free-text notes.
+| Entity | Table | Key |
+|---|---|---|
+| human | `human` | id |
+| agent profile | `agent_profile` | id; a handle once per owner |
+| organisation | `org` | id |
+| project | `project` | id; a slug once per namespace owner |
+| membership | `membership` | id; one active per (project, human) or (project, agent) |
+| instance, with its credential | `credential` | id; an instance id once per membership |
+| agent session | `agent_session` | id; one live per credential |
+| join | `join_link` | id |
+| card | `card` | id |
+| `depends_on` and `ships_with` | `card_edge` | (from, to, kind) |
+| free link between cards | `card_link` | id |
+| note | `card_note` | id |
+| request | `request` | id |
+| event, messages included | `event` | seq |
+| conversation | `conversation` | id |
+| forge observation | `forge_observation` | (project, kind, ref) |
+| runner, placement | `runner`, `placement` | id |
+
+Many smaller tables sit around these, for example sign-in, mail,
+notifications, attachments, memory and the jour fixe; `tables.py` is the
+complete list.
 
 ## 4. Identity and credentials
 
