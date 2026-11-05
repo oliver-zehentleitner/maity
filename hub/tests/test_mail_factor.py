@@ -81,7 +81,7 @@ def setup(
 
 
 def login(client: TestClient) -> Any:
-    return client.post("/api/v1/auth/login", json={"handle": "ada", "password": factory.PASSWORD})
+    return factory.login_handle(client, "ada")
 
 
 def mails(engine: Engine) -> list[Any]:
@@ -239,9 +239,15 @@ def test_a_human_with_totp_is_asked_for_totp_never_for_mail(
 def test_an_account_that_never_had_an_address_enrols_instead(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    client, _ = setup(make_client, migrated, verified=False)
-    answer = login(client)
-    assert answer.json() == {"second_factor": "enrolment_required"}
+    # Without an address there is no password sign-in (§2.1): such an account's first factor
+    # is a device code, approved where it is still signed in.
+    client, human = setup(make_client, migrated, verified=False)
+    hub: Settings = client.app.state.settings
+    with migrated.begin() as conn:
+        _, _, _, state = second_factor.begin(
+            conn, hub, human, method="device_code", address="198.51.100.5", user_agent=None
+        )
+    assert state == "enrolment"
     assert mails(migrated) == []
 
 

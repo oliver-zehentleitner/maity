@@ -93,7 +93,7 @@ def test_what_is_not_a_change_of_the_verified_address_asks_for_nothing(
     # A human without a verified address sets the first one without the factor.
     other = factory.human(migrated, "grace")
     client = make_client(secret_key=KEY, mail=mail_env().mail)
-    client.post("/api/v1/auth/login", json={"handle": "grace", "password": factory.PASSWORD})
+    factory.login_handle(client, "grace")
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     grace = flow.Human(client, csrf, other)
     enrol(grace, moment)

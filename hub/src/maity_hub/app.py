@@ -59,7 +59,7 @@ from maity_hub import (
     write_guard,
 )
 from maity_hub.auth import device_codes as codes
-from maity_hub.auth import mail_factor
+from maity_hub.auth import known_sources, mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
@@ -285,6 +285,7 @@ def create_app(
     )
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
+    known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

@@ -512,6 +512,20 @@ human_device = Table(
     **MYSQL_TABLE,
 )
 
+# Where a human's sign-ins completed (§2.1): a keyed fingerprint of each source address, never the
+# address, and the last time. Past the limit of wrong passwords, only such a source keeps the
+# password. A row goes 30 days after its last sign-in there, and with the account (§2.9).
+known_source = Table(
+    "known_source",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("fingerprint", String(HEX_SHA256), nullable=False),
+    Column("last_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "fingerprint"),
+    Index("ix_known_source_last_at", "last_at"),
+    **MYSQL_TABLE,
+)
+
 # A mail link and its browser-bound code share one single-use row (§2.6.3).
 email_sign_in = Table(
     "email_sign_in",

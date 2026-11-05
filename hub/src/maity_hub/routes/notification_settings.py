@@ -13,15 +13,14 @@ from sqlalchemy import Connection, select
 
 from maity_hub import events
 from maity_hub import tables as t
-from maity_hub.auth import second_factor
+from maity_hub.auth import password_limits, second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.db import retrying
-from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of
+from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences
-from maity_hub.routes.auth import LOGIN_BY_ADDRESS, LOGIN_BY_HANDLE
 from maity_hub.views import member_view
 
 router = APIRouter()
@@ -81,19 +80,17 @@ def patch_settings(
 ) -> JSONResponse:
     session_hash = _human(caller)
     hub = settings_of(request)
-    address = origin_of(request).address
 
     def run() -> tuple[dict[str, Any], int]:
         with events.transaction(engine_of(request)) as conn:
             human, session = _context(conn, caller, session_hash)
 
             def wrong_password() -> None:
-                # A wrong current password counts against the login limit (§2.1, §18.4).
-                LOGIN_BY_ADDRESS.hit(address)
-                LOGIN_BY_HANDLE.hit(human.handle)
+                # A wrong current password counts in the address change's own bucket (§2.1).
+                password_limits.ADDRESS_CHANGE.hit(human.id)
 
             def password_blocked() -> int:
-                return max(LOGIN_BY_ADDRESS.blocked(address), LOGIN_BY_HANDLE.blocked(human.handle))
+                return password_limits.ADDRESS_CHANGE.blocked(human.id)
 
             before = preferences.preferences(conn, human.id)["email"]["language"]
             status = preferences.patch(

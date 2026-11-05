@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,9 +21,7 @@ def owner(migrated: Engine) -> str:
 
 
 def _login(client: TestClient, handle: str = "maintainer") -> str:
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, handle)
     assert response.status_code == 200, response.text
     csrf: str = client.get("/api/v1/auth/session").json()["csrf_token"]
     return csrf
@@ -32,9 +31,7 @@ def test_login_answers_the_member_and_sets_both_cookies(
     make_client: ClientFactory, owner: str
 ) -> None:
     client = make_client()
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, "maintainer")
     assert response.status_code == 200
     assert response.json() == {
         "member": {
@@ -57,9 +54,7 @@ def test_login_answers_the_member_and_sets_both_cookies(
 
 def test_plain_http_mode_drops_the_secure_flag(make_client: ClientFactory, owner: str) -> None:
     client = make_client(base_url="http://hub.local", allow_plain_http=True)
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, "maintainer")
     assert all("Secure" not in c for c in response.headers.get_list("set-cookie"))
 
 
@@ -69,9 +64,7 @@ def test_plain_http_mode_drops_the_secure_flag(make_client: ClientFactory, owner
 def test_a_wrong_handle_or_password_is_unauthenticated(
     make_client: ClientFactory, owner: str, handle: str, password: str
 ) -> None:
-    response = make_client().post(
-        "/api/v1/auth/login", json={"handle": handle, "password": password}
-    )
+    response = factory.login_handle(make_client(), handle, password)
     assert response.status_code == 401
     assert response.headers["Maity-Error"] == "unauthenticated"
     assert "set-cookie" not in response.headers
@@ -80,24 +73,90 @@ def test_a_wrong_handle_or_password_is_unauthenticated(
 def test_login_is_limited_to_ten_per_minute(make_client: ClientFactory, owner: str) -> None:
     client = make_client()
     for _ in range(10):
-        client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": "wrong"})
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+        factory.login_handle(client, "maintainer", "wrong")
+    response = factory.login_handle(client, "maintainer")
     assert response.status_code == 429
     assert response.headers["Maity-Error"] == "rate_limited"
     assert int(response.headers["Retry-After"]) >= 1
 
 
-def test_the_handle_limit_holds_across_addresses(make_client: ClientFactory, owner: str) -> None:
-    for i in range(10):
-        make_client(peer=f"203.0.113.{i + 10}").post(
-            "/api/v1/auth/login", json={"handle": "maintainer", "password": "wrong"}
-        )
-    response = make_client(peer="198.51.100.1").post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
-    assert response.headers["Maity-Error"] == "rate_limited"
+def _reason(response: Any) -> Any:
+    return response.json()["error"]["details"].get("reason")
+
+
+def test_five_wrong_passwords_pause_the_password_from_other_sources(
+    make_client: ClientFactory, owner: str
+) -> None:
+    for i in range(5):
+        wrong = factory.login_handle(make_client(peer=f"203.0.113.{i + 10}"), "maintainer", "wrong")
+        assert (wrong.status_code, _reason(wrong)) == (401, None)
+    # The right password from a source the account never signed in from: not even checked.
+    paused = factory.login_handle(make_client(peer="198.51.100.1"), "maintainer")
+    assert paused.status_code == 401 and paused.headers["Maity-Error"] == "unauthenticated"
+    details = paused.json()["error"]["details"]
+    assert details["reason"] == "password_paused"  # this hub offers no link by mail
+    assert 1 <= details["retry_after"] <= 15 * 60
+    assert "set-cookie" not in paused.headers
+
+
+def test_a_known_source_keeps_the_password_until_its_own_five(
+    make_client: ClientFactory, owner: str
+) -> None:
+    home = "198.51.100.7"
+    assert factory.login_handle(make_client(peer=home), "maintainer").status_code == 200
+    for i in range(5):
+        factory.login_handle(make_client(peer=f"203.0.113.{i + 10}"), "maintainer", "wrong")
+    assert factory.login_handle(make_client(peer=home), "maintainer").status_code == 200
+    for _ in range(5):  # wrong passwords from the known source count like any
+        wrong = factory.login_handle(make_client(peer=home), "maintainer", "wrong")
+        assert (wrong.status_code, _reason(wrong)) == (401, None)
+    paused = factory.login_handle(make_client(peer=home), "maintainer")
+    assert _reason(paused) == "password_paused"
+
+
+def test_a_session_waiting_at_the_second_factor_makes_no_known_source(
+    make_client: ClientFactory, migrated: Engine, owner: str
+) -> None:
+    from maity_hub.auth import known_sources
+
+    with migrated.begin() as conn:
+        assert known_sources.known(conn, owner, "203.0.113.7") is False
+    factory.login_handle(make_client(), "maintainer")  # the default peer, 203.0.113.7
+    with migrated.begin() as conn:
+        assert known_sources.known(conn, owner, "203.0.113.7") is True
+        stored = conn.execute(select(t.known_source)).all()
+    assert [row.human_id for row in stored] == [owner]
+    assert all("203.0.113.7" not in row.fingerprint for row in stored)  # a fingerprint only
+
+
+def test_an_address_of_no_account_is_answered_as_an_account_is(
+    make_client: ClientFactory, owner: str
+) -> None:
+    answers = [factory.login_handle(make_client(), "nobody", "wrong") for _ in range(6)]
+    assert [(a.status_code, _reason(a)) for a in answers[:5]] == [(401, None)] * 5
+    assert _reason(answers[5]) == "password_paused"
+
+
+def test_past_the_limit_the_link_is_offered_where_the_hub_sends_it(
+    make_client: ClientFactory, owner: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.auth import sign_in_settings
+
+    monkeypatch.setattr(sign_in_settings, "view", lambda conn, hub: {"email_link_available": True})
+    for i in range(5):
+        factory.login_handle(make_client(peer=f"203.0.113.{i + 10}"), "maintainer", "wrong")
+    paused = factory.login_handle(make_client(peer="198.51.100.1"), "maintainer")
+    assert paused.json()["error"]["details"] == {"reason": "email_link"}
+
+
+def test_a_right_password_gives_its_place_back(make_client: ClientFactory, owner: str) -> None:
+    for i in range(4):
+        factory.login_handle(make_client(peer=f"203.0.113.{i + 10}"), "maintainer", "wrong")
+    for i in range(3):
+        right = factory.login_handle(make_client(peer=f"203.0.113.{i + 30}"), "maintainer")
+        assert right.status_code == 200
+    # Four wrong, not seven: a new source still signs in.
+    assert factory.login_handle(make_client(peer="198.51.100.9"), "maintainer").status_code == 200
 
 
 def test_session_answers_member_csrf_token_and_expiry(
@@ -213,9 +272,7 @@ def test_a_password_change_ends_every_other_session(
     assert laptop.get("/api/v1/me").status_code == 200
     assert phone.get("/api/v1/me").headers["Maity-Error"] == "unauthenticated"
     fresh = make_client()
-    ok = fresh.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": "a new long password"}
-    )
+    ok = factory.login_handle(fresh, "maintainer", "a new long password")
     assert ok.status_code == 200
 
 
@@ -265,12 +322,12 @@ def test_a_new_password_has_at_least_twelve_characters(
     assert twelve.status_code == 200
 
 
-def test_a_wrong_current_password_counts_against_the_login_limit(
+def test_a_wrong_current_password_counts_in_its_own_bucket(
     make_client: ClientFactory, owner: str
 ) -> None:
     client = make_client()
-    csrf = _login(client)  # one login attempt
-    for _ in range(9):
+    csrf = _login(client)
+    for _ in range(5):
         wrong = client.post(
             "/api/v1/auth/password",
             json={"current": "guess", "new": "a new long password"},
@@ -284,18 +341,15 @@ def test_a_wrong_current_password_counts_against_the_login_limit(
     )
     assert limited.status_code == 429
     assert limited.headers["Maity-Error"] == "rate_limited"
-    login = make_client(peer="198.51.100.2").post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
-    assert login.headers["Maity-Error"] == "rate_limited"  # the handle's limit is shared
+    # The session's own wrong attempts pause nobody's sign-in (§2.1).
+    login = factory.login_handle(make_client(peer="198.51.100.2"), "maintainer")
+    assert login.status_code == 200
 
 
 def test_login_over_plain_http_off_loopback_is_insecure_transport(
     make_client: ClientFactory, owner: str
 ) -> None:
-    response = make_client(base_url="http://hub.example").post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(make_client(base_url="http://hub.example"), "maintainer")
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "insecure_transport"
 
@@ -303,8 +357,8 @@ def test_login_over_plain_http_off_loopback_is_insecure_transport(
 def test_login_over_plain_http_on_loopback_sets_cookies_without_secure(
     make_client: ClientFactory, owner: str
 ) -> None:
-    response = make_client(base_url="http://localhost:8080", peer="127.0.0.1").post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
+    response = factory.login_handle(
+        make_client(base_url="http://localhost:8080", peer="127.0.0.1"), "maintainer"
     )
     assert response.status_code == 200
     assert all("Secure" not in c for c in response.headers.get_list("set-cookie"))
@@ -323,9 +377,7 @@ def test_a_cookie_sent_over_plain_http_off_loopback_is_refused(
 def test_secure_follows_the_scheme_even_with_the_plain_http_flag(
     make_client: ClientFactory, owner: str
 ) -> None:
-    response = make_client(allow_plain_http=True).post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(make_client(allow_plain_http=True), "maintainer")
     assert all("Secure" in c for c in response.headers.get_list("set-cookie"))
 
 
@@ -336,7 +388,7 @@ def test_an_agent_credential_on_login_is_forbidden(
     agent = factory.agent(migrated, project_id, factory.human(migrated))
     response = make_client().post(
         "/api/v1/auth/login",
-        json={"handle": "x", "password": "y"},
+        json={"email": "x", "password": "y"},
         headers={"Authorization": f"Bearer {agent.value}"},
     )
     assert response.status_code == 403

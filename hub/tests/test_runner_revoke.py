@@ -33,9 +33,7 @@ def _human(client: Any, migrated: Engine) -> flow.Human:
     from tests import factory
 
     human_id = factory.human(migrated, "maintainer")
-    login = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    login = factory.login_handle(client, "maintainer")
     assert login.status_code == 200, login.text
     return flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], human_id)
 

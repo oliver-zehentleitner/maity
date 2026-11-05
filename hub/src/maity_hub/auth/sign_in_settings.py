@@ -15,6 +15,7 @@ from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
 from maity_hub.db import xact_lock
 from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
+from maity_hub.ratelimit import Attempt
 
 SWITCHES = ("device_code", "email_link")
 SEEN = "sign_in.second_factor_seen"
@@ -121,7 +122,7 @@ def confirm_email(conn: Connection, hub: Settings, session: Any, code: str, by: 
     False for a wrong code, counted as any (§2.8.6); the caller commits the count, then refuses."""
     from maity_hub.auth import second_factor  # it imports this module
 
-    with second_factor.Attempt(by) as attempt:
+    with Attempt(second_factor.WRONG_BY_HUMAN, by) as attempt:
         nonce = store.stored(conn, "sign_in").get(PENDING)
         if _environment(hub, "second_factor") is not None:
             raise invalid({"second_factor": "set_by_environment"})

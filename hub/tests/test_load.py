@@ -171,9 +171,7 @@ def test_a_held_long_poll_costs_the_same_whatever_the_history_and_the_tabs(
         humans = [owner]
         for k in range(n - 1):
             client = make_client(peer=f"198.51.100.{10 + k}")
-            client.post(
-                "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-            )
+            factory.login_handle(client, "maintainer")
             csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
             humans.append(flow.Human(client, csrf, owner.id))
         return humans

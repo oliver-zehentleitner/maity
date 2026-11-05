@@ -19,6 +19,7 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import clock, ids
 from maity_hub import tables as t
+from maity_hub.auth import known_sources
 from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
     SESSION_IDLE,
@@ -301,6 +302,7 @@ def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -
         select(t.human_session).where(t.human_session.c.public_id == public_id)
     ).one()
     conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_login_at=now))
+    known_sources.remember(conn, human_id, row.source)  # a known source from now on (§2.1)
     # Every new session tells its human, whichever the method (§2.6.5).
     data: dict[str, Any] = {
         "session_id": public_id,

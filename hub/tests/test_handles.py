@@ -189,7 +189,7 @@ def test_a_human_whose_current_handle_it_is_comes_first_but_not_through_an_alias
     }
 
 
-def test_login_and_the_owner_part_of_a_project_address_follow_aliases(
+def test_the_owner_part_of_a_project_address_follows_aliases_and_a_rename_keeps_the_login(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
@@ -207,13 +207,9 @@ def test_login_and_the_owner_part_of_a_project_address_follow_aliases(
     for prefix in ("/badge/{}/maity.svg",):
         assert public.get(prefix.format("boss")).status_code == 200
         assert public.get(prefix.format("maintainer")).status_code == 200, prefix
-    # And signs in: a handle, or an alias of it.
-    for name in ("boss", "maintainer"):
-        client = make_client()
-        login = client.post(
-            "/api/v1/auth/login", json={"handle": name, "password": factory.PASSWORD}
-        )
-        assert login.status_code == 200 and login.json()["member"]["handle"] == "boss"
+    # The login takes the address, not a handle (§2.1): the rename leaves it as it was.
+    login = factory.login(make_client(), owner.id)
+    assert login.status_code == 200 and login.json()["member"]["handle"] == "boss"
     # A new project cannot take a slug under the alias either: it is the same namespace.
     clash = owner.post("/projects", {"slug": "maity", "name": "Again"})
     assert clash.status_code in (400, 409)
@@ -316,24 +312,13 @@ def test_two_renames_to_one_handle_leave_one_winner(
         assert len(holders) == 1
 
 
-def test_the_admin_search_finds_an_account_by_an_alias_and_login_is_limited_per_account(
+def test_the_admin_search_finds_an_account_by_an_alias(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from maity_hub.routes import auth
-
     admin = flow.human(make_client, migrated)  # the earliest human: the instance admin
     assert admin.patch("/me", {"handle": "boss"}).status_code == 200
     found = admin.get("/admin/users", params={"q": "maintainer"})
     assert [u["handle"] for u in found.json()["items"]] == ["boss"]
-    auth.LOGIN_BY_HANDLE.reset()
-    wrong = make_client()
-    codes = []
-    for name in ("boss", "maintainer") * 5:
-        codes.append(
-            wrong.post("/api/v1/auth/login", json={"handle": name, "password": "wrong"}).status_code
-        )
-    assert 429 in codes  # alias and handle share one account's limit
-    auth.LOGIN_BY_HANDLE.reset()
 
 
 def test_an_agent_naming_a_handle_is_forbidden_even_when_it_is_null_and_a_human_needs_a_field(

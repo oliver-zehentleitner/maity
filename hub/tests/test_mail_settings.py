@@ -45,9 +45,7 @@ def admin(make_client: ClientFactory, engine: Engine, hub: Settings) -> flow.Hum
     if human_id is None:
         human_id = factory.human(engine, "maintainer")
     client = make_client(mail=hub.mail, secret_key=hub.secret_key)
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, "maintainer")
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, human_id)

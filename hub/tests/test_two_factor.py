@@ -40,7 +40,7 @@ def moment() -> Clock:
 
 
 def login(client: TestClient, handle: str = "maintainer") -> Any:
-    return client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
+    return factory.login_handle(client, handle)
 
 
 def signed_in(make_client: ClientFactory, migrated: Engine, **overrides: object) -> flow.Human:

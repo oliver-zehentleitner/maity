@@ -193,7 +193,7 @@ def test_resume_needs_no_key(client: TestClient, agent: factory.Agent) -> None:
 
 def test_a_human_may_send_a_key_and_need_not(client: TestClient, migrated: Engine) -> None:
     factory.human(migrated, "maintainer")
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     headers = {"X-CSRF-Token": csrf}
     assert client.post("/api/v1/probe", json={}, headers=headers).status_code == 201
