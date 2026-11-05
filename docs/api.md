@@ -9910,9 +9910,12 @@ its members read the organisation's image, not each other's.
   person's `public_profile` is `true` or the caller shares a project with
   them (for the reader's own handle always), and never for an
   organisation: a bio that is not public is the person's alone.
-- **`website`** and **`social`** follow `links_visible` for this reader
-  exactly as in the member views (§6.2, §16.9, "A person's links"),
-  and are absent otherwise; an organisation has neither.
+- **`website`** and **`social`** are there only when the person's
+  profile is public (`public_profile: true`), the reader shares an
+  active project with the person, or it is the reader's own; then they
+  follow `links_visible` for this reader exactly as in the member views
+  (§6.2, §16.9, "A person's links"), and are absent otherwise; an
+  organisation has neither.
 - **`projects`**: for a human, the projects in which both the caller
   and the person are active members, and those with a served public
   page in which the person is an active member (as the public page
@@ -16380,8 +16383,9 @@ same header and footer (§16.7.5).
   font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
   'none'`: they load the landing page's
   `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
-  for the frame (§16.7.5), and `img-src 'self'` covers the favicon and
-  the pictures `public-pages.css` names; the page's text has no image.
+  for the frame (§16.7.5), and `img-src 'self'` covers the browser's own
+  favicon request (the page links no icon) and the pictures
+  `public-pages.css` names; the page's text has no image.
   Both replace §1.1's `default-src 'self'` for these documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
@@ -16789,7 +16793,8 @@ as sign-in never depends on that call either. These words carry their own `lang`
 read draws the page from the catalogue with no message, as sign-in never depends
 on this call. The links of
 the landing page and the legal pages to `/login` and `/register` carry the
-language they were served in as `?lang=<tag>`.
+language they were served in as `?lang=<tag>`; a link whose query already
+holds a `lang` the operator wrote keeps it, and the hub adds none.
 
 **In the site file** (`maity-site/1`, `web/README.md`) the parts `sign_in` and
 `sign_up` hold `{<language>: {<key>: text}}`, and a part left out stays as it
@@ -16816,8 +16821,8 @@ legal pages exist, which social link a column above already has.
 GET /site/chrome?lang=<tag>
 ```
 
-No session; on the public host only, as `GET /landing` (the join host
-never routes it, §1.1: `not_found`). It answers `200` with the model in
+No session; on the public host only, as `GET /landing` (on the join host
+it is an ordinary other `GET`, a `302` to the public start page, §1.1). It answers `200` with the model in
 one language, chosen as the landing page's is: `lang` if the landing page
 has it, else the best match of `Accept-Language` among the landing page's
 languages, else its `default_language`. While the landing page is
@@ -16875,7 +16880,8 @@ from the hub's catalogue in `language`.
   `?lang=<language>` in every link of the model, as §16.7.4 says for the
   landing page's links. A `href` the operator wrote (a call to action, an
   `opensource` link, a social link) is as stored, except that a path
-  `/login` or `/register` gets the language as well.
+  `/login` or `/register` gets the language as well, unless its query
+  already holds a `lang`: an explicit `lang` the operator wrote wins.
 - **Landing page disabled.** `landing` is `false`, `nav` is `[]` and `cta`
   is `null`: there is no page to link into, and `GET /landing` answers
   `{enabled: false}` alone. The footer has `platform` with sign in and
@@ -16889,7 +16895,7 @@ from the hub's catalogue in `language`.
   `Vary: Accept-Language`. The answer depends on the chosen language and
   on the stored landing and legal settings; an edit is visible within 60 s.
 - **Errors.** An unknown `lang` is no error. On the join host the route
-  does not exist (`not_found`). During a maintenance window it answers
+  does not exist: a `GET` is a `302` to the public start page (§1.1). During a maintenance window it answers
   `503 maintenance` like every call §16.12 does not name; the dashboard
   then draws the sign-in and sign-up pages without the frame (§16.7.4).
 - **The mail link pages.** `/mail/sign-in/{token}` (§2.6.3) and the
@@ -18112,8 +18118,9 @@ them (§11); like every forge text they are data, rendered as text.
 `merge.public` is `true` when the read that observed the merge found the
 repository public (the forge named its base repository not private), and
 `false` otherwise, also when the forge did not say; it is that read's
-answer, whichever source read it, and decides whether the merge counts
-on a page without sign-in (§6.22, §16.9; the one exception of §11.4). The
+answer, whichever source read it. A page without sign-in counts the
+merge only when `merge.public` is `true` and the hub's last check also
+found the repository public (§6.22, §16.9; the one exception of §11.4). The
 `decision` text names the card and the request id and nothing of the
 request; its content is added per reader (§17.5). `request` is
 `{id, class, task_id}`, `release` is `{task_id, version}`, `deploy` is
