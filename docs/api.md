@@ -106,9 +106,11 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   registration's, §2.7.1) answer with the frame's policy (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
-  by `ETag`, and the project
-  badge (§6.20), the one answer with a public cache (`public,
-  max-age=60`), because it carries nothing but a count, and the app
+  by `ETag`, the project
+  badge (§6.20), with a public cache (`public, max-age=60`) because it
+  carries nothing but a count, a public picture (§6.10, `public,
+  max-age=86400, s-maxage=60` at its address by digest, which names no
+  account and changes with the picture), and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
   a deploy. The hub serves no
   third-party script: the
@@ -7186,7 +7188,8 @@ caches drop it within 60 seconds, and no new visitor gets it.
 **Sizes.** Both addresses take `?s=<size>` and serve the picture at
 `s` × `s` pixels, `s` one of `32`, `64`, `128` and `256`; without `s`
 it is `256`, the stored size. Another `s` is `invalid`
-(`details.fields.s: "unsupported"`), checked after the authorization.
+(`details.fields.s: "unsupported"`), checked after the authorization
+and after the image is found (Errors, below).
 A picture smaller than `s` (an upload under 256 pixels, never scaled
 up, below) is served at its own size for every larger `s`. The hub
 scales each size once from the stored image, when it stores it or at
@@ -7194,8 +7197,10 @@ the first request for that size, keeps it next to the stored image and
 serves the kept bytes; it never scales on a request it has served
 before. Each size has its own `ETag` (a digest of its bytes); the
 digest in the address stays the stored image's, so one address names
-every size and a client adds `s` for the size it draws. A new upload or
-a delete drops the kept sizes with the image they were made from.
+every size and a client adds `s` for the size it draws. Every change of
+the effective picture — an upload, a delete, a moderation reset
+(§16.8) and a forge refresh that changes the image — drops the kept
+sizes with the image they were made from.
 
 **Upload.** `PUT` with the raw image as the body — no JSON, no multipart
 — and `Content-Type: image/png`, `image/jpeg` or `image/webp`. The rules of the logo's
@@ -7297,9 +7302,11 @@ member list, which carries the current URL on every read.
 
 Errors, `GET`: `not_found` when there is no image or the caller may not
 see the member, and on the public address for a digest no public
-picture has; `invalid` with `details.fields.s: "unsupported"` for a
-size not listed under **Sizes**, checked after the authorization, so
-it tells nothing to a caller who may not see the image. `PUT`: `invalid` with `details.fields.body` one of
+picture has; only then `invalid` with `details.fields.s:
+"unsupported"` for an `s` that is not exactly one of the strings `32`,
+`64`, `128` and `256` (an empty or non-numeric `s` included), so it
+tells nothing to a caller who may not see an image and a member without
+one is `not_found` whatever `s` says. `PUT`: `invalid` with `details.fields.body` one of
 `unsupported_type` (not PNG, JPEG or WebP by its bytes, or a `Content-Type` that
 does not name the sniffed type), `too_large` (over 1 MiB), `dimensions`
 (over 4096 pixels on a side, by the header or after decoding, or a
@@ -13701,7 +13708,7 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
-| GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
+| GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans; for an organisation's, its members and its projects' members | 6.10 |
 | GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page) | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -17395,10 +17402,13 @@ placeholder of the same size, drawn with inline style and no image,
 when the person has none; with `public_profile` `false` it shows the
 placeholder. Not the generated avatar of §6.10: a page carries no
 script to draw it, and it would name the account id. A picture is an
-input of the page that shows it, the person's or the agent's: an
-upload, a delete or a moderation reset renders that page again under
-`MAITY_PUBLIC_PAGES_RENDER` (below; a removal at once), so a stored
-page names the current picture's address.
+input of the page that shows it, the person's or the agent's: every
+change of the effective picture (an upload, a delete, a moderation
+reset, a forge refresh that changes the image) renders that page again
+at once under either `MAITY_PUBLIC_PAGES_RENDER` (below), since it
+replaces what the page shows: the old public address answers
+`not_found` from the change on, so a page that kept it would show a
+broken image.
 
 **Online on public pages.** `PATCH /me` (human only) also sets
 `public_presence` (`true` or `false`, anything else `null` included
@@ -17548,7 +17558,8 @@ by moderation (§16.8), a change of a shown member's `trust`, `role` or
 `reports_to`, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
 project's `name`, `full_name` or `links`, a card's `title`, `status`, `label` or
-holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
+holder, a website or a name (an edit replaces what was there), and a
+change of a shown picture (above, "The picture") — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
 member, agent or project on a page — and the counts; a card that leaves
@@ -17625,13 +17636,16 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name}`, empty while `public_profile` is `false`), `agents` (`person`s) |
-| `agent` | `name`, `handle`, `owner` (`person`), `projects` (`{name, full_name}`), `statistics` |
+| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name}`, empty while `public_profile` is `false`), `agents` (`person`s) |
+| `agent` | `name`, `handle`, `picture` (as for `person`), `owner` (`person`), `projects` (`{name, full_name}`), `statistics` |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
 
 Member ids, session or credential data, presence, instances, models, mail and
-network addresses and everything the section above excludes never appear. The other routes
-stay as they are: without a session they answer `401`, and a caller who is no
+network addresses and everything the section above excludes never appear;
+`picture` is the address by digest, never the `avatar_url` that names the
+account. The other routes stay as they are: without a session they answer
+`401` — except the public picture address of §6.10, which answers anyone —
+and a caller who is no
 member gets `not_found` (§1.3). A signed-in reader who is no member of the
 project reads the same route. The Overview's addresses read the project's own
 page (`kind` `project`), its swarm tab none (§16.11).
