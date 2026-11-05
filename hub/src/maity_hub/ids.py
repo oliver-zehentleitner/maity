@@ -30,6 +30,8 @@ PREFIXES = {
     "placement": "plc",
     "memory": "mem",
     "conversation": "cnv",
+    "cross_chat": "xch",
+    "cross_message": "xmsg",
     "human_session": "hss",
     "device_code": "dvc",
     "notification_position": "npos",
