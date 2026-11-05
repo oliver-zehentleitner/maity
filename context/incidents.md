@@ -320,3 +320,43 @@ dump ten minutes earlier worked, which fits a pod whose network was not ready ye
 - Only the log check in `helm-upgrade.sh`: it protects upgrades, but the nightly dumps would go on failing silently.
 - Only the fixed script: the CronJob in the cluster keeps the old one until someone applies the manifest, so the upgrade script checks too.
 - A separate monitor for empty `.part` files: another thing to run for what the Job's own exit status can say.
+
+## A setting whose unset value stopped the hub reading its own repository went to production unset
+
+**Id:** 2083a296-dac3-4164-b51e-9a3a6a38a26b
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** #1218 (merged 2026-11-03) and its changelog fragment `changelog.d/agent-b-forge-instance-namespaces-hub.md`; the maintainer's request to record the lesson and the lead's account of the outage and the fix, 2026-11-05
+**Revisit when:** the deploy candidate's list is generated from the fragments, or the hub refuses to start while a setting it needs for live behaviour is unset
+
+#1218 made the instance's forge token serve only the namespaces listed
+in `MAITY_FORGE_INSTANCE_NAMESPACES`; unset, it serves no project. Its
+changelog fragment and `hub/README.md` said so ("set the variable when
+upgrading"). The production instance was deployed with the change, and
+the setting was never added. From then on the hub could not read the
+project's own repository: the Keep the Why dashboard's Why reported
+that Maity has no access to it (`probe_not_configured`), and no forge
+data came in. Nobody noticed for about two days: neither the deploy
+candidate's test list nor the checks after the deploy named the
+setting. It was set on 2026-11-05 at 19:20 UTC. The hub then caught up
+on the merges it had missed and woke the holders of their cards with
+merge tickers 21 to 47 hours late.
+
+**Learned:** a change whose setting alters live behaviour while unset
+names the setting and that effect in its pull request and in its
+changelog fragment, as #1218's fragment did. The deploy candidate's
+test list carries every such note from the fragments it ships, as a
+step done before the deploy, so the setting is in place when the new
+version starts. The list for this deploy did not, and why it did not
+is unknown.
+
+**Reason:** confirmed — the chain from #1218 through the unset setting
+to the fix: the fragment, the hub's answer `probe_not_configured` and
+the fix that ended it. Inferred — the late merge tickers came from the
+catch-up after the fix; that cause was not reproduced.
+
+**Rejected alternatives:**
+- Leaving it to whoever deploys to read every merged pull request for
+  new settings: that was the practice here, and it missed a setting
+  whose note was in the changelog.
