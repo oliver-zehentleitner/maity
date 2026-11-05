@@ -243,14 +243,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const links = productLine.querySelectorAll("a");
     const hrefs = links.map((a) => a.getAttribute("href"));
-    expect(text(productLine) === " Maity " + new Date().getFullYear() + " · Found a bug? · Made with ♥ by Oliver Zehentleitner on & ",
-      "product line: Maity and the year, Found a bug?, the credit with the name as plain text");
+    expect(text(productLine) === " Maity " + new Date().getFullYear() + " · Found a bug? · Found a vulnerability? · Made with ♥ by Oliver Zehentleitner on & ",
+      "product line: Maity and the year, Found a bug?, Found a vulnerability?, the credit with the name as plain text");
     expect(JSON.stringify(hrefs) === JSON.stringify(["https://github.com/oliver-zehentleitner/maity/issues",
-      "https://github.com/oliver-zehentleitner", "https://maity.team/oliver-zehentleitner"]),
-      "product line: three absolute links, the same on every instance, the Maity page without @");
+      "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md", "https://github.com/oliver-zehentleitner", "https://maity.team/oliver-zehentleitner"]),
+      "product line: four absolute links, the same on every instance, the Maity page without @");
     expect(links.every((a) => a.getAttribute("rel") === "noopener noreferrer" && a.getAttribute("target") === "_blank"),
       "product line: every link in a new tab with rel=noopener noreferrer");
-    expect(links[1].getAttribute("aria-label") === "GitHub" && links[2].getAttribute("aria-label") === "Maity"
+    expect(links[2].getAttribute("aria-label") === "GitHub" && links[3].getAttribute("aria-label") === "Maity"
       && productLine.querySelectorAll("svg").every((svg) => svg.getAttribute("aria-hidden") === "true"),
       "product line: the icon links named GitHub and Maity, every icon aria-hidden");
     const heart = productLine.querySelector(".product-heart");
@@ -320,6 +320,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter, and holds its personal requests too");
   await go("#/all");
   expect(byId("inbox-project").value === "maintainer/sample" && main.querySelectorAll("li.entry").length === 1, "inbox: back in all projects, the filter is still set");
+  // Who asked, across projects too: a link into the request's project (tsk-3re8qp89hc18).
+  const allAsker = main.querySelector(".current .entry-body a.member-ref");
+  expect(allAsker && allAsker.getAttribute("href") === "#/maintainer/sample/members/agt-s1" && text(allAsker) === "Shop Dev",
+    "inbox of all projects: Asked by links to the member in the request's project " + (allAsker ? allAsker.getAttribute("href") : "none"));
   // A filter outlives a reload: what it hides is said, and one click lifts it (the owner's "only F5 brings it").
   const filterNote = () => main.querySelector(".inbox-filter-hidden");
   expect(filterNote() && /hides \d+ open request/.test(text(filterNote())), "inbox: the filter says what it hides " + (filterNote() ? text(filterNote()) : "none"));
@@ -6528,7 +6532,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("down"), { status: 503 })) : frGet(p));
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   win.Maity.api.get = frLineGet;
-  expect(!frFoot() && productLine.querySelectorAll("a").length === 3, "frame: a failed read after a frame takes it down and brings the product line back");
+  expect(!frFoot() && productLine.querySelectorAll("a").length === 4, "frame: a failed read after a frame takes it down and brings the product line back");
   // On the way in from another view, no frame yet: no product line under the form while the read waits either.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   const frInHeld = [];
@@ -6551,7 +6555,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A model without its footer is no frame: the one standing goes, the app's bar comes back.
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(Object.assign(frModel({}), { footer: null })) : frGet(p));
   const frHalf = await win.Maity.siteChrome.enter("/login");
-  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false && productLine.querySelectorAll("a").length === 3,
+  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false && productLine.querySelectorAll("a").length === 4,
     "frame: a model without its footer draws none, takes down the one standing and brings the product line back");
   // The page's own language picker draws the login again without render() (app.js, renderLogin): a frame standing
   // and then a failed read leaves the page without the frame, ending with the product line
@@ -6564,7 +6568,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frPick = byId("login-interface"), frPickStood = !!frFoot() && !productLine.querySelectorAll("a").length;
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   if (frPick) { frPick.value = win.Maity.i18n.language; frPick.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); }
-  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-handle") && productLine.querySelectorAll("a").length === 3,
+  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-handle") && productLine.querySelectorAll("a").length === 4,
     "frame: the picker's redraw with a failed read takes the frame down and brings the product line back " + [!!frPick, frPickStood, productLine.querySelectorAll("a").length]);
   // Picked again after that failure, its read held open: the line stays away while it waits, and once the frame stands
   // (maity-review-team-chatgpt#nyh5's review of #1287).
@@ -6605,20 +6609,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   const lpLegal = main.querySelector(".legal-links");
-  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-handle") && productLine.querySelectorAll("a").length === 3
+  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-handle") && productLine.querySelectorAll("a").length === 4
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
     "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form, the product line at the end");
   win.Maity.api.get = frGet;
   // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 2 && frSheets().every((l) => l.disabled === true) && header.hidden === false
-    && productLine.querySelectorAll("a").length === 3,
+    && productLine.querySelectorAll("a").length === 4,
     "frame: an invitation's page has none, its stylesheets off, the product line back");
   // Without a session render() leaves the frame standing until the view decides, so every view that is not the
   // sign-in takes it down itself (lotse#wtwy on #1287). Each from the framed sign-in: the frame gone, the line back
   // (review of #1287 by maity-review-team-grok#spq4).
   const frLeft = () => !frHead() && !frFoot() && !frOn() && frSheets().every((l) => l.disabled === true) && header.hidden === false
-    && productLine.querySelectorAll("a").length === 3;
+    && productLine.querySelectorAll("a").length === 4;
   const frFromDoor = async (where) => {
     await go("#/login"); for (let k = 0; k < 6; k++) await tick();
     const stood = !!frFoot();
@@ -6663,7 +6667,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The token is in the path: the page sends no Referer (docs/api.md §16.13), and still ends with the product line.
   expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
     "invite: the page sets <meta name=referrer content=no-referrer>, once");
-  expect(productLine.querySelectorAll("a").length === 3, "invite: the page ends with the product line");
+  expect(productLine.querySelectorAll("a").length === 4, "invite: the page ends with the product line");
   // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
   const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
   expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
@@ -10300,10 +10304,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const mrAsker = main.querySelector(".current .facts a.member-ref");
   expect(mrAsker && mrAsker.getAttribute("href") === "#/maintainer/maity/members/" + mrAsker.getAttribute("data-member"), "member links: the inbox names its asker as a link");
-  // Across projects the page has no member list of the request's project: names stay text, never a guessed link.
+  // Across projects the page has no member list, but the request names its asker: a link into the request's own project.
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".current") && !main.querySelectorAll(".entries a.member-ref").length,
-    "member links: in all projects no member is linked, since no member list of their project was read");
+  const allRefs = main.querySelectorAll(".entries li.entry a.member-ref");
+  expect(main.querySelector(".current") && allRefs.length && allRefs.every((a) => {
+    let li = a.parentNode; while (li && li.tagName !== "LI") li = li.parentNode;
+    const label = li && li.querySelector("a.project-label");
+    return label && a.getAttribute("href").startsWith(label.getAttribute("href").replace(/inbox$/, "members/"));
+  }), "member links: in all projects the asker links into the request's own project");
+  // One the request's project does not list stays text there too, as in the project's inbox: a
+  // foreign agent (agt-z) and a human the list does not name (hum-anna) (c47w on #1356).
+  for (const [title, id] of [["Foreign agent: may it reuse the logo?", "agt-z"], ["Human asker: lunch at noon?", "hum-anna"]]) {
+    const head = main.querySelectorAll(".entry-head").find((b) => (b.textContent || "").includes(title));
+    if (head && head.attrs["aria-expanded"] !== "true") { head.click(); await tick(); }
+    const dt = main.querySelectorAll(".current .entry-body .facts dt").find((x) => text(x) === "Asked by");
+    let dd = dt && dt.nextSibling; while (dd && dd.tagName !== "DD") dd = dd.nextSibling;
+    const asker = dd && dd.querySelector(".member-ref");
+    expect(head && asker && asker.tagName === "SPAN" && asker.classList.contains("plain") && !dd.querySelector("a"),
+      "member links: in all projects an asker the request's project does not list is text " + id + " " + (asker ? asker.tagName : "none"));
+  }
+  // Asked of the reader in person (`human:<id>`): "you", never a member link to "human:…" (e5kk on #1356).
+  const youHead = main.querySelectorAll(".entry-head").find((b) => (b.textContent || "").includes("Agent A proposes a change to your preferences"));
+  if (youHead && youHead.attrs["aria-expanded"] !== "true") { youHead.click(); await tick(); }
+  const toDt = main.querySelectorAll(".current .entry-body .facts dt").find((x) => text(x) === "To");
+  let toDd = toDt && toDt.nextSibling; while (toDd && toDd.tagName !== "DD") toDd = toDd.nextSibling;
+  expect(youHead && toDd && text(toDd) === "you" && !toDd.querySelector("a"), "inbox: a request to the reader in person says you " + (toDd ? text(toDd) : "none"));
   // The direct chat's heading names its agent as a link; a needs-in-session note names its member.
   await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
   const mrHead = main.querySelector(".chat-pane") && main.querySelector(".chat-pane").querySelector("a.member-ref");
@@ -10418,7 +10443,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
-  expect(productLine.querySelectorAll("a").length === 3, "product line: under a public address the dashboard draws");
+  expect(productLine.querySelectorAll("a").length === 4, "product line: under a public address the dashboard draws");
   // From the framed sign-in to a public address: the frame goes once the public page is drawn, the line with it.
   // Signed out for this step, as a visitor is: the sign-in in the frame first.
   const viChromeGet = win.Maity.api.get;
@@ -10433,14 +10458,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   viSignedOut = false;
   win.Maity.api.get = viChromeGet;
   await win.Maity.api.get("/auth/session");
-  expect(viFramed && JSON.stringify(viAfter) === "[true,false,false,3]",
+  expect(viFramed && JSON.stringify(viAfter) === "[true,false,false,4]",
     "product line: from the framed sign-in to a public address, the frame gone, the line back " + viFramed + JSON.stringify(viAfter));
   main.hasAttribute = (k) => k in main.attrs;
   main.setAttribute("data-public-page", "");
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
   expect(!productLine.querySelectorAll("a").length, "product line: not under a stored public page the hub served");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
-  expect(productLine.querySelectorAll("a").length === 3, "product line: back with the next view");
+  expect(productLine.querySelectorAll("a").length === 4, "product line: back with the next view");
   delete main.hasAttribute;
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");

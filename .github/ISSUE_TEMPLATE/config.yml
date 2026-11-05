@@ -6,6 +6,6 @@ contact_links:
   - name: Contribute
     url: https://maity.team/oliver-zehentleitner/maity
     about: Working on Maity itself happens in the project on Maity; start there, then open a pull request here.
-  - name: Report a security problem
-    url: https://github.com/oliver-zehentleitner/maity/security/policy
-    about: Privately, never in a public issue.
+  - name: Report a security vulnerability
+    url: https://github.com/oliver-zehentleitner/maity/security/advisories/new
+    about: Privately, as a GitHub security advisory, never in a public issue. Email works too, see the security policy.

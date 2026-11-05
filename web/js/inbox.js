@@ -86,7 +86,12 @@ window.Maity = window.Maity || {};
     if (to.startsWith("trust:")) return M.t("inbox.to.trust", { trust: to.slice(6) });
     if (to === ctx.me.id) return M.t("inbox.to.you");
     if (to.startsWith("profile_owner:")) return M.t("inbox.to.profile_owner");
-    return ref(ctx, req, { member_id: to, display_name: ctx.nameOf ? ctx.nameOf(to) : to });
+    // A human in person (`human:<id>`) and one instance of an agent
+    // (`<member>#<instance>`, §6.17) name their member apart from the form.
+    const human = to.startsWith("human:") ? to.slice(6) : null;
+    if (human && human === ctx.me.id) return M.t("inbox.to.you");
+    const [id, instance] = human ? [human, null] : to.split("#");
+    return ref(ctx, req, { member_id: id, display_name: ctx.nameOf ? ctx.nameOf(id) : id, instance: instance || null });
   }
 
   // In the cross-project view: the project's logo or monogram, its name
@@ -143,16 +148,20 @@ window.Maity = window.Maity || {};
     return computedGo ? "reply primary" : "reply";
   }
 
-  // A member named in an entry, as a link to them in the request's own
-  // project; a personal request's project may be one the human is not in,
-  // so there they stay text.
-  // A link only to someone this page knows is a member of the request's
-  // project: its own project's member list. Across projects that list is
-  // not read, so there, and for a personal request, they stay text.
+  // A member named in an entry (who asked, on whose behalf, to whom), as a
+  // link to them and their instance in the request's own project (§7): their
+  // page there, Sessions with the instance chosen. Only one that project's
+  // member list names is linked: inside a project from its list, across
+  // projects from the list of each request's project (`membersOf`). One it
+  // does not list stays text, the way the project's inbox shows them: a
+  // member removed since, a human who asks without a membership (§6.26), a
+  // project the reader is not in, a list that could not be read.
   function ref(ctx, req, person) {
     const id = person && (person.member_id || person.id);
-    const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
-    const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
+    const list = ctx.scope === "project" ? ctx.memberById : membersOf[req.slug];
+    const m = id && list ? list[id] : null;
+    const link = (view, ...rest) => ctx.projectLink(req.slug, view, ...rest);
+    const view = { memberById: m ? { [id]: m } : {}, link, nameOf: ctx.nameOf };
     return M.dom.memberRef(view, person, { instance: person && person.instance });
   }
 
@@ -177,6 +186,11 @@ window.Maity = window.Maity || {};
   // The member ids of the reader's own agent profiles (GET /agents), read once
   // per view: who Talk may go to across projects and for personal requests.
   let ownAgents = new Set();
+
+  // Across projects, the members of each request's project by id (GET
+  // …/members), read once per view for the reader's projects the list shows:
+  // whom `ref` links there. A project whose list fails is left out.
+  let membersOf = {};
 
   // Talk ("neither, let's talk") is the human's who owns the asking agent
   // (§7), and the agent must read the answer. The request does not say so, so
@@ -520,6 +534,12 @@ window.Maity = window.Maity || {};
   M.views.inbox = async function (ctx, root, args) {
     const items = await load(ctx);
     ownAgents = new Set();
+    membersOf = {};
+    if (ctx.scope !== "project") {
+      const slugs = [...new Set(items.map((r) => r.slug))].filter((s) => s && ctx.projects.some((p) => p.full_name === s));
+      await Promise.all(slugs.map((s) => M.api.getAll("/projects/" + M.api.projectPath(s) + "/members")
+        .then((r) => { membersOf[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
+    }
     // Inside a project the member list says whose an agent is; the profiles are needed across projects
     // and for a personal request only.
     if (ctx.scope !== "project" || items.some((r) => r.personal)) {

@@ -3320,6 +3320,7 @@
   "product.bug": "发现了 bug？",
   "product.love": "爱",
   "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
+  "product.security": "发现了安全漏洞？",
   "profile_delete.busy": "正在删除…",
   "profile_delete.done": "个人资料 @{handle} 已删除。",
   "profile_delete.done_ended": "个人资料 @{handle} 已删除；其成员资格已终止。",

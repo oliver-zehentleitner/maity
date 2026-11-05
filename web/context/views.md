@@ -836,13 +836,13 @@ by kind and project for reading and for marking, so the dashboard needs no new c
 - The line in the inbox only: it would show on one tab, and the inbox does not redraw when only
   the counts change.
 
-## A personal request in the cross-project inbox is labelled Personal and links into no project
+## A personal request in the cross-project inbox is labelled Personal; its project, card and mentions are no links
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29; the review of PR #1356 that found the people of a personal request linked by the member list since, 2026-11-04
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -853,7 +853,10 @@ Withdraw, which only its human may do. Grouped by project, the personal
 ones come first under "Personal". Since 2026-10-29 a project's own inbox
 lists the open personal requests about that project too, read from
 `GET /requests`: its tab counts them (§18.2), so the list shows what the
-tab says; they keep the label and lead into nothing. The hub has no
+tab says; they keep the label, and their badge, card and mentions lead
+into nothing. Who asked, on whose behalf and to whom are named as
+everywhere: a link only for a member the request's project lists
+(801bc195). The hub has no
 project filter on `GET /requests` (§7), so the project's inbox filters
 what it reads; a failed read is said in the list's status line, never
 shown as an empty list, since a list short of its tab is the bug this
@@ -863,8 +866,9 @@ not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
 request, the project's own listing never holds one (§7), and its human
-need not be a member of that project: every link or member read into the
-project would lead nowhere. A tab that counts what its list leaves out
+need not be a member of that project: a link to the project's inbox or
+card would lead nowhere. A member the project lists has a page there,
+and one it does not list stays text (801bc195). A tab that counts what its list leaves out
 reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
@@ -910,16 +914,21 @@ menu per press would make that slow.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23; the maintainer's report that "Asked by" in the inbox was plain text, relayed by the lead on tsk-3re8qp89hc18, 2026-11-04 (web/js/inbox.js `ref` and `membersOf`, the e2e step `asker_links_step`); the review of PR #1356 that found links to members the project no longer lists, 2026-11-04
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
 a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
-project does not list (removed, outside), a personal request's people,
-whose project the human may not be in, and every member in a view read
-from outside the project are plain text. A name inside a button (an
-inbox entry's head) stays text, since a link cannot sit in a button.
+project does not list (removed, outside) and every member in a view read
+from outside the project are plain text. The inbox of all projects
+reads the member list of each request's project among the reader's, once
+per view, and names who asked, on whose behalf and to whom by it: a link
+into the request's project for one that list names, text for one it does
+not (a member removed since, a human who asks without a membership, a
+project the reader is not in, a list that could not be read), as inside
+a project. A name inside a button (an inbox entry's head) stays text,
+since a link cannot sit in a button.
 
 **Reason:** the maintainer wants to reach any member's actions from
 wherever they appear, and one helper keeps the link, the tooltip and the
@@ -927,6 +936,13 @@ plain-text rule the same on every page.
 
 **Rejected alternative:** a link built in each view: the rules for who
 is linkable (listed, inside the project) would drift between pages.
+Keeping the inbox of all projects plain text, as it was until
+2026-11-04, since it read no member list there: the maintainer found the
+plain name a dead end. A link built from the request alone, for anyone
+it names in one of the reader's projects: the hub keeps an open request
+of a member removed since, and names a human who asks without a
+membership the same way, and both links opened only "No member with the
+id … in this project" (the review of PR #1356, 2026-11-04).
 
 ## A route the hub does not serve is said quietly, and the page does not ask it again
 
