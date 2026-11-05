@@ -132,6 +132,32 @@ night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
 
+## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
+
+**Id:** 85c4ab14-7638-454f-b7fd-1ca1921c559a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-05 to keep the lesson of the unset forge setting in `context/`, and the lead's rule for it, 2026-11-05
+**Revisit when:** the deploy candidate's list is generated from the fragments by a tool, or fragments get a marker of their own for upgrade steps
+**See:** incidents.md#a-setting-whose-unset-value-stopped-the-hub-reading-its-own-repository-went-to-production-unset — 2083a296-dac3-4164-b51e-9a3a6a38a26b — as of 2026-11-05
+
+Before the deploy go, the lead greps the changelog fragments shipped
+between the live SHA and the candidate SHA for upgrade and setting
+notes ("set … when upgrading", a new or changed setting, an effect
+while unset), and puts each one on the deploy candidate's test list as
+a step done before the deploy. A pull request whose setting changes live
+behaviour while unset names the setting and that effect in its body and
+in its fragment, so the grep finds it.
+
+**Reason:** a note that sat in the changelog did not reach the deploy
+(incident 2083a296): the lists were built from pull request titles and
+cards, and the fragments are where a change says what its upgrade needs.
+
+**Rejected alternatives:**
+- Leaving it to whoever deploys to read every merged pull request for
+  new settings: that missed a setting whose note was in the changelog.
+
 ## When a reviewer returns, the cover's finished reviews stand and the returning reviewer takes the unstarted ones
 
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5

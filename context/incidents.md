@@ -329,6 +329,7 @@ dump ten minutes earlier worked, which fits a pod whose network was not ready ye
 **Evidence:** inferred
 **Source:** #1218 (merged 2026-11-03) and its changelog fragment `changelog.d/agent-b-forge-instance-namespaces-hub.md`; the maintainer's request to record the lesson and the lead's account of the outage and the fix, 2026-11-05
 **Revisit when:** the deploy candidate's list is generated from the fragments, or the hub refuses to start while a setting it needs for live behaviour is unset
+**See:** process.md#before-the-deploy-go-the-lead-puts-every-upgrade-or-setting-note-of-the-shipped-changelog-fragments-on-the-deploy-list — 85c4ab14-7638-454f-b7fd-1ca1921c559a — as of 2026-11-05
 
 #1218 made the instance's forge token serve only the namespaces listed
 in `MAITY_FORGE_INSTANCE_NAMESPACES`; unset, it serves no project. Its
@@ -348,13 +349,16 @@ names the setting and that effect in its pull request and in its
 changelog fragment, as #1218's fragment did. The deploy candidate's
 test list carries every such note from the fragments it ships, as a
 step done before the deploy, so the setting is in place when the new
-version starts. The list for this deploy did not, and why it did not
-is unknown.
+version starts (decision 85c4ab14). The list for this deploy did not:
+the lead's deploy lists were built from pull request titles and cards,
+and nobody read the shipped fragments for upgrade notes.
 
 **Reason:** confirmed — the chain from #1218 through the unset setting
 to the fix: the fragment, the hub's answer `probe_not_configured` and
 the fix that ended it. Inferred — the late merge tickers came from the
-catch-up after the fix; that cause was not reproduced.
+catch-up after the fix, a cause not reproduced; and that this deploy's
+list was built from titles and cards as the lead's lists were, which
+the lead cannot prove for the list used.
 
 **Rejected alternatives:**
 - Leaving it to whoever deploys to read every merged pull request for

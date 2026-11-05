@@ -1,5 +1,7 @@
 ### Changed
 
 - context: the incident of a setting whose unset value stopped the hub reading its own
-  repository after a deploy, and the lesson: a change names such a setting in its pull
-  request and fragment, and the deploy candidate's test list carries every such note.
+  repository after a deploy (`incidents.md`), and the rule it leaves (`process.md`): a change
+  names such a setting and its unset effect in its pull request and fragment, and before the
+  deploy go the lead puts every upgrade or setting note of the shipped fragments on the deploy
+  list.
