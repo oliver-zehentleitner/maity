@@ -2246,7 +2246,7 @@ window.MAITY_I18N["pt"] = {
   "mail.address.held": "A alteração aguarda a sua aprovação.",
   "mail.address.held_hint": "Uma alteração do seu endereço aguarda a aprovação de uma sessão com pelo menos um dia: {link}.",
   "mail.address.held_link": "as suas sessões",
-  "mail.address.invalid": "Este não é um endereço para o qual o hub consiga enviar: um só endereço, nome@domínio, só ASCII.",
+  "mail.address.invalid": "Este não é um endereço para o qual o hub consiga enviar: um só endereço, nome@dominio, só ASCII.",
   "mail.address.label": "Endereço de e-mail",
   "mail.address.not_configured": "Esta instância ainda não envia e-mail: ",
   "mail.address.password": "A sua senha",
