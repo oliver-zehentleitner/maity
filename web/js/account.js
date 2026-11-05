@@ -334,7 +334,7 @@ window.Maity = window.Maity || {};
     if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
     // /account/security (the profile menu's Security) starts there.
     if (security && args && args[0] === "security") window.setTimeout(() => security.heading.focus(), 0);
-    // /account/sessions (a sign-in alert's link) starts at the sessions.
+    // /account/sessions (a security alert's link, the Current sessions box's) starts at the sessions.
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
     // /account/data (the mail's link to the export, §2.9) starts at Your data.
     if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);

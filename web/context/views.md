@@ -537,6 +537,7 @@ shows.
 **Revisit when:** the session view gains a field that says what a session may do
 **See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
 **See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-03
+**See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-04
 
 What the earlier entry says about disabled buttons and their reasons stands. What
 changed: **This was me** posts the session's confirm and is offered on an active
@@ -556,6 +557,11 @@ the session, so its result is known without reading the list again.
 contract made reading and confirming two acts. Keeping the banner tied to the unread
 alert: marking it read in the bell would take the banner down while the sign-in is still
 unconfirmed. Offering This was me on an ended session: there is nothing left to confirm.
+
+**Since 2026-11-04** (09f74f56-7c6c-4d94-a499-ef804b022f3a): `pinned` holds no sign-in, so the
+unread alerts listed in this section are only the other security kinds, each with **Mark
+read**; no row says its sign-in alert is unread, and the ended sessions stay folded. **This
+was me** on an active unconfirmed session is unchanged.
 
 ## The Ticker view reads the listing, not the events, and says each reason in the dashboard's own words
 
@@ -833,13 +839,13 @@ by kind and project for reading and for marking, so the dashboard needs no new c
 - The line in the inbox only: it would show on one tab, and the inbox does not redraw when only
   the counts change.
 
-## A personal request in the cross-project inbox is labelled Personal and links into no project
+## A personal request in the cross-project inbox is labelled Personal; its project, card and mentions are no links
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29; the review of PR #1356 that found the people of a personal request linked by the member list since, 2026-11-04
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -850,7 +856,10 @@ Withdraw, which only its human may do. Grouped by project, the personal
 ones come first under "Personal". Since 2026-10-29 a project's own inbox
 lists the open personal requests about that project too, read from
 `GET /requests`: its tab counts them (§18.2), so the list shows what the
-tab says; they keep the label and lead into nothing. The hub has no
+tab says; they keep the label, and their badge, card and mentions lead
+into nothing. Who asked, on whose behalf and to whom are named as
+everywhere: a link only for a member the request's project lists
+(801bc195). The hub has no
 project filter on `GET /requests` (§7), so the project's inbox filters
 what it reads; a failed read is said in the list's status line, never
 shown as an empty list, since a list short of its tab is the bug this
@@ -860,8 +869,9 @@ not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
 request, the project's own listing never holds one (§7), and its human
-need not be a member of that project: every link or member read into the
-project would lead nowhere. A tab that counts what its list leaves out
+need not be a member of that project: a link to the project's inbox or
+card would lead nowhere. A member the project lists has a page there,
+and one it does not list stays text (801bc195). A tab that counts what its list leaves out
 reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
@@ -907,16 +917,21 @@ menu per press would make that slow.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23; the maintainer's report that "Asked by" in the inbox was plain text, relayed by the lead on tsk-3re8qp89hc18, 2026-11-04 (web/js/inbox.js `ref` and `membersOf`, the e2e step `asker_links_step`); the review of PR #1356 that found links to members the project no longer lists, 2026-11-04
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
 a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
-project does not list (removed, outside), a personal request's people,
-whose project the human may not be in, and every member in a view read
-from outside the project are plain text. A name inside a button (an
-inbox entry's head) stays text, since a link cannot sit in a button.
+project does not list (removed, outside) and every member in a view read
+from outside the project are plain text. The inbox of all projects
+reads the member list of each request's project among the reader's, once
+per view, and names who asked, on whose behalf and to whom by it: a link
+into the request's project for one that list names, text for one it does
+not (a member removed since, a human who asks without a membership, a
+project the reader is not in, a list that could not be read), as inside
+a project. A name inside a button (an inbox entry's head) stays text,
+since a link cannot sit in a button.
 
 **Reason:** the maintainer wants to reach any member's actions from
 wherever they appear, and one helper keeps the link, the tooltip and the
@@ -924,6 +939,13 @@ plain-text rule the same on every page.
 
 **Rejected alternative:** a link built in each view: the rules for who
 is linkable (listed, inside the project) would drift between pages.
+Keeping the inbox of all projects plain text, as it was until
+2026-11-04, since it read no member list there: the maintainer found the
+plain name a dead end. A link built from the request alone, for anyone
+it names in one of the reader's projects: the hub keeps an open request
+of a member removed since, and names a human who asks without a
+membership the same way, and both links opened only "No member with the
+id … in this project" (the review of PR #1356, 2026-11-04).
 
 ## A route the hub does not serve is said quietly, and the page does not ask it again
 
@@ -1380,8 +1402,8 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; contract in `docs/api.md` §6.16, §8.5
-**Revisit when:** the dashboard gets a dialog of its own for reasons, the list is drawn per note, or an open edit has to outlive the list being drawn again
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; PR #1391 (tsk-wvf8s7f44vz7, an open edit kept across a redraw of the list, with its focus and caret restored); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons, or the list is drawn per note
 **See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
 **See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
 
@@ -1401,10 +1423,13 @@ fails there is no form yet, as before). The list stays as drawn while it is
 read, only the latest read replaces it, and its Edit and Remove wait
 meanwhile (`aria-busy`). On a post's success exactly the text sent leaves
 the field; anything typed since stays. After an edit, a removal or a post
-the focus moves on only if it is still where that action left it. Known
-gap: an edit opened before another action draws the list again (a post, a
-removal, a second edit ending) goes with the list, its text too; that was
-so before and waits for its own card (tsk-wvf8s7f44vz7). An edit and a removal name the
+the focus moves on only if it is still where that action left it. An edit
+already open keeps its row across that redraw (a post, a removal, another
+edit ending): the same form and the text typed into it stay, and when the
+edit held the focus at redraw the same field and caret come back, so a post
+does not move them into Add a note; a reader who moved focus elsewhere
+during the read is left alone. Cancel or a successful save drops the form
+before the next read; a note gone as a tombstone ends the edit. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1416,7 +1441,8 @@ holder, the date and the reason, never the old text, none on a removed note.
 refusal for a button that should not have been there; an empty reason is not
 sent, so the edit mark of one's own note stays without one, as §6.16 has it;
 one way of asking a removal's reason in the whole dashboard; a note is posted
-once, however the list is drawn again around its post.
+once, however the list is drawn again around its post; an open edit is the
+writer's draft of that note, so a redraw of the list must not throw it away.
 
 **Rejected alternatives:**
 - Showing Edit to every reader and letting the hub refuse: a button that
@@ -1429,8 +1455,13 @@ once, however the list is drawn again around its post.
   refusal vanished with a failed read. A form drawn once has none of it.
 - Keeping an edit begun on the list being read: the list drawn after the read
   would have to merge it in; Edit and Remove waiting for the read is simpler.
-  This covers only an edit begun during a read, not one already open (the
-  known gap above).
+  That lock covers only an edit begun during a read; an edit already open is
+  kept by holding its row across the redraw (tsk-wvf8s7f44vz7).
+- Making Edit wait while a post or a removal is in flight: disabling Edit
+  only stops a new edit from beginning — it does not stop typing in an
+  already open textarea, and that open edit would still lose its row on the
+  redraw. Keeping the open row lets both run, and restores its focus when it
+  still held it.
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
@@ -4916,3 +4947,19 @@ Eight rules of `ktw-views.css` write `#fff` on the library's accent (selected co
 **Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
 
 **Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one. Checking only the export's fields, or only what the library writes: the fields keep a bad link from shaping what the library builds from it, the check of the mounts covers links in entry text and any field a later library adds. An elsewhere view of Maity's own for a `centre`: a second rendering of an entry the library's pages already draw. A centred entry as its `ref` place: the library's `ref` resolves the entry and goes to it at that centre, which was the same address again, so the page never left "Looking for …"; and a child root had no place in it.
+
+## The organisation's Paths face draws only edges the members API gives; an event's usual edges are marked as usual
+
+**Id:** 04ce10bd-5160-46e3-bb6d-7c3f760f4167
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-j9ktmj7e4fxq, 2026-11-05: the lead's answer to the request on the card (req-x3hgj0b7xzy3), choosing the members API as the only source and usual edges marked as such; the designer's approved draft for the layout
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-11-05
+**Revisit when:** the hub names an event's recipients itself (a routing read), or a team's lead has more than one role group too wide for the canvas
+
+The Team page's Organisation tab has two faces, Tree and Paths, the choice kept per browser. Paths (`js/paths.js`) draws the team top-down from `reports_to`, humans first, a lead centred over its members, and more than six members of one role under one lead folded into one box that opens in place. The reporting lines are a chip of their own, on by default; four more chips draw where one event goes, from the routing of docs/api.md §8.2 and §8.4: a review result to the reviewer's lead, not listening to the agent's lead, the admins and the owner (never a meat proxy), a request to a human to the agent's owner, and a card assignment from a lead to the member and the member's owner. Every edge is computed from what `GET /members` returns. Where the hub's routing depends on something the members list does not carry (who assigned the card, who wrote the reviewed PR), the edge is drawn as usual, dotted and named "usual" in the legend, or only said in the chip's note. At phone width the drawing gives way to a list of cards, each naming whom the member reports to and what it gets.
+
+**Reason:** a picture of the routing that the hub does not do is worse than none; the members list is what the dashboard already reads, and the usual edges answer the question readers ask (who hears about this) without claiming the hub computed them.
+
+**Rejected alternatives:** a routing table of the dashboard's own, kept beside §8: a second copy that drifts from the hub. Leaving out the edges the members list cannot settle: card assignment, the most asked about, would show nothing. A force layout: it moves on every redraw and hides who reports to whom; the draft's tidy tree keeps the hierarchy readable.

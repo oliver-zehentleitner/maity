@@ -1365,26 +1365,31 @@ window.Maity = window.Maity || {};
     if (youngerThanHour(cur) && Date.parse(s.created_at) < Date.parse(cur.created_at)) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
   }
   // Ending one ends the sessions it approved by device code, and theirs.
+  // `sessions_rev` (§18.2): the number of the newest session record, here the
+  // highest `created.record` of the fixture's sessions, raised by every end.
+  let sessionRecord = null;
+  function sessionsRev() {
+    if (sessionRecord === null) {
+      const numbers = fixtures()["sessions.json"].items.map((s) => Number(((s.created || {}).record || "acr-0").slice(4)));
+      sessionRecord = Math.max(0, ...numbers);
+    }
+    return sessionRecord ? "acr-" + sessionRecord : null;
+  }
   function endSession(s, by) {
+    sessionsRev();
+    sessionRecord += 1; // its session_ended record
     Object.assign(s, { ended_at: nowIso(), ended_by: by });
     activeSessions().filter((x) => x.approved_by === s.id).forEach((x) => endSession(x, by));
   }
-  // A security item is marked read only from a session in good standing that
-  // existed before what it reports, never from the reported session (§18.3).
   // Why this session may not mark a security item read, or null (§18.3):
-  // only a sign-in and an address change are guarded, `not_earlier` before
-  // `not_in_good_standing`, as the hub checks them.
+  // only an address change is guarded, from a session in good standing that
+  // existed before it, `not_earlier` before `not_in_good_standing`, as the hub
+  // checks them. A sign-in is no item (§2.6.5).
   function securityRefusal(x) {
     const cur = currentSession();
     const t0 = x.target || {};
-    const address = t0.type === "settings" && t0.id === "notifications";
-    if (t0.type !== "session" && !address) return null;
-    let since = Date.parse(x.at);
-    if (t0.type === "session") {
-      if (cur && t0.id === cur.id) return "not_earlier";
-      const reported = fixtures()["sessions.json"].items.find((s) => s.id === t0.id);
-      if (reported) since = Date.parse(reported.created_at);
-    }
+    if (!(t0.type === "settings" && t0.id === "notifications")) return null;
+    const since = Date.parse(x.at);
     if (!cur || !(Date.parse(cur.created_at) < since)) return "not_earlier";
     return cur.good_standing ? null : "not_in_good_standing";
   }
@@ -1749,8 +1754,8 @@ window.Maity = window.Maity || {};
       endSession(s, s.id === fixtures()["sessions.json"].current ? "logout" : "revoked");
       return { ended: true };
     }],
-    // §2.6.5: "This was me", checked in the hub's order; it marks the
-    // sign-in's alert read as well.
+    // §2.6.5: "This was me", checked in the hub's order; it marks nothing
+    // read, as a sign-in is no bell item.
     ["POST", /^\/auth\/sessions\/([^/]+)\/confirm$/, (m, body, path) => {
       const all = fixtures()["sessions.json"];
       const s = all.items.find((x) => x.id === m[1]);
@@ -1760,9 +1765,6 @@ window.Maity = window.Maity || {};
       if (s.id === cur.id || !(Date.parse(cur.created_at) < Date.parse(s.created_at))) refuse("not_earlier");
       if (!cur.good_standing) refuse("not_in_good_standing");
       if (!s.good_standing) Object.assign(s, { good_standing: true, confirmed_at: nowIso(), confirmed_by: cur.id });
-      fixtures()["notifications.json"].items.forEach((x) => {
-        if (x.target && x.target.type === "session" && x.target.id === s.id) x.read = true;
-      });
       return Object.assign({ current: false }, s);
     }],
     ["POST", /^\/auth\/sessions\/end-others$/, (m, body, path) => {
@@ -1843,7 +1845,7 @@ window.Maity = window.Maity || {};
       const after = query.get("after");
       const head = headOf(n.items);
       if (after !== null) {
-        if (!limit) return { counts, by_project: byProject, items: [], next_cursor: null, next_after: after, server_time: nowIso() };
+        if (!limit) return { counts, by_project: byProject, items: [], sessions_rev: sessionsRev(), next_cursor: null, next_after: after, server_time: nowIso() };
         const past = items.filter((x) => pastOf(x, after)).sort(inOrder);
         const listed = past.slice(0, limit);
         const [a, b] = parts(after);
@@ -1852,7 +1854,7 @@ window.Maity = window.Maity || {};
         const next = past.length > limit
           ? Math.max(a, ...listed.filter((x) => !x.record).map((x) => x.seq)) + "." + Math.max(b, ...listed.filter((x) => x.record).map(recordNo))
           : Math.max(a, ha) + "." + Math.max(b, hb);
-        return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: next, server_time: nowIso() };
+        return { counts, by_project: byProject, items: listed.map(view), sessions_rev: sessionsRev(), next_cursor: null, next_after: next, server_time: nowIso() };
       }
       const offset = Number(query.get("cursor") || 0);
       const ordered = items.slice().sort(inOrder).reverse();
@@ -1862,7 +1864,7 @@ window.Maity = window.Maity || {};
       const pinned = n.items.filter((x) => x.kind === "security" && !x.read)
         .sort(inOrder).reverse().slice(0, 50);
       return { counts, by_project: byProject, items: listed.map(view),
-        pinned: pinned.map(view),
+        pinned: pinned.map(view), sessions_rev: sessionsRev(),
         next_cursor: limit && offset + limit < ordered.length ? String(offset + limit) : null,
         next_after: head, server_time: nowIso() };
     }],

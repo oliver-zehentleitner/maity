@@ -1029,13 +1029,15 @@ page offers an instance nobody has to host.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); contract `docs/api.md` §16.13
+**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); contract `docs/api.md` §16.13
 **See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 
-The dashboard and the hub's own pages (the maintenance page, the pages
-behind links in mails, the join page in a browser) end with one small
-line: the Maity icon, "Maity" and the current year, "Found a bug?" to the
-project's GitHub issues, and "Made with ♥ by Oliver Zehentleitner on"
+The dashboard and the hub's own pages (the maintenance page,
+registration's link page, the join page in a browser) end with one small
+line (the other pages behind links in mails stand in the frame of the
+public pages and end with its footer instead, §16.13): the Maity icon, "Maity" and the current year, "Found a bug?" to the
+project's GitHub issues, "Found a vulnerability?" to the project's
+`SECURITY.md`, and "Made with ♥ by Oliver Zehentleitner on"
 two icons: GitHub's, linked to the maintainer's GitHub profile, and
 Maity's, linked to the maintainer's page on maity.team. The name itself
 is no link. It is part of the product and
@@ -1046,7 +1048,10 @@ pages, `/explore` and the public pages of §16.9 do not carry it.
 content: whoever uses Maity, on any instance, sees where to report a bug
 and who makes it. The landing page and the legal pages are the operator's
 own site with the operator's footer, and the public pages show a
-member's or a project's content, so the product line stays off them. Both
+member's or a project's content, so the product line stays off them.
+The security link stands beside the issues so that a vulnerability is
+reported privately, as `SECURITY.md` describes, and not filed as a
+public issue; alternatives to that link were not recorded. Both
 profile links are absolute: the maintainer's page exists only on
 maity.team, and on any other instance a relative link would be dead or
 name another account.

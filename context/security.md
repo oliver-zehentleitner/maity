@@ -160,9 +160,9 @@ Keeping the projects' record keeps other members' history readable.
 **Source:** the lead's ruling in the review of the hub's product line (2026-11-03), on the reviewers' point that the line was neither centred nor muted on the link, join and maintenance pages; `hub/src/maity_hub/product_line.py`
 **See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-03
 
-The hub's pages under its default policy `default-src 'self'` (the mail
-link pages, the join page in a browser, the
-`503` maintenance page) carry one fixed `<style>` block for the product
+The hub's pages under its default policy `default-src 'self'` (the join
+page in a browser and the `503` maintenance page; the mail link pages
+stand in the frame under its own policy instead, 8191d964) carry one fixed `<style>` block for the product
 line and answer with `default-src 'self'; style-src 'sha256-…'`, the
 hash of exactly that block. A test checks that the hash in the header
 is the block's.
@@ -179,6 +179,42 @@ dropping it.
 - An exception in the contract for pages without a stylesheet: the line
   would look different on exactly the pages a newcomer sees first.
 - A stylesheet file: the join host serves no assets (§1.1).
+
+## The mail link pages of §18.6 take the frame's policy, not the product line's hash
+
+**Id:** 8191d964-95b1-4c3b-b12d-d0c7f4cfc422
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-w62n5p0v9d47 (the maintainer found the four pages bare, 2026-11-04) and lotse#wtwy's go on the plan (2026-11-05); contract `docs/api.md` §1.1, §16.7.5, §16.13, §18.6
+**See:** security.md#the-pages-without-inline-style-allow-the-product-lines-one-block-by-its-hash — 32f18f7d-91c7-40c3-898f-6137cac6969a — as of 2026-11-05
+
+The pages of §18.6 (verify the address, unsubscribe, second-factor
+reset, account deletion) stand in the frame of §16.7.5, as the sign-in
+link's page does, and answer with its policy: `default-src 'none'`, the
+hub's own stylesheets, fonts and images, the fallback style by its hash,
+`form-action 'self'`, `base-uri 'none'`, `frame-ancestors 'none'`. The
+frame's footer takes the product line's place. Words, statuses and the
+one explicit button stay as they were. Registration's link page keeps
+its own shell and the line.
+
+**Reason:** the card asked for the public pages' look under a policy
+that stays strict, and at first for the policy itself to stay as it
+was. That part cannot hold: the old `style-src 'sha256-…'` admits one
+inline block, and a hash source never admits a `<link>` stylesheet. The
+frame's policy loads only the hub's own files and is stricter in every
+other directive, and one string for all five link pages keeps them
+alike. A test pins the string.
+
+**Rejected alternatives:**
+- A path source for the one sheet (`style-src 'self'/assets/landing/public-pages.css`):
+  a source path ignores the query, so it pins no digest, and the frame
+  needs `landing.css` and the fonts as well; it adds nothing over `'self'`.
+- The whole look as more inline style allowed by its hash: every change
+  to the look changes the header, and the fonts still need `font-src`.
+- The product line under the frame's footer: lotse#wtwy chose the same
+  ending for every link page, as on `/mail/sign-in` and the framed
+  `/login` (req-5k1gvfsmcg9k).
 
 ## A page with a token in its path sends no referrer; its outgoing links say so too
 

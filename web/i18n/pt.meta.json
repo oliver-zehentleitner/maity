@@ -3691,6 +3691,10 @@
     "en": "573787aef85bae91",
     "text": "7091cc0a35af1f8f"
   },
+  "error.resolve_the_report": {
+    "en": "801abed453bd5d19",
+    "text": "7a06c495cb1010ea"
+  },
   "error.role_unknown": {
     "en": "93981d3d18c2300e",
     "text": "48a70d76a87f5499"
@@ -11930,6 +11934,10 @@
   "product.made_by": {
     "en": "3c4acf7ac90b37e1",
     "text": "576d63e0e7b1f473"
+  },
+  "product.security": {
+    "en": "32548671ddc1415a",
+    "text": "f27d63ca68bb8477"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",

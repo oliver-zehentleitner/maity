@@ -333,28 +333,10 @@
    "next_after": "string",
    "next_cursor": "null",
    "pinned": {
-    "array": {
-     "object": {
-      "actor": "null",
-      "at": "string",
-      "id": "string",
-      "kind": "string",
-      "project": "null",
-      "read": "boolean",
-      "record": "string",
-      "redacted": "boolean",
-      "target": {
-       "object": {
-        "id": "string",
-        "type": "string"
-       }
-      },
-      "title": "string",
-      "url": "string"
-     }
-    }
+    "array": null
    },
-   "server_time": "string"
+   "server_time": "string",
+   "sessions_rev": "string"
   }
  },
  "GET /projects/{project}": {
@@ -901,6 +883,7 @@
         }
        }
       },
+      "report": "null",
       "status": "string",
       "summary": "null",
       "takeover_id": "null",
@@ -1329,6 +1312,7 @@
         }
        }
       },
+      "report": "null",
       "status": "string",
       "summary": "string",
       "takeover_id": "null",

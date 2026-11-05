@@ -4059,6 +4059,10 @@
     "en": "573787aef85bae91",
     "text": "4878c86ac767eceb"
   },
+  "error.resolve_the_report": {
+    "en": "801abed453bd5d19",
+    "text": "cd1b1b8d4cae7e56"
+  },
   "error.role_unknown": {
     "en": "93981d3d18c2300e",
     "text": "edc8ea63a9128ede"
@@ -12623,6 +12627,10 @@
     "en": "3c4acf7ac90b37e1",
     "text": "ddca2521a770ef59"
   },
+  "product.security": {
+    "en": "32548671ddc1415a",
+    "text": "c2b7aa77a24bc1a4"
+  },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",
     "text": "62bc62880cd91899"
@@ -14482,10 +14490,6 @@
   "sessions.address.too_new": {
     "en": "ceb846c9f1e324a3",
     "text": "dcc88496659aff79"
-  },
-  "sessions.alert_unread": {
-    "en": "4182ae122ff51775",
-    "text": "53ddab7e98425957"
   },
   "sessions.banner.approved": {
     "en": "36d355755805147c",

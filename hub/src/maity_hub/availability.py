@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, case, literal, or_, select, update
 
-from maity_hub import clock, maintenance, worker_runs
+from maity_hub import cards, clock, maintenance, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project, transaction
 
@@ -35,7 +35,6 @@ LIMIT_AHEAD = timedelta(days=7)  # `until` at most this far ahead (§6.12)
 LEASE_HOLD = timedelta(hours=24)  # a limit keeps the member's cards at most this long
 REASON_MAX = 200
 INTERVAL = 60.0  # seconds between the worker's sweeps
-CLOSED_CARD = ("done", "cancelled")
 
 
 def policy_errors(
@@ -607,8 +606,7 @@ def hold_leases(conn: Connection, membership_ids: Sequence[int], until: datetime
         conn.execute(
             update(t.card)
             .where(
-                t.card.c.claim_holder == row.id,
-                t.card.c.status.notin_(CLOSED_CARD),
+                cards.open_claims(row.id),
                 or_(t.card.c.lease_until.is_(None), t.card.c.lease_until < target),
             )
             .values(lease_until=target)
