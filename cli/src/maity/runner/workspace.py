@@ -176,7 +176,10 @@ def prepare(
             # The clone is the agents'; no prompt for a login, as proc.run says for ours.
             done = as_user.run(command, env=dict(proc.NO_PROMPT), timeout=CLONE_TIMEOUT)
         else:
-            done = proc.run(command, cwd=workspace.path.parent, timeout=CLONE_TIMEOUT)
+            done = proc.run(
+                command, cwd=workspace.path.parent, timeout=CLONE_TIMEOUT,
+                transports=":".join(PROTOCOLS),
+            )  # fmt: skip
     except (proc.ToolError, subprocess.TimeoutExpired):
         raise Refused("clone_failed") from None
     if done.returncode != 0:

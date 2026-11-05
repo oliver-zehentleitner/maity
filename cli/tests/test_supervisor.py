@@ -650,6 +650,19 @@ def test_prepare_clones_and_records(tmp_path: Path, origin_repo: Path) -> None:
     assert moved.value.detail == "origin_mismatch"
 
 
+def test_a_clone_over_a_transport_the_runner_does_not_use_is_refused(
+    tmp_path: Path, origin_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(workspace, "PROTOCOLS", ("https", "ssh"))
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    with pytest.raises(workspace.Refused) as failed:
+        workspace.prepare(cfg, place, origin_repo.as_uri(), "agt-3", "plc-0003")
+    assert failed.value.reason == "clone_failed"
+    assert not place.path.exists()
+
+
 def test_a_failed_clone(tmp_path: Path, origin_repo: Path) -> None:
     cfg = load(tmp_path)
     assert cfg.local is not None
@@ -1143,9 +1156,11 @@ def test_the_clone_allows_only_https_and_ssh(
     cfg = load(tmp_path)
     assert cfg.local is not None
     seen: list[list[str]] = []
+    allowed: list[str] = []
 
-    def fake_run(command: list[str], cwd: Path, timeout: float) -> Any:
+    def fake_run(command: list[str], cwd: Path, timeout: float, transports: str) -> Any:
         seen.append(command)
+        allowed.append(transports)
         return subprocess.CompletedProcess(command, 128, "", "")
 
     monkeypatch.setattr("maity.runner.workspace.proc.run", fake_run)
@@ -1155,6 +1170,7 @@ def test_the_clone_allows_only_https_and_ssh(
     command = seen[0]
     assert command[:3] == ["git", "-c", "protocol.allow=never"]
     assert "protocol.https.allow=always" in command and "protocol.file.allow=always" not in command
+    assert allowed == ["https:ssh"]  # GIT_ALLOW_PROTOCOL outranks the `-c` settings
 
 
 def test_run_join_imports_nothing_from_the_clone(tmp_path: Path, fake: Any) -> None:
