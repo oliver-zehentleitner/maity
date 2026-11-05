@@ -93,7 +93,8 @@ window.Maity = window.Maity || {};
     [[51, 21], [51, 43], [32, 54], [13, 43], [13, 21]].forEach(([cx, cy]) => part("circle", { cx: String(cx), cy: String(cy), r: "6" }));
     part("path", { d: "M23.5 38V31a4.25 4.25 0 0 1 8.5 0v7M32 31a4.25 4.25 0 0 1 8.5 0v7", fill: "none", "stroke-width": "3.5" });
     const a = h("a", { class: "brand" }, svg, "maity");
-    // The instance's start page, the hub's own (§16.7): a page load, in fixture mode too.
+    // The instance's start page, the hub's own (§16.7): a page load, in fixture mode too; M.route
+    // leaves every click on `/` to the browser (web/context/routing.md).
     a.setAttribute("href", "/");
     return a;
   }
@@ -126,8 +127,8 @@ window.Maity = window.Maity || {};
 
   // A language of the footer: this page's own address with ?lang=<tag>, its query kept (a sign-in's
   // next). A path, never a bare query, which under the shell's <base href="/assets/"> would lead into
-  // /assets/ (routing.md). The dashboard reads ?lang= only when it loads, so a click chooses the
-  // language itself (as the page's own picker does) and draws the page again at that address.
+  // /assets/ (routing.md). A click chooses the language itself (as the page's own picker does, which
+  // writes it into an address's ?lang=, js/i18n.js) and draws the page again at that address.
   function language(one) {
     const at = M.route.current();
     const query = new URLSearchParams(at.query);

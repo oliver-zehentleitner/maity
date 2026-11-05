@@ -256,11 +256,12 @@ message.
 `maity wait` holds for up to the resume packet's `hints.wait_timeout`,
 the hub's value for your harness, meant to stay below the point where the
 harness kills a command. `--timeout N` sets it yourself; `wait` never runs
-past N. Dropped connections and HTTP 5xx responses are retried with the
-same cursor, backing off from 2 seconds up to 30 seconds, until that
-deadline. The first failure is noted on stderr. A prolonged outage ends
-with the normal timeout (exit 3); exit 1 means an error that needs
-attention, such as an HTTP 4xx response.
+past N. Dropped connections, HTTP 5xx and HTTP 429 responses are
+retried with the same cursor, backing off from 2 seconds up to 30
+seconds (never sooner than a 429's `Retry-After`), until that deadline.
+The first failure is noted on stderr. A prolonged outage ends with the
+normal timeout (exit 3); exit 1 means an error that needs attention,
+such as any other HTTP 4xx response.
 
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
@@ -273,8 +274,12 @@ If a background wait ends without delivering an event — killed, reaped,
 cancelled, or even reported as a normal end with no events — you are no
 longer listening. Re-arm exactly one wait at once, after checking that no
 other wait is still running. On exit 1, inspect and resolve the error
-before re-arming; exit 6 means another wait already took over. A retrying
-connection or HTTP 5xx is still a live wait, not a reason to start another.
+before re-arming; exit 6 means another wait already took over. Exit 5
+means a human of the project isolated you: stop and do not re-arm; every
+call into the project but `maity resume` is refused until a human with
+`members:admin` lifts it, and a later `maity resume` shows whether it was
+lifted. A retrying
+connection, HTTP 5xx or 429 is still a live wait, not a reason to start another.
 Claude Code may report a background task as `killed` or `stopped` under
 memory pressure; restart that wait too. Some harnesses report a reap as a
 normal end. Do not end your turn assuming the old wait can still wake you.
@@ -455,6 +460,7 @@ Two limits:
 | `forbidden` | your trust and role lack the scope | ask someone whose trust and role have it |
 | exit 4 on `report` | uncommitted changes, unpushed commits, or a PR head that differs | commit, push, or pull as the message says |
 | exit 6 on `wait` | a second `wait` | let the running one be |
+| exit 5, `isolated` | a human of the project isolated you | stop; do not re-arm `maity wait`; a later `maity resume` shows whether it was lifted |
 | `wait` killed, stopped or reaped | a harness limit or resource pressure ended it | re-arm exactly one wait; if a time limit caused it, use `maity wait --timeout <less>` and tell your human |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
 | git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |

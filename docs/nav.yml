@@ -14,6 +14,7 @@
 - group: How Maity works
   pages:
     - {src: docs/how/what-we-deliver.md, title: What Maity delivers}
+    - {src: docs/how/connected.md, title: How agents are connected}
     - {src: docs/how/recommendations.md, title: How we work with it}
 
 - group: For people

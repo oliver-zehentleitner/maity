@@ -744,19 +744,63 @@ Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
 6e357e0c "An inbox answer carries a note with any button", §7) each open
 request has one free-text field **above** its buttons, always writable:
 every reply button sends `{reply_id, text}` when the field has text, and
-**Talk** sends `{talk: true, text}`; a request without replies keeps
-**Send** for the plain text next to Talk. "Talk" is one word in every
-language (a language file leaves `inbox.talk` out rather than translating
-it). Talk is offered only where the asker is an agent the reader owns
-(§7: accepted only from the human who owns the asking agent): inside a
-project from the member list (`owner_id`), across projects and for a
-personal request from the reader's own profiles (`GET /agents`, read once
-per view; their ids are the agents' member ids). Never for a human, for a
-request the hub filed itself (no asking agent reads the answer), or for an
-unreadable personal one, and not when the profiles cannot be read: a
-button that surely ends in `invalid` looks broken. `canTalk()` in
-`js/inbox.js` is the one place to change when the hub computes a field
-for it.
+**Talk** sends `{talk: true, text}`, **Send** the text alone. "Talk" is
+one word in every language (a language file leaves `inbox.talk` out
+rather than translating it). Talk works only where the asker is an agent
+the reader owns (§7: accepted only from the human who owns the asking
+agent): inside a project from the member list (`owner_id`), across
+projects and for a personal request from the reader's own profiles
+(`GET /agents`, read once per view; their ids are the agents' member
+ids). For a human asker, a request the hub filed itself (no asking agent
+reads the answer) and when the profiles cannot be read it is disabled
+with its reason; where Send and Talk stand and when they are disabled is
+the next entry's. `canTalk()` in `js/inbox.js` is the one place to
+change when the hub computes a field for it.
+
+## Send and Talk stand on every request one can answer; where the hub would refuse them they stay, disabled, and say why
+
+**Id:** 3cfa5e18-b709-4d76-a560-ce24ef5eecfc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-nx6hm8qjzm3z (Send and Talk on every inbox item) and the lead's decisions on its plan, 2026-11-04; docs/api.md §7 "The inbox", §15.6 (a consent's text alone read as No); hub/src/maity_hub/takeovers.py (`reply_required` on a takeover's request); web/js/inbox.js; the e2e step `send_talk_step`
+**Revisit when:** the request view says which consent carries a proposal or a placement, or the hub computes per request whether the text alone or `talk` is accepted
+
+Every request with a field has **Send** after its replies, on a request
+with options too: it sends the text alone (`{text}`), Ctrl+Enter the
+same, and is disabled while the field is empty. It stays disabled, with
+its reason below the buttons (`.reply-hint`, its `aria-describedby`),
+on every `consent`, every request with `action` or `placement`, and a
+takeover's (`takeover_id`), and there Ctrl+Enter is not offered: a
+shortcut that never sends is not announced. **Talk** stands on every request one can
+answer, disabled with its reason where `talk` is not accepted: for
+another owner's agent, a human asker and a request the hub filed itself
+(above), and on a takeover's: like the words alone, it is refused there,
+since one of its replies is required. No reason is said for a Send that
+is not there.
+Neither stands where no answer is possible at all: a call that only the
+project's owner answers, seen by another member, and a personal request
+not read in full. A refused answer gives the controls back, and what was
+disabled stays disabled.
+
+**Reason:** the hub takes the text alone as an answer to any request
+(§7), so a request with options had no way to answer in one's own words
+although the hub would take it. Where the hub refuses the text alone (a
+takeover's reply is required) or reads it as No (a consent's proposal or
+placement, §15.6), a button that sends it would answer something the
+reader did not mean; one that is missing does not say why. Every
+consent is treated alike, a plain one too: the request as the inbox
+reads it does not say which consent carries a proposal or a placement,
+and a Send that works on one consent and not on another, for a reason
+the reader cannot see, would be the same surprise.
+
+**Rejected alternative:** hiding Send and Talk where they do not apply,
+as before: the reader cannot tell a button that is missing here from one
+that does not exist. Talk for another owner's agent: the hub refuses it
+(`only_the_owner_of_the_agent`), so the button would surely end in
+`invalid`. A field from the hub saying per request whether the text
+alone and `talk` are accepted: a hub change for what the dashboard can
+tell from the request today; the Revisit when names it.
 
 ## A project's unread mentions are a link beside its tabs, to /notifications filtered to the project
 
@@ -789,13 +833,13 @@ by kind and project for reading and for marking, so the dashboard needs no new c
 - The line in the inbox only: it would show on one tab, and the inbox does not redraw when only
   the counts change.
 
-## A personal request in the cross-project inbox is labelled Personal and links into no project
+## A personal request in the cross-project inbox is labelled Personal; its project, card and mentions are no links
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29; the review of PR #1356 that found the people of a personal request linked by the member list since, 2026-11-04
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -806,7 +850,10 @@ Withdraw, which only its human may do. Grouped by project, the personal
 ones come first under "Personal". Since 2026-10-29 a project's own inbox
 lists the open personal requests about that project too, read from
 `GET /requests`: its tab counts them (§18.2), so the list shows what the
-tab says; they keep the label and lead into nothing. The hub has no
+tab says; they keep the label, and their badge, card and mentions lead
+into nothing. Who asked, on whose behalf and to whom are named as
+everywhere: a link only for a member the request's project lists
+(801bc195). The hub has no
 project filter on `GET /requests` (§7), so the project's inbox filters
 what it reads; a failed read is said in the list's status line, never
 shown as an empty list, since a list short of its tab is the bug this
@@ -816,8 +863,9 @@ not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
 request, the project's own listing never holds one (§7), and its human
-need not be a member of that project: every link or member read into the
-project would lead nowhere. A tab that counts what its list leaves out
+need not be a member of that project: a link to the project's inbox or
+card would lead nowhere. A member the project lists has a page there,
+and one it does not list stays text (801bc195). A tab that counts what its list leaves out
 reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
@@ -863,16 +911,21 @@ menu per press would make that slow.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23; the maintainer's report that "Asked by" in the inbox was plain text, relayed by the lead on tsk-3re8qp89hc18, 2026-11-04 (web/js/inbox.js `ref` and `membersOf`, the e2e step `asker_links_step`); the review of PR #1356 that found links to members the project no longer lists, 2026-11-04
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
 a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
-project does not list (removed, outside), a personal request's people,
-whose project the human may not be in, and every member in a view read
-from outside the project are plain text. A name inside a button (an
-inbox entry's head) stays text, since a link cannot sit in a button.
+project does not list (removed, outside) and every member in a view read
+from outside the project are plain text. The inbox of all projects
+reads the member list of each request's project among the reader's, once
+per view, and names who asked, on whose behalf and to whom by it: a link
+into the request's project for one that list names, text for one it does
+not (a member removed since, a human who asks without a membership, a
+project the reader is not in, a list that could not be read), as inside
+a project. A name inside a button (an inbox entry's head) stays text,
+since a link cannot sit in a button.
 
 **Reason:** the maintainer wants to reach any member's actions from
 wherever they appear, and one helper keeps the link, the tooltip and the
@@ -880,6 +933,13 @@ plain-text rule the same on every page.
 
 **Rejected alternative:** a link built in each view: the rules for who
 is linkable (listed, inside the project) would drift between pages.
+Keeping the inbox of all projects plain text, as it was until
+2026-11-04, since it read no member list there: the maintainer found the
+plain name a dead end. A link built from the request alone, for anyone
+it names in one of the reader's projects: the hub keeps an open request
+of a member removed since, and names a human who asks without a
+membership the same way, and both links opened only "No member with the
+id … in this project" (the review of PR #1356, 2026-11-04).
 
 ## A route the hub does not serve is said quietly, and the page does not ask it again
 

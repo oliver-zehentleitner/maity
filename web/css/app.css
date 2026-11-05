@@ -369,6 +369,10 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
+/* WCAG 2.2 target size: in an entry two links can stand in rows one above the other (the project, who
+   asked). A line is 21.75 px high (15 px at 1.45): 2 px apart their centres were 23.75 px apart, under
+   the 24 px axe asks for; 6 px apart they are 27.75 px. */
+.entry-body .facts { row-gap: 6px; }
 
 .send-status { min-height: 1.2em; margin: 6px 0 0; color: var(--muted); }
 .send-status.failed { color: var(--bad); }
@@ -1566,7 +1570,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The landing page and legal pages editor (js/landing.js). */
 .lp-sections, .lp-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
 .lp-section, .lp-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-wrap: anywhere; }
-.lp-section.kept { opacity: 0.8; }
+/* A section the editor keeps unedited: marked by its border, never by opacity, which would take its
+   muted text under the contrast it needs (tsk-fmdn6vb2zs19). */
+.lp-section.kept { border-style: dashed; }
 .lp-campaign-param { font-family: var(--mono); }
 .lp-variant-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .lp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -1735,9 +1741,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .product-line:empty { display: none; }
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
-.product-line a { color: inherit; }
+/* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line
+   wraps at phone width, whatever stands on the row above or below it. */
+.product-line a { color: inherit; display: inline-flex; align-items: center; min-height: 24px; }
 .product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
-.product-icon { display: inline-flex; align-items: center; padding: 2px; border-radius: 3px; }
+.product-icon { justify-content: center; min-width: 24px; border-radius: 3px; }
 .product-heart { color: var(--bad); }
 /* The Maity mark's dark variant (brand/maity-mark-small-dark.svg): CSS over the presentation attributes. */
 @media (prefers-color-scheme: dark) {

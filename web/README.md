@@ -215,9 +215,9 @@ A member is always clickable: wherever a view names one (the overview's
 members and reports, an inbox entry's asker, addressee and answerer, chat
 authors and people, project messages, ticker items, the members list,
 agent cards, the organisation), the name is a link to that member's row
-in Members, with the full name as tooltip (`M.dom.memberRef`). A member
-the project does not list, a personal request's people and anyone in a
-read-along view are plain text.
+in Members, with the full name as tooltip (`M.dom.memberRef`), in the
+inbox of all projects too, into the request's own project. A member the
+project does not list and anyone in a read-along view are plain text.
 
 Every role picker (a member's form, an invitation, a join, a member's own
 agent) offers the roles of `docs/api.md` §2.3 from one list (`js/trust.js`):

@@ -855,7 +855,7 @@ window.MAITY_I18N["ja"] = {
   "device.code.open": "コードをお持ちですか?",
   "device.code.title": "コードでサインイン",
   "device.expires": "あと {time} で期限切れになります。",
-  "device.mail.address": "あなたのアドレス",
+  "device.mail.address": "メールアドレス",
   "device.mail.check": "メールを確認してください",
   "device.mail.code": {
     "other": "{count} 桁のコード"
@@ -3162,6 +3162,7 @@ window.MAITY_I18N["ja"] = {
   "product.bug": "バグを見つけましたか？",
   "product.love": "愛",
   "product.made_by": "{name} が {github} & {maity} で {heart} を込めて作りました",
+  "product.security": "脆弱性を見つけましたか？",
   "profile_delete.busy": "削除しています…",
   "profile_delete.done": "プロフィール @{handle} を削除しました。",
   "profile_delete.done_ended": "プロフィール @{handle} を削除しました。そのメンバーシップは終了しました。",
@@ -3371,7 +3372,7 @@ window.MAITY_I18N["ja"] = {
   "reg.terms.version": "バージョン",
   "reg.title": "登録",
   "reg.unchanged": "変更はありません。",
-  "register.address": "あなたのアドレス",
+  "register.address": "メールアドレス",
   "register.check_mail": "メールを確認してください",
   "register.closed": "このハブは、リクエストに応じた新しいアカウントを作成しません。",
   "register.closed_sign_in": "アカウントをお持ちの場合は、{link}してください。",
