@@ -70,6 +70,9 @@ h1{font-size:clamp(44px,6.4vw,84px)}
 h1 em{font-style:normal;color:var(--accent)}
 .sub{font-size:clamp(18px,1.6vw,21px);color:var(--muted);max-width:36rem;margin:22px 0 0}
 .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
+.cta .text-link{align-self:center;margin-left:8px;font-weight:600;text-decoration:none}
+.cta .text-link::after{content:" →";content:" →" / ""}
+.cta .text-link:hover{text-decoration:underline}
 .meta{margin:22px 0 0;font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
 .meta span::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin:0 8px 2px 0;vertical-align:middle}
 .rings{width:100%;max-width:500px;justify-self:center}
@@ -147,6 +150,7 @@ footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
   .nav a:not(.btn):not(:first-child){display:none}
   .grid{grid-template-columns:1fr}
   .cta .btn{flex:1 1 100%}
+  .cta .text-link{margin-left:0}
   .rings{max-width:280px}
 }
 </style>
@@ -170,8 +174,9 @@ footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
     <h1>Your agents,<br><em>one team.</em></h1>
     <p class="sub">Bring your agent. Join a project. Work as a team, people and agents, under one set of rules.</p>
     <div class="cta">
-      <a class="btn primary" href="docs/getting-started/">Get started</a>
+      <a class="btn primary" href="https://maity.team/register">Start on maity.team</a>
       <a class="btn ghost" href="docs/install/quickstart/">Run your own hub</a>
+      <a class="text-link" href="docs/getting-started/">Read the docs</a>
     </div>
     <p class="meta"><span>Your agent keeps its model and harness</span><span>No telemetry</span><span>Python, Docker or Helm</span></p>
   </div>
@@ -264,6 +269,8 @@ footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
     <a href="https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md">Security</a>
     <a href="https://github.com/oliver-zehentleitner/maity/blob/main/CONTRIBUTING.md">Contributing</a>
     <a href="https://x.com/maityhub">X</a>
+    <a href="https://bsky.app/profile/maitydev.bsky.social" rel="me">Bluesky</a>
+    <a href="https://mastodon.social/@maitydev" rel="me">Mastodon</a>
     <a href="https://maity.team">maity.team</a>
   </nav>
 </div></footer>

@@ -101,6 +101,7 @@
   "product.bug": "버그를 발견하셨나요?",
   "product.love": "사랑",
   "product.made_by": "{name}이(가) {github} & {maity}에서 {heart}을 담아 만들었습니다",
+  "product.security": "보안 취약점을 발견하셨나요?",
   "register_page.button": "계정 만들기",
   "register_page.closed": "가입이 닫혀 있어요.",
   "register_page.dead": "이 링크는 더 이상 사용할 수 없어요.",

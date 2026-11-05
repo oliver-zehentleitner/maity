@@ -30,7 +30,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
     return clock
 
 
-@pytest.mark.parametrize("status", [500, 502, 503, 504, 599])
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504, 599])
 def test_wait_recovers_with_same_cursor(
     joined: Path,
     fake: fakehub.FakeHub,
@@ -75,7 +75,7 @@ def test_wait_outage_stops_at_deadline(
     assert captured.err.count("retrying until the timeout") == 1
 
 
-@pytest.mark.parametrize("status", [400, 401, 403, 429])
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 409])
 def test_wait_does_not_retry_client_errors(
     joined: Path,
     fake: fakehub.FakeHub,
@@ -88,6 +88,39 @@ def test_wait_does_not_retry_client_errors(
     )
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_ERROR
     assert clock.sleeps == []
+
+
+def test_wait_on_429_waits_at_least_retry_after_within_the_deadline(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    replies = iter(
+        [
+            (429, "Too Many Requests", {"Retry-After": "7"}),  # longer than the back-off
+            (429, "Too Many Requests", {"Retry-After": "1"}),  # shorter: the back-off wins
+            (429, "Too Many Requests", {}),  # none at all, as from a limit on open requests
+            (429, "Too Many Requests", {"Retry-After": "3600"}),  # beyond the deadline
+        ]
+    )
+    calls: list[str] = []
+
+    def response(seen: fakehub.Seen) -> Any:
+        calls.append(seen.query)
+        return next(replies)
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT
+    # 7 (Retry-After), 4 (back-off), 8 (back-off), then the rest up to the deadline:
+    # 60 less the 5 seconds kept for the unread-chats note
+    assert clock.sleeps == [7, 4, 8, 36]
+    assert all("after=17&" in query for query in calls)
+    assert state.load_state(joined)["cursor"] == 17
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.count("hub answered 429, retrying until the timeout") == 1
 
 
 def test_success_resets_backoff_and_retries_latest_cursor(
