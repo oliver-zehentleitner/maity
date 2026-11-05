@@ -13,7 +13,7 @@ from maity_hub import instance_settings as store
 from maity_hub.auth import device_codes, email_links, mail_factor
 from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
 from maity_hub.db import xact_lock
-from maity_hub.errors import invalid, rate_limited
+from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
 
 SWITCHES = ("device_code", "email_link")
@@ -121,20 +121,18 @@ def confirm_email(conn: Connection, hub: Settings, session: Any, code: str, by: 
     False for a wrong code, counted as any (§2.8.6); the caller commits the count, then refuses."""
     from maity_hub.auth import second_factor  # it imports this module
 
-    wait = second_factor.WRONG_BY_HUMAN.blocked(by)
-    if wait:
-        raise rate_limited(wait)
-    nonce = store.stored(conn, "sign_in").get(PENDING)
-    if _environment(hub, "second_factor") is not None:
-        raise invalid({"second_factor": "set_by_environment"})
-    # What the `PATCH` checked may have changed in the 15 minutes, and either would lock out.
-    if not mail_factor.mail_ready(conn, hub):
-        raise invalid({"second_factor": "mail_not_ready"})
-    if mail_factor.address_of(conn, by) is None:
-        raise invalid({"second_factor": "no_verified_address"})
-    if not nonce or not mail_factor.check_confirmation(conn, hub, session, nonce, code):
-        second_factor.WRONG_BY_HUMAN.hit(by)
-        return False
+    with second_factor.Attempt(by) as attempt:
+        nonce = store.stored(conn, "sign_in").get(PENDING)
+        if _environment(hub, "second_factor") is not None:
+            raise invalid({"second_factor": "set_by_environment"})
+        # What the `PATCH` checked may have changed in the 15 minutes, and either would lock out.
+        if not mail_factor.mail_ready(conn, hub):
+            raise invalid({"second_factor": "mail_not_ready"})
+        if mail_factor.address_of(conn, by) is None:
+            raise invalid({"second_factor": "no_verified_address"})
+        if not nonce or not mail_factor.check_confirmation(conn, hub, session, nonce, code):
+            attempt.wrong()
+            return False
     store.put(conn, "sign_in.second_factor", "email", by)
     store.put(conn, PENDING, None, by)
     _settled(conn, hub, by)

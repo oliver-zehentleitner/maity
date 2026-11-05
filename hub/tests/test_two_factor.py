@@ -235,6 +235,51 @@ def test_ten_wrong_codes_lock_the_human_out_for_the_window(
     assert locked.status_code == 429  # even the right code, until the window passes
 
 
+def test_a_check_holds_its_place_in_the_count_while_it_compares(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nine wrong codes; while the tenth is compared, the count already holds it, so a check
+    # running at the same time is refused instead of getting past the limit too (§2.8.6).
+    human = signed_in(make_client, migrated)
+    secret, _ = enrol(human, moment)
+    client = make_client(secret_key=KEY)
+    csrf = second_step(client)
+    for _ in range(4):
+        client.post(
+            "/api/v1/auth/second-factor/verify",
+            json={"code": "123456"},
+            headers={"X-CSRF-Token": csrf},
+        )
+    client = make_client(secret_key=KEY)
+    csrf = second_step(client)
+    for _ in range(5):
+        client.post(
+            "/api/v1/auth/second-factor/verify",
+            json={"code": "123456"},
+            headers={"X-CSRF-Token": csrf},
+        )
+    seen: list[int] = []
+    consume = second_factor._consume_totp
+
+    def comparing(*args: Any) -> bool:
+        seen.append(second_factor.WRONG_BY_HUMAN.blocked(human.id))
+        return consume(*args)
+
+    monkeypatch.setattr(second_factor, "_consume_totp", comparing)
+    client = make_client(secret_key=KEY)
+    csrf = second_step(client)
+    moment.move(seconds=30)
+    right = client.post(
+        "/api/v1/auth/second-factor/verify",
+        json={"code": code_now(secret, moment.at)},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert right.status_code == 200
+    assert len(seen) == 1 and seen[0] > 0  # the tenth place was taken before the comparison
+    # The right code gave its place back: one more wrong code still fits.
+    assert second_factor.WRONG_BY_HUMAN.blocked(human.id) == 0
+
+
 def test_a_recovery_code_signs_in_once(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
