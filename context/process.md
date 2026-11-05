@@ -540,6 +540,42 @@ already knows what it deploys.
 - Listing every `.html` file as the card first said: it would put the brand's loader fragment
   into the sitemap.
 
+## The docs site is built from a hashed lock in a job with read access only; a second job that installs nothing publishes it
+
+**Id:** b2e1d100-43c0-4655-aec2-b39ed2703d88
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3t1tvkd5ktxs, pull request #1402 (plan approved by the team lead, the reasons below are the author's and the reviewers'); `.github/workflows/pages.yml`, `tools/requirements/site.in`, `tools/Makefile`
+**See:** process.md — 7e78b0e4-e8b4-4ce2-9a83-f9457153cd5b — as of 2026-11-05
+**Revisit when:** the site needs a tool without wheels, GitHub Pages deploys without an OIDC token, or pip installs from a standard lock (`pylock.toml`) without uv
+
+The pages workflow has two jobs. `build` has `contents: read` only, checks out without stored
+credentials, installs nothing but `tools/requirements/site.txt` (the Keep the Why dashboard,
+Markdown, PyYAML; `--require-hashes --no-deps --only-binary :all:`) into a fresh environment,
+makes the site and uploads it as the Pages artifact. `deploy` needs `build`, has no checkout and
+installs nothing; of the two jobs only it holds `pages: write` and `id-token: write`. The lock is
+compiled from `site.in` with the uv that `hub/requirements/tools.txt` pins (`make -C tools lock`);
+`make -C tools lock-check` recompiles a copy without its hashes and fails on any difference. It
+runs in ci.yml's `changelog` job, which installs uv from the tools lock the same way (hashed, no
+dependency resolution, wheels only) and runs the docs renderer's tests from the site lock. The
+audit workflow checks the site lock against the known advisories.
+
+**Reason:** the rights to publish the site belong to the one step that publishes it, so the job
+that holds them runs no code from the checkout and installs no package. The job that runs the
+tools installs exactly the reviewed, hashed versions, and those change only when the lock
+does. Wheels only, because an sdist would be built with build tools that are not in the lock. The
+lock uses the same recipe as the hub's locks, so there is no second locking tool.
+
+**Rejected alternatives:**
+- One job with `pages: write` and `id-token: write`, as before: every step and every installed
+  package ran with the rights to publish the site.
+- Exact pins without hashes (`pip install markdown==… PyYAML==…`, the dashboard unpinned): pip
+  installs whatever file the index serves for that version, and the dashboard's version could
+  change on any push without a repository change.
+- Installing the lock into setup-python's environment: whatever else is there shares it; a fresh
+  environment holds exactly the lock.
+
 ## The database CI jobs may run on the maintainer's machine; a fork's code reaches it only through an approval
 
 **Id:** 405c762c-11a2-4a95-a23b-0b2657a7aa8d
