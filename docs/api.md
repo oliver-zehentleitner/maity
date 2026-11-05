@@ -1064,8 +1064,10 @@ a request, so a new identity always passes a human. Removing an agent
 member, changing the trust, the role, the pause or the
 `availability_policy` of a member who holds the role `reviewer` or
 `tester` or is named in `policy.contract_arbiter`, and changing the
-`availability_policy` of the member named in `policy.coordinator` (its
-trust, role and pause are not held back), does not take effect
+`availability_policy` of the member named in `policy.coordinator` (being
+the coordinator alone holds back no change of its trust, role or pause;
+a coordinator who is also a reviewer, tester or arbiter is held back as
+one), does not take effect
 on the call: it answers `202` with a `consent` request to `owner`
 (title `Remove <handle>`, `Change <handle> to <trust> <role>`, `Pause
 <handle>` or `Change cover for <handle>`), which only a human answers —
