@@ -152,6 +152,58 @@ def test_a_listed_agent_reads_and_writes_and_its_owner_does_not_through_it(
     assert _reason(get(owner, card["id"])) == "restricted"
 
 
+def test_a_bridged_call_is_refused_before_the_set(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """docs/api.md §6.4: Maity-For on the restricted routes is bridge_no_restricted, even
+    when the served agent is in the set and already holds a text."""
+    project_id = _project(migrated).id
+    served = factory.agent(migrated, project_id, owner.id, "coder")
+    bridge = factory.agent(migrated, project_id, owner.id, "coder", instance="brg1")
+    made = owner.post(
+        f"/projects/maintainer/maity/members/{served.agent_id}/bridges",
+        {"bridge": bridge.agent_id, "purpose": "local files for the coder"},
+    )
+    assert made.status_code == 201, made.text
+    card = _card(owner)
+    _set(migrated, "nobody_except", [served.agent_id])
+    # The served agent itself may write; a bridge calling as it may not.
+    direct = make_client()
+    written = direct.put(
+        _path(card["id"]),
+        content=json.dumps({"text": MARKER, "base_version": 0}),
+        headers={
+            "Authorization": f"Bearer {served.value}",
+            "Idempotency-Key": "served-write-0000001",
+        },
+    )
+    assert written.status_code == 200, written.text
+    n = 0
+
+    def bridged(method: str, **kwargs: Any) -> Any:
+        nonlocal n
+        n += 1
+        headers = {
+            "Authorization": f"Bearer {bridge.value}",
+            "Maity-For": served.agent_id,
+            "Idempotency-Key": f"bridge-restricted-{n:06d}",
+        }
+        return getattr(make_client(), method)(_path(card["id"]), headers=headers, **kwargs)
+
+    for response in (
+        bridged("get"),
+        bridged("put", content=json.dumps({"text": "x", "base_version": 1})),
+        bridged("delete"),
+    ):
+        assert response.status_code == 403 and _reason(response) == "bridge_no_restricted"
+        assert MARKER not in response.text
+        assert response.headers["Cache-Control"] == "no-store"
+    # Order of checks: bridge before the set, so a closed set still names the bridge.
+    _set(migrated, None)
+    closed = bridged("get")
+    assert closed.status_code == 403 and _reason(closed) == "bridge_no_restricted"
+
+
 # --- who is in the set ---------------------------------------------------------------------------
 
 
