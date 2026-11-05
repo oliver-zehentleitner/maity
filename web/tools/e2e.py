@@ -2573,8 +2573,8 @@ PATHS_MEASURE = """() => {
 def paths_views(run: Run, browser) -> None:
     """The Organisation tab's Paths face (tsk-j9ktmj7e4fxq) in fixture mode, every state the layout
     has: 2560, 1280 and 390 px wide; with and without the sign-in banner; the fixture team and a
-    team shaped like Maity's (25 members, 13 coders under one lead) folded and opened; the
-    reporting lines on and off. Nothing overlaps, leaves the canvas or the window, no name is wider
+    team shaped like Maity's (26 members, 13 coders under one lead, one role of its own) folded
+    and opened; the reporting lines on and off. Nothing overlaps, leaves the canvas or the window, no name is wider
     than its box, and the panel stands under the drawing."""
     run.step("fixtures: the Paths face fits at every width, with or without the banner, folded and opened")
     index = (WEB / "index.html").as_uri()
@@ -2617,7 +2617,7 @@ def paths_views(run: Run, browser) -> None:
                                 assert m["wideShown"] and not m["narrowShown"], f"{where}: the drawing is not the face shown"
                                 assert not m["overlaps"], f"{where}: boxes overlap {m['overlaps']}"
                                 assert not m["outside"], f"{where}: boxes leave the canvas {m['outside']}"
-                                assert not m["clipped"], f"{where}: parts outside their box or text wider than it {m["clipped"]}"
+                                assert not m["clipped"], f"{where}: parts outside their box or text wider than it {m['clipped']}"
                                 assert m["panelBelow"] and m["scrollFits"], f"{where}: the panel is not under the drawing, or the drawing's frame leaves the window"
                                 assert (m["reports"] > 0) == lines, f"{where}: {m['reports']} reporting lines drawn"
                                 if team == "maity":
