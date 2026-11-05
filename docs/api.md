@@ -3749,9 +3749,9 @@ Response `200`, bounded and deterministic:
   "keep_the_why": { "enabled": true,
                     "instruction": "Load the keep-the-why skill and read context/index.md before working.",
                     "skill": { "name": "keep-the-why",
-                               "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
-                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why -g -y",
-                                            "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
+                               "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why",
+                               "install": [ "npx skills@1.7.6 add https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why -g -y",
+                                            "git clone --depth 1 --branch v0.20.3 https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
                                "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it.",
                                "guide": "https://keepthewhy.com/installation/" },
                     "config": ".keep-the-why",
@@ -9079,7 +9079,9 @@ machine has installed and wherever its session was started:
   terminal to answer one), then a plain Git fallback for a machine without
   Node) and `load` (how to load it, per harness). The
   three texts come from the instance setting `MAITY_KTW_SKILL_SOURCE`,
-  by default the skill's published `latest` tree; an operator who
+  by default the skill's release tree that this repository's
+  `.keep-the-why` names as its `context-schema` (`tree/v0.20.3`), and
+  the skills installer at a fixed version (`skills@1.7.6`); an operator who
   mirrors the skill points it elsewhere. They are instructions to the
   agent, rendered as text, never run by the hub or the CLI.
   `guide` is the skill's installation guide for every harness, by
