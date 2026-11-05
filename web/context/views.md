@@ -5052,7 +5052,7 @@ the same list as the tabs, followed by Sign out.
 | Profile | `/account` | name, handle, picture, meat proxy, public profile |
 | Settings | `/account/settings` | preferences, the site's and the personal language, theme |
 | Notifications | `/account/notifications` | mail, when mail goes out, agents that stop listening, browser notifications; a line leads to the language under Settings |
-| Security | `/account/security` | its own tabs: Sign-in (password, second factor), Sessions (`/sessions`), Another device (`/device`), Forge access (`/forge`), Your data (`/data`) |
+| Security | `/account/security` | its own tabs: Sign-in (second factor, then password), Sessions (`/sessions`), Another device (`/device`), Forge access (`/forge`), Your data (`/data`) |
 | Organisations | `/account/orgs` | `js/orgs.js`, as before |
 | Linked accounts | none | greyed, to come |
 
