@@ -3204,8 +3204,8 @@
     "text": "913beec4f0add43c"
   },
   "device.mail.address": {
-    "en": "a0e9230cd85dd0a5",
-    "text": "ffbd7d5e7d0194aa"
+    "en": "c6394f33e6b9bb97",
+    "text": "86fbb0f790dfc4b7"
   },
   "device.mail.check": {
     "en": "87408a1b980a558e",
@@ -3638,6 +3638,10 @@
   "error.project_closed": {
     "en": "bcaa5d6cec3e2285",
     "text": "ecf2a45d4caa36df"
+  },
+  "error.project_limit": {
+    "en": "8860ca6b483b92dc",
+    "text": "75a85f8d2f9d8c39"
   },
   "error.rate_limited": {
     "en": "eb225fd04f71a530",
@@ -7847,6 +7851,18 @@
     "en": "77aadfc309105cd0",
     "text": "2731e1646fa4410e"
   },
+  "limits.projects.at": {
+    "en": "4a63e8a7c5eb7629",
+    "text": "5a0501426f501123"
+  },
+  "limits.projects.hint": {
+    "en": "67bab4d8e9be36a0",
+    "text": "239b71c2c54668a6"
+  },
+  "limits.projects.label": {
+    "en": "b6d4cb1fd0f9af75",
+    "text": "209888ca3ac9ae6b"
+  },
   "limits.save": {
     "en": "91afeacb7d1aa481",
     "text": "b3bd93fd3129d05e"
@@ -8314,6 +8330,10 @@
   "memberpage.actions.label": {
     "en": "e06a7f4657ebee9b",
     "text": "ac545c7264c052e2"
+  },
+  "memberpage.activity.cursor_stuck": {
+    "en": "a7e1f024331f6c1d",
+    "text": "a534dfe938a78b16"
   },
   "memberpage.activity.failed": {
     "en": "129ded00b9230026",
@@ -9471,14 +9491,6 @@
     "en": "888560be416ca928",
     "text": "4ecb66f56c0084a5"
   },
-  "messages.cursor_stuck": {
-    "en": "a7e1f024331f6c1d",
-    "text": "a534dfe938a78b16"
-  },
-  "messages.cut": {
-    "en": "8ab4866b3f0358bf",
-    "text": "1e4527535bb6b494"
-  },
   "messages.filter.every_type": {
     "en": "e07a1390aa248806",
     "text": "b37b3a7b4f4f93f1"
@@ -9499,6 +9511,10 @@
     "en": "c67dde4187c1b692",
     "text": "fb2f3bb087cc71e5"
   },
+  "messages.new_failed": {
+    "en": "e4d19a856d0d36dc",
+    "text": "678eb99cbb345eb3"
+  },
   "messages.none": {
     "en": "1e7936a3a804e102",
     "text": "55dc66505c1d5c76"
@@ -9506,6 +9522,18 @@
   "messages.none_of_type": {
     "en": "6c5ee8a820df13be",
     "text": "c635eca0d772dbff"
+  },
+  "messages.not_read_yet": {
+    "en": "dd53c10be9be8cac",
+    "text": "0b54c4d615a284bc"
+  },
+  "messages.older": {
+    "en": "9d767fc1f68dfc65",
+    "text": "00c6cb4ffed95aa8"
+  },
+  "messages.read_failed": {
+    "en": "3a29780ed7868ab6",
+    "text": "0d76c45d73ac05b0"
   },
   "messages.remove": {
     "en": "9469a102f04ea196",
@@ -9530,6 +9558,10 @@
   "messages.remove.label": {
     "en": "4ffa3b8abbf19914",
     "text": "81570c20f2baf6d0"
+  },
+  "messages.removed": {
+    "en": "a1b61b3fcf61b9da",
+    "text": "1a8eaff80537cb71"
   },
   "messages.review.more": {
     "en": "4533d2647946c19c",
@@ -9700,8 +9732,8 @@
     "text": "bd74266ddef97690"
   },
   "names.refused.step_up": {
-    "en": "d83b553c1ec2c2f0",
-    "text": "aa7e9c22fda739f0"
+    "en": "ede2e2af3b0541e9",
+    "text": "c295a345ceb2b3b2"
   },
   "names.refused.taken": {
     "en": "f75c10f4797ab8bc",
@@ -11899,6 +11931,10 @@
     "en": "3c4acf7ac90b37e1",
     "text": "894277f3d0cc72cd"
   },
+  "product.security": {
+    "en": "32548671ddc1415a",
+    "text": "4a75d23aa5cf1361"
+  },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",
     "text": "bf4e1a361e796cba"
@@ -12668,8 +12704,8 @@
     "text": "075dfbbf085a1b53"
   },
   "register.address": {
-    "en": "a0e9230cd85dd0a5",
-    "text": "ffbd7d5e7d0194aa"
+    "en": "c6394f33e6b9bb97",
+    "text": "86fbb0f790dfc4b7"
   },
   "register.check_mail": {
     "en": "87408a1b980a558e",

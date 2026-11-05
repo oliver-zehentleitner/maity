@@ -2,15 +2,13 @@
 // may see (docs/api.md §8.4, every type but chat), newest first, by type:
 // who wrote to whom, about which card, the text as Markdown, the members
 // it mentions as links, and its files (§8.7). The uploader or an admin
-// deletes a file; an admin removes a message (§8.5). The hub has no
-// message listing yet (§8.8 is in the contract): the view reads the
-// project's latest events with wait=0, page by page, and keeps the
-// messages; new ones, removals and deleted files arrive with the
-// project's feed and change the list in place.
-//
-// No removed message is shown while the view reads /events: a removed
-// chat message looks the same there as a removed project message (§8.5
-// replaces the whole payload), and §8.8 lists only the latter.
+// deletes a file; an admin removes a message (§8.5). The view pages through
+// the hub's listing (§8.8): its newest page first, older ones by the
+// listing's cursor, the type filter the hub's. The project's feed is only
+// the signal, as on the Ticker: a new message there reads the listing
+// forward from the newest one shown, following its cursor; removals and deleted files change
+// the list in place. A removed message stays as the listing's tombstone,
+// or leaves a list filtered by type, which shows what is still there.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -25,15 +23,11 @@ window.Maity = window.Maity || {};
     review_result: () => M.t("messages.type.review_result"), interface_change: () => M.t("messages.type.interface_change"),
   };
   const typeWord = (type) => (Object.hasOwn(TYPE_WORDS, type) ? TYPE_WORDS[type]() : type);
-  const PAGE = 200;
-  // How far back the view reads, said when cut: a window of the hub's event
-  // numbers (`seq` counts across every project, §8.3), so it holds fewer of
-  // this project's events the busier the rest of the hub is; the hub has no
-  // reading backwards by project, and no filter by kind or actor.
-  const WINDOW = 5000;
-  const MAX_PAGES = Math.ceil(WINDOW / PAGE) + 1;
+  const PAGE = 50;
+  // How many pages of new messages one live round reads at most.
+  const LIVE_PAGES = 20;
 
-  // A project message that is still there; a removed one is never kept.
+  // A project message on the feed (§8.3), as the listing has it: not a chat's.
   const isMessage = (e) => e.kind === "message" && !e.redacted && e.payload && e.payload.type !== "chat";
 
   function toWords(ctx, to) {
@@ -41,30 +35,6 @@ window.Maity = window.Maity || {};
     if (/^role:/.test(to || "")) return M.t("messages.to.role", { role: to.slice(5) });
     return M.dom.memberRef(ctx, to);
   }
-
-  // The project's events within the hub's latest WINDOW numbers, oldest
-  // first, those `keep` takes; stops when the view was left, and fails loud
-  // on a cursor that does not move. Shared with a member's Activity.
-  async function scan(ctx, stillHere, keep) {
-    const head = (await M.api.get(ctx.base + "/events?after=latest&wait=0")).cursor;
-    const start = Math.max(0, head - WINDOW);
-    const kept = [];
-    let after = start;
-    for (let n = 0; n < MAX_PAGES; n++) {
-      if (!stillHere()) return null;
-      const page = await M.api.get(ctx.base + "/events?after=" + after + "&wait=0&limit=" + PAGE);
-      kept.push(...page.items.filter(keep || isMessage));
-      if (page.items.length < PAGE) return { kept, cut: start > 0 };
-      const next = page.items[page.items.length - 1].seq;
-      if (!(next > after)) throw new Error(M.t("messages.cursor_stuck", { after: String(after) }));
-      after = next;
-    }
-    return { kept, cut: true };
-  }
-
-  // Read by a member's Activity (js/member-page.js) with its own filter.
-  M.recentEvents = (ctx, keep, stillHere) => scan(ctx, stillHere || (() => true), keep);
-  M.recentEvents.WINDOW = WINDOW;
 
   // A review result's facts (§8.4): the verdict, what was reviewed, the
   // commit at its short head, and the places the reviewer read, each with
@@ -107,105 +77,209 @@ window.Maity = window.Maity || {};
 
   M.views.messages = async function (ctx, root) {
     const here = M.route.current().path;
-    const read = await scan(ctx, () => M.route.current().path === here);
-    if (!read) return;
-    const all = read.kept;
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     let filter = "";
+    let cursor = null;
+    // Each read belongs to one filter; an answer of an older one is dropped.
+    let gen = 0;
+    let busy = false;
+    // A first page still on its way: a signal meanwhile waits for it (ticker.js).
+    let resetting = true;
+    let liveAgain = false;
+    let loaded = false;
+    // The newest seq shown; floor, where a live read starts while none is.
+    let top = 0;
+    let floor = 0;
+    const shown = new Map();
     const list = h("ol", { class: "project-messages" });
-    const shows = (e) => !filter || e.payload.type === filter;
+    const more = h("div", { class: "actions" });
+    const query = (extra) => ctx.base + "/messages?" + [filter ? "type=" + encodeURIComponent(filter) : null, "limit=" + PAGE, extra || null].filter(Boolean).join("&");
     const itemOf = (seq) => Array.from(list.querySelectorAll("li.pmsg")).find((li) => li.getAttribute("data-seq") === String(seq));
-    const empty = () => h("li", { class: "empty muted" }, filter ? M.t("messages.none_of_type") : M.t("messages.none"));
+    // Nothing shown: "none" only at the end of the history (next_cursor
+    // null, §8.8); a page the hub's scan budget cut short may be empty while
+    // older messages are still unread.
+    const empty = () => h("li", { class: "empty muted" },
+      cursor ? M.t("messages.not_read_yet") : filter ? M.t("messages.none_of_type") : M.t("messages.none"));
     const fillEmpty = () => {
       const blank = list.querySelector("li.empty");
-      const any = list.querySelector("li.pmsg");
-      if (any && blank) list.removeChild(blank);
-      if (!any && !blank) append(list, empty());
+      if (blank) list.removeChild(blank);
+      if (!list.querySelector("li.pmsg")) append(list, empty());
     };
+    // Items of one answer not shown yet, each once, also within the answer.
+    const fresh = (items) => items.filter((x, i) => !shown.has(x.seq) && items.findIndex((y) => y.seq === x.seq) === i);
+    const mark = (x) => { shown.set(x.seq, x); if (x.seq > top) top = x.seq; };
+    // One button for older pages, kept while a cursor remains, so it keeps
+    // the focus across clicks; busy is aria-disabled, which keeps it too.
+    const older = h("button", { type: "button", class: "small", onclick: () => load(false) }, M.t("messages.older"));
+    function drawMore() {
+      if (busy) older.setAttribute("aria-disabled", "true"); else older.removeAttribute("aria-disabled");
+      if (cursor && older.parentNode !== more) append(more, older);
+      if (!cursor && older.parentNode === more) more.removeChild(older);
+    }
 
-    // Gone from the list: removed here or by someone else.
-    function drop(seq) {
-      const i = all.findIndex((x) => x.seq === seq);
-      if (i >= 0) all.splice(i, 1);
+    // Removed, here or by someone else (§8.5): the tombstone in its place,
+    // as the listing has it; a list filtered by type drops it.
+    function removed(seq) {
       const li = itemOf(seq);
-      if (li) list.removeChild(li);
+      if (!li) return;
+      const x = shown.get(seq);
+      if (!filter && x) {
+        const gone = Object.assign({}, x, { type: null, to: null, task_id: null, body: null, mentions: [], attachments: [], review: null, redacted: true });
+        shown.set(seq, gone);
+        list.insertBefore(item(gone), li);
+      }
+      list.removeChild(li);
       fillEmpty();
     }
 
-    async function remove(e) {
+    async function remove(x) {
       const reason = M.chatParts.askReason(M.t("messages.remove.ask"));
       if (reason === null) return;
       status.busy(M.t("messages.remove.busy"));
       try {
-        await M.api.post(ctx.base + "/events/" + encodeURIComponent(e.seq) + "/redact", { reason });
+        await M.api.post(ctx.base + "/events/" + encodeURIComponent(x.seq) + "/redact", { reason });
       } catch (err) {
         status.fail(M.t("messages.remove.failed"), err);
         return;
       }
-      drop(e.seq);
+      removed(x.seq);
       status.done();
       append(status.el, h("span", { class: "ok" }, M.t("messages.remove.done")));
       status.el.focus();
     }
 
-    function item(e) {
-      const p = e.payload;
-      const review = p.type === "review_result" && p.review ? reviewBlock(ctx, p.review) : null;
-      const from = e.actor && e.actor.member_id;
+    // A listing item (§8.8): from, from_instance, to, task_id, sent_at.
+    function item(x) {
+      const from = x.from;
+      const who = () => M.dom.memberRef(ctx, from, { instance: x.from_instance });
+      // An update sent without one has no addressee (§8.4).
+      const head = (badge) => h("div", { class: "pmsg-head" }, badge,
+        h("span", null, " ", x.to ? M.tn("messages.from_to", { from: who(), to: toWords(ctx, x.to) }) : who()),
+        x.task_id ? [" · ", h("a", { href: ctx.link("tasks", x.task_id) }, x.task_id)] : null,
+        " · ", h("span", { class: "muted" }, formatTime(x.sent_at)));
+      if (x.redacted) {
+        return h("li", { class: "pmsg removed", "data-seq": String(x.seq) }, head(null), h("p", { class: "muted msg-redacted" }, M.t("messages.removed")));
+      }
+      const review = x.type === "review_result" && x.review ? reviewBlock(ctx, x.review) : null;
       // The file's uploader is the message's sender; an admin deletes any (§8.7).
       const canDelete = () => from === ctx.me.id || ctx.canAdmin;
-      return h("li", { class: "pmsg type-" + p.type, "data-seq": String(e.seq) },
-        h("div", { class: "pmsg-head" },
-          h("span", { class: "badge" }, typeWord(p.type)),
-          h("span", null, " ", M.tn("messages.from_to", { from: M.dom.memberRef(ctx, from, { instance: e.actor }), to: toWords(ctx, p.to) })),
-          p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
-          " · ", h("span", { class: "muted" }, formatTime(e.at))),
+      return h("li", { class: "pmsg type-" + x.type, "data-seq": String(x.seq) },
+        head(h("span", { class: "badge" }, typeWord(x.type))),
         review,
         // Its mentions are links where they stand (the one renderer, js/markdown.js).
-        p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx), { mentions: p.mentions, hrefOf: (id) => ctx.link("members", id), ctx })) : null,
-        M.attachments ? M.attachments.render(ctx, { attachments: p.attachments, body: p.body || "" }, canDelete) : null,
+        x.body ? h("div", { class: "md" }, M.markdown(x.body, M.ids.where(ctx), { mentions: x.mentions, hrefOf: (id) => ctx.link("members", id), ctx })) : null,
+        M.attachments ? M.attachments.render(ctx, { attachments: x.attachments, body: x.body || "" }, canDelete) : null,
         ctx.canAdmin ? h("div", { class: "actions" },
-          h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(e) }, M.t("messages.remove"))) : null);
+          h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(x) }, M.t("messages.remove"))) : null);
     }
 
-    // The whole list, only when the filter changes; the feed patches it.
-    function draw() {
-      clear(list);
-      all.filter(shows).slice().reverse().forEach((e) => append(list, item(e)));
+    // A page, newest first: the first one of a filter (reset), or the next
+    // older one by the listing's cursor. given: a page already read.
+    async function load(reset, given) {
+      if (!reset && busy) return;
+      const mine = reset ? ++gen : gen;
+      if (reset) { clear(list); shown.clear(); top = 0; cursor = null; liveFrom = null; liveCursor = null; resetting = true; loaded = false; }
+      busy = true;
+      drawMore();
+      const hadFocus = !reset && document.activeElement === older;
+      let page = given;
+      try {
+        if (!page) page = await M.api.get(query(cursor ? "cursor=" + encodeURIComponent(cursor) : null));
+      } catch (err) {
+        if (mine !== gen) return;
+        busy = false;
+        resetting = false;
+        drawMore();
+        status.fail(M.t("messages.read_failed"), err);
+        return;
+      }
+      if (mine !== gen) return;
+      busy = false;
+      const added = fresh(page.items);
+      added.forEach((x) => { mark(x); append(list, item(x)); });
+      cursor = page.next_cursor;
       fillEmpty();
+      drawMore();
+      // The last older page takes the button away: the focus goes to the
+      // first message it added, not to the page's body.
+      if (hadFocus && !cursor) {
+        const to = added.length ? itemOf(added[0].seq) : null;
+        if (to) { to.setAttribute("tabindex", "-1"); to.focus(); } else status.el.focus();
+      }
+      if (reset) {
+        resetting = false;
+        loaded = true;
+        status.done();
+        if (liveAgain) live();
+      }
     }
+
+    // New messages with the feed: the listing forward from the newest one
+    // shown, oldest first (§8.8), in this filter. A round keeps its after=
+    // and follows next_cursor, empty pages too, until it is null: a page
+    // examines at most the hub's scan budget, so a short one is not the
+    // end. A round out of pages leaves its cursor to the next one. A signal
+    // while a read runs is kept: the read runs once more afterwards.
+    let liveBusy = false;
+    let liveFrom = null;
+    let liveCursor = null;
+    async function live() {
+      if (liveBusy || resetting) { liveAgain = true; return; }
+      if (!loaded) { load(true); return; }
+      liveBusy = true;
+      liveAgain = false;
+      const mine = gen;
+      let added = 0;
+      const from = liveCursor ? liveFrom : top || floor;
+      let next = liveCursor;
+      try {
+        for (let n = 0; n < LIVE_PAGES; n++) {
+          const page = await M.api.get(query("after=" + from + (next ? "&cursor=" + encodeURIComponent(next) : "")));
+          if (mine !== gen) return;
+          fresh(page.items).forEach((x) => { mark(x); list.insertBefore(item(x), list.firstChild); added += 1; });
+          next = page.next_cursor;
+          if (!next) break;
+        }
+        liveFrom = next ? from : null;
+        liveCursor = next;
+      } catch (err) {
+        if (mine === gen) status.fail(M.t("messages.new_failed"), err);
+        return;
+      } finally {
+        liveBusy = false;
+        if (liveAgain && !resetting) live();
+      }
+      if (!added) { status.done(); return; }
+      fillEmpty();
+      status.done();
+      append(status.el, h("span", null, M.t("messages.new", { count: added })));
+    }
+
+    const first = await M.api.get(query());
+    if (M.route.current().path !== here) return;
 
     ctx.onEvents((events) => {
-      let added = 0;
+      const arrived = events.filter((e) => isMessage(e) && !shown.has(e.seq)).map((e) => e.seq);
       events.forEach((e) => {
-        if (isMessage(e) && !all.some((x) => x.seq === e.seq)) {
-          all.push(e);
-          if (shows(e)) { list.insertBefore(item(e), list.firstChild); added += 1; }
-        }
-        if (e.kind === "event_redacted" && e.payload) drop(e.payload.seq);
-        if (e.kind === "attachment_deleted" && e.payload) {
-          // Kept on the message, so a later redraw shows it removed too.
-          all.forEach((x) => (x.payload.attachments || []).forEach((a) => { if (a.id === e.payload.attachment_id) a.removed = true; }));
-          M.attachments.markDeleted(list, e.payload.attachment_id);
-        }
+        if (e.kind === "event_redacted" && e.payload) removed(e.payload.seq);
+        if (e.kind === "attachment_deleted" && e.payload) M.attachments.markDeleted(list, e.payload.attachment_id);
       });
-      if (added) {
-        fillEmpty();
-        status.done();
-        append(status.el, h("span", null, M.t("messages.new", { count: added })));
-      }
+      if (!arrived.length) return;
+      // Nothing shown yet: the read starts just below the first that arrived.
+      const below = Math.min(...arrived) - 1;
+      floor = floor ? Math.min(floor, below) : below;
+      live();
     });
 
-    const pick = h("select", { id: "messages-type", onchange: (ev) => { filter = ev.target.value; draw(); } },
+    const pick = h("select", { id: "messages-type", onchange: (ev) => { filter = ev.target.value; load(true); } },
       h("option", { value: "" }, M.t("messages.filter.every_type")), Object.keys(TYPE_WORDS).map((v) => h("option", { value: v }, typeWord(v))));
     append(root,
       h("div", { class: "toolbar" }, h("h2", null, M.t("messages.title")), h("a", { class: "button small", href: ctx.link("message") }, M.t("messages.write"))),
       h("p", { class: "muted" }, M.t("messages.intro")),
-      read.cut ? h("p", { class: "muted pmsg-cut" }, M.t("messages.cut", { window: WINDOW })) : null,
       h("form", { class: "board-filter", role: "search", onsubmit: (ev) => ev.preventDefault() },
         h("label", { for: "messages-type" }, M.t("messages.filter.type")), pick),
-      status.el, list);
-    draw();
+      status.el, list, more);
+    await load(true, first);
   };
 })(window.Maity);
