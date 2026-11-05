@@ -60,8 +60,8 @@ and when that render runs, and the time limits on it, are entry deafb243 below. 
 render that finds the inputs' digest unchanged leaves the row alone, so the ETag and the sitemap's `lastmod`
 move with the inputs and not with the safety net. A render that fails takes the target's pages off (in a
 savepoint, so the writer's own transaction goes on) instead of leaving a stale page. At start the hub renders
-all again before it serves any (within a budget, deafb243); a worker repeats `render_all` every
-`MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
+all again before it serves any, taking up no further target after its startup budget (deafb243); a worker
+repeats `render_all` every `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
 (`public_pages.configure`), because the write paths do not carry them. The sitemap lists the stored rows
 with their `lastmod` and becomes an index with `/sitemap-<n>.xml` parts above 50,000 URLs or 50 MB;
 `robots.txt` closes every reserved first segment of §16.11 (as `/word/` and `/word`, so that a handle
@@ -80,7 +80,7 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 - Touching with the settings passed through every call: the writers (a profile, a card, a membership) have
   no reason to know the hub's settings.
 
-## A touched page is taken off in the writer's transaction and rendered after its commit; one render and a start have time limits
+## A touched page is taken off in the writer's transaction and rendered after its commit; one render has a time limit, and a start takes up no target after its budget
 
 **Id:** deafb243-f385-4108-8de4-81fc8f9a7872
 **Type:** decision
