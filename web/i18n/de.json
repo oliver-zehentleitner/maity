@@ -3843,7 +3843,6 @@
   "sessions.address.remove": "Die Anmeldeadresse entfernen",
   "sessions.address.title": "Eine Adressänderung wartet auf dich",
   "sessions.address.too_new": "Zum Genehmigen braucht es eine Sitzung, die mindestens einen Tag alt ist; diese kann sie ablehnen.",
-  "sessions.alert_unread": "Ihre Anmeldewarnung ist ungelesen.",
   "sessions.banner.approved": "Sie hat genehmigt: {devices}.",
   "sessions.banner.end": "Diese Sitzung beenden",
   "sessions.banner.ended_but": "Sie ist beendet, aber eine Sitzung, die sie genehmigt hat, ist noch aktiv: {devices}.",
