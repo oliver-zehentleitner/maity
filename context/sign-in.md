@@ -412,6 +412,13 @@ become one, and a session waiting at the second factor makes none. The
 fingerprint keeps that working after the sessions have ended, which
 erase their addresses (the maintainer's choice of the two options).
 
+**Limit:** the fingerprint is pseudonymous, not anonymous: whoever
+holds the key, or without `MAITY_SECRET_KEY` a copy of the whole
+database (the pepper sits there), can test a guessed source address,
+and source addresses are few enough to try them all. Setting, changing
+or removing `MAITY_SECRET_KEY` gives every address a new fingerprint,
+so every account has no known source until its next sign-in.
+
 **Rejected alternatives (storage):**
 - Only the start addresses of the account's live sessions: no new data,
   but whoever has a live session in that browser is signed in already;
