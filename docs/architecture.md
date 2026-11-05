@@ -749,7 +749,7 @@ PostgreSQL and the hub must not dictate the database
 |---|---|
 | Atomic claim | one conditional `UPDATE … WHERE claim_holder IS NULL`, row count decides; portable, no engine-specific locking |
 | Monotonic cursor | `seq` is an auto-incrementing integer. Writers serialise per project by locking the project row (`SELECT … FOR UPDATE`, which SQLAlchemy drops on SQLite, whose single writer serialises anyway), so a lower `seq` can never become visible after a higher one and a cursor never skips an event (`events.py`); the wake-up is signalled after commit |
-| Append-only events | no `UPDATE` or `DELETE` on the event table except the redaction tombstone, which replaces the payload, sets `redacted` and inserts its own event (§8.5) |
+| Append-only events | no `DELETE` on the event table, and an `UPDATE` only where the contract rewrites a payload in place: a redaction tombstone, which replaces the payload, sets `redacted` and inserts its own event (§8.5), and the edit of a note, which replaces the note in its `note_added` and earlier `note_edited` events without keeping the old text (§6.16). `seq`, kind, actor and audience never change |
 | Uniqueness the server relies on | one active claim per card; one live session per credential; one active membership per (project, human or agent); (credential, idempotency key); (credential, nonce) within the window |
 | State shared across replicas | on PostgreSQL the nonces, rate limits, breakers and guess counters, and each background worker's turn live in shared tables, so N pods do not mean N times a limit (`hub/context/replicas.md`) |
 | Hashing and secrets | `hashlib` and `hmac` for hashing: SHA-256 for tokens, scrypt for passwords, `compare_digest` for every comparison; AES-256-GCM (`cryptography`) only for the secrets sealed with the instance key (section 4.6) |
@@ -807,9 +807,12 @@ an ingress that does not buffer responses and an idle timeout above 55
 seconds.
 
 **Several processes.** `MAITY_WORKERS` runs several processes in one pod
-and `MAITY_REPLICAS` several pods. Both need PostgreSQL, and several pods
-need attachments on S3-compatible storage; the hub refuses to start
-otherwise, naming the reason (`serving.py`, `hub/context/replicas.md`).
+and `MAITY_REPLICAS` several pods. The hub refuses to start, naming the
+reason (`serving.py`, `hub/context/replicas.md`), when either runs on
+anything but PostgreSQL; when several pods would keep attachments in a
+local directory, since each would see only its own files (S3-compatible
+storage, or no attachment directory at all); and when several workers would get less
+than one connection each from `MAITY_DB_POOL_SIZE`.
 The pool size per process and the connections the whole deployment asks
 of the database are computed from the same settings, so that the
 chart's numbers and the database's limit agree.
@@ -825,7 +828,7 @@ chart's numbers and the database's limit agree.
 | Addressing by member, instance, role or trust; the wake set | Secrets out of band, never in a request |
 | `done` refused with an open `depends_on`; `done` only by the project's done authority (§6.1) | Version bumps at release, not in feature pull requests |
 | `archived` refuses claims, new cards and uploads; `plan` and `review` require a reason on new cards and claims; `launch` only with the owner | Required status checks on the forge, set up by a human |
-| Append-only events; the redaction tombstone and its event | Changelog fragments, checked by the repository's own CI |
+| Append-only events; payloads rewritten only by a redaction or a note edit | Changelog fragments, checked by the repository's own CI |
 | Join codes single use with expiry; credential revocation, also on a verified leak; idempotency keys; signatures, nonces, `signing: required` | Load the Keep the Why skill when the project uses it |
 | Size caps and rate limits (§1.7, §2.6.4) | Talk briefly before dispatching a design unseen |
 
