@@ -36,14 +36,24 @@ def git(*args: str, cwd: Path) -> str:
     ).stdout.strip()
 
 
-def ref_exists(ref: str, cwd: Path) -> bool:
+def commit_of(ref: str, cwd: Path) -> str | None:
+    """The commit `ref` names, an annotated tag peeled to its commit; None for anything else."""
     found = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
         cwd=cwd,
         capture_output=True,
         text=True,
     )
-    return found.returncode == 0
+    return found.stdout.strip() if found.returncode == 0 else None
+
+
+def changed_files(base: str, sha: str, cwd: Path) -> list[str]:
+    """The paths as stored, NUL-separated: git's quoted display form of a name like `é.py`
+    would start with a quote and match no package."""
+    out = subprocess.run(
+        ["git", "diff", "-z", "--name-only", base, sha], cwd=cwd, check=True, capture_output=True
+    ).stdout
+    return [name for name in out.decode("utf-8", "surrogateescape").split("\0") if name]
 
 
 def pushed_ranges(lines: Iterable[str], remote: str, top: Path) -> list[tuple[str | None, str]]:
@@ -56,13 +66,18 @@ def pushed_ranges(lines: Iterable[str], remote: str, top: Path) -> list[tuple[st
         _local_ref, local_sha, _remote_ref, remote_sha = parts
         if ZERO.match(local_sha):
             continue  # a deletion pushes no code
-        if not ZERO.match(remote_sha) and ref_exists(remote_sha, top):
-            ranges.append((remote_sha, local_sha))
+        # An annotated tag arrives as the tag object's id; what is pushed is its commit.
+        local = commit_of(local_sha, top)
+        if local is None:
+            continue  # a tag of a tree or a blob: no commit, nothing a package check could run on
+        remote_commit = None if ZERO.match(remote_sha) else commit_of(remote_sha, top)
+        if remote_commit is not None:
+            ranges.append((remote_commit, local))
             continue
         # A new branch: what it adds to the remote's main.
         main = f"refs/remotes/{remote}/main"
-        base = git("merge-base", main, local_sha, cwd=top) if ref_exists(main, top) else None
-        ranges.append((base or None, local_sha))
+        base = git("merge-base", main, local, cwd=top) if commit_of(main, top) else None
+        ranges.append((base or None, local))
     return ranges
 
 
@@ -103,7 +118,7 @@ def main(argv: Sequence[str], stdin: Iterable[str]) -> int:
         if base is None:
             files.update(PACKAGES)  # nothing to compare with: check both
         else:
-            files.update(git("diff", "--name-only", base, sha, cwd=top).splitlines())
+            files.update(changed_files(base, sha, cwd=top))
     packages = touched_packages(files)
     if not packages:
         return 0

@@ -106,6 +106,20 @@ class PrePushTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.ran(), [f"hub lint {self.python}", f"hub typecheck {self.python}"])
 
+    def test_a_file_name_git_would_quote_still_counts_for_its_package(self) -> None:
+        sha = self.commit("hub/\u00e9.py")
+        result = self.push(f"refs/heads/b {sha} refs/heads/b {self.base}", FAIL_hub="1")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.ran()[0], f"hub lint {self.python}")
+
+    def test_an_annotated_tag_of_head_is_checked_as_its_commit(self) -> None:
+        self.commit("hub/x.py")
+        self.git("tag", "-a", "-m", "t", "t1")
+        tag = self.git("rev-parse", "t1")
+        result = self.push(f"refs/tags/t1 {tag} refs/tags/t1 {ZERO}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.ran(), [f"hub lint {self.python}", f"hub typecheck {self.python}"])
+
     def test_a_deletion_checks_nothing(self) -> None:
         result = self.push(f"(delete) {ZERO} refs/heads/b {self.base}")
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -34,11 +34,11 @@ The second line is the hub's environment from the hashed lock, the same
 one CI installs; the hook uses it for both packages (or the Python that
 `MAITY_HOOK_PYTHON` names). It stops before checking when black, ruff or
 mypy there differ from the pins in `hub/requirements/dev.txt`: after a
-lock change, run `make -C hub install` again. It checks the working tree,
-so it also stops when HEAD is not the pushed commit or a touched package
-has uncommitted changes. `git push --no-verify` skips it;
-`git config --unset core.hooksPath` turns it off. `tools/pre_push.py`
-has the details.
+lock change, run `make -C hub install PYTHON=.venv/bin/python` again. It
+checks the working tree, so it also stops when HEAD is not the pushed
+commit or a touched package has uncommitted changes. `git push
+--no-verify` skips it; `git config --unset core.hooksPath` turns it off.
+`tools/pre_push.py` has the details.
 
 ## Before merging a change to the web catalogs
 
