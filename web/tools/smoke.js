@@ -3660,9 +3660,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(said("forbidden", { reason: "humans_only" }, "hub") === "Nur ein Mensch.", "errors: a translated reason comes before its code");
     // The second factor is said as what is missing, never as missing rights (tsk-7jhpzrvsnzm3).
     Object.assign(win.MAITY_I18N.de, { "error.forbidden": "Dafür fehlen dir die Rechte.", "error.forbidden.reason": "Dafür fehlen dir die Rechte ({reason}).",
-      "error.reason.second_factor_required": "In dieser Sitzung fehlt noch dein zweiter Faktor.",
+      "error.reason.second_factor_required": "Hier ist dein zweiter Faktor Pflicht.",
       "error.reason.step_up_required": "Dafür brauchst du zuerst deinen zweiten Faktor." });
-    expect(said("forbidden", { reason: "second_factor_required" }, "hub") === "In dieser Sitzung fehlt noch dein zweiter Faktor."
+    expect(said("forbidden", { reason: "second_factor_required" }, "hub") === "Hier ist dein zweiter Faktor Pflicht."
       && said("forbidden", { reason: "step_up_required" }, "hub") === "Dafür brauchst du zuerst deinen zweiten Faktor.",
       "errors: the second factor's refusals say the factor, not the bare rights");
     expect(said("forbidden", { reason: "some_new_reason" }, "hub") === "Dafür fehlen dir die Rechte (some_new_reason)."

@@ -1104,7 +1104,7 @@
   "error.reason.registration_closed": "This hub does not create accounts right now.",
   "error.reason.reauthentication_required": "Give your password again first.",
   "error.reason.second_factor_enrolment_required": "Set up your second factor first.",
-  "error.reason.second_factor_required": "This session still needs your second factor.",
+  "error.reason.second_factor_required": "Your second factor is required here.",
   "error.reason.step_up_required": "This needs your second factor first.",
   "error.release_in_flight": "Another release is already open.",
   "error.release_not_ready": "This release is not ready yet.",

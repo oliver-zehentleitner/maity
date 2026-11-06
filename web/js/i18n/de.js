@@ -1056,7 +1056,7 @@ window.MAITY_I18N["de"] = {
   "error.reason.reauthentication_required": "Gib zuerst noch einmal dein Passwort ein.",
   "error.reason.registration_closed": "Dieser Hub legt gerade keine Konten an.",
   "error.reason.second_factor_enrolment_required": "Richte zuerst deinen zweiten Faktor ein.",
-  "error.reason.second_factor_required": "In dieser Sitzung fehlt noch dein zweiter Faktor.",
+  "error.reason.second_factor_required": "Hier ist dein zweiter Faktor Pflicht.",
   "error.reason.step_up_required": "Dafür brauchst du zuerst deinen zweiten Faktor.",
   "error.release_in_flight": "Ein anderes Release ist schon offen.",
   "error.release_not_ready": "Dieses Release ist noch nicht bereit.",
