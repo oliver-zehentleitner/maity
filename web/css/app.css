@@ -106,6 +106,14 @@
   --ktw-muted: var(--muted);
   --ktw-line: var(--border);
   --ktw-accent: var(--accent);
+  /* the library's text on its accent (0.11.44) is Maity's own pair: --accent-text on --accent,
+     5.32:1 light, 6.0:1 dark. Its accent-coloured text (links, counts, the type pill) is the
+     accent a fifth of the way to --text, as --ktw-warn: --accent itself is only 4.11:1 light and
+     3.98:1 dark on the type pill's 18% tint; the mix is 4.84:1 at least on --bg, --surface and
+     that tint over either, in both themes (WCAG AA) */
+  --ktw-accent-fill: var(--accent);
+  --ktw-on-accent: var(--accent-text);
+  --ktw-accent-text: color-mix(in srgb, var(--accent) 80%, var(--text));
   /* text in the plan's and the warning's hue, a fifth of the way to --text: 4.95:1 at least
      on --bg, --surface, --surface-2 and the type pill's accent tint in light, 5.16:1 in dark
      (axe color-contrast, WCAG AA); --plan and --warn themselves are 3.95:1 and 4.26:1 there */
@@ -118,6 +126,7 @@
   --ktw-inferred: var(--ktw-warn);
   --ktw-unknown: var(--muted);
   --ktw-status-active: var(--ok);
+  --ktw-status-active-text: var(--ok); /* a host that sets the active Status sets its text too */
   --ktw-status-open: var(--accent);
   --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
@@ -126,17 +135,6 @@
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
 }
-/* The library writes #fff on its accent in its selected controls: 3.2:1 on the dark theme's
-   --accent; Maity's own text for its accent passes in both themes (5.32:1 light, 6.0:1 dark).
-   Every such rule of ktw-views.css, so one the views mount later is covered too. */
-.ktw-root .ktw-search-scope a.ktw-on,
-.ktw-root .ktw-mode button.ktw-on,
-.ktw-root.ktw-aside .ktw-mini .ktw-mini-seg button.ktw-on,
-.ktw-root.ktw-aside .ktw-thought-min button.ktw-on,
-.ktw-root.ktw-aside .ktw-pane-width button.ktw-on,
-.ktw-root .ktw-thought-reader .ktw-timeline-bar .ktw-tick,
-.ktw-root .ktw-stage-wrap .ktw-stage-seg button.ktw-on,
-.ktw-root .ktw-stage-card .ktw-stage-card-held:hover { color: var(--accent-text); }
 
 .why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
 .why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }
