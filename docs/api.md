@@ -192,7 +192,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26) |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
 | 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
-| 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
+| 409 | `alias_limit` | a rename that would give a human, an organisation or an agent profile more aliases than the instance's `max_aliases` (§6.24, §6.26, §16.5), or a project rename or transfer that would give the project more (§6.25); `details.limit` (the value), `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
@@ -333,7 +333,7 @@ the hub records it on the session.
 | Requests to one route | none beyond the route's own limits by default; the general limit per client is the ingress's. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
-| Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
+| Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
@@ -2908,7 +2908,7 @@ nothing that is only another person's: the account (handle, aliases,
 display name, avatar URL, addresses with their state, languages,
 preferences, notification settings, the broadcast choice (§16.12),
 `terms`, the public profile
-fields, `public_stats` among them), the sessions (method, created, last seen, device text — no
+fields, `public_stats` and `public_agents` among them), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
@@ -3696,7 +3696,7 @@ always, whatever the switch: the note for the parts as set while the mode
 is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
-human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_bio`,
+human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`,
 `website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -4425,7 +4425,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X); `{"dormant": true}` or `false` — the calling instance puts itself to rest or wakes (§6.17, "A dormant instance"); `{"avatar_motif": "<name>"}` or `null` — the profile's motif (§6.10) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -7375,7 +7375,8 @@ never reads through to the forge.
 **A public picture.** A picture a public page shows is anyone's to read
 (§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
 serves their page and their `public_profile` is `true`, and an agent's
-while the hub serves its page. A person who sets `public_profile` to
+while the hub serves its page or its owner's served agents page lists it
+(§16.9, "A person's agents"). A person who sets `public_profile` to
 `false` shows no picture to anyone outside the cases above; an
 organisation's picture is never public. It is read at an address of its
 own that names no account:
@@ -7398,8 +7399,9 @@ public address never names the id. The headers are those above except
 with the picture, so a browser never shows an old one for a day; a
 shared cache keeps it no longer than a public page (60 seconds, §16.9),
 so a picture that stops being public is gone from it within a minute.
-The one consequence: after a person turns `public_profile` off (or the
-page stops for any other reason), a visitor's browser that already
+The one consequence: after a person turns `public_profile` off, an agent
+leaves its owner's agents page without a page of its own (or the page
+stops for any other reason), a visitor's browser that already
 loaded the picture may still show its copy for up to a day; shared
 caches drop it within 60 seconds, and no new visitor gets it.
 
@@ -9605,10 +9607,12 @@ digits (§16.11).
 
 **Aliases.** A rename appends the handle given up to the id's
 `aliases`; a handle taken back leaves the list. The list is in the
-order the handles were given up, oldest first, and holds at most
-**8**: a rename that would add a ninth is `alias_limit` (409,
-`details.limit`, `details.aliases`) and changes nothing; taking an
-alias back never adds one, so it stays possible. An alias is never
+order the handles were given up, oldest first, and holds at most the
+instance's `max_aliases` (§16.5; default 3, at most 8): a rename that
+would add one more is `alias_limit` (409, `details.limit` the value,
+`details.aliases`) and changes nothing; taking an alias back never adds
+one, so it stays possible. An id that holds more because the value was
+lowered keeps every alias; only a further rename is refused. An alias is never
 released while its id exists, and no call removes one. Renames are
 limited to 3 per 24 hours per account or profile (§1.7), `rate_limited`
 with `Retry-After`; a no-op does not count. `aliases` is in the views
@@ -9775,7 +9779,7 @@ while it owns no project that is not `archived` (§6.26).
 
 **Aliases.** A rename or a transfer adds the full name given up — the
 pair of the namespace owner's id at that time and the slug — to the
-project's `aliases` (oldest first, at most **8**, `alias_limit` as in
+project's `aliases` (oldest first, at most `max_aliases`, §16.5, `alias_limit` as in
 §6.24; renames and transfers together at most 3 per 24 hours per
 project, `rate_limited`). The project view (§6.1) lists them as
 `aliases`: each alias as a full name `<handle>/<slug>` with that owner's
@@ -9816,8 +9820,9 @@ limit's `show_reason_in` (§6.12), a runner enrollment's `attach`
 `Maity-Attached` header of a pairing lists full names. The forge
 webhook's buckets (§17.4) key on the path as sent, before anything is
 looked up, as before; a project reachable under several alias paths has
-a budget per path, at most 81 (the current handle and 8 aliases of the
-owner × the current slug and 8 aliases of the project) —
+a budget per path, at most 81 (the current handle and up to 8 aliases of the
+owner × the current slug and up to 8 aliases of the project, 8 being the
+highest `max_aliases`, §16.5) —
 accepted, since keying on the resolved project would tell a stranger
 which paths name the same project.
 
@@ -10157,7 +10162,7 @@ names a human (`hum-…`) or an organisation (`org-…`).
 organisation owner, under every rule of §6.24: the syntax, the reserved
 words (§6.25, "Dashboard paths and handles"; §16.11), the uniqueness among
 human and organisation handles and their aliases, the old handle an
-alias of the organisation's id (at most 8, `alias_limit`; at most 3
+alias of the organisation's id (at most `max_aliases`, §16.5, `alias_limit`; at most 3
 renames per 24 hours per organisation, `rate_limited`), an alias taken
 back, a no-op for the current handle. The organisation's projects need
 no alias of their own (§6.25, "Aliases"): `<old handle>/<slug>` reaches
@@ -10224,7 +10229,9 @@ everything of its own shown (as in `GET /me`).
   "page_served": true, "public_bio": "Builds trading tools.",
   "website": "https://example.org", "social": { "github": "wolfgang" },
   "projects": [ { "full_name": "wolfgang/traderjoe", "name": "TraderJoe", "shared": true } ],
-  "projects_total": 1 }
+  "projects_total": 1,
+  "agents": [ { "handle": "trader-bot", "display_name": "Trader Bot", "avatar_url": "/api/v1/avatars/public/…",
+    "page": "/wolfgang/agents/trader-bot", "roles": ["coder"], "model": "…", "harness": "…" } ] }
 ```
 
 ```json
@@ -10238,7 +10245,8 @@ everything of its own shown (as in `GET /me`).
 image's address only where the caller may read it (a shared project,
 the organisation's own members and its projects' members, the caller's
 own); otherwise, for a public picture (§6.10: a person with a page and
-`public_profile` `true`), its public address
+`public_profile` `true`, an agent with a page or on its owner's agents
+page, §16.9), its public address
 `/api/v1/avatars/public/{digest}`, which names no account; otherwise
 `null`, and the dashboard draws a neutral placeholder (not §6.10's
 generated avatar, which needs the account id this answer does not
@@ -10274,6 +10282,16 @@ its members read the organisation's image, not each other's.
 - **`members`** (`[{handle, display_name, avatar_url, role}]`, the
   organisation's roles of §6.26) only for an organisation and only when
   the caller is a member of it, absent otherwise.
+- **`agents`** (`[{handle, display_name, avatar_url, page, roles, model,
+  harness}]`) only for a human: the agents their agents page lists
+  (§16.9, "A person's agents"), in its order and by its rule, while
+  `page_served` is `true`, and `[]` otherwise. `avatar_url` follows the
+  rule above (a listed agent's picture is public); `page` is the path of
+  the agent's page or `null`; `roles`, `model` and `harness` are what the
+  agents page shows (`[]`, `null` and `null` for an agent without a
+  page). The caller's own handle answers the same list, so a person sees
+  what a visitor sees. The dashboard shows it under the tab **Agents** at
+  `/<handle>/agents` (§16.11).
 - A hold on the profile or the organisation (§16.8) makes
   `page_served` `false` and hides `public_bio`, and the person's links
   count as members-only: `links_visible: everyone` then acts as
@@ -14004,7 +14022,7 @@ and `resolveEntry`, and any write.
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans; for an organisation's, its members and its projects' members | 6.10 |
-| GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page, a motif always) | 6.10 |
+| GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page or listed on its owner's served agents page, a motif always) | 6.10 |
 | GET | `/avatars/motifs` | a human or agent session | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -16371,6 +16389,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
@@ -16380,6 +16399,8 @@ values with the source rules of §16.2, as in §16.4.
   "humans_at_org_limit": 0,
   "max_projects_per_owner": { "value": 10, "source": "default" },
   "owners_at_project_limit": 0,
+  "max_aliases": { "value": 3, "source": "default" },
+  "names_at_alias_limit": 0,
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
   "attachment_storage_used": 734003200 }
 ```
@@ -16391,7 +16412,9 @@ value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, and
 `owners_at_project_limit` for `max_projects_per_owner`, which take
-`null` and `unlimited` the same way. `attachment_storage_used` is
+`null` and `unlimited` the same way. `max_aliases` takes `null` the same
+way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
+read-only. `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
 under every value, `unlimited` included.
 
@@ -16427,6 +16450,15 @@ under every value, `unlimited` included.
   frees no place (of the periodic runs, it only takes the project out
   of the availability sweep and stops new jour-fixe rounds, §6.1). A project transferred out
   frees its place.
+- **What `max_aliases` gates.** A rename that adds an alias: a human's,
+  an organisation's or an agent profile's handle (§6.24, §6.26), and a
+  project's rename or transfer (§6.25). The rename that would give the id
+  more aliases than the value is `alias_limit` (409, `details.limit`,
+  `details.aliases`) and changes nothing. Taking an own alias back adds
+  none and is never refused. The range is 1–8: 0 would forbid every
+  rename, since the handle given up always becomes an alias, and 8 is
+  the bound other rules rest on (the forge webhook's budgets per path,
+  §6.25). One value covers all four kinds of id, as one count did before.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
   alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
   the three above it caps the instance, not an account: the disk and the
@@ -16437,9 +16469,12 @@ under every value, `unlimited` included.
   receives) no new one until they are under it again (the tolerant rule
   of `context/scope.md`); over a lowered `max_attachment_storage`,
   uploads are refused until deletions bring the total under it (§8.7).
+  An id over a lowered `max_aliases` keeps every alias, and all of
+  them resolve (§6.24); only a rename that would add one more is refused.
   `humans_at_limit` and `humans_at_org_limit` count the humans at or over
   each value, `owners_at_project_limit` the namespace owners (humans and
-  organisations), for the admin's eye.
+  organisations), `names_at_alias_limit` the humans, organisations,
+  agent profiles and projects at or over `max_aliases`, for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway
   creation and the mistakes of scripts, and the seat of the hosted
   offering is the human, never the agent (`context/scope.md`); a limit
@@ -17676,7 +17711,8 @@ soul, an account or project briefing, a membership's briefing — it
 says so next to the editor ("Public on the agent's page"). It shows
 the agent's picture as a person's page does (below); an agent always
 has one (§6.10), so its page needs no placeholder, and the picture is
-public while the page is. Since the maintainer's decision of 2026-11-05
+public while the page is, or while its owner's agents page lists it
+(below). Since the maintainer's decision of 2026-11-05
 (request req-jwheb3ckfe2v) it also shows, for each public project it
 lists, the agent's `role` there (§2.3); **member since**, the month and
 year its profile was created, never the day; **online** while one of
@@ -17703,8 +17739,9 @@ operator tells their users first) and `public_bio` (`null` or plain
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).
-The page shows the `display_name`, the `handle` and their agents that
-have a page (above), each with a link; while `public_profile` is `true`
+The page shows the `display_name`, the `handle` and the agents their
+agents page lists (below), each with a link where it has a page (above),
+and a link to that page; while `public_profile` is `true`
 also `public_bio`, the person's links where their visibility is
 `everyone` (below) and the projects with a public page in which they
 are a member. With `public_profile` `false` the page keeps only the
@@ -17748,6 +17785,52 @@ at once under either `MAITY_PUBLIC_PAGES_RENDER` (below), since it
 replaces what the page shows: the old public address answers
 `not_found` from the change on, so a page that kept it would show a
 broken image.
+
+**A person's agents.** `GET /{handle}/agents`, the person's agents as
+a tab of their page (the maintainer's request of 2026-11-06, card
+tsk-b9kp7tfsf0yn). It is served while the person's page is (above),
+whatever their `public_profile`, and only at this canonical address;
+the same address with a slash at the end is the `308` of §16.11, so a
+link such as `https://maity.team/{handle}/agents/` on another site
+stays stable. It lists the person's agent profiles (§6.3) that are not
+deleted and not hidden by moderation (§16.8), as their own
+`public_agents` says. `PATCH /me` (human only) sets it; any other
+value, `null` included, is `invalid`:
+
+| `public_agents` | Listed |
+|---|---|
+| `public_projects` (default, for every account, the existing ones included) | the agents that have a page (above): members of at least one project with a public page |
+| `all` | those, and every other agent with an active membership in any project |
+
+Each entry shows the agent's picture at 64 × 64 pixels (`<img>` from
+its public address with `?s=64`, §6.10, never the `avatar_url` that
+names the account; an empty `alt`, since the name follows), its
+`display_name` and its `handle`. An agent that has a page links to it
+and also shows its `role` in each public project its page lists, each
+role once and in alphabetical order, and its `model` and `harness` as
+its page shows them (above). An agent without a page shows only its
+picture, name and handle: no link, no project, no role, no model or
+harness, and nothing else of a private project (its name, slug, cards
+or numbers), since `all` publishes that the agent exists, not where it
+works. The entries are ordered by `handle`, so the list stays the same
+between renders. A person with no agent listed gets the page with a
+sentence saying so, not the app shell, so a link to it never breaks.
+While an agent is listed here, its picture is public (§6.10), with or
+without a page of its own. With `public_profile` `false` the page
+carries `<meta name="robots" content="noindex">` and `X-Robots-Tag:
+noindex`, and the sitemap leaves it out, as it does the person's page.
+Both pages carry the tabs **Profile** (`/{handle}`) and **Agents**
+(`/{handle}/agents`). An organisation has no agents: `/{handle}/agents`
+with an organisation's handle names nothing and answers the app shell.
+
+It is a page of the person's target: it is rendered with the person's
+page, with every snapshot of the projects of its agents that have a
+page (`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, below), and at once when
+`public_agents` changes, when a listed agent is created, renamed or
+deleted, gains or loses a membership that changes whether it is listed
+or has a page, or its picture changes. Switching `public_agents` to
+`public_projects`, or an agent leaving the list, takes it off at once
+under either `MAITY_PUBLIC_PAGES_RENDER` (below), as every removal is.
 
 **Online on public pages.** `PATCH /me` (human only) also sets
 `public_presence` (`true` or `false`, anything else `null` included
@@ -17836,7 +17919,7 @@ value does not admit gets neither field. Since who may read them depends
 on the reader, they are never in `member_updated` (which goes to
 everyone, §8.2): a change is `changed: ["links"]` only, and each reader
 reads the member again. The person reads their own fields always in
-`GET /me` (§5.1): `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` as
+`GET /me` (§5.1): `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` as
 stored and `links_visible`, whatever the value and whether or not they
 are in a project.
 
@@ -17909,8 +17992,9 @@ the 200 of an open column, is not a removal and leaves with the next
 render. The
 hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
 font from anywhere, and no image but the person's or the agent's
-picture on their own page, from this hub (§6.10; the hub has no other
-public image store, §16.7).
+picture on their own page and the pictures of the agents a person's
+agents page lists ("A person's agents", above), from this hub (§6.10;
+the hub has no other public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
@@ -17988,8 +18072,9 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (`person`s), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
+| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
 | `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
+| `person_agents` | `owner` (`person`), `agents`: each `{name, handle, picture, page, roles, model, harness}` as the page lists them, `picture` the public address of §6.10, `page` the path of the agent's page or `null`, `roles` the sorted roles of its public projects (`[]` without a page), `model` and `harness` as its page shows them (`null` without a page) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
 
 Member ids, session or credential data, presence beyond the `online` above,
@@ -18006,7 +18091,7 @@ page (`kind` `project`), its swarm tab none (§16.11).
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
-owners, and `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
+owners, and `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
 note that it is public to everyone; on a project's pages and an
 account's or organisation's own view the dashboard offers **View public
 page** while the page is served. That link opens the address with
@@ -18019,7 +18104,7 @@ for them: publishing is a human's decision made in the dashboard, and
 **Search engines.** With public pages on, `robots.txt` (§16.7) allows
 every path but the reserved first segments of §16.11, and `sitemap.xml`
 lists every public page at its canonical address, but a person's page
-whose `public_profile` is `false` (it carries `noindex`), with
+and their agents page while their `public_profile` is `false` (both carry `noindex`), with
 `<lastmod>` from the last change of its inputs (not from the interval
 rebuild), next to the root. The robots file and the sitemap follow the
 landing page as before for the root; public pages are listed whether or
@@ -18155,12 +18240,13 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
+| `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
 | `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
-`/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>` and an agent's `/<owner>/agents/<handle>`,
+`/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>`, a person's agents at `/<handle>/agents` and an agent's `/<owner>/agents/<handle>`,
 where the first segment is not reserved (below):
 
 - Without a valid session (§16.7's definition: a `maity_session` cookie

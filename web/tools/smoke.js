@@ -7184,6 +7184,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
   btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
   expect(text(main.querySelector(".device-stage")).includes("Approved: the other device is signing in."), "device code: the right number approves it");
+  // Approving is a sensitive call (§2.8.4): an enrolled human whose second factor is older
+  // than 10 minutes is asked for it in the dialog, and the approval is sent again.
+  const dsStepPost = win.Maity.api.post;
+  const dsVerified = [];
+  const dsApprovals = [];
+  let dsStepped = false;
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify") { dsVerified.push(b); dsStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+    if (/^\/auth\/device-codes\/[^/]+\/approve$/.test(p)) {
+      dsApprovals.push(b);
+      if (!dsStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+    }
+    return dsStepPost(p, b);
+  };
+  const dsStage = () => main.querySelector(".device-stage");
+  btn(dsStage(), "New code") ? btn(dsStage(), "New code").click() : null;
+  await go("#/maintainer/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
+  await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  expect(dsStage().querySelector("form.step-up") && text(dsStage()).includes("needs your second factor") && !text(dsStage()).includes("Not sent"),
+    "device code: a step-up the hub asks for on the approval is asked in the dialog, not said as a refusal");
+  btn(dsStage().querySelector("form.step-up"), "Cancel").click(); await dsSettle();
+  expect(!dsStage().querySelector("form.step-up") && !text(dsStage()).includes("Not sent") && main.querySelector(".device-approval") && dsApprovals.length === 1,
+    "device code: Cancel on the step-up leaves the approval open, quietly");
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  byId("step-up-step_up_required").value = "123 456"; dsStage().querySelector("form.step-up").dispatch("submit"); await dsSettle(); await dsSettle();
+  expect(JSON.stringify(dsVerified) === JSON.stringify([{ code: "123456" }]) && dsApprovals.length === 3 && text(dsStage()).includes("Approved: the other device is signing in."),
+    "device code: after the code the approval is sent again and approves the device");
+  win.Maity.api.post = dsStepPost;
   // The new device: the QR's URL fills the code in, a tap sends it, the number shows, and after the approval the account.
   const dsMade = await win.Maity.api.post("/auth/device-codes", {});
   profileButton().click(); await tick();
