@@ -8315,6 +8315,10 @@
     "en": "8f8f7a7d741ceb59",
     "text": "72032286adb5b0d4"
   },
+  "login.email": {
+    "en": "c6394f33e6b9bb97",
+    "text": "67bbabd6766cf1b7"
+  },
   "login.failed": {
     "en": "0c16e564176f0925",
     "text": "c50db9dae59303d1"
@@ -8323,10 +8327,6 @@
     "en": "f47e2ac03d287b36",
     "text": "93a3186db0e3faef"
   },
-  "login.handle": {
-    "en": "41483b645efc0c65",
-    "text": "c6964657ac777e45"
-  },
   "login.page_title": {
     "en": "ade68277aa732e36",
     "text": "ac09b1563cb07134"
@@ -8334,6 +8334,10 @@
   "login.password": {
     "en": "9e10723b04013059",
     "text": "0a0d7fd56959883b"
+  },
+  "login.paused": {
+    "en": "faa3623d3dffd777",
+    "text": "079ef9bccbecf97c"
   },
   "login.public_page": {
     "en": "749d5ea463603454",
