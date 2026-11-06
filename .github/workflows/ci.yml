@@ -445,7 +445,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev]'
+      # The dev tools from requirements/dev.txt with their hashes (the hub's versions of black,
+      # ruff, mypy and pytest), the CLI editable without build isolation on the lock's setuptools.
+      - run: pip install --require-hashes -r requirements/dev.txt
+      - run: pip install --no-deps --no-build-isolation -e .
       - run: make check
       # The release build's hashed lock follows release.in, and the build backend's and the
       # dev extra's setuptools pins match it; it builds (release-cli.yml), so a tag never finds it broken; once, on the release's Python.
@@ -470,10 +473,13 @@ jobs:
         working-directory: cli
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev]'
+      - run: pip install --require-hashes -r requirements/dev.txt
+      - run: pip install --no-deps --no-build-isolation -e .
       - run: python -m pytest -q --tb=short
 
   # The PowerShell join lines in the shells they are for. Its own job, not a step of cli-windows:
