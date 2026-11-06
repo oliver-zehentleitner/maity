@@ -553,6 +553,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.second_factor_reset).where(t.second_factor_reset.c.human_id == human_id))
     conn.execute(delete(t.second_factor).where(t.second_factor.c.human_id == human_id))
     conn.execute(delete(t.human_device).where(t.human_device.c.human_id == human_id))
+    conn.execute(delete(t.known_source).where(t.known_source.c.human_id == human_id))
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
     conn.execute(

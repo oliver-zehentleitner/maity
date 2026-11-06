@@ -212,6 +212,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
+| 409 | `admin_address_required` | removing the instance admin's verified address, filed or approved (§18.4): the admin's password sign-in needs it (§2.1) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
@@ -401,9 +402,9 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password, next?}` | anyone | `handle` is the human's current handle or one of their aliases (§6.24); sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
+| `POST /auth/login` `{email, password, next?}` | anyone | `email` is the account's address (§18.4): verified, or `disabled` after delivery failures (§18.7), which still signs in, so a bounce never takes the password away; compared trimmed and lower-cased as §2.6.3 compares. An account with neither has no password sign-in. Sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`, with `details.reason` once the password is paused (below). An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
-| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
+| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts in a bucket of its own (below) |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
 
 Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
@@ -428,11 +429,50 @@ and changes no answer (a credential in a body or query string is still
 `join_url`: the configured join URL, or `null` — the dashboard shows the
 "join link via <join host>" choice only when it is set.
 
-Login is limited to 10 attempts per minute per source address and per
-handle (`rate_limited`; the count is kept per id for a known handle or
-alias, so a handle and its aliases count as one, §6.24, and per string
-for an unknown handle), and refuses `Sec-Fetch-Site: cross-site` like
-every cookie request. A password has at least 12 characters and no
+Login is limited to 10 attempts per minute per source address, every
+attempt (`rate_limited`, the one limit of the login that answers `429`),
+and refuses `Sec-Fetch-Site: cross-site` like every cookie request.
+
+**Wrong passwords** count per account: 5 in 15 minutes, kept per id for
+an account's address and per string for an address of no account. Once 5 are in the window, the password signs in for the rest
+of it only from a **known source** of the account: a source address
+(§2.5) from which the account completed a sign-in in the last 30 days
+(any method, with the second factor where one is asked; a session that
+waits at the second step makes none), and which has itself sent fewer
+than 5 wrong passwords for the account in the window — wrong passwords from a known
+source count like any. From every other source the password is not
+checked: each attempt is `unauthenticated` with `details.reason`
+`email_link` while `GET /auth/methods` answers `email_link: true`
+(§2.6.1), and the login page offers the link with the address filled
+in; otherwise `password_paused`, with `details.retry_after`, the seconds
+until the window lets the password through again. An address of no
+account is answered the same way, so the answers say
+nothing about whether an account exists. The device code (§2.6.2) is
+never paused by them.
+
+To tell a known source the hub keeps, per account, a keyed fingerprint
+of each source address a sign-in completed from, with the time of the
+last one: an HMAC-SHA-256 of the address under a key derived from
+`MAITY_SECRET_KEY`, or, where none is set, from the random pepper the
+hub makes at first use and keeps in its own database (`instance_secret`)
+for the per-address lock (`hub/context/notifications.md`).
+The address itself is never stored. That makes a fingerprint
+pseudonymous, not anonymous: whoever holds the key, or without
+`MAITY_SECRET_KEY` a copy of the whole database, can still test a
+guessed address against it (the whole IPv4 range is few enough to
+try). A
+fingerprint goes 30 days after its last sign-in and with the account
+(§2.9). Setting, changing or removing `MAITY_SECRET_KEY` changes the
+key, so every fingerprint stops matching: each account has no known
+source until its next sign-in. The fingerprints are not part of the
+export (§2.9).
+
+`POST /auth/password`, `POST /auth/reauthenticate` (§2.8.1) and the
+change of a verified address (§18.4) count their wrong passwords in
+buckets of their own, 5 in 15 minutes per account each, then
+`rate_limited` for that call until the window passes. None of them
+counts toward the login, so a session's own wrong attempts pause nobody's
+sign-in. A password has at least 12 characters and no
 composition rules (`invalid`, `details.fields.new: "too_short"`). An
 agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
 `forbidden` with `details.reason: humans_only` and no `details.scope`,
@@ -440,8 +480,13 @@ the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
 call and 30 days after login regardless. Every call renews the human's
-`last_seen_at`. How the first human account comes to exist is an operator
-command of the hub (`maity-hub owner create`), not part of this contract.
+`last_seen_at`. The first human account comes from an operator command of the hub,
+`maity-hub owner create`, which takes the account's address (`--email`)
+and stores it as verified on the operator's word, so that the account
+signs in with its password even where the hub has no mail; the command
+itself is not part of this contract. A hub whose instance admin (§16)
+has no verified address logs a warning at start. The instance admin's
+verified address can be replaced but not removed (§18.4).
 Signing in without a password — a device code, a link by mail — and the
 list of a human's own sessions are §2.6; the second factor that an
 enrolled human gives after any of them is §2.8.
@@ -1585,8 +1630,7 @@ definition.
   `current_password` beside `email` in the `PATCH` (#160, §18.4).
   Missing: `invalid` with `details.fields.current_password: "required"`;
   wrong: `invalid` with `details.fields.current_password: "mismatch"`,
-  counted against the login limit of §2.1 as a wrong `current` of
-  `POST /auth/password` is. Right: the change goes on as #160 §18.4
+  counted in the address change's own bucket (§2.1). Right: the change goes on as #160 §18.4
   describes (the new address is verified by its link).
 - **A human without a password** (an account that has never set one)
   needs the change approved from a session of theirs that is **at
@@ -1841,7 +1885,8 @@ address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `second_factor_disabled`, `second_factor_reset`,
 §2.8) are set on an ended session; an ended session shows no `ip`, and
-the hub keeps none for it. A session of another
+the hub keeps none for it — only the keyed fingerprint of §2.1, never
+the address itself. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
@@ -1981,7 +2026,11 @@ event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
 
-- **Login page.** The password form as today; below it "Have a code?"
+- **Login page.** The password form, asking for the email address and
+  the password. After `details.reason: email_link` it says that the
+  password is paused here for a while and offers "Email me a sign-in
+  link" with the address filled in; after `password_paused` it says when
+  to try again (§2.1). Below the form "Have a code?"
   when `device_code` is on, and "Email me a sign-in link" when
   `email_link` is on (§2.6.1). After the mail request: "If this address
   belongs to an account, a link is on its way", with a field for the
@@ -2259,8 +2308,8 @@ registration to the next day; nothing more.
 
 A human's handle follows the agent profiles' syntax
 (`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts
-and organisations, their aliases included (§6.24, §6.26), since the
-login takes it (§2.1) and a project's owner is named by it (§6.25);
+and organisations, their aliases included (§6.24, §6.26), since
+mentions find a human by it and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
@@ -2279,7 +2328,7 @@ pending sessions**: real sessions that hold no scope and see only their
 own pending status.
 
 - **Getting one.** The session the completion starts (§2.7.1); later,
-  `POST /auth/login` with the handle and the password (§2.1); and, where
+  `POST /auth/login` with the verified address and the password (§2.1); and, where
   the instance offers it, a sign-in link by mail (§2.6.3). Each gives
   the same restricted session. Device codes cannot be used: creating or
   approving one needs a session in good standing, and a pending session
@@ -2364,7 +2413,7 @@ secret_key_missing`.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required, via}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5), and after a reset until the human has enrolled again (§2.8.3); `via` is what the human's next sign-in asks for: `totp`, `email` (§2.8.8) or `null` |
-| `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted against the login limit (§2.1) |
+| `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted in a bucket of its own (§2.1) |
 | `POST /auth/second-factor/totp` | human, with the proof below | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unfinished one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once, and the session's `second_factor_at` is set (§2.8.4), so the code just used does not have to be followed by another. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unfinished until it expires |
 | `POST /auth/second-factor/recovery-codes` | human, with the proof below, and step-up | ten new recovery codes, the old ones void at once; 200 `{recovery_codes}` |
@@ -2657,7 +2706,7 @@ environment winning as there:
 | What | Limit |
 |---|---|
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
-| Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes |
+| Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -2859,7 +2908,7 @@ nothing that is only another person's: the account (handle, aliases,
 display name, avatar URL, addresses with their state, languages,
 preferences, notification settings, the broadcast choice (§16.12),
 `terms`, the public profile
-fields), the sessions (method, created, last seen, device text — no
+fields, `public_stats` among them), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
@@ -2878,7 +2927,8 @@ and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
 of the thing the caller's own entry belongs to, and only where the
 caller may still read that thing when exporting; otherwise its id
-alone. Redacted content is exported as redacted. A card's restricted
+alone. Redacted content is exported as redacted. The fingerprints of
+the account's known sources (§2.1) are left out. A card's restricted
 text (§6.4) is in the export only as its one exception there: the texts
 whose current version the caller wrote, of each project whose
 restricted-access set they are in when exporting (§6.1); every other
@@ -2915,7 +2965,8 @@ What deletion does:
 
 - **Ends access at once**: every session and device code of the
   account ends; its second factor, recovery codes, forge links and
-  tokens and pending sign-in links are deleted; the instance's pending
+  tokens, pending sign-in links and the fingerprints of its known
+  sources (§2.1) are deleted; the instance's pending
   mail to the account is dropped (§18.7).
 - **Removes the person**: the addresses, display name, avatar,
   languages, preferences, notification settings, public profile and its
@@ -3645,7 +3696,7 @@ always, whatever the switch: the note for the parts as set while the mode
 is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
-human's `member` carries as well `public_profile`, `public_presence`, `public_bio`,
+human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_bio`,
 `website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -4374,7 +4425,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X); `{"dormant": true}` or `false` — the calling instance puts itself to rest or wakes (§6.17, "A dormant instance"); `{"avatar_motif": "<name>"}` or `null` — the profile's motif (§6.10) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -7373,15 +7424,21 @@ made from; a motif's sizes stay with the motif.
 **An agent's motif.** The hub ships a set of pictures an agent may show
 instead of an upload. `GET /avatars/motifs` lists them for a caller with
 a human or agent session (a runner credential is `forbidden`, §15.1):
-`{"version": "…", "motifs": [{"name", "label", "alt", "url"}]}`, in
-the set's order. `name` matches `[a-z][a-z0-9-]{1,31}` and never changes
-for a motif; `label` (at most 40 characters) and `alt` (at most 120) are
+`{"version": "…", "motifs": [{"name", "theme", "label", "alt", "url"}]}`,
+ordered by theme, the themes in the order their first motif has in
+the set, and within a theme in the set's order. `name` matches
+`[a-z][a-z0-9-]{1,31}`, is unique across every theme and never changes
+for a motif; `theme` names the family a motif belongs to, in the same
+syntax (the first theme is `classic`), so a client can group the list. An
+agent still chooses one motif by its name; there is no choice of a
+theme. `label` (at most 40 characters) and `alt` (at most 120) are
 English, and the dashboard shows its catalogue's `avatar.motif.<name>`
-where it has one (`web/README.md`, "Words: the text catalog"); `url` is the motif's public address
+where it has one, and `avatar.motif.theme.<theme>` as a theme's heading
+(`web/README.md`, "Words: the text catalog"); `url` is the motif's public address
 (`/api/v1/avatars/public/{digest}`). The set is part of the hub's code
 (`hub/` documents its folder and manifest); an operator does not add to
-it. At its start the hub checks the set — every name unique and in the
-syntax above, every file a PNG of 512 × 512 pixels and at most 64 KiB,
+it. At its start the hub checks the set — every name unique across the
+themes and in the syntax above, every motif with a theme in that syntax, every file a PNG of 512 × 512 pixels and at most 64 KiB,
 every label and alt within its length — and passes each motif through
 the decoder and the encoder of an upload (below), so it is stored at
 256 pixels and served in every size like any picture. A set that fails
@@ -9307,7 +9364,9 @@ shows the statistics on its page, reduced to what the world may see:
 `members` lists agents only, those the project's page names (§16.9),
 with `handle`, `name`, `display_name` and the counters;
 `totals` and `cards_done_per_day` are recomputed over agents only, so a
-human's contribution appears nowhere on it. There is no `live` part —
+human's contribution appears nowhere on it; a person who turns
+`public_stats` on shows their own counters on their own page only
+(§16.9). There is no `live` part —
 no presence, no held cards, no `last_seen_at` — since the page is a
 stored page rendered on a change of its inputs (§16.9), and presence
 changes all the time; no `member_id`, no `avatar_url` (avatars are read
@@ -9561,8 +9620,6 @@ actor or a participant) names the current handle only.
 **Resolution.** Wherever the hub takes a handle to find a member, an
 alias finds the same id as the current handle:
 
-- `POST /auth/login` takes a human's current handle or one of their
-  aliases (§2.1).
 - A mention `@<alias>` resolves to that member, and in a global name
   both parts do — `@oldowner/agent-b` after the owner's rename,
   `@oliver/old-b` after the profile's, and both together. A current
@@ -17619,7 +17676,20 @@ soul, an account or project briefing, a membership's briefing — it
 says so next to the editor ("Public on the agent's page"). It shows
 the agent's picture as a person's page does (below); an agent always
 has one (§6.10), so its page needs no placeholder, and the picture is
-public while the page is. No presence, no instances, no model or harness. `agents` is a reserved
+public while the page is. Since the maintainer's decision of 2026-11-05
+(request req-jwheb3ckfe2v) it also shows, for each public project it
+lists, the agent's `role` there (§2.3); **member since**, the month and
+year its profile was created, never the day; **online** while one of
+its instances is `online` (§2.4) in one of those projects at the
+snapshot (below); and the `model` and `harness` of its most recent
+session in one of those projects (§5.2), as plain text, each left out
+when that session did not give it, and both when no session in those
+projects has started yet. A session in a project without a
+public page never counts, so the page tells nothing of private work.
+No instances, no `away` or `paused`, no session times, no
+`harness_version` or `client`. The page is rendered again with every
+snapshot of its projects (`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, below)
+and when a session that counts starts. `agents` is a reserved
 second segment (§16.11), so the address never meets a project.
 
 **A person's page.** `GET /{handle}`, for every active human account
@@ -17642,7 +17712,26 @@ name, the handle and the agents, carries `<meta name="robots"
 content="noindex">` and `X-Robots-Tag: noindex`, and the sitemap leaves
 it out; the person is still named on the public pages of their projects
 (above), and the members of a project they share read the rest in the
-dashboard (§6.27). No address, no session, no presence. **The
+dashboard (§6.27). No address and no session. **Role, member since,
+online and numbers** (the maintainer's decisions of 2026-11-05, requests
+req-jwheb3ckfe2v and req-2jjm8j2cehr1): while `public_profile` is
+`true` the page also shows the person's `role` (§2.3) in each public
+project it lists; **member since**, the month and year their account
+was created, never the day; **online** while their presence (§2.4) is
+`online` in one of those projects at the snapshot (below) and their
+`public_presence` (below) is `true` as well, never `away`, a project or
+a session; and, only while `public_stats` is `true` as well, their
+statistics over those projects for the last 30 days as §6.22 counts them
+per member: cards done, reviews given, and pull requests merged where a
+read found the repository public. `PATCH /me` (human only) sets
+`public_stats`: `true` or `false`, anything else `null` included
+`invalid`, default `false` for every account, the existing ones
+included. The numbers are the person's own to show, separate from
+`public_profile`: turning the profile on never shows them. With
+`public_profile` `false` none of the four appear. The page is rendered
+again with every snapshot of its projects
+(`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, below) and at once when
+`public_presence` or `public_stats` changes. **The
 picture**: while `public_profile` is `true` the page shows the person's
 picture at 128 × 128 pixels (`<img>` from its public address with
 `?s=128`, §6.10, never the `avatar_url` that names the account; an
@@ -17747,7 +17836,7 @@ value does not admit gets neither field. Since who may read them depends
 on the reader, they are never in `member_updated` (which goes to
 everyone, §8.2): a change is `changed: ["links"]` only, and each reader
 reads the member again. The person reads their own fields always in
-`GET /me` (§5.1): `public_profile`, `public_presence`, `public_bio`, `website`, `social` as
+`GET /me` (§5.1): `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` as
 stored and `links_visible`, whatever the value and whether or not they
 are in a project.
 
@@ -17899,11 +17988,12 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name}`, empty while `public_profile` is `false`), `agents` (`person`s) |
-| `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name}`), `statistics` |
+| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (`person`s), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
+| `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
 
-Member ids, session or credential data, presence, instances, models, mail and
+Member ids, session or credential data, presence beyond the `online` above,
+instances, models and harnesses beyond the agent's above, mail and
 network addresses and everything the section above excludes never appear;
 `picture` is the address by digest, never the `avatar_url` that names the
 account. The other routes stay as they are: without a session they answer
@@ -17916,7 +18006,7 @@ page (`kind` `project`), its swarm tab none (§16.11).
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
-owners, and `public_profile`, `public_presence`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
+owners, and `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
 note that it is public to everyone; on a project's pages and an
 account's or organisation's own view the dashboard offers **View public
 page** while the page is served. That link opens the address with
@@ -18395,12 +18485,14 @@ stands in its place (above, since req-5k1gvfsmcg9k).
 The maintainer's decision of 2026-10-22: every merge into the default
 branch, every change to the contract, every decision taken in the inbox,
 every deploy and every release becomes one short announcement in the
-project — a sentence and a link. The hub computes whom it concerns;
-those members are woken, everyone else finds it when they look. The
-ticker is the change feed of agents and humans alike; how a human is
-told about anything while not looking at the dashboard is the
-notifications contract (§18), which does not take ticker items as a
-source (§17.10).
+project — a sentence and a link. A merge the probe did not see while it
+happened is announced only when its `merged_at` is at most 1 hour before
+delivery; an older missed merge is discarded (§17.4). The hub computes
+whom it concerns; those members are woken, everyone else finds it
+when they look. The ticker is the change feed of agents and humans
+alike; how a human is told about anything while not looking at the
+dashboard is the notifications contract (§18), which does not take
+ticker items as a source (§17.10).
 
 ### 17.1 The item
 
@@ -18586,7 +18678,15 @@ file at the merge commit and at the base. The grant (§11.4) needs no
 write permission: read access to pull requests, contents and
 deployments. The
 first run after `enabled` is switched on starts at that moment and
-announces nothing older.
+announces nothing older. When the probe sees merges it did not see
+while they happened — forge access returning after a gap, for one —
+only a merge whose `merged_at` is at most 1 hour before the moment of
+delivery, on the hub's clock, is delivered as usual: a ticker item and
+a wake (§17.1, §17.5). A missed merge older than that is discarded: no
+ticker item, no wake and no notification. Discarding one still advances
+the merge-scan cursor (`scanned_until`, and the round's progress), so
+the gap is not read again on later rounds. A discarded merge adds no
+card link and changes no count; the only state it moves is that scan.
 
 **The webhook** is optional and only makes the hub look sooner.
 
@@ -19637,10 +19737,13 @@ device; the browser's own permission is per browser and is not stored.
 - **Changing a verified address.** Once a verified address exists,
   setting another one or removing it (`null`) needs the human's own
   confirmation; how young a session is or how it was made does not
-  count. A human with a password puts it in the same request,
+  count. The instance admin's (§16) verified address is never removed:
+  a removal, filed or approved, is `409 admin_address_required`, since
+  the admin's password sign-in needs it (§2.1); replacing it goes on as
+  below. A human with a password puts it in the same request,
   `current_password` beside `email` (missing: `invalid` with
   `details.fields.current_password: "required"`; wrong: `"mismatch"`,
-  counted against the login limit of §2.1). A human without a password
+  counted in its own bucket, §2.1). A human without a password
   needs the change approved from a session of theirs in good standing
   (#169 §2.6.5) and at least 24 hours old: a `PATCH` from such a session
   is the approval; from a younger

@@ -110,13 +110,15 @@ python3 -m venv .venv
 pip install --require-hashes -r requirements/runtime.txt -r requirements/build.txt   # the tested versions
 pip install --no-deps --no-build-isolation -e .   # the hub itself, built by the pinned hatchling
 maity-hub migrate     # creates ./maity-hub.db and brings the schema to the current version
-maity-hub owner create --handle maintainer --display-name "Maintainer"   # asks for the password
+maity-hub owner create --handle maintainer --display-name "Maintainer" --email maintainer@example.org   # asks for the password
 maity-hub serve       # http://127.0.0.1:8080
 ```
 
 `owner create` makes the first human account; it reads the password from
 the terminal (asked twice) or from the first line of standard input,
-never from the command line. The earliest human account is the instance
+never from the command line. `--email` is the address the account signs
+in with; the command stores it as verified, so it needs no mail
+(`docs/api.md` §2.1). The earliest human account is the instance
 admin (`docs/api.md` §16): it sees `GET /admin/users` and the mail
 settings (`/admin/settings/mail`), and nothing of a project it is not a
 member of.
@@ -132,8 +134,9 @@ implicitly.
 
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is
-no human (`--handle` defaults to the login name, the password is read as
-`owner create` reads it), and then serves. A database behind the current
+no human (`--handle` defaults to the login name, the address is asked
+for unless `--email` gives it, the password is read as `owner create`
+reads it), and then serves. A database behind the current
 schema is refused as `serve` refuses it. Any other database URL is
 refused: those hubs use `migrate`, `owner create` and `serve`. The steps
 for a personal hub are in [`docs/install/quickstart.md`](../docs/install/quickstart.md).
@@ -159,7 +162,7 @@ starts after it succeeded and reports healthy once `/api/v1/health`
 answers. The hub is published on `127.0.0.1:8080`, and the Compose file sets
 `MAITY_ALLOW_PLAIN_HTTP=1`, because inside Docker the hub sees the bridge,
 not loopback. Create the first account with
-`docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle maintainer --display-name Maintainer`
+`docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle maintainer --display-name Maintainer --email maintainer@example.org`
 and the password on standard input.
 
 To serve other machines, do not publish the port on `0.0.0.0`: that

@@ -294,9 +294,7 @@ def test_a_state_of_another_session_or_human_is_refused(
     assert setup(other, 7, state) == DONE + "?error=link_state"
     # The same human in another browser: another session.
     again = make_client()
-    signed_in = again.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    signed_in = factory.login_handle(again, "maintainer")
     assert signed_in.status_code == 200
     second = flow.Human(again, "", human.id, "maintainer")
     assert setup(second, 7, state) == DONE + "?error=link_state"

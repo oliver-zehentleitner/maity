@@ -236,15 +236,15 @@ def test_a_rate_limit_counts_once_over_both_processes(
     hubs: tuple[Hub, Hub], agents: tuple[flow.Agent, flow.Agent]
 ) -> None:
     a, b = hubs
-    wrong = {"handle": "maintainer", "password": "not the password at all"}
-    # Ten a minute (`LOGIN_BY_HANDLE`), and the login of the setup is one of them:
-    # neither process alone sees more than six of its own.
+    wrong = {"email": "nobody@example.org", "password": "not the password at all"}
+    # Five wrong passwords per address in 15 minutes (`password_limits.LOGIN`, §2.1): neither
+    # process alone sees more than three of its own, yet the sixth is paused.
     answers = [
-        (a if n % 2 else b).send({}, "POST", "/api/v1/auth/login", json=wrong) for n in range(12)
+        (a if n % 2 else b).send({}, "POST", "/api/v1/auth/login", json=wrong) for n in range(6)
     ]
-    codes = [answer.status_code for answer in answers]
-    assert codes[-1] == 429 and 429 not in codes[:8], codes
-    assert answers[-1].headers["Maity-Error"] == "rate_limited"
+    reasons = [answer.json()["error"]["details"].get("reason") for answer in answers]
+    assert [answer.status_code for answer in answers] == [401] * 6
+    assert reasons[:5] == [None] * 5 and reasons[5] in ("email_link", "password_paused"), reasons
 
 
 def test_a_signed_requests_nonce_is_refused_on_the_other_process(
