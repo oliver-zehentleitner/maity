@@ -1862,7 +1862,9 @@ window.Maity = window.Maity || {};
   let kept = null; // { epoch, at, session, me, project: { slug, project, members } | null }
   // Any write of this tab (a rename, a new project, a trust changed, a request answered) may
   // change them: the next drawing reads afresh.
-  M.onWrite = () => { kept = null; };
+  // Counted too: a drawing or a read again that began before a write keeps nothing it read.
+  let writes = 0;
+  M.onWrite = () => { kept = null; writes += 1; };
   const keptKey = (session, me) => JSON.stringify([
     session.member && session.member.id, session.second_factor || null, session.session_id || null,
     me.member, me.maintenance || null, me.limit || null,
@@ -1875,6 +1877,7 @@ window.Maity = window.Maity || {};
   // members and the project only refresh `kept` for the next switch; the view's event feed
   // offers their changes as before.
   async function keepFresh(seq, reused, slug) {
+    const wrote = writes;
     let session, me, project, members;
     try {
       const base = slug ? "/projects/" + M.api.projectPath(slug) : null;
@@ -1889,11 +1892,14 @@ window.Maity = window.Maity || {};
       if (err && err.status === 401 && seq === renderSeq && !sessionEnded) render();
       return;
     }
-    if (kept !== reused) return;
+    // Only the read behind the drawing that stands replaces what is kept: an older one answering
+    // first would leave the current one nothing to compare, its view uncorrected (review of #1440).
+    if (kept !== reused || writes !== wrote || seq !== renderSeq) return;
     const changed = keptKey(session, me) !== keptKey(reused.session, reused.me);
     kept = { epoch: reused.epoch, at: Date.now(), session, me,
-      project: project ? { slug, project, members } : reused.project };
-    if (changed && seq === renderSeq) render();
+      // The project only as just read: carried on, it would outlive KEPT_MS with every switch.
+      project: project ? { slug, project, members } : null };
+    if (changed) render();
   }
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
   // page renders, and again while it stands or when `sessions_rev` moves (a
@@ -1934,6 +1940,7 @@ window.Maity = window.Maity || {};
 
   async function render(how) {
     const seq = ++renderSeq;
+    const wrote = writes;
     const reuse = how === SWITCH && kept && !sessionEnded && kept.epoch === (M.sessionEpoch || 0)
       && Date.now() - kept.at < KEPT_MS ? kept : null;
     if (how !== SWITCH) kept = null;
@@ -2070,15 +2077,17 @@ window.Maity = window.Maity || {};
       // notice (watch), and the counts stay as /me has them.
       // The project's own reads are kept only for a switch inside the same project.
       keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
-      const [loaded, views] = await Promise.all([loadContext(where, me, reuse && reuse.project), projectViews(me),
+      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
       ctx.projectViews = views;
-      // What the next switch may start from: read just now, or kept and read again below.
-      if (!reuse) kept = { epoch: M.sessionEpoch || 0, at: Date.now(), session, me, project: ctx.keptProject || null };
-      else if (ctx.keptProject) reuse.project = ctx.keptProject;
       ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
+      // What the next switch may start from: read just now, or kept and read again below; nothing
+      // a write of this tab came after.
+      if (writes === wrote && !reuse) kept = { epoch: M.sessionEpoch || 0, at: Date.now(), session, me, project: ctx.keptProject || null };
+      // A view outside the project lets the project go: only a switch inside it takes it again.
+      else if (writes === wrote && kept === reuse) reuse.project = ctx.keptProject || null;
     } catch (err) {
       if (seq !== renderSeq) return;
       // The page could not load: the header with the lockup stays, the

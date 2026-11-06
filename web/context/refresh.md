@@ -309,12 +309,14 @@ Behind the drawn view the same four reads are made again. A change in
 who is signed in, the second step, the memberships with their trust and
 role, a maintenance window or one's own limit draws the view again from
 what was read; a 401 of the session check draws the page afresh. Counts,
-members and the project only refresh what is kept for the next switch.
-Any write of the tab (a POST, PATCH, PUT or DELETE through `M.api`), a
+members and the project only refresh what is kept for the next switch,
+and only the read behind the drawing that stands does: an older one
+answering first would leave the current one nothing to compare. Any
+write of the tab (a POST, PATCH, PUT or DELETE through `M.api`), a
 sign-out, an ended session, a refresh and a maintenance change drop what
 is kept. While the next view loads, the view being left is also
-`aria-busy`, and a bar along the top of the page shows the click was
-taken.
+`aria-busy` and dimmed, and a bar above it, in the page's top padding,
+shows the click was taken.
 
 **Reason:** every switch read the session, then /me, then the project's
 reads, then the view's data, one after another: four round trips before
