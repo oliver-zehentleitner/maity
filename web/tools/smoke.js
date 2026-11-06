@@ -736,7 +736,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("project-rename").value = "maity"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle(); await go(win.location.hash); await nsSettle();
   expect(win.location.hash === "#/maintainer/maity/settings" && text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity-hub")
     && !text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity,"), "namespace: a name taken back is current again");
-  // At 8 earlier names a new one is refused, taking back one's own is not (as the hub, #487).
+  // At 8 earlier names, over max_aliases (default 3, §16.5), a new one is refused, taking back one's own is not (as the hub, #487).
   let nsFull = null;
   try { await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-new" }); } catch (err) { nsFull = err; }
   const nsBack = await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-old" });
@@ -12208,6 +12208,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await lmSubmit();
   expect(JSON.stringify(lmPatches[7]) === JSON.stringify({ max_attachment_storage: 1024 ** 3 }),
     "limits: typing the shown whole number sets it exactly " + JSON.stringify(lmPatches));
+  // Earlier names (§16.5, tsk-1zng488dbprp): 1 to 8, no "no limit" to choose, and the hub's rename refusal follows the value.
+  expect(byId("limits-max_aliases-mode").value === "default" && byId("limits-max_aliases").hidden
+    && byId("limits-max_aliases-mode").querySelectorAll("option").map((o) => o.textContent).join("|") === "A number|The default"
+    && text(lmSection()).includes("Earlier names per handle or project")
+    && text(lmSection()).includes("0 accounts, organisations, profiles or projects are at or over this limit."),
+    "limits: earlier names default to 3, with no unlimited option, the ids at it counted");
+  byId("limits-max_aliases-mode").value = "number"; byId("limits-max_aliases-mode").dispatch("change");
+  byId("limits-max_aliases").value = "9";
+  await lmSubmit();
+  expect(lmPatches.length === 8 && text(byId("limits-max_aliases-error")) === "A whole number from 1 to 8.",
+    "limits: more than 8 earlier names is said at its field and nothing is sent " + JSON.stringify(lmPatches));
+  byId("limits-max_aliases").value = "5";
+  await lmSubmit();
+  let lmAliasRefusal = null;
+  try { await adminPatch("/projects/maintainer/sample", { slug: "sample-five" }); } catch (err) { lmAliasRefusal = err; } // not one of the admin writes counted below
+  expect(JSON.stringify(lmPatches[8]) === JSON.stringify({ max_aliases: 5 }) && lmAliasRefusal && lmAliasRefusal.code === "alias_limit"
+    && lmAliasRefusal.details.limit === 5, "limits: earlier names are sent as a number and a rename refusal names the new value " + JSON.stringify(lmPatches));
+  byId("limits-max_aliases-mode").value = "default"; byId("limits-max_aliases-mode").dispatch("change");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[9]) === JSON.stringify({ max_aliases: null }) && byId("limits-max_aliases-mode").value === "default",
+    "limits: earlier names back to the default " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
