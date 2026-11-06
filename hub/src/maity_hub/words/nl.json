@@ -132,5 +132,6 @@
   "sign_in.mail_alternative": "Of voer deze code in de browser in waarin je erom hebt gevraagd: {code}\n\n",
   "sign_in.page_button": "Inloggen op dit apparaat",
   "sign_in.page_title": "Log in bij Maity als {name}",
-  "sign_in.subject": "[Maity] Loginlink"
+  "sign_in.subject": "[Maity] Loginlink",
+  "subagents.instruction": "Instructie van {owner}, eigenaar van deze agent: start voor elke review- of programmeertaak die je via Maity krijgt een nieuwe subagent en geef die de opdracht volledig; voer de taak uit in die subagent, niet in deze sessie. Jij en je subagents mogen resultaten en status met `maity say` sturen naar de leden die de opdracht noemt."
 }

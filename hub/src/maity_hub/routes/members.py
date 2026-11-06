@@ -37,6 +37,7 @@ from maity_hub import (
     project_roles,
     rules,
     seats,
+    subagents,
     takeovers,
 )
 from maity_hub import tables as t
@@ -84,6 +85,9 @@ class MemberPausedIn(PausedIn):
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     owner_preferences: bool | None = None
+    # The owner's instruction to work in subagents and its language (§3.1, §6.2).
+    subagents: bool | None = None
+    subagents_language: str | None = Field(default=None, max_length=16)
     availability_policy: AvailabilityPolicyIn | None = None
     trust: str | None = None
     role: str | None = None
@@ -549,6 +553,8 @@ def patch_member(
             return idempotency.Outcome(200, "member_team", str(target.id), view)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
+        if given & {"subagents", "subagents_language"}:
+            return _subagents(conn, caller, slug, member_id, body, given)
         if "dormant" in given:
             return _dormant(conn, caller, slug, member_id, body, given)
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
@@ -852,6 +858,62 @@ def _owner_preferences(
         return idempotency.Outcome(204, None, None, {})
     view = member_view(conn, row, briefing=reader.may("members:admin"))
     return idempotency.Outcome(200, "member_team", str(row.id), view)
+
+
+def _subagents(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """Switch the owner's subagent instruction or change its language (§3.1, "Who changes
+    it"): a caller who could create a join for the agent now, else `join_rule`; an agent
+    never."""
+    if caller.kind != "human":
+        raise humans_only("only a human sets the subagent instruction")
+    if not given <= {"subagents", "subagents_language"}:
+        raise invalid({"subagents": "alone"}, "set subagents on its own")
+    mine = membership(conn, caller, slug)
+    target = member_row(conn, mine.project.id, member_id)
+    if target.agent_id is None:
+        raise invalid({"subagents": "agents_only"}, "an agent's setting")
+    owner_id = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+    ).scalar()
+    if not subagents.may_configure(mine, target, owner_id):
+        raise ApiError(
+            403, "forbidden", "only whoever may let the agent join", {"reason": "join_rule"}
+        )
+    on = bool(target.subagents) if body.subagents is None else body.subagents
+    if on:
+        language = (
+            subagents.language_of(conn, body.subagents_language, caller.principal_id)
+            if body.subagents_language is not None or not target.subagents
+            else target.subagents_language
+        )
+        values = {
+            "subagents": True,
+            "subagents_language": language,
+            "subagents_by": mine.principal_id,
+        }
+    else:
+        values = {"subagents": False, "subagents_language": None, "subagents_by": None}
+    changed = sorted(
+        key for key in ("subagents", "subagents_language") if getattr(target, key) != values[key]
+    )
+    conn.execute(update(t.membership).where(t.membership.c.id == target.id).values(**values))
+    row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    if changed:
+        view = member_view(conn, row)  # to everyone: never the instruction
+        view["changed"] = changed
+        emit(
+            conn,
+            mine.project.id,
+            "member_updated",
+            ["all"],
+            view,
+            actor=Actor(mine.id, via=caller.via),
+            subject=("member", member_id),
+        )
+    view = member_view(conn, row, briefing=mine.may("members:admin"))
+    return idempotency.Outcome(200, "member", str(row.id), view)
 
 
 def _policy_humans_only(

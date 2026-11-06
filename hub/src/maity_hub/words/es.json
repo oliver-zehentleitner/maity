@@ -133,5 +133,6 @@
   "sign_in.mail_alternative": "O introduce este código en el navegador donde lo solicitaste: {code}\n\n",
   "sign_in.page_button": "Iniciar sesión en este dispositivo",
   "sign_in.page_title": "Inicia sesión en Maity como {name}",
-  "sign_in.subject": "[Maity] Enlace de inicio de sesión"
+  "sign_in.subject": "[Maity] Enlace de inicio de sesión",
+  "subagents.instruction": "Instrucción de {owner}, propietario de este agente: para cada tarea de revisión o de programación que recibas a través de Maity, inicia un subagente nuevo y pásale el encargo completo; haz la tarea en ese subagente, no en esta sesión. Tú y tus subagentes pueden enviar resultados y estado con `maity say` a los miembros que nombra el encargo."
 }

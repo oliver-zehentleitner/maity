@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, Insert
@@ -1148,3 +1149,89 @@ def test_profiles_public_switches_every_account_on_and_indexes_every_page(engine
         ("hum-c", True),
     ]
     assert bool(indexed) is True
+
+
+def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engine: Engine) -> None:
+    """20261106210000_join_subagents (§6.2, req-7s40gwjt3h11): a coder or reviewer membership
+    and an open join for one take the role default, set by the profile owner (for a join, its
+    creator) in the language the hub speaks to that human; other roles, used joins and humans
+    stay as they were."""
+    from datetime import timedelta
+
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261106210000_join_subagents"
+    migrate(engine, _before(engine, revision))
+    project_id = factory.project(engine, "subagents")
+    chosen, written, plain = (factory.human(engine, h) for h in ("chosen", "written", "plain"))
+    now = clock.now()
+    with engine.begin() as conn:
+        conn.execute(update(t.human).where(t.human.c.id == chosen).values(interface_language="de"))
+        conn.execute(
+            insert(t.notification_settings).values(
+                human_id=written,
+                preferences={"email": {"language": "fr"}},
+                address_status="none",
+                epoch=0,
+                hard_failures=0,
+                updated_at=now,
+            )
+        )
+    coder = factory.agent(engine, project_id, chosen, "coder")
+    reviewer = factory.agent(engine, project_id, written, "reviewer")
+    tester = factory.agent(engine, project_id, plain, "tester")
+    english = factory.agent(engine, project_id, plain, "coder")
+
+    def join(n: int, role: str, creator: str, **values: Any) -> str:
+        trust, role = factory.trust_and_role(role)
+        with engine.begin() as conn:
+            conn.execute(
+                insert(t.join_link).values(
+                    id=f"join-{n}",
+                    project_id=project_id,
+                    token_hash=f"{n:064x}",
+                    code_hash="0" * 64,
+                    role=role,
+                    trust=trust,
+                    areas=["/"],
+                    capabilities=[],
+                    created_by=creator,
+                    created_at=now,
+                    expires_at=now + timedelta(days=1),
+                    failed_attempts=0,
+                    new_agent_handle=f"new-{n}",
+                    new_agent_display_name=f"New {n}",
+                    **values,
+                )
+            )
+        return f"join-{n}"
+
+    open_coder = join(1, "coder", written)
+    used_coder = join(2, "coder", written, used_at=now)
+    open_tester = join(3, "tester", chosen)
+    migrate(engine, revision)
+    with engine.connect() as conn:
+        members = {
+            row.agent_id: (row.subagents, row.subagents_language, row.subagents_by)
+            for row in conn.execute(
+                select(t.membership).where(t.membership.c.agent_id.is_not(None))
+            )
+        }
+        joins = {
+            row.id: (row.subagents, row.subagents_language)
+            for row in conn.execute(select(t.join_link))
+        }
+    assert members[coder.agent_id] == (True, "de", chosen)
+    assert members[reviewer.agent_id] == (True, "fr", written)
+    assert members[english.agent_id] == (True, "en", plain)
+    assert members[tester.agent_id] == (False, None, None)
+    assert joins == {
+        open_coder: (True, "fr"),
+        used_coder: (False, None),
+        open_tester: (False, None),
+    }
+    downgrade(engine, _before(engine, revision))
