@@ -1965,7 +1965,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       family: { create: (o) => { ktwNav = o.nav; return { view: (box) => box.appendChild(document.createTextNode("family view")), bodies: (s) => Promise.resolve(s),
         publicState: (canonical, root) => { ktwCalls.push(["public", canonical, root]); return Promise.resolve(ktwPublic[canonical + "|" + root] || { error: "no export there" }); } }; } },
       search: { create: () => ({ view: (box, scope, q) => box.appendChild(document.createTextNode("search " + q)) }) },
-      thoughts: { create: () => ({ page: (box) => box.appendChild(document.createTextNode("thoughts page")), reader: () => {} }) },
+      // as the library: "Loading…" first, then the graph is read (an await), and a box no longer
+      // in the document is taken as a page left meanwhile and kept as it is
+      thoughts: { create: () => ({
+        // made in the page's realm, as the vendored library is: an await there takes the page's turns
+        page: vm.runInContext(`(async function (box, host) {
+          const p = document.createElement("p"); p.appendChild(document.createTextNode("Loading…")); box.appendChild(p);
+          await host.graph(); if (!p.isConnected) return; p.textContent = "thoughts page"; })`, ctx),
+        reader: async () => { throw new Error("the chain could not be read"); } }) },
       pages: { create: (o) => ({
         overview: (box, H) => { ktwCalls.push(["overview", H.provider()]); box.appendChild(document.createTextNode("overview page")); },
         topic: (box, file) => { ktwCalls.push(["topic", file]); box.appendChild(document.createTextNode("topic " + file)); },
@@ -2114,6 +2121,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
   expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",
     "why: the timeline's speed, named by its title alone in the library, has that name in the mount");
+  // Thoughts reads before it draws and stops when its box is not in the document: the place is
+  // drawn once the app has put the view into the page. The fake DOM knows `isConnected` here only.
+  Object.defineProperty(Node_.prototype, "isConnected", { configurable: true,
+    get() { for (let n = this; n; n = n.parentNode) if (n === body) return true; return false; } });
+  await go("#/maintainer/maity/why/thoughts"); for (let k = 0; k < 6; k++) await tick();
+  const ktwThoughtsText = text(main);
+  expect(ktwThoughtsText.includes("thoughts page") && !ktwThoughtsText.includes("Loading…"),
+    "why: Thoughts reads its graph and draws it, no Loading… for good " + JSON.stringify(ktwThoughtsText.slice(0, 200)));
+  await go("#/maintainer/maity/why/thought/a,b"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("the chain could not be read"),
+    "why: a place that fails after its read shows the failure, not Loading… for good");
+  delete Node_.prototype.isConnected;
   // The routes: a ref's repository from the address, a centre, a topic's file.
   const whyAt = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } });
   const whyAtRoot = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "packages/a" } });
