@@ -623,9 +623,9 @@ runner that refuses the harness by configuration.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
-**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, or git learns another file in `.git` that redirects where it reads configuration
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration, or a harness version other than the one in `capabilities.CHECKED` is in use
 
 Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
 environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
@@ -649,6 +649,23 @@ against the pattern typed, not the path searched. maity and the runner
 run git only through `proc.GIT`, a clone into a missing directory, and
 `gc`'s pinned read; a test pins that.
 
+A repository's grant may only add plain commands, a grammar rather
+than a list of bad spellings: a program name or path, then arguments of
+plain characters (the CLI README names them), `*` only in an argument.
+The program is never `env` or `maity`, under any path, case or Windows
+extension, and no part of an argument (between `/`, `:`, `=` and the
+other separators) is `maity`. Assignments, quotes, variables, escapes,
+shell operators and a `:` in the program (Claude Code's `prog:*` form)
+are refused when the configuration is read, and an adapter skips such a
+rule as well.
+`maity` stays the runner's own rule. Claude Code's `.git` write deny is
+one `Edit(…)` rule, which covers its file-editing tools; it does not
+check a `Write(…)` deny rule. That a call with something in front of
+`maity` stays inside Claude Code's sandbox was checked with one version,
+2.1.318 (`capabilities.CHECKED`); with another version the runner still
+starts the agent, and `runner check` and the supervisor log say that it
+was not checked for it.
+
 **Reason:** git creates lock files, `ORIG_HEAD` and `COMMIT_EDITMSG` in
 `.git`, so the directory has to stay writable, and an agent that can
 write there can write `commondir`. Read-only `config` and `hooks` meant
@@ -665,6 +682,12 @@ without a model run. Denying each other clone's credential by name at
 the start avoids the question, at the cost of clones made later. The
 home list is a list: the README says that any other secret in the
 agents' home stays readable.
+A grant rule is matched as written, so one with a prefix would be
+allowed outside the rules the runner checked; refusing it in the
+configuration says so to the operator before an agent starts. The
+version check is a warning that does not block the start, as the
+hardening task asked: what was checked is the harness's behaviour with
+one version, not a contract.
 
 **Rejected alternatives:**
 - A read-only `.git` with write access to `objects`, `refs` and the
@@ -680,6 +703,19 @@ agents' home stays readable.
   a newly staged submodule, so `report` would miss a change. The
   configuration setting keeps git out of the submodule and still shows
   the staged gitlink.
+- Refusing a list of bad spellings (`NAME=` and `env` in front, `maity`
+  after an operator): `NAME+=`, `/usr/bin/env`, a quoted `maity`,
+  `maity:*` and `maity.exe` still passed, found in review. A grammar
+  refuses what it does not name.
+- Only a warning for a grant rule with something in front or naming
+  `maity`, keeping the rule: the harness would still allow it as
+  written, and a configuration the runner accepted today then means
+  more than the runner checked. Refusing it changes what a valid
+  configuration is, and says so by name when `check` or `serve` reads
+  it.
+- Keeping the `Write(…)` deny next to `Edit(…)`: Claude Code warns at
+  start that it ignores it, and a rule that does nothing reads as a
+  boundary.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
@@ -687,9 +723,9 @@ agents' home stays readable.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user
+**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user; a tester's macOS run, where that host's `install` refused `-D` for every write on the agents' side, its rerun, where `chmod` took a `--` after the mode for a file, and the reviews of #1411, 2026-11-05
 **See:** runner.md — 2bdc5809-b08b-4fa2-97bc-004d37c4cddb — as of 2026-10-22
-**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), or a live run shows a harness writing where the agents' user cannot
+**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), a live run shows a harness writing where the agents' user cannot, or a target host lacks one of the tools the agents' side writes with
 
 With `layout = "agent_user"`, every command for the agents runs as
 `sudo -n -u <agent_user> --`, with only the environment it needs passed
@@ -715,6 +751,16 @@ own; a listing that is not complete refuses the start
 sandbox tools are looked up, and Codex's sandbox tried, as that user on
 the agents' PATH as well.
 
+Files for the agents' side (in this layout and on ssh hosts) are written
+by one fixed `sh -c` script with tools BSD, macOS and GNU all have. It
+makes the file's own directory 0700 if missing, writes the text from
+stdin into a `mktemp` file next to the path, sets it 0600 and renames it
+over the path. A link at the path, to a file or a directory, is removed
+first, and a directory at the path is refused. The text never appears in
+an argument, and the path never holds a half-written file. Each `--`
+comes before a command's first operand (`chmod -- 600`, not `chmod 600 --`):
+BSD tools read no options after the first operand.
+
 **Reason:** the layout exists so that agents, and any repository code
 they run, cannot read the runner's credential or state. That only holds
 if nothing the agents need has to be inside the runner's 0700 state
@@ -733,6 +779,15 @@ files and credentials; separating them needs one user per agent (ssh
 - Running tmux as the runner with `server-access` for the agents' user:
   tmux 3.3 and later only, and the sessions' processes would still be
   the runner's.
+- `install -D -m 600 /dev/stdin <path>` for the agents' files: GNU's
+  meaning of `-D` (make the missing parents) is not the same everywhere.
+  Some BSD and macOS versions refuse `-D`, as the tester's macOS host did,
+  so no agent could start there in this layout or over ssh; others give
+  it another meaning.
+- `cat >` straight into the path: it writes through a link planted
+  there, and leaves a half-written file when it fails.
+- `mv -T` or other GNU-only guards against a directory at the path: the
+  same portability problem as `install -D`.
 
 ## On the ssh backend each host is a target that runs its own `maity`
 

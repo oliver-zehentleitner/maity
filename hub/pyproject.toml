@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anyio>=4",  # the worker threads' limiter, for the `stats` line
     "fastapi>=0.156",
+    "starlette>=1.9",  # GZip's content-type exclusions and its worker thread (compression.py)
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.0.36",
     "alembic>=1.14",
