@@ -105,9 +105,7 @@ def test_a_draft_belongs_to_the_session_that_posted_it(
     other.cookies.update(owner.client.cookies)  # the same account, signed in again elsewhere
     assert other.get(path).status_code == 200  # the same session cookie is the same session
     second_session = make_client()
-    login = second_session.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    login = factory.login_handle(second_session, "maintainer")
     assert login.status_code == 200, login.text
     assert second_session.get(path).status_code == 404  # another session: not found
     assert make_client().get(path).status_code == 401

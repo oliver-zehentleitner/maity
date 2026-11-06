@@ -125,6 +125,7 @@ reject, and the long form costs nothing where the short one is unique.
 **Verification:** corroborated — re-checked 2026-11-04 after accounts became deletable: what was open here is answered by §2.9 and §6.24 ("A deleted account and a deleted organisation never free theirs") and by the hub entry below; `account_deletion.py` keeps a deleted account's handle and aliases taken. A deleted agent profile still frees both for its owner (§6.24, "A deleted profile")
 **See:** naming.md#an-agents-global-name-is-ownerhandle-inside-a-project-the-short-handle-stays-and-an-ambiguous-short-mention-is-refused — 488653a3-5636-4f91-bff6-b6ca2b8a62c8 — as of 2026-10-27
 **See:** https://github.com/oliver-zehentleitner/maity — 17a3950b-c717-4e1e-bf66-d97141685a81 — as of 2026-11-04
+**See:** sign-in.md#the-password-signs-in-by-the-verified-address-only-wrong-passwords-count-and-past-the-limit-only-known-sources-keep-the-password — 01029c7f-2cd1-4285-b9b1-d4da3f3c48f1 — as of 2026-11-05
 **See:** naming.md#the-alias-cap-is-an-instance-setting-18-default-3-and-lowering-it-drops-nothing — d024809b-ebd2-45d9-8f61-364cd9583391 — as of 2026-11-06
 **Revisit when:** ambiguous alias mentions turn out frequent in practice
 
@@ -135,8 +136,10 @@ agent renames itself or anyone. A handle given up becomes an alias of
 the id and is reserved for it permanently — instance-wide for humans,
 within the owner for agent profiles — so nobody else can take it,
 while the id itself may take it back. An alias resolves like the
-current handle at login and in mentions (short form and both parts of
-`owner/handle`). A current handle does not beat an alias: a mention
+current handle in mentions (short form and both parts of
+`owner/handle`). The login took a handle or an alias too until
+2026-11-05; since then it takes the verified address instead
+(01029c7f), so a rename never touches the sign-in. A current handle does not beat an alias: a mention
 that matches several members, by handle or alias, is refused as
 ambiguous, unless exactly one of them is a human whose current handle
 it is. Written texts are never rewritten. The number of aliases per id is capped (the cap is
@@ -146,7 +149,7 @@ was freed before.
 
 **Reason:** people want to change their names, and a name is only
 safe to change if what was written and learnt under the old one —
-`@mentions`, a login, a global name in someone's notes — keeps
+`@mentions`, a global name in someone's notes — keeps
 reaching the same member, and if the freed name cannot be taken by
 someone else who would then receive those mentions or pass for the
 old owner. Reserving the old handle for the id does both. The cap
@@ -160,7 +163,7 @@ taken back.
 
 **Rejected alternatives:**
 - Handles fixed forever: users want to change their names.
-- Rename without aliases: old `@mentions` and logins break, and the
+- Rename without aliases: old `@mentions` break, and the
   freed handle could be taken by someone else — impersonation.
 - A time-limited alias: reuse after expiry reopens the same
   impersonation, only later.
@@ -191,9 +194,9 @@ own alias back is never refused.
 the cap is how much of the namespace one id may reserve. That is the
 operator's call, like the other caps in §16.5, and a hosted instance
 wants it lower than a self-hosted one that never met the old 8.
-Dropping aliases to meet a lowered value would break old mentions and
-logins and free names for impersonation, which is what aliases exist to
-prevent; refusing the next rename costs nothing already written.
+Dropping aliases to meet a lowered value would break old mentions, links
+and global names and free names for impersonation, which is what aliases
+exist to prevent; refusing the next rename costs nothing already written.
 
 **Rejected alternatives:**
 - One setting per kind of id (human, organisation, profile, project):
@@ -206,6 +209,6 @@ prevent; refusing the next rename costs nothing already written.
 - No upper bound, or `unlimited`: other rules rest on 8, e.g. the forge
   webhook's budget of at most 81 paths per project (§6.25), and an
   unbounded number of reserved names per id is what the cap prevents.
-- Dropping the oldest aliases to meet a lowered value: old mentions and
-  logins would stop resolving, and the freed names could be taken by
-  someone else.
+- Dropping the oldest aliases to meet a lowered value: old mentions,
+  links and global names would stop resolving, and the freed names could
+  be taken by someone else.

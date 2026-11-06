@@ -151,12 +151,8 @@ def test_suspend_ends_every_way_in_until_the_operator_lifts_it(
             .where(t.membership.c.agent_id == agent.id)
         ).scalars()
         assert set(reasons) == {"suspended"}
-    login = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD}
-    )
-    wrong = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": "not the password"}
-    )
+    login = factory.login_handle(make_client(), "pat")
+    wrong = factory.login_handle(make_client(), "pat", "not the password")
     assert (login.status_code, login.json()) == (wrong.status_code, wrong.json())
 
     # Its memberships act as paused (§5.3).
@@ -167,17 +163,10 @@ def test_suspend_ends_every_way_in_until_the_operator_lifts_it(
 
     # A dismiss lifts holds, never a suspension: that is the operator's.
     assert resolve(team, made["id"], "dismiss").status_code == 200
-    assert (
-        make_client()
-        .post("/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD})
-        .status_code
-        == 401
-    )
+    assert factory.login_handle(make_client(), "pat").status_code == 401
     with migrated.begin() as conn:
         assert moderation.unsuspend(conn, pat.id)
-    back = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD}
-    )
+    back = factory.login_handle(make_client(), "pat")
     assert back.status_code == 200, back.text
 
 

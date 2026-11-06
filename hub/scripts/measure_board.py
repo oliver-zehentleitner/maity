@@ -259,9 +259,7 @@ def main() -> int:
         client = stack.enter_context(
             TestClient(create_app(settings, engine), base_url="https://hub.example")
         )
-        login = client.post(
-            "/api/v1/auth/login", json={"handle": "owner", "password": factory.PASSWORD}
-        )
+        login = factory.login_handle(client, "owner")
         assert login.status_code == 200, login.text
         slug = "measure"
         paths = [
