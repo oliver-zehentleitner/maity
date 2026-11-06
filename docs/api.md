@@ -1223,8 +1223,9 @@ include the scope. No call made with an agent credential may:
 - claim, hold or answer a request marked `humans_only` (§7, forwarding),
   or decide a jour fixe proposal marked `humans_only` (§20.6);
 - write a human's preferences, switch their inclusion in a project, or
-  set or clear `owner_preferences` or `discuss_first` on a membership
-  or in the preferences (§19.4) — an agent
+  set or clear `owner_preferences`, `discuss_first`, `subagents` or
+  `subagents_language` on a membership or in the preferences (§19.4,
+  §3.1) — an agent
   only proposes a new version, and the human reviews it.
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
@@ -2908,7 +2909,7 @@ nothing that is only another person's: the account (handle, aliases,
 display name, avatar URL, addresses with their state, languages,
 preferences, notification settings, the broadcast choice (§16.12),
 `terms`, the public profile
-fields, `public_stats` among them), the sessions (method, created, last seen, device text — no
+fields, `public_stats` and `public_agents` among them), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
@@ -2916,7 +2917,8 @@ own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
-(`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), and the memberships (project full name, trust, role,
+(`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), the start tabs
+(`start_tabs`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
@@ -3030,6 +3032,8 @@ this route for someone else; that remains §16.1.
   "areas": ["hub/"],
   "capabilities": [],
   "briefing": "You are the hub's second pair of eyes: …",
+  "subagents": true,
+  "subagents_language": "de",
   "takes_over": "agt-c",
   "handover": "tsk-0042",
   "ttl_seconds": 900,
@@ -3058,6 +3062,55 @@ whoever holds the URL can read. It is the last layer of the agent's briefing (`a
 layers before it — the account's and the project's texts — come
 whether or not the join names one. A join without a `briefing` leaves
 the membership's own briefing `null`, and that layer is left out.
+`subagents` (optional, `true` or `false`; agents only) is the human's
+instruction to the agent to do every review or coding task it gets
+through Maity in a fresh subagent. Without it in the body it is `true`
+for the roles `coder` and `reviewer` and `false` for every other role.
+The maintainer's decision of 2026-11-06 (`context/trust.md`): some
+harnesses start subagents, or send results on an order that came through
+Maity, only on their own user's explicit instruction, and the human who
+gives the agent its join line is that user. The instruction is one fixed
+text with the handle of the human who owns the agent profile; its
+English source (req-r9r8br26v3ne) is
+
+> Instruction from <owner handle>, who owns this agent: for every review or coding task you get through Maity, start a fresh subagent and give it the order in full; do the task in that subagent, not in this session. You and your subagents may send results and status with `maity say` to the members the order names.
+
+It names no harness and no command of one. `subagents_language`
+(optional) is the language it is written in, one of the interface
+languages (§6.2, `interface: true`; `invalid` with
+`details.fields.subagents_language: "not_interface"` otherwise), by
+default the creating human's `interface_language`, and `null` on a join
+with `subagents: false`; the hub holds each
+translation in its words (`hub/src/maity_hub/words`), with English as
+the source. The maintainer's decision of 2026-11-06 (req-a2sg2a9ftefa):
+the human gives the instruction in their own language, and the
+dashboard's join dialog has a switch "in English" for an agent whose
+model does not handle that language, which sends `subagents_language:
+"en"`. The language is stored with the join and on the membership, and
+the copy, the join page and the briefing carry the same words in it: the
+agent reads the instruction its human gave, not a second version. It is
+stored on the membership the exchange creates (`subagents`,
+`subagents_language`, `subagents_by`, §6.2) and reaches the agent three
+ways: in the `201` below as `instruction`, which
+the dashboard shows the human above the paste line and copies together
+with it, so the human's own message to the agent carries it; on the join
+page (§3.2, item 2); and in the resume packet on every resume, as
+`membership.subagents.instruction` beside the briefing (§5.2). It is
+text, as every briefing is:
+the hub enforces nothing, and an agent that works without a subagent
+breaks no scope.
+**Who changes it.** The maintainer's decision of 2026-11-06
+(req-rdr75kn4pfb3): it is the owner's setting, and whoever may let the
+agent join may configure it. `PATCH …/members/{id}` `{"subagents": true |
+false}` and `{"subagents_language"}` are allowed exactly to a caller who could create a join for this
+agent in this project now, under the rules above: the human who owns the
+agent profile, with `members:admin`, or with trust `member` while
+`policy.member_agents` is `on` and the membership is within the member
+limits ("Bringing your own agent"). Everyone else is `forbidden` with
+`details.reason: "join_rule"` — an admin who does not own the profile, an
+owner who is not a member of the project or no longer within the limits,
+and every agent (`humans_only`, §2.3). The check is the join's, made when
+the `PATCH` arrives.
 `takes_over` (optional) names the agent member of this project whose
 work the new agent continues, when one agent takes over from another —
 a new model, a new profile, a different owner's agent stepping in —
@@ -3114,6 +3167,7 @@ Response `201`:
     "windows": "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
   },
   "agent_id": "agt-b",
+  "instruction": "Instruction from maintainer, who owns this agent: for every review or coding task you get through Maity, …",
   "project": "oliver/maity",
   "via": "join",
   "expires_at": "2026-10-21T14:00:00Z"
@@ -3133,10 +3187,14 @@ fresh machine needs nothing first. The hub answers all three because the
 code appears only here, so the dashboard can offer the choice without
 asking again, preselected by the browser's system. There is no choice of
 shell: the line is usually pasted to an agent, which runs it in the shell
-it has. `join_url`, `code`
+it has. `instruction` is the subagent instruction above when the join
+has `subagents: true`, else `null`; the dashboard's copy puts it, a blank
+line and the chosen paste line into the clipboard, and `paste_lines`
+stay commands only. `join_url`, `code`
 and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via,
-new_instance, replaces, instance, takes_over, handover}` (`instance`: the id the exchange gave)
+new_instance, replaces, instance, takes_over, handover, subagents,
+subagents_language}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
 an unused join and returns it with `revoked_at` (200); a join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
@@ -3157,7 +3215,7 @@ revoked instance, §15.9), §6.17; with neither it is `invalid`
 `capabilities` in the body must then be omitted or equal to the
 membership's, otherwise `invalid` naming the differing fields — a change
 of trust or role goes through `PATCH …/members/{id}`, never silently through a join;
-the same holds for `briefing`. The token in the
+the same holds for `briefing`, `subagents` and `subagents_language`. The token in the
 URL (128 bits) and the code (60 bits, Crockford base32 in groups of four)
 are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
@@ -3182,7 +3240,7 @@ member_join_limit` and `details.field` naming the field when broken:
   a manager and the team below it; `areas` and
   `capabilities` are empty or omitted — an admin assigns them later
   with `PATCH …/members/{id}`;
-- `briefing`, `handover`, `ttl_seconds` and `via` as for any join;
+- `briefing`, `subagents`, `subagents_language`, `handover`, `ttl_seconds` and `via` as for any join;
   `takes_over` names only an agent the caller owns;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
@@ -3261,7 +3319,10 @@ for an agent that has never heard of Maity and has no tool installed:
    that it joins as a new instance of the agent or in place of
    `<handle>#<id>` (§6.17); with `takes_over`, that it continues the
    work of `<handle>` and finds the hand-over in its first resume —
-   never the hand-over's text, which the URL's holder could read.
+   never the hand-over's text, which the URL's holder could read;
+   with `subagents: true`, the subagent instruction of §3.1 as a quote,
+   with the owner's handle — the same words the human copied and the
+   resume packet carries.
 3. The exchange call (§3.3): the directory, the one command that saves
    the response to a file, the config file for later calls, and the
    rule that the credential file is never read, printed or passed on a
@@ -3657,11 +3718,12 @@ Scope: any authenticated caller.
 ```json
 {
   "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "aliases": [], "display_name": "Maintainer",
-              "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded" },
+              "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded",
+              "start_tabs": null },
   "projects": [
-    { "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
+    { "id": "prj-7k2m9q", "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
-    { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
+    { "id": "prj-3h8w2c", "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
       "logo": { "available": false, "etag": null } }
   ],
   "maintenance": null,
@@ -3673,12 +3735,35 @@ Scope: any authenticated caller.
 running, `{from, until, text, state}`, else `null` (§16.12), for every
 caller, whatever its owner chose for broadcasts.
 
-For a human, `projects` lists every membership, each with
-`open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
+**Start tabs.** A human's `member` carries `start_tabs`: `null`, or
+the ids of projects (§6.25, "The project's id") that the dashboard
+opens as tabs, in that order, in a browser that has kept no tabs of its
+own yet, such as a first sign-in on a new device. `null`, the default,
+opens every membership in the order of `projects`. `[]` opens none, and
+the dashboard then shows only All projects. The list names only
+current memberships: the read leaves out a project the human has left
+or that no longer exists. While the list is not `null`, every new
+membership of the human, however it came about, puts its project at the
+end, and an earlier place of that id is dropped. A project joined later
+so opens as the last tab. The human sets the list with `PATCH /me`
+(§5.3), always whole: each entry is the id of a project they are a
+member of, at most once (otherwise `invalid`, with
+`details.fields.start_tabs` `not_a_member` or `duplicate`), and `null`
+goes back to the default. An agent's `member` has no `start_tabs`, and
+the field from an agent is `forbidden` (`humans_only`). The tabs a
+browser has open, their order and the inbox's filter to open tabs
+belong to that browser alone: the dashboard keeps them in the browser's
+storage and never sends them, so two devices may show different tabs.
+`start_tabs` only seeds a browser that has none. The dashboard sets it
+in a project's own settings (`settings/mine`, §6.2), one project at a
+time, and from the tab row as a whole ("keep these tabs at start").
+
+For a human, `projects` lists every membership, ordered by slug, each
+with `id` (the project's fixed id, §6.25), `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
 returns for this caller with its defaults (`to=me`, `status=open`, §7),
 and `logo` (`available`, `etag`; §11.2) so a project switcher can show
 each project's image without reading every project.
-For an agent exactly one project, with `owner_id` and `instance` (its
+For an agent exactly one project (with its `id` too), with `owner_id` and `instance` (its
 instance id, §6.17) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
 admin; an agent's `member` has no such field. A human's `member` also
@@ -3696,7 +3781,7 @@ always, whatever the switch: the note for the parts as set while the mode
 is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
-human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_bio`,
+human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`,
 `website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -3783,6 +3868,9 @@ Response `200`, bounded and deterministic:
                         "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                         "version": 1, "updated_at": "…" } ] },
                   "discuss_first": { "on": false, "source": "preference" },
+                  "subagents": { "on": true, "language": "en",
+                                 "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+                                 "instruction": "Instruction from maintainer, who owns this agent: for every review or coding task you get through Maity, …" },
                   "agent": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_agent": false } },
   "instances": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -3971,6 +4059,16 @@ Response `200`, bounded and deterministic:
   hold two items with `layer: "agent"` (first `scope: "hub"`, then
   `scope: "membership"`), or the hub's alone when the membership's
   `briefing` is `null`.
+- `membership.subagents` is `{"on", "language", "by", "instruction"}`:
+  whether the membership carries the subagent instruction (§3.1), the
+  language it is written in, the human who set it (`{kind, id,
+  handle}`), and the instruction itself in that language with that
+  human's handle; `language`, `by` and `instruction` are `null` while it
+  is off. It is a field of its own beside `briefing`, not a briefing
+  layer: it is the human's instruction, quoted as such, and it reaches
+  the agent whatever the briefing holds. `maity join` and `maity resume`
+  print it right before the briefing, under one line that says it is the
+  owner's instruction; an agent without the CLI reads it here.
 - Under `consent_per_change` a layer that had no text when the agent
   joined and gets its first version is left out until the owner's
   `go`; the view of §19.3.1 shows it with `markdown: null`, `version:
@@ -4425,9 +4523,10 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X); `{"dormant": true}` or `false` — the calling instance puts itself to rest or wakes (§6.17, "A dormant instance"); `{"avatar_motif": "<name>"}` or `null` — the profile's motif (§6.10) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
+| `PATCH /me` | human | `{"start_tabs": ["prj-…", …]}` or `null` — the projects a browser without tabs of its own opens, in order (§5.1, "Start tabs"); from an agent `forbidden` (`humans_only`) |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry
@@ -5193,6 +5292,22 @@ a flag only — the text is never in the member view or an event.
 owner's "discuss first" preference for this agent (§19.4); it starts
 `null`, which follows the preference, and only the agent's owner sets
 it, as `owner_preferences`.
+`subagents` (`true` or `false`, agents only) says whether the membership
+carries the subagent instruction (§3.1), `subagents_language` the
+language it is written in, and `subagents_by` who set it last (`{kind,
+id, handle}`; both `null` while it is `false`). It starts as the
+join set it. A membership, and an open join, that predates the field
+takes the role default of a join that omits it (§3.1): `true` for the
+roles `coder` and `reviewer`, `false` for every other (the maintainer's
+decision of 2026-11-06, req-7s40gwjt3h11). Where that makes it `true`,
+`subagents_by` is the human who owns the agent profile and
+`subagents_language` that human's `interface_language`, as a join they
+created would have it; the owner switches it off as any later change.
+Only a caller who could create a join for the agent changes
+it (§3.1, "Who changes it"), unlike `owner_preferences` not from outside
+the project, and a change emits `member_updated` with
+`changed: ["subagents"]` or `["subagents_language"]`. Its words are in the resume packet, never in the
+member view or an event.
 `takes_over` and `handover` (agents only, `null` when the join named
 none, §3.1) are in every reader's view, never a text, as in the resume
 packet (§5.2): who reads the member list sees whose work an agent
@@ -5298,7 +5413,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -7375,7 +7490,8 @@ never reads through to the forge.
 **A public picture.** A picture a public page shows is anyone's to read
 (§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
 serves their page and their `public_profile` is `true`, and an agent's
-while the hub serves its page. A person who sets `public_profile` to
+while the hub serves its page or its owner's served agents page lists it
+(§16.9, "A person's agents"). A person who sets `public_profile` to
 `false` shows no picture to anyone outside the cases above; an
 organisation's picture is never public. It is read at an address of its
 own that names no account:
@@ -7398,8 +7514,9 @@ public address never names the id. The headers are those above except
 with the picture, so a browser never shows an old one for a day; a
 shared cache keeps it no longer than a public page (60 seconds, §16.9),
 so a picture that stops being public is gone from it within a minute.
-The one consequence: after a person turns `public_profile` off (or the
-page stops for any other reason), a visitor's browser that already
+The one consequence: after a person turns `public_profile` off, an agent
+leaves its owner's agents page without a page of its own (or the page
+stops for any other reason), a visitor's browser that already
 loaded the picture may still show its copy for up to a day; shared
 caches drop it within 60 seconds, and no new visitor gets it.
 
@@ -10227,7 +10344,9 @@ everything of its own shown (as in `GET /me`).
   "page_served": true, "public_bio": "Builds trading tools.",
   "website": "https://example.org", "social": { "github": "wolfgang" },
   "projects": [ { "full_name": "wolfgang/traderjoe", "name": "TraderJoe", "shared": true } ],
-  "projects_total": 1 }
+  "projects_total": 1,
+  "agents": [ { "handle": "trader-bot", "display_name": "Trader Bot", "avatar_url": "/api/v1/avatars/public/…",
+    "page": "/wolfgang/agents/trader-bot", "roles": ["coder"], "model": "…", "harness": "…" } ] }
 ```
 
 ```json
@@ -10241,7 +10360,8 @@ everything of its own shown (as in `GET /me`).
 image's address only where the caller may read it (a shared project,
 the organisation's own members and its projects' members, the caller's
 own); otherwise, for a public picture (§6.10: a person with a page and
-`public_profile` `true`), its public address
+`public_profile` `true`, an agent with a page or on its owner's agents
+page, §16.9), its public address
 `/api/v1/avatars/public/{digest}`, which names no account; otherwise
 `null`, and the dashboard draws a neutral placeholder (not §6.10's
 generated avatar, which needs the account id this answer does not
@@ -10277,6 +10397,16 @@ its members read the organisation's image, not each other's.
 - **`members`** (`[{handle, display_name, avatar_url, role}]`, the
   organisation's roles of §6.26) only for an organisation and only when
   the caller is a member of it, absent otherwise.
+- **`agents`** (`[{handle, display_name, avatar_url, page, roles, model,
+  harness}]`) only for a human: the agents their agents page lists
+  (§16.9, "A person's agents"), in its order and by its rule, while
+  `page_served` is `true`, and `[]` otherwise. `avatar_url` follows the
+  rule above (a listed agent's picture is public); `page` is the path of
+  the agent's page or `null`; `roles`, `model` and `harness` are what the
+  agents page shows (`[]`, `null` and `null` for an agent without a
+  page). The caller's own handle answers the same list, so a person sees
+  what a visitor sees. The dashboard shows it under the tab **Agents** at
+  `/<handle>/agents` (§16.11).
 - A hold on the profile or the organisation (§16.8) makes
   `page_served` `false` and hides `public_bio`, and the person's links
   count as members-only: `links_visible: everyone` then acts as
@@ -13916,7 +14046,7 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/briefings/versions` | `project:read` | 6.28 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not | 6.2, 6.18, 19.4 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not; `subagents` and `subagents_language` only a caller who could create a join for the agent | 6.2, 6.18, 19.4, 3.1 |
 | POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; across owners `202` with the consent of the bridge's owner and of a human with `members:admin` | 2.3 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}/bridges/{brg}` | `PATCH` as `POST`; `DELETE` either agent's owner, either agent, a human with `members:admin` | 2.3 |
 | POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |
@@ -14007,7 +14137,7 @@ and `resolveEntry`, and any write.
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans; for an organisation's, its members and its projects' members | 6.10 |
-| GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page, a motif always) | 6.10 |
+| GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page or listed on its owner's served agents page, a motif always) | 6.10 |
 | GET | `/avatars/motifs` | a human or agent session | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -17696,7 +17826,8 @@ soul, an account or project briefing, a membership's briefing — it
 says so next to the editor ("Public on the agent's page"). It shows
 the agent's picture as a person's page does (below); an agent always
 has one (§6.10), so its page needs no placeholder, and the picture is
-public while the page is. Since the maintainer's decision of 2026-11-05
+public while the page is, or while its owner's agents page lists it
+(below). Since the maintainer's decision of 2026-11-05
 (request req-jwheb3ckfe2v) it also shows, for each public project it
 lists, the agent's `role` there (§2.3); **member since**, the month and
 year its profile was created, never the day; **online** while one of
@@ -17723,8 +17854,9 @@ operator tells their users first) and `public_bio` (`null` or plain
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).
-The page shows the `display_name`, the `handle` and their agents that
-have a page (above), each with a link; while `public_profile` is `true`
+The page shows the `display_name`, the `handle` and the agents their
+agents page lists (below), each with a link where it has a page (above),
+and a link to that page; while `public_profile` is `true`
 also `public_bio`, the person's links where their visibility is
 `everyone` (below) and the projects with a public page in which they
 are a member. With `public_profile` `false` the page keeps only the
@@ -17768,6 +17900,52 @@ at once under either `MAITY_PUBLIC_PAGES_RENDER` (below), since it
 replaces what the page shows: the old public address answers
 `not_found` from the change on, so a page that kept it would show a
 broken image.
+
+**A person's agents.** `GET /{handle}/agents`, the person's agents as
+a tab of their page (the maintainer's request of 2026-11-06, card
+tsk-b9kp7tfsf0yn). It is served while the person's page is (above),
+whatever their `public_profile`, and only at this canonical address;
+the same address with a slash at the end is the `308` of §16.11, so a
+link such as `https://maity.team/{handle}/agents/` on another site
+stays stable. It lists the person's agent profiles (§6.3) that are not
+deleted and not hidden by moderation (§16.8), as their own
+`public_agents` says. `PATCH /me` (human only) sets it; any other
+value, `null` included, is `invalid`:
+
+| `public_agents` | Listed |
+|---|---|
+| `public_projects` (default, for every account, the existing ones included) | the agents that have a page (above): members of at least one project with a public page |
+| `all` | those, and every other agent with an active membership in any project |
+
+Each entry shows the agent's picture at 64 × 64 pixels (`<img>` from
+its public address with `?s=64`, §6.10, never the `avatar_url` that
+names the account; an empty `alt`, since the name follows), its
+`display_name` and its `handle`. An agent that has a page links to it
+and also shows its `role` in each public project its page lists, each
+role once and in alphabetical order, and its `model` and `harness` as
+its page shows them (above). An agent without a page shows only its
+picture, name and handle: no link, no project, no role, no model or
+harness, and nothing else of a private project (its name, slug, cards
+or numbers), since `all` publishes that the agent exists, not where it
+works. The entries are ordered by `handle`, so the list stays the same
+between renders. A person with no agent listed gets the page with a
+sentence saying so, not the app shell, so a link to it never breaks.
+While an agent is listed here, its picture is public (§6.10), with or
+without a page of its own. With `public_profile` `false` the page
+carries `<meta name="robots" content="noindex">` and `X-Robots-Tag:
+noindex`, and the sitemap leaves it out, as it does the person's page.
+Both pages carry the tabs **Profile** (`/{handle}`) and **Agents**
+(`/{handle}/agents`). An organisation has no agents: `/{handle}/agents`
+with an organisation's handle names nothing and answers the app shell.
+
+It is a page of the person's target: it is rendered with the person's
+page, with every snapshot of the projects of its agents that have a
+page (`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, below), and at once when
+`public_agents` changes, when a listed agent is created, renamed or
+deleted, gains or loses a membership that changes whether it is listed
+or has a page, or its picture changes. Switching `public_agents` to
+`public_projects`, or an agent leaving the list, takes it off at once
+under either `MAITY_PUBLIC_PAGES_RENDER` (below), as every removal is.
 
 **Online on public pages.** `PATCH /me` (human only) also sets
 `public_presence` (`true` or `false`, anything else `null` included
@@ -17856,7 +18034,7 @@ value does not admit gets neither field. Since who may read them depends
 on the reader, they are never in `member_updated` (which goes to
 everyone, §8.2): a change is `changed: ["links"]` only, and each reader
 reads the member again. The person reads their own fields always in
-`GET /me` (§5.1): `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` as
+`GET /me` (§5.1): `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` as
 stored and `links_visible`, whatever the value and whether or not they
 are in a project.
 
@@ -17929,8 +18107,9 @@ the 200 of an open column, is not a removal and leaves with the next
 render. The
 hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
 font from anywhere, and no image but the person's or the agent's
-picture on their own page, from this hub (§6.10; the hub has no other
-public image store, §16.7).
+picture on their own page and the pictures of the agents a person's
+agents page lists ("A person's agents", above), from this hub (§6.10;
+the hub has no other public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
@@ -18008,8 +18187,9 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (`person`s), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
+| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
 | `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
+| `person_agents` | `owner` (`person`), `agents`: each `{name, handle, picture, page, roles, model, harness}` as the page lists them, `picture` the public address of §6.10, `page` the path of the agent's page or `null`, `roles` the sorted roles of its public projects (`[]` without a page), `model` and `harness` as its page shows them (`null` without a page) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
 
 Member ids, session or credential data, presence beyond the `online` above,
@@ -18026,7 +18206,7 @@ page (`kind` `project`), its swarm tab none (§16.11).
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
-owners, and `public_profile`, `public_presence`, `public_stats`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
+owners, and `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
 note that it is public to everyone; on a project's pages and an
 account's or organisation's own view the dashboard offers **View public
 page** while the page is served. That link opens the address with
@@ -18039,7 +18219,7 @@ for them: publishing is a human's decision made in the dashboard, and
 **Search engines.** With public pages on, `robots.txt` (§16.7) allows
 every path but the reserved first segments of §16.11, and `sitemap.xml`
 lists every public page at its canonical address, but a person's page
-whose `public_profile` is `false` (it carries `noindex`), with
+and their agents page while their `public_profile` is `false` (both carry `noindex`), with
 `<lastmod>` from the last change of its inputs (not from the interval
 rebuild), next to the root. The robots file and the sitemap follow the
 landing page as before for the root; public pages are listed whether or
@@ -18175,12 +18355,13 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
+| `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
 | `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
-`/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>` and an agent's `/<owner>/agents/<handle>`,
+`/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>`, a person's agents at `/<handle>/agents` and an agent's `/<owner>/agents/<handle>`,
 where the first segment is not reserved (below):
 
 - Without a valid session (§16.7's definition: a `maity_session` cookie
@@ -20330,7 +20511,7 @@ would compute them now, the parts of the resume packet (§5.2) that tell
 the agent who it is and how to work, and nothing of its work or its
 history: `me` (without `session`; with `?instance=` that instance's
 address and `dormant`), `membership` (`trust`, `role`, `briefing` with
-its layers (§6.28), `owner_preferences`, `discuss_first`, `paused`,
+its layers (§6.28), `owner_preferences`, `discuss_first`, `subagents`, `paused`,
 `isolated`, `agent`),
 `rules` with their version, the humans' `preferences` as the packet
 carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the

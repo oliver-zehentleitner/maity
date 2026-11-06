@@ -3647,6 +3647,10 @@
     "en": "426cd406687feeb1",
     "text": "0f3dd533888868a2"
   },
+  "error.forbidden.reason": {
+    "en": "d9de247b04d3423e",
+    "text": "56b1e8b68537112a"
+  },
   "error.forge_app_missing": {
     "en": "30e3fa60a8310b1e",
     "text": "fee5bc93e7164b33"
@@ -3855,9 +3859,25 @@
     "en": "e2be9e00cb6b812d",
     "text": "0dbc949e74a5f1c2"
   },
+  "error.reason.reauthentication_required": {
+    "en": "2b0dbcacf626b95c",
+    "text": "4f8ce33be2378fc8"
+  },
   "error.reason.registration_closed": {
     "en": "d031b820260feb34",
     "text": "9e4f7691e53d2653"
+  },
+  "error.reason.second_factor_enrolment_required": {
+    "en": "1202629e03275f33",
+    "text": "0b74fbae9e349862"
+  },
+  "error.reason.second_factor_required": {
+    "en": "5959a6b378714ff4",
+    "text": "9ae9707066be1df7"
+  },
+  "error.reason.step_up_required": {
+    "en": "ce40580b97ab35cb",
+    "text": "fb5d3601c6d3be36"
   },
   "error.release_in_flight": {
     "en": "66dd2d5b19ca1760",
@@ -5584,8 +5604,12 @@
     "text": "ce9bdb37f2c0b17a"
   },
   "jf.enabled": {
-    "en": "ea32e9bdd8064432",
-    "text": "ae0b1bd3f7c7fce8"
+    "en": "60a7b879d02b645b",
+    "text": "0168859e741f0b3c"
+  },
+  "jf.enabled.hint": {
+    "en": "140267b4030ef581",
+    "text": "34fd74835ad80678"
   },
   "jf.error.time": {
     "en": "7d7a5978e2666f65",
@@ -5798,10 +5822,6 @@
   "jf.rounds.reading": {
     "en": "d9f368c2d320ec2c",
     "text": "18ec28341c32b7c0"
-  },
-  "jf.settings_link": {
-    "en": "701fab0b12e1172e",
-    "text": "b13eb01f732b77e1"
   },
   "jf.skip.hub_down": {
     "en": "338c6cb639de63d0",
@@ -6394,6 +6414,10 @@
   "jfs.hint": {
     "en": "f496ad7da5050f5b",
     "text": "da2960ba1c3bf680"
+  },
+  "jfs.kept_on_page": {
+    "en": "dbcf6830b5d345c6",
+    "text": "47652065659754cd"
   },
   "jfs.moderators": {
     "en": "95ba7594a758cfad",

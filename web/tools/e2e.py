@@ -772,10 +772,12 @@ def main() -> int:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
+                    profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
+                    jour_fixe_settings_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -3056,6 +3058,84 @@ ACCOUNT_MOVED = (
 )
 
 
+# Before any script reads the fixtures: the theme chosen, and for a reader who keeps no series the
+# project's trust lowered to member, so the jour fixe page has no settings of the series.
+JOUR_FIXE_FIXTURE = """(() => { try { localStorage.setItem("maity.theme", %s); } catch (e) {}
+  if (!%s) return; let f; Object.defineProperty(window, "MAITY_FIXTURES", { configurable: true,
+  get() { return f; },
+  set(v) { f = v; f["me.json"].projects.forEach((p) => { if (p.full_name === "maintainer/maity") p.trust = "member"; }); } }); })();"""
+
+
+def jour_fixe_settings_layout(run: Run, browser) -> None:
+    """The jour fixe series' settings at the top of the jour fixe page (tsk-3526xb7mqg9r) in fixture
+    mode, every state the layout has, at 1280 x 900 and 390 x 844, light and dark, with the sign-in
+    banner and without: for a keeper the link in Project settings, the section folded, opened and
+    with the form for a new series (LINES_MEASURE on each); for a member who keeps no series the
+    page without the section."""
+    run.step("fixtures: the jour fixe series' settings folded, opened and with the form, keeper and not, light and dark, banner on and off")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            for keeper in (True, False):
+                context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+                context.add_init_script(JOUR_FIXE_FIXTURE % (json.dumps(scheme), "false" if keeper else "true"))
+                page = context.new_page()
+                errors: list[str] = []
+                page.on("pageerror", lambda err: errors.append(str(err)))
+                who = "keeper" if keeper else "member"
+                try:
+                    for banner in (True, False):
+                        where = f"{who} at {width}x{height} {scheme}" + (" with the banner" if banner else "")
+                        tag = f"-{who}-{width}-{scheme}" + ("-banner" if banner else "")
+
+                        def measure(selector: str, state: str) -> None:
+                            if not banner:
+                                page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                            assert page.evaluate("() => document.documentElement.getAttribute('data-theme')") == scheme, f"{where}: the theme"
+                            m = page.evaluate(LINES_MEASURE, selector)
+                            assert not m["problems"] and not errors, f"{where}, {state}: {m['problems'] + errors}"
+
+                        if keeper:
+                            page.goto("about:blank")
+                            page.goto(f"{index}?lang=en#/maintainer/maity/settings")
+                            moved = page.locator("main section.jf-series-moved")
+                            expect(moved.get_by_role("link", name="Jour fixe", exact=True)).to_be_visible()
+                            expect(page.locator("main li.jf-series")).to_have_count(0)
+                            measure("main section.jf-series-moved", "Project settings")
+                            run.shot(page, "fixtures-jour-fixe-settings-link" + tag)
+                        page.goto("about:blank")
+                        page.goto(f"{index}?lang=en#/maintainer/maity/jour-fixe")
+                        expect(page.locator("main section.jf-series-block").first).to_be_visible()
+                        expect(page.locator("main .signin-banner")).to_be_visible()
+                        fold = page.locator("main details.jf-series-settings")
+                        if not keeper:
+                            # What this state changes is the section's absence: the page stays inside the window.
+                            # (The rounds' own lines are not this case's: they are as before.)
+                            expect(fold).to_have_count(0)
+                            if not banner:
+                                page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                            wide = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+                            assert wide <= 0 and not errors, f"{where}, no settings: {wide} px too wide, {errors}"
+                            run.shot(page, "fixtures-jour-fixe" + tag)
+                            continue
+                        expect(fold).not_to_have_attribute("open", "")
+                        expect(fold.locator("li.jf-series")).to_have_count(0)
+                        measure("main details.jf-series-settings", "folded")
+                        run.shot(page, "fixtures-jour-fixe-folded" + tag)
+                        fold.locator("summary").click()
+                        expect(fold.locator("li.jf-series")).to_have_count(2)
+                        measure("main details.jf-series-settings", "opened")
+                        run.shot(page, "fixtures-jour-fixe-opened" + tag)
+                        fold.get_by_role("button", name="New series", exact=True).click()
+                        expect(fold.locator("#jfs-enabled-hint")).to_be_visible()
+                        measure("main details.jf-series-settings", "with the form")
+                        run.shot(page, "fixtures-jour-fixe-form" + tag)
+                        if width == 1280 and banner:
+                            run.a11y(page, f"fixtures: jour fixe settings, {scheme}")
+                finally:
+                    context.close()
+
+
 def account_tabs_layout(run: Run, browser) -> None:
     """The account's tabs (tsk-3banvfzv3nvs) in fixture mode, every state the layout has: each tab
     and each of Security's own at 2560, 1280 and 390 px, with the sign-in banner and without
@@ -3169,6 +3249,70 @@ def account_tabs_layout(run: Run, browser) -> None:
                 page.wait_for_function("() => location.href === 'about:blank'")
         finally:
             context.close()
+
+
+PROFILE_LINK_MEASURE = """() => {
+  const facts = document.querySelector("main dl.facts"), p = document.querySelector("main p.public-profile-link");
+  const a = p && p.querySelector("a"), r = (el) => el ? el.getBoundingClientRect() : null;
+  const f = r(facts), l = r(p);
+  return { next: !!(facts && p && facts.nextElementSibling === p), in_form: !!(p && p.closest("form")),
+           display: p ? getComputedStyle(p).display : null, gap: f && l ? l.top - f.bottom : null,
+           text: a ? a.textContent : null, href: a ? a.getAttribute("href") : null, target: a ? a.target : null,
+           theme: document.documentElement.getAttribute("data-theme") };
+}"""
+
+
+def profile_public_link_layout(run: Run, browser) -> None:
+    """The account's Profile tab (tsk-4e17b8xnp8eq) in fixture mode: "View public page" right under
+    the name and handle (`dl.facts`), never under the public-profile form. At 1280 x 900 and
+    390 x 844, light and dark, with the sign-in banner and without, and with the page served and not
+    (`page_served: false` from GET /people/{handle}): the link is the facts' next sibling and outside
+    the form, a gap of at most 16 px under the facts while served, `display: none` while not; the
+    facts and the link measured by LINES_MEASURE, the page never wider than the window."""
+    run.step("fixtures: View public page under the name and handle at 1280 and 390 px, light and dark, banner on and off, served and not")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme)
+            context.add_init_script(f"try {{ localStorage.setItem('maity.theme', '{scheme}'); }} catch (e) {{}}")
+            page = context.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                for served in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en#/account")
+                    expect(page.locator("main dl.facts")).to_be_visible()
+                    if not served:
+                        # The hub no longer serves the page: the tab drawn again reads it anew.
+                        page.evaluate("""() => { const api = window.Maity.api, get = api.get;
+                          api.get = (p, ...rest) => p === '/people/maintainer'
+                            ? get.call(api, p, ...rest).then((x) => ({ ...x, page_served: false })) : get.call(api, p, ...rest); }""")
+                        page.locator("main nav.account-tabs").get_by_role("link", name="Settings", exact=True).click()
+                        expect(page.locator("main h3", has_text="Theme")).to_be_visible()
+                        page.locator("main nav.account-tabs").get_by_role("link", name="Profile", exact=True).click()
+                        expect(page.locator("main dl.facts")).to_be_visible()
+                        expect(page.locator("main form.public-profile-form")).to_be_visible()
+                    else:
+                        expect(page.locator("main p.public-profile-link a")).to_be_visible()
+                    expect(page.locator("main .signin-banner")).to_be_visible()
+                    for banner in (True, False):
+                        if not banner:
+                            page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        where = f"the Profile tab at {width}x{height} {scheme}, {'served' if served else 'not served'}" + (", with the banner" if banner else "")
+                        m = page.evaluate(PROFILE_LINK_MEASURE)
+                        lines = page.evaluate(LINES_MEASURE, "main dl.facts, main p.public-profile-link")
+                        assert not lines["problems"] and not errors, f"{where}: {lines['problems'] + errors}"
+                        assert m["theme"] == scheme, f"{where}: the theme is {m['theme']}"
+                        assert m["next"] and not m["in_form"], f"{where}: the link is not right under the name and handle: {m}"
+                        if served:
+                            assert m["display"] != "none" and 0 <= m["gap"] <= 16, f"{where}: {m}"
+                            assert (m["text"], m["href"], m["target"]) == ("View public page", "#/maintainer?as=public", "_blank"), f"{where}: {m}"
+                        else:
+                            assert m["display"] == "none" and m["text"] is None, f"{where}: {m}"
+                        run.shot(page, f"fixtures-profile-link-{width}-{scheme}-{'served' if served else 'none'}" + ("-banner" if banner else ""))
+            finally:
+                context.close()
 
 
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
@@ -4253,12 +4397,18 @@ def project_links_step(run: Run, page: Page) -> None:
 
 
 def jour_fixe_step(run: Run, page: Page) -> None:
-    """The jour fixe (docs/api.md §20): a series kept in Project settings against the real hub,
-    the owner granted the right to moderate it, the view says its next slot and the member's part,
-    and a start by hand opens a round of that series or says why not."""
-    run.step("jour fixe: a series saved in Project settings, a moderator granted, a start by hand")
+    """The jour fixe (docs/api.md §20): a series kept at the top of the jour fixe page against the
+    real hub (Project settings link there), the owner granted the right to moderate it, the view
+    says its next slot and the member's part, and a start by hand opens a round of that series or
+    says why not."""
+    run.step("jour fixe: a series saved on the jour fixe page, a moderator granted, a start by hand")
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    page.locator("section.jf-series-moved").get_by_role("link", name="Jour fixe", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/jour-fixe$"))
+    fold = page.locator("details.jf-series-settings")
+    expect(fold).not_to_have_attribute("open", "")
+    fold.locator("summary").click()
     page.get_by_role("button", name="New series", exact=True).click()
     form = page.locator("form.jf-series-form")
     expect(form).to_be_visible()
@@ -4277,9 +4427,10 @@ def jour_fixe_step(run: Run, page: Page) -> None:
     row.locator("input[id^=jfs-reason-]").fill("e2e: the owner moderates")
     row.get_by_role("button", name="Grant", exact=True).click()
     expect(row.locator("ul.jf-moderators-list li")).to_have_count(1)
-    page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
+    # The series' block below is drawn again after each change, the settings staying open.
     block = page.locator("section.jf-series-block", has_text="e2e: how we work")
     expect(block).to_contain_text("Next round:")
+    expect(fold).to_have_attribute("open", "")
     # Opting out and back in, as the member's own part in the series (§20.2).
     block.locator("li.jf-part .jf-optout").first.click()
     expect(block.locator("li.jf-part").first).to_contain_text("opted out")

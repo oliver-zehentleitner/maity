@@ -5388,8 +5388,12 @@
     "text": "e3ca8c1c2c77c89d"
   },
   "jf.enabled": {
-    "en": "ea32e9bdd8064432",
-    "text": "e8b5e354aff1481b"
+    "en": "60a7b879d02b645b",
+    "text": "6d64077428651f5c"
+  },
+  "jf.enabled.hint": {
+    "en": "140267b4030ef581",
+    "text": "9dadf64379f1ca93"
   },
   "jf.error.time": {
     "en": "7d7a5978e2666f65",
@@ -5602,10 +5606,6 @@
   "jf.rounds.reading": {
     "en": "d9f368c2d320ec2c",
     "text": "291c63091e1a300f"
-  },
-  "jf.settings_link": {
-    "en": "701fab0b12e1172e",
-    "text": "9c7b288553c49a20"
   },
   "jf.skip.hub_down": {
     "en": "338c6cb639de63d0",
@@ -6198,6 +6198,10 @@
   "jfs.hint": {
     "en": "f496ad7da5050f5b",
     "text": "ac82286699afb368"
+  },
+  "jfs.kept_on_page": {
+    "en": "dbcf6830b5d345c6",
+    "text": "b91634766eebcf61"
   },
   "jfs.moderators": {
     "en": "95ba7594a758cfad",
