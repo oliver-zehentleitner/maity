@@ -740,6 +740,10 @@ class Supervisor:
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
+        found = target.probes.get(harness.id)
+        warning = capabilities.unchecked(harness.id, found.version if found else None)
+        if warning is not None:
+            self.log(f"{name}: {warning}")
 
     # --- the join (§15.9) -------------------------------------------------------------------
 
