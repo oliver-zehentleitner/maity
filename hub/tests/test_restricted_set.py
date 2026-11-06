@@ -604,6 +604,35 @@ def test_a_late_joiner_does_not_see_an_old_restricted_notice(
     assert _notices(anna) == []  # anna wrote it
 
 
+def test_a_late_joiner_does_not_see_an_old_restricted_event(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """akbp 82280 / vuur 82282 / restricted.readable_seqs: membership_id predicate. A human
+    admitted after a card restricted_changed must not read that earlier event from history
+    (the private-list row was written for members in the set at write time)."""
+    anna = _member(make_client, migrated, "anna")
+    bert = _member(make_client, migrated, "bert")
+    card = _card(owner)
+    _set(migrated, "nobody_except", [anna.id])
+    _write(anna, card["id"], MARKER)
+    [event] = [
+        e
+        for e in _events(anna, "restricted_changed")
+        if e["payload"].get("task_id") == card["id"]
+    ][-1:]
+    _set(migrated, "nobody_except", [anna.id, bert.id])
+    assert [
+        e
+        for e in _events(bert, "restricted_changed")
+        if e["payload"].get("task_id") == card["id"] and e["seq"] == event["seq"]
+    ] == []
+    assert [
+        e["seq"]
+        for e in _events(anna, "restricted_changed")
+        if e["payload"].get("task_id") == card["id"]
+    ] == [event["seq"]]
+
+
 def test_org_promotion_raises_an_existing_member_into_the_set(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
