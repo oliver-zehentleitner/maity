@@ -712,7 +712,7 @@ def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
 def _with_mail(make_client: ClientFactory, admin: flow.Human) -> flow.Human:
     """The instance admin on a hub whose mail is complete and enabled."""
     client = make_client(mail=settings_for().mail)
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     return flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], admin.id)
 
 

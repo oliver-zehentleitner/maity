@@ -212,6 +212,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
+| 409 | `admin_address_required` | removing the instance admin's verified address, filed or approved (§18.4): the admin's password sign-in needs it (§2.1) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
@@ -401,9 +402,9 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password, next?}` | anyone | `handle` is the human's current handle or one of their aliases (§6.24); sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
+| `POST /auth/login` `{email, password, next?}` | anyone | `email` is the account's address (§18.4): verified, or `disabled` after delivery failures (§18.7), which still signs in, so a bounce never takes the password away; compared trimmed and lower-cased as §2.6.3 compares. An account with neither has no password sign-in. Sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`, with `details.reason` once the password is paused (below). An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
-| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
+| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts in a bucket of its own (below) |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
 
 Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
@@ -428,11 +429,50 @@ and changes no answer (a credential in a body or query string is still
 `join_url`: the configured join URL, or `null` — the dashboard shows the
 "join link via <join host>" choice only when it is set.
 
-Login is limited to 10 attempts per minute per source address and per
-handle (`rate_limited`; the count is kept per id for a known handle or
-alias, so a handle and its aliases count as one, §6.24, and per string
-for an unknown handle), and refuses `Sec-Fetch-Site: cross-site` like
-every cookie request. A password has at least 12 characters and no
+Login is limited to 10 attempts per minute per source address, every
+attempt (`rate_limited`, the one limit of the login that answers `429`),
+and refuses `Sec-Fetch-Site: cross-site` like every cookie request.
+
+**Wrong passwords** count per account: 5 in 15 minutes, kept per id for
+an account's address and per string for an address of no account. Once 5 are in the window, the password signs in for the rest
+of it only from a **known source** of the account: a source address
+(§2.5) from which the account completed a sign-in in the last 30 days
+(any method, with the second factor where one is asked; a session that
+waits at the second step makes none), and which has itself sent fewer
+than 5 wrong passwords for the account in the window — wrong passwords from a known
+source count like any. From every other source the password is not
+checked: each attempt is `unauthenticated` with `details.reason`
+`email_link` while `GET /auth/methods` answers `email_link: true`
+(§2.6.1), and the login page offers the link with the address filled
+in; otherwise `password_paused`, with `details.retry_after`, the seconds
+until the window lets the password through again. An address of no
+account is answered the same way, so the answers say
+nothing about whether an account exists. The device code (§2.6.2) is
+never paused by them.
+
+To tell a known source the hub keeps, per account, a keyed fingerprint
+of each source address a sign-in completed from, with the time of the
+last one: an HMAC-SHA-256 of the address under a key derived from
+`MAITY_SECRET_KEY`, or, where none is set, from the random pepper the
+hub makes at first use and keeps in its own database (`instance_secret`)
+for the per-address lock (`hub/context/notifications.md`).
+The address itself is never stored. That makes a fingerprint
+pseudonymous, not anonymous: whoever holds the key, or without
+`MAITY_SECRET_KEY` a copy of the whole database, can still test a
+guessed address against it (the whole IPv4 range is few enough to
+try). A
+fingerprint goes 30 days after its last sign-in and with the account
+(§2.9). Setting, changing or removing `MAITY_SECRET_KEY` changes the
+key, so every fingerprint stops matching: each account has no known
+source until its next sign-in. The fingerprints are not part of the
+export (§2.9).
+
+`POST /auth/password`, `POST /auth/reauthenticate` (§2.8.1) and the
+change of a verified address (§18.4) count their wrong passwords in
+buckets of their own, 5 in 15 minutes per account each, then
+`rate_limited` for that call until the window passes. None of them
+counts toward the login, so a session's own wrong attempts pause nobody's
+sign-in. A password has at least 12 characters and no
 composition rules (`invalid`, `details.fields.new: "too_short"`). An
 agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
 `forbidden` with `details.reason: humans_only` and no `details.scope`,
@@ -440,8 +480,13 @@ the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
 call and 30 days after login regardless. Every call renews the human's
-`last_seen_at`. How the first human account comes to exist is an operator
-command of the hub (`maity-hub owner create`), not part of this contract.
+`last_seen_at`. The first human account comes from an operator command of the hub,
+`maity-hub owner create`, which takes the account's address (`--email`)
+and stores it as verified on the operator's word, so that the account
+signs in with its password even where the hub has no mail; the command
+itself is not part of this contract. A hub whose instance admin (§16)
+has no verified address logs a warning at start. The instance admin's
+verified address can be replaced but not removed (§18.4).
 Signing in without a password — a device code, a link by mail — and the
 list of a human's own sessions are §2.6; the second factor that an
 enrolled human gives after any of them is §2.8.
@@ -1585,8 +1630,7 @@ definition.
   `current_password` beside `email` in the `PATCH` (#160, §18.4).
   Missing: `invalid` with `details.fields.current_password: "required"`;
   wrong: `invalid` with `details.fields.current_password: "mismatch"`,
-  counted against the login limit of §2.1 as a wrong `current` of
-  `POST /auth/password` is. Right: the change goes on as #160 §18.4
+  counted in the address change's own bucket (§2.1). Right: the change goes on as #160 §18.4
   describes (the new address is verified by its link).
 - **A human without a password** (an account that has never set one)
   needs the change approved from a session of theirs that is **at
@@ -1841,7 +1885,8 @@ address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `second_factor_disabled`, `second_factor_reset`,
 §2.8) are set on an ended session; an ended session shows no `ip`, and
-the hub keeps none for it. A session of another
+the hub keeps none for it — only the keyed fingerprint of §2.1, never
+the address itself. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
@@ -1981,7 +2026,11 @@ event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
 
-- **Login page.** The password form as today; below it "Have a code?"
+- **Login page.** The password form, asking for the email address and
+  the password. After `details.reason: email_link` it says that the
+  password is paused here for a while and offers "Email me a sign-in
+  link" with the address filled in; after `password_paused` it says when
+  to try again (§2.1). Below the form "Have a code?"
   when `device_code` is on, and "Email me a sign-in link" when
   `email_link` is on (§2.6.1). After the mail request: "If this address
   belongs to an account, a link is on its way", with a field for the
@@ -2259,8 +2308,8 @@ registration to the next day; nothing more.
 
 A human's handle follows the agent profiles' syntax
 (`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts
-and organisations, their aliases included (§6.24, §6.26), since the
-login takes it (§2.1) and a project's owner is named by it (§6.25);
+and organisations, their aliases included (§6.24, §6.26), since
+mentions find a human by it and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
@@ -2279,7 +2328,7 @@ pending sessions**: real sessions that hold no scope and see only their
 own pending status.
 
 - **Getting one.** The session the completion starts (§2.7.1); later,
-  `POST /auth/login` with the handle and the password (§2.1); and, where
+  `POST /auth/login` with the verified address and the password (§2.1); and, where
   the instance offers it, a sign-in link by mail (§2.6.3). Each gives
   the same restricted session. Device codes cannot be used: creating or
   approving one needs a session in good standing, and a pending session
@@ -2364,7 +2413,7 @@ secret_key_missing`.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required, via}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5), and after a reset until the human has enrolled again (§2.8.3); `via` is what the human's next sign-in asks for: `totp`, `email` (§2.8.8) or `null` |
-| `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted against the login limit (§2.1) |
+| `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted in a bucket of its own (§2.1) |
 | `POST /auth/second-factor/totp` | human, with the proof below | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unfinished one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once, and the session's `second_factor_at` is set (§2.8.4), so the code just used does not have to be followed by another. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unfinished until it expires |
 | `POST /auth/second-factor/recovery-codes` | human, with the proof below, and step-up | ten new recovery codes, the old ones void at once; 200 `{recovery_codes}` |
@@ -2657,7 +2706,7 @@ environment winning as there:
 | What | Limit |
 |---|---|
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
-| Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes |
+| Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -2878,7 +2927,8 @@ and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
 of the thing the caller's own entry belongs to, and only where the
 caller may still read that thing when exporting; otherwise its id
-alone. Redacted content is exported as redacted. A card's restricted
+alone. Redacted content is exported as redacted. The fingerprints of
+the account's known sources (§2.1) are left out. A card's restricted
 text (§6.4) is in the export only as its one exception there: the texts
 whose current version the caller wrote, of each project whose
 restricted-access set they are in when exporting (§6.1); every other
@@ -2915,7 +2965,8 @@ What deletion does:
 
 - **Ends access at once**: every session and device code of the
   account ends; its second factor, recovery codes, forge links and
-  tokens and pending sign-in links are deleted; the instance's pending
+  tokens, pending sign-in links and the fingerprints of its known
+  sources (§2.1) are deleted; the instance's pending
   mail to the account is dropped (§18.7).
 - **Removes the person**: the addresses, display name, avatar,
   languages, preferences, notification settings, public profile and its
@@ -9569,8 +9620,6 @@ actor or a participant) names the current handle only.
 **Resolution.** Wherever the hub takes a handle to find a member, an
 alias finds the same id as the current handle:
 
-- `POST /auth/login` takes a human's current handle or one of their
-  aliases (§2.1).
 - A mention `@<alias>` resolves to that member, and in a global name
   both parts do — `@oldowner/agent-b` after the owner's rename,
   `@oliver/old-b` after the profile's, and both together. A current
@@ -19688,10 +19737,13 @@ device; the browser's own permission is per browser and is not stored.
 - **Changing a verified address.** Once a verified address exists,
   setting another one or removing it (`null`) needs the human's own
   confirmation; how young a session is or how it was made does not
-  count. A human with a password puts it in the same request,
+  count. The instance admin's (§16) verified address is never removed:
+  a removal, filed or approved, is `409 admin_address_required`, since
+  the admin's password sign-in needs it (§2.1); replacing it goes on as
+  below. A human with a password puts it in the same request,
   `current_password` beside `email` (missing: `invalid` with
   `details.fields.current_password: "required"`; wrong: `"mismatch"`,
-  counted against the login limit of §2.1). A human without a password
+  counted in its own bucket, §2.1). A human without a password
   needs the change approved from a session of theirs in good standing
   (#169 §2.6.5) and at least 24 hours old: a `PATCH` from such a session
   is the approval; from a younger
