@@ -309,7 +309,9 @@ def _person(human: Any) -> dict[str, Any]:
     return {"name": human.display_name, "handle": human.handle, "page": f"/{human.handle}"}
 
 
-def _data(human: Any, named: list[Listed], agents: list[ListedAgent], shown: Shown) -> dict[str, Any]:
+def _data(
+    human: Any, named: list[Listed], agents: list[ListedAgent], shown: Shown
+) -> dict[str, Any]:
     """What the visitors' route answers; `website` and `social` only as the page shows them."""
     data: dict[str, Any] = {
         "name": human.display_name,

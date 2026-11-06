@@ -8,11 +8,11 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import public_pages, public_snapshot
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_public_project_views import World, pages
 
@@ -154,9 +154,9 @@ def test_a_person_without_an_agent_gets_the_page_with_a_sentence(world: World) -
 
 
 def test_with_the_profile_off_the_tab_stays_out_of_search(world: World) -> None:
-    assert "<loc>https://hub.example/maintainer/agents</loc>" in world.anyone.get(
-        "/sitemap.xml"
-    ).text
+    assert (
+        "<loc>https://hub.example/maintainer/agents</loc>" in world.anyone.get("/sitemap.xml").text
+    )
     assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
     got = world.anyone.get("/maintainer/agents")
     assert got.headers["x-robots-tag"] == "noindex"
@@ -198,3 +198,45 @@ def test_the_snapshot_brings_an_agent_s_model_and_harness_to_the_tab(
     page = main(world, "maintainer/agents")
     assert "Model: model-one" in page and "Harness: claude-code" in page
     assert "Model:" not in main(world, "maintainer")  # the profile lists names only
+
+
+def test_under_all_an_agent_held_by_moderation_is_not_listed(
+    world: World, make_client: ClientFactory
+) -> None:
+    assert world.owner.patch("/me", {"public_agents": "all"}).status_code == 200
+    _, hidden = private_agent(world, make_client)
+    with world.migrated.connect() as conn:
+        agent_id = conn.execute(
+            select(t.agent_profile.c.id).where(t.agent_profile.c.handle == hidden)
+        ).scalar_one()
+    # The agent shares no project with anyone but its owner: the instance admin reports it.
+    target = {"target": {"type": "profile", "id": agent_id}, "reason": "spam"}
+    made = world.owner.post("/reports", target)
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
+    with world.migrated.begin() as conn:  # what the owner's next render reads
+        public_pages.touch(conn, "person", world.owner.id)
+    assert hidden not in [a["handle"] for a in data(world, "maintainer/agents")["data"]["agents"]]
+    assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
+    with world.migrated.begin() as conn:
+        public_pages.touch(conn, "person", world.owner.id)
+    assert hidden in [a["handle"] for a in data(world, "maintainer/agents")["data"]["agents"]]
+
+
+def test_the_snapshot_renders_the_tab_of_an_owner_who_is_no_member(world: World, hub: Any) -> None:
+    olga = factory.human(world.migrated, "olga")  # owns an agent in the project, no member
+    bot = factory.agent(world.migrated, world.project_id, olga, role="coder")
+    with world.migrated.begin() as conn:
+        public_pages.touch(conn, "person", olga)
+    (listed,) = data(world, "olga/agents")["data"]["agents"]
+    assert listed["model"] == "claude-opus-5-5"
+    with world.migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.id == bot.session_id)
+            .values(model="model-two")
+        )
+    public_snapshot.Worker(world.migrated, hub).run_once()
+    (listed,) = data(world, "olga/agents")["data"]["agents"]
+    assert listed["model"] == "model-two"
