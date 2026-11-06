@@ -80,6 +80,22 @@ def member(who: Any, member_id: str, body: dict[str, Any]) -> Any:
     return who.patch(f"{PROJECT}/members/{member_id}", body)
 
 
+def _signed_in_owner(make_client: ClientFactory, engine: Engine, agent_id: str) -> flow.Human:
+    """The human who owns the agent profile, signed in. Not a member of the project."""
+    with engine.connect() as conn:
+        owner_id = conn.execute(
+            select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+        ).scalar_one()
+        handle = conn.execute(select(t.human.c.handle).where(t.human.c.id == owner_id)).scalar_one()
+    client = make_client()
+    logged_in = client.post(
+        "/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD}
+    )
+    assert logged_in.status_code == 200, logged_in.text
+    csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
+    return flow.Human(client, csrf, str(owner_id), str(handle))
+
+
 def details(response: Any) -> Any:
     return response.json()["error"]["details"]
 
@@ -510,14 +526,25 @@ def test_only_a_human_lowers_a_manager_to_guest(team: dict[str, Any], migrated: 
 
 
 def test_ending_the_edge_ends_the_consent_and_lifts_the_pause(
-    owner: flow.Human, team: dict[str, Any], migrated: Engine
+    owner: flow.Human, team: dict[str, Any], migrated: Engine, make_client: ClientFactory
 ) -> None:
+    """§6.2 "Another owner's agent": a `reports_to` of `null` on another owner's agent is a
+    field of the consent request. The call answers `202`; the edge, the line consent and a
+    pause the manager set end at that owner's `go`."""
     manager, stranger = team["manager"], team["stranger"]
     _set(migrated, stranger, line_consent=True)
     assert member(manager, stranger, {"paused": {"reason": "x"}}).status_code == 200
     ended = member(owner, stranger, {"reports_to": None})
-    assert ended.status_code == 200, ended.text
-    assert (ended.json()["line_consent"], ended.json()["paused"]) == (False, None)
+    assert ended.status_code == 202, ended.text
+    held = _row(migrated, stranger)
+    assert held.reports_to == _mid(migrated, manager.id)
+    assert held.line_consent is True and held.paused_since is not None
+    theirs = _signed_in_owner(make_client, migrated, stranger)
+    assert ended.json()["to"] == f"human:{theirs.id}"
+    go = theirs.post(f"/requests/{ended.json()['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    row = _row(migrated, stranger)
+    assert (row.reports_to, row.line_consent, row.paused_since) == (None, False, None)
     # Removing the boss ends the edge the same way.
     _set(migrated, stranger, reports_to=manager.id, line_consent=True)
     assert member(manager, stranger, {"paused": {"reason": "x"}}).status_code == 200

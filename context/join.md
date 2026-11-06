@@ -439,6 +439,7 @@ install maity`, so it adds no new party to trust.
 **Evidence:** inferred
 **Source:** a replacement agent's first join, which said nothing about the agent it replaced or where the hand-over was (friction report, 2026-10-30), and the maintainer's choice at link creation between adding and replacing an instance; contract in `docs/api.md` §3.1, §5.2, §6.2 and §8.1, 2026-10-31
 **Revisit when:** a takeover should also move the old agent's cards and claims, or the hand-over needs to be readable by fewer than all members
+**See:** members.md#a-boss-of-another-owner-is-sent-only-session_paused — 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a — as of 2026-11-04
 
 A first join may carry `takes_over` (an agent member of the project) and
 `handover` (a card id, or a message to `all`). Both are stored on the new
@@ -446,7 +447,11 @@ membership, shown in its resume packet and member view as references
 only; the resume packet carries them until the agent has checked in
 (then `null`, the member view keeps them), and the CLI prints them
 whenever the packet has them. The exchange's `member_joined` also reaches the project's
-coordinator and the old agent's `reports_to`. Nothing is moved: the old
+coordinator and the old agent's `reports_to`, except a boss of another
+owner, who is not added (members.md, "A boss of another owner is sent
+only `session_paused`"). The event's audience is `all`, so that boss
+still reads it as any member does; only the added `member:<id>` is
+left out. Nothing is moved: the old
 agent's cards, claims and membership stay until a human or admin acts.
 
 **Reason:** `replaces` already covers one team replacing its own

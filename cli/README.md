@@ -145,7 +145,7 @@ So that a new session resumes on its own, add this to AGENTS.md (or join with --
 <!-- maity:begin -->
 …
 <!-- maity:end -->
-Your briefing, as the humans of this project wrote it for you:
+Your briefing, set by maintainer:
 > You own the hub's credential exchange. Start with tsk-0004;
 > ask me before you change the database schema.
 
@@ -317,7 +317,14 @@ to allow it.
 git and gh run with prompts switched off (`GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never`, `GH_PROMPT_DISABLED=1`), stdin closed and a
 30-second timeout. A remote that asks for a password is an error, never a
-hanging command.
+hanging command. maity's own git and gh calls (such as report, checkpoint,
+the cite and text checks, the state lookup, the join's root lookup and
+the build identity) start by name from an absolute
+`PATH` entry, never from the current directory, and git may use only the
+https, http, ssh, git and file transports (`GIT_ALLOW_PROTOCOL`, narrowed
+further by one you set yourself). The runner's `gc` read of a clone and a
+workspace clone made as the agents' user run git with settings of their
+own (see `context/report.md`).
 
 ## `report`
 
@@ -344,6 +351,11 @@ It refuses with exit 4, before anything is sent, on any of these:
   that PR's branch (`git switch`), or after a merge with the branch
   deleted, from that branch recreated at its merged head
   (`git switch -c <branch> <merged head>`)
+
+Before it asks git about the upstream, it refuses with exit 1 an upstream
+whose remote, configured URL or merge ref starts with `-` or names a remote
+helper (`<transport>::<address>`), and a merge ref outside `refs/heads/`;
+the message names `git push -u` to set it again.
 
 Before sending, `report` prints what it reports on standard error:
 `reporting <branch> at <head>, PR #<n> (<state>)`.
@@ -993,7 +1005,19 @@ real `.git` and do not run a program from a planted directory or
 submodule. `maity` runs its own git (`report`, `checkpoint`) with the
 same settings on the command line, whatever its environment, because
 for Claude Code it runs outside the sandbox. An agent can unset the
-variables for its own commands, but those stay in its sandbox. The cost:
+variables for its own commands, but those stay in its sandbox. In a
+session, maity's own git runs only once the clone passes the plain-clone
+check `gc` uses, and on a repository maity writes for that run under
+`.git/maity`, so what git reads as configuration is maity's, not the
+clone's, with no system or global configuration; git is the one the
+runner recorded, with a fixed environment, not maity's own. A clone the
+runner set up holds a marker in `.git/maity`; there maity runs no git
+without the session's variables, also from outside the clone when git
+would be led to it. Submodules, Git LFS, worktrees, sparse checkout,
+partial clones and other repository format extensions
+are not supported under the runner yet. The git of the
+harness, and of other programs run in the clone, is not protected by
+maity's checks. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
 and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
 submodule moved to another commit does not show in `git status` or
@@ -1016,6 +1040,19 @@ needs it.
 | `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
 | `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
+
+**Claude Code's sandbox and injected text.** maity runs outside Claude
+Code's sandbox, as a plain `maity …` call. Checked with Claude Code
+2.1.318: a command, a variable or a PATH placed in front of that call
+does not run outside the sandbox (the runner's permission rules refuse
+it, and past them it runs inside). This is the harness's behaviour, not
+a contract; recheck it with other versions. Not covered: an allow rule
+from the repository's own grant that itself starts with such a prefix,
+and Codex. Where it does not hold, a prefixed call would run as the
+operator's account in the `single` layout, as the agents' user's account
+in `agent_user`. Run agents that read untrusted text (issues, pull
+requests, web pages) in the `agent_user` layout, which keeps your own
+account out of their reach either way.
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
