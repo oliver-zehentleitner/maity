@@ -163,9 +163,12 @@ window.Maity = window.Maity || {};
     // future member reads them too; saved only once the human confirms.
     function askWiden(next, newly) {
       clear(confirmBox);
-      const count = value && typeof value.cards_with_text === "number" ? value.cards_with_text : 0;
+      // A closed setting is served without a count, while texts written before stay stored
+      // (§6.1): then the page says that, never a number it was not given.
+      const counted = !!value && typeof value.cards_with_text === "number";
       append(confirmBox,
-        h("p", { class: "restricted-confirm-cards" }, M.t("restricted.widen.cards", { count })),
+        h("p", { class: "restricted-confirm-cards" }, counted
+          ? M.t("restricted.widen.cards", { count: value.cards_with_text }) : M.t("restricted.widen.cards_unknown")),
         newly.length ? [h("p", null, M.t("restricted.widen.newly")),
           h("ul", { class: "restricted-newly" }, newly.map((m) => h("li", null, who(ctx, m))))] : null,
         next.mode === "all_except" ? h("p", { class: "restricted-confirm-future" }, M.t("restricted.widen.future")) : null,

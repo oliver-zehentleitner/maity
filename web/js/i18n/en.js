@@ -3898,6 +3898,7 @@ window.MAITY_I18N["en"] = {
     "one": "{count} card has a restricted text now.",
     "other": "{count} cards have a restricted text now."
   },
+  "restricted.widen.cards_unknown": "Texts written while the set was open before stay stored, and they will read those too.",
   "restricted.widen.future": "Every member who joins this project later will read them too.",
   "restricted.widen.go": "Save and let them read",
   "restricted.widen.newly": "These members will read and write every restricted text of the project, those written before included:",

@@ -3289,7 +3289,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("restricted-mode").value = "nobody_except"; byId("restricted-mode").dispatch("change");
   byId("restricted-member-hum-maintainer").checked = true; byId("restricted-member-agt-b").checked = true;
   await raSubmit();
-  expect(!raPatches.length && !raConfirm().hidden && text(raConfirm()).includes("0 cards have a restricted text now.")
+  expect(!raPatches.length && !raConfirm().hidden && text(raConfirm()).includes("Texts written while the set was open before stay stored, and they will read those too.") && !text(raConfirm()).includes("0 cards")
     && text(raConfirm()).includes("Agent B (@agent-b), agent of Maintainer (@maintainer)") && !text(raConfirm()).includes("Every member who joins"),
     "restricted: a change that widens the set asks first, each agent with its owner, nothing sent " + JSON.stringify(raPatches));
   raConfirm().querySelector("button.restricted-widen-go").click(); for (let k = 0; k < 8; k++) await tick();
