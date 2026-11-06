@@ -6140,17 +6140,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && main.querySelector("section.jf-report").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/inbox/req-0091"),
       "jour fixe: a round shows its topic, phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
 
-    // Project settings: the series, created, changed and deleted with a reason.
+    // Project settings only say where the series are kept now.
     await go("#/maintainer/maity/settings"); await settle();
+    const jfMoved = main.querySelector("section.jf-series-moved");
+    expect(jfMoved && !main.querySelector("li.jf-series") && !main.querySelector("details.jf-series-settings")
+      && jfMoved.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/jour-fixe")
+      && text(jfMoved).includes("The series and their moderators are kept on the Jour fixe page."), "jour fixe: Project settings point to the jour fixe page and list no series");
+    // The jour fixe page: the series at its top, folded and not read until opened; then created, changed and deleted with a reason.
+    const jfFold = () => main.querySelector("details.jf-series-settings");
+    const jfOpen = async () => { jfFold().open = true; jfFold().dispatch("toggle"); await settle(); };
+    let jfReads = 0;
+    const jfGetNow = win.Maity.api.get;
+    win.Maity.api.get = (p, ...rest) => { if (p === "/projects/maintainer/maity/jour-fixe") jfReads += 1; return jfGetNow(p, ...rest); };
+    await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    const jfBody = () => main.querySelector("div.jf-body");
+    expect(jfFold() && !jfFold().open && jfFold().nextSibling === jfBody() && jfBody().contains(jfBlock("jfs-0001")) && !main.querySelector("li.jf-series")
+      && text(jfFold().querySelector("summary")) === "Jour fixe series" && jfReads === 1,
+      "jour fixe: the series' settings at the top of the page, above the rounds, folded and not read until opened");
+    await jfOpen();
+    win.Maity.api.get = jfGetNow;
+    expect(jfReads === 2, "jour fixe: opening the settings reads the series once");
     const jfItem = (id) => main.querySelector("li.jf-series[data-series=\"" + id + "\"]");
     const jfItems = () => main.querySelectorAll("li.jf-series").map((li) => li.getAttribute("data-series"));
     const jfForm = () => main.querySelector("form.jf-series-form");
     expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-0001", "jfs-0002"]) && text(jfItem("jfs-0001")).includes("Weekly on Monday at 09:00 (Europe/Vienna)")
       && text(jfItem("jfs-0001")).includes("on schedule") && text(jfItem("jfs-0002")).includes("paused") && text(jfItem("jfs-0002")).includes("My agents: how the queue feels")
-      && !jfForm() && btn(main, "New series"), "jour fixe: Project settings list the series with their topic, circle, state and schedule; no form until one is asked for");
+      && !jfForm() && btn(main, "New series"), "jour fixe: the settings list the series with their topic, circle, state and schedule; no form until one is asked for");
     btn(main, "New series").click(); await tick();
-    expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden,
-      "jour fixe: the form for a new series, the circle open to choose");
+    expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden
+      && byId("jfs-enabled").parentNode.querySelector("label") && text(byId("jfs-enabled").parentNode.querySelector("label")) === " Activated"
+      && byId("jfs-enabled").getAttribute("aria-describedby") === "jfs-enabled-hint" && text(byId("jfs-enabled-hint")).startsWith("While activated, rounds open on this schedule."),
+      "jour fixe: the form for a new series, the circle open to choose, the schedule Activated with its hint");
     byId("jfs-topic").value = " "; byId("jfs-reason").value = "a look back";
     jfForm().dispatch("submit"); await settle(4);
     expect(!jfCalls.length && text(byId("jfs-error")).includes("Write the topic."), "jour fixe: a series without a topic is not sent");
@@ -6171,6 +6191,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const jfMine = () => main.querySelectorAll("li.jf-series").find((li) => text(li).includes("Reviews"));
     expect(!jfForm() && jfMine() && text(jfMine()).includes("The project's humans") && text(jfMine()).includes("Every 2 weeks on Monday, Thursday at 10:00 (Europe/Vienna)")
       && text(main).includes("The series is saved.") && jfItems().length === 3, "jour fixe: the new series listed with its schedule as a sentence");
+    expect(jfBlock(jfMine().getAttribute("data-series")) && jfFold().open && jfFold().nextSibling === jfBody(),
+      "jour fixe: a new series gets its block below at once, the settings staying open");
     // A series for one owner: the owner is chosen among the humans; a hub refusal is said at its field.
     btn(main, "New series").click(); await tick();
     byId("jfs-circle").value = "owner"; byId("jfs-circle").dispatch("change");
@@ -6227,7 +6249,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "jour fixe: the right ended without a reason or a body");
 
     // The owner's series is private: its keeper reads it; an admin who is not its owner only learns it exists, and may delete it.
-    await go("#/maintainer/sample/settings"); await settle();
+    await go("#/maintainer/sample/jour-fixe"); await settle(6); await jfOpen();
     expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-s1", "jfs-s2"]) && text(jfItem("jfs-s2")).includes("A private series of @hum-anna.") && !text(jfItem("jfs-s2")).includes("Anna's agents")
       && !jfItem("jfs-s2").querySelector(".jfs-edit") && !jfItem("jfs-s2").querySelector("ul.jf-moderators-list") && jfItem("jfs-s2").querySelector(".jfs-delete")
       && text(jfItem("jfs-s1")).includes("Shop: how we work"), "jour fixe: an owner's series is shown to an admin without its topic, to be deleted only");
@@ -6279,7 +6301,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && (await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s4").catch((err) => err.code)) === "not_found",
       "jour fixe: an owner's series is no block of the view for an admin who is not its owner; its rounds are left out and not found");
     jfCalls.length = 0;
-    await go("#/maintainer/sample/settings"); await settle();
+    await go("#/maintainer/sample/jour-fixe"); await settle(6); await jfOpen();
     byId("jfs-reason-jfs-s2").value = "its owner left"; jfItem("jfs-s2").querySelector(".jfs-delete").click(); await settle();
     expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s2", { reason: "its owner left" }]]) && JSON.stringify(jfItems()) === JSON.stringify(["jfs-s1"]),
       "jour fixe: an admin deletes an owner's series with a reason");
@@ -6402,6 +6424,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       byId("jfa-redact-answer-jfa-s9").value = "too personal"; btn(own(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
       expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/redact", { target: "answer:jfa-s9", reason: "too personal" }]) && text(own()).includes("Removed."),
         "jour fixe answer: the author removes their named answer after the window");
+      // Who is no keeper reads the rounds as before, without the series' settings (§20.1).
+      await go("#/maintainer/sample/jour-fixe"); for (let k = 0; k < 10; k++) await tick();
+      expect(!main.querySelector("details.jf-series-settings") && main.querySelector("section.jf-series-block") && !main.querySelector("li.jf-series"),
+        "jour fixe: a member without project:admin gets the rounds without the series' settings");
       win.Maity.api.get = asMember;
       const anonAfter = await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s1/answers?mine=true");
       expect(anonAfter.items.length === 0, "jour fixe answer: an anonymous answer is not found as one's own after the window, in the fixture hub as in the hub");
