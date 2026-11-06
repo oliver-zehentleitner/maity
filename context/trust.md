@@ -772,3 +772,40 @@ reading that takes an agent's text as the humans' instruction.
 **Rejected alternative:** keep one heading, "written by the humans",
 for every layer — an agent's text would be presented as the humans'.
 
+
+## The human tells the agent to use subagents, through the join line and the briefing, not the hub
+
+**Id:** 918db873-56e9-4764-a547-e8d444dc50fd
+**Type:** decision
+**Status:** pending-confirmation
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; open details put to the maintainer as req-rdr75kn4pfb3 (who may change it), req-a2sg2a9ftefa (the language of the copy) and req-r9r8br26v3ne (the wording)
+**Revisit when:** a harness starts subagents on an instruction from the hub alone, or one refuses the instruction even from its own user
+**See:** trust.md#a-briefing-names-its-writer — fe48424d-d68c-4db9-8871-c9eddf83ae52 — as of 2026-11-06
+
+A join has a switch `subagents`, on by default for coders and reviewers.
+When it is on, the agent gets one fixed English instruction from the
+human who owns it: do every review or coding task from Maity in a
+fresh subagent, and send results with `maity say` to the members the
+order names. The instruction reaches the agent in three places with the
+same words: in the text the dashboard copies with the join line, on
+the join page, and in the briefing's `agent` layer on every resume,
+there with `by` the owner. Only the agent's owner changes the switch
+later, as with "discuss first".
+
+**Reason:** some harnesses started no subagents and sent no results on
+orders that came through Maity; they accept both only on their own
+user's explicit instruction. The human who pastes the join line is that
+user, so the instruction travels in the human's own message. It is
+also in the briefing because a harness reads that on every resume,
+long after the paste. It is quoted with the owner as `by`, not as a
+hub default, because the briefing marks hub texts as not
+instructions.
+
+**Rejected alternatives:**
+- A sentence of the hub in the guide or the rules: quoted as the hub's,
+  which is what those harnesses do not follow.
+- The instruction inside `paste_lines`: those are shell commands that
+  scripts and the CLI pass on; a sentence there breaks them.
+- A command per harness (a flag, a config key): ties the contract to
+  harness versions, and the request was for every harness alike.
