@@ -8,7 +8,8 @@ name: release-cli
 # short-lived OIDC token, so no PyPI token is stored in this repository. The
 # PyPI project names this repository, this file and the `pypi` environment as
 # its publisher; the environment is where a required approval can be set.
-# The checks run in a job of their own with the dev tools; the sdist and wheel
+# The checks run in a job of their own with the dev tools from
+# cli/requirements/dev.txt, pinned with hashes; the sdist and wheel
 # come from a separate job that installs only cli/requirements/release.txt,
 # pinned with hashes, and builds without isolation, so nothing the checks
 # installed and no unpinned package reaches what is uploaded. The interpreter
@@ -43,7 +44,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: python -m pip install -e ".[dev]"
+      # As the cli job of ci.yml: the dev tools from requirements/dev.txt with their hashes,
+      # the CLI editable without build isolation.
+      - run: python -m pip install --require-hashes -r requirements/dev.txt
+      - run: python -m pip install --no-deps --no-build-isolation -e .
       - run: make check
 
   build:

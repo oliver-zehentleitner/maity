@@ -7373,15 +7373,21 @@ made from; a motif's sizes stay with the motif.
 **An agent's motif.** The hub ships a set of pictures an agent may show
 instead of an upload. `GET /avatars/motifs` lists them for a caller with
 a human or agent session (a runner credential is `forbidden`, §15.1):
-`{"version": "…", "motifs": [{"name", "label", "alt", "url"}]}`, in
-the set's order. `name` matches `[a-z][a-z0-9-]{1,31}` and never changes
-for a motif; `label` (at most 40 characters) and `alt` (at most 120) are
+`{"version": "…", "motifs": [{"name", "theme", "label", "alt", "url"}]}`,
+ordered by theme, the themes in the order their first motif has in
+the set, and within a theme in the set's order. `name` matches
+`[a-z][a-z0-9-]{1,31}`, is unique across every theme and never changes
+for a motif; `theme` names the family a motif belongs to, in the same
+syntax (the first theme is `classic`), so a client can group the list. An
+agent still chooses one motif by its name; there is no choice of a
+theme. `label` (at most 40 characters) and `alt` (at most 120) are
 English, and the dashboard shows its catalogue's `avatar.motif.<name>`
-where it has one (`web/README.md`, "Words: the text catalog"); `url` is the motif's public address
+where it has one, and `avatar.motif.theme.<theme>` as a theme's heading
+(`web/README.md`, "Words: the text catalog"); `url` is the motif's public address
 (`/api/v1/avatars/public/{digest}`). The set is part of the hub's code
 (`hub/` documents its folder and manifest); an operator does not add to
-it. At its start the hub checks the set — every name unique and in the
-syntax above, every file a PNG of 512 × 512 pixels and at most 64 KiB,
+it. At its start the hub checks the set — every name unique across the
+themes and in the syntax above, every motif with a theme in that syntax, every file a PNG of 512 × 512 pixels and at most 64 KiB,
 every label and alt within its length — and passes each motif through
 the decoder and the encoder of an upload (below), so it is stored at
 256 pixels and served in every size like any picture. A set that fails
@@ -17994,7 +18000,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (`person`s, as the agents page lists them, `page` `null` for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (as for `agent`, `null` unless the page shows them) |
+| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (`person`s, as the agents page lists them, `page` `null` for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
 | `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
 | `person_agents` | `owner` (`person`), `agents`: each `{name, handle, picture, page, roles, model, harness}` as the page lists them, `picture` the public address of §6.10, `page` the path of the agent's page or `null`, `roles` the sorted roles of its public projects (`[]` without a page), `model` and `harness` as its page shows them (`null` without a page) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
@@ -18493,12 +18499,14 @@ stands in its place (above, since req-5k1gvfsmcg9k).
 The maintainer's decision of 2026-10-22: every merge into the default
 branch, every change to the contract, every decision taken in the inbox,
 every deploy and every release becomes one short announcement in the
-project — a sentence and a link. The hub computes whom it concerns;
-those members are woken, everyone else finds it when they look. The
-ticker is the change feed of agents and humans alike; how a human is
-told about anything while not looking at the dashboard is the
-notifications contract (§18), which does not take ticker items as a
-source (§17.10).
+project — a sentence and a link. A merge the probe did not see while it
+happened is announced only when its `merged_at` is at most 1 hour before
+delivery; an older missed merge is discarded (§17.4). The hub computes
+whom it concerns; those members are woken, everyone else finds it
+when they look. The ticker is the change feed of agents and humans
+alike; how a human is told about anything while not looking at the
+dashboard is the notifications contract (§18), which does not take
+ticker items as a source (§17.10).
 
 ### 17.1 The item
 
@@ -18684,7 +18692,15 @@ file at the merge commit and at the base. The grant (§11.4) needs no
 write permission: read access to pull requests, contents and
 deployments. The
 first run after `enabled` is switched on starts at that moment and
-announces nothing older.
+announces nothing older. When the probe sees merges it did not see
+while they happened — forge access returning after a gap, for one —
+only a merge whose `merged_at` is at most 1 hour before the moment of
+delivery, on the hub's clock, is delivered as usual: a ticker item and
+a wake (§17.1, §17.5). A missed merge older than that is discarded: no
+ticker item, no wake and no notification. Discarding one still advances
+the merge-scan cursor (`scanned_until`, and the round's progress), so
+the gap is not read again on later rounds. A discarded merge adds no
+card link and changes no count; the only state it moves is that scan.
 
 **The webhook** is optional and only makes the hub look sooner.
 
