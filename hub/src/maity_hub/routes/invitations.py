@@ -26,6 +26,7 @@ from maity_hub import (
     paging,
     project_roles,
     registration,
+    start_tabs,
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
@@ -387,6 +388,7 @@ def _accept(
     key = result.inserted_primary_key
     assert key is not None
     membership_id = int(key[0])
+    start_tabs.append(conn, caller.human_id, row.project_id)  # it opens as the last tab (§5.1)
     actor = caller.actor(membership_id)
     _use(conn, row, caller.human_id, actor)
     new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()

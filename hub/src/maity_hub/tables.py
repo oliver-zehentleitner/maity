@@ -130,6 +130,9 @@ human = Table(
     Column("broadcasts", JSON_VALUE),
     # The portal's language and that of the hub's own texts (§6.2); null until chosen.
     Column("interface_language", String(35)),
+    # The projects a browser with no tabs of its own opens, in order, as project ids (§5.1
+    # "Start tabs"); NULL opens every membership.
+    Column("start_tabs", JSON_VALUE),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration

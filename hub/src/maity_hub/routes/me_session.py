@@ -44,6 +44,7 @@ from maity_hub import (
     ranks,
     rules,
     setup_cards,
+    start_tabs,
     ticker,
 )
 from maity_hub import tables as t
@@ -187,6 +188,7 @@ class MePatch(Strict):
     social: Any = None  # an object, checked with the other fields: `social: "format"`
     links_visible: str | None = None
     interface_language: str | None = None  # §6.2; null clears it
+    start_tabs: list[str] | None = None  # §5.1 "Start tabs": the whole list; null resets it
 
 
 LINKS = ("website", "social", "links_visible")
@@ -201,6 +203,7 @@ HUMAN_FIELDS = (
     "social",
     "links_visible",
     "interface_language",
+    "start_tabs",
 )
 
 
@@ -856,6 +859,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             and not (public or links)
             and body.handle is None
             and "interface_language" not in given
+            and "start_tabs" not in given
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
@@ -899,6 +903,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if chosen is not None and chosen not in languages.INTERFACE:
                 raise invalid({"interface_language": "unknown_language"})
             values["interface_language"] = chosen
+        if "start_tabs" in given:
+            values["start_tabs"] = start_tabs.checked(conn, caller.human_id, body.start_tabs)
         links_given = {"website", "social", "links_visible"} & given
         changed = False
         if links_given:

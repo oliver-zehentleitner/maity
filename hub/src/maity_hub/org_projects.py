@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock
+from maity_hub import clock, start_tabs
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.views import member_view
@@ -82,6 +82,7 @@ def keep_owner(conn: Connection, project: Any, human_id: str) -> None:
         )
         key = made.inserted_primary_key
         assert key is not None
+        start_tabs.append(conn, human_id, project.id)  # it opens as the last tab (§5.1)
         row = conn.execute(select(t.membership).where(t.membership.c.id == int(key[0]))).one()
         emit(
             conn,

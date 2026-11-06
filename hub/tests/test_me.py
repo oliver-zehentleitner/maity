@@ -83,9 +83,11 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
         "limit": None,  # no limit declared (§6.12)
+        "start_tabs": None,  # §5.1: every membership opens as a tab
     }
     assert body["projects"] == [
         {
+            "id": maity,  # the fixed id a browser keeps its tabs by (§5.1)
             "slug": "maity",
             "full_name": "maintainer/maity",
             "name": "Maity",
@@ -96,6 +98,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "open_requests": 3,
         },
         {
+            "id": sample,
             "slug": "sample",
             "full_name": "maintainer/sample",
             "name": "Sample shop",

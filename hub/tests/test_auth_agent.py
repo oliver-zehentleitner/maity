@@ -88,7 +88,8 @@ def test_bearer_over_tls_answers_the_agents_me(
         "owner_id": agent.owner_id,
         "avatar_source": None,
     }
-    assert body["projects"] == [
+    assert body["projects"][0]["id"].startswith("prj-")  # its fixed id (§5.1, §6.25)
+    assert [{k: v for k, v in p.items() if k != "id"} for p in body["projects"]] == [
         {
             "slug": "maity",
             "full_name": "maintainer/maity",
