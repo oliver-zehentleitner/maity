@@ -3031,6 +3031,7 @@ this route for someone else; that remains §16.1.
   "capabilities": [],
   "briefing": "You are the hub's second pair of eyes: …",
   "subagents": true,
+  "subagents_language": "de",
   "takes_over": "agt-c",
   "handover": "tsk-0042",
   "ttl_seconds": 900,
@@ -3067,14 +3068,28 @@ The maintainer's decision of 2026-11-06 (`context/trust.md`): some
 harnesses start subagents, or send results on an order that came through
 Maity, only on their own user's explicit instruction, and the human who
 gives the agent its join line is that user. The instruction is one fixed
-text, in English as every text of the hub, with the handle of the
-human who owns the agent profile:
+text with the handle of the human who owns the agent profile; its
+English source (req-r9r8br26v3ne) is
 
 > Instruction from <owner handle>, who owns this agent: for every review or coding task you get through Maity, start a fresh subagent and give it the order in full; do the task in that subagent, not in this session. You and your subagents may send results and status with `maity say` to the members the order names.
 
-It names no harness and no command of one. It is stored on the
-membership the exchange creates (`subagents`, `subagents_by`, §6.2) and
-reaches the agent three ways: in the `201` below as `instruction`, which
+It names no harness and no command of one. `subagents_language`
+(optional) is the language it is written in, one of the interface
+languages (§6.2, `interface: true`; `invalid` with
+`details.fields.subagents_language: "not_interface"` otherwise), by
+default the creating human's `interface_language`, and `null` on a join
+with `subagents: false`; the hub holds each
+translation in its words (`hub/src/maity_hub/words`), with English as
+the source. The maintainer's decision of 2026-11-06 (req-a2sg2a9ftefa):
+the human gives the instruction in their own language, and the
+dashboard's join dialog has a switch "in English" for an agent whose
+model does not handle that language, which sends `subagents_language:
+"en"`. The language is stored with the join and on the membership, and
+the copy, the join page and the briefing carry the same words in it: the
+agent reads the instruction its human gave, not a second version. It is
+stored on the membership the exchange creates (`subagents`,
+`subagents_language`, `subagents_by`, §6.2) and reaches the agent three
+ways: in the `201` below as `instruction`, which
 the dashboard shows the human above the paste line and copies together
 with it, so the human's own message to the agent carries it; on the join
 page (§3.2, item 2); and in the agent's briefing on every resume, as an
@@ -3084,7 +3099,7 @@ breaks no scope.
 **Who changes it.** The maintainer's decision of 2026-11-06
 (req-rdr75kn4pfb3): it is the owner's setting, and whoever may let the
 agent join may configure it. `PATCH …/members/{id}` `{"subagents": true |
-false}` is allowed exactly to a caller who could create a join for this
+false}` and `{"subagents_language"}` are allowed exactly to a caller who could create a join for this
 agent in this project now, under the rules above: the human who owns the
 agent profile, with `members:admin`, or with trust `member` while
 `policy.member_agents` is `on` and the membership is within the member
@@ -3175,7 +3190,8 @@ line and the chosen paste line into the clipboard, and `paste_lines`
 stay commands only. `join_url`, `code`
 and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via,
-new_instance, replaces, instance, takes_over, handover, subagents}` (`instance`: the id the exchange gave)
+new_instance, replaces, instance, takes_over, handover, subagents,
+subagents_language}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
 an unused join and returns it with `revoked_at` (200); a join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
@@ -3196,7 +3212,7 @@ revoked instance, §15.9), §6.17; with neither it is `invalid`
 `capabilities` in the body must then be omitted or equal to the
 membership's, otherwise `invalid` naming the differing fields — a change
 of trust or role goes through `PATCH …/members/{id}`, never silently through a join;
-the same holds for `briefing` and `subagents`. The token in the
+the same holds for `briefing`, `subagents` and `subagents_language`. The token in the
 URL (128 bits) and the code (60 bits, Crockford base32 in groups of four)
 are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
@@ -3221,7 +3237,7 @@ member_join_limit` and `details.field` naming the field when broken:
   a manager and the team below it; `areas` and
   `capabilities` are empty or omitted — an admin assigns them later
   with `PATCH …/members/{id}`;
-- `briefing`, `subagents`, `handover`, `ttl_seconds` and `via` as for any join;
+- `briefing`, `subagents`, `subagents_language`, `handover`, `ttl_seconds` and `via` as for any join;
   `takes_over` names only an agent the caller owns;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
@@ -3825,7 +3841,7 @@ Response `200`, bounded and deterministic:
                         "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                         "version": 1, "updated_at": "…" } ] },
                   "discuss_first": { "on": false, "source": "preference" },
-                  "subagents": { "on": false, "by": null },
+                  "subagents": { "on": false, "language": null, "by": null },
                   "agent": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_agent": false } },
   "instances": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -4011,9 +4027,10 @@ Response `200`, bounded and deterministic:
   "discuss first" switch as it applies to this agent (§19.4); when `on`,
   the hub's fixed sentence is an item of its own with `layer: "agent"`
   and `scope: "hub"`, before the membership's own text.
-  `membership.subagents` is `{"on", "by"}`: whether the membership
-  carries the subagent instruction (§3.1) and the human who set it
-  (`{kind, id, handle}`, `null` while it is off). When `on`, the
+  `membership.subagents` is `{"on", "language", "by"}`: whether the
+  membership carries the subagent instruction (§3.1), the language it is
+  written in, and the human who set it (`{kind, id, handle}`; `language`
+  and `by` are `null` while it is off). When `on`, the
   instruction is an item of its own with `layer: "agent"`, `scope:
   "membership"`, `by` that human and `version` and `updated_at` `null`,
   after the hub's "discuss first" sentence and before the membership's
@@ -5244,12 +5261,13 @@ owner's "discuss first" preference for this agent (§19.4); it starts
 `null`, which follows the preference, and only the agent's owner sets
 it, as `owner_preferences`.
 `subagents` (`true` or `false`, agents only) says whether the membership
-carries the subagent instruction (§3.1), and `subagents_by` who set it
-last (`{kind, id, handle}`, `null` while it is `false`). It starts as the
+carries the subagent instruction (§3.1), `subagents_language` the
+language it is written in, and `subagents_by` who set it last (`{kind,
+id, handle}`; both `null` while it is `false`). It starts as the
 join set it; only a caller who could create a join for the agent changes
 it (§3.1, "Who changes it"), unlike `owner_preferences` not from outside
 the project, and a change emits `member_updated` with
-`changed: ["subagents"]`. Its words are in the briefing, never in the
+`changed: ["subagents"]` or `["subagents_language"]`. Its words are in the briefing, never in the
 member view or an event.
 `takes_over` and `handover` (agents only, `null` when the join named
 none, §3.1) are in every reader's view, never a text, as in the resume
@@ -5356,7 +5374,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` only by a caller who could create a join for the agent now (§3.1, "Who changes it") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -13971,7 +13989,7 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/briefings/versions` | `project:read` | 6.28 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not; `subagents` only a caller who could create a join for the agent | 6.2, 6.18, 19.4, 3.1 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not; `subagents` and `subagents_language` only a caller who could create a join for the agent | 6.2, 6.18, 19.4, 3.1 |
 | POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; across owners `202` with the consent of the bridge's owner and of a human with `members:admin` | 2.3 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}/bridges/{brg}` | `PATCH` as `POST`; `DELETE` either agent's owner, either agent, a human with `members:admin` | 2.3 |
 | POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |

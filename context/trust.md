@@ -777,19 +777,21 @@ for every layer — an agent's text would be presented as the humans'.
 
 **Id:** 918db873-56e9-4764-a547-e8d444dc50fd
 **Type:** decision
-**Status:** pending-confirmation
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; req-rdr75kn4pfb3 (who may change it: the join's rule, answered 2026-11-06); still open: req-a2sg2a9ftefa (the language of the copy) and req-r9r8br26v3ne (the wording)
+**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; req-rdr75kn4pfb3 (who may change it: the join's rule, answered 2026-11-06); req-a2sg2a9ftefa (the dashboard's language, an English switch) and req-r9r8br26v3ne (the wording), both answered 2026-11-06
 **Revisit when:** a harness starts subagents on an instruction from the hub alone, or one refuses the instruction even from its own user
 **See:** trust.md#a-briefing-names-its-writer — fe48424d-d68c-4db9-8871-c9eddf83ae52 — as of 2026-11-06
 
 A join has a switch `subagents`, on by default for coders and reviewers.
-When it is on, the agent gets one fixed English instruction from the
-human who owns it: do every review or coding task from Maity in a
+When it is on, the agent gets one fixed instruction from the human who
+owns it, in that human's dashboard language or, by a switch in the join
+dialog, in English (req-a2sg2a9ftefa): do every review or coding task from Maity in a
 fresh subagent, and send results with `maity say` to the members the
 order names. The instruction reaches the agent in three places with the
-same words: in the text the dashboard copies with the join line, on
-the join page, and in the briefing's `agent` layer on every resume,
+same words and language, stored with the join: in the text the
+dashboard copies with the join line, on the join page, and in the
+briefing's `agent` layer on every resume,
 there with `by` the owner. Later only a caller who could create a join
 for the agent in the project changes the switch: its owner, with
 `members:admin` or as a member bringing their own agent (the
@@ -812,3 +814,9 @@ instructions.
   scripts and the CLI pass on; a sentence there breaks them.
 - A command per harness (a flag, a config key): ties the contract to
   harness versions, and the request was for every harness alike.
+- Copy in English only, as every hub text: the maintainer wants the
+  human to give the instruction in their own language, with English as
+  a choice for a model that does not handle it.
+- The English switch only in the dialog, the briefing always English:
+  the agent would read two versions of one instruction, and the
+  briefing's would not be what its human gave it.
