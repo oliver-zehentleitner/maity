@@ -79,10 +79,29 @@ def run(
     a caller's narrower `-c protocol.*` included, so such a caller passes its own list. A
     `GIT_ALLOW_PROTOCOL` the operator set narrows it further, never the other way round."""
     env = {**os.environ, **NO_PROMPT, "GIT_ALLOW_PROTOCOL": allowed(transports)}
+    if cmd[0] != "git":
+        return _start(cmd, cwd, timeout, env)
+    from maity import clonecheck  # imports onboarding, which imports this module
+
+    try:
+        with clonecheck.placement_git(cwd) as pinned:
+            if pinned is None:
+                return _start(cmd, cwd, timeout, env)
+            kept = {**clonecheck.kept_env(os.environ), **NO_PROMPT}
+            return _start(cmd, cwd, timeout, {**kept, "GIT_ALLOW_PROTOCOL": allowed(transports),
+                                              **pinned.env}, pinned.git)  # fmt: skip
+    except clonecheck.Refused as exc:
+        raise ToolError(f"maity runs no git here: {exc}") from None
+
+
+def _start(
+    cmd: list[str], cwd: Path, timeout: float, env: dict[str, str], path: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """`path`: the program to start for `cmd[0]`, when the caller fixed it; else PATH's."""
     if os.name == "nt":
         # git and gh start programs of their own (ssh, credential helpers): not from cwd either.
         env["NoDefaultCurrentDirectoryInExePath"] = "1"
-    path = program(cmd[0])
+    path = path or program(cmd[0])
     if path is None:
         raise ToolError(f"{cmd[0]} is not installed")
     try:

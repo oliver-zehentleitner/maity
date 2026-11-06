@@ -67,13 +67,22 @@ class Secret:
 def resolve_state_dir(cwd: Path | None = None) -> Path:
     """Return the state directory for the clone `cwd` belongs to.
 
-    `MAITY_STATE_DIR` wins. Otherwise the Git common directory of the clone (shared by its
-    worktrees) plus `maity/`. Outside a Git clone, refuse: a home-level fallback would merge
-    every agent profile on a shared home into one identity.
+    `MAITY_STATE_DIR` wins. Under the runner, the runner's clone's `.git/maity`. Otherwise
+    the Git common directory of the clone (shared by its worktrees) plus `maity/`. Outside a
+    Git clone, refuse: a home-level fallback would merge every agent profile on a shared
+    home into one identity.
     """
     override = os.environ.get(STATE_DIR_ENV)
     if override:
         return Path(override).expanduser().resolve()
+    from maity import clonecheck  # imports onboarding, which imports this module
+
+    try:
+        placed = clonecheck.placement_root(cwd)
+    except clonecheck.Refused as exc:
+        raise StateError(f"the runner's clone is unknown: {exc}") from None
+    if placed is not None:  # without git: the check may refuse the clone, and git under the
+        return placed / ".git" / "maity"  # runner reads a repository of maity's own
     base = cwd or Path.cwd()
     try:
         result = proc.run([*proc.GIT, "rev-parse", "--git-common-dir"], base)

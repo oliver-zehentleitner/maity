@@ -11,7 +11,10 @@
 **Revisit when:** a forge account's picture is written as a `forge` avatar, or the moderation of §16.8 changes what it does to an avatar
 
 Every member has a generated avatar, drawn by the client from the member
-id; the hub stores nothing for it. A human can upload a picture, or later
+id; the hub stores nothing for it. For an agent this is overturned by
+the contract of 2026-11-05: the hub draws an agent's generated picture
+and stores it, and an agent may choose a motif (entry 11881a0c); a
+human's stays the client's. A human can upload a picture, or later
 use a linked forge account's; an agent sets its own, and its owner can
 set or remove it too. The avatar belongs to the human's account or the
 agent's profile, not to a membership, so it is the same in every
@@ -38,6 +41,61 @@ beyond it an abuse report (§16.8).
   included, does not survive).
 - Moderation by a project's `members:admin`: see above.
 
+## An agent always has a picture: its upload, else a motif the hub ships, else a generated one the hub draws
+
+**Id:** 11881a0c-f813-4182-84df-5fa1744f9082
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's answer to request req-ms9y03z7a5g5 (option 3) on 2026-11-05, relayed by the lead with card tsk-q155psrk6tzz: an agent without an upload gets a generated picture from the hub and may choose an artwork motif; the source order, the one lightness, the startup check and the fallback for a motif gone from the set are the contract owner's; contract `docs/api.md` §6.10, §6.3, §16.9
+**Revisit when:** humans should be able to choose a motif too, an operator should be able to add motifs, or the generated picture should follow the page's theme
+**See:** members.md#a-picture-a-public-page-shows-is-public-a-persons-while-public_profile-is-on-an-agents-while-its-page-exists-in-four-sizes — 294d6f7b-2701-4cb0-a0b4-11430b34f246 — as of 2026-11-05
+
+An agent's picture is the first of: its upload, a motif from the set
+the hub ships (chosen by the agent or its owner, `avatar_motif`), and
+a generated picture. The generated picture uses the dashboard's
+generated-avatar algorithm over the profile id, but the hub draws it
+once as a PNG and stores it as the source `generated`. An agent's
+`avatar_url` is therefore never `null`, and every client and its
+public page show the same picture through the same addresses and
+sizes. Humans keep their sources and the generated avatar the client
+draws.
+
+**Reason:** confirmed — the maintainer chose option 3 of
+req-ms9y03z7a5g5: agents get a generated hub picture and may wear an
+artwork motif. Inferred, the contract owner's — the hub draws the
+generated picture, because a public page has no script to draw it and
+a stored PNG goes through the digest address and the kept sizes like
+any picture; one lightness on a transparent background, because a
+stored picture cannot follow the reader's theme; a motif behind an
+upload is kept rather than cleared, so deleting the upload brings back
+the owner's choice; a set that fails its startup check is not served
+at all rather than in part, so a broken file never reaches a page; a
+motif gone from a later set falls back to the generated picture and
+keeps its name, so a set update never leaves an agent without a
+picture.
+
+**Rejected alternatives:**
+- Option 1 of req-ms9y03z7a5g5, a generated picture only ("rendered by
+  the hub, developed from the identicon"), and option 2, an artwork set
+  only (the agent picks a motif): the maintainer chose option 3, both,
+  generated as the default and artwork selectable; why the single
+  options lost is unknown, the answer carried no text.
+- The neutral placeholder for an agent without an upload (entry
+  294d6f7b, until this decision): the maintainer chose a picture.
+- Drawing the generated picture in the client on the public page too
+  (inline SVG): every other surface would still need its own drawing,
+  and the page would carry a second, unversioned picture outside the
+  digest address.
+- Two stored generated pictures, one per theme: a picture would no
+  longer be one digest, and a page could not pick between them without
+  script.
+- Choosing a motif removes the upload: an owner trying a motif would
+  lose the uploaded picture for good.
+- Motifs added by the operator: the set's names and the web catalogue's
+  `avatar.motif.<name>` labels are fixed with the code; an operator set
+  would need its own labels and review.
+
 ## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its page exists, in four sizes
 
 **Id:** 294d6f7b-2701-4cb0-a0b4-11430b34f246
@@ -45,7 +103,7 @@ beyond it an abuse report (§16.8).
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's decision of 2026-11-05 after the profile inventory, relayed by the lead with card tsk-q155psrk6tzz (public pages show profile pictures, scaled to their size and cached; a person with `public_profile` off shows none); the cache split and the sizes are the contract owner's; contract `docs/api.md` §6.10, §6.27, §16.9
-**Revisit when:** the maintainer decides how an agent without an upload looks (request req-ms9y03z7a5g5), an organisation's page should show its picture, or a shared cache in front of the hub needs more than 60 seconds
+**Revisit when:** an organisation's page should show its picture, or a shared cache in front of the hub needs more than 60 seconds
 **See:** members.md#avatars-generated-from-the-member-id-by-default-an-upload-or-a-forge-picture-overrides-per-account-not-per-project — 901a3806-5444-47a1-bb5b-961de130a604 — as of 2026-11-05
 **See:** members.md#the-dashboards-view-of-a-person-or-organisation-reads-one-endpoint-that-applies-every-visibility-rule-for-the-reader — ae13dab7-24da-43e1-ba82-1e8ab33408fd — as of 2026-11-05
 
@@ -56,7 +114,9 @@ that names no account: `GET /avatars/public/{digest}`, the digest of
 the stored image. `GET /avatars/{id}` keeps the reader list of §6.10
 and never answers a stranger. A person's page and an agent's page draw the
 picture at 128 pixels, and a neutral placeholder without an image when
-there is none or the person's `public_profile` is off. An
+there is none or the person's `public_profile` is off; an agent always
+has a picture since entry 11881a0c, so only a person's page draws the
+placeholder. A motif's digest answers at that address at every time. An
 organisation's picture stays private. The public address answers with
 `Cache-Control: public, max-age=86400, s-maxage=60`; the id address stays
 `private, no-cache`. The hub serves 32, 64, 128 and 256 pixels (`?s=`),
@@ -91,8 +151,10 @@ requested by anyone.
 - Scaling on every request: a public URL would let anyone make the hub
   decode on demand.
 - The generated avatar of §6.10 as the public placeholder: a page has no
-  script to draw it and it would carry the account id; how an agent
-  without an upload looks is left to req-ms9y03z7a5g5.
+  script to draw it and it would carry the account id. For an agent this
+  half is overturned: the hub draws an agent's generated picture and
+  stores it, so an agent's page always shows one (entry 11881a0c); a
+  person's page keeps the placeholder.
 
 ## Removing a member clears every reports_to naming it — on members, join links and profile-creating placements alike
 
