@@ -18,7 +18,7 @@ import hashlib
 import re
 from collections.abc import Iterable
 from html import escape, unescape
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from maity_hub import catalog, landing_files, product_line
@@ -909,6 +909,41 @@ def chrome(
     return _frame(setting, legal, chosen, drawn, tags)
 
 
+class Frame(NamedTuple):
+    """The frame of a public page the hub renders itself (§16.7.5): the landing page's header
+    and footer from the frame's model, and the `<head>` links of the stylesheets that draw them,
+    `landing.css` and `public-pages.css`. `style` is the inline fallback while a stylesheet is
+    missing (a hub built without the landing assets), else empty."""
+
+    header: str
+    footer: str
+    head: str
+    style: str
+
+
+def public_frame(model: dict[str, Any], lang: str) -> Frame:
+    """The frame for a page in `lang`, from `chrome`'s model. The mark comes without its
+    `style` attributes, which a policy without inline styles would block: `public-pages.css`
+    colours it. Where the frame's words are in another language than the page (the landing page
+    has no `lang`), header and footer say theirs."""
+    nav = "".join(
+        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
+        for item in model["header"]["nav"]
+    )
+    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
+    mark = landing_files.svg("mark.svg")
+    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
+    if model["language"] != lang:
+        header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
+        footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
+    head = "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
+    )
+    return Frame(header, footer, head, "" if all(sheets) else STYLE)
+
+
 def legal_document(
     *,
     page: str,
@@ -942,11 +977,7 @@ def legal_document(
         if len(languages) > 1
         else []
     )
-    nav = "".join(
-        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
-        for item in model["header"]["nav"]
-    )
-    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    frame = public_frame(model, lang)
     # The legal pages that are set, this one marked; a draft's own page is there before it is set.
     toc = "".join(
         f'<a href="/{target}?lang={escape(lang, quote=True)}"'
@@ -957,25 +988,21 @@ def legal_document(
     )
     banner = f'<p class="note">{escape(words["preview"])}</p>' if version is None else ""
     body = (
-        _site_header(model, nav, cta, None) + f'<main><div class="legal-page"><div class="wrap">'
+        frame.header + f'<main><div class="legal-page"><div class="wrap">'
         f'<nav class="legal-toc" aria-label="{escape(words["legal"], quote=True)}">{toc}</nav>'
         f"{banner}<h1>{escape(title)}</h1>"
         f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}</div></div></main>'
-        + _landing_footer(model, on_landing=False)
+        + frame.footer
     )
     head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">'
-    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
-    head += "".join(
-        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
-    )
     return _document(
         lang=lang,
         title=title,
         description="",
-        head=head,
+        head=head + frame.head,
         body=body,
         languages=languages,
-        style="" if all(sheets) else STYLE,
+        style=frame.style,
     )
 
 
@@ -1008,39 +1035,23 @@ def door_document(
     person's, not the address's. `content` is HTML of escaped text and elements."""
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
     model["footer"]["languages"] = []
-    nav = "".join(
-        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
-        for item in model["header"]["nav"]
-    )
-    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
-    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
-    # The mark without its style attributes, which the policy would block: public-pages.css
-    # colours it (`.site-header .mark rect`, …), as on the dashboard's framed pages.
-    mark = landing_files.svg("mark.svg")
-    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
-    if model["language"] != lang:  # the frame's words are in a language the landing page has
-        header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
-        footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    frame = public_frame(model, lang)
     # The panel without a pitch, as the dashboard draws it for its own pages of this kind
     # (web/js/auth-pages.js, door()): public-pages.css shows the art large, and hides the panel
     # at phone width.
     body = (
-        header + '<main><div class="door-page">'
+        frame.header + '<main><div class="door-page">'
         '<aside class="door-panel" aria-hidden="true"></aside>'
-        f'<section class="door-form"><div>{content}</div></section></div></main>' + footer
-    )
-    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
-    head = "".join(
-        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
+        f'<section class="door-form"><div>{content}</div></section></div></main>' + frame.footer
     )
     return _document(
         lang=lang,
         title=title,
         description="",
-        head=head,
+        head=frame.head,
         body=body,
         languages=[],
-        style="" if all(sheets) else STYLE,
+        style=frame.style,
     )
 
 
