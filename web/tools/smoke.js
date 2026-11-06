@@ -5768,6 +5768,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "online switch: ticking it again sends public_presence true " + JSON.stringify(psSent));
     win.Maity.api.patch = psPatch;
   }
+  // The link to one's public page (tsk-4e17b8xnp8eq): directly under the name and handle,
+  // outside the profile form; while the hub serves no page, no link.
+  {
+    await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    const plFacts = () => main.querySelector("dl.facts");
+    const plLink = () => main.querySelector("p.public-profile-link");
+    expect(plFacts() && plFacts().nextSibling === plLink() && plLink().querySelector("a")
+      && plLink().querySelector("a").getAttribute("href") === "#/maintainer?as=public" && plLink().querySelector("a").getAttribute("target") === "_blank"
+      && text(plLink()) === "View public page" && !main.querySelector("form.public-profile-form").querySelector(".public-profile-link"),
+      "public profile: View public page sits right under the name and handle, outside the form, opened at ?as=public");
+    const plGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/people/maintainer" ? plGet(p).then((x) => ({ ...x, page_served: false })) : plGet(p));
+    await go("#/account/settings"); await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    expect(plFacts() && plFacts().nextSibling === plLink() && !plLink().querySelector("a") && text(plLink()) === "",
+      "public profile: no page served, no link under the name and handle");
+    win.Maity.api.get = plGet;
+  }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
   const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;

@@ -1764,6 +1764,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
 .meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+/* One's public page, right under the name and handle (js/account.js); empty while none is served. */
+.public-profile-link { margin: 4px 0 12px; }
+.public-profile-link:empty { display: none; }
 
 /* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
 .person-head { display: flex; align-items: center; gap: 14px; }
