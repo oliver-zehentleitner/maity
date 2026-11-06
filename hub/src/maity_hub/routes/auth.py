@@ -11,9 +11,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import account_deletion, avatars, clock, handles, paths
+from maity_hub import account_deletion, avatars, clock, paths
 from maity_hub import tables as t
-from maity_hub.auth import email_links, mail_factor, passwords, second_factor, sessions
+from maity_hub.auth import (
+    email_links,
+    mail_factor,
+    password_limits,
+    passwords,
+    second_factor,
+    sessions,
+)
 from maity_hub.auth.caller import (
     CSRF_COOKIE,
     SESSION_ABSOLUTE,
@@ -33,14 +40,15 @@ from maity_hub.errors import (
     rate_limited,
     unauthenticated,
 )
+from maity_hub.mail import address as addresses
 from maity_hub.notifications import records
-from maity_hub.ratelimit import Limiter
+from maity_hub.ratelimit import Attempt, Limiter
 from maity_hub.views import human_member
 
 router = APIRouter(prefix="/auth")
 
+# Every attempt per source address; the one limit of the login that answers `429` (§2.1).
 LOGIN_BY_ADDRESS = Limiter(10, 60, name="routes.auth.LOGIN_BY_ADDRESS")
-LOGIN_BY_HANDLE = Limiter(10, 60, name="routes.auth.LOGIN_BY_HANDLE")
 
 
 class Strict(BaseModel):
@@ -48,7 +56,7 @@ class Strict(BaseModel):
 
 
 class Login(Strict):
-    handle: str = Field(min_length=1, max_length=64)
+    email: str = Field(min_length=1, max_length=254)
     password: str = Field(min_length=1, max_length=1024)
     # Where the dashboard goes afterwards; an unsafe value, of any length, becomes `/`
     # silently (§2.6.5).
@@ -98,10 +106,9 @@ async def login(body: Login, request: Request) -> JSONResponse:
     require_secure_transport(origin, settings_of(request).allow_plain_http)
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "csrf_mismatch", "cross-site login")
-    for limiter, key in ((LOGIN_BY_ADDRESS, origin.address), (LOGIN_BY_HANDLE, body.handle)):
-        wait = limiter.hit(key)
-        if wait:
-            raise rate_limited(wait)
+    wait = LOGIN_BY_ADDRESS.hit(origin.address)
+    if wait:
+        raise rate_limited(wait)
     engine = engine_of(request)
     presented = request.cookies.get(SESSION_COOKIE)
     device = request.cookies.get(sessions.DEVICE_COOKIE)
@@ -111,24 +118,25 @@ async def login(body: Login, request: Request) -> JSONResponse:
     next_route = paths.safe_next(body.next)
 
     def run() -> tuple[dict[str, Any], str, str, str | None]:
+        # The known sources' key without an instance key, before the login's transaction (§2.1).
+        addresses.prepare(engine, hub.secret_key)
         with engine.begin() as conn:
-            known = handles.human_id_of(conn, body.handle)  # the handle or an alias (§6.24)
-            row = (
-                conn.execute(select(t.human).where(t.human.c.id == known)).first()
-                if known is not None
-                else None
+            row = account_of(conn, body.email)
+            account = password_limits.account_key(
+                conn, row.id if row is not None else None, addresses.normalized(body.email)
             )
-            if row is not None:  # one limit per account, whichever name it was reached by
-                wait = LOGIN_BY_HANDLE.hit(row.id)
-                if wait:
-                    raise rate_limited(wait)
-            stored = row.password_hash if row is not None else passwords.DUMMY_HASH
-            if not passwords.verify_password(body.password, stored) or row is None:
-                raise unauthenticated("handle or password is wrong")
+            with password_limits.LoginAttempt(
+                conn, hub, account, row.id if row is not None else None, origin.address
+            ) as attempt:
+                stored = row.password_hash if row is not None else None
+                right = passwords.verify_password(body.password, stored or passwords.DUMMY_HASH)
+                if not right or row is None or stored is None:
+                    attempt.wrong()
+                    raise unauthenticated("address or password is wrong")
             if row.deleted_at is not None:  # a deleted account never signs in (§2.9)
-                raise unauthenticated("handle or password is wrong")
+                raise unauthenticated("address or password is wrong")
             if row.suspended_at is not None:  # nor a suspended one, told nothing more (§16.8)
-                raise unauthenticated("handle or password is wrong")
+                raise unauthenticated("address or password is wrong")
             sessions.forget_expired_addresses(conn)
             end_presented(conn, presented)
             session_id, csrf, _, state = second_factor.begin(
@@ -162,6 +170,19 @@ async def login(body: Login, request: Request) -> JSONResponse:
     response = JSONResponse(answer)
     set_session_cookies(response, request, session_id, csrf, device_value)
     return response
+
+
+def account_of(conn: Connection, given: str) -> Any:
+    """The human whose address is `given`, verified or `disabled` after delivery failures, so a
+    bounce never takes the password away (§2.1); compared as §2.6.3 compares."""
+    return conn.execute(
+        select(t.human)
+        .join(t.notification_settings, t.notification_settings.c.human_id == t.human.c.id)
+        .where(
+            t.notification_settings.c.address_normalized == addresses.normalized(given),
+            t.notification_settings.c.address_status.in_(("verified", "disabled")),
+        )
+    ).first()
 
 
 def pending_answer(state: str, via: str = "totp") -> dict[str, Any]:
@@ -223,20 +244,14 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
     _require_cookie(caller)
     if len(body.new) < passwords.MIN_LENGTH:
         raise invalid({"new": "too_short"}, "a password has at least 12 characters")
-    address = origin_of(request).address
     with engine_of(request).begin() as conn:
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         row = conn.execute(select(t.human).where(t.human.c.id == caller.principal_id)).one()
-        # A wrong current password counts against the login limit (§2.1).
-        limits = ((LOGIN_BY_ADDRESS, address), (LOGIN_BY_HANDLE, row.handle))
-        for limiter, key in limits:
-            wait = limiter.blocked(key)
-            if wait:
-                raise rate_limited(wait)
-        if not passwords.verify_password(body.current, row.password_hash):
-            for limiter, key in limits:
-                limiter.hit(key)
-            raise invalid({"current": "mismatch"}, "the current password is wrong")
+        # A wrong current password counts in this call's own bucket (§2.1).
+        with Attempt(password_limits.CHANGE, row.id) as attempt:
+            if not passwords.verify_password(body.current, row.password_hash):
+                attempt.wrong()
+                raise invalid({"current": "mismatch"}, "the current password is wrong")
         conn.execute(
             update(t.human)
             .where(t.human.c.id == row.id)
@@ -423,22 +438,15 @@ class Reauthenticate(Strict):
 @router.post("/reauthenticate")
 def reauthenticate(body: Reauthenticate, request: Request, caller: HumanCaller) -> JSONResponse:
     """The password given again on this session: the proof of §2.8.1 for ten minutes.
-    A wrong one counts against the login limit (§2.1)."""
+    A wrong one counts in this call's own bucket (§2.1)."""
     _require_cookie(caller)
-    address = origin_of(request).address
-    with engine_of(request).begin() as conn:
-        handle = conn.execute(
-            select(t.human.c.handle).where(t.human.c.id == caller.principal_id)
-        ).scalar_one()
-        limits = ((LOGIN_BY_ADDRESS, address), (LOGIN_BY_HANDLE, handle))
-        for limiter, key in limits:
-            wait = limiter.blocked(key)
-            if wait:
-                raise rate_limited(wait)
+    with (
+        engine_of(request).begin() as conn,
+        Attempt(password_limits.REAUTHENTICATE, caller.principal_id) as attempt,
+    ):
         try:
             until = second_factor.reauthenticate(conn, caller, body.password)
         except ApiError:
-            for limiter, key in limits:
-                limiter.hit(key)
+            attempt.wrong()
             raise
     return JSONResponse({"valid_until": clock.rfc3339(until)})

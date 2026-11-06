@@ -15,9 +15,9 @@ Check it:
   helm -n {{ .Release.Namespace }} test {{ .Release.Name }}
 
 Create the first human account (the password is read from standard input,
-never from the command line):
+never from the command line; the address is what you sign in with):
   kubectl -n {{ .Release.Namespace }} exec -i deploy/{{ include "maity-hub.fullname" . }} -- \
-    maity-hub owner create --handle <handle> --display-name '<Your Name>' < password-file
+    maity-hub owner create --handle <handle> --display-name '<Your Name>' --email <you@example.org> < password-file
 {{- if not .Values.forge.github.existingSecret }}
 
 No forge token is configured. Once the hub version in use has the forge probe,

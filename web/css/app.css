@@ -1031,6 +1031,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jfa-triage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series .actions, .jf-participation .jf-part { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* The series' settings at the top of the jour fixe view, folded until opened (js/jour-fixe-series.js). */
+.jf-series-settings { margin: 8px 0 16px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.jf-series-settings > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+.jf-series-settings[open] > summary { margin-bottom: 8px; }
 .jf-series-block { margin: 12px 0; }
 .jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
 .jf-weekly[hidden], .jf-monthly[hidden], .jfs-owner[hidden] { display: none; }

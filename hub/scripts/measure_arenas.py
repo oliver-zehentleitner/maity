@@ -37,7 +37,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from measure_wait import PASSWORD, Human, wait_for_health  # noqa: E402
+from measure_wait import OWNER_EMAIL, PASSWORD, Human, wait_for_health  # noqa: E402
 
 PORT = 18830
 
@@ -65,8 +65,16 @@ def run_setting(arenas: str, threads: int, requests: int, grow: int, phases: int
     if arenas != "default":
         env["MALLOC_ARENA_MAX"] = arenas
     subprocess.run(hub_command("migrate"), env=env, check=True, capture_output=True)
-    subprocess.run(
-        hub_command("owner", "create", "--handle", "owner", "--display-name", "Owner"),
+    subprocess.run(hub_command(
+        "owner",
+        "create",
+        "--handle",
+        "owner",
+        "--display-name",
+        "Owner",
+        "--email",
+        OWNER_EMAIL,
+        ),  # fmt: skip
         input=PASSWORD + "\n",
         text=True,
         env=env,

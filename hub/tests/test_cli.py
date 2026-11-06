@@ -164,7 +164,21 @@ def test_owner_create_reads_the_password_from_stdin(
 
     assert main(["migrate"]) == 0
     monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
-    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "Maint"]) == 0
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "maintainer",
+                "--display-name",
+                "Maint",
+                "--email",
+                "maintainer@example.org",
+            ]
+        )
+        == 0
+    )
     assert "created maintainer (hum-" in capsys.readouterr().out
     from sqlalchemy import create_engine, text
 
@@ -176,16 +190,30 @@ def test_owner_create_reads_the_password_from_stdin(
     assert "a long password" not in stored
 
     monkeypatch.setattr("sys.stdin", io.StringIO("another long password\n"))
-    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "X"]) == 1
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "maintainer",
+                "--display-name",
+                "X",
+                "--email",
+                "maintainer@example.org",
+            ]
+        )
+        == 1
+    )
     assert "exists" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
     ("args", "stdin"),
     [
-        (["--handle", "Bad Handle", "--display-name", "X"], "pw\n"),
-        (["--handle", "ok", "--display-name", "X"], "\n"),
-        (["--handle", "ok", "--display-name", "X"], "eleven char\n"),
+        (["--handle", "Bad Handle", "--display-name", "X", "--email", "ok@example.org"], "pw\n"),
+        (["--handle", "ok", "--display-name", "X", "--email", "ok@example.org"], "\n"),
+        (["--handle", "ok", "--display-name", "X", "--email", "ok@example.org"], "eleven char\n"),
     ],
 )
 def test_owner_create_refuses_a_bad_handle_or_an_empty_password(
@@ -204,7 +232,21 @@ def test_owner_create_needs_a_migrated_database(
     import io
 
     monkeypatch.setattr("sys.stdin", io.StringIO("a long enough password\n"))
-    assert main(["owner", "create", "--handle", "ok", "--display-name", "X"]) == 1
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "ok",
+                "--display-name",
+                "X",
+                "--email",
+                "ok@example.org",
+            ]
+        )
+        == 1
+    )
     assert "maity-hub migrate" in capsys.readouterr().err
 
 
@@ -296,12 +338,12 @@ def test_quickstart_sets_up_a_new_hub_and_ends_on_the_dashboard(
 ) -> None:
     _banner_only(monkeypatch)
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
-    assert main(["quickstart", "--handle", "me"]) == 0
+    assert main(["quickstart", "--handle", "me", "--email", "Me@Example.org"]) == 0
     captured = capsys.readouterr()
     out = captured.out.strip().splitlines()
     assert out[0] == f"maity-hub: schema empty -> {head()}"
     assert out[1].startswith("maity-hub: created me (hum-")
-    assert out[-2:] == ["maity-hub: sign in as me", out[-1]]
+    assert out[-2:] == ["maity-hub: sign in as me@example.org", out[-1]]
     assert out[-1].startswith("maity-hub: dashboard at http://127.0.0.1:8080/") or (
         "API only" in out[-1]
     )
@@ -350,8 +392,8 @@ def test_quickstart_names_the_account_after_the_login(
     monkeypatch.setattr("getpass.getuser", lambda: login)
     _banner_only(monkeypatch)
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
-    assert main(["quickstart"]) == 0
-    assert f"maity-hub: sign in as {handle}" in capsys.readouterr().out
+    assert main(["quickstart", "--email", "me@example.org"]) == 0
+    assert f"maity-hub: created {handle} (hum-" in capsys.readouterr().out
 
 
 def test_quickstart_never_migrates_a_file_that_holds_tables(
@@ -379,12 +421,26 @@ def test_quickstart_never_adds_a_second_first_account(
     def meanwhile() -> str:  # another `owner create` finishes while we ask
         monkeypatch.setattr(cli, "_read_password", asked)
         _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
-        assert main(["owner", "create", "--handle", "other", "--display-name", "Other"]) == 0
+        assert (
+            main(
+                [
+                    "owner",
+                    "create",
+                    "--handle",
+                    "other",
+                    "--display-name",
+                    "Other",
+                    "--email",
+                    "other@example.org",
+                ]
+            )
+            == 0
+        )
         return ACCOUNT_PASSWORD
 
     monkeypatch.setattr(cli, "_read_password", meanwhile)
     _banner_only(monkeypatch)
-    assert main(["quickstart", "--handle", "me"]) == 1
+    assert main(["quickstart", "--handle", "me", "--email", "me@example.org"]) == 1
     captured = capsys.readouterr()
     assert "an account was created meanwhile" in captured.err
     assert "sign in as me" not in captured.out
@@ -412,7 +468,21 @@ def test_owner_create_refuses_a_handle_another_human_kept_as_an_alias(
 
     assert main(["migrate"]) == 0
     monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
-    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "Maint"]) == 0
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "maintainer",
+                "--display-name",
+                "Maint",
+                "--email",
+                "maintainer@example.org",
+            ]
+        )
+        == 0
+    )
     engine = create_engine("sqlite:///maity-hub.db")
     with engine.begin() as conn:
         human_id = conn.execute(select(t.human.c.id)).scalar_one()
@@ -423,7 +493,21 @@ def test_owner_create_refuses_a_handle_another_human_kept_as_an_alias(
         )
     engine.dispose()
     monkeypatch.setattr("sys.stdin", io.StringIO("another long password\n"))
-    assert main(["owner", "create", "--handle", "old-maint", "--display-name", "X"]) == 1
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "old-maint",
+                "--display-name",
+                "X",
+                "--email",
+                "old-maint@example.org",
+            ]
+        )
+        == 1
+    )
     assert "alias" in capsys.readouterr().err
 
 
@@ -434,5 +518,121 @@ def test_quickstart_refuses_a_reserved_handle_for_the_first_account(
     handle that is a first segment of the hub (§16.11): so it is refused up front."""
     _banner_only(monkeypatch)
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
-    assert main(["quickstart", "--handle", "admin"]) == 2
+    assert main(["quickstart", "--handle", "admin", "--email", "me@example.org"]) == 2
     assert "is reserved" in capsys.readouterr().err
+
+
+def test_owner_create_stores_the_address_as_verified_and_it_signs_in(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """docs/api.md §2.1: the password signs in by the verified address, and the first account
+    has it before the instance sends any mail."""
+    import io
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+    from maity_hub.app import create_app
+    from maity_hub.config import Settings
+
+    assert main(["migrate"]) == 0
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    args = ["--handle", "maintainer", "--display-name", "Maint", "--email", " Me@Example.org "]
+    assert main(["owner", "create", *args]) == 0
+    assert "signing in as me@example.org" in capsys.readouterr().out
+    engine = make_engine("sqlite:///maity-hub.db")
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(select(t.notification_settings)).one()
+        assert (row.address, row.address_normalized, row.address_status) == (
+            "me@example.org",
+            "me@example.org",
+            "verified",
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(""))
+        settings = Settings.from_env({"MAITY_DATABASE_URL": "sqlite:///maity-hub.db"})
+        with TestClient(create_app(settings, engine), base_url="https://hub.example") as client:
+            body = {"email": "ME@example.org", "password": ACCOUNT_PASSWORD}
+            login = client.post("/api/v1/auth/login", json=body)
+        assert login.status_code == 200, login.text
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("email", ["", "me", "a@b", "Me <me@example.org>", "a@example.org,b@x.org"])
+def test_owner_create_refuses_anything_but_one_address_before_the_password(
+    email: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    assert main(["migrate"]) == 0
+    stdin = io.StringIO(ACCOUNT_PASSWORD + "\n")
+    monkeypatch.setattr("sys.stdin", stdin)
+    args = ["--handle", "maintainer", "--display-name", "Maint", "--email", email]
+    assert main(["owner", "create", *args]) == 2
+    assert "--email" in capsys.readouterr().err
+    assert stdin.tell() == 0  # the password was never asked for
+
+
+def test_owner_create_refuses_an_address_another_account_holds(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    assert main(["migrate"]) == 0
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    first = ["--handle", "maintainer", "--display-name", "Maint", "--email", "me@example.org"]
+    assert main(["owner", "create", *first]) == 0
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    second = ["--handle", "other", "--display-name", "Other", "--email", "ME@example.org"]
+    assert main(["owner", "create", *second]) == 1
+    assert "another account has the address me@example.org" in capsys.readouterr().err
+    engine = make_engine("sqlite:///maity-hub.db")
+    with engine.connect() as conn:  # the second account rolled back, its handle too
+        assert [r.handle for r in conn.execute(select(t.human.c.handle))] == ["maintainer"]
+        assert conn.execute(select(t.handle_register.c.handle)).scalars().all() == ["maintainer"]
+    engine.dispose()
+
+
+def test_quickstart_asks_for_the_address_at_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    class Terminal(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    asked: list[str] = []
+
+    def answer(prompt: str) -> str:
+        asked.append(prompt)
+        return "me@example.org"
+
+    monkeypatch.setattr("sys.stdin", Terminal(""))
+    monkeypatch.setattr("builtins.input", answer)
+    monkeypatch.setattr("getpass.getpass", lambda prompt: ACCOUNT_PASSWORD)
+    _banner_only(monkeypatch)
+    assert main(["quickstart", "--handle", "me"]) == 0
+    assert asked == ["email address (you sign in with it): "]
+    assert "maity-hub: sign in as me@example.org" in capsys.readouterr().out
+
+
+def test_quickstart_without_a_terminal_needs_the_address(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    _banner_only(monkeypatch)
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    assert main(["quickstart", "--handle", "me"]) == 2
+    assert "--email" in capsys.readouterr().err
+    engine = make_engine("sqlite:///maity-hub.db")
+    with engine.connect() as conn:
+        assert conn.execute(select(t.human.c.id)).first() is None
+    engine.dispose()
