@@ -173,7 +173,10 @@ def patch_agent(
         if "handle" in given:
             if body.handle is None:  # as in `PATCH /me`: null renames nothing
                 raise invalid({"handle": "required"})
-            done = handles.rename(conn, agent_id, caller.principal_id, body.handle)
+            alias_limit = limits.aliases(conn, settings_of(request))
+            done = handles.rename(
+                conn, agent_id, caller.principal_id, body.handle, alias_limit=alias_limit
+            )
             if done is not None:
                 handles.announce(conn, caller, agent_id, caller.principal_id, *done)
         values: dict[str, Any] = {}
