@@ -249,7 +249,7 @@ window.Maity = window.Maity || {};
       status.el);
   }
 
-  // ---- Project settings: the list, its moderators ------------------------
+  // ---- The series' settings: the list, its moderators ------------------
 
   function seriesItem(ctx, s, reload, say) {
     const priv = isPrivate(s);

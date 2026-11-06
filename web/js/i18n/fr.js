@@ -1772,7 +1772,7 @@ window.MAITY_I18N["fr"] = {
   "jfs.grant_to": "Accorder le droit de modération à",
   "jfs.granting": "Attribution…",
   "jfs.hint": "Un projet peut compter jusqu'à dix séries, chacune avec son propre sujet, son propre cercle de participation, son propre calendrier et ses propres modérateurs. Une modification s'applique dès le tour suivant ; un tour en cours garde ce avec quoi il a été ouvert.",
-  "jfs.kept_on_page": "Les séries et les personnes qui les modèrent se trouvent sur la page {link}.",
+  "jfs.kept_on_page": "Les séries et leurs modérateurs se trouvent sur la page {link}.",
   "jfs.moderators": "Modérateurs",
   "jfs.moderators.none": "Personne n'a encore le droit de modération.",
   "jfs.new": "Nouvelle série",
