@@ -107,6 +107,8 @@ def test_a_project_takes_its_own_alias_back(owner: flow.Human) -> None:
 
 
 def test_three_changes_a_day(owner: flow.Human) -> None:
+    # The highest `max_aliases` (§16.5), so that the rate limit is met before the cap.
+    assert owner.patch("/admin/settings/limits", {"max_aliases": 8}).status_code == 200
     for n, slug in enumerate(("one", "two", "three")):
         name = "maintainer/maity" if n == 0 else f"maintainer/{('one', 'two')[n - 1]}"
         assert rename(owner, name, slug).status_code == 200
@@ -115,7 +117,9 @@ def test_three_changes_a_day(owner: flow.Human) -> None:
     assert owner.get("/projects/maintainer/three").json()["slug"] == "three"
 
 
-def test_at_most_eight_aliases(owner: flow.Human, migrated: Engine) -> None:
+def test_at_most_max_aliases_aliases_and_a_name_taken_back_over_it(
+    owner: flow.Human, migrated: Engine
+) -> None:
     with migrated.begin() as conn:
         project = conn.execute(select(t.project)).one()
         for n in range(8):
@@ -132,10 +136,10 @@ def test_at_most_eight_aliases(owner: flow.Human, migrated: Engine) -> None:
     assert (status, code, details["limit"], len(details["aliases"])) == (
         409,
         "alias_limit",
-        8,
+        3,  # `max_aliases`' default (§16.5)
         8,
     )
-    # Taking an alias back adds none, so it stays possible.
+    # Taking an alias back adds none, so it stays possible, also over the value (§16.5).
     assert rename(owner, "maintainer/maity", "old-3").status_code == 200
 
 

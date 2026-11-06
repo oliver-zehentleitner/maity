@@ -30,6 +30,7 @@ from maity_hub import (
     instances,
     ktw_skill,
     languages,
+    limits,
     maintenance,
     memory,
     mentions,
@@ -864,7 +865,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             )
         assert caller.human_id is not None
         if body.handle is not None:  # a human renames themselves (§6.24)
-            done = handles.rename(conn, caller.human_id, None, body.handle)
+            alias_limit = limits.aliases(conn, settings_of(request))
+            done = handles.rename(conn, caller.human_id, None, body.handle, alias_limit=alias_limit)
             if done is not None:
                 handles.announce(conn, caller, caller.human_id, None, *done)
         values: dict[str, Any] = {}

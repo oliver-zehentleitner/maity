@@ -14,8 +14,10 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta
+from types import TracebackType
 
 from maity_hub import shared_counts
+from maity_hub.errors import rate_limited
 
 Mark = float | datetime | None  # what `place` recorded: a moment, or a fixed window's start
 # Up to this limit a shared limit counts every attempt exactly: the estimate from two windows
@@ -192,3 +194,33 @@ class Limiter:
             self._hits.clear()
         if self._shared():
             shared_counts.clear(self.name)
+
+
+class Attempt:
+    """One attempt at a secret (a code, a password), counted before it is compared: checks
+    running at the same time never get past the limit together. `rate_limited` when the
+    limit is spent. Leaving gives the attempt back unless `wrong` kept it: a right secret, a
+    check that compared none, or an error before the verdict is no wrong attempt."""
+
+    def __init__(self, limiter: Limiter, key: str) -> None:
+        self.limiter = limiter
+        self.key = key
+        wait, self._mark = limiter.place(key)
+        if wait:
+            raise rate_limited(wait)
+        self._kept = False
+
+    def wrong(self) -> None:
+        self._kept = True
+
+    def __enter__(self) -> Attempt:
+        return self
+
+    def __exit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        trace: TracebackType | None,
+    ) -> None:
+        if not self._kept:
+            self.limiter.release(self.key, self._mark)

@@ -1811,10 +1811,13 @@ window.Maity = window.Maity || {};
       email.address_change = null;
       return fixtures()["notifications.json"].settings;
     }],
+    // §2.1: the verified address signs in, compared as the hub does (trimmed, lower-cased).
     ["POST", /^\/auth\/login$/, (m, body, path) => {
-      if (body.handle !== me().member.handle || !body.password
+      const email = fixtures()["notifications.json"].settings.email;
+      const given = String(body.email || "").trim().toLowerCase();
+      if (!email.address || !email.verified_at || given !== email.address.toLowerCase() || !body.password
         || (fixturePassword !== null && body.password !== fixturePassword)) {
-        fail(401, "unauthenticated", "Handle or password is wrong", path);
+        fail(401, "unauthenticated", "the address or password is wrong", path);
       }
       fixtureSignedIn = true;
       return { member: me().member, next: body.next || "/" };

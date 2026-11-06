@@ -56,10 +56,12 @@ def test_a_handle_or_alias_of_another_is_taken(
     assert _fields(owner.patch("/me", {"handle": "account"})) == {"handle": "reserved"}
 
 
-def test_the_ninth_alias_and_the_fourth_rename_are_refused(
+def test_the_ninth_alias_at_the_highest_value_and_the_fourth_rename_are_refused(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
+    # The highest `max_aliases` (§16.5), so that the rate limit is met before the cap.
+    assert owner.patch("/admin/settings/limits", {"max_aliases": 8}).status_code == 200
     for i in range(3):
         assert owner.patch("/me", {"handle": f"name-{i}"}).status_code == 200
     limited = owner.patch("/me", {"handle": "name-3"})
@@ -189,7 +191,7 @@ def test_a_human_whose_current_handle_it_is_comes_first_but_not_through_an_alias
     }
 
 
-def test_login_and_the_owner_part_of_a_project_address_follow_aliases(
+def test_the_owner_part_of_a_project_address_follows_aliases_and_a_rename_keeps_the_login(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
@@ -207,13 +209,9 @@ def test_login_and_the_owner_part_of_a_project_address_follow_aliases(
     for prefix in ("/badge/{}/maity.svg",):
         assert public.get(prefix.format("boss")).status_code == 200
         assert public.get(prefix.format("maintainer")).status_code == 200, prefix
-    # And signs in: a handle, or an alias of it.
-    for name in ("boss", "maintainer"):
-        client = make_client()
-        login = client.post(
-            "/api/v1/auth/login", json={"handle": name, "password": factory.PASSWORD}
-        )
-        assert login.status_code == 200 and login.json()["member"]["handle"] == "boss"
+    # The login takes the address, not a handle (§2.1): the rename leaves it as it was.
+    login = factory.login(make_client(), owner.id)
+    assert login.status_code == 200 and login.json()["member"]["handle"] == "boss"
     # A new project cannot take a slug under the alias either: it is the same namespace.
     clash = owner.post("/projects", {"slug": "maity", "name": "Again"})
     assert clash.status_code in (400, 409)
@@ -275,7 +273,7 @@ def test_a_rename_of_a_profile_deleted_meanwhile_is_not_found(
         ).scalar_one()
     with events.transaction(migrated) as conn:
         try:
-            handles.rename(conn, profile["id"], owner_id, "wasp")
+            handles.rename(conn, profile["id"], owner_id, "wasp", alias_limit=3)
         except ApiError as error:
             assert error.status == 404 and error.code == "not_found"
         else:
@@ -300,7 +298,7 @@ def test_two_renames_to_one_handle_leave_one_winner(
         ready.wait()
         try:
             with events.transaction(migrated) as conn:
-                handles.rename(conn, human_id, None, "wanted")
+                handles.rename(conn, human_id, None, "wanted", alias_limit=3)
             outcomes.append("renamed")
         except ApiError as error:
             outcomes.append(error.details["fields"]["handle"])
@@ -316,24 +314,13 @@ def test_two_renames_to_one_handle_leave_one_winner(
         assert len(holders) == 1
 
 
-def test_the_admin_search_finds_an_account_by_an_alias_and_login_is_limited_per_account(
+def test_the_admin_search_finds_an_account_by_an_alias(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from maity_hub.routes import auth
-
     admin = flow.human(make_client, migrated)  # the earliest human: the instance admin
     assert admin.patch("/me", {"handle": "boss"}).status_code == 200
     found = admin.get("/admin/users", params={"q": "maintainer"})
     assert [u["handle"] for u in found.json()["items"]] == ["boss"]
-    auth.LOGIN_BY_HANDLE.reset()
-    wrong = make_client()
-    codes = []
-    for name in ("boss", "maintainer") * 5:
-        codes.append(
-            wrong.post("/api/v1/auth/login", json={"handle": name, "password": "wrong"}).status_code
-        )
-    assert 429 in codes  # alias and handle share one account's limit
-    auth.LOGIN_BY_HANDLE.reset()
 
 
 def test_an_agent_naming_a_handle_is_forbidden_even_when_it_is_null_and_a_human_needs_a_field(
@@ -429,7 +416,21 @@ def test_a_handle_that_speaks_for_the_hub_is_refused_on_every_path(
     assert _fields(org) == {"handle": "reserved"}
     with migrated.connect() as conn:
         assert check_names(conn, handle, "Someone")["handle"] == "reserved"
-    assert main(["owner", "create", "--handle", handle, "--display-name", "X"]) == 2
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                handle,
+                "--display-name",
+                "X",
+                "--email",
+                "x@example.org",
+            ]
+        )
+        == 2
+    )
 
 
 def test_an_agent_may_have_a_word_that_is_only_a_path() -> None:
@@ -464,7 +465,21 @@ def test_owner_create_refuses_a_load_test_handle(
     # on its own message, rather than on the prompt.
     monkeypatch.setattr(sys, "stdin", io.StringIO("a long password\n"))
     monkeypatch.setenv("MAITY_DATABASE_URL", "sqlite:////no/such/directory/maity.db")
-    assert main(["owner", "create", "--handle", "lt-7", "--display-name", "Load"]) == 2
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "lt-7",
+                "--display-name",
+                "Load",
+                "--email",
+                "lt-7@example.org",
+            ]
+        )
+        == 2
+    )
     assert "is reserved" in capsys.readouterr().err
 
 

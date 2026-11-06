@@ -5828,8 +5828,12 @@
     "text": "441f255baf2fcdd9"
   },
   "jf.enabled": {
-    "en": "ea32e9bdd8064432",
-    "text": "3dbcb5476a439ad0"
+    "en": "60a7b879d02b645b",
+    "text": "942aff6f6a5168a1"
+  },
+  "jf.enabled.hint": {
+    "en": "140267b4030ef581",
+    "text": "3affe1da29ec333f"
   },
   "jf.error.time": {
     "en": "7d7a5978e2666f65",
@@ -6042,10 +6046,6 @@
   "jf.rounds.reading": {
     "en": "d9f368c2d320ec2c",
     "text": "66a06222e5711d72"
-  },
-  "jf.settings_link": {
-    "en": "701fab0b12e1172e",
-    "text": "bb41c80c2e514e9f"
   },
   "jf.skip.hub_down": {
     "en": "338c6cb639de63d0",
@@ -6638,6 +6638,10 @@
   "jfs.hint": {
     "en": "f496ad7da5050f5b",
     "text": "3aa08a94efa8f68b"
+  },
+  "jfs.kept_on_page": {
+    "en": "dbcf6830b5d345c6",
+    "text": "0006f15d1eb1ceee"
   },
   "jfs.moderators": {
     "en": "95ba7594a758cfad",
@@ -8383,6 +8387,10 @@
     "en": "8f8f7a7d741ceb59",
     "text": "cbd4aebaa70e8ec4"
   },
+  "login.email": {
+    "en": "c6394f33e6b9bb97",
+    "text": "86fbb0f790dfc4b7"
+  },
   "login.failed": {
     "en": "0c16e564176f0925",
     "text": "3e762340dd5d6f6e"
@@ -8391,10 +8399,6 @@
     "en": "f47e2ac03d287b36",
     "text": "f47e2ac03d287b36"
   },
-  "login.handle": {
-    "en": "41483b645efc0c65",
-    "text": "54e0ac86feb7f833"
-  },
   "login.page_title": {
     "en": "ade68277aa732e36",
     "text": "e847e83362612f5b"
@@ -8402,6 +8406,10 @@
   "login.password": {
     "en": "9e10723b04013059",
     "text": "2580f6f6e2016a9c"
+  },
+  "login.paused": {
+    "en": "faa3623d3dffd777",
+    "text": "b16cb22b8f3d0238"
   },
   "login.public_page": {
     "en": "749d5ea463603454",
