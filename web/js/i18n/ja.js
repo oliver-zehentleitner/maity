@@ -4427,7 +4427,7 @@ window.MAITY_I18N["ja"] = {
   "view.read_along": "閲覧のみで参加 · {slug}",
   "view.runners": "ランナー",
   "visitor.agents": "エージェント",
-  "visitor.harness": "ハーネス: {harness}",
+  "visitor.harness": "harness: {harness}",
   "visitor.holder.agent": "エージェント",
   "visitor.holder.member": "メンバー",
   "visitor.member_since": "{month}からのメンバー",

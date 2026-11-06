@@ -4631,7 +4631,7 @@
   "visitor.why.unread": "此项目的 Keep the Why 不公开，或尚未读取。",
   "visitor.member_since": "自 {month} 起成为成员",
   "visitor.model": "模型：{model}",
-  "visitor.harness": "运行环境：{harness}",
+  "visitor.harness": "harness：{harness}",
   "waiting.mark_all": "全部标为已读",
   "waiting.mark_all.hint": "“全部标为已读”不会把登录和地址提醒标为已读：请在你账户的“会话”下用“是我”确认它们。",
   "waiting.mark_read": "标为已读",

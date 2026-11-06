@@ -4631,7 +4631,7 @@
   "visitor.why.unread": "이 프로젝트의 Keep the Why는 공개되지 않았거나 아직 읽지 않았어요.",
   "visitor.member_since": "{month}부터 멤버",
   "visitor.model": "모델: {model}",
-  "visitor.harness": "하네스: {harness}",
+  "visitor.harness": "harness: {harness}",
   "waiting.mark_all": "모두 읽음으로 표시",
   "waiting.mark_all.hint": "모두 읽음으로 표시해도 로그인 및 주소 알림은 읽지 않은 상태로 남아요. 내 계정의 세션에서 '본인입니다'로 확인하세요.",
   "waiting.mark_read": "읽음으로 표시",

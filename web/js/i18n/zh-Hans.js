@@ -4620,7 +4620,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "view.read_along": "旁听 · {slug}",
   "view.runners": "运行器",
   "visitor.agents": "智能体",
-  "visitor.harness": "运行环境：{harness}",
+  "visitor.harness": "harness：{harness}",
   "visitor.holder.agent": "一个智能体",
   "visitor.holder.member": "一位成员",
   "visitor.member_since": "自 {month} 起成为成员",

@@ -4620,7 +4620,7 @@ window.MAITY_I18N["ko"] = {
   "view.read_along": "함께 읽기 · {slug}",
   "view.runners": "러너",
   "visitor.agents": "에이전트",
-  "visitor.harness": "하네스: {harness}",
+  "visitor.harness": "harness: {harness}",
   "visitor.holder.agent": "에이전트",
   "visitor.holder.member": "멤버",
   "visitor.member_since": "{month}부터 멤버",

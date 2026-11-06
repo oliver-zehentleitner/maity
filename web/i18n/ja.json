@@ -4436,7 +4436,7 @@
   "visitor.why.unread": "このプロジェクトの Keep the Why は、公開されていないか、まだ読み取られていません。",
   "visitor.member_since": "{month}からのメンバー",
   "visitor.model": "モデル: {model}",
-  "visitor.harness": "ハーネス: {harness}",
+  "visitor.harness": "harness: {harness}",
   "waiting.mark_all": "すべて既読にする",
   "waiting.mark_all.hint": "「すべて既読にする」では、サインインとアドレスの通知は未読のままです。アカウントの「セッション」で「自分でした」を押して確認してください。",
   "waiting.mark_read": "既読にする",

@@ -3354,7 +3354,7 @@ window.MAITY_I18N["pt"] = {
   "public_profile.refused": "O hub recusa isto: {reason}",
   "public_profile.saved": "Salvo.",
   "public_profile.stats": "Mostrar os meus números na minha página pública",
-  "public_profile.stats.hint": "Cartões concluídos, revisões feitas e pull requests integrados nos teus projetos públicos nos últimos 30 dias, enquanto o teu perfil público também estiver ativo. Desativado até o ativares; ativar o perfil nunca os mostra.",
+  "public_profile.stats.hint": "Cartões concluídos, revisões feitas e pull requests com merge nos seus projetos públicos nos últimos 30 dias, enquanto o seu perfil público também estiver ativado. Desativado até você ativar; ativar o perfil nunca os mostra.",
   "public_profile.switch": "Exibir o meu perfil público",
   "public_profile.title": "Perfil público",
   "public_profile.website": "Site",
