@@ -1324,6 +1324,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     decided = ticker_read.details(conn, rows)
     notices = ticker_read.ticker_subjects(conn, rows)
     standing = _standing_of(conn, rows, reader)
+    restricted_reads = _RestrictedReads(conn, reader)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -1375,6 +1376,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "via": row.actor_via,
             }
         payload = _without_reason(row, reader, reason_readers.get(row.conversation_id or ""))
+        if row.kind == "project_updated":
+            payload = shaped_restricted(row, payload, restricted_reads)
         audience = row.audience
         if row.kind == "event_redacted" and row.subject_id in notices:
             audience = ticker_read.shaped_audience(audience, reader)  # like the item it removed
@@ -1418,15 +1421,46 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     return views
 
 
+class _RestrictedReads:
+    """How one reader reads `settings.restricted_access` in `project_updated` (§6.1 "Reading
+    the setting"), decided once per batch and only when a batch holds such an event."""
+
+    def __init__(self, conn: Connection, reader: Any) -> None:
+        self.conn, self.reader = conn, reader
+        self._full: bool | None = None
+
+    def shape(self, value: Any) -> Any:
+        from maity_hub import restricted
+
+        project = getattr(self.reader, "project", None)
+        if project is None:
+            return restricted.announced(self.conn, None, value, None, False)
+        if self._full is None:
+            self._full = restricted.reads_members(self.conn, project, self.reader)
+        return restricted.announced(self.conn, project, value, self.reader, self._full)
+
+
+def shaped_restricted(row: Any, payload: Any, reads: _RestrictedReads) -> Any:
+    """A `project_updated` naming `settings.restricted_access`, served per reader at read: the
+    stored `{mode, members}` or `{mode, included}` (§6.1)."""
+    fields = (payload or {}).get("fields") if isinstance(payload, dict) else None
+    if not isinstance(fields, dict) or "settings.restricted_access" not in fields:
+        return payload
+    value = reads.shape(fields["settings.restricted_access"])
+    return {**payload, "fields": {**fields, "settings.restricted_access": value}}
+
+
 def _wakes(row: Any, reader: Any = None) -> dict[str, Any]:
     """The instances a team's wake rule chose, as addresses; absent when no team's rule
-    narrowed the event (§8.2). Where the audience holds a watch's token only the reader's own
-    entries: the others would tell who watches the card (§6.4)."""
+    narrowed the event (§8.2). Where the audience holds a watch's token, or a restricted text's
+    (`restricted:`), only the reader's own entries: the others would tell who watches the card,
+    or who is in the set (§6.4)."""
     if row.wakes is None:
         return {}
     chosen = row.wakes
     if any(
-        isinstance(token, str) and token.startswith("watchers:") for token in row.audience or []
+        isinstance(token, str) and token.startswith(("watchers:", "restricted:"))
+        for token in row.audience or []
     ):
         own = getattr(reader, "principal_id", None)
         chosen = {member: ids for member, ids in chosen.items() if member == own}

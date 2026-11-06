@@ -622,5 +622,5 @@ def _windows_directory() -> str:
 def kept_env(environ: Mapping[str, str]) -> dict[str, str]:
     """What git under the runner gets from `environ`: ENV_KEPT, and on Windows what a
     program needs to start there."""
-    names = ENV_KEPT + (ENV_KEPT_WINDOWS if os.name == "nt" else ())
+    names = ENV_KEPT + (ENV_KEPT_WINDOWS if _windows() else ())
     return {name: environ[name] for name in names if name in environ}

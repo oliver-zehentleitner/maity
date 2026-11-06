@@ -348,7 +348,7 @@ def create(
     return org, "owner"
 
 
-def rename(conn: Connection, org: Any, handle: str, caller: Any) -> None:
+def rename(conn: Connection, org: Any, handle: str, caller: Any, *, alias_limit: int) -> None:
     """A new handle under every rule of §6.24; each project of the organisation says so in its
     log and on its ticker (§6.26). The caller holds the organisation's lock."""
     from maity_hub import moderation, project_names, public_projects
@@ -361,7 +361,7 @@ def rename(conn: Connection, org: Any, handle: str, caller: Any) -> None:
         select(t.project.c.id).where(t.project.c.owner_org_id == org.id).order_by(t.project.c.id)
     ).scalars()
     old_names = {project: namespace.name_of(conn, project) for project in projects}
-    handles.rename(conn, org.id, None, handle)
+    handles.rename(conn, org.id, None, handle, alias_limit=alias_limit)
     for project, old in old_names.items():
         own = conn.execute(
             select(t.membership.c.id).where(
@@ -380,15 +380,17 @@ def rename(conn: Connection, org: Any, handle: str, caller: Any) -> None:
     public_projects.touch_of_org(conn, org.id)  # each page moves to its new address (§16.9)
 
 
-def change_settings(conn: Connection, org: Any, fields: dict[str, Any], caller: Any) -> Any:
+def change_settings(
+    conn: Connection, org: Any, fields: dict[str, Any], caller: Any, *, alias_limit: int
+) -> Any:
     """`handle`, `display_name`, `members_create_projects`, `public_page`, as the owner sent
-    them."""
+    them; a rename within `alias_limit` (`max_aliases`, §16.5)."""
     values: dict[str, Any] = {}
     nulled = {name: "invalid" for name, value in fields.items() if value is None}
     if nulled:  # a field that is sent is a value: `null` does not mean "leave it"
         raise invalid(nulled)
     if "handle" in fields:
-        rename(conn, org, fields["handle"], caller)
+        rename(conn, org, fields["handle"], caller, alias_limit=alias_limit)
     if "display_name" in fields:
         if not display_name_ok(fields["display_name"]):
             raise invalid({"display_name": "invalid"})
@@ -412,7 +414,7 @@ def change_settings(conn: Connection, org: Any, fields: dict[str, Any], caller: 
 
 
 def set_role(
-    conn: Connection, org: Any, actor_role: str, human_id: str, role: str
+    conn: Connection, org: Any, actor_role: str, human_id: str, role: str, by: str | None = None
 ) -> dict[str, Any]:
     """An owner sets any role of anyone; an admin moves a member or admin between `member`
     and `admin`. The last owner is never demoted (`org_last_owner`)."""
@@ -437,7 +439,7 @@ def set_role(
         )
         org_invitations.withdraw_by_inviter(conn, org.id, human_id, role)
         if current != "owner" and role == "owner":  # the hub keeps them owners of its projects
-            org_projects.keep_in_all(conn, org.id, human_id)
+            org_projects.keep_in_all(conn, org.id, human_id, by)
         elif current == "owner" and role != "owner":
             org_projects.release_in_all(conn, org.id, human_id)
     return next(m for m in members(conn, org.id) if m["id"] == human_id)

@@ -35,6 +35,7 @@ from maity_hub import (
     pins,
     placements,
     project_roles,
+    restricted,
     rules,
     seats,
     subagents,
@@ -463,6 +464,9 @@ def apply_patch(
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
+    # A guest raised may enter the restricted-access set, it and its listed agents (§6.1).
+    raised = "trust" in changed and target.trust == restricted.GUEST
+    in_set_before = restricted.resolve(conn, change.project) if raised else None
     if changed:
         columns = {k: v for k, v in changed.items() if k != "briefing"}
         if "reports_to" in changed:
@@ -501,6 +505,19 @@ def apply_patch(
                 view,
                 actor=change.actor,
                 subject=("member", member_id),
+            )
+        if in_set_before is not None:
+            restricted.entered(
+                conn,
+                change.project.id,
+                in_set_before,
+                "trust_raised",
+                (
+                    restricted.person(conn, change.actor.membership_id)
+                    if change.actor.membership_id is not None
+                    else "hub"
+                ),
+                change.actor,
             )
         if "reports_to" in changed:
             line.edge_ended(conn, change, target)

@@ -424,6 +424,7 @@ def test_on_windows_git_gets_the_systems_systemroot_not_maitys(
         raise OSError("not started")
 
     monkeypatch.setenv("SYSTEMROOT", "/chosen/by/the/command/line")
+    monkeypatch.setenv("PATH", f"/chosen/path{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(clonecheck, "_windows_directory", lambda: "/the/system")
     monkeypatch.setattr(clonecheck, "_windows", lambda: True, raising=False)
     monkeypatch.setattr(subprocess, "run", recording)
@@ -433,6 +434,32 @@ def test_on_windows_git_gets_the_systems_systemroot_not_maitys(
     assert seen[0]["SYSTEMROOT"] == "/the/system"
     assert pinned["SYSTEMROOT"] == "/the/system"
     assert "/chosen" not in pinned["PATH"] and "/chosen" not in seen[0]["PATH"]
+
+
+def test_the_runners_values_win_over_maitys_environment(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What git under the runner gets: maity's kept variables first, the runner's own after
+    them, so a kept SYSTEMROOT (Windows) or PATH from the command line never wins."""
+    from maity import proc
+
+    seen: list[dict[str, str]] = []
+
+    def recording(
+        cmd: list[str], cwd: Path, timeout: float, env: dict[str, str], path: str | None = None
+    ) -> Any:
+        seen.append(dict(env))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setenv("SYSTEMROOT", "/chosen/by/the/command/line")
+    monkeypatch.setenv("PATH", f"/chosen/path{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(clonecheck, "_windows", lambda: True, raising=False)
+    monkeypatch.setattr(clonecheck, "_windows_directory", lambda: "/the/system", raising=False)
+    monkeypatch.setattr(proc, "_start", recording)
+    proc.run([*proc.GIT, "status", "--porcelain"], placed)
+    (env,) = seen
+    assert env["SYSTEMROOT"] == "/the/system"
+    assert "/chosen" not in env["PATH"]
 
 
 def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> None:

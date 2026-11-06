@@ -63,6 +63,7 @@ from maity_hub import admin as instance_admin
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import known_sources, mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
+from maity_hub.compression import Compression
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
     APPLICATION_SERVING,
@@ -506,6 +507,8 @@ def create_app(
     app.state.route_limits = route_limits.resolve(app.routes, settings.route_limits)
     public_pages.BY_ADDRESS.configure(*settings.public_page_limit)
     badges.BY_ADDRESS.configure(*settings.badge_limit)
+    # Inside HubMiddleware, so its request line and stats count the compressed answer's time.
+    app.add_middleware(Compression)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
     if settings.allow_plain_http:
         log.warning(

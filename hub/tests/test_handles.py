@@ -56,10 +56,12 @@ def test_a_handle_or_alias_of_another_is_taken(
     assert _fields(owner.patch("/me", {"handle": "account"})) == {"handle": "reserved"}
 
 
-def test_the_ninth_alias_and_the_fourth_rename_are_refused(
+def test_the_ninth_alias_at_the_highest_value_and_the_fourth_rename_are_refused(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
+    # The highest `max_aliases` (§16.5), so that the rate limit is met before the cap.
+    assert owner.patch("/admin/settings/limits", {"max_aliases": 8}).status_code == 200
     for i in range(3):
         assert owner.patch("/me", {"handle": f"name-{i}"}).status_code == 200
     limited = owner.patch("/me", {"handle": "name-3"})
@@ -271,7 +273,7 @@ def test_a_rename_of_a_profile_deleted_meanwhile_is_not_found(
         ).scalar_one()
     with events.transaction(migrated) as conn:
         try:
-            handles.rename(conn, profile["id"], owner_id, "wasp")
+            handles.rename(conn, profile["id"], owner_id, "wasp", alias_limit=3)
         except ApiError as error:
             assert error.status == 404 and error.code == "not_found"
         else:
@@ -296,7 +298,7 @@ def test_two_renames_to_one_handle_leave_one_winner(
         ready.wait()
         try:
             with events.transaction(migrated) as conn:
-                handles.rename(conn, human_id, None, "wanted")
+                handles.rename(conn, human_id, None, "wanted", alias_limit=3)
             outcomes.append("renamed")
         except ApiError as error:
             outcomes.append(error.details["fields"]["handle"])

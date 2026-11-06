@@ -45,6 +45,7 @@ from maity_hub import (
     namespace,
     product_line,
     project_roles,
+    restricted,
     subagents,
     takeovers,
     write_guard,
@@ -1015,6 +1016,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     if row.placement_id is not None:
         _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    in_set_before = restricted.resolve(conn, project)  # who enters is told to the set (§6.4)
     if not allowed_projects.admits(conn, allowed_projects.of_profile(conn, row.agent_id), project):
         raise not_found()  # the list changed since the join was handed out (§6.3)
     if row.member_rule:
@@ -1121,6 +1123,15 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             member_view(conn, new),
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
             subject=("member", agent_id),
+        )
+        # The join is the call of whoever made it (§6.1 "Every way into the set").
+        restricted.entered(
+            conn,
+            row.project_id,
+            in_set_before,
+            "joined",
+            restricted.human_person(conn, row.created_by),
+            Actor(membership_id=membership_id, credential_id=credential_id),
         )
     name = namespace.full_name(conn, project)  # the join answer's project (§6.25)
     return value, credential_id, agent_id, name, project.signing, instance
