@@ -45,20 +45,24 @@ ROLES = ("coder", "reviewer")
 INTERFACE = ("en", "de", "fr", "es", "pt", "it", "nl", "ja", "ko", "zh-Hans")
 
 
-def _language(chosen: object, settings: object) -> str:
-    """`languages.of_interface`: the interface language chosen, else what agents write in when
-    the portal has it, else English (§6.2)."""
+# How many human ids one statement names, well below every backend's bound on parameters.
+CHUNK = 500
+
+
+def _mail_language(settings: object) -> str:
+    """What agents write in, when the portal has it, else English: the rest of
+    `languages.of_interface` once the interface language has not decided (§6.2)."""
     if isinstance(settings, str):
         settings = json.loads(settings)
     mail = settings.get("email") if isinstance(settings, dict) else None
     written = mail.get("language") if isinstance(mail, dict) else None
-    for tag in (chosen, written):
-        if tag in INTERFACE:
-            return str(tag)
-    return "en"
+    return str(written) if written in INTERFACE else "en"
 
 
 def _backfill() -> None:
+    """Set-based, so the work grows with the rows that change, not with humans × joins: one
+    statement per table sets the instruction with the owner's interface language, and only
+    the owners without one are read again, for their mail language, a chunk at a time."""
     human = sa.table(
         "human", sa.column("id", sa.String), sa.column("interface_language", sa.String)
     )
@@ -88,31 +92,75 @@ def _backfill() -> None:
         sa.column("subagents", sa.Boolean),
         sa.column("subagents_language", sa.String),
     )
+    chosen = sa.case(
+        (human.c.interface_language.in_(INTERFACE), human.c.interface_language),
+        else_=sa.null(),
+    )
+    owner = (
+        sa.select(profile.c.owner_id).where(profile.c.id == membership.c.agent_id).scalar_subquery()
+    )
+    owner_chosen = (
+        sa.select(chosen)
+        .select_from(profile.join(human, human.c.id == profile.c.owner_id))
+        .where(profile.c.id == membership.c.agent_id)
+        .scalar_subquery()
+    )
+    creator_chosen = sa.select(chosen).where(human.c.id == join.c.created_by).scalar_subquery()
     conn = op.get_bind()
-    rows = conn.execute(
-        sa.select(human.c.id, human.c.interface_language, settings.c.preferences).select_from(
-            human.outerjoin(settings, settings.c.human_id == human.c.id)
+    conn.execute(
+        sa.update(membership)
+        .where(membership.c.agent_id.is_not(None), membership.c.role.in_(ROLES))
+        .values(subagents=sa.true(), subagents_by=owner, subagents_language=owner_chosen)
+    )
+    still_open = (
+        join.c.role.in_(ROLES),
+        join.c.used_at.is_(None),
+        join.c.revoked_at.is_(None),
+        join.c.burned_at.is_(None),
+    )
+    conn.execute(
+        sa.update(join)
+        .where(*still_open)
+        .values(subagents=sa.true(), subagents_language=creator_chosen)
+    )
+    # The owners left without a language: their mail language, else English.
+    member_left = membership.c.subagents.is_(True) & membership.c.subagents_language.is_(None)
+    join_left = join.c.subagents.is_(True) & join.c.subagents_language.is_(None)
+    left = sorted(
+        {
+            *conn.execute(
+                sa.select(membership.c.subagents_by)
+                .where(member_left, membership.c.subagents_by.is_not(None))
+                .distinct()
+            ).scalars(),
+            *conn.execute(sa.select(join.c.created_by).where(join_left).distinct()).scalars(),
+        }
+    )
+    by_language: dict[str, list[str]] = {}
+    for start in range(0, len(left), CHUNK):
+        ids = left[start : start + CHUNK]
+        stored = dict(
+            conn.execute(
+                sa.select(settings.c.human_id, settings.c.preferences).where(
+                    settings.c.human_id.in_(ids)
+                )
+            ).all()
         )
-    ).all()
-    for human_id, chosen, stored in rows:
-        language = _language(chosen, stored)
-        owned = sa.select(profile.c.id).where(profile.c.owner_id == human_id)
-        conn.execute(
-            sa.update(membership)
-            .where(membership.c.agent_id.in_(owned), membership.c.role.in_(ROLES))
-            .values(subagents=sa.true(), subagents_by=human_id, subagents_language=language)
-        )
-        conn.execute(
-            sa.update(join)
-            .where(
-                join.c.created_by == human_id,
-                join.c.role.in_(ROLES),
-                join.c.used_at.is_(None),
-                join.c.revoked_at.is_(None),
-                join.c.burned_at.is_(None),
+        for human_id in ids:
+            by_language.setdefault(_mail_language(stored.get(human_id)), []).append(human_id)
+    for language, ids in by_language.items():
+        for start in range(0, len(ids), CHUNK):
+            chunk = ids[start : start + CHUNK]
+            conn.execute(
+                sa.update(membership)
+                .where(member_left, membership.c.subagents_by.in_(chunk))
+                .values(subagents_language=language)
             )
-            .values(subagents=sa.true(), subagents_language=language)
-        )
+            conn.execute(
+                sa.update(join)
+                .where(join_left, join.c.created_by.in_(chunk))
+                .values(subagents_language=language)
+            )
 
 
 def downgrade() -> None:

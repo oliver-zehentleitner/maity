@@ -1158,7 +1158,7 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     stay as they were."""
     from datetime import timedelta
 
-    from sqlalchemy import insert, select, update
+    from sqlalchemy import event, insert, select, update
 
     from maity_hub import clock
     from maity_hub import tables as t
@@ -1167,24 +1167,35 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     revision = "20261106210000_join_subagents"
     migrate(engine, _before(engine, revision))
     project_id = factory.project(engine, "subagents")
-    chosen, written, plain = (factory.human(engine, h) for h in ("chosen", "written", "plain"))
+    names = ("chosen", "written", "plain", "odd", "both")
+    chosen, written, plain, odd, both = (factory.human(engine, h) for h in names)
     now = clock.now()
+    # chosen: an interface language; written: only a mail language; plain: neither; odd: an
+    # interface tag that is no interface language, and a mail language; both: both, where
+    # the interface language wins.
     with engine.begin() as conn:
-        conn.execute(update(t.human).where(t.human.c.id == chosen).values(interface_language="de"))
-        conn.execute(
-            insert(t.notification_settings).values(
-                human_id=written,
-                preferences={"email": {"language": "fr"}},
-                address_status="none",
-                epoch=0,
-                hard_failures=0,
-                updated_at=now,
+        for human_id, interface in ((chosen, "de"), (odd, "xx"), (both, "it")):
+            conn.execute(
+                update(t.human).where(t.human.c.id == human_id).values(interface_language=interface)
             )
-        )
+        for human_id, mail in ((written, "fr"), (odd, "fr"), (both, "es")):
+            conn.execute(
+                insert(t.notification_settings).values(
+                    human_id=human_id,
+                    preferences={"email": {"language": mail}},
+                    address_status="none",
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=now,
+                )
+            )
     coder = factory.agent(engine, project_id, chosen, "coder")
     reviewer = factory.agent(engine, project_id, written, "reviewer")
     tester = factory.agent(engine, project_id, plain, "tester")
     english = factory.agent(engine, project_id, plain, "coder")
+    odd_reviewer = factory.agent(engine, project_id, odd, "reviewer")
+    both_coder = factory.agent(engine, project_id, both, "coder")
+    both_writer = factory.agent(engine, project_id, both, "writer")
 
     def join(n: int, role: str, creator: str, **values: Any) -> str:
         trust, role = factory.trust_and_role(role)
@@ -1213,7 +1224,30 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     open_coder = join(1, "coder", written)
     used_coder = join(2, "coder", written, used_at=now)
     open_tester = join(3, "tester", chosen)
-    migrate(engine, revision)
+    revoked = join(4, "coder", chosen, revoked_at=now)
+    burned = join(5, "reviewer", chosen, burned_at=now)
+    odd_join = join(6, "coder", odd)
+    both_join = join(7, "reviewer", both)
+    # More owners with an interface language add rows, never statements (akbp, #1447).
+    many = [factory.human(engine, f"many-{n}") for n in range(10)]
+    with engine.begin() as conn:
+        conn.execute(update(t.human).where(t.human.c.id.in_(many)).values(interface_language="ko"))
+    crowd = [factory.agent(engine, project_id, h, "coder").agent_id for h in many]
+    for n, h in enumerate(many):
+        join(10 + n, "reviewer", h)
+    statements: list[str] = []
+
+    def count(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        if statement.lstrip().upper().startswith("UPDATE"):
+            statements.append(statement.split()[1].strip('"`'))
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        migrate(engine, revision)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    # One set-based statement per table, then one per mail language left (fr and en here).
+    assert statements.count("membership") == 3 and statements.count("join_link") == 3, statements
     with engine.connect() as conn:
         members = {
             row.agent_id: (row.subagents, row.subagents_language, row.subagents_by)
@@ -1229,6 +1263,13 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     assert members[reviewer.agent_id] == (True, "fr", written)
     assert members[english.agent_id] == (True, "en", plain)
     assert members[tester.agent_id] == (False, None, None)
+    assert members[odd_reviewer.agent_id] == (True, "fr", odd)
+    assert members[both_coder.agent_id] == (True, "it", both)
+    assert members[both_writer.agent_id] == (False, None, None)
+    assert [joins.pop(j) for j in (revoked, burned)] == [(False, None)] * 2
+    assert [joins.pop(j) for j in (odd_join, both_join)] == [(True, "fr"), (True, "it")]
+    assert all(members[a] == (True, "ko", h) for a, h in zip(crowd, many, strict=True))
+    assert {joins.pop(f"join-{10 + n}") for n in range(10)} == {(True, "ko")}
     assert joins == {
         open_coder: (True, "fr"),
         used_coder: (False, None),
