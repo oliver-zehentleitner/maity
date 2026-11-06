@@ -7,7 +7,7 @@ req-7s40gwjt3h11): on for `coder` and `reviewer`, set by the agent profile's own
 its creator) in the language the hub speaks to that human (`languages.of_interface`).
 
 Revision ID: 20261106210000_join_subagents
-Revises: 20261105120000_known_source
+Revises: 20261106180000_public_stats
 Create Date: 2026-11-06
 """
 
@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261106210000_join_subagents"
-down_revision: str | None = "20261105120000_known_source"
+down_revision: str | None = "20261106180000_public_stats"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
