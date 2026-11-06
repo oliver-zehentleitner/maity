@@ -379,3 +379,60 @@ back to no factor.
   the admins included; the hub refuses to start with that combination
   instead (this contract's reading, after review).
 
+
+## The password signs in by the verified address; only wrong passwords count, and past the limit only known sources keep the password
+
+**Id:** 01029c7f-2cd1-4285-b9b1-d4da3f3c48f1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on 2026-11-05 (sign-in hardening), with four values he set; contract in `docs/api.md` §2.1, §2.6.5, §2.7.4, §2.8.6, §2.9, §18.4
+**Revisit when:** passkeys arrive, or the instance admin becomes a flag that several accounts hold (§16)
+**See:** sign-in.md#an-instance-may-make-mail-the-second-factor-for-everyone-then-the-sign-in-link-is-off-as-a-first-factor — 04a233ef-5d92-43f3-a3b6-0421171027f8 — as of 2026-11-05
+
+`POST /auth/login` takes the account's verified address instead of a
+handle. Only wrong passwords count: 5 in 15 minutes per account. Past
+that, for the rest of the window, the password still signs in from a
+known source, an address from which the account completed a sign-in in
+the last 30 days and which has itself sent fewer than 5 wrong
+passwords in the window; the hub keeps a keyed fingerprint of it, not
+the address. Every other source gets `unauthenticated`, with
+`email_link` where the instance offers the sign-in link, and with
+`password_paused` and the seconds to wait otherwise. The password
+change, the re-authentication and the address change count in buckets
+of their own. `maity-hub owner create` takes the address and stores it
+as verified. The instance admin's verified address can be replaced but
+not removed. A second-factor check takes its place in the count before
+it compares the code.
+
+**Reason:** the maintainer's decision, as hardening of the password
+sign-in. A known source is defined by the account's own completed
+sign-ins, so an address the account has never signed in from can never
+become one, and a session waiting at the second factor makes none. The
+fingerprint keeps that working after the sessions have ended, which
+erase their addresses (the maintainer's choice of the two options).
+
+**Limit:** the fingerprint is pseudonymous, not anonymous: whoever
+holds the key, or without `MAITY_SECRET_KEY` a copy of the whole
+database (the pepper sits there), can test a guessed source address,
+and the whole IPv4 range is few enough to try. Setting, changing
+or removing `MAITY_SECRET_KEY` gives every address a new fingerprint,
+so every account has no known source until its next sign-in.
+
+**Rejected alternatives (storage):**
+- Only the start addresses of the account's live sessions: no new data,
+  but whoever has a live session in that browser is signed in already;
+  it would have helped another device on the same network only.
+
+**Rejected alternatives:**
+- Keeping the handle (or the handle or the address) at login: dropped
+  by the maintainer's decision; its reasons are not recorded here.
+- 3 wrong passwords in 15 minutes, as proposed: the maintainer set 5.
+- A sign-in link past the limit under the second factor `email`: the
+  mailbox is the second factor there and cannot be the first as well
+  (as 04a233ef); such an instance behaves as one without mail.
+- A command to give an existing admin account an address later
+  (`owner set-email`): not needed for the existing instance; the
+  warning at start is enough.
+- The source of the first wrong attempt as the one that keeps the
+  password: that is the address the wrong passwords come from.
