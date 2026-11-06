@@ -1,6 +1,7 @@
 // The jour fixe (docs/api.md §20): the team's regular look at how it works.
-// The series (§20.1) and their moderators are kept in Project settings
-// (js/jour-fixe-series.js). The view /<owner>/<slug>/jour-fixe lists the
+// The series (§20.1) and their moderators are kept at the top of this view,
+// folded until opened, by a human with project:admin (js/jour-fixe-series.js);
+// a change there draws the rounds again. The view /<owner>/<slug>/jour-fixe lists the
 // rounds per series with its topic, the next slot, the open round, and starts
 // a round of a series by hand for its keepers and moderators; a round's view
 // (/<owner>/<slug>/jour-fixe/<id>, §16.11) shows its phase, its deadlines, who
@@ -87,8 +88,20 @@ window.Maity = window.Maity || {};
 
   async function view(ctx, root, args) {
     if (args && args[0]) { await roundView(ctx, root, args[0]); return; }
+    // The series' settings stay as they are (open or folded) while the rounds below are drawn again.
+    const keeper = ctx.canAdmin && ctx.me.kind === "human" && M.jourFixeSeries;
+    // A fresh body each time: a read still under way fills the one taken out, never twice the new one.
+    let body = h("div", { class: "jf-body" });
+    const redraw = () => { const fresh = h("div", { class: "jf-body" }); body.parentNode.replaceChild(fresh, body); body = fresh; seriesBlocks(ctx, body, redraw); };
+    append(root, h("h2", null, M.t("jf.title")), h("p", { class: "muted" }, M.t("jf.intro")),
+      keeper ? M.jourFixeSeries.settingsPart(ctx, redraw) : null, body);
+    await seriesBlocks(ctx, body, redraw);
+  }
+
+  // The series' blocks with their rounds, and older rounds by the hub's cursor.
+  async function seriesBlocks(ctx, root, redraw) {
     const status = M.statusLine();
-    append(root, h("h2", null, M.t("jf.title")), h("p", { class: "muted" }, M.t("jf.intro")), status.el);
+    append(root, status.el);
     let state, rounds;
     try {
       [state, rounds] = await Promise.all([M.api.get(ctx.base + "/jour-fixe"), M.api.get(ctx.base + "/jour-fixe/rounds")]);
@@ -98,7 +111,6 @@ window.Maity = window.Maity || {};
     }
     status.done();
     const all = state.series || [];
-    const redraw = () => { clear(root); view(ctx, root, args); };
     // Rounds go to their series' block (§20.7: the round names it); one of a series gone gets a block of its topic.
     const blocks = new Map();
     let privates = 0;
@@ -133,7 +145,6 @@ window.Maity = window.Maity || {};
       } }, M.t("jf.rounds.more")), moreStatus.el);
     }
     append(root,
-      ctx.canAdmin && ctx.me.kind === "human" ? h("p", { class: "hint" }, M.tn("jf.settings_link", { link: h("a", { href: ctx.link("settings") }, M.t("nav.settings")) })) : null,
       holder,
       blocks.size || privates ? null : h("p", { class: "muted" }, M.t("jfs.none")), more);
     showMore(rounds.next_cursor);

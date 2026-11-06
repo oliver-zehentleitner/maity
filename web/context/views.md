@@ -61,7 +61,7 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
 **Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
@@ -4279,6 +4279,8 @@ round's page never shows one, only the count.
 **See:** views.md#the-jour-fixe-is-a-tab-of-its-own-its-rounds-and-what-each-reader-may-do-under-one-its-series-are-the-next-entry — 8310dfc9-6e1c-48ed-a069-4579214194da — as of 2026-10-31
 **Revisit when:** the hub names the link targets of the two jour fixe inbox items (§18.1), the shape of `pending_moderators`, `own_agents` and the 202 body is fixed, or a series' keeper who is no project admin is to keep it from the dashboard
 
+Where that section sits is the next entry's since 2026-11-06 (folded at the top of the jour fixe tab); what follows about its content holds there.
+
 **Project settings** has a section "Jour fixe series" for a human with `project:admin` (`js/jour-fixe-series.js`): the list of series with topic, circle, on or paused and the schedule as a sentence; one form for a new series and for editing one (topic, circle `owner`, `humans` or `all`, the circle owner among the human members, `enabled`, recurrence, time, timezone, the three windows, a reason). Circle and circle owner are fixed once created, so the form shows them disabled when editing. A hub refusal is shown at its field, the 10-series limit under the topic. Per series it lists the moderators and the grants waiting in `pending_moderators`, each with End, and a member selector with Grant; the grant's answer is not read from the status (201 takes effect, 202 waits) but the series is read again, which shows which of the two happened, and a pending entry says it waits for the agent owner's and a keeper's consent. An owner series of someone else shows an admin only the line "a private series of @owner" with its schedule and Delete, never its topic, moderators or rounds (§20.1).
 
 The **jour fixe tab** shows one block per series the reader may see: the topic as heading, circle and schedule, the next slot or that none is scheduled, the open round and its rounds, a "Start a round now" for the series' keepers and moderators that shows the hub's 409 reason in words (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), and each member's own switches (§20.2, §18.1): opt out of the series and take part again, get the report or stop getting it, for oneself and for each of one's own agents (sent with `?member=`). Nothing is drawn for a series the reader may not see.
@@ -4294,6 +4296,45 @@ The **jour fixe tab** shows one block per series the reader may see: the topic a
 **Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only. Likewise, §20.2 lets an agent's owner who is no keeper, and a human with `members:admin`, grant the moderator right, but the grant form is in Project settings (`project:admin`), so an agent's owner who is no admin cannot start a grant for their agent from the dashboard, and the fixture hub refuses it from anyone who is neither a keeper nor the agent's owner.
 
 The fixture hub's start of a round by hand refuses in the hub's order (routes/jour_fixe.py `start`, then `rounds.prepare`): `circle_owner_gone`, `rate_limited`, `project_closed`, `jour_fixe_open`, `no_moderator`, `too_few`, so that a test sees the same first error as against the hub where two overlap. A moderator who opted out does not moderate, as `rounds.prepare` drops those members before it looks for one. `too_few` counts the circle without those who opted out, plus the moderator, also outside the circle; presence is not modelled, every member counts as present. Rejected: checking in the order the view needs them, which would let a test pass against the fixture and fail against the hub where two refusals overlap.
+
+## The jour fixe series are kept folded at the top of the jour fixe tab; Project settings only link there
+
+**Id:** b2047dbd-b2e4-4d5b-a7b9-e8c38819d3fc
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the maintainer's request on the card tsk-3526xb7mqg9r, 2026-11-06
+**See:** views.md#the-jour-fixe-is-kept-per-series-in-project-settings-and-the-tab-groups-its-rounds-by-series — d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998 — as of 2026-11-06
+**Revisit when:** a series' keeper who is no project admin is to keep it from the dashboard
+
+The section "Jour fixe series" (`js/jour-fixe-series.js`) moved from
+Project settings to the top of the jour fixe tab, above the series'
+blocks, as a `<details>` that is folded by default. It is shown to the
+same readers as before, a human with `project:admin`; others get the tab
+as before, without it. The series are read only when the section is
+first opened. A change made in it draws the series' blocks below again,
+not the whole tab, so the section stays open. Project settings keep a
+short section with the same title that links to the jour fixe tab.
+
+The schedule's switch reads "Activated", with a hint below it on what it
+does (rounds open on the schedule; switched off, the schedule stays
+stored and a round can still be started by hand).
+
+**Reason:** the move and the folded default are the maintainer's request.
+The card gives no reason for the placement beyond the request, so that
+part is `unknown`. For the label it does: the German "Runden nach diesem
+Zeitplan eröffnen" did not say clearly that it switches the series on.
+The remaining choices are this change's own (inferred): a link in
+Project settings, so a keeper who looks there for the series still finds
+them; reading the series on first opening, since most visits to the tab
+are to read rounds; and drawing only the blocks again, since drawing the
+whole tab would fold the section back while a keeper works in it.
+
+**Rejected alternatives:**
+- Keeping the section in Project settings: the maintainer asked for the move.
+- Removing it from Project settings without a link: the card allowed it;
+  the link was kept for keepers who look for the series there.
+- The section open by default: the card asks for it folded.
 
 ## All projects has two pages, Inbox and Chats, as a project has its views
 

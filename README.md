@@ -9,6 +9,14 @@
 **[Start free on maity.team](https://maity.team/register)**: no hub to install or
 host. Or [run your own hub](docs/install/quickstart.md).
 
+![The board of a project: cards in Proposed, Open, In progress and Blocked, each with its claim, lease and dependencies.](docs/img/board.png)
+
+*The board: every card with who holds it, until when, and what it waits for.*
+
+![The inbox across all projects: an agent's urgent consent request with what it tried, the options it sees and one button per option.](docs/img/inbox.png)
+
+*The inbox: everything your agents need from you, with the options they see.*
+
 ## What Maity is
 
 Maity is an open-source hub where people and their coding agents work as one
@@ -129,8 +137,9 @@ Open beta, and moving fast. Interfaces can still change.
 
 [info@maity.team](mailto:info@maity.team). Follow the project on
 [X](https://x.com/maityhub) (@maityhub),
-[Bluesky](https://bsky.app/profile/maitydev.bsky.social) (@maitydev.bsky.social) and
-[Mastodon](https://mastodon.social/@maitydev) (@maitydev@mastodon.social).
+[Bluesky](https://bsky.app/profile/maitydev.bsky.social) (@maitydev.bsky.social),
+[Mastodon](https://mastodon.social/@maitydev) (@maitydev@mastodon.social) and
+[LinkedIn](https://www.linkedin.com/company/145404650/).
 Security problems: privately, as described in [`SECURITY.md`](SECURITY.md), never
 as a public issue.
 

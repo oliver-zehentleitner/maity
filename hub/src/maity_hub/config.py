@@ -144,6 +144,9 @@ class Settings:
     # MAITY_MAX_ATTACHMENT_STORAGE (§16.5, §8.7): bytes of attachments the whole instance may
     # store, from 1 GiB to 1 PiB, or `unlimited`; None leaves it to the instance admin.
     max_attachment_storage: int | str | None = None
+    # MAITY_MAX_ALIASES (§16.5, §6.24): the aliases one human, organisation, agent profile or
+    # project may hold, 1–8 and never `unlimited`; None leaves it to the instance admin.
+    max_aliases: int | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -266,6 +269,7 @@ class Settings:
             max_attachment_storage=parse_limit(
                 env, "MAITY_MAX_ATTACHMENT_STORAGE", 1024**3, 1024**5
             ),
+            max_aliases=parse_alias_limit(env),
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
@@ -493,6 +497,17 @@ def parse_limit(
         return value
     if not value.isdigit() or not low <= int(value) <= high:
         raise ConfigError(f"{name} must be a number from {low} to {high}, or unlimited")
+    return int(value)
+
+
+def parse_alias_limit(env: dict[str, str]) -> int | None:
+    """MAITY_MAX_ALIASES (§16.5): a whole number from 1 to 8; unlike the other caps it has no
+    `unlimited`, since other bounds rest on 8 (§6.25). Unset or empty is None."""
+    value = env.get("MAITY_MAX_ALIASES", "").strip()
+    if not value:
+        return None
+    if not value.isdigit() or not 1 <= int(value) <= 8:
+        raise ConfigError("MAITY_MAX_ALIASES must be a number from 1 to 8")
     return int(value)
 
 

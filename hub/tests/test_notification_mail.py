@@ -133,7 +133,7 @@ def test_quiet_hours_hold_everything_but_security(
     owner.patch(S, {"email": {"quiet_hours": window}})
     ask(agent)
     client = make_client(peer="198.51.100.40")
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     at(minutes=5)
     run(migrated)
     assert notifications(migrated) == []
@@ -154,9 +154,7 @@ def test_sign_in_alerts_follow_the_security_switch(
 ) -> None:
     owner, _ = setup(make_client, migrated)
     owner.patch(S, {"email": {"kinds": {"security": {"mode": "off"}}}})
-    make_client().post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    factory.login_handle(make_client(), "maintainer")
     run(migrated)
     assert [
         r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"
@@ -649,9 +647,7 @@ def test_a_sign_in_alert_in_a_digest_travels_with_it(
     owner, _ = setup(make_client, migrated)
     assert owner.patch(S, {"email": {"kinds": {"security": {"mode": "hourly"}}}}).status_code == 200
     run(migrated)  # starts the hourly clock
-    make_client(peer="198.51.100.41").post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    factory.login_handle(make_client(peer="198.51.100.41"), "maintainer")
     at(minutes=5)
     run(migrated)
     security = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]

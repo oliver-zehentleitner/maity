@@ -462,8 +462,12 @@ def test_the_own_handle_is_a_noop_and_an_alias_comes_back(
     assert (back.json()["handle"], back.json()["aliases"]) == ("oz-team", ["oz"])
 
 
-def test_three_renames_a_day_and_at_most_eight_aliases(migrated: Engine, owner: flow.Human) -> None:
+def test_three_renames_a_day_and_at_most_eight_aliases_at_the_highest_value(
+    migrated: Engine, owner: flow.Human
+) -> None:
     org = make_org(owner)
+    # The highest `max_aliases` (§16.5), so that the rate limit is met before the cap.
+    assert owner.patch("/admin/settings/limits", {"max_aliases": 8}).status_code == 200
     for handle, to in (("oz-team", "oz-1"), ("oz-1", "oz-2"), ("oz-2", "oz-3")):
         assert _rename(owner, handle, to).status_code == 200
     limited = _rename(owner, "oz-3", "oz-4")
