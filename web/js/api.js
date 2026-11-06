@@ -5060,6 +5060,8 @@ window.Maity = window.Maity || {};
 
   function request(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
+    // A write may change what the dashboard keeps between page switches (js/app.js): told first.
+    if (method !== "GET" && M.onWrite) M.onWrite();
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
     // place (js/maintenance.js), and the caller gets the refusal as before.

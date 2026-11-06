@@ -205,8 +205,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       closed.click(); for (let k = 0; k < 3; k++) await tick();
     }
   }
+  // The tests change what a read answers between two pages; in the page that takes a write of
+  // this tab, which drops what a switch keeps (js/app.js, tsk-hn2wa8a7e2eq). go() drops it
+  // too, so every page reads afresh; the cases of the kept reads navigate without go().
   async function go(hash) {
     checkFields("before leaving " + (win.location.hash || "/"));
+    if (win.Maity.onWrite) win.Maity.onWrite();
     win.location.hash = hash; win.onhashchange(); await tick(); await tick();
     checkFields(hash);
   }
@@ -1860,12 +1864,63 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let lvRelease = null;
   win.Maity.api.get = (p) => (p === "/auth/session" && !lvRelease ? new Promise((resolve) => { lvRelease = () => resolve(lvGet(p)); }) : lvGet(p));
   const lvOld = main.querySelector("section.view-runners");
+  if (win.Maity.onWrite) win.Maity.onWrite(); // a drawing that reads the session again, held here
   win.location.hash = "#/all"; win.onhashchange(); await tick();
   expect(lvOld && lvOld.parentNode === main && lvOld.getAttribute("inert") === "", "navigation: the view being left stays shown but is inert until the next is drawn");
   win.Maity.api.get = lvGet;
   lvRelease(); for (let k = 0; k < 6; k++) await tick();
   const lvNew = main.querySelector("section.view-all");
   expect(lvNew && lvNew.getAttribute("inert") === undefined && !main.querySelector("section.view-runners"), "navigation: the view drawn next takes clicks again");
+  await go("#/maintainer/maity/inbox");
+  // A switch inside the dashboard draws the next view from the session, /me and the project the
+  // last drawing read, and reads them again behind it (tsk-hn2wa8a7e2eq). Held here: what the
+  // view would wait for if it read them first.
+  const kpGet = win.Maity.api.get, kpBase = "/projects/maintainer/maity", kpReads = [];
+  let kpHeld = [];
+  const kpHold = (paths, answer) => {
+    win.Maity.api.get = (p, ...r) => {
+      kpReads.push(p);
+      if (!paths.includes(p)) return kpGet(p, ...r);
+      return new Promise((resolve, reject) => kpHeld.push({ p, reject, go: () => (answer ? answer(p) : kpGet(p, ...r)).then(resolve, reject) }));
+    };
+  };
+  const kpInert = () => main.childNodes.some((n) => n.getAttribute && n.getAttribute("inert") === "");
+  const kpSwitch = async (hash) => { win.location.hash = hash; win.onhashchange(); for (let k = 0; k < 6; k++) await tick(); };
+  // Answers what is held, and what a drawing started by those answers asks again.
+  const kpRelease = async () => { for (let k = 0; k < 12; k++) { kpHeld.splice(0).forEach((x) => x.go()); await tick(); } };
+  kpHold(["/auth/session", "/me", kpBase, kpBase + "/members"]);
+  await kpSwitch("#/maintainer/maity/board");
+  const kpBoard = main.querySelector("section.view-board");
+  expect(kpBoard && !kpInert() && kpHeld.map((x) => x.p).sort().join() === ["/auth/session", "/me", kpBase, kpBase + "/members"].sort().join(),
+    "switch: inside a project the next view is drawn from the kept session, /me, project and members while they are read again " + kpHeld.map((x) => x.p).join());
+  await kpRelease();
+  expect(main.querySelector("section.view-board") === kpBoard, "switch: what is read again behind it, unchanged, draws nothing again");
+  // Trust changed meanwhile: the view stands on what was kept until the read says so, then is drawn again.
+  kpHold(["/me"], (p) => kpGet(p).then((m0) => { const m = JSON.parse(JSON.stringify(m0)); m.projects.find((x) => x.full_name === "maintainer/maity").trust = "admin"; return m; }));
+  await kpSwitch("#/maintainer/maity/inbox");
+  const kpInbox = main.querySelector("section.view-inbox");
+  expect(kpInbox && kpHeld.length === 1, "switch: the inbox drawn from the kept /me while /me is read again");
+  await kpRelease();
+  expect(main.querySelector("section.view-inbox") && main.querySelector("section.view-inbox") !== kpInbox,
+    "switch: a trust changed in the read behind it draws the view again");
+  // A write of this tab drops what is kept: the next view waits for the session again.
+  win.Maity.api.get = kpGet; await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  kpHold(["/auth/session"]);
+  await win.Maity.api.post("/no-such-write", {}).catch(() => null);
+  await kpSwitch("#/maintainer/maity/board");
+  expect(!main.querySelector("section.view-board") && main.querySelector("section.view-inbox") && kpInert() && kpHeld.length === 1,
+    "switch: after a write the next view reads the session first, as before");
+  await kpRelease();
+  // The session check behind a switch says 401: the page is drawn afresh, the session read first.
+  kpHold(["/auth/session"]);
+  await kpSwitch("#/maintainer/maity/inbox");
+  win.Maity.api.get = (p, ...r) => { kpReads.push(p); return kpGet(p, ...r); };
+  const kpBefore = kpReads.length;
+  kpHeld.splice(0).forEach((x) => x.reject(new win.Maity.api.ApiError("signed out", 401, x.p, "unauthenticated")));
+  for (let k = 0; k < 6; k++) await tick();
+  expect(kpReads.slice(kpBefore).includes("/auth/session") && main.querySelector("section.view-inbox") && !kpInert(),
+    "switch: a 401 of the session check behind it draws the page afresh");
+  win.Maity.api.get = kpGet;
   await go("#/maintainer/maity/inbox");
 
   // Trust × role (docs/api.md §2.3, tsk-tx9qcehevfnk): an owner is offered every trust for a human, never owner for an agent,
