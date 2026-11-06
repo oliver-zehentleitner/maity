@@ -17923,8 +17923,9 @@ the 200 of an open column, is not a removal and leaves with the next
 render. The
 hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
 font from anywhere, and no image but the person's or the agent's
-picture on their own page, from this hub (§6.10; the hub has no other
-public image store, §16.7).
+picture on their own page and the pictures of the agents a person's
+agents page lists ("A person's agents", above), from this hub (§6.10;
+the hub has no other public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
