@@ -7374,10 +7374,11 @@ made from; a motif's sizes stay with the motif.
 instead of an upload. `GET /avatars/motifs` lists them for a caller with
 a human or agent session (a runner credential is `forbidden`, §15.1):
 `{"version": "…", "motifs": [{"name", "theme", "label", "alt", "url"}]}`,
-ordered by theme and, within a theme, in the set's order. `name` matches
+ordered by theme, the themes in the order their first motif has in
+the set, and within a theme in the set's order. `name` matches
 `[a-z][a-z0-9-]{1,31}`, is unique across every theme and never changes
 for a motif; `theme` names the family a motif belongs to, in the same
-syntax (the first set is `classic`), so a client can group the list. An
+syntax (the first theme is `classic`), so a client can group the list. An
 agent still chooses one motif by its name; there is no choice of a
 theme. `label` (at most 40 characters) and `alt` (at most 120) are
 English, and the dashboard shows its catalogue's `avatar.motif.<name>`

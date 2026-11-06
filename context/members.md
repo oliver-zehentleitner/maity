@@ -87,8 +87,8 @@ picture.
   (inline SVG): every other surface would still need its own drawing,
   and the page would carry a second, unversioned picture outside the
   digest address.
-- Two stored generated pictures, one per theme: a picture would no
-  longer be one digest, and a page could not pick between them without
+- Two stored generated pictures, one per page theme (light, dark): a
+  picture would no longer be one digest, and a page could not pick between them without
   script.
 - Choosing a motif removes the upload: an owner trying a motif would
   lose the uploaded picture for good.
@@ -107,9 +107,10 @@ picture.
 **See:** members.md#an-agent-always-has-a-picture-its-upload-else-a-motif-the-hub-ships-else-a-generated-one-the-hub-draws — 11881a0c-f813-4182-84df-5fa1744f9082 — as of 2026-11-05
 
 Every motif carries a `theme`, a name in the motif names' syntax; the
-first set is `classic`. Motif names stay unique across all themes, the
-manifest stays one file and `GET /avatars/motifs` one list, ordered by
-theme, and the agent still chooses exactly one motif by its name. A
+first theme is `classic`. Motif names stay unique across all themes,
+`GET /avatars/motifs` stays one list, the themes in the order their first
+motif has in the set, and the agent still chooses exactly one motif by
+its name. A
 theme's heading comes from the web catalogue
 (`avatar.motif.theme.<theme>`), like a motif's label. The startup check
 and its limits, 64 KiB per file among them, apply to every theme alike.
@@ -120,17 +121,18 @@ owner's — a field on each motif adds a theme without changing how a
 motif is chosen, stored or checked, so `avatar_motif` and every stored
 choice keep working; unique names across themes keep that single name
 enough to find a motif; labels from the catalogue keep every visible
-word translatable, as for the motifs themselves.
+word translatable, as for the motifs themselves; the themes follow the
+order of the set, so the set decides which theme comes first (`classic`)
+without an order of its own, where sorting by name would tie the order
+to a theme's spelling.
 
 **Rejected alternatives:**
 - No field, the second theme as more motifs in the same flat list: a
   client could not group the list or head it by theme.
-- Two forms the designer raised after the lead's choice, and answered
-  with it rather than weighed again: a list of themes at the top of the
-  manifest, each motif pointing to one (a second structure to check for
-  the same grouping), and a second folder or manifest per theme (the
-  startup check, the uniqueness of names and the one list would each
-  have to span several sets).
+- The designer raised two more forms after the lead's choice, a list
+  of themes at the top of the manifest and a second folder or manifest
+  per theme; the lead's choice answered them and no reason was given
+  for either.
 - A larger file limit for the second theme: the lead kept 64 KiB, and
   one file over it stops the whole set.
 
