@@ -81,11 +81,13 @@ def login(
     human_id: str,
     password: str = PASSWORD,
     headers: dict[str, str] | None = None,
+    engine: Engine | None = None,
     **body: Any,
 ) -> Any:
-    """`POST /auth/login` for `human_id` with its sign-in address (above), on the database of
-    the client's app; `body` adds fields such as `next`."""
-    engine: Engine = client.app.state.engine
+    """`POST /auth/login` for `human_id` with its sign-in address (above), on `engine`, or on
+    the database of the client's app; `body` adds fields such as `next`. A client that talks to
+    a hub over HTTP has no app, so its caller passes the engine."""
+    engine = engine if engine is not None else client.app.state.engine
     with sign_in_address(engine, human_id) as address:
         return client.post(
             "/api/v1/auth/login",
