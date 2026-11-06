@@ -192,7 +192,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26) |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
 | 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
-| 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
+| 409 | `alias_limit` | a rename that would give a human, an organisation or an agent profile more aliases than the instance's `max_aliases` (§6.24, §6.26, §16.5), or a project rename or transfer that would give the project more (§6.25); `details.limit` (the value), `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
@@ -333,7 +333,7 @@ the hub records it on the session.
 | Requests to one route | none beyond the route's own limits by default; the general limit per client is the ingress's. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
-| Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
+| Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
@@ -9605,10 +9605,12 @@ digits (§16.11).
 
 **Aliases.** A rename appends the handle given up to the id's
 `aliases`; a handle taken back leaves the list. The list is in the
-order the handles were given up, oldest first, and holds at most
-**8**: a rename that would add a ninth is `alias_limit` (409,
-`details.limit`, `details.aliases`) and changes nothing; taking an
-alias back never adds one, so it stays possible. An alias is never
+order the handles were given up, oldest first, and holds at most the
+instance's `max_aliases` (§16.5; default 3, at most 8): a rename that
+would add one more is `alias_limit` (409, `details.limit` the value,
+`details.aliases`) and changes nothing; taking an alias back never adds
+one, so it stays possible. An id that holds more because the value was
+lowered keeps every alias; only a further rename is refused. An alias is never
 released while its id exists, and no call removes one. Renames are
 limited to 3 per 24 hours per account or profile (§1.7), `rate_limited`
 with `Retry-After`; a no-op does not count. `aliases` is in the views
@@ -9775,7 +9777,7 @@ while it owns no project that is not `archived` (§6.26).
 
 **Aliases.** A rename or a transfer adds the full name given up — the
 pair of the namespace owner's id at that time and the slug — to the
-project's `aliases` (oldest first, at most **8**, `alias_limit` as in
+project's `aliases` (oldest first, at most `max_aliases`, §16.5, `alias_limit` as in
 §6.24; renames and transfers together at most 3 per 24 hours per
 project, `rate_limited`). The project view (§6.1) lists them as
 `aliases`: each alias as a full name `<handle>/<slug>` with that owner's
@@ -9816,8 +9818,9 @@ limit's `show_reason_in` (§6.12), a runner enrollment's `attach`
 `Maity-Attached` header of a pairing lists full names. The forge
 webhook's buckets (§17.4) key on the path as sent, before anything is
 looked up, as before; a project reachable under several alias paths has
-a budget per path, at most 81 (the current handle and 8 aliases of the
-owner × the current slug and 8 aliases of the project) —
+a budget per path, at most 81 (the current handle and up to 8 aliases of the
+owner × the current slug and up to 8 aliases of the project, 8 being the
+highest `max_aliases`, §16.5) —
 accepted, since keying on the resolved project would tell a stranger
 which paths name the same project.
 
@@ -10157,7 +10160,7 @@ names a human (`hum-…`) or an organisation (`org-…`).
 organisation owner, under every rule of §6.24: the syntax, the reserved
 words (§6.25, "Dashboard paths and handles"; §16.11), the uniqueness among
 human and organisation handles and their aliases, the old handle an
-alias of the organisation's id (at most 8, `alias_limit`; at most 3
+alias of the organisation's id (at most `max_aliases`, §16.5, `alias_limit`; at most 3
 renames per 24 hours per organisation, `rate_limited`), an alias taken
 back, a no-op for the current handle. The organisation's projects need
 no alias of their own (§6.25, "Aliases"): `<old handle>/<slug>` reaches
@@ -16371,6 +16374,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
@@ -16380,6 +16384,8 @@ values with the source rules of §16.2, as in §16.4.
   "humans_at_org_limit": 0,
   "max_projects_per_owner": { "value": 10, "source": "default" },
   "owners_at_project_limit": 0,
+  "max_aliases": { "value": 3, "source": "default" },
+  "names_at_alias_limit": 0,
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
   "attachment_storage_used": 734003200 }
 ```
@@ -16391,7 +16397,9 @@ value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, and
 `owners_at_project_limit` for `max_projects_per_owner`, which take
-`null` and `unlimited` the same way. `attachment_storage_used` is
+`null` and `unlimited` the same way. `max_aliases` takes `null` the same
+way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
+read-only. `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
 under every value, `unlimited` included.
 
@@ -16427,6 +16435,15 @@ under every value, `unlimited` included.
   frees no place (of the periodic runs, it only takes the project out
   of the availability sweep and stops new jour-fixe rounds, §6.1). A project transferred out
   frees its place.
+- **What `max_aliases` gates.** A rename that adds an alias: a human's,
+  an organisation's or an agent profile's handle (§6.24, §6.26), and a
+  project's rename or transfer (§6.25). The rename that would give the id
+  more aliases than the value is `alias_limit` (409, `details.limit`,
+  `details.aliases`) and changes nothing. Taking an own alias back adds
+  none and is never refused. The range is 1–8: 0 would forbid every
+  rename, since the handle given up always becomes an alias, and 8 is
+  the bound other rules rest on (the forge webhook's budgets per path,
+  §6.25). One value covers all four kinds of id, as one count did before.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
   alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
   the three above it caps the instance, not an account: the disk and the
@@ -16437,9 +16454,12 @@ under every value, `unlimited` included.
   receives) no new one until they are under it again (the tolerant rule
   of `context/scope.md`); over a lowered `max_attachment_storage`,
   uploads are refused until deletions bring the total under it (§8.7).
+  An id over a lowered `max_aliases` keeps every alias, and all of
+  them resolve (§6.24); only a rename that would add one more is refused.
   `humans_at_limit` and `humans_at_org_limit` count the humans at or over
   each value, `owners_at_project_limit` the namespace owners (humans and
-  organisations), for the admin's eye.
+  organisations), `names_at_alias_limit` the humans, organisations,
+  agent profiles and projects at or over `max_aliases`, for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway
   creation and the mistakes of scripts, and the seat of the hosted
   offering is the human, never the agent (`context/scope.md`); a limit
