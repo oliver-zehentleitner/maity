@@ -6274,7 +6274,8 @@ window.MAITY_FIXTURES = {
       "meat_proxy_hands": false,
       "meat_proxy_lead": false,
       "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first.",
-      "public_presence": true
+      "public_presence": true,
+      "public_stats": false
     },
     "projects": [
       {

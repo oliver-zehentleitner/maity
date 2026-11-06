@@ -40,6 +40,7 @@ from maity_hub import (
     onboarding,
     person_links,
     preferences,
+    public_agents,
     public_pages,
     public_people,
     ranks,
@@ -174,7 +175,7 @@ class ResumeIn(Strict):
 
 class MePatch(Strict):
     """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2) and their
-    public page (`public_profile`, `public_presence`, `public_bio`, §16.9)."""
+    public page (`public_profile`, `public_presence`, `public_stats`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
     dormant: StrictBool | None = None  # the calling instance rests or wakes (§6.17)
@@ -184,6 +185,7 @@ class MePatch(Strict):
     meat_proxy_hands: StrictBool | None = None
     public_profile: StrictBool | None = None
     public_presence: StrictBool | None = None
+    public_stats: StrictBool | None = None
     public_bio: str | None = None
     website: str | None = None
     social: Any = None  # an object, checked with the other fields: `social: "format"`
@@ -198,6 +200,7 @@ HUMAN_FIELDS = (
     "meat_proxy_hands",
     "public_profile",
     "public_presence",
+    "public_stats",
     "public_bio",
     "website",
     "social",
@@ -303,6 +306,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
         )
         environment.refresh(conn, mine.project.id, mine.id)
+        if mine.project.public_page == "on" and caller.agent_id is not None:
+            # The agent's page shows its latest session's model and harness (§16.9).
+            public_pages.touch(conn, public_agents.KIND, caller.agent_id, dependents=False)
         commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
         conn.execute(
             update(t.card)
@@ -856,7 +862,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
         if "paused" in given or "dormant" in given:
             raise invalid({"paused" if "paused" in given else "dormant": "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
-        public = {"public_profile", "public_presence", "public_bio"} & given
+        public = {"public_profile", "public_presence", "public_stats", "public_bio"} & given
         links = {"website", "social", "links_visible"} & given
         if (
             body.meat_proxy is None
@@ -898,6 +904,10 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if body.public_presence is None:
                 raise invalid({"public_presence": "required"})
             values["public_presence"] = body.public_presence
+        if "public_stats" in given:
+            if body.public_stats is None:
+                raise invalid({"public_stats": "required"})
+            values["public_stats"] = body.public_stats
         if "public_bio" in given:
             problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
             if problem is not None:
@@ -949,6 +959,12 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             public_pages.touch(
                 conn, public_people.KIND, caller.human_id, removal=not switched_on_only
             )
+            if switched_on_only and values.get("public_presence"):
+                # The person's own page shows online: it follows at once either way (§16.9,
+                # "Role, member since, online and numbers"); the project pages keep their rule.
+                # `public_stats` needs no such step: it is never a switch that waits, so the
+                # touch above already renders at once.
+                public_pages.touch(conn, public_people.KIND, caller.human_id, dependents=False)
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
         )
