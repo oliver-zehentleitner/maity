@@ -129,6 +129,14 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
   `/mail/second-factor-reset/{token}` (§18.6), and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
+- Compression. A `GET` or `HEAD` under `/api/v1/` or `/assets/` whose
+  request sends `Accept-Encoding: gzip` is answered gzipped when its body
+  is 1024 bytes or more, with `Content-Encoding: gzip` and `Accept-Encoding`
+  in `Vary`. Never compressed: any other method, anything under
+  `/api/v1/auth/`, an attachment's bytes
+  (`…/attachments/{attachment_id}/content`), `text/event-stream`, the
+  image and archive types, and every address outside those two prefixes
+  (the shell, the join, invitation and link pages, the public pages).
 - Every string the hub renders into HTML (project name, handles, titles)
   is escaped; the dashboard renders agent-written text as text only
   (`web/context/rendering.md`).
