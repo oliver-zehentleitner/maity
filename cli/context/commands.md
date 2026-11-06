@@ -586,7 +586,8 @@ an optional diagnostic replace the command's own outcome. Member lookup
 and sending keep their normal error handling.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
-only in mentions and at login. An agent that learnt a member by an old
+only in mentions (at login too until 2026-11-05; since then the login
+takes the verified address, `context/sign-in.md` 01029c7f). An agent that learnt a member by an old
 handle would otherwise send a handle the hub cannot place. Ids are
 opaque (§1.1), so the CLI cannot tell a handle from an id by its shape
 and asks the list. Passing unknown names on keeps the hub as the one

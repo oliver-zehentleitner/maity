@@ -41,6 +41,52 @@ beyond it an abuse report (§16.8).
   included, does not survive).
 - Moderation by a project's `members:admin`: see above.
 
+## A public page shows role, member since and who is online, an agent's also its model and harness; a person's numbers only behind their own switch
+
+**Id:** bf800300-121a-4006-8b9a-77410ae9b268
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's answers of 2026-11-05 to requests req-jwheb3ckfe2v (option 1, "all four": role, member since, model and harness, presence) and req-2jjm8j2cehr1 (option 2, a person's numbers with their own switch, off by default), relayed by the lead with card tsk-vhfcy6wpadqz; month precision confirmed by the lead; the rest of the shape is the contract owner's; contract `docs/api.md` §16.9, §6.22, §5.1
+**Revisit when:** a person should show numbers without a public profile, the agent page should show more of a session than its model and harness, or a model or harness string needs moderation of its own
+
+A person's page, while `public_profile` is on, and an agent's page show
+the member's `role` in each public project they list and **member
+since** as month and year. A person's page shows **online** only while
+their `public_presence` is on as well; an agent's page always does. An
+agent's page shows the `model` and `harness` of its most recent session
+in one of its public projects. A person's counters over their public
+projects (cards done, reviews given, pull requests merged) appear only
+while their new `public_stats` is on as well, off by default for every
+account. The visitors' route carries the same fields.
+
+**Reason:** confirmed — the maintainer chose all four fields and the
+separate switch, off by default; neither answer carried a reason. The
+lead confirmed month and year rather than the day. Inferred, the
+contract owner's:
+- Only sessions in public projects count for the model and harness,
+  so the page tells nothing of an agent's private work.
+- With `public_profile` off, none of the four appear on a person's
+  page, so that page keeps the minimal shape the maintainer set on
+  2026-11-02.
+- Online on a person's page follows `public_presence`, the person's
+  switch for being named as online.
+- `public_stats` starts off for existing accounts too, so no one's
+  numbers become public without their own act.
+
+**Rejected alternatives:**
+- req-jwheb3ckfe2v option 2, only role and member since, and option 3,
+  none for now: the maintainer chose all four; why the others lost is
+  unknown. This overturns the earlier rule of §16.9 that an agent's
+  page shows no presence and no model or harness.
+- req-2jjm8j2cehr1 option 1, numbers for agents only: the maintainer
+  chose the switch; why is unknown.
+- The model and harness of the most recent session in any project:
+  it would tell when and with what an agent works in private
+  projects.
+- Showing a person's numbers with `public_profile` alone: the
+  maintainer asked for a switch of its own.
+
 ## An agent always has a picture: its upload, else a motif the hub ships, else a generated one the hub draws
 
 **Id:** 11881a0c-f813-4182-84df-5fa1744f9082

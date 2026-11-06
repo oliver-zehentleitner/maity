@@ -25,13 +25,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, languages
+from maity_hub import admin, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.errors import ApiError, invalid, rate_limited
+from maity_hub.errors import ApiError, invalid
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
+from maity_hub.ratelimit import Attempt
 
 KINDS = ("inbox", "chat", "mention", "security")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
@@ -364,14 +365,13 @@ def patch(
     signing_key: bytes | None,
     public_url: str,
     mail_ready: bool,
-    wrong_password: Any,
-    password_blocked: Any,
+    password_attempt: Callable[[], Attempt],
     step_up: Callable[[], None],
     keeps_factor: Callable[[], None],
 ) -> int:
     """Apply a `PATCH`; returns 200, or 202 when an address change is held for approval.
-    `wrong_password` counts a mismatched `current_password` against the login limits,
-    `password_blocked` gives the seconds to wait while they are exhausted, and `step_up`
+    `password_attempt` takes a `current_password` its place in the address change's own count
+    of wrong passwords before it is compared (§2.1), and `step_up`
     raises when the caller's session owes the second factor the change of a verified
     address needs (§2.8.4)."""
     errors: dict[str, str] = {}
@@ -400,8 +400,7 @@ def patch(
             signing_key=signing_key,
             public_url=public_url,
             mail_ready=mail_ready,
-            wrong_password=wrong_password,
-            password_blocked=password_blocked,
+            password_attempt=password_attempt,
             step_up=step_up,
             keeps_factor=keeps_factor,
         )
@@ -495,8 +494,7 @@ def _change_address(
     signing_key: bytes | None,
     public_url: str,
     mail_ready: bool,
-    wrong_password: Any,
-    password_blocked: Any,
+    password_attempt: Callable[[], Attempt],
     step_up: Callable[[], None],
     keeps_factor: Callable[[], None],
 ) -> int:
@@ -504,6 +502,8 @@ def _change_address(
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
     verified = row.address_status in ("verified", "disabled") and row.address is not None
     moves = verified and wanted != row.address
+    if moves and wanted is None:
+        _keeps_admin_address(conn, human.id)
     if moves:
         step_up()  # changing or removing the verified address is a sensitive call (§2.8.4)
         if wanted is None and row.address_status == "verified":
@@ -511,13 +511,11 @@ def _change_address(
         if human.password_hash is not None:
             if not isinstance(given_password, str) or not given_password:
                 raise invalid({"current_password": "required"})
-            # The login limits hold here as at the login: no guessing past them (§2.1).
-            wait = password_blocked()
-            if wait:
-                raise rate_limited(wait)
-            if not passwords.verify_password(given_password, human.password_hash):
-                wrong_password()
-                raise invalid({"current_password": "mismatch"})
+            # Wrong passwords count here too, in a bucket of their own, before the compare (§2.1).
+            with password_attempt() as attempt:
+                if not passwords.verify_password(given_password, human.password_hash):
+                    attempt.wrong()
+                    raise invalid({"current_password": "mismatch"})
         else:
             held = _held(row)
             standing = sessions.good_standing(session)
@@ -780,6 +778,8 @@ def decide_held(
             .values(address_change=None, updated_at=clock.now())
         )
         return
+    if held["address"] is None:
+        _keeps_admin_address(conn, human.id)  # the account may have become the admin since
     step_up()
     if held["address"] is None and row.address_status == "verified":
         keeps_factor()  # the policy may have come to `email` since it was held (§2.8.8)
@@ -789,6 +789,17 @@ def decide_held(
         conn, row=row, human_id=human.id, wanted=held["address"], signing_key=signing_key,
         public_url=public_url, session=session,
     )  # fmt: skip
+
+
+def _keeps_admin_address(conn: Connection, human_id: str) -> None:
+    """The instance admin's verified address is replaced, never removed: their password
+    signs in by it (§2.1, §18.4)."""
+    if admin.is_instance_admin(conn, human_id):
+        raise ApiError(
+            409,
+            "admin_address_required",
+            "the instance admin's address can be replaced, not removed",
+        )
 
 
 def _session_forbidden(reason: str) -> ApiError:

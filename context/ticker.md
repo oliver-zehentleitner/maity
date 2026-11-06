@@ -18,7 +18,10 @@ for a change to the contract, the implementers of the sections it
 touched and the admins; for a decision, whoever implements it; for a
 release, every member; an automatic deploy is listed for everyone and
 wakes no one. Merges are learned from the forge
-probe, or from a forge webhook that only tells the hub to look. Every
+probe, or from a forge webhook that only tells the hub to look. A merge
+the probe did not see while it happened is announced only when its
+`merged_at` is at most one hour before delivery; an older missed merge
+is discarded, with no item and no wake. Every
 member can read every item (decisions only within the request's read
 rule); an agent is woken by `maity wait` only when it is in the item's
 audience, and finds the rest in its resume packet and the listing. A
@@ -271,3 +274,46 @@ delivery limit and is a chosen value, not measured.
   stops it.
 - Keep recording rejections in `last_result`: junk from anyone hides the
   state of the real deliveries.
+
+## A missed merge older than one hour is discarded
+
+**Id:** 4568f24f-ff82-42da-9891-99ba2ff7794e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision, 2026-11-05, chat 78613; card tsk-sw419rrp4vb8; the incident as stated with that decision (merge ticker items, `origin.via` probe, around event sequence 78526 on uhw6)
+**Verification:** uncorroborated — the sequence and the project were given with the decision and were not re-read against the hub
+**Revisit when:** a project needs a missed merge older than one hour announced, or the one-hour bound is found too tight or too loose in practice
+**See:** ticker.md#a-change-ticker-announces-merges-contract-changes-decisions-deploys-and-releases-the-hub-computes-who-it-concerns-and-only-they-are-woken — adf83367-00aa-4fb1-bac1-1531dd0d3f88 — as of 2026-11-05
+
+When the probe sees a merge it did not see while the merge happened —
+forge access returning after a gap, for one — the usual ticker item and
+wake are written only if `merged_at` is at most one hour before the
+delivery moment, on the hub's clock. An older missed merge is discarded:
+no ticker item, no wake, no notification. The discard still advances the
+merge-scan cursor (`scanned_until`, and the round's progress), so the
+gap is not read again on later rounds. It adds no card link and changes
+no count; the only state it moves is that scan. The first run after the
+ticker is enabled is unchanged: it starts at the moment `enabled` is
+switched on and announces nothing older. The report path (`task_merged`,
+`probe_observed`) is outside this decision.
+
+The ruling is the maintainer's (confirmed). Why the bound is one hour,
+rather than another duration, was not weighed in what was recorded; it
+is the chosen value, as the ticker's other limits were.
+
+**Reason:** a catch-up after a gap delivered merges as ticker items
+(`origin.via` probe) with an old `merged_at`, and those items woke the
+holders of the linked cards through `member:` tokens. The merges had
+already happened. Keeping the usual item and wake inside one hour still
+delivers a merge the probe only just missed; dropping the rest stops
+that wake. The cursor moves with the discard, or the same gap is read
+on every later round. The switch-on rule stays, so turning the ticker
+on does not announce the hour before it.
+
+**Rejected alternatives:**
+- Announce every missed merge once the probe can read the forge again:
+  that is the delivery that woke the linked-card holders for merges
+  hours old.
+- Leave the scan cursor where the gap began: the discarded merges are
+  read again on later rounds, and the gap never ends.

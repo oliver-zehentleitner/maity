@@ -216,7 +216,21 @@ def test_the_operators_owner_create_may_take_a_listed_name(
     monkeypatch.setattr(handles, "_instance_names", frozenset({"acme-org"}))
     assert main(["migrate"]) == 0
     monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
-    assert main(["owner", "create", "--handle", "acme-org", "--display-name", "Acme"]) == 0
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "acme-org",
+                "--display-name",
+                "Acme",
+                "--email",
+                "acme-org@example.org",
+            ]
+        )
+        == 0
+    )
 
 
 def test_the_start_names_held_and_former_names(
