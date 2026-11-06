@@ -2547,6 +2547,130 @@ def cmd_task_edit(args: argparse.Namespace) -> int:
     return _done(args, card, f"updated {args.card}: {', '.join(sorted(patch))}")
 
 
+# A card's restricted text (§6.4 "Restricted text", §13). The text is read only from a file or
+# stdin, never from the command line, which the machine's process list and the shell's
+# history show; it stays in memory, never in a file, a log or another process's arguments.
+_RESTRICTED_ARGV_HINT = (
+    "a restricted text is never an argument: give it with --file FILE, or --file - for stdin"
+)
+
+
+def _restricted_card(card: str) -> str:
+    """Text where the card id belongs is refused without repeating it."""
+    if any(ch.isspace() for ch in card):
+        raise UsageError("the card id has white space in it; " + _RESTRICTED_ARGV_HINT)
+    return card
+
+
+def _restricted_path(session: Session, card: str) -> str:
+    return session.project_path("tasks", _restricted_card(card), "restricted")
+
+
+def _restricted_who(value: Any) -> str:
+    who = _obj(value)
+    handle = who.get("handle")
+    return "@" + onboarding.inline(handle) if handle else "a deleted account"
+
+
+def _restricted_state(state: dict[str, Any]) -> str:
+    """`version N, changed by @x at T`, or the version alone before the first write."""
+    line = f"version {onboarding.inline(state.get('version'))}"
+    if state.get("updated_by") or state.get("updated_at"):
+        line += (f", changed by {_restricted_who(state.get('updated_by'))}"
+                 f" at {onboarding.inline(state.get('updated_at'))}")  # fmt: skip
+    return line
+
+
+def cmd_task_restricted_show(args: argparse.Namespace) -> int:
+    """`GET …/tasks/{id}/restricted`; the text quoted as data, its escapes as `maity wait`'s."""
+    session = Session()
+    state = _obj(session.client.call("GET", _restricted_path(session, args.card)))
+    if args.json:
+        _print_json(state)
+        return EXIT_OK
+    text = state.get("text")
+    print(f"{onboarding.inline(args.card)} restricted text, {_restricted_state(state)}")
+    if isinstance(text, str):
+        print("\n".join("  " + line for line in onboarding.quote(text)))
+    else:
+        print("  no restricted text")
+    history = [h for h in state.get("history") or [] if isinstance(h, dict)]
+    if history:
+        print("  changes:")
+        for item in history:
+            action = "set" if item.get("action") == "set" else "cleared"
+            by, at = _restricted_who(item.get("by")), onboarding.inline(item.get("at"))
+            print(f"    version {onboarding.inline(item.get('version'))} {action} by {by} at {at}")
+    return EXIT_OK
+
+
+def _restricted_text(source: str) -> str:
+    """The text from a file or, with `-`, from stdin, less one final line ending (a file and a
+    here-document end with one); the rest is sent as it is and checked by the hub."""
+    if source == "-":
+        text = _stdin_text()
+    else:
+        # The path is not repeated in a refusal: a text given there by mistake stays unsaid.
+        try:
+            text = Path(source).read_text(encoding="utf-8").removeprefix(_BOM)
+        except UnicodeDecodeError:
+            raise UsageError("--file: the file is not UTF-8; save it as UTF-8") from None
+        except OSError as exc:
+            raise UsageError(
+                f"--file: the file cannot be read ({exc.strerror or 'error'})"
+            ) from None
+    for ending in ("\r\n", "\n"):
+        if text.endswith(ending):
+            return text[: -len(ending)]
+    return text
+
+
+def _restricted_write(args: argparse.Namespace, method: str, text: str | None) -> int:
+    """Read the version, then `PUT` or `DELETE` with it. A `conflict` is never retried: the
+    current version and who changed it are read again and said, never the text."""
+    session = Session()
+    path = _restricted_path(session, args.card)
+    version = _obj(session.client.call("GET", path)).get("version")
+    if not isinstance(version, int):
+        raise CommandError("the hub sent no version for the restricted text")
+    try:
+        if method == "PUT":
+            state = session.client.call("PUT", path, body={"text": text, "base_version": version})
+        else:
+            state = session.client.call("DELETE", path, query=[("base_version", str(version))])
+    except hub.HubError as exc:
+        if exc.code != "conflict":
+            raise
+        now = _obj(session.client.call("GET", path))
+        raise CommandError(
+            f"not written: the restricted text of {onboarding.inline(args.card)} changed after "
+            f"it was read; it is now {_restricted_state(now)}. Read it with `maity task "
+            "restricted show` and write again if it should still change"
+        ) from None
+    state = _obj(state)
+    if args.json:
+        _print_json(state)
+        return EXIT_OK
+    done = "set" if method == "PUT" else "cleared"
+    print(
+        f"{done} the restricted text of {onboarding.inline(args.card)}: {_restricted_state(state)}"
+    )
+    return EXIT_OK
+
+
+def cmd_task_restricted_set(args: argparse.Namespace) -> int:
+    """`PUT …/restricted` with `{text, base_version}`, the text from `--file` alone."""
+    if args.file is None:
+        raise UsageError(_RESTRICTED_ARGV_HINT)
+    _restricted_card(args.card)  # before the file or stdin is read
+    return _restricted_write(args, "PUT", _restricted_text(args.file))
+
+
+def cmd_task_restricted_clear(args: argparse.Namespace) -> int:
+    """`DELETE …/restricted?base_version=` with the version just read."""
+    return _restricted_write(args, "DELETE", None)
+
+
 def _releases(session: Session) -> list[dict[str, Any]]:
     """Every release card of the project, following the pages."""
     return _cards(session, [("kind", "release"), ("status", "all")])
@@ -4722,6 +4846,33 @@ def build_parser() -> argparse.ArgumentParser:
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_task_edit)
+    r = tsub.add_parser(
+        "restricted",
+        help="a card's restricted text, for members of the restricted-access set",
+        description="A card's restricted text (§6.4): read and written only by the members of "
+        "the project's restricted-access set (§6.1). `set` takes the text from a file or, "
+        "with --file -, from stdin, never as an argument: a command line shows in the "
+        "process list and the shell's history. Access restriction, not encryption.",
+        formatter_class=fmt,
+    )
+    rsub = r.add_subparsers(dest="restricted_command", metavar="<action>", required=True)
+    rr = rsub.add_parser("show", help="the text, its version and its changes", formatter_class=fmt)
+    rr.add_argument("card", type=_id, help="the card id")
+    _json_flag(rr)
+    rr.set_defaults(handler=cmd_task_restricted_show)
+    rr = rsub.add_parser(
+        "set", help="set the text from a file or stdin (--file -)", formatter_class=fmt
+    )
+    rr.add_argument("card", type=_id, help="the card id")
+    rr.add_argument(
+        "--file", metavar="FILE", help="the text as UTF-8, - for stdin; never on the command line"
+    )
+    _json_flag(rr)
+    rr.set_defaults(handler=cmd_task_restricted_set)
+    rr = rsub.add_parser("clear", help="clear the text", formatter_class=fmt)
+    rr.add_argument("card", type=_id, help="the card id")
+    _json_flag(rr)
+    rr.set_defaults(handler=cmd_task_restricted_clear)
 
     p = add(
         "note",
@@ -5074,6 +5225,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
     args, extra = parser.parse_known_args(argv)
+    if extra and getattr(args, "handler", None) is cmd_task_restricted_set:
+        # Never repeated: what is left over may be the restricted text itself (§13).
+        parser.error(_RESTRICTED_ARGV_HINT)
     if extra and not _say_body_after_options(args, extra):
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
