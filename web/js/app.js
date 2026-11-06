@@ -339,7 +339,7 @@ window.Maity = window.Maity || {};
     renderLogin(document.getElementById("main"), M.t("login.session_ended"));
   };
 
-  let keptHandle = "";
+  let keptEmail = "";
   function renderLogin(main, note) {
     document.title = M.t("login.page_title");
     // The app's bar stands where the frame cannot be read (§16.7.4); js/site-chrome.js hides it meanwhile.
@@ -347,13 +347,14 @@ window.Maity = window.Maity || {};
       brandTitle(false, "div"),
       M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
-    const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
-    handle.value = keptHandle;
-    keptHandle = "";
-    // The page's language (§6.2), as on /register: the form is drawn again in it, the handle kept, the password not.
+    // The verified address signs in (§2.1); `username` is what password managers fill.
+    const email = h("input", { id: "login-email", name: "email", type: "email", autocomplete: "username", required: true });
+    email.value = keptEmail;
+    keptEmail = "";
+    // The page's language (§6.2), as on /register: the form is drawn again in it, the address kept, the password not.
     const site = M.interfacePicker ? M.interfacePicker("login-interface", M.i18n.language, false) : null;
     if (site) site.addEventListener("change", async () => {
-      keptHandle = handle.value;
+      keptEmail = email.value;
       await M.i18n.choose(site.value);
       renderLogin(main, note);
       // The page is drawn here, not through `render`: the banner of a window follows the language too.
@@ -362,6 +363,9 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const pitch = M.authPages.pitch("sign_in", M.t("login.title"));
+    // A code from another device or a link by mail, as the hub offers them
+    // (js/device-sign-in.js), on this page's own timers.
+    const options = M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null;
     const form = h("form", {
       class: "login",
       onsubmit: async (e) => {
@@ -369,22 +373,30 @@ window.Maity = window.Maity || {};
         status.busy(M.t("login.busy"));
         try {
           const next = routeNext();
-          const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
+          const answer = await M.api.post("/auth/login", Object.assign({ email: email.value.trim(), password: password.value }, next ? { next } : {}));
           password.value = "";
           goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
-          status.fail(M.t("login.failed"), err);
+          const reason = err && err.details && err.details.reason;
+          if (reason === "password_paused") {
+            // §2.1, §2.6.7: when the password goes through again, from `retry_after`.
+            const minutes = M.secondFactor.minutes(err.details.retry_after);
+            status.fail("", { message: M.t("login.paused", { minutes }) });
+          } else {
+            status.fail(M.t("login.failed"), err);
+            // §2.6.7: the link by mail offered with the address filled in.
+            const mail = reason === "email_link" && options ? options.querySelector(".sign-in-mail") : null;
+            if (mail && mail.openWith) mail.openWith(email.value.trim());
+          }
         }
       },
     },
-    h("label", { for: "login-handle" }, M.t("login.handle")), handle,
+    h("label", { for: "login-email" }, M.t("login.email")), email,
     h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),
     status.el);
-    // A code from another device or a link by mail, as the hub offers them
-    // (js/device-sign-in.js), on this page's own timers.
     // A dashboard address of a project with a public page (§16.11): that page is one link away.
     const publicLink = h("p", { class: "public-page-link", hidden: true });
     const parts = M.route.current().path.split("/").filter(Boolean);
@@ -400,7 +412,7 @@ window.Maity = window.Maity || {};
     const legal = M.legal ? M.legal.links() : null;
     append(clear(main), M.authPages.door(pitch.panel, [
       note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, pitch.title, form, publicLink,
-      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
+      options,
       legal]));
     M.siteChrome.enter("/login", () => { if (legal) legal.remove(); });
   }
@@ -742,8 +754,11 @@ window.Maity = window.Maity || {};
     // The public page: the namespace owner's alone, however high the trust (§16.9).
     if (M.publicPage) append(panel, M.publicPage.projectPart(ctx, save));
     if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
-    // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
-    if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
+    // The jour fixe's series and their moderators (§20.1, §20.2) are kept at the top of the jour fixe
+    // view (the maintainer, 2026-11-06); here only where to find them.
+    if (humanAdmin) append(panel, h("section", { class: "jf-series-moved", "aria-labelledby": "jfs-moved-title" },
+      h("h2", { class: "panel-title", id: "jfs-moved-title" }, M.t("jfs.title")),
+      h("p", { class: "hint" }, M.tn("jfs.kept_on_page", { link: h("a", { href: ctx.link("jour-fixe") }, M.t("jf.title")) }))));
     // The change ticker (§17.3), read by every member, changed by a human
     // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {

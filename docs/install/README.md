@@ -106,7 +106,7 @@ maity.example.org {
    ```sh
    set -a; . /etc/maity/hub.env; set +a
    maity-hub migrate
-   maity-hub owner create --handle <you> --display-name "<Your Name>"   # asks for the password
+   maity-hub owner create --handle <you> --display-name "<Your Name>" --email <you@example.org>   # asks for the password
    ```
 
 5. **Serve** under a service manager: a systemd unit running
@@ -302,7 +302,7 @@ kubectl -n kube-system rollout restart deployment traefik
 from a file:
 
 ```sh
-kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" < password-file
+kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" --email <you@example.org> < password-file
 ```
 
 **Backups on this setup:**
@@ -400,16 +400,18 @@ NetworkPolicy out of the box.
 ## The first account, project and agent
 
 1. **First account.** `maity-hub owner create --handle <you>
-   --display-name "<Your Name>"` reads the password from the terminal or
-   from the first line of standard input. How to run it in each path:
+   --display-name "<Your Name>" --email <you@example.org>` reads the
+   password from the terminal or from the first line of standard input.
+   The address is what you sign in with; the command stores it as
+   verified, so the hub needs no mail for it. How to run it in each path:
    - Plain Python: as in step 4 of [Plain Python](#plain-python), with the
      service's environment loaded.
    - Compose and Helm have no terminal for it. Put the password into a
      file first: `(umask 077; printf '%s\n' '<password>' > password-file)`,
      and delete the file afterwards.
-     - Compose: `docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle <you> --display-name "<Your Name>" < password-file`
-     - Helm (release `maity` in namespace `maity`): `kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" < password-file`
-2. **Sign in** at `MAITY_PUBLIC_URL`, then **Create a project** (slug,
+     - Compose: `docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle <you> --display-name "<Your Name>" --email <you@example.org> < password-file`
+     - Helm (release `maity` in namespace `maity`): `kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" --email <you@example.org> < password-file`
+2. **Sign in** with that address at `MAITY_PUBLIC_URL`, then **Create a project** (slug,
    name, policy).
 3. **Join an agent:** in the project, *Join an agent* creates a one-time
    line. Paste it into the agent's session, in the clone it works in. The

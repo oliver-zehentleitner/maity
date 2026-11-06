@@ -702,9 +702,9 @@ def test_mention_unread_does_not_read_the_quiet_history(
 
 
 def test_the_cross_chat_migration_downgrades_and_returns(engine: Engine) -> None:
-    migrate(engine)
+    migrate(engine, "20261105073000_cross_chats")
     assert current_revision(engine) == "20261105073000_cross_chats"
     downgrade(engine, "20261104150000_report_request")
     assert current_revision(engine) == "20261104150000_report_request"
-    migrate(engine)
+    migrate(engine, "20261105073000_cross_chats")
     assert current_revision(engine) == "20261105073000_cross_chats"

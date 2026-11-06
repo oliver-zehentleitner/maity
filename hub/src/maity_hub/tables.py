@@ -512,6 +512,20 @@ human_device = Table(
     **MYSQL_TABLE,
 )
 
+# Where a human's sign-ins completed (§2.1): a keyed fingerprint of each source address, never the
+# address, and the last time. Past the limit of wrong passwords, only such a source keeps the
+# password. A row goes 30 days after its last sign-in there, and with the account (§2.9).
+known_source = Table(
+    "known_source",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("fingerprint", String(HEX_SHA256), nullable=False),
+    Column("last_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "fingerprint"),
+    Index("ix_known_source_last_at", "last_at"),
+    **MYSQL_TABLE,
+)
+
 # A mail link and its browser-bound code share one single-use row (§2.6.3).
 email_sign_in = Table(
     "email_sign_in",
@@ -2673,5 +2687,49 @@ public_page = Table(
     Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
     Column("indexed", Boolean, nullable=False, server_default=true()),  # false: `noindex`
     Index("ix_public_page_target", "kind", "target_id"),
+    **MYSQL_TABLE,
+)
+
+# A card's restricted text (docs/api.md §6.4 "Restricted text"): at most one per card, in
+# its own table so that no read of the card (its view, search, history, events, export,
+# public page) can carry it by accident. `text` is null once cleared; `version` counts every
+# changing write. Deleted with the card or the project, which the hub never deletes.
+task_restricted = Table(
+    "task_restricted",
+    metadata,
+    _ref("task_id", "card.id", primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("text", String(1000)),
+    Column("version", Integer, nullable=False),
+    _membership_ref("updated_by", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Every changing write of a restricted text (§6.4): who set or cleared it, when, never the
+# text. The view shows the last 50; the write caps count the last hour's rows.
+task_restricted_history = Table(
+    "task_restricted_history",
+    metadata,
+    _ref("task_id", "card.id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("action", String(8), nullable=False),  # set | cleared
+    _membership_ref("author", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("task_id", "version"),
+    Index("ix_task_restricted_history_author_at", "author", "at"),
+    **MYSQL_TABLE,
+)
+
+# The private list of a restricted-text event (§6.4, §7.1): the memberships that were in the
+# card's set when the event was written, the only readers of that event. An account's
+# deletion takes it off every list (§2.9).
+restricted_event_list = Table(
+    "restricted_event_list",
+    metadata,
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    PrimaryKeyConstraint("seq", "membership_id"),
+    Index("ix_restricted_event_list_membership", "membership_id"),
     **MYSQL_TABLE,
 )

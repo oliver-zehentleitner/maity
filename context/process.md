@@ -132,6 +132,33 @@ night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
 
+## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
+
+**Id:** 85c4ab14-7638-454f-b7fd-1ca1921c559a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-05 to keep the lesson of the unset forge setting in `context/`, and the lead's rule for it, 2026-11-05
+**Revisit when:** the deploy candidate's list is generated from the fragments by a tool, or fragments get a marker of their own for upgrade steps
+**See:** incidents.md#a-setting-whose-unset-value-stopped-the-hub-reading-its-own-repository-went-to-production-unset — 2083a296-dac3-4164-b51e-9a3a6a38a26b — as of 2026-11-05
+
+Before the deploy go, the lead greps the changelog fragments shipped
+between the live SHA and the candidate SHA for upgrade and setting
+notes ("set … when upgrading", a new or changed setting, an effect
+while unset), and puts each one on the deploy candidate's test list as
+a step done before the deploy. A pull request whose setting changes live
+behaviour while unset names the setting and that effect in its body and
+in its fragment, so the grep finds it.
+
+**Reason:** the deploy list did not name the setting, although the
+fragment of #1218 did (incident 2083a296), and the fragments are where a
+change says what its upgrade needs. How that list was built is the
+incident's inferred part, not this rule's.
+
+**Rejected alternatives:**
+- Leaving it to whoever deploys to read every merged pull request for
+  new settings: that missed a setting whose note was in the changelog.
+
 ## When a reviewer returns, the cover's finished reviews stand and the returning reviewer takes the unstarted ones
 
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
@@ -1497,7 +1524,7 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 **Status:** active
 **Evidence:** inferred
 **Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405
-**Revisit when:** the CLI gets a hashed dev lock of its own (then the hook takes the CLI's tools from it), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
+**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
 
 `tools/hooks/pre-push` runs `tools/pre_push.py` once a clone sets `git config core.hooksPath tools/hooks`
 (CONTRIBUTING.md). For each of `hub/` and `cli/` that the pushed commits touch, it runs CI's own `make lint
@@ -1520,8 +1547,10 @@ HEAD is not the pushed commit or a touched package has uncommitted changes.
 - The pushed commit checked out into a temporary tree instead of the working tree: mypy needs the environment the
   hub's editable install points at, which is the working tree; checking there and stopping when it differs from
   the push is simpler and says so.
-- The CLI's tools from the CLI's own environment: the `cli` CI job installs its dev extra unpinned, so there is no
-  lock to compare with yet; until a CLI dev lock exists the hook checks the CLI with the hub lock's versions.
+- The CLI's tools from the CLI's own environment: `cli/requirements/dev.txt` is compiled with the hub's dev lock as
+  constraints, so its black, ruff and mypy are the versions the hook already compares with; a second environment
+  per contributor would check the same versions. (When the hook was written the `cli` CI job installed its dev
+  extra unpinned, so there was no lock to compare with.)
 
 ## The Keep the Why skill is pinned to the release the context is on, and a check holds every copy to it
 
@@ -1572,7 +1601,7 @@ every line that was missed.
 
 **Id:** 9a0ed6f7-694b-4036-8b78-16ff53aa760a
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `.github/workflows/ci.yml` (`web-e2e`, `join-smoke`), `web/requirements/e2e.in`, `web/Makefile`
 **Revisit when:** the CLI gets a hashed dev lock of its own (then that environment can serve), the hub's runtime lock stops constraining Playwright's dependencies (the e2e lock would then need its own environment), or pip installs from a standard lock (`pylock.toml`) without uv
@@ -1605,3 +1634,36 @@ and `join-smoke` ran `pip install -e cli`.
   already pins and checks.
 - `e2e.txt` without the shared packages (`--no-emit-package`): the lock would not stand on its
   own, and pip already accepts the same pin twice.
+
+## The CLI's dev tools come from a hashed lock that takes the hub's dev pins as constraints
+
+**Id:** 3026ae2a-ae3f-43db-8fd3-ced72506d443
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `cli/requirements/dev.txt`, `cli/Makefile`, `.github/workflows/ci.yml` (`cli`, `cli-windows`), `.github/workflows/release-cli.yml` (`check`)
+**Revisit when:** the CLI needs a tool the hub's dev lock pins to a version that does not support the CLI's oldest Python, the CLI gets runtime dependencies, or pip installs from a standard lock (`pylock.toml`) without uv
+
+`cli/requirements/dev.txt` holds the dev extra of `cli/pyproject.toml` with hashes, compiled universally for
+Python 3.11 (the CLI's oldest) with `hub/requirements/dev.txt` as constraints (`make -C cli lock`, checked by
+`make -C cli lock-check` beside the release lock). CI's `cli` and `cli-windows` jobs, the release workflow's
+check job and `make dev` install from it, then the CLI editable without build isolation. Before, they ran
+`pip install -e '.[dev]'`, which resolved the newest ruff, black, mypy, pytest, build and wheel on every run.
+
+**Reason:**
+- A lint or type result that changes with a tool release nobody chose turns CI red, or green, without a change
+  in the repository. On the day this was written the unpinned install got ruff 0.17.4 and mypy 2.4.1.
+- With the hub's dev pins as constraints, black, ruff, mypy and pytest are the same versions in both packages.
+  The pre-push hook checks both packages with the hub's environment (the entry on the pre-push hook above), so
+  it gives the CLI the result CI gives.
+- Universal, so one file serves Linux and the Windows job (colorama only where the marker says).
+- With the pins that older ruff and mypy brought, `cli/` needed no change: lint and types are clean and the
+  tests pass on Python 3.11 from the lock.
+
+**Rejected alternatives:**
+- A CLI lock without the hub's constraints: the CLI's tools would drift from the hub's at every `make lock`,
+  and the pre-push hook would check the CLI on other versions than CI.
+- One lock for both packages: the hub's dev lock is compiled for Python 3.12, the CLI supports 3.11, and the
+  hub's lock holds the hub's runtime dependencies, which the CLI must not be tested with.
+- Pinning the tools by version in `pyproject.toml`'s dev extra without hashes: the versions would hold, but
+  not the files.

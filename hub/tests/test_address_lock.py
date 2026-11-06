@@ -77,7 +77,12 @@ def test_without_the_pepper_and_an_instance_key_no_lock_is_taken(migrated: Engin
 def test_a_route_makes_the_pepper_it_needs(
     make_client: ClientFactory, migrated: Engine, admin: object
 ) -> None:
-    """No test fixture makes the pepper: a route that locks without `prepare` fails here."""
+    """No test fixture makes the pepper: a route that locks without `prepare` fails here. The
+    admin's login made one (`routes/auth.py`, for the known sources, §2.1), so it goes first."""
+    with migrated.begin() as conn:
+        conn.execute(
+            delete(t.instance_secret).where(t.instance_secret.c.name == addresses.LOCK_PEPPER)
+        )
     with migrated.connect() as conn:
         assert store.sealed(conn, addresses.LOCK_PEPPER) is None
     requested(make_client, migrated, settings_for())  # locks the address on its way

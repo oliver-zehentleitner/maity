@@ -366,7 +366,7 @@ is the standard trade-off and errs by at most the previous window's share.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the sixteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, public pages, the public snapshot, reports, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
+**Source:** the seventeen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, known sources, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, public pages, the public snapshot, reports, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
 **Revisit when:** one worker's pass takes longer than its interval on the one pod that holds it, so that it has to be split across pods
 
 Every worker keeps running in every pod, so any pod can take over at once, but a pass starts only
