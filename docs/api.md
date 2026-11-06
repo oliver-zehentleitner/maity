@@ -3092,8 +3092,9 @@ stored on the membership the exchange creates (`subagents`,
 ways: in the `201` below as `instruction`, which
 the dashboard shows the human above the paste line and copies together
 with it, so the human's own message to the agent carries it; on the join
-page (§3.2, item 2); and in the agent's briefing on every resume, as an
-item of the `agent` layer (§5.2, §6.28). It is text, as every layer is:
+page (§3.2, item 2); and in the resume packet on every resume, as
+`membership.subagents.instruction` beside the briefing (§5.2). It is
+text, as every briefing is:
 the hub enforces nothing, and an agent that works without a subagent
 breaks no scope.
 **Who changes it.** The maintainer's decision of 2026-11-06
@@ -3319,7 +3320,7 @@ for an agent that has never heard of Maity and has no tool installed:
    never the hand-over's text, which the URL's holder could read;
    with `subagents: true`, the subagent instruction of §3.1 as a quote,
    with the owner's handle — the same words the human copied and the
-   briefing carries.
+   resume packet carries.
 3. The exchange call (§3.3): the directory, the one command that saves
    the response to a file, the config file for later calls, and the
    rule that the credential file is never read, printed or passed on a
@@ -3841,7 +3842,9 @@ Response `200`, bounded and deterministic:
                         "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                         "version": 1, "updated_at": "…" } ] },
                   "discuss_first": { "on": false, "source": "preference" },
-                  "subagents": { "on": false, "language": null, "by": null },
+                  "subagents": { "on": true, "language": "en",
+                                 "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+                                 "instruction": "Instruction from maintainer, who owns this agent: for every review or coding task you get through Maity, …" },
                   "agent": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_agent": false } },
   "instances": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -4026,18 +4029,20 @@ Response `200`, bounded and deterministic:
   member it applies to. `membership.discuss_first` is the owner's
   "discuss first" switch as it applies to this agent (§19.4); when `on`,
   the hub's fixed sentence is an item of its own with `layer: "agent"`
-  and `scope: "hub"`, before the membership's own text.
-  `membership.subagents` is `{"on", "language", "by"}`: whether the
-  membership carries the subagent instruction (§3.1), the language it is
-  written in, and the human who set it (`{kind, id, handle}`; `language`
-  and `by` are `null` while it is off). When `on`, the
-  instruction is an item of its own with `layer: "agent"`, `scope:
-  "membership"`, `by` that human and `version` and `updated_at` `null`,
-  after the hub's "discuss first" sentence and before the membership's
-  own text: it is the human's instruction, quoted as such, not a default
-  of the hub. So `layers` may hold up to three items with `layer:
-  "agent"` (the hub's sentence, the subagent instruction, the
-  membership's `briefing`), each left out when it does not apply.
+  and `scope: "hub"`, before the membership's own text. So `layers` may
+  hold two items with `layer: "agent"` (first `scope: "hub"`, then
+  `scope: "membership"`), or the hub's alone when the membership's
+  `briefing` is `null`.
+- `membership.subagents` is `{"on", "language", "by", "instruction"}`:
+  whether the membership carries the subagent instruction (§3.1), the
+  language it is written in, the human who set it (`{kind, id,
+  handle}`), and the instruction itself in that language with that
+  human's handle; `language`, `by` and `instruction` are `null` while it
+  is off. It is a field of its own beside `briefing`, not a briefing
+  layer: it is the human's instruction, quoted as such, and it reaches
+  the agent whatever the briefing holds. `maity join` and `maity resume`
+  print it right before the briefing, under one line that says it is the
+  owner's instruction; an agent without the CLI reads it here.
 - Under `consent_per_change` a layer that had no text when the agent
   joined and gets its first version is left out until the owner's
   `go`; the view of §19.3.1 shows it with `markdown: null`, `version:
@@ -5267,7 +5272,7 @@ id, handle}`; both `null` while it is `false`). It starts as the
 join set it; only a caller who could create a join for the agent changes
 it (§3.1, "Who changes it"), unlike `owner_preferences` not from outside
 the project, and a change emits `member_updated` with
-`changed: ["subagents"]` or `["subagents_language"]`. Its words are in the briefing, never in the
+`changed: ["subagents"]` or `["subagents_language"]`. Its words are in the resume packet, never in the
 member view or an event.
 `takes_over` and `handover` (agents only, `null` when the join named
 none, §3.1) are in every reader's view, never a text, as in the resume

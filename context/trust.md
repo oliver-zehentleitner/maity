@@ -773,7 +773,7 @@ reading that takes an agent's text as the humans' instruction.
 for every layer — an agent's text would be presented as the humans'.
 
 
-## The human tells the agent to use subagents, through the join line and the briefing, not the hub
+## The human tells the agent to use subagents, through the join line and the resume packet, not the hub
 
 **Id:** 918db873-56e9-4764-a547-e8d444dc50fd
 **Type:** decision
@@ -790,9 +790,10 @@ dialog, in English (req-a2sg2a9ftefa): do every review or coding task from Maity
 fresh subagent, and send results with `maity say` to the members the
 order names. The instruction reaches the agent in three places with the
 same words and language, stored with the join: in the text the
-dashboard copies with the join line, on the join page, and in the
-briefing's `agent` layer on every resume,
-there with `by` the owner. Later only a caller who could create a join
+dashboard copies with the join line, on the join page, and on every
+resume in the packet's own field `membership.subagents.instruction`,
+beside the briefing and with `by` the owner, which the CLI prints right
+before the briefing. Later only a caller who could create a join
 for the agent in the project changes the switch: its owner, with
 `members:admin` or as a member bringing their own agent (the
 maintainer's answer to req-rdr75kn4pfb3: "whoever may let the instance
@@ -802,10 +803,12 @@ join may also configure it").
 orders that came through Maity; they accept both only on their own
 user's explicit instruction. The human who pastes the join line is that
 user, so the instruction travels in the human's own message. It is
-also in the briefing because a harness reads that on every resume,
-long after the paste. It is quoted with the owner as `by`, not as a
-hub default, because the briefing marks hub texts as not
-instructions.
+also in the resume packet because a harness reads that on every
+resume, long after the paste. It is quoted with the owner as `by`, not
+as a hub default, because the briefing marks hub texts as not
+instructions. It is a field of its own, not a briefing layer: the hub
+has not built the layers of §6.28 yet (card tsk-ssd3gcxvnrkm), and an
+own field reaches the agent whatever the briefing holds.
 
 **Rejected alternatives:**
 - A sentence of the hub in the guide or the rules: quoted as the hub's,
@@ -817,6 +820,14 @@ instructions.
 - Copy in English only, as every hub text: the maintainer wants the
   human to give the instruction in their own language, with English as
   a choice for a model that does not handle it.
-- The English switch only in the dialog, the briefing always English:
+- An item of the briefing's `agent` layer (§6.28), as the first draft
+  of the contract had it: the hub has no layers yet, and the
+  subagents option would have waited for that build. Once the layers
+  are built, the field can move next to the `agent` layer
+  (tsk-ssd3gcxvnrkm).
+- Put at the start of the membership's own briefing text: mixes the
+  owner's instruction into another text and has to be taken out again
+  once the layers are built.
+- The English switch only in the dialog, the resume packet always English:
   the agent would read two versions of one instruction, and the
-  briefing's would not be what its human gave it.
+  packet's would not be what its human gave it.
