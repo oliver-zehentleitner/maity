@@ -768,6 +768,7 @@ def main() -> int:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
+                    profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
@@ -3177,6 +3178,70 @@ def account_tabs_layout(run: Run, browser) -> None:
                 page.wait_for_function("() => location.href === 'about:blank'")
         finally:
             context.close()
+
+
+PROFILE_LINK_MEASURE = """() => {
+  const facts = document.querySelector("main dl.facts"), p = document.querySelector("main p.public-profile-link");
+  const a = p && p.querySelector("a"), r = (el) => el ? el.getBoundingClientRect() : null;
+  const f = r(facts), l = r(p);
+  return { next: !!(facts && p && facts.nextElementSibling === p), in_form: !!(p && p.closest("form")),
+           display: p ? getComputedStyle(p).display : null, gap: f && l ? l.top - f.bottom : null,
+           text: a ? a.textContent : null, href: a ? a.getAttribute("href") : null, target: a ? a.target : null,
+           theme: document.documentElement.getAttribute("data-theme") };
+}"""
+
+
+def profile_public_link_layout(run: Run, browser) -> None:
+    """The account's Profile tab (tsk-4e17b8xnp8eq) in fixture mode: "View public page" right under
+    the name and handle (`dl.facts`), never under the public-profile form. At 1280 x 900 and
+    390 x 844, light and dark, with the sign-in banner and without, and with the page served and not
+    (`page_served: false` from GET /people/{handle}): the link is the facts' next sibling and outside
+    the form, a gap of at most 16 px under the facts while served, `display: none` while not; the
+    facts and the link measured by LINES_MEASURE, the page never wider than the window."""
+    run.step("fixtures: View public page under the name and handle at 1280 and 390 px, light and dark, banner on and off, served and not")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme)
+            context.add_init_script(f"try {{ localStorage.setItem('maity.theme', '{scheme}'); }} catch (e) {{}}")
+            page = context.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                for served in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en#/account")
+                    expect(page.locator("main dl.facts")).to_be_visible()
+                    if not served:
+                        # The hub no longer serves the page: the tab drawn again reads it anew.
+                        page.evaluate("""() => { const api = window.Maity.api, get = api.get;
+                          api.get = (p, ...rest) => p === '/people/maintainer'
+                            ? get.call(api, p, ...rest).then((x) => ({ ...x, page_served: false })) : get.call(api, p, ...rest); }""")
+                        page.locator("main nav.account-tabs").get_by_role("link", name="Settings", exact=True).click()
+                        expect(page.locator("main h3", has_text="Theme")).to_be_visible()
+                        page.locator("main nav.account-tabs").get_by_role("link", name="Profile", exact=True).click()
+                        expect(page.locator("main dl.facts")).to_be_visible()
+                        expect(page.locator("main form.public-profile-form")).to_be_visible()
+                    else:
+                        expect(page.locator("main p.public-profile-link a")).to_be_visible()
+                    expect(page.locator("main .signin-banner")).to_be_visible()
+                    for banner in (True, False):
+                        if not banner:
+                            page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        where = f"the Profile tab at {width}x{height} {scheme}, {'served' if served else 'not served'}" + (", with the banner" if banner else "")
+                        m = page.evaluate(PROFILE_LINK_MEASURE)
+                        lines = page.evaluate(LINES_MEASURE, "main dl.facts, main p.public-profile-link")
+                        assert not lines["problems"] and not errors, f"{where}: {lines['problems'] + errors}"
+                        assert m["theme"] == scheme, f"{where}: the theme is {m['theme']}"
+                        assert m["next"] and not m["in_form"], f"{where}: the link is not right under the name and handle: {m}"
+                        if served:
+                            assert m["display"] != "none" and 0 <= m["gap"] <= 16, f"{where}: {m}"
+                            assert (m["text"], m["href"], m["target"]) == ("View public page", "#/maintainer?as=public", "_blank"), f"{where}: {m}"
+                        else:
+                            assert m["display"] == "none" and m["text"] is None, f"{where}: {m}"
+                        run.shot(page, f"fixtures-profile-link-{width}-{scheme}-{'served' if served else 'none'}" + ("-banner" if banner else ""))
+            finally:
+                context.close()
 
 
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
