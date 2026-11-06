@@ -34,6 +34,8 @@ window.Maity = window.Maity || {};
   // project: the cross-project view's filter ("" for every project);
   // group: whether it shows one section per project.
   const ui = { sort: "priority", show: "open", current: null, later: new Set(), project: "", group: false };
+  // The project filter's value for the projects with an open tab; no full name has no slash.
+  const TABS = "open-tabs";
 
   // An entry is addressed by project and id: ids are unique per project
   // only. req.slug is set on load to the project's full name (§6.25); the
@@ -568,8 +570,20 @@ window.Maity = window.Maity || {};
 
     // The project filter is the cross-project view's only; a project no
     // longer in the switcher is no filter (it would empty the list for good).
-    if (ui.project && !ctx.projects.some((p) => p.full_name === ui.project)) ui.project = "";
+    // TABS is the projects with an open tab (js/tabs.js), a choice this
+    // browser keeps per viewer, as it keeps the tabs.
+    if (ctx.scope === "all" && !ui.project && M.tabs.managed(ctx) && M.tabs.onlyOpen(ctx.me)) ui.project = TABS;
+    if (ui.project && ui.project !== TABS && !ctx.projects.some((p) => p.full_name === ui.project)) ui.project = "";
     const projectFilter = () => (ctx.scope === "all" ? ui.project : "");
+    // Personal requests belong to no project: the filter to open tabs keeps them.
+    const passes = (r) => {
+      const only = projectFilter();
+      if (!only) return true;
+      if (only !== TABS) return r.slug === only;
+      return !!r.personal || M.tabs.open(ctx).some((p) => p.full_name === r.slug);
+    };
+    // Grouped by project in the switcher's order: the open tabs, then the rest.
+    const tabOrder = () => { const open = M.tabs.open(ctx); return open.concat(ctx.projects.filter((p) => !open.includes(p))); };
     const grouped = () => ctx.scope === "all" && ui.group;
     const list = h("div", { class: "entries-box" });
     const listStatus = M.statusLine();
@@ -585,11 +599,12 @@ window.Maity = window.Maity || {};
     function ordered() {
       const sorted = items
         .filter((r) => show() === "all" || r.status === "open")
-        .filter((r) => !projectFilter() || r.slug === projectFilter())
+        .filter(passes)
         .sort(comparator(names));
       if (!grouped()) return sorted;
       // Personal requests first, in a group of their own; then by project.
-      const at = (r) => { if (r.personal) return -1; const i = ctx.projects.findIndex((p) => p.full_name === r.slug); return i < 0 ? ctx.projects.length : i; };
+      const order = tabOrder();
+      const at = (r) => { if (r.personal) return -1; const i = order.findIndex((p) => p.full_name === r.slug); return i < 0 ? order.length : i; };
       return sorted.map((r, i) => [r, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([r]) => r);
     }
 
@@ -599,11 +614,12 @@ window.Maity = window.Maity || {};
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
       // A filter outlives a reload: what it hides is said, or a new request elsewhere looks like no reload at all.
-      const hiddenByFilter = projectFilter() ? items.filter((r) => r.status === "open" && r.slug !== projectFilter()).length : 0;
+      const hiddenByFilter = projectFilter() ? items.filter((r) => r.status === "open" && !passes(r)).length : 0;
       if (hiddenByFilter) {
         append(list, h("p", { class: "flag inbox-filter-hidden" }, M.t("inbox.filter.hidden", { count: hiddenByFilter }), " ",
           h("button", { type: "button", class: "small", onclick: () => {
             ui.project = "";
+            if (M.tabs.managed(ctx)) M.tabs.setOnlyOpen(ctx.me, false);
             if (projectSelect) projectSelect.value = "";
             draw();
           } }, M.t("inbox.filter.show_all"))));
@@ -699,8 +715,14 @@ window.Maity = window.Maity || {};
     // The cross-project view: a project filter and grouping by project.
     const projectSelect = ctx.scope === "all" ? h("select", {
       id: "inbox-project",
-      onchange: (e) => { ui.project = e.target.value; ui.current = null; draw(); },
+      onchange: (e) => {
+        ui.project = e.target.value;
+        if (M.tabs.managed(ctx)) M.tabs.setOnlyOpen(ctx.me, ui.project === TABS);
+        ui.current = null;
+        draw();
+      },
     }, h("option", { value: "" }, M.t("inbox.every_project")),
+    M.tabs.managed(ctx) ? h("option", { value: TABS }, M.t("inbox.open_tabs")) : null,
     // No counts in the options: the switcher beside it has them, kept current.
     ctx.projects.map((p) => h("option", { value: p.full_name }, p.name))) : null;
     if (projectSelect) projectSelect.value = ui.project;

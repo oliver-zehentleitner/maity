@@ -10,11 +10,13 @@
     "meat_proxy_lead": false,
     "meat_proxy_hands": false,
     "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first.",
-    "public_presence": true
+    "public_presence": true,
+    "start_tabs": null
   },
   "deletion": null,
   "projects": [
     {
+      "id": "prj-maity0000001",
       "slug": "maity",
       "full_name": "maintainer/maity",
       "name": "Maity",
@@ -24,6 +26,7 @@
       "open_requests": 7
     },
     {
+      "id": "prj-sample000001",
       "slug": "sample",
       "full_name": "maintainer/sample",
       "name": "Sample shop",

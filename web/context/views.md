@@ -61,15 +61,18 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
-**Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
+**Revisit when:** a human asks to land on one project
 **See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
-project switcher: each project with its state and the number of open
-requests waiting for this human, plus "All projects" with the total. The
+project switcher: each project this browser has open as a tab, with its
+state and the number of open requests waiting for this human, plus "All
+projects" with the total. A switcher row too long is answered by closing
+tabs (cd4fe2ba). The
 cross-project view (`/all`) is the inbox across every project, each
 entry labelled with its project and that project's state, answered in
 place. Opening the dashboard without a route lands there when the human
@@ -86,6 +89,38 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## The project tabs are the browser's own, moved by dragging, by Alt+Shift+Arrow or from the tabs menu
+
+**Id:** cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
+
+Which projects the header shows as tabs, and in which order, is kept in
+this browser per viewer (`js/tabs.js`); without storage it holds for the
+visit. A browser with nothing kept starts from the account's
+`start_tabs`, or with every project when that is `null`. A project the
+browser has not seen yet opens as the last tab; one opened by its
+address gets its tab back. A tab moves by dragging, by Alt+Shift+Arrow
+on the focused tab, or by Move this tab left/right in the tabs menu
+beside the row, which also opens and closes each project (switches that
+keep the menu open) and keeps the current row as the start set. Each
+move is announced with the new place. A project's start-set switch also
+sits in its own settings (Mine). The cross-project inbox can be filtered
+to projects with an open tab; personal requests always stay.
+
+**Reason:** the split between browser and account is the maintainer's
+(the contract entry above). The rest is inferred from the dashboard's
+existing rules: nothing is drag-only (the board's Move and Place menus),
+so a single pointer or a keyboard reaches every move a drag makes; and
+a filter that hides personal requests would hide requests with no tab
+to open them from.
+
+**Rejected alternatives:** unknown beyond the contract entry's.
 
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 

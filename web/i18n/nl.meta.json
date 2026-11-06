@@ -4799,6 +4799,10 @@
     "en": "074964d062492852",
     "text": "5c572f85783d91c2"
   },
+  "inbox.open_tabs": {
+    "en": "73e85032c53bf0b7",
+    "text": "ff179a9f44cc636b"
+  },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
     "text": "4677b82e1b8e10ac"
@@ -9682,6 +9686,26 @@
   "mine.saved_here": {
     "en": "c5fd8ba21d61c2fe",
     "text": "5020634e4c5c1b4f"
+  },
+  "mine.start_tab.hint": {
+    "en": "32e2b2c7f09d2462",
+    "text": "521c3b2c8b0d5126"
+  },
+  "mine.start_tab.label": {
+    "en": "b1433ec21f04fa5f",
+    "text": "9c0c2e0996b29c01"
+  },
+  "mine.start_tab.legend": {
+    "en": "806935f0e9a21e7a",
+    "text": "f4354be552f52690"
+  },
+  "mine.start_tab.saved_off": {
+    "en": "c7e34e324b69339f",
+    "text": "d224258030aad700"
+  },
+  "mine.start_tab.saved_on": {
+    "en": "17461c0d0e4516b9",
+    "text": "fba2d09d16517971"
   },
   "mine.title": {
     "en": "7a21b6d58d3fa8fb",
@@ -15518,6 +15542,46 @@
   "swarm.window.title": {
     "en": "e7fed8cb843bdff1",
     "text": "c56ba16c8cf041e1"
+  },
+  "tabs.closed": {
+    "en": "41a13659a8884709",
+    "text": "e26a061eebc09139"
+  },
+  "tabs.keep_at_start": {
+    "en": "bded12959749c950",
+    "text": "ca606eb28193a835"
+  },
+  "tabs.keep_failed": {
+    "en": "831641bc8e3a7e90",
+    "text": "5bdec1c96ad260a6"
+  },
+  "tabs.kept": {
+    "en": "2482794c67a6be13",
+    "text": "d22d5a4e82ab7f31"
+  },
+  "tabs.menu": {
+    "en": "be9597d99ab83e55",
+    "text": "82850935c837c5ba"
+  },
+  "tabs.move_hint": {
+    "en": "84c7a82cd68e277d",
+    "text": "86712c3b5509e3ca"
+  },
+  "tabs.move_left": {
+    "en": "13921bad599da92d",
+    "text": "cdf0019fd2418205"
+  },
+  "tabs.move_right": {
+    "en": "cb3dbcadfd42ae03",
+    "text": "64ee8a980cdff27c"
+  },
+  "tabs.moved": {
+    "en": "4db9451c5e9ac558",
+    "text": "0940ff5d024fdcf1"
+  },
+  "tabs.opened": {
+    "en": "1a8185ac38f28117",
+    "text": "d18fc836f8855aa4"
   },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",

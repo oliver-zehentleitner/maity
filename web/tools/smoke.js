@@ -309,7 +309,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(sortLabels[0].startsWith("Personal") && sortLabels.find((t) => !t.startsWith("Personal")).startsWith("Maity"), "sort by project: the personal requests first, then the projects");
   // A project filter and grouping by project.
   const pf = byId("inbox-project");
-  expect(pf.querySelectorAll("option").map((o) => o.textContent).join("|") === "every project|Maity|Sample shop", "inbox: the project options carry no counts that could go stale");
+  expect(pf.querySelectorAll("option").map((o) => o.textContent).join("|") === "every project|projects with an open tab|Maity|Sample shop", "inbox: the project options carry no counts that could go stale");
   pf.value = "maintainer/sample"; pf.dispatch("change"); await tick();
   expect(main.querySelectorAll("li.entry").length === 1 && text(main.querySelector("li.entry")).includes("Sample shop"), "inbox: filtered to one project");
   // The filter is the cross-project view's: a project's own inbox shows its entries.
@@ -348,9 +348,118 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(header).includes("Build") && text(header).includes("Fixtures") && header.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")), "project header: state, fixtures label, sign out");
   expect(chip("Maity").getAttribute("aria-current") === "page", "switcher marks the current project");
   const sRow = header.querySelector(".switcher-row");
-  expect(sRow && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "project-state"
-    && sRow.childNodes[1].querySelector(".state") && !header.querySelector(".bar .state"),
-    "header: the state and the settings sit at the projects' right, apart, not in the top bar");
+  expect(sRow && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "tabs-menu-box" && sRow.childNodes[2].className === "project-state"
+    && sRow.childNodes[2].querySelector(".state") && !header.querySelector(".bar .state"),
+    "header: the tabs menu, then the state and the settings sit at the projects' right, apart, not in the top bar");
+  // Project tabs (tsk-p6aye59z0k7g, docs/api.md §5.1 "Start tabs"): this browser's own, per viewer;
+  // the account's list only seeds a browser that has none.
+  {
+    const tabStore = {};
+    const tabLs = win.localStorage;
+    win.localStorage = { getItem: (k) => (k in tabStore ? tabStore[k] : null), setItem: (k, v) => { tabStore[k] = String(v); }, removeItem: (k) => { delete tabStore[k]; } };
+    const M_ = win.Maity;
+    const tabIds = () => header.querySelectorAll("nav.switcher a").map((a) => a.getAttribute("data-project")).filter(Boolean).join();
+    const kept = () => JSON.parse(tabStore["maity.tabs.hum-maintainer"] || "null");
+    const tabChip = (id) => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("data-project") === id);
+    const said = () => text(header.querySelector(".tabs-said"));
+    const MA = "prj-maity0000001", SA = "prj-sample000001";
+    await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(tabIds() === MA + "," + SA && kept() && kept().open.join() === MA + "," + SA && kept().known.join() === MA + "," + SA,
+      "tabs: a fresh browser without a start set opens every project in /me's order, and keeps that");
+    expect(tabChip(MA).attrs.draggable === "true" && tabChip(MA).getAttribute("title") === "Drag to move, or Alt+Shift+Arrow", "tabs: each tab is draggable and says how to move it");
+    // The keyboard: Alt+Shift+Arrow moves the focused tab and says where it went.
+    tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
+    expect(tabIds() === SA + "," + MA && kept().open.join() === SA + "," + MA && said() === "Sample shop moved to place 1 of 2",
+      "tabs: Alt+Shift+ArrowLeft moves a tab one place, kept, and announced");
+    tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
+    tabChip(SA).dispatch("keydown", { key: "ArrowRight", altKey: false, shiftKey: true });
+    expect(tabIds() === SA + "," + MA, "tabs: no move past the first place, and none without Alt");
+    // A drag: dropped on another tab, it goes before it.
+    tabChip(MA).dispatch("dragstart", { dataTransfer: null });
+    let overPrevented = false;
+    tabChip(SA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = true; } });
+    tabChip(SA).dispatch("drop", { dataTransfer: null });
+    tabChip(MA).dispatch("dragend");
+    expect(overPrevented && tabIds() === MA + "," + SA && kept().open.join() === MA + "," + SA, "tabs: a tab dragged onto another goes before it");
+    tabChip(MA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = false; } });
+    expect(overPrevented, "tabs: no drop target without a tab being dragged");
+    // The tabs menu: one switch per project, the start set, nothing sent for a switch.
+    const tabsButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
+    const tabsItems = () => header.querySelector(".tabs-menu-box").querySelectorAll(".menu-item");
+    const patchesTabs = [];
+    const realPatchTabs = M_.api.patch;
+    M_.api.patch = (path, body) => { patchesTabs.push([path, body]); return realPatchTabs(path, body); };
+    tabsButton().click(); await tick();
+    expect(tabsButton().getAttribute("aria-label") === "Project tabs" && tabsItems().map((i) => i.getAttribute("role") + ":" + (i.getAttribute("aria-checked") || "-") + ":" + i.textContent).join("|")
+      === "menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop|menuitem:-:Keep these tabs at start", "tabs: the menu lists each project as a switch, then the start set");
+    tabsItems()[1].click(); await tick();
+    expect(tabIds() === MA && kept().open.join() === MA && !header.querySelector(".tabs-menu-box").querySelector("ul").hidden
+      && tabsItems()[1].getAttribute("aria-checked") === "false" && said() === "Sample shop is no longer a tab" && !patchesTabs.length,
+      "tabs: switching a project off closes its tab, the menu stays open, nothing is sent");
+    // The inbox filter to open tabs, kept per viewer.
+    const pfTabs = byId("inbox-project");
+    pfTabs.value = "open-tabs"; pfTabs.dispatch("change"); await tick();
+    const labelsTabs = main.querySelectorAll(".project-label").map((el) => el.textContent);
+    expect(tabStore["maity.inbox.tabs.hum-maintainer"] === "1" && labelsTabs.length && labelsTabs.every((t) => t.startsWith("Personal") || t.startsWith("Maity"))
+      && main.querySelector(".inbox-filter-hidden"), "tabs: the inbox's filter to open tabs hides the closed project, keeps the personal requests, and is kept");
+    await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(byId("inbox-project").value === "open-tabs", "tabs: the filter to open tabs holds on the next visit");
+    byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
+    expect(!("maity.inbox.tabs.hum-maintainer" in tabStore), "tabs: every project again: the kept filter is gone");
+    // Opening a closed project by its address gives it its tab back, at the end.
+    await go("#/maintainer/sample/inbox"); for (let k = 0; k < 3; k++) await tick();
+    expect(tabIds() === MA + "," + SA && kept().open.join() === MA + "," + SA, "tabs: a closed project opened by its address gets its tab back, last");
+    // Moving the current tab from the menu, the way without a drag or a key.
+    tabsButton().click(); await tick();
+    const moveLeft = tabsItems().find((i) => i.textContent === "Move this tab left");
+    expect(moveLeft && !tabsItems().some((i) => i.textContent === "Move this tab right"), "tabs: the menu moves the current tab, only where it can go");
+    moveLeft.click(); await tick();
+    expect(tabIds() === SA + "," + MA, "tabs: Move this tab left moves it");
+    // The row as the start set: the whole list to PATCH /me.
+    tabsButton().click(); await tick();
+    tabsItems().find((i) => i.textContent === "Keep these tabs at start").click(); for (let k = 0; k < 3; k++) await tick();
+    expect(patchesTabs.length === 1 && patchesTabs[0][0] === "/me" && JSON.stringify(patchesTabs[0][1]) === JSON.stringify({ start_tabs: [SA, MA] })
+      && JSON.stringify((await M_.api.get("/me")).member.start_tabs) === JSON.stringify([SA, MA]) && said() === "Saved: a browser with no tabs of its own yet opens these.",
+      "tabs: Keep these tabs at start sends the row as start_tabs, and says so");
+    // A browser that has no tabs yet starts from the account's list.
+    await realPatchTabs("/me", { start_tabs: [SA] });
+    Object.keys(tabStore).forEach((k) => { delete tabStore[k]; });
+    await go("#/maintainer/sample/settings/mine"); for (let k = 0; k < 6; k++) await tick();
+    expect(tabIds() === SA && kept().open.join() === SA && kept().known.join() === MA + "," + SA, "tabs: a browser with no tabs of its own opens the account's start set");
+    // A project joined since this browser last looked (not yet known): a tab at the end.
+    tabStore["maity.tabs.hum-maintainer"] = JSON.stringify({ open: [SA], known: [SA] });
+    await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(tabIds() === SA + "," + MA && kept().known.join() === MA + "," + SA, "tabs: a project joined since this browser last looked opens as the last tab");
+    await realPatchTabs("/me", { start_tabs: [SA] });
+    // Mine: whether this project opens as a tab at start, saved at once.
+    await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 6; k++) await tick();
+    const startBox = byId("my-start-tab");
+    expect(startBox && !startBox.checked && byId("my-start-tab-hint"), "tabs: Mine shows whether the project opens as a tab at start, off for Maity here");
+    startBox.checked = true; startBox.dispatch("change"); for (let k = 0; k < 3; k++) await tick();
+    expect(JSON.stringify(patchesTabs[patchesTabs.length - 1][1]) === JSON.stringify({ start_tabs: [SA, MA] }) && text(main).includes("Saved: this project opens as a tab at start."),
+      "tabs: switching it on adds the project at the end of the start set");
+    await realPatchTabs("/me", { start_tabs: null });
+    await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 6; k++) await tick();
+    byId("my-start-tab").checked = false; byId("my-start-tab").dispatch("change"); for (let k = 0; k < 3; k++) await tick();
+    expect(byId("my-start-tab").checked === false && JSON.stringify(patchesTabs[patchesTabs.length - 1][1]) === JSON.stringify({ start_tabs: [SA] }),
+      "tabs: switching it off while every project opens sends every other project, in /me's order");
+    // A refused save puts the switch back.
+    const failPatch = M_.api.patch;
+    M_.api.patch = () => Promise.reject(new M_.api.ApiError("nope", 400, "/me", "invalid"));
+    byId("my-start-tab").checked = true; byId("my-start-tab").dispatch("change"); for (let k = 0; k < 3; k++) await tick();
+    expect(byId("my-start-tab").checked === false && text(main).includes("Not saved"), "tabs: a refused save puts the switch back and says so");
+    M_.api.patch = realPatchTabs;
+    void failPatch;
+    // Without storage the tabs still hold for the visit.
+    win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+    await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    const before = tabIds();
+    tabChip(before.split(",")[1]).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
+    expect(tabIds() === before.split(",").reverse().join(), "tabs: a browser that keeps nothing still moves tabs for the visit");
+    await realPatchTabs("/me", { start_tabs: null });
+    win.localStorage = tabLs;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 3; k++) await tick();
+  }
   let c2 = main.querySelector(".current");
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · member · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
