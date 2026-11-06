@@ -950,9 +950,11 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             public_pages.touch(
                 conn, public_people.KIND, caller.human_id, removal=not switched_on_only
             )
-            if switched_on_only and {"public_presence", "public_stats"} & set(values):
-                # The person's own page shows both: it follows at once either way (§16.9,
+            if switched_on_only and values.get("public_presence"):
+                # The person's own page shows online: it follows at once either way (§16.9,
                 # "Role, member since, online and numbers"); the project pages keep their rule.
+                # `public_stats` needs no such step: it is never a switch that waits, so the
+                # touch above already renders at once.
                 public_pages.touch(conn, public_people.KIND, caller.human_id, dependents=False)
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
