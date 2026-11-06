@@ -133,7 +133,8 @@ segment of a join-host path (above), as `…`. The server's default access log i
   request sends `Accept-Encoding: gzip` is answered gzipped when its body
   is 1024 bytes or more, with `Content-Encoding: gzip` and `Accept-Encoding`
   in `Vary`. Never compressed: any other method, anything under
-  `/api/v1/auth/`, an attachment's bytes
+  `/api/v1/auth/`, the join and invitation documents a token opens
+  (`/api/v1/join/{token}`, `/api/v1/invitations/{token}`), an attachment's bytes
   (`…/attachments/{attachment_id}/content`), `text/event-stream`, the
   image and archive types, and every address outside those two prefixes
   (the shell, the join, invitation and link pages, the public pages).

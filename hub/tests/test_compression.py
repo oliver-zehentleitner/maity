@@ -8,9 +8,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 from starlette.types import Message, Receive, Scope, Send
 
 from maity_hub.compression import MINIMUM_SIZE, Compression
+from tests import flow
+from tests.conftest import ClientFactory
 
 GZIP = {"Accept-Encoding": "gzip"}
 
@@ -31,6 +34,19 @@ def test_the_dashboard_files_are_gzipped(client: TestClient, web_dir: Path) -> N
     assert done.text == "// the dashboard\n" * 400
 
 
+def test_a_join_document_carrying_its_token_is_never_gzipped(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    token = flow.join(owner, "maity")["join_url"].rsplit("/", 1)[1]
+    for accept in ("text/markdown", "text/html"):
+        page = make_client().get(f"/api/v1/join/{token}", headers={"Accept": accept, **GZIP})
+        assert page.status_code == 200 and token in page.text, accept
+        assert len(page.content) >= MINIMUM_SIZE, accept  # large enough to be gzipped otherwise
+        assert "content-encoding" not in page.headers, accept
+
+
 def test_without_accept_encoding_nothing_is_gzipped(client: TestClient) -> None:
     done = client.get("/api/v1/openapi.json", headers={"Accept-Encoding": "identity"})
     assert done.status_code == 200 and "content-encoding" not in done.headers
@@ -38,8 +54,10 @@ def test_without_accept_encoding_nothing_is_gzipped(client: TestClient) -> None:
 
 async def _answer(scope: Scope, receive: Receive, send: Send) -> None:
     body = b"x" * (MINIMUM_SIZE * 4)
+    kinds = {".png": b"image/png", ".zip": b"application/zip"}
+    kind = next((v for k, v in kinds.items() if scope["path"].endswith(k)), b"application/json")
     await send({"type": "http.response.start", "status": 200,
-                "headers": [(b"content-type", b"application/json"),
+                "headers": [(b"content-type", kind),
                             (b"content-length", str(len(body)).encode())]})  # fmt: skip
     await send({"type": "http.response.body", "body": body})
 
@@ -75,11 +93,17 @@ async def _encoding(method: str, path: str) -> str | None:
         ("PATCH", "/api/v1/me", None),
         ("GET", "/api/v1/auth/session", None),
         ("GET", "/api/v1/auth/sessions", None),
+        ("GET", "/api/v1/join/abcdefghijklmnopqrstuv", None),
+        ("GET", "/api/v1/invitations/abcdefghijklmnopqrstuv", None),
+        ("GET", "/api/v1/projects/o/p/invitations", "gzip"),
         ("GET", "/join/abc", None),
         ("GET", "/r/abc", None),
         ("GET", "/mail/abc", None),
         ("GET", "/api/v1/projects/o/p/attachments/att-1/content", None),
         ("GET", "/api/v1/projects/o/p/attachments/att-1", "gzip"),
+        ("GET", "/api/v1/avatars/agt-1/picture.png", None),
+        ("GET", "/assets/brand/mark.png", None),
+        ("GET", "/api/v1/me/export/archive.zip", None),
         ("GET", "/", None),
         ("GET", "/oliver/maity/board", None),
         ("GET", "/abcdefghijklmnopqrstuv", None),

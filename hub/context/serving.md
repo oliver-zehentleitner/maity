@@ -520,16 +520,22 @@ address.
 
 A `GET` or `HEAD` under `/api/v1/` or `/assets/` of 1024 bytes and more
 is gzipped at level 6 when the request accepts it (docs/api.md §1.1).
-Writes are never compressed, nor anything under `/api/v1/auth/`, an
-attachment's bytes, or any address outside the two prefixes. Starlette's
+Writes are never compressed, nor anything under `/api/v1/auth/`, the
+join and invitation documents a token opens (`/api/v1/join/{token}`,
+`/api/v1/invitations/{token}`), an attachment's bytes, or any address
+outside the two prefixes. The types that are compressed already (images,
+archives, fonts, `text/event-stream`) are named in the hub, not taken
+from Starlette's default, which older releases kept shorter. Starlette's
 middleware compresses a body of 128 KiB and more in a worker thread.
 
 **Reason:** the board's pages of cards are the dashboard's largest reads
 and compress to about a quarter. In the hub, every deployment gets it
 without a setting of its own, a self-hosted one too. Every place the hub answers a secret (a
 new credential, a join line, a code, the session's CSRF token) is a write
-or under `/api/v1/auth/`, and the pages outside the prefixes carry a
-token from their own address. Leaving all of them out means no answer
+or under `/api/v1/auth/`; the join and invitation documents under
+`/api/v1/` and the pages outside the prefixes carry a token from their
+own address. The first version of this list missed `/api/v1/join/{token}`,
+which a review found. Leaving all of them out means no answer
 carries a secret compressed together with what the request sent.
 Attachments are someone's files, often compressed already, streamed with
 their length against their digest. Level 6: 24.7% of the board's bytes
