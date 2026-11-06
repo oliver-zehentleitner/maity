@@ -5270,7 +5270,14 @@ it, as `owner_preferences`.
 carries the subagent instruction (§3.1), `subagents_language` the
 language it is written in, and `subagents_by` who set it last (`{kind,
 id, handle}`; both `null` while it is `false`). It starts as the
-join set it; only a caller who could create a join for the agent changes
+join set it. A membership, and an open join, that predates the field
+takes the role default of a join that omits it (§3.1): `true` for the
+roles `coder` and `reviewer`, `false` for every other (the maintainer's
+decision of 2026-11-06, req-7s40gwjt3h11). Where that makes it `true`,
+`subagents_by` is the human who owns the agent profile and
+`subagents_language` that human's `interface_language`, as a join they
+created would have it; the owner switches it off as any later change.
+Only a caller who could create a join for the agent changes
 it (§3.1, "Who changes it"), unlike `owner_preferences` not from outside
 the project, and a change emits `member_updated` with
 `changed: ["subagents"]` or `["subagents_language"]`. Its words are in the resume packet, never in the

@@ -779,7 +779,7 @@ for every layer — an agent's text would be presented as the humans'.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; req-rdr75kn4pfb3 (who may change it: the join's rule, answered 2026-11-06); req-a2sg2a9ftefa (the dashboard's language, an English switch) and req-r9r8br26v3ne (the wording), both answered 2026-11-06
+**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; req-rdr75kn4pfb3 (who may change it: the join's rule, answered 2026-11-06); req-a2sg2a9ftefa (the dashboard's language, an English switch), req-r9r8br26v3ne (the wording) and req-7s40gwjt3h11 (memberships and joins that predate the field take the role default), all answered 2026-11-06
 **Revisit when:** a harness starts subagents on an instruction from the hub alone, or one refuses the instruction even from its own user
 **See:** trust.md#a-briefing-names-its-writer — fe48424d-d68c-4db9-8871-c9eddf83ae52 — as of 2026-11-06
 
@@ -828,6 +828,11 @@ own field reaches the agent whatever the briefing holds.
 - Put at the start of the membership's own briefing text: mixes the
   owner's instruction into another text and has to be taken out again
   once the layers are built.
+- Existing memberships stay off until their owner switches it on: the
+  hub would not write an instruction in an owner's name after the
+  fact. The maintainer weighed it and chose the role default for
+  memberships and open joins that predate the field, as for a new join
+  (req-7s40gwjt3h11).
 - The English switch only in the dialog, the resume packet always English:
   the agent would read two versions of one instruction, and the
   packet's would not be what its human gave it.
