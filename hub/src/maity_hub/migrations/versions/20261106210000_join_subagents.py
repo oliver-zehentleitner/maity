@@ -11,11 +11,11 @@ Revises: 20261105120000_known_source
 Create Date: 2026-11-06
 """
 
-import json
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "20261106210000_join_subagents"
 down_revision: str | None = "20261105120000_known_source"
@@ -45,31 +45,18 @@ ROLES = ("coder", "reviewer")
 INTERFACE = ("en", "de", "fr", "es", "pt", "it", "nl", "ja", "ko", "zh-Hans")
 
 
-# How many human ids one statement names, well below every backend's bound on parameters.
-CHUNK = 500
-
-
-def _mail_language(settings: object) -> str:
-    """What agents write in, when the portal has it, else English: the rest of
-    `languages.of_interface` once the interface language has not decided (§6.2)."""
-    if isinstance(settings, str):
-        settings = json.loads(settings)
-    mail = settings.get("email") if isinstance(settings, dict) else None
-    written = mail.get("language") if isinstance(mail, dict) else None
-    return str(written) if written in INTERFACE else "en"
-
-
 def _backfill() -> None:
-    """Set-based, so the work grows with the rows that change, not with humans × joins: one
-    statement per table sets the instruction with the owner's interface language, and only
-    the owners without one are read again, for their mail language, a chunk at a time."""
+    """Two statements, one per table, whatever the number of humans: each row's language
+    comes from correlated lookups by primary key (agent_profile.id, human.id,
+    notification_settings.human_id), as `languages.of_interface` decides it — the interface
+    language, else what agents write in (the mail language), else English (§6.2)."""
     human = sa.table(
         "human", sa.column("id", sa.String), sa.column("interface_language", sa.String)
     )
     settings = sa.table(
         "notification_settings",
         sa.column("human_id", sa.String),
-        sa.column("preferences", sa.JSON),
+        sa.column("preferences", sa.JSON().with_variant(postgresql.JSONB(), "postgresql")),
     )
     profile = sa.table(
         "agent_profile", sa.column("id", sa.String), sa.column("owner_id", sa.String)
@@ -92,75 +79,41 @@ def _backfill() -> None:
         sa.column("subagents", sa.Boolean),
         sa.column("subagents_language", sa.String),
     )
-    chosen = sa.case(
+    mail = (
+        sa.select(settings.c.preferences[("email", "language")].as_string())
+        .where(settings.c.human_id == human.c.id)
+        .scalar_subquery()
+    )
+    language = sa.case(
         (human.c.interface_language.in_(INTERFACE), human.c.interface_language),
-        else_=sa.null(),
+        (mail.in_(INTERFACE), mail),
+        else_=sa.literal("en"),
     )
     owner = (
         sa.select(profile.c.owner_id).where(profile.c.id == membership.c.agent_id).scalar_subquery()
     )
-    owner_chosen = (
-        sa.select(chosen)
+    owner_language = (
+        sa.select(language)
         .select_from(profile.join(human, human.c.id == profile.c.owner_id))
         .where(profile.c.id == membership.c.agent_id)
         .scalar_subquery()
     )
-    creator_chosen = sa.select(chosen).where(human.c.id == join.c.created_by).scalar_subquery()
-    conn = op.get_bind()
-    conn.execute(
+    creator_language = sa.select(language).where(human.c.id == join.c.created_by).scalar_subquery()
+    op.execute(
         sa.update(membership)
         .where(membership.c.agent_id.is_not(None), membership.c.role.in_(ROLES))
-        .values(subagents=sa.true(), subagents_by=owner, subagents_language=owner_chosen)
+        .values(subagents=sa.true(), subagents_by=owner, subagents_language=owner_language)
     )
-    still_open = (
-        join.c.role.in_(ROLES),
-        join.c.used_at.is_(None),
-        join.c.revoked_at.is_(None),
-        join.c.burned_at.is_(None),
-    )
-    conn.execute(
+    op.execute(
         sa.update(join)
-        .where(*still_open)
-        .values(subagents=sa.true(), subagents_language=creator_chosen)
-    )
-    # The owners left without a language: their mail language, else English.
-    member_left = membership.c.subagents.is_(True) & membership.c.subagents_language.is_(None)
-    join_left = join.c.subagents.is_(True) & join.c.subagents_language.is_(None)
-    left = sorted(
-        {
-            *conn.execute(
-                sa.select(membership.c.subagents_by)
-                .where(member_left, membership.c.subagents_by.is_not(None))
-                .distinct()
-            ).scalars(),
-            *conn.execute(sa.select(join.c.created_by).where(join_left).distinct()).scalars(),
-        }
-    )
-    by_language: dict[str, list[str]] = {}
-    for start in range(0, len(left), CHUNK):
-        ids = left[start : start + CHUNK]
-        stored = dict(
-            conn.execute(
-                sa.select(settings.c.human_id, settings.c.preferences).where(
-                    settings.c.human_id.in_(ids)
-                )
-            ).all()
+        .where(
+            join.c.role.in_(ROLES),
+            join.c.used_at.is_(None),
+            join.c.revoked_at.is_(None),
+            join.c.burned_at.is_(None),
         )
-        for human_id in ids:
-            by_language.setdefault(_mail_language(stored.get(human_id)), []).append(human_id)
-    for language, ids in by_language.items():
-        for start in range(0, len(ids), CHUNK):
-            chunk = ids[start : start + CHUNK]
-            conn.execute(
-                sa.update(membership)
-                .where(member_left, membership.c.subagents_by.in_(chunk))
-                .values(subagents_language=language)
-            )
-            conn.execute(
-                sa.update(join)
-                .where(join_left, join.c.created_by.in_(chunk))
-                .values(subagents_language=language)
-            )
+        .values(subagents=sa.true(), subagents_language=creator_language)
+    )
 
 
 def downgrade() -> None:

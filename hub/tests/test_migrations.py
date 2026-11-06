@@ -1235,6 +1235,65 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     crowd = [factory.agent(engine, project_id, h, "coder").agent_id for h in many]
     for n, h in enumerate(many):
         join(10 + n, "reviewer", h)
+    # 1200 owners without an interface language, one open join each: the first 600 with
+    # the mail language nl, the others with no settings at all (English).
+    fallback = [f"hum-fallback-{n}" for n in range(1200)]
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.human),
+            [
+                {
+                    "id": h,
+                    "handle": h,
+                    "display_name": h,
+                    "password_hash": "x",
+                    "created_at": now,
+                }
+                for h in fallback
+            ],
+        )
+        conn.execute(
+            insert(t.notification_settings),
+            [
+                {
+                    "human_id": h,
+                    "preferences": {"email": {"language": "nl"}},
+                    "address_status": "none",
+                    "epoch": 0,
+                    "hard_failures": 0,
+                    "updated_at": now,
+                }
+                for h in fallback[:600]
+            ],
+        )
+    for n, h in enumerate(fallback):
+        join(100 + n, "coder", h)
+    # A mail language that is no string, or no interface language, counts as none: English,
+    # as `languages.of_interface` decides (§6.2).
+    stored: list[Any] = [
+        {},
+        {"email": {}},
+        {"email": {"language": None}},
+        {"email": {"language": 5}},
+        {"email": {"language": "xx"}},
+        {"email": "de"},
+        {"email": {"language": ["de"]}},
+    ]
+    shapes = [factory.human(engine, f"shape-{n}") for n in range(len(stored))]
+    with engine.begin() as conn:
+        for h, preferences in zip(shapes, stored, strict=True):
+            conn.execute(
+                insert(t.notification_settings).values(
+                    human_id=h,
+                    preferences=preferences,
+                    address_status="none",
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=now,
+                )
+            )
+    for n, h in enumerate(shapes):
+        join(2000 + n, "reviewer", h)
     statements: list[str] = []
 
     def count(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
@@ -1246,8 +1305,8 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         migrate(engine, revision)
     finally:
         event.remove(engine, "before_cursor_execute", count)
-    # One set-based statement per table, then one per mail language left (fr and en here).
-    assert statements.count("membership") == 3 and statements.count("join_link") == 3, statements
+    # One statement per table, whatever the number of humans and their languages.
+    assert statements.count("membership") == 1 and statements.count("join_link") == 1, statements
     with engine.connect() as conn:
         members = {
             row.agent_id: (row.subagents, row.subagents_language, row.subagents_by)
@@ -1270,6 +1329,11 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     assert [joins.pop(j) for j in (odd_join, both_join)] == [(True, "fr"), (True, "it")]
     assert all(members[a] == (True, "ko", h) for a, h in zip(crowd, many, strict=True))
     assert {joins.pop(f"join-{10 + n}") for n in range(10)} == {(True, "ko")}
+    assert {joins.pop(f"join-{100 + n}") for n in range(600)} == {(True, "nl")}
+    assert {joins.pop(f"join-{100 + n}") for n in range(600, 1200)} == {(True, "en")}
+    assert [joins.pop(f"join-{2000 + n}") for n in range(len(stored))] == [(True, "en")] * len(
+        stored
+    )
     assert joins == {
         open_coder: (True, "fr"),
         used_coder: (False, None),

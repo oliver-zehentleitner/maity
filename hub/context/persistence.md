@@ -934,3 +934,32 @@ dictionary in the order PostgreSQL would return finds the places that forgot; SQ
 
 **Reason:** the order of keys looks stable in development, on SQLite, and breaks only on the production database, in a job nobody
 runs locally, so the rule has to be a habit of reading rather than a thing a test happens to catch.
+
+## A migration's backfill is a fixed number of set-based statements, never a loop over humans
+
+**Id:** 319da070-d55d-4e2f-a59e-2b74e94423df
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the reviews of #1447 (2026-11-06/07, migration `20261106210000_join_subagents`): akbp measured the per-human loop and then the per-chunk fallback as full scans of `membership` and `join_link` (neither `subagents_by` nor `created_by` is indexed); vuur and spq4 named the bound
+**Revisit when:** a backfill needs a value SQL cannot compute on all supported databases
+
+The backfill of `20261106210000_join_subagents` gives every coder or reviewer membership, and every open coder or
+reviewer join, its owner's language as `languages.of_interface` decides it: the interface language, else the mail language in
+`notification_settings.preferences`, else `en`. It is two `UPDATE`s, one per table. Each row's value comes from correlated
+subqueries on primary keys (`agent_profile.id`, `human.id`, `notification_settings.human_id`), and the mail language is read
+in SQL through SQLAlchemy's JSON path (`#>>` on PostgreSQL, `JSON_EXTRACT` on SQLite and MariaDB). Each table is scanned once,
+whatever the number of humans. The migration test counts the statements and compares the rows with the per-human loop.
+
+**Reason:** a migration runs inside the deployment's transaction and holds its locks; work that grows with humans × rows
+grows with the instance's history, where nobody measures it before the deploy.
+
+**Rejected alternatives:**
+- One `UPDATE` per table and human, with the language computed in Python: two statements per human, each a full scan of
+  `join_link` without an index on `created_by`, O(humans × joins).
+- Set-based for the interface language, then one `UPDATE` per mail language and chunk of 500 humans: fewer statements, but
+  each still a full scan, O(chunks × rows).
+- A temporary table of humans and languages joined once per table: the same bound, but more statements and a table to clean up.
+- An index on `created_by` / `subagents_by` for the loop: it makes the loop cheaper, not bounded, and keeps an index only
+  this migration needs.
