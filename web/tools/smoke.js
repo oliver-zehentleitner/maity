@@ -736,7 +736,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("project-rename").value = "maity"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle(); await go(win.location.hash); await nsSettle();
   expect(win.location.hash === "#/maintainer/maity/settings" && text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity-hub")
     && !text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity,"), "namespace: a name taken back is current again");
-  // At 8 earlier names a new one is refused, taking back one's own is not (as the hub, #487).
+  // At 8 earlier names, over max_aliases (default 3, §16.5), a new one is refused, taking back one's own is not (as the hub, #487).
   let nsFull = null;
   try { await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-new" }); } catch (err) { nsFull = err; }
   const nsBack = await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-old" });
@@ -3658,6 +3658,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     i18n.language = "de";
     expect(said("not_holder", {}, "hub") === "Nur wer die Karte hält.", "errors: a translated code");
     expect(said("forbidden", { reason: "humans_only" }, "hub") === "Nur ein Mensch.", "errors: a translated reason comes before its code");
+    // The second factor is said as what is missing, never as missing rights (tsk-7jhpzrvsnzm3).
+    Object.assign(win.MAITY_I18N.de, { "error.forbidden": "Dafür fehlen dir die Rechte.", "error.forbidden.reason": "Dafür fehlen dir die Rechte ({reason}).",
+      "error.reason.second_factor_required": "Hier ist dein zweiter Faktor Pflicht.",
+      "error.reason.step_up_required": "Dafür brauchst du zuerst deinen zweiten Faktor." });
+    expect(said("forbidden", { reason: "second_factor_required" }, "hub") === "Hier ist dein zweiter Faktor Pflicht."
+      && said("forbidden", { reason: "step_up_required" }, "hub") === "Dafür brauchst du zuerst deinen zweiten Faktor.",
+      "errors: the second factor's refusals say the factor, not the bare rights");
+    expect(said("forbidden", { reason: "some_new_reason" }, "hub") === "Dafür fehlen dir die Rechte (some_new_reason)."
+      && said("forbidden", { scope: "members:admin" }, "hub") === "Dafür fehlen dir die Rechte.",
+      "errors: a refusal whose reason has no words keeps the reason in brackets; without a reason the bare sentence");
     expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
       "errors: without a translation, or for a code unknown here, the hub's English");
     i18n.language = was;
@@ -5758,6 +5768,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "online switch: ticking it again sends public_presence true " + JSON.stringify(psSent));
     win.Maity.api.patch = psPatch;
   }
+  // The link to one's public page (tsk-4e17b8xnp8eq): directly under the name and handle,
+  // outside the profile form; while the hub serves no page, no link.
+  {
+    await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    const plFacts = () => main.querySelector("dl.facts");
+    const plLink = () => main.querySelector("p.public-profile-link");
+    expect(plFacts() && plFacts().nextSibling === plLink() && plLink().querySelector("a")
+      && plLink().querySelector("a").getAttribute("href") === "#/maintainer?as=public" && plLink().querySelector("a").getAttribute("target") === "_blank"
+      && text(plLink()) === "View public page" && !main.querySelector("form.public-profile-form").querySelector(".public-profile-link"),
+      "public profile: View public page sits right under the name and handle, outside the form, opened at ?as=public");
+    const plGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/people/maintainer" ? plGet(p).then((x) => ({ ...x, page_served: false })) : plGet(p));
+    await go("#/account/settings"); await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    expect(plFacts() && plFacts().nextSibling === plLink() && !plLink().querySelector("a") && text(plLink()) === "",
+      "public profile: no page served, no link under the name and handle");
+    win.Maity.api.get = plGet;
+  }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
   const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;
@@ -6130,17 +6157,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && main.querySelector("section.jf-report").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/inbox/req-0091"),
       "jour fixe: a round shows its topic, phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
 
-    // Project settings: the series, created, changed and deleted with a reason.
+    // Project settings only say where the series are kept now.
     await go("#/maintainer/maity/settings"); await settle();
+    const jfMoved = main.querySelector("section.jf-series-moved");
+    expect(jfMoved && !main.querySelector("li.jf-series") && !main.querySelector("details.jf-series-settings")
+      && jfMoved.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/jour-fixe")
+      && text(jfMoved).includes("The series and their moderators are kept on the Jour fixe page."), "jour fixe: Project settings point to the jour fixe page and list no series");
+    // The jour fixe page: the series at its top, folded and not read until opened; then created, changed and deleted with a reason.
+    const jfFold = () => main.querySelector("details.jf-series-settings");
+    const jfOpen = async () => { jfFold().open = true; jfFold().dispatch("toggle"); await settle(); };
+    let jfReads = 0;
+    const jfGetNow = win.Maity.api.get;
+    win.Maity.api.get = (p, ...rest) => { if (p === "/projects/maintainer/maity/jour-fixe") jfReads += 1; return jfGetNow(p, ...rest); };
+    await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    const jfBody = () => main.querySelector("div.jf-body");
+    expect(jfFold() && !jfFold().open && jfFold().nextSibling === jfBody() && jfBody().contains(jfBlock("jfs-0001")) && !main.querySelector("li.jf-series")
+      && text(jfFold().querySelector("summary")) === "Jour fixe series" && jfReads === 1,
+      "jour fixe: the series' settings at the top of the page, above the rounds, folded and not read until opened");
+    await jfOpen();
+    win.Maity.api.get = jfGetNow;
+    expect(jfReads === 2, "jour fixe: opening the settings reads the series once");
     const jfItem = (id) => main.querySelector("li.jf-series[data-series=\"" + id + "\"]");
     const jfItems = () => main.querySelectorAll("li.jf-series").map((li) => li.getAttribute("data-series"));
     const jfForm = () => main.querySelector("form.jf-series-form");
     expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-0001", "jfs-0002"]) && text(jfItem("jfs-0001")).includes("Weekly on Monday at 09:00 (Europe/Vienna)")
       && text(jfItem("jfs-0001")).includes("on schedule") && text(jfItem("jfs-0002")).includes("paused") && text(jfItem("jfs-0002")).includes("My agents: how the queue feels")
-      && !jfForm() && btn(main, "New series"), "jour fixe: Project settings list the series with their topic, circle, state and schedule; no form until one is asked for");
+      && !jfForm() && btn(main, "New series"), "jour fixe: the settings list the series with their topic, circle, state and schedule; no form until one is asked for");
     btn(main, "New series").click(); await tick();
-    expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden,
-      "jour fixe: the form for a new series, the circle open to choose");
+    expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden
+      && byId("jfs-enabled").parentNode.querySelector("label") && text(byId("jfs-enabled").parentNode.querySelector("label")) === " Activated"
+      && byId("jfs-enabled").getAttribute("aria-describedby") === "jfs-enabled-hint" && text(byId("jfs-enabled-hint")).startsWith("While activated, rounds open on this schedule."),
+      "jour fixe: the form for a new series, the circle open to choose, the schedule Activated with its hint");
     byId("jfs-topic").value = " "; byId("jfs-reason").value = "a look back";
     jfForm().dispatch("submit"); await settle(4);
     expect(!jfCalls.length && text(byId("jfs-error")).includes("Write the topic."), "jour fixe: a series without a topic is not sent");
@@ -6161,6 +6208,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const jfMine = () => main.querySelectorAll("li.jf-series").find((li) => text(li).includes("Reviews"));
     expect(!jfForm() && jfMine() && text(jfMine()).includes("The project's humans") && text(jfMine()).includes("Every 2 weeks on Monday, Thursday at 10:00 (Europe/Vienna)")
       && text(main).includes("The series is saved.") && jfItems().length === 3, "jour fixe: the new series listed with its schedule as a sentence");
+    expect(jfBlock(jfMine().getAttribute("data-series")) && jfFold().open && jfFold().nextSibling === jfBody(),
+      "jour fixe: a new series gets its block below at once, the settings staying open");
     // A series for one owner: the owner is chosen among the humans; a hub refusal is said at its field.
     btn(main, "New series").click(); await tick();
     byId("jfs-circle").value = "owner"; byId("jfs-circle").dispatch("change");
@@ -6217,7 +6266,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "jour fixe: the right ended without a reason or a body");
 
     // The owner's series is private: its keeper reads it; an admin who is not its owner only learns it exists, and may delete it.
-    await go("#/maintainer/sample/settings"); await settle();
+    await go("#/maintainer/sample/jour-fixe"); await settle(6); await jfOpen();
     expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-s1", "jfs-s2"]) && text(jfItem("jfs-s2")).includes("A private series of @hum-anna.") && !text(jfItem("jfs-s2")).includes("Anna's agents")
       && !jfItem("jfs-s2").querySelector(".jfs-edit") && !jfItem("jfs-s2").querySelector("ul.jf-moderators-list") && jfItem("jfs-s2").querySelector(".jfs-delete")
       && text(jfItem("jfs-s1")).includes("Shop: how we work"), "jour fixe: an owner's series is shown to an admin without its topic, to be deleted only");
@@ -6269,7 +6318,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && (await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s4").catch((err) => err.code)) === "not_found",
       "jour fixe: an owner's series is no block of the view for an admin who is not its owner; its rounds are left out and not found");
     jfCalls.length = 0;
-    await go("#/maintainer/sample/settings"); await settle();
+    await go("#/maintainer/sample/jour-fixe"); await settle(6); await jfOpen();
     byId("jfs-reason-jfs-s2").value = "its owner left"; jfItem("jfs-s2").querySelector(".jfs-delete").click(); await settle();
     expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s2", { reason: "its owner left" }]]) && JSON.stringify(jfItems()) === JSON.stringify(["jfs-s1"]),
       "jour fixe: an admin deletes an owner's series with a reason");
@@ -6392,6 +6441,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       byId("jfa-redact-answer-jfa-s9").value = "too personal"; btn(own(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
       expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/redact", { target: "answer:jfa-s9", reason: "too personal" }]) && text(own()).includes("Removed."),
         "jour fixe answer: the author removes their named answer after the window");
+      // Who is no keeper reads the rounds as before, without the series' settings (§20.1).
+      await go("#/maintainer/sample/jour-fixe"); for (let k = 0; k < 10; k++) await tick();
+      expect(!main.querySelector("details.jf-series-settings") && main.querySelector("section.jf-series-block") && !main.querySelector("li.jf-series"),
+        "jour fixe: a member without project:admin gets the rounds without the series' settings");
       win.Maity.api.get = asMember;
       const anonAfter = await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s1/answers?mine=true");
       expect(anonAfter.items.length === 0, "jour fixe answer: an anonymous answer is not found as one's own after the window, in the fixture hub as in the hub");
@@ -6601,6 +6654,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector("section.agents-join").hidden && !main.querySelector(".agents-head button.join-open").hidden, "agents page: Cancel folds the join away, the button back");
   main.querySelector(".agents-head button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelector("section.agents-join").hidden && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: Join an agent opens the form again");
+  // The panel on /agents asks for the second factor as the project's Agents does (tsk-7jhpzrvsnzm3):
+  // one join.js behind both, the code asked in the form, the join sent again.
+  {
+    const gaPost = win.Maity.api.post, gaJoins = [], gaVerified = [];
+    let gaStepped = false;
+    win.Maity.api.post = (p, b) => {
+      if (p === "/auth/second-factor/verify") { gaVerified.push(b); gaStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+      if (p !== "/projects/maintainer/maity/joins") return gaPost(p, b);
+      gaJoins.push(b);
+      if (!gaStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+      return Promise.resolve({ id: "join-ga", agent_id: "agt-ga1", paste_lines: { windows: "maity join ga-line", posix: "maity join ga-line" }, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-11-06T00:00:00Z" });
+    };
+    const gaPanel = () => main.querySelector("section.agents-join .join-panel");
+    byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-ga1"); byId("join-display").value = "Agent GA";
+    gaPanel().querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(gaPanel().querySelector("form.step-up") && text(gaPanel()).includes("needs your second factor") && !text(gaPanel()).includes("No join created"),
+      "agents page: Join an agent asks for the second factor in its form, not said as a refusal");
+    byId("step-up-step_up_required").value = "654321"; gaPanel().querySelector("form.step-up").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(gaVerified) === JSON.stringify([{ code: "654321" }]) && gaJoins.length === 2 && gaPanel().querySelector(".join-result"),
+      "agents page: after the code the join is sent again and its line shown");
+    win.Maity.api.post = gaPost;
+    await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    main.querySelector(".agents-head button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  }
   main.querySelector(".agents-head button.agent-add-open").click(); await tick();
   expect(main.querySelector("section.agents-join").hidden && main.querySelector("form.agent-new"), "agents page: Add an agent folds the join away");
   // Add clicked while Join still reads: that read is dropped, and only the new profile's form stays open.
@@ -7150,6 +7227,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
   btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
   expect(text(main.querySelector(".device-stage")).includes("Approved: the other device is signing in."), "device code: the right number approves it");
+  // Approving is a sensitive call (§2.8.4): an enrolled human whose second factor is older
+  // than 10 minutes is asked for it in the dialog, and the approval is sent again.
+  const dsStepPost = win.Maity.api.post;
+  const dsVerified = [];
+  const dsApprovals = [];
+  let dsStepped = false;
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify") { dsVerified.push(b); dsStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+    if (/^\/auth\/device-codes\/[^/]+\/approve$/.test(p)) {
+      dsApprovals.push(b);
+      if (!dsStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+    }
+    return dsStepPost(p, b);
+  };
+  const dsStage = () => main.querySelector(".device-stage");
+  btn(dsStage(), "New code") ? btn(dsStage(), "New code").click() : null;
+  await go("#/maintainer/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
+  await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  expect(dsStage().querySelector("form.step-up") && text(dsStage()).includes("needs your second factor") && !text(dsStage()).includes("Not sent"),
+    "device code: a step-up the hub asks for on the approval is asked in the dialog, not said as a refusal");
+  btn(dsStage().querySelector("form.step-up"), "Cancel").click(); await dsSettle();
+  expect(!dsStage().querySelector("form.step-up") && !text(dsStage()).includes("Not sent") && main.querySelector(".device-approval") && dsApprovals.length === 1,
+    "device code: Cancel on the step-up leaves the approval open, quietly");
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  byId("step-up-step_up_required").value = "123 456"; dsStage().querySelector("form.step-up").dispatch("submit"); await dsSettle(); await dsSettle();
+  expect(JSON.stringify(dsVerified) === JSON.stringify([{ code: "123456" }]) && dsApprovals.length === 3 && text(dsStage()).includes("Approved: the other device is signing in."),
+    "device code: after the code the approval is sent again and approves the device");
+  win.Maity.api.post = dsStepPost;
   // The new device: the QR's URL fills the code in, a tap sends it, the number shows, and after the approval the account.
   const dsMade = await win.Maity.api.post("/auth/device-codes", {});
   profileButton().click(); await tick();
@@ -12179,6 +12285,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await lmSubmit();
   expect(JSON.stringify(lmPatches[7]) === JSON.stringify({ max_attachment_storage: 1024 ** 3 }),
     "limits: typing the shown whole number sets it exactly " + JSON.stringify(lmPatches));
+  // Earlier names (§16.5, tsk-1zng488dbprp): 1 to 8, no "no limit" to choose, and the hub's rename refusal follows the value.
+  expect(byId("limits-max_aliases-mode").value === "default" && byId("limits-max_aliases").hidden
+    && byId("limits-max_aliases-mode").querySelectorAll("option").map((o) => o.textContent).join("|") === "A number|The default"
+    && text(lmSection()).includes("Earlier names per handle or project")
+    && text(lmSection()).includes("0 accounts, organisations, profiles or projects are at or over this limit."),
+    "limits: earlier names default to 3, with no unlimited option, the ids at it counted");
+  byId("limits-max_aliases-mode").value = "number"; byId("limits-max_aliases-mode").dispatch("change");
+  byId("limits-max_aliases").value = "9";
+  await lmSubmit();
+  expect(lmPatches.length === 8 && text(byId("limits-max_aliases-error")) === "A whole number from 1 to 8.",
+    "limits: more than 8 earlier names is said at its field and nothing is sent " + JSON.stringify(lmPatches));
+  byId("limits-max_aliases").value = "5";
+  await lmSubmit();
+  let lmAliasRefusal = null;
+  try { await adminPatch("/projects/maintainer/sample", { slug: "sample-five" }); } catch (err) { lmAliasRefusal = err; } // not one of the admin writes counted below
+  expect(JSON.stringify(lmPatches[8]) === JSON.stringify({ max_aliases: 5 }) && lmAliasRefusal && lmAliasRefusal.code === "alias_limit"
+    && lmAliasRefusal.details.limit === 5, "limits: earlier names are sent as a number and a rename refusal names the new value " + JSON.stringify(lmPatches));
+  byId("limits-max_aliases-mode").value = "default"; byId("limits-max_aliases-mode").dispatch("change");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[9]) === JSON.stringify({ max_aliases: null }) && byId("limits-max_aliases-mode").value === "default",
+    "limits: earlier names back to the default " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");

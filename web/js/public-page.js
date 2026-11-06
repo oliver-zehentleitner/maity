@@ -114,7 +114,7 @@ window.Maity = window.Maity || {};
       let person = null;
       try { person = await M.api.get("/people/" + encodeURIComponent(ctx.me.handle)); } catch (err) { person = null; }
       // page_served: the hub serves it now, with the instance's own switch counted.
-      if (person && person.page_served) append(link, h("a", { href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
+      if (person && person.page_served) append(link, h("a", { class: "button-link", href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
     }
     function show() {
       box.checked = !!ctx.me.public_profile;
@@ -179,10 +179,12 @@ window.Maity = window.Maity || {};
     ...Object.values(networks).flatMap((f) => f.nodes),
     h("label", { for: "public-links-visible" }, M.t("public_profile.links.visible")), visibility,
     h("p", { class: "hint" }, M.t("public_profile.links.hint")),
-    h("button", { type: "submit" }, M.t("board.save")), status.el, link);
+    h("button", { type: "submit" }, M.t("board.save")), status.el);
     show();
     await showLink();
-    return { el: form };
+    // The link to one's public page goes under the name and handle (account.js), not
+    // under the form; a save above still redraws it, so it shows only while served.
+    return { el: form, link };
   }
 
   M.publicPage = { projectPart, profileSection };

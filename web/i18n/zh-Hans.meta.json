@@ -4748,8 +4748,8 @@
     "text": "b894cb99a5dfd7fa"
   },
   "handles.aliases": {
-    "en": "5a6dfee2685fd642",
-    "text": "bbe3d55107a2e330"
+    "en": "761b044beeac0866",
+    "text": "eb460d092b802c8c"
   },
   "handles.aliases_none": {
     "en": "e9cbae354863e00e",
@@ -5760,8 +5760,12 @@
     "text": "590b7770bd85f460"
   },
   "jf.enabled": {
-    "en": "ea32e9bdd8064432",
-    "text": "3770b17c2c561a2b"
+    "en": "60a7b879d02b645b",
+    "text": "90a311c78e30120e"
+  },
+  "jf.enabled.hint": {
+    "en": "140267b4030ef581",
+    "text": "ec8b0e6640eafdd1"
   },
   "jf.error.time": {
     "en": "7d7a5978e2666f65",
@@ -5974,10 +5978,6 @@
   "jf.rounds.reading": {
     "en": "d9f368c2d320ec2c",
     "text": "b0acca8a5228b28d"
-  },
-  "jf.settings_link": {
-    "en": "701fab0b12e1172e",
-    "text": "b0d495cd71a1bef6"
   },
   "jf.skip.hub_down": {
     "en": "338c6cb639de63d0",
@@ -6570,6 +6570,10 @@
   "jfs.hint": {
     "en": "f496ad7da5050f5b",
     "text": "2731d5438dafdb59"
+  },
+  "jfs.kept_on_page": {
+    "en": "dbcf6830b5d345c6",
+    "text": "73b35c7a4cefb922"
   },
   "jfs.moderators": {
     "en": "95ba7594a758cfad",
@@ -10456,8 +10460,8 @@
     "text": "e827b502a5479ea3"
   },
   "names.rename.hint": {
-    "en": "85a6c142b16caac9",
-    "text": "a8e582efbd10d8ff"
+    "en": "90c478359bdb09cc",
+    "text": "79c88cfed319cd3c"
   },
   "names.renaming": {
     "en": "55f8d0e263c5fefb",
