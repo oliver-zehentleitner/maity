@@ -347,7 +347,7 @@ def _fresh_process_state() -> Iterator[None]:
         shared_budget,
         shared_counts,
     )
-    from maity_hub.auth import caller
+    from maity_hub.auth import caller, password_limits
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
     from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
@@ -368,7 +368,8 @@ def _fresh_process_state() -> Iterator[None]:
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()
     runners.PAIR_BY_ADDRESS.reset()
-    auth.LOGIN_BY_HANDLE.reset()
+    for limiter in password_limits.ALL:
+        limiter.reset()
     mentions.PINGS.reset()
     mail_settings.test_limiter.reset()
     for limiter in (

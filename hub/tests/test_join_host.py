@@ -35,7 +35,7 @@ def hosted_human(make_client: ClientFactory, migrated: Any, handle: str) -> flow
     """A human logged in on the public host of an app that has a join host."""
     human_id = factory.human(migrated, handle)
     client = make_client(join_url=JOIN)
-    login = client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
+    login = factory.login_handle(client, handle)
     assert login.status_code == 200, login.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, human_id, handle)
@@ -259,7 +259,7 @@ def test_a_variant_of_the_join_host_is_the_join_host(
     assert help_.status_code == 302 and help_.headers["location"] == f"{PUBLIC}/"
     login = client.post(
         "/api/v1/auth/login",
-        json={"handle": "variant", "password": factory.PASSWORD},
+        json={"email": "variant@example.org", "password": factory.PASSWORD},
         headers=headers,
     )
     assert login.status_code == 404 and "set-cookie" not in login.headers

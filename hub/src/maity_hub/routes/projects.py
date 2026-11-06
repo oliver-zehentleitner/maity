@@ -867,7 +867,8 @@ def patch_project(
         actor = caller.actor(mine.id)
         # A rename first, so that every event below names the project by its new full name.
         renamed = "slug" in given and body.slug is not None
-        if renamed and project_names.rename(conn, mine, str(body.slug), words, actor):
+        aliases = limits.aliases(conn, settings_of(request)) if renamed else 0
+        if renamed and project_names.rename(conn, mine, str(body.slug), words, actor, aliases):
             project = _load(conn, project.id)
             mine = replace(mine, project=project)
         owner_id = _owner_id(conn, project.id)
@@ -1215,7 +1216,8 @@ def transfer_project(
         project_names.authority(conn, mine)
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         limit = limits.of(conn, settings_of(request), "max_projects_per_owner")
-        request_id = project_names.transfer(conn, mine, caller, body.to, limit)
+        aliases = limits.aliases(conn, settings_of(request))
+        request_id = project_names.transfer(conn, mine, caller, body.to, limit, aliases)
         if request_id is None:  # the move happened in the call: the project as it is now (§6.26)
             return idempotency.Outcome(
                 200, "project", mine.project.id, load_project(conn, mine.project.id, request)

@@ -124,13 +124,13 @@ echo "from ingress-nginx: $allowed, from elsewhere: $other"
 step "a human account through kubectl exec, a login through a port-forward"
 owner_password="$(secret)"
 printf '%s\n' "$owner_password" | kubectl -n "$ns" exec -i deploy/hub-maity-hub -- \
-    maity-hub owner create --handle owner --display-name Owner
+    maity-hub owner create --handle owner --display-name Owner --email owner@smoke.example
 kubectl -n "$ns" port-forward svc/hub-maity-hub 18975:80 >"$work/forward.log" 2>&1 &
 forward_pid=$!
 for _ in $(seq 50); do curl -sf http://127.0.0.1:18975/api/v1/health >/dev/null && break; sleep 0.2; done
 curl -sS --fail http://127.0.0.1:18975/api/v1/health
 echo
-printf '{"handle":"owner","password":"%s"}' "$owner_password" >"$work/login.json"
+printf '{"email":"owner@smoke.example","password":"%s"}' "$owner_password" >"$work/login.json"
 curl -sS --fail -o /dev/null -c "$work/jar" -H 'Content-Type: application/json' \
     -d @"$work/login.json" http://127.0.0.1:18975/api/v1/auth/login
 curl -sS --fail -b "$work/jar" http://127.0.0.1:18975/api/v1/auth/session \

@@ -436,6 +436,28 @@ def _unread_chats(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _cross_chats(packet: dict[str, Any]) -> list[str]:
+    """Each cross-project group chat with unread messages (§5.2 `cross_chats`, §13).
+
+    Its own block, after the project's unread chats. The line names the GET the contract
+    gives for this room. `maity chat` reads a project's conversation and is not this one.
+    """
+    unread = [
+        c for c in _items(packet.get("cross_chats"))
+        if isinstance(c.get("unread"), int) and not isinstance(c.get("unread"), bool)
+        and c["unread"] > 0
+    ]  # fmt: skip
+    lines = []
+    for c in unread[:UNREAD_CHATS]:
+        chat = inline(c.get("id") or "?")
+        name = inline(c.get("title")) if c.get("title") else "Cross"
+        counts = f"{inline(c['unread'])} unread, {inline(c.get('mentions_unread') or 0)} mentions"
+        lines.append(f"  {name} {chat} ({counts}): GET /me/cross-chats/{chat}/messages")
+    if len(unread) > UNREAD_CHATS:
+        lines.append(f"  … {len(unread) - UNREAD_CHATS} more: GET /me/cross-chats")
+    return lines
+
+
 def imported_mark(card: dict[str, Any]) -> str:
     """Where an imported card comes from (§6.14): the forge author's, often no member's. A member
     may have changed the title since, so this names the issue, not the title's writer."""
@@ -1123,6 +1145,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
             ],
         ),
         ("Unread chats:", _unread_chats(packet)),
+        ("Cross-project chats:", _cross_chats(packet)),
         *([(ticker[0], ticker[1:])] if (ticker := _ticker(packet)) else []),
     ]
     for title, lines in sections:
