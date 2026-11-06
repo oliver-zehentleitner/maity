@@ -5905,6 +5905,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("public-presence").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_presence: true }) && byId("public-presence").checked,
       "online switch: ticking it again sends public_presence true " + JSON.stringify(psSent));
+    // The numbers (`public_stats`, §16.9): off by default, a switch of their own, sent alone.
+    expect(byId("public-stats") && !byId("public-stats").checked, "numbers switch: the account page shows it off by default");
+    byId("public-stats").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_stats: true }) && byId("public-stats").checked,
+      "numbers switch: ticking it sends public_stats true alone and keeps the answer " + JSON.stringify(psSent));
+    byId("public-stats").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_stats: false }) && !byId("public-stats").checked,
+      "numbers switch: unticking it sends public_stats false " + JSON.stringify(psSent));
     win.Maity.api.patch = psPatch;
   }
   // The link to one's public page (tsk-4e17b8xnp8eq): directly under the name and handle,
@@ -10933,7 +10941,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false,
           edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
-    "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", owner: { name: "Sam", handle: "sam", page: "/sam" }, projects: [{ name: "Tool", full_name: "stranger/tool" }], statistics: { totals: { cards_done: 1, prs_merged: null } } } },
+    "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", owner: { name: "Sam", handle: "sam", page: "/sam" }, projects: [{ name: "Tool", full_name: "stranger/tool", role: "reviewer" }], statistics: { totals: { cards_done: 1, prs_merged: null } },
+      member_since: "2026-03", online: true, model: "model-<b>one</b>", harness: null } },
+    "/public/pages/sam": { path: "/sam", kind: "person", data: { name: "Sam", handle: "sam", bio: null, projects: [{ name: "Tool", full_name: "stranger/tool", role: "coder" }], agents: [],
+      member_since: "2025-11", online: false, statistics: { cards_done: 4, reviews_given: 2, prs_merged: null } } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
       ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
@@ -11027,6 +11038,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  {
+    // Role, member since, online, and the model as text; no harness line for a null one (§16.9).
+    const facts = viView().querySelector("ul.visitor-facts");
+    const said = facts ? facts.querySelectorAll("li").map(text) : [];
+    expect(said.length === 3 && said[0].startsWith("Member since ") && said[0].includes("2026") && !said[0].includes("2026-03")
+      && said[1] === "Online" && said[2] === "Model: model-<b>one</b>" && !facts.querySelector("b"),
+      "visitor: an agent's page says member since as a month, online, and its model as text, no harness line " + JSON.stringify(said));
+    expect(viView().querySelectorAll("span.label-tag").some((t) => text(t) === "Reviewer"), "visitor: an agent's page names its role in each project");
+  }
   const viSoGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/auth/session" || p === "/me" ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viSoGet(p));
   await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
@@ -11035,6 +11055,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  // A person's page is the visitor's without a session; signed in, /<handle> is the members' person view.
+  await go("#/sam"); for (let k = 0; k < 4; k++) await tick();
+  {
+    const said = viView() && viView().querySelector("ul.visitor-facts") ? viView().querySelector("ul.visitor-facts").querySelectorAll("li").map(text) : [];
+    const stats = viView() ? viView().querySelectorAll("ul.visitor-stats li").map(text) : [];
+    expect(viView() && viView().getAttribute("data-kind") === "person" && said.length === 1 && said[0].startsWith("Member since ")
+      && JSON.stringify(stats) === JSON.stringify(["Cards done: 4", "Reviews given: 2"]),
+      "visitor: a person's page says member since, no Online while offline, and their own counts without a null one " + JSON.stringify([said, stats]));
+  }
   await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && byId("login-email"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
   win.Maity.api.get = viSoGet;

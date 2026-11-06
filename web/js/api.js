@@ -1971,6 +1971,10 @@ window.Maity = window.Maity || {};
       }
       if ("public_profile" in body) mm.public_profile = !!body.public_profile;
       if ("public_presence" in body) mm.public_presence = !!body.public_presence;
+      if ("public_stats" in body) {
+        if (typeof body.public_stats !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { public_stats: "required" } });
+        mm.public_stats = body.public_stats;
+      }
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
       // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
       if ("website" in body || "social" in body || "links_visible" in body) {
@@ -1998,7 +2002,7 @@ window.Maity = window.Maity || {};
         mm.interface_language = chosen;
         fixtures()["auth-session.json"].member.interface_language = chosen;
       }
-      const profileFields = ["public_profile", "public_presence", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
