@@ -779,7 +779,7 @@ for every layer — an agent's text would be presented as the humans'.
 **Type:** decision
 **Status:** pending-confirmation
 **Evidence:** confirmed
-**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; open details put to the maintainer as req-rdr75kn4pfb3 (who may change it), req-a2sg2a9ftefa (the language of the copy) and req-r9r8br26v3ne (the wording)
+**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; req-rdr75kn4pfb3 (who may change it: the join's rule, answered 2026-11-06); still open: req-a2sg2a9ftefa (the language of the copy) and req-r9r8br26v3ne (the wording)
 **Revisit when:** a harness starts subagents on an instruction from the hub alone, or one refuses the instruction even from its own user
 **See:** trust.md#a-briefing-names-its-writer — fe48424d-d68c-4db9-8871-c9eddf83ae52 — as of 2026-11-06
 
@@ -790,8 +790,11 @@ fresh subagent, and send results with `maity say` to the members the
 order names. The instruction reaches the agent in three places with the
 same words: in the text the dashboard copies with the join line, on
 the join page, and in the briefing's `agent` layer on every resume,
-there with `by` the owner. Only the agent's owner changes the switch
-later, as with "discuss first".
+there with `by` the owner. Later only a caller who could create a join
+for the agent in the project changes the switch: its owner, with
+`members:admin` or as a member bringing their own agent (the
+maintainer's answer to req-rdr75kn4pfb3: "whoever may let the instance
+join may also configure it").
 
 **Reason:** some harnesses started no subagents and sent no results on
 orders that came through Maity; they accept both only on their own
