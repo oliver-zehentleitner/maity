@@ -414,7 +414,7 @@ def change_settings(
 
 
 def set_role(
-    conn: Connection, org: Any, actor_role: str, human_id: str, role: str
+    conn: Connection, org: Any, actor_role: str, human_id: str, role: str, by: str | None = None
 ) -> dict[str, Any]:
     """An owner sets any role of anyone; an admin moves a member or admin between `member`
     and `admin`. The last owner is never demoted (`org_last_owner`)."""
@@ -439,7 +439,7 @@ def set_role(
         )
         org_invitations.withdraw_by_inviter(conn, org.id, human_id, role)
         if current != "owner" and role == "owner":  # the hub keeps them owners of its projects
-            org_projects.keep_in_all(conn, org.id, human_id)
+            org_projects.keep_in_all(conn, org.id, human_id, by)
         elif current == "owner" and role != "owner":
             org_projects.release_in_all(conn, org.id, human_id)
     return next(m for m in members(conn, org.id) if m["id"] == human_id)
