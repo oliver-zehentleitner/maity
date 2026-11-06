@@ -2093,7 +2093,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       normalizeState: (s) => s,
       routes: {
         format: (r) => "#" + [r.view, r.file, r.uuid].filter((x) => x != null).map(encodeURIComponent).join("/"),
-        parse: (h) => { const [view, a, b] = h.slice(1).split("/").map(decodeURIComponent);
+        parse: (h) => { const c = /^#centre\/public\/([^/]*)\/([^/]*)(?:\/(.*))?$/.exec(h);
+          if (c) { const place = fakeKtw.core.routes.parse("#" + (c[3] || ""));
+            return { ...place, centre: { mode: "public", canonical: decodeURIComponent(c[1]), root: decodeURIComponent(c[2]) } }; }
+          const [view, a, b] = h.slice(1).split("/").map(decodeURIComponent);
           return view === "topic" ? { view, file: a } : view === "entry" ? { view, uuid: a }
             : view === "ref" ? { view, canonical: a, uuid: b } : { view: view || "overview" }; },
       },
@@ -2283,6 +2286,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "why: another place in another repository is the family page");
   expect(kh.below(win.KeepTheWhy, { view: "topic", file: "a b/c.md" }) === "topic/a%20b/c.md"
     && kh.routeOf(["topic", "a b", "c.md"]).file === "a b/c.md", "why: a topic's file is written encoded and read back as it stands");
+  // The library's centre form (0.11.44) as it arrives: the router has dropped an empty root.
+  const whyCentre = kh.routeOf(["centre", "public", "https://github.com/acme/other", "entry", U]);
+  const whyCentreRoot = kh.routeOf(["centre", "public", "https://github.com/acme/other", "packages/a", "entry", U]);
+  const whyCentrePage = kh.routeOf(["centre", "public", "https://github.com/acme/other", "packages/a", "graph"]);
+  expect(whyCentre.view === "entry" && whyCentre.uuid === U && whyCentre.centre.canonical === "https://github.com/acme/other" && whyCentre.centre.root === ""
+    && whyCentreRoot.centre.root === "packages/a" && whyCentreRoot.uuid === U && whyCentrePage.view === "family"
+    && kh.below(win.KeepTheWhy, whyCentreRoot) === "at/" + U + "/" + encodeURIComponent("https://github.com/acme/other") + "/" + encodeURIComponent("packages/a"),
+    "why: the library's centre/public link reads as the entry at that repository, with or without a root; another place there is the family page; it is written back as at/");
   await go("#/maintainer/maity/why/ref/" + encodeURIComponent("javascript:alert(1)") + "/" + U); for (let k = 0; k < 6; k++) await tick();
   expect(!ktwCalls.some((c) => c[0] === "ref") && text(main).includes("Not a repository of this project's family."),
     "why: a ref whose repository in the address is not plain https reads nothing");
