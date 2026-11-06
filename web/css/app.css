@@ -245,6 +245,13 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
   opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
 .page-loading .maity-loader { width: 48px; height: 48px; }
 @keyframes page-loading-shows { to { opacity: 1; } }
+/* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
+   A bar along the top and the dimmed view say at once that the click was taken. */
+main:has(> [inert])::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000;
+  background: var(--accent); transform-origin: left; pointer-events: none; animation: view-switching 1.2s ease-out infinite; }
+main > [inert] { opacity: 0.6; transition: opacity 0.15s; }
+@keyframes view-switching { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { main:has(> [inert])::before { animation: none; } main > [inert] { transition: none; } }
 /* A calm block, not an alarm: the mark at rest, a plain title, what to do,
    the reason folded away, Try again at the right edge. */
 .page-failed { display: grid; gap: 8px; max-width: 28rem; width: 100%; margin: 24px auto; text-align: start; box-sizing: border-box; }

@@ -1948,7 +1948,8 @@ window.Maity = window.Maity || {};
     // meanwhile: it is what stands if its data cannot be read.
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
-    else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
+    // Busy too, for a screen reader; the bar it shows is in css/app.css.
+    else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) { n.setAttribute("inert", ""); n.setAttribute("aria-busy", "true"); } });
     // The frame of the pages without a session (js/site-chrome.js) stands wherever the sign-in
     // or the registration is drawn signed out: /login, /register, the root after a sign-out, an
     // address of the app without a session. Kept meanwhile while no session is known, so a page

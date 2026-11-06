@@ -289,3 +289,45 @@ between tabs, for the case of several tabs shown at once, which the
 visibility check does not cover. Re-reading the banner's sessions only
 when the count of unread alerts changes: the banner must go when its
 session ends elsewhere with the count unchanged, which only a read finds.
+
+## A page switch draws from the session, /me and project it kept, and reads them again behind the view
+
+**Id:** f71932e2-191d-492b-aef9-02a274a8855c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-hn2wa8a7e2eq (measured waterfalls of a page switch) and the owner's choice of what to build from that report, 2026-11-06
+**Revisit when:** the hub offers a session, /me and the project in one read, or the dashboard gains a shared request cache
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-06
+**See:** views.md#the-view-being-left-is-inert-until-the-next-one-is-drawn — 1d888f69-9233-40b4-b9f3-cd679825ef82 — as of 2026-11-06
+
+A change of the address inside the dashboard draws the next view from
+`/auth/session`, `/me` and, inside the same project, its project and
+members as the last drawing read them, for at most 60 seconds. The
+project's event head is read again every time, before the view's data.
+Behind the drawn view the same four reads are made again. A change in
+who is signed in, the second step, the memberships with their trust and
+role, a maintenance window or one's own limit draws the view again from
+what was read; a 401 of the session check draws the page afresh. Counts,
+members and the project only refresh what is kept for the next switch.
+Any write of the tab (a POST, PATCH, PUT or DELETE through `M.api`), a
+sign-out, an ended session, a refresh and a maintenance change drop what
+is kept. While the next view loads, the view being left is also
+`aria-busy`, and a bar along the top of the page shows the click was
+taken.
+
+**Reason:** every switch read the session, then /me, then the project's
+reads, then the view's data, one after another: four round trips before
+anything showed (694 ms for the board at 150 ms latency, more on prod).
+Keeping the first three leaves two. That the owner chose this is
+confirmed; the 60 seconds, the fields that draw again and dropping on
+writes are this implementation's reading of what must stay as fresh as
+before, not yet confirmed by review.
+
+**Rejected alternative:** reusing the previous view's event cursor as
+well, for one round trip: events between that cursor and the new view's
+read would be offered as a reload of what the view already shows.
+Redrawing on any difference in /me or the members: the counts and
+presence move all the time, so nearly every switch would be drawn twice.
+Keeping until the next read without a time limit: a membership changed
+by someone else would stand until something else read /me.

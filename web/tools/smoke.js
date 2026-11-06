@@ -1866,7 +1866,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const lvOld = main.querySelector("section.view-runners");
   if (win.Maity.onWrite) win.Maity.onWrite(); // a drawing that reads the session again, held here
   win.location.hash = "#/all"; win.onhashchange(); await tick();
-  expect(lvOld && lvOld.parentNode === main && lvOld.getAttribute("inert") === "", "navigation: the view being left stays shown but is inert until the next is drawn");
+  expect(lvOld && lvOld.parentNode === main && lvOld.getAttribute("inert") === "" && lvOld.getAttribute("aria-busy") === "true",
+    "navigation: the view being left stays shown but is inert and busy until the next is drawn");
   win.Maity.api.get = lvGet;
   lvRelease(); for (let k = 0; k < 6; k++) await tick();
   const lvNew = main.querySelector("section.view-all");
