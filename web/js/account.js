@@ -345,6 +345,8 @@ window.Maity = window.Maity || {};
       h("dl", { class: "facts" },
         h("dt", null, M.t("account.name")), h("dd", null, ctx.me.display_name),
         h("dt", null, M.t("account.handle")), h("dd", null, "@" + ctx.me.handle)),
+      // Directly under the name and handle: one's public page, while the hub serves it.
+      publicProfile ? publicProfile.link : null,
       M.handles.editor(ctx.me, "/me", M.t("handles.what_own"), changed),
       pictureHeading,
       h("p", { class: "muted" }, M.t("account.picture_hint")),

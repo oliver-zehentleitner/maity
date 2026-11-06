@@ -132,9 +132,10 @@ def rename(
     slug: str,
     words: frozenset[str],
     actor: Actor,
+    alias_limit: int,
 ) -> bool:
     """Rename the project to `slug` in its namespace; False for a no-op. By a human with
-    trust `owner`, never an agent."""
+    trust `owner`, never an agent; the alias it adds within `alias_limit` (§16.5)."""
     project = mine.project
     if mine.kind != "human":
         raise humans_only("a project is renamed by a human")
@@ -144,7 +145,7 @@ def rename(
         return False
     if slug in words:
         raise invalid({"slug": "reserved"}, "this slug is a word of the API's routes")
-    namespace.check_change(conn, project, project.owner_id, slug)
+    namespace.check_change(conn, project, project.owner_id, slug, alias_limit=alias_limit)
     old = namespace.full_name(conn, project)
     withdraw_open(conn, project.id, actor, "the project was renamed")
     namespace.move(conn, project, project.owner_id, slug)
@@ -178,7 +179,12 @@ def authority(conn: Connection, mine: Membership) -> None:
 
 
 def transfer(
-    conn: Connection, mine: Membership, caller: Caller, to: str, limit: int | None
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    to: str,
+    limit: int | None,
+    alias_limit: int,
 ) -> str | None:
     """File the transfer to `to`, a human (`hum-…`) or an organisation (`org-…`); returns
     the request's id, or None when the move happened in the call itself (an owner of the
@@ -195,11 +201,11 @@ def transfer(
     if to == project.owner_id:
         raise invalid({"to": "self"}, "the project is in this namespace already")
     if to.startswith("org-"):
-        return _transfer_to_org(conn, mine, caller, to, limit)
+        return _transfer_to_org(conn, mine, caller, to, limit, alias_limit)
     receiver = _receiver(conn, project.id, to)
     if receiver is None:
         raise invalid({"to": "not_an_owner"}, "the receiver must be an owner of the project")
-    namespace.check_change(conn, project, to, project.slug)
+    namespace.check_change(conn, project, to, project.slug, alias_limit=alias_limit)
     limits.refuse_project_over(conn, to, limit)
     actor = caller.actor(mine.id)
     if project.owner_org_id is not None and mine.row.human_id == to:
@@ -235,7 +241,12 @@ def transfer(
 
 
 def _transfer_to_org(
-    conn: Connection, mine: Membership, caller: Caller, org_id: str, limit: int | None
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    org_id: str,
+    limit: int | None,
+    alias_limit: int,
 ) -> str | None:
     """A transfer into an organisation (§6.26): an `owner` of it speaks for it and the move
     happens now; an `admin` speaks only for themselves, and a consent request goes to each
@@ -249,7 +260,7 @@ def _transfer_to_org(
     if role == "member":
         raise orgs.org_role()
     moderation.refuse_held(conn, "org", org_id, "suspend")  # §16.8: nothing moves into it
-    namespace.check_change(conn, project, org_id, project.slug)
+    namespace.check_change(conn, project, org_id, project.slug, alias_limit=alias_limit)
     limits.refuse_project_over(conn, org_id, limit)
     actor = caller.actor(mine.id)
     withdraw_open(conn, project.id, actor, "a new transfer was filed")
@@ -370,7 +381,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     if namespace.taken(conn, to, project.slug, project.id):
         taken = invalid({"slug": "taken"}, "the slug is taken in the receiver's namespace")
         raise proposals.Stale(taken, request.id, "the slug is taken in the receiver's namespace")
-    namespace.check_change(conn, project, to, project.slug)
+    namespace.check_change(conn, project, to, project.slug, alias_limit=limits.aliases(conn, s.hub))
     if s.hub is not None:  # the receiver filled up since the request was filed (§16.5)
         try:
             limits.refuse_project_over(conn, to, limits.of(conn, s.hub, "max_projects_per_owner"))
