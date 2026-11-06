@@ -148,6 +148,21 @@ def html(entries: list[dict[str, Any]], up: dict[str, Any]) -> str:
     return f"{recent}<h2>Online</h2>{count}" + (f"<ul>{names}</ul>" if names else "")
 
 
+def _members_of(conn: Connection, project_ids: list[str]) -> list[tuple[str, str]]:
+    """The person and agent pages of the active members of these projects."""
+    from maity_hub import public_agents, public_people
+
+    if not project_ids:
+        return []
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.human_id, m.agent_id).where(m.project_id.in_(project_ids), m.active.is_(True))
+    ).all()
+    return [(public_people.KIND, h) for h, _ in rows if h] + [
+        (public_agents.KIND, a) for _, a in rows if a
+    ]
+
+
 class Worker:
     """Renders every public project page again every `public_pages_snapshot_minutes`, one
     replica at a time, so the snapshot follows without a connection per visitor."""
@@ -178,6 +193,13 @@ class Worker:
         for project_id in ids:
             with self.engine.begin() as conn:
                 public_pages.refresh(conn, self.hub, public_projects.KIND, project_id)
+        # The pages of the members show who is online at the snapshot too (§16.9): each
+        # person and each agent once, however many public projects they are in.
+        with self.engine.connect() as conn:
+            members = sorted(set(_members_of(conn, ids)))
+        for kind, target_id in members:
+            with self.engine.begin() as conn:
+                public_pages.refresh(conn, self.hub, kind, target_id)
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval):

@@ -245,6 +245,16 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
   opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
 .page-loading .maity-loader { width: 48px; height: 48px; }
 @keyframes page-loading-shows { to { opacity: 1; } }
+/* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
+   A bar and the dimmed view say at once that the click was taken. The bar stands in main's top
+   padding, under the header and above the sign-in banner, and its margins give back the 3 px, so
+   nothing moves; sticky, it stays in sight on a page scrolled down. */
+main:has(> [inert])::before { content: ""; display: block; position: sticky; top: 0; height: 3px; z-index: 10;
+  margin: calc(-1 * var(--main-pad)) 0 calc(var(--main-pad) - 3px); background: var(--accent); transform-origin: left;
+  pointer-events: none; animation: view-switching 1.2s ease-out infinite; }
+main > [inert] { opacity: 0.6; transition: opacity 0.15s; }
+@keyframes view-switching { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { main:has(> [inert])::before { animation: none; } main > [inert] { transition: none; } }
 /* A calm block, not an alarm: the mark at rest, a plain title, what to do,
    the reason folded away, Try again at the right edge. */
 .page-failed { display: grid; gap: 8px; max-width: 28rem; width: 100%; margin: 24px auto; text-align: start; box-sizing: border-box; }
@@ -346,7 +356,7 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
-main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
+main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; margin: 0 auto; }
 
 .error {
   background: var(--error-bg);
@@ -1075,7 +1085,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 /* ---- phone width ---------------------------------------------------- */
 
 @media (max-width: 600px) {
-  main { padding: 12px; }
+  main { --main-pad: 12px; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
@@ -1527,7 +1537,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The frame of the pages without a session (js/site-chrome.js, docs/api.md §16.7.5): the hub's
    landing.css and public-pages.css, loaded after this file, lay out /login and /register; the
    shell's own spacing steps aside for them. */
-.public-frame #main { padding: 0; max-width: none; }
+.public-frame #main { --main-pad: 0px; max-width: none; }
 .public-frame .door-form .login, .public-frame .door-form .sign-in-options { margin: 0; max-width: none; }
 .public-frame .door-form .legal-links { text-align: start; }
 .landing-preview .landing { margin: 16px auto; }

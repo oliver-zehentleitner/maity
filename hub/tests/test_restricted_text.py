@@ -511,7 +511,8 @@ def test_the_text_reaches_no_other_read_of_the_card(
     assert owner.get(f"/projects/maintainer/maity/tasks?q={MARKER}").json()["items"] == []
     with migrated.connect() as conn:
         events_after = conn.execute(select(t.event)).all()
-    assert len(events_after) == len(events_before)  # no task_updated, no event at all yet
+    # No task_updated: the one new event is the text's own, ids and version only (§6.4).
+    assert [row.kind for row in events_after[len(events_before) :]] == ["restricted_changed"]
     assert all(MARKER not in json.dumps(row.payload) for row in events_after)
     agent = flow.agent(make_client, owner)
     assert MARKER not in agent.resume().text

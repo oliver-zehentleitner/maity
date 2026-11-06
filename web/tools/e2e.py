@@ -778,6 +778,7 @@ def main() -> int:
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
                     jour_fixe_settings_layout(run, browser)
+                    switch_busy_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -3056,6 +3057,91 @@ ACCOUNT_MOVED = (
     ("/account/unknown", "/account", None),
     ("/account/security/unknown", "/account/security", None),
 )
+
+
+SWITCH_MEASURE = """() => {
+  const main = document.getElementById("main"), header = document.getElementById("header");
+  const cs = getComputedStyle(main), bar = getComputedStyle(main, "::before");
+  const box = main.getBoundingClientRect(), banner = main.querySelector(".signin-banner");
+  const first = main.children[0];
+  const top = box.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop) + (parseFloat(bar.marginTop) || 0);
+  return {
+    content: bar.content, position: bar.position, height: parseFloat(bar.height) || 0, background: bar.backgroundColor,
+    animation: bar.animationName, barTop: top, barBottom: top + (parseFloat(bar.height) || 0),
+    headerBottom: header.getBoundingClientRect().bottom, bannerTop: banner ? banner.getBoundingClientRect().top : null,
+    firstTop: first ? first.getBoundingClientRect().top : null, mainTop: box.top, mainHeight: box.height,
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    left: Array.from(main.children).filter((n) => n.hasAttribute("inert"))
+      .map((n) => ({ busy: n.getAttribute("aria-busy"), opacity: getComputedStyle(n).opacity })),
+  };
+}"""
+
+# The view's own first read held: a page switch inside the project stands busy until released.
+SWITCH_HOLD = """() => {
+  const get = window.Maity.api.get, held = [];
+  window.Maity.api.get = (p, ...r) => (p.includes("/events?after=latest")
+    ? new Promise((resolve, reject) => held.push(() => get(p, ...r).then(resolve, reject))) : get(p, ...r));
+  window.__switchRelease = () => { window.Maity.api.get = get; held.splice(0).forEach((go) => go()); };
+}"""
+
+
+def switch_busy_layout(run: Run, browser) -> None:
+    """A page switch while the next view loads (tsk-hn2wa8a7e2eq) in fixture mode: at 1280x900 and
+    390x844, light and dark, the sign-in banner on and off, and with reduced motion. The bar stands
+    in main's top padding, 3 px, under the header and above the banner or the view, and moves
+    nothing; the view being left is dimmed and busy; nothing overflows sideways; all of it is gone
+    once the next view stands."""
+    run.step("fixtures: a page switch's bar and dimmed view at 1280 and 390 px, light and dark, banner on and off, reduced motion")
+    index = (WEB / "index.html").as_uri()
+    cases = [(w, h, scheme, banner, False) for (w, h) in ((1280, 900), (390, 844))
+             for scheme in ("light", "dark") for banner in (True, False)]  # fmt: skip
+    cases += [(1280, 900, "light", True, True), (390, 844, "dark", False, True)]
+    for width, height, scheme, banner, reduced in cases:
+        where = f"{width}x{height} {scheme}" + (" with the banner" if banner else "") + (", reduced motion" if reduced else "")
+        context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme,
+                                      reduced_motion="reduce" if reduced else "no-preference")  # fmt: skip
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            page.goto(f"{index}?lang=en#/maintainer/maity/board")
+            expect(page.locator("main section.view-board")).to_be_visible()
+            expect(page.locator("main .signin-banner")).to_be_visible()
+            if not banner:
+                page.evaluate("() => document.querySelector('main .signin-banner').remove()")
+            still = page.evaluate(SWITCH_MEASURE)
+            assert still["content"] in ("none", "normal") and not still["left"], f"{where}: a bar before any switch {still}"
+            page.evaluate(SWITCH_HOLD)
+            page.evaluate("() => window.Maity.route.go('/maintainer/maity/inbox')")
+            page.wait_for_function("() => Array.from(document.getElementById('main').children).some((n) => n.hasAttribute('inert'))")
+            page.wait_for_timeout(300)  # the dimming's transition
+            busy = page.evaluate(SWITCH_MEASURE)
+            problems = []
+            if busy["height"] != 3 or busy["position"] != "sticky" or busy["background"] in ("", "rgba(0, 0, 0, 0)"):
+                problems.append(f"the bar is not a 3 px sticky bar in the accent: {busy}")
+            if busy["barTop"] < busy["headerBottom"] - 0.5:
+                problems.append(f"the bar covers the header: top {busy['barTop']}, header ends at {busy['headerBottom']}")
+            if busy["bannerTop"] is not None and busy["barBottom"] > busy["bannerTop"] + 0.5:
+                problems.append(f"the bar covers the banner: ends at {busy['barBottom']}, banner at {busy['bannerTop']}")
+            if busy["firstTop"] is not None and busy["barBottom"] > busy["firstTop"] + 0.5:
+                problems.append(f"the bar covers the view: ends at {busy['barBottom']}, first child at {busy['firstTop']}")
+            if abs(busy["firstTop"] - still["firstTop"]) > 0.5 or abs(busy["mainTop"] - still["mainTop"]) > 0.5:
+                problems.append(f"the page moved: first child {still['firstTop']} -> {busy['firstTop']}, main {still['mainTop']} -> {busy['mainTop']}")
+            if not busy["left"] or any(v["busy"] != "true" or abs(float(v["opacity"]) - 0.6) > 0.01 for v in busy["left"]):
+                problems.append(f"the view being left is not busy and dimmed: {busy['left']}")
+            if busy["overflow"] > 0:
+                problems.append(f"{busy['overflow']} px wider than the window")
+            if (busy["animation"] == "none") != reduced:
+                problems.append(f"animation {busy['animation']} with reduced motion {reduced}")
+            assert not problems and not errors, f"{where}: {problems + errors}"
+            run.shot(page, f"fixtures-switch-busy-{width}-{scheme}" + ("-banner" if banner else "") + ("-reduced" if reduced else ""))
+            page.evaluate("() => window.__switchRelease()")
+            expect(page.locator("main section.view-inbox")).to_be_visible()
+            done = page.evaluate(SWITCH_MEASURE)
+            assert done["content"] in ("none", "normal") and not done["left"] and done["overflow"] <= 0 and not errors, \
+                f"{where}: after the switch {done} {errors}"
+        finally:
+            context.close()
 
 
 # Before any script reads the fixtures: the theme chosen, and for a reader who keeps no series the
