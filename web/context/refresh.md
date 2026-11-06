@@ -310,8 +310,11 @@ who is signed in, the second step, the memberships with their trust and
 role, a maintenance window or one's own limit draws the view again from
 what was read; a 401 of the session check draws the page afresh. Counts,
 members and the project only refresh what is kept for the next switch,
-and only the read behind the drawing that stands does: an older one
-answering first would leave the current one nothing to compare. Any
+and only the read behind the drawing that stands does, whether it
+answers or fails: an older one answering or failing first would leave
+the current one nothing to compare. A project entered from outside is
+kept as that drawing read it, so the next switch inside it waits for
+neither. Any
 write of the tab (a POST, PATCH, PUT or DELETE through `M.api`), a
 sign-out, an ended session, a refresh and a maintenance change drop what
 is kept. While the next view loads, the view being left is also

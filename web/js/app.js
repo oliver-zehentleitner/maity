@@ -1876,7 +1876,9 @@ window.Maity = window.Maity || {};
   // window, one's own limit) changed: the view is drawn again from what was read. Counts,
   // members and the project only refresh `kept` for the next switch; the view's event feed
   // offers their changes as before.
-  async function keepFresh(seq, reused, slug) {
+  // `slug`: the project kept and to read again; `fresh`: the project this drawing has just read
+  // itself, entering it from outside, kept as it is (review of #1440).
+  async function keepFresh(seq, reused, slug, fresh) {
     const wrote = writes;
     let session, me, project, members;
     try {
@@ -1888,7 +1890,9 @@ window.Maity = window.Maity || {};
     } catch (err) {
       // A session that ended is told by the call that met it (onSessionEnded); a 401 of the
       // session check, or any other failure, leaves nothing kept: the next drawing reads afresh.
-      if (kept === reused) kept = null;
+      // Only the read behind the drawing that stands: an older one failing would leave the
+      // current one nothing to compare (review of #1440).
+      if (kept === reused && writes === wrote && seq === renderSeq) kept = null;
       if (err && err.status === 401 && seq === renderSeq && !sessionEnded) render();
       return;
     }
@@ -1897,8 +1901,9 @@ window.Maity = window.Maity || {};
     if (kept !== reused || writes !== wrote || seq !== renderSeq) return;
     const changed = keptKey(session, me) !== keptKey(reused.session, reused.me);
     kept = { epoch: reused.epoch, at: Date.now(), session, me,
-      // The project only as just read: carried on, it would outlive KEPT_MS with every switch.
-      project: project ? { slug, project, members } : null };
+      // The project only as just read, here or by the drawing: carried on, it would outlive
+      // KEPT_MS with every switch.
+      project: project ? { slug, project, members } : fresh || null };
     if (changed) render();
   }
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
@@ -2171,7 +2176,7 @@ window.Maity = window.Maity || {};
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
     ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     watch(ctx, where, known ? item : null, main);
-    if (reuse) keepFresh(seq, reuse, keptSlug);
+    if (reuse) keepFresh(seq, reuse, keptSlug, keptSlug ? null : ctx.keptProject || null);
     let label = M.t("view.none");
     if (empty) label = M.t("view.no_projects");
     else if (where.scope === "all") label = M.t("header.all_projects");

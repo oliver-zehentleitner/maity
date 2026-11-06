@@ -1984,6 +1984,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "switch: back in the project after " + hops.join(", ") + ", its project and members are read before the view");
     await kpRelease();
   }
+  // Into the project from outside: the project and members that drawing read are kept, the next
+  // switch inside it draws without waiting for them (review of #1440).
+  win.Maity.api.get = kpGet; await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  await kpSwitch("#/maintainer/maity/inbox"); await kpRelease();
+  kpHold([kpBase, kpBase + "/members"]);
+  await kpSwitch("#/maintainer/maity/board");
+  expect(main.querySelector("section.view-board") && !kpInert(),
+    "switch: entered from #/all, the next view inside the project draws from the project and members just read");
+  await kpRelease();
+  // The older read behind fails, the current one finds a changed trust: the view is drawn again.
+  win.Maity.api.get = kpGet; await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  kpHold(["/me"], kpAdmin);
+  await kpSwitch("#/maintainer/maity/board");
+  await kpSwitch("#/maintainer/maity/inbox");
+  const kpStood = main.querySelector("section.view-inbox");
+  const [kpOld, kpNew] = kpHeld.splice(0);
+  kpOld.reject(new win.Maity.api.ApiError("failed", 500, kpOld.p, "internal")); for (let k = 0; k < 4; k++) await tick();
+  kpNew.go(); await kpRelease();
+  expect(kpStood && kpNew && main.querySelector("section.view-inbox") && main.querySelector("section.view-inbox") !== kpStood,
+    "switch: the older read behind failing, the current one's changed /me draws the view that stands again");
   win.Maity.api.get = kpGet;
   await go("#/maintainer/maity/inbox");
 
