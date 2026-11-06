@@ -456,9 +456,31 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ]
 
 
-def explore_html(conn: Connection, hub: Settings) -> str:
-    """The page of `/explore`: every project that has a page now, by name. It shows only what
-    those pages already show, and is rendered per request, behind the public cache."""
+# The monogram's ground on a project card: one of eight tones, by the project's full name, so
+# that a project keeps its colour from visit to visit (`.mono.t0` … `.t7` in public-pages.css).
+TONES = 8
+
+
+def monogram(full: str, name: str) -> tuple[str, int]:
+    """The letter and the tone of a project's card on `/explore`: the first letter of its name
+    in upper case, else the first character of its slug; the tone by a hash of `full`."""
+    letter = next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1])
+    return letter.upper(), hashlib.sha256(full.encode()).digest()[0] % TONES
+
+
+def explore_html(
+    conn: Connection,
+    hub: Settings,
+    *,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """The page of `/explore`: every project that has a page now, by name, as cards in the
+    frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
+    shows only what those pages already show, and is rendered per request, behind the public
+    cache."""
     shown = sorted(
         (
             (namespace.full_name(conn, project), project.name)
@@ -471,16 +493,39 @@ def explore_html(conn: Connection, hub: Settings) -> str:
         ),
         key=lambda item: (item[1].casefold(), item[0]),
     )
-    items = "".join(
-        f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a> ({escape(full)})</li>'
-        for full, name in shown
+    cards = []
+    for full, name in shown:
+        letter, tone = monogram(full, name)
+        cards.append(
+            f'<li><a class="project-card" href="/{escape(full, quote=True)}">'
+            f'<span class="mono t{tone}" aria-hidden="true">{escape(letter)}</span>'
+            f'<span class="name">{escape(name)}</span><span class="slug">{escape(full)}</span>'
+            "</a></li>"
+        )
+    count = f"<b>{len(shown)}</b> public project" + ("" if len(shown) == 1 else "s")
+    listed = (
+        f'<div class="explore-tools"><span>{count}</span><span>sorted by name</span></div>'
+        f'<ul class="project-grid">{"".join(cards)}</ul>'
+        if cards
+        else '<p class="empty-note">No project has a public page yet.</p>'
     )
-    listed = f"<ul>{items}</ul>" if items else "<p>No project has a public page yet.</p>"
-    return render.page_document(
+    content = (
+        '<section class="page-band"><div class="wrap">'
+        '<p class="kicker"><span class="seat"></span>Explore</p><h1>Public projects</h1>'
+        '<p class="sub">Projects whose owners show them to everyone: people and their agents '
+        "working together. Open one to see its board, members and reasons.</p>"
+        '<div class="band-pad"></div></div></section>'
+        f'<section class="page-body"><div class="wrap">{listed}</div></section>'
+    )
+    return render.framed_document(
         lang="en",
         title="Public projects on Maity",
         canonical=f"{hub.public_url.rstrip('/')}/explore",
-        content=f"<h1>Public projects</h1>{listed}",
+        content=content,
+        setting=setting,
+        legal=legal,
+        stats=stats,
+        accept_language=accept_language,
     )
 
 

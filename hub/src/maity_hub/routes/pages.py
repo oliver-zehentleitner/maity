@@ -172,13 +172,22 @@ def explore(request: Request) -> Response:
         raise rate_limited(wait)
     window = maintenance.window_now(engine_of(request))
     with engine_of(request).begin() as conn:
-        body = maintenance.with_banner(public_projects.explore_html(conn, settings), window)
+        frame = landing.stored(conn)
+        body = public_projects.explore_html(
+            conn,
+            settings,
+            setting=frame,
+            legal=legal.public(legal.stored(conn)),
+            stats=landing_stats.for_frame(conn, frame),
+            accept_language=request.headers.get("accept-language"),
+        )
+        body = maintenance.with_banner(body, window)
     return HTMLResponse(
         body,
         headers={
             "Cache-Control": public_pages.CACHE,
-            "Vary": "Cookie",
-            "Content-Security-Policy": public_pages.CSP,
+            "Vary": "Cookie, Accept-Language",
+            "Content-Security-Policy": LEGAL_CSP,
             "X-Content-Type-Options": "nosniff",
         },
     )
