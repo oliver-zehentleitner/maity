@@ -2916,7 +2916,8 @@ own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
-(`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), and the memberships (project full name, trust, role,
+(`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), the start tabs
+(`start_tabs`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
@@ -3657,11 +3658,12 @@ Scope: any authenticated caller.
 ```json
 {
   "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "aliases": [], "display_name": "Maintainer",
-              "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded" },
+              "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded",
+              "start_tabs": null },
   "projects": [
-    { "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
+    { "id": "prj-7k2m9q", "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
-    { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
+    { "id": "prj-3h8w2c", "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
       "logo": { "available": false, "etag": null } }
   ],
   "maintenance": null,
@@ -3673,12 +3675,35 @@ Scope: any authenticated caller.
 running, `{from, until, text, state}`, else `null` (§16.12), for every
 caller, whatever its owner chose for broadcasts.
 
-For a human, `projects` lists every membership, each with
-`open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
+**Start tabs.** A human's `member` carries `start_tabs`: `null`, or
+the ids of projects (§6.25, "The project's id") that the dashboard
+opens as tabs, in that order, in a browser that has kept no tabs of its
+own yet, such as a first sign-in on a new device. `null`, the default,
+opens every membership in the order of `projects`. `[]` opens none, and
+the dashboard then shows only All projects. The list names only
+current memberships: the read leaves out a project the human has left
+or that no longer exists. While the list is not `null`, every new
+membership of the human, however it came about, puts its project at the
+end, and an earlier place of that id is dropped. A project joined later
+so opens as the last tab. The human sets the list with `PATCH /me`
+(§5.3), always whole: each entry is the id of a project they are a
+member of, at most once (otherwise `invalid`, with
+`details.fields.start_tabs` `not_a_member` or `duplicate`), and `null`
+goes back to the default. An agent's `member` has no `start_tabs`, and
+the field from an agent is `forbidden` (`humans_only`). The tabs a
+browser has open, their order and the inbox's filter to open tabs
+belong to that browser alone: the dashboard keeps them in the browser's
+storage and never sends them, so two devices may show different tabs.
+`start_tabs` only seeds a browser that has none. The dashboard sets it
+in a project's own settings (`settings/mine`, §6.2), one project at a
+time, and from the tab row as a whole ("keep these tabs at start").
+
+For a human, `projects` lists every membership, ordered by slug, each
+with `id` (the project's fixed id, §6.25), `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
 returns for this caller with its defaults (`to=me`, `status=open`, §7),
 and `logo` (`available`, `etag`; §11.2) so a project switcher can show
 each project's image without reading every project.
-For an agent exactly one project, with `owner_id` and `instance` (its
+For an agent exactly one project (with its `id` too), with `owner_id` and `instance` (its
 instance id, §6.17) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
 admin; an agent's `member` has no such field. A human's `member` also
@@ -4428,6 +4453,7 @@ event it may not read, and when; never which members or which level
 | `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
+| `PATCH /me` | human | `{"start_tabs": ["prj-…", …]}` or `null` — the projects a browser without tabs of its own opens, in order (§5.1, "Start tabs"); from an agent `forbidden` (`humans_only`) |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry

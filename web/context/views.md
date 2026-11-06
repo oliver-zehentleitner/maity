@@ -61,7 +61,7 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
 **Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
