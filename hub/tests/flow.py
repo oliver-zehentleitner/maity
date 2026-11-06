@@ -69,9 +69,7 @@ class Agent:
 def human(make_client: ClientFactory, engine: Engine, handle: str = "maintainer") -> Human:
     human_id = factory.human(engine, handle)
     client = make_client()
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD}
-    )
+    response = factory.login(client, human_id, engine=engine)
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return Human(client, csrf, human_id, handle)

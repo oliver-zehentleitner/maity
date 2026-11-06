@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 PASSWORD = "measure owner password"
+OWNER_EMAIL = "owner@measure.example"
 CUT_AFTER = 3.0  # seconds the proxy lets a connection live
 
 
@@ -58,7 +59,7 @@ class Human:
             return json.loads(response.read() or b"null")
 
     def login(self) -> None:
-        self.call("POST", "/auth/login", {"handle": "owner", "password": PASSWORD})
+        self.call("POST", "/auth/login", {"email": OWNER_EMAIL, "password": PASSWORD})
         self.csrf = self.call("GET", "/auth/session")["csrf_token"]
 
 
@@ -122,7 +123,10 @@ def main() -> int:
     env = dict(os.environ, MAITY_DATABASE_URL=database, MAITY_BIND=f"127.0.0.1:{port}")
     run("maity-hub", "migrate", env=env)
     subprocess.run(
-        ["maity-hub", "owner", "create", "--handle", "owner", "--display-name", "Owner"],
+        [
+            "maity-hub", "owner", "create", "--handle", "owner", "--display-name", "Owner",
+            "--email", OWNER_EMAIL,
+        ],  # fmt: skip
         input=PASSWORD + "\n",
         text=True,
         env=env,

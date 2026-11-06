@@ -94,6 +94,9 @@ sections are unknown and every implementer applies. A project that had
 the ticker on before this part arrived got the upgrade's moment from the
 migration (0020); a project that is switched on afterwards gets its moment
 from the PATCH that switches it on, and there is no other way to be on.
+§17.4 also discards a merge the probe did not see while it happened,
+when `merged_at` is more than one hour before delivery (the next
+entry). This scan does not apply that bound.
 
 **Reason:** §17.4 announces nothing older than the switch, so the moment
 has to be stored; the dedupe key alone would announce the whole history
@@ -112,6 +115,34 @@ after the bound: a merge that moved up the list while a cut scan read
 on would fall between its pages and the next interval for good.
 Reading only the files' names and taking every section of a touched
 contract file: it would wake every implementer for a one-line change.
+
+## A missed merge older than one hour is not an item; the scan cursor still moves
+
+**Id:** 9be48060-e975-4c7f-b8e5-529162d15ce6
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §17.4 (the one-hour catch-up); the parent decision, 2026-11-05; `announce_merges` as it stands
+**Revisit when:** the merge scan applies the one-hour bound
+**See:** https://github.com/oliver-zehentleitner/maity — 4568f24f-ff82-42da-9891-99ba2ff7794e — as of 2026-11-05
+
+The contract now discards a merge the probe did not see while it
+happened when `merged_at` is more than one hour before the delivery
+moment: no ticker item, no wake, no notification, no card link and no
+count, while `scanned_until` and the round's progress still advance.
+The parent records why (confirmed there). The merge scan above still
+admits every pull request merged after `merges_since` that has no
+`merge:<n>` key yet; it does not compare `merged_at` with the delivery
+moment. That reading of the scan is from the code (inferred).
+
+**Reason:** the cursor has to move for a discarded merge, or the gap is
+read again on every round. Recording the bound here, while the scan
+still admits the whole interval after the switch-on, keeps the contract
+from being read as what this scan already does.
+
+**Rejected alternative:** treat the switch-on cursor as enough, and
+announce every missed merge whenever the forge can be read again: that
+is the scan as it stands, and it is what the one-hour bound rules out.
 
 ## The forge webhook is answered in the middleware, limited and checked before its body is read, and only ever triggers the probe
 

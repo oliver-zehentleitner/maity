@@ -206,9 +206,7 @@ def test_a_running_window_refuses_the_api_with_retry_after(
     assert me.json()["maintenance"]["state"] == "running"
     assert admin.patch("/me", {"display_name": "Changed"}).status_code == 503
     fresh = make_client()
-    signed_in = fresh.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    signed_in = factory.login_handle(fresh, "maintainer")
     assert signed_in.status_code == 200, signed_in.text
     # the hub's own pages answer a small page, the badge an empty one; the app shell is served
     page = fresh.get("/explore")
