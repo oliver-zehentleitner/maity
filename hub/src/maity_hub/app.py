@@ -331,6 +331,9 @@ def create_app(
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)
         reports_worker.start()
+        # A known source's fingerprint goes after 30 days, sign-ins or not (§2.1).
+        sources_worker = known_sources.Worker(engine)
+        sources_worker.start()
         # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
         invitations_worker = org_invitations.Worker(engine)
         invitations_worker.start()
@@ -386,6 +389,7 @@ def create_app(
         takeover_worker.stop()
         jour_fixe_clock.stop()
         reports_worker.stop()
+        sources_worker.stop()
         invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()

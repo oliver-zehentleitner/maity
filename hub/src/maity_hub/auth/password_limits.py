@@ -5,7 +5,9 @@ re-authentication and the address change count in buckets of their own, so a ses
 attempts pause nobody's sign-in.
 
 Every bucket takes the attempt before the password is compared and gives it back when it is
-right (`ratelimit.Attempt`): logins running at the same time never get past the limit together.
+right: logins running at the same time never get past the limit together. The login does it in
+`LoginAttempt`, with two buckets and a refusal that depends on the source; the other three go
+through `ratelimit.Attempt`.
 """
 
 from __future__ import annotations

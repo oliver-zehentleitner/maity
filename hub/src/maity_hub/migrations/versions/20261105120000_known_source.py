@@ -49,5 +49,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_known_source_last_at", table_name="known_source")
+    # The table alone: its index goes with it (hub/context/persistence.md).
     op.drop_table("known_source")

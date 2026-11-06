@@ -612,3 +612,25 @@ def test_a_claim_that_slips_past_the_lock_is_a_dead_link_not_an_error(
         event.remove(migrated, "before_cursor_execute", meanwhile)
     assert slipped["done"]
     assert answer.status_code == 404, answer.text
+
+
+def test_a_wrong_password_holds_its_place_in_the_count_while_it_compares(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§2.1: the address change counts its attempt before the password is compared."""
+    from maity_hub.auth import passwords
+
+    owner = verified(make_client, migrated, "old@example.org")
+    body = {"email": {"address": "new@example.org"}, "current_password": "not it at all"}
+    for _ in range(4):
+        owner.patch(S, body)
+    seen: list[int] = []
+    verify = passwords.verify_password
+
+    def comparing(*args: Any) -> bool:
+        seen.append(password_limits.ADDRESS_CHANGE.blocked(owner.id))
+        return verify(*args)
+
+    monkeypatch.setattr(passwords, "verify_password", comparing)
+    owner.patch(S, body)
+    assert len(seen) == 1 and seen[0] > 0

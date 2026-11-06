@@ -680,3 +680,27 @@ def test_a_trusted_session_held_at_enrolment_may_still_confirm_a_sign_in(
     fresh = make_client(secret_key=KEY)
     login(fresh)
     assert fresh.get("/api/v1/me/notifications").status_code == 403
+
+
+def test_a_source_becomes_known_only_once_the_second_step_is_done(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.1: a session that waits at the second step makes no known source."""
+    from maity_hub.auth import known_sources
+
+    human = signed_in(make_client, migrated)
+    secret, _ = enrol(human, moment)
+    source = "198.51.100.40"
+    client = make_client(secret_key=KEY, peer=source)
+    csrf = second_step(client)
+    with migrated.begin() as conn:
+        assert known_sources.known(conn, human.id, source) is False
+    moment.move(seconds=30)
+    done = client.post(
+        "/api/v1/auth/second-factor/verify",
+        json={"code": code_now(secret, moment.at)},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert done.status_code == 200, done.text
+    with migrated.begin() as conn:
+        assert known_sources.known(conn, human.id, source) is True

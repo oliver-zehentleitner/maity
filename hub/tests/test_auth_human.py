@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -11,6 +13,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.config import Settings
 from tests import factory
 from tests.conftest import ClientFactory
 
@@ -114,7 +117,7 @@ def test_a_known_source_keeps_the_password_until_its_own_five(
     assert _reason(paused) == "password_paused"
 
 
-def test_a_session_waiting_at_the_second_factor_makes_no_known_source(
+def test_a_completed_sign_in_keeps_a_fingerprint_of_its_source_not_the_address(
     make_client: ClientFactory, migrated: Engine, owner: str
 ) -> None:
     from maity_hub.auth import known_sources
@@ -418,3 +421,149 @@ def test_an_agent_credential_on_login_is_forbidden(
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "forbidden"
     assert "scope" not in response.json()["error"]["details"]
+
+
+def test_a_wrong_password_an_address_of_no_account_and_a_suspended_account_are_answered_alike(
+    make_client: ClientFactory, migrated: Engine, owner: str
+) -> None:
+    """§2.1: an address of no account and a suspended account learn nothing a wrong password
+    does not tell; the whole answer is the same, body and headers."""
+    from maity_hub import moderation
+
+    suspended = factory.human(migrated, "suspended")
+    with migrated.begin() as conn:
+        moderation.suspend(conn, suspended, "rpt-000000000000")
+
+    def answer(response: Any) -> tuple[Any, ...]:
+        headers = response.headers
+        return (
+            response.status_code,
+            response.json(),
+            headers.get("Maity-Error"),
+            headers.get("Retry-After"),
+        )
+
+    wrong = factory.login_handle(make_client(peer="203.0.113.21"), "maintainer", "wrong")
+    nobody = factory.login_handle(make_client(peer="203.0.113.22"), "nobody", "wrong")
+    right_but_suspended = factory.login_handle(make_client(peer="203.0.113.23"), "suspended")
+    assert wrong.status_code == 401
+    assert answer(nobody) == answer(wrong)
+    assert answer(right_but_suspended) == answer(wrong)
+
+
+def _seen_while_comparing(monkeypatch: pytest.MonkeyPatch, bucket: Any, key: str) -> list[int]:
+    """What `bucket` says about `key` while a password is being compared."""
+    from maity_hub.auth import passwords
+
+    seen: list[int] = []
+    verify = passwords.verify_password
+
+    def comparing(*args: Any) -> bool:
+        seen.append(bucket.blocked(key))
+        return verify(*args)
+
+    monkeypatch.setattr(passwords, "verify_password", comparing)
+    return seen
+
+
+def test_a_login_holds_its_place_in_the_count_while_it_compares(
+    make_client: ClientFactory, owner: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Four wrong; while the fifth is compared the count already holds it, so a login running
+    # at the same time from an unknown source is refused instead of getting past the limit.
+    from maity_hub.auth import password_limits
+
+    for i in range(4):
+        factory.login_handle(make_client(peer=f"203.0.113.{i + 10}"), "maintainer", "wrong")
+    seen = _seen_while_comparing(monkeypatch, password_limits.LOGIN, owner)
+    factory.login_handle(make_client(peer="203.0.113.20"), "maintainer", "wrong")
+    assert len(seen) == 1 and seen[0] > 0  # the fifth place was taken before the comparison
+
+
+def _signed_in_with_four_wrong(
+    make_client: ClientFactory, path: str, method: str, body: dict[str, Any]
+) -> tuple[TestClient, str]:
+    client = make_client()
+    csrf = _login(client)
+    for _ in range(4):
+        client.request(method, path, json=body, headers={"X-CSRF-Token": csrf})
+    return client, csrf
+
+
+@pytest.mark.parametrize(
+    ("bucket", "method", "path", "body"),
+    [
+        ("CHANGE", "POST", "/api/v1/auth/password", {"current": "nope", "new": "a new long one"}),
+        ("REAUTHENTICATE", "POST", "/api/v1/auth/reauthenticate", {"password": "nope"}),
+    ],
+)
+def test_the_other_password_checks_hold_their_place_while_they_compare(
+    make_client: ClientFactory,
+    owner: str,
+    monkeypatch: pytest.MonkeyPatch,
+    bucket: str,
+    method: str,
+    path: str,
+    body: dict[str, Any],
+) -> None:
+    from maity_hub.auth import password_limits
+
+    client, csrf = _signed_in_with_four_wrong(make_client, path, method, body)
+    seen = _seen_while_comparing(monkeypatch, getattr(password_limits, bucket), owner)
+    client.request(method, path, json=body, headers={"X-CSRF-Token": csrf})
+    assert len(seen) == 1 and seen[0] > 0
+
+
+def test_a_fingerprint_goes_30_days_after_its_last_sign_in_without_another_sign_in(
+    migrated: Engine, owner: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§2.1: the 30 days hold on a hub where nobody signs in; the sweep deletes the row."""
+    from maity_hub.auth import known_sources
+
+    monkeypatch.setattr(known_sources, "_secret_key", [b"k" * 32])
+    source = "203.0.113.7"
+    start = clock.now()
+    with migrated.begin() as conn:
+        known_sources.remember(conn, owner, source)
+
+    def rows() -> int:
+        with migrated.connect() as conn:
+            return len(conn.execute(select(t.known_source)).all())
+
+    clock.set_source(lambda: start + timedelta(days=29, hours=23))
+    with migrated.begin() as conn:
+        known_sources.forget_old(conn)
+        assert known_sources.known(conn, owner, source) is True
+    assert rows() == 1
+    clock.set_source(lambda: start + timedelta(days=30, seconds=1))
+    sweep = known_sources.Worker(migrated, interval=0.05)
+    sweep.start()
+    try:
+        deadline = time.monotonic() + 10
+        while rows() and time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        sweep.stop()
+    assert rows() == 0
+
+
+def test_the_start_warns_while_the_instance_admin_has_no_verified_address(
+    migrated: Engine, settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from maity_hub.app import check_startup
+
+    def warned() -> bool:
+        return any(
+            "instance admin has no verified address" in r.getMessage() for r in caplog.records
+        )
+
+    caplog.set_level(logging.WARNING)
+    check_startup(migrated, settings)
+    assert not warned()  # no human yet, no admin
+    admin = factory.human(migrated, "maintainer")
+    check_startup(migrated, settings)
+    assert warned()
+    caplog.clear()
+    with factory.sign_in_address(migrated, admin):
+        check_startup(migrated, settings)
+    assert not warned()
