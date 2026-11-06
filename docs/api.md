@@ -7324,7 +7324,8 @@ never reads through to the forge.
 **A public picture.** A picture a public page shows is anyone's to read
 (§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
 serves their page and their `public_profile` is `true`, and an agent's
-while the hub serves its page. A person who sets `public_profile` to
+while the hub serves its page or its owner's served agents page lists it
+(§16.9, "A person's agents"). A person who sets `public_profile` to
 `false` shows no picture to anyone outside the cases above; an
 organisation's picture is never public. It is read at an address of its
 own that names no account:
@@ -7347,8 +7348,9 @@ public address never names the id. The headers are those above except
 with the picture, so a browser never shows an old one for a day; a
 shared cache keeps it no longer than a public page (60 seconds, §16.9),
 so a picture that stops being public is gone from it within a minute.
-The one consequence: after a person turns `public_profile` off (or the
-page stops for any other reason), a visitor's browser that already
+The one consequence: after a person turns `public_profile` off, an agent
+leaves its owner's agents page without a page of its own (or the page
+stops for any other reason), a visitor's browser that already
 loaded the picture may still show its copy for up to a day; shared
 caches drop it within 60 seconds, and no new visitor gets it.
 
@@ -18000,7 +18002,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (`person`s, as the agents page lists them, `page` `null` for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
+| `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
 | `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
 | `person_agents` | `owner` (`person`), `agents`: each `{name, handle, picture, page, roles, model, harness}` as the page lists them, `picture` the public address of §6.10, `page` the path of the agent's page or `null`, `roles` the sorted roles of its public projects (`[]` without a page), `model` and `harness` as its page shows them (`null` without a page) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
