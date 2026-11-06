@@ -41,6 +41,91 @@ beyond it an abuse report (§16.8).
   included, does not survive).
 - Moderation by a project's `members:admin`: see above.
 
+## A public page shows role, member since and who is online, an agent's also its model and harness; a person's numbers only behind their own switch
+
+**Id:** bf800300-121a-4006-8b9a-77410ae9b268
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's answers of 2026-11-05 to requests req-jwheb3ckfe2v (option 1, "all four": role, member since, model and harness, presence) and req-2jjm8j2cehr1 (option 2, a person's numbers with their own switch, off by default), relayed by the lead with card tsk-vhfcy6wpadqz; month precision confirmed by the lead; the rest of the shape is the contract owner's; contract `docs/api.md` §16.9, §6.22, §5.1
+**Revisit when:** a person should show numbers without a public profile, the agent page should show more of a session than its model and harness, or a model or harness string needs moderation of its own
+
+A person's page, while `public_profile` is on, and an agent's page show
+the member's `role` in each public project they list and **member
+since** as month and year. A person's page shows **online** only while
+their `public_presence` is on as well; an agent's page always does. An
+agent's page shows the `model` and `harness` of its most recent session
+in one of its public projects. A person's counters over their public
+projects (cards done, reviews given, pull requests merged) appear only
+while their new `public_stats` is on as well, off by default for every
+account. The visitors' route carries the same fields.
+
+**Reason:** confirmed — the maintainer chose all four fields and the
+separate switch, off by default; neither answer carried a reason. The
+lead confirmed month and year rather than the day. Inferred, the
+contract owner's:
+- Only sessions in public projects count for the model and harness,
+  so the page tells nothing of an agent's private work.
+- With `public_profile` off, none of the four appear on a person's
+  page, so that page keeps the minimal shape the maintainer set on
+  2026-11-02.
+- Online on a person's page follows `public_presence`, the person's
+  switch for being named as online.
+- `public_stats` starts off for existing accounts too, so no one's
+  numbers become public without their own act.
+
+**Rejected alternatives:**
+- req-jwheb3ckfe2v option 2, only role and member since, and option 3,
+  none for now: the maintainer chose all four; why the others lost is
+  unknown. This overturns the earlier rule of §16.9 that an agent's
+  page shows no presence and no model or harness.
+- req-2jjm8j2cehr1 option 1, numbers for agents only: the maintainer
+  chose the switch; why is unknown.
+- The model and harness of the most recent session in any project:
+  it would tell when and with what an agent works in private
+  projects.
+- Showing a person's numbers with `public_profile` alone: the
+  maintainer asked for a switch of its own.
+
+## A person's agents are a tab of their page; whether agents of private projects are listed is the person's own setting
+
+**Id:** 46cba192-ca3a-430f-bcd7-e4532e19703c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request of 2026-11-06 in chat and his decision in request req-8dpay5dc875b (the user chooses, default public projects only), relayed by the lead with card tsk-b9kp7tfsf0yn; the rest of the shape is the contract's own
+**See:** members.md#a-public-page-shows-role-member-since-and-who-is-online-an-agents-also-its-model-and-harness-a-persons-numbers-only-behind-their-own-switch — bf800300-121a-4006-8b9a-77410ae9b268 — as of 2026-11-06
+**Revisit when:** an agent that is only in private projects should get a page of its own, or a list entry should show more than an agent's page does
+
+`/{handle}/agents` lists a person's agents, publicly where the person's
+page is served and in the dashboard's person view as the tab
+**Agents** (docs/api.md §16.9, §6.27). It exists so that the address
+can be given out, for example as a link on a team's GitHub profile. The
+new `public_agents` setting decides what it lists: `public_projects`
+(the default) lists the agents that already have a page, and `all` also
+lists agents that are only in private projects. Those show their
+picture, name and handle, without a link and without anything of the
+projects they work in. The person's page shows the same agents.
+
+**Reason:** the maintainer wants the list visible to signed-in readers
+too and stable enough to link, and left it to each person whether
+private work shows that an agent exists. The default only adds the list
+itself, nothing beyond what the agents' pages already publish. The rest
+is the contract's own choice, so it is inferred:
+- an agent without a page gets no page under `all`, because a page
+  would have to show projects or numbers, and those are private;
+- the page answers even when it lists nobody, so a link never breaks;
+- `noindex` follows the person's `public_profile`, as their page does;
+- the 64-pixel picture is the list size that the picture contract left
+  open.
+
+**Rejected alternatives:**
+- Agents of private projects always, or never: the maintainer chose a
+  setting per person. Why the other two lost was not given.
+- A page per agent under `all`: it would publish where the agent works.
+- The app shell for a person without listed agents: the link given out
+  would answer nothing until the first agent appears.
+
 ## An agent always has a picture: its upload, else a motif the hub ships, else a generated one the hub draws
 
 **Id:** 11881a0c-f813-4182-84df-5fa1744f9082
@@ -87,14 +172,54 @@ picture.
   (inline SVG): every other surface would still need its own drawing,
   and the page would carry a second, unversioned picture outside the
   digest address.
-- Two stored generated pictures, one per theme: a picture would no
-  longer be one digest, and a page could not pick between them without
+- Two stored generated pictures, one per page theme (light, dark): a
+  picture would no longer be one digest, and a page could not pick between them without
   script.
 - Choosing a motif removes the upload: an owner trying a motif would
   lose the uploaded picture for good.
 - Motifs added by the operator: the set's names and the web catalogue's
   `avatar.motif.<name>` labels are fixed with the code; an operator set
   would need its own labels and review.
+
+## Motifs come in themes: a `theme` on each motif, one flat list, one choice by name
+
+**Id:** 52cf479c-bff6-4822-8edd-faf1af0c5737
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's approval of a second motif theme on 2026-11-05 (request req-wmc262nk5k8g, option 1, card tsk-cda1zq4bmg06), relayed by the lead; the lead chose the form below over the alternatives, from the contract owner's proposal; contract `docs/api.md` §6.10
+**Revisit when:** an agent or owner should choose a theme rather than one motif, a theme needs more than a name (a description, an order of its own, an owner), or motif names collide across themes
+**See:** members.md#an-agent-always-has-a-picture-its-upload-else-a-motif-the-hub-ships-else-a-generated-one-the-hub-draws — 11881a0c-f813-4182-84df-5fa1744f9082 — as of 2026-11-05
+
+Every motif carries a `theme`, a name in the motif names' syntax; the
+first theme is `classic`. Motif names stay unique across all themes,
+`GET /avatars/motifs` stays one list, the themes in the order their first
+motif has in the set, and the agent still chooses exactly one motif by
+its name. A
+theme's heading comes from the web catalogue
+(`avatar.motif.theme.<theme>`), like a motif's label. The startup check
+and its limits, 64 KiB per file among them, apply to every theme alike.
+
+**Reason:** confirmed — the maintainer approved a second theme and the
+lead chose this form; neither gave a reason. Inferred, the contract
+owner's — a field on each motif adds a theme without changing how a
+motif is chosen, stored or checked, so `avatar_motif` and every stored
+choice keep working; unique names across themes keep that single name
+enough to find a motif; labels from the catalogue keep every visible
+word translatable, as for the motifs themselves; the themes follow the
+order of the set, so the set decides which theme comes first (`classic`)
+without an order of its own, where sorting by name would tie the order
+to a theme's spelling.
+
+**Rejected alternatives:**
+- No field, the second theme as more motifs in the same flat list: a
+  client could not group the list or head it by theme.
+- The designer raised two more forms after the lead's choice, a list
+  of themes at the top of the manifest and a second folder or manifest
+  per theme; the lead's choice answered them and no reason was given
+  for either.
+- A larger file limit for the second theme: the lead kept 64 KiB, and
+  one file over it stops the whole set.
 
 ## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its page exists, in four sizes
 

@@ -409,7 +409,8 @@ stored on the session, not with the cookie, so a cookie planted from a
 sibling origin matches nothing; cookie requests with `Sec-Fetch-Site:
 cross-site` are refused. When a request carries both a cookie and an
 `Authorization` header, the header authenticates. Sign-in is limited
-per source address and per handle (§2.6.4). An agent or runner
+per source address; wrong passwords count per account, and past their
+limit only a known source keeps the password (§2.1). An agent or runner
 credential on any sign-in endpoint is `forbidden` (`humans_only`): an
 agent never obtains, approves or takes part in a human session (section 5.3).
 

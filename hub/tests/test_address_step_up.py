@@ -74,6 +74,7 @@ def test_changing_the_verified_address_needs_a_recent_factor(
 def test_removing_the_verified_address_needs_a_recent_factor(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
+    factory.earlier_admin(migrated)
     human, secret = person(make_client, migrated, moment)
     refused = human.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
     assert refused.status_code == 403
@@ -93,7 +94,7 @@ def test_what_is_not_a_change_of_the_verified_address_asks_for_nothing(
     # A human without a verified address sets the first one without the factor.
     other = factory.human(migrated, "grace")
     client = make_client(secret_key=KEY, mail=mail_env().mail)
-    client.post("/api/v1/auth/login", json={"handle": "grace", "password": factory.PASSWORD})
+    factory.login_handle(client, "grace")
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     grace = flow.Human(client, csrf, other)
     enrol(grace, moment)
@@ -161,3 +162,50 @@ def test_rejecting_a_held_change_needs_no_factor(
     rejected = decide(human, change, "reject")
     assert rejected.status_code == 200, rejected.text
     assert address_of(human).get("address_change") is None
+
+
+def test_the_instance_admins_address_is_replaced_never_removed(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The admin's password signs in by the verified address (§2.1, §18.4): a removal is
+    refused before anything else is asked; a replacement goes on as for anyone."""
+    human, secret = person(make_client, migrated, moment)  # the first human: the admin
+    refused = human.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "admin_address_required"
+    assert address_of(human)["address"] == "old@example.org"
+    given(human, secret, moment)
+    assert human.patch(S, NEW).status_code == 200
+    assert address_of(human)["pending_address"] == "new@example.org"
+
+
+def test_a_held_removal_is_refused_when_it_is_approved_by_the_admin(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """Held before the account was the admin, a removal is still never applied (§18.4)."""
+    human, secret = person(make_client, migrated, moment)
+    change = {
+        "id": "adc-000000000001",
+        "address": None,
+        "requested_at": clock.rfc3339(clock.now()),
+        "session_id": "ses-earlier",
+    }
+    with migrated.begin() as conn:
+        conn.execute(
+            t.notification_settings.update()
+            .where(t.notification_settings.c.human_id == human.id)
+            .values(address_change=change)
+        )
+    given(human, secret, moment)
+    body = {"id": change["id"], "address": None}
+    refused = human.post(f"{S}/email/address-change/approve", body)
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "admin_address_required"
+    assert address_of(human)["address"] == "old@example.org"
+    with migrated.connect() as conn:
+        row = conn.execute(
+            select(t.notification_settings.c.address_change).where(
+                t.notification_settings.c.human_id == human.id
+            )
+        ).one()
+    assert row.address_change == change  # still held; rejecting it stays possible

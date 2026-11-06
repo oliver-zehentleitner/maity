@@ -3658,6 +3658,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     i18n.language = "de";
     expect(said("not_holder", {}, "hub") === "Nur wer die Karte hält.", "errors: a translated code");
     expect(said("forbidden", { reason: "humans_only" }, "hub") === "Nur ein Mensch.", "errors: a translated reason comes before its code");
+    // The second factor is said as what is missing, never as missing rights (tsk-7jhpzrvsnzm3).
+    Object.assign(win.MAITY_I18N.de, { "error.forbidden": "Dafür fehlen dir die Rechte.", "error.forbidden.reason": "Dafür fehlen dir die Rechte ({reason}).",
+      "error.reason.second_factor_required": "Hier ist dein zweiter Faktor Pflicht.",
+      "error.reason.step_up_required": "Dafür brauchst du zuerst deinen zweiten Faktor." });
+    expect(said("forbidden", { reason: "second_factor_required" }, "hub") === "Hier ist dein zweiter Faktor Pflicht."
+      && said("forbidden", { reason: "step_up_required" }, "hub") === "Dafür brauchst du zuerst deinen zweiten Faktor.",
+      "errors: the second factor's refusals say the factor, not the bare rights");
+    expect(said("forbidden", { reason: "some_new_reason" }, "hub") === "Dafür fehlen dir die Rechte (some_new_reason)."
+      && said("forbidden", { scope: "members:admin" }, "hub") === "Dafür fehlen dir die Rechte.",
+      "errors: a refusal whose reason has no words keeps the reason in brackets; without a reason the bare sentence");
     expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
       "errors: without a translation, or for a code unknown here, the hub's English");
     i18n.language = was;
@@ -6601,6 +6611,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector("section.agents-join").hidden && !main.querySelector(".agents-head button.join-open").hidden, "agents page: Cancel folds the join away, the button back");
   main.querySelector(".agents-head button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelector("section.agents-join").hidden && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: Join an agent opens the form again");
+  // The panel on /agents asks for the second factor as the project's Agents does (tsk-7jhpzrvsnzm3):
+  // one join.js behind both, the code asked in the form, the join sent again.
+  {
+    const gaPost = win.Maity.api.post, gaJoins = [], gaVerified = [];
+    let gaStepped = false;
+    win.Maity.api.post = (p, b) => {
+      if (p === "/auth/second-factor/verify") { gaVerified.push(b); gaStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+      if (p !== "/projects/maintainer/maity/joins") return gaPost(p, b);
+      gaJoins.push(b);
+      if (!gaStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+      return Promise.resolve({ id: "join-ga", agent_id: "agt-ga1", paste_lines: { windows: "maity join ga-line", posix: "maity join ga-line" }, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-11-06T00:00:00Z" });
+    };
+    const gaPanel = () => main.querySelector("section.agents-join .join-panel");
+    byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-ga1"); byId("join-display").value = "Agent GA";
+    gaPanel().querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(gaPanel().querySelector("form.step-up") && text(gaPanel()).includes("needs your second factor") && !text(gaPanel()).includes("No join created"),
+      "agents page: Join an agent asks for the second factor in its form, not said as a refusal");
+    byId("step-up-step_up_required").value = "654321"; gaPanel().querySelector("form.step-up").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(gaVerified) === JSON.stringify([{ code: "654321" }]) && gaJoins.length === 2 && gaPanel().querySelector(".join-result"),
+      "agents page: after the code the join is sent again and its line shown");
+    win.Maity.api.post = gaPost;
+    await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    main.querySelector(".agents-head button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  }
   main.querySelector(".agents-head button.agent-add-open").click(); await tick();
   expect(main.querySelector("section.agents-join").hidden && main.querySelector("form.agent-new"), "agents page: Add an agent folds the join away");
   // Add clicked while Join still reads: that read is dropped, and only the new profile's form stays open.
@@ -6728,7 +6762,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // sign out, sign in
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await tick(); await tick();
-  expect(byId("login-handle"), "sign out shows the login");
+  expect(byId("login-email"), "sign out shows the login");
   // Signed out, the theme is a menu in the header, beside nothing else.
   expect(thButton() && thButton().getAttribute("aria-label") === "Theme: System", "theme: signed out, a theme switch in the header, System by default");
   const thPick = async (label) => {
@@ -6760,7 +6794,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frOn = () => (document.documentElement.className || "").split(" ").includes("public-frame");
   const frLinks = (el) => el.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join();
   const frCols = () => frFoot().querySelectorAll("nav.foot-col").map((n) => n.getAttribute("aria-label") + ":" + frLinks(n)).join(" | ");
-  expect(byId("login-handle") && !main.querySelector("article.landing") && !lpReads.includes("/landing") && lpReads.includes("/legal")
+  expect(byId("login-email") && !main.querySelector("article.landing") && !lpReads.includes("/landing") && lpReads.includes("/legal")
     && frHead() && frFoot() && body.childNodes.indexOf(frHead()) === body.childNodes.indexOf(header) + 1 && body.childNodes.indexOf(frFoot()) === body.childNodes.indexOf(main) + 1
     && frCols() === "Platform:#/login?lang=en=Sign in,#/register?lang=en=Create your account | Legal:/impressum?lang=en=Imprint | Follow:https://social.example/@example=Mastodon"
     && !main.querySelector(".legal-links"),
@@ -6854,7 +6888,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frPick = byId("login-interface"), frPickStood = !!frFoot() && !productLine.querySelectorAll("a").length;
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   if (frPick) { frPick.value = win.Maity.i18n.language; frPick.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); }
-  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-handle") && productLine.querySelectorAll("a").length === 4,
+  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-email") && productLine.querySelectorAll("a").length === 4,
     "frame: the picker's redraw with a failed read takes the frame down and brings the product line back " + [!!frPick, frPickStood, productLine.querySelectorAll("a").length]);
   // Picked again after that failure, its read held open: the line stays away while it waits, and once the frame stands
   // (maity-review-team-chatgpt#nyh5's review of #1287).
@@ -6874,7 +6908,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frDeepHeld = [];
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frDeepHeld.push(r)) : frGet(p));
   await go("#/all"); for (let k = 0; k < 6; k++) await tick();
-  const frDeepWait = [!!frFoot(), productLine.querySelectorAll("a").length, frDeepHeld.length, !!byId("login-handle")];
+  const frDeepWait = [!!frFoot(), productLine.querySelectorAll("a").length, frDeepHeld.length, !!byId("login-email")];
   frDeepHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(frDeepWait) === "[false,0,1,true]" && frFoot() && frOn() && !productLine.querySelectorAll("a").length,
     "frame: the sign-in at an address of the app, no product line while the read waits, the frame after " + JSON.stringify(frDeepWait));
@@ -6895,7 +6929,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   const lpLegal = main.querySelector(".legal-links");
-  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-handle") && productLine.querySelectorAll("a").length === 4
+  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-email") && productLine.querySelectorAll("a").length === 4
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
     "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form, the product line at the end");
   win.Maity.api.get = frGet;
@@ -6917,7 +6951,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   };
   // The mail's second step in a browser without the session it was sent for (§2.8.8).
   const frStepStood = await frFromDoor("#/sign-in/second-factor/email?token=elsewhere");
-  expect(frStepStood && frLeft() && !byId("login-handle"), "frame: the mail's second step without a session leaves it, the product line back");
+  expect(frStepStood && frLeft() && !byId("login-email"), "frame: the mail's second step without a session leaves it, the product line back");
   // A running maintenance window: the full page instead of the sign-in, outside the frame (§16.12).
   await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   const frMtStood = !!frFoot();
@@ -6931,7 +6965,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frFailStood = !!frFoot();
   win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(Object.assign(new Error("boom"), { status: 500 })) : frGet(p));
   await go("#/all"); for (let k = 0; k < 8; k++) await tick();
-  const frFailed = frLeft() && !byId("login-handle") && text(main).includes(win.Maity.t("page.failed.fixtures"));
+  const frFailed = frLeft() && !byId("login-email") && text(main).includes(win.Maity.t("page.failed.fixtures"));
   win.Maity.api.get = frGet;
   expect(frFailStood && frFailed, "frame: a page that fails to load leaves it, the product line back");
   win.Maity.api.get = lpGet;
@@ -7080,7 +7114,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = rgGet;
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   expect(win.location.hash === "#/invite/only-xxxxxxxxxxxxxxxx2" && ivPage() && btn(ivPage(), "Join Maity as Maintainer"),
     "invite: signing in with the invitation as next comes back to it, signed in");
@@ -7089,25 +7123,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(header.querySelector("a.brand-home") && header.querySelector("a.brand-home").getAttribute("href") === "#/"
     && header.querySelector("a.brand-home").getAttribute("aria-label") === "Maity: home",
     "brand: without a session, the logo links to the start page");
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
-  expect(byId("login-handle") && text(main).includes("wrong"), "password: the old password no longer signs in");
+  expect(byId("login-email") && text(main).includes("wrong"), "password: the old password no longer signs in");
   byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
-  expect(!byId("login-handle") && !main.querySelector(".error"), "sign in with the new password returns to the dashboard");
+  expect(!byId("login-email") && !main.querySelector(".error"), "sign in with the new password returns to the dashboard");
   expect(!frHead() && !frFoot() && !frOn() && frSheets().every((l) => l.disabled === true) && header.hidden === false,
     "frame: signed in, the frame and its stylesheets are gone, the app's header back");
   // Signing out at the start page's own address (fixture mode, where `/` is a route): nothing changes
   // there, so the sign-in is drawn in place of the setup the session was held in (§2.8.5).
   win.MAITY_FIXTURE_ENROLMENT = true;
   await go("#/"); for (let k = 0; k < 6; k++) await tick();
-  const enrolAtStart = win.location.hash === "#/" && !byId("login-handle");
+  const enrolAtStart = win.location.hash === "#/" && !byId("login-email");
   await win.Maity.logout(); for (let k = 0; k < 6; k++) await tick();
   win.MAITY_FIXTURE_ENROLMENT = false;
-  expect(enrolAtStart && win.location.hash === "#/" && byId("login-handle"), "sign out at the start page's address draws the sign-in there " + win.location.hash);
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  expect(enrolAtStart && win.location.hash === "#/" && byId("login-email"), "sign out at the start page's address draws the sign-in there " + win.location.hash);
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(!byId("login-handle"), "signed in again after that sign-out");
+  expect(!byId("login-email"), "signed in again after that sign-out");
 
   // Sign-in without a password (§2.6): the code, its QR, the approval by number; the code on the new device; a link by mail.
   const ds = win.Maity.deviceSignIn;
@@ -7150,12 +7184,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
   btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
   expect(text(main.querySelector(".device-stage")).includes("Approved: the other device is signing in."), "device code: the right number approves it");
+  // Approving is a sensitive call (§2.8.4): an enrolled human whose second factor is older
+  // than 10 minutes is asked for it in the dialog, and the approval is sent again.
+  const dsStepPost = win.Maity.api.post;
+  const dsVerified = [];
+  const dsApprovals = [];
+  let dsStepped = false;
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify") { dsVerified.push(b); dsStepped = true; return Promise.resolve({ valid_until: "2099-01-01T00:10:00Z" }); }
+    if (/^\/auth\/device-codes\/[^/]+\/approve$/.test(p)) {
+      dsApprovals.push(b);
+      if (!dsStepped) return Promise.reject(new win.Maity.api.ApiError("this call needs your second factor first", 403, p, "forbidden", { reason: "step_up_required" }));
+    }
+    return dsStepPost(p, b);
+  };
+  const dsStage = () => main.querySelector(".device-stage");
+  btn(dsStage(), "New code") ? btn(dsStage(), "New code").click() : null;
+  await go("#/maintainer/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
+  await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  expect(dsStage().querySelector("form.step-up") && text(dsStage()).includes("needs your second factor") && !text(dsStage()).includes("Not sent"),
+    "device code: a step-up the hub asks for on the approval is asked in the dialog, not said as a refusal");
+  btn(dsStage().querySelector("form.step-up"), "Cancel").click(); await dsSettle();
+  expect(!dsStage().querySelector("form.step-up") && !text(dsStage()).includes("Not sent") && main.querySelector(".device-approval") && dsApprovals.length === 1,
+    "device code: Cancel on the step-up leaves the approval open, quietly");
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  byId("step-up-step_up_required").value = "123 456"; dsStage().querySelector("form.step-up").dispatch("submit"); await dsSettle(); await dsSettle();
+  expect(JSON.stringify(dsVerified) === JSON.stringify([{ code: "123456" }]) && dsApprovals.length === 3 && text(dsStage()).includes("Approved: the other device is signing in."),
+    "device code: after the code the approval is sent again and approves the device");
+  win.Maity.api.post = dsStepPost;
   // The new device: the QR's URL fills the code in, a tap sends it, the number shows, and after the approval the account.
   const dsMade = await win.Maity.api.post("/auth/device-codes", {});
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
   win.location.hash = "#/sign-in/code?c=k7qm4xpr9d2f"; win.onhashchange(); await dsSettle();
-  expect(byId("device-code") && byId("device-code").value === "K7QM-4XPR-9D2F" && byId("login-handle"), "device code: the QR's URL opens the login with the code filled in, not sent");
+  expect(byId("device-code") && byId("device-code").value === "K7QM-4XPR-9D2F" && byId("login-email"), "device code: the QR's URL opens the login with the code filled in, not sent");
   // Over https (§16.11) the code is in the fragment, /sign-in/code#c=…: read once, then gone from the address.
   const dsRoute = win.Maity.route;
   let dsFragment = "c=k7qm4xpr9d2f";
@@ -7174,15 +7237,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(dsWait && text(dsWait).includes("Waiting for approval on your other device") && text(dsWait.querySelector(".match-number")) === "47" && !text(dsWait).includes("Maintainer"),
     "device code: the new device shows the number to pick and nothing of the account");
   // Simulate the signed-in approving device in this single-session fixture.
-  await win.Maity.api.post("/auth/login", { handle: "maintainer", password: "a long new password" });
+  await win.Maity.api.post("/auth/login", { email: "maintainer@example.org", password: "a long new password" });
   await win.Maity.api.get("/auth/session");
   await win.Maity.api.post("/auth/device-codes/" + dsMade.id + "/approve", { number: 47 });
   await win.Maity.api.post("/auth/logout");
   await fireIntervals(); await dsSettle(); await dsSettle();
-  expect(!byId("login-handle") && !main.querySelector(".error") && win.location.hash !== "#/sign-in/code?c=k7qm4xpr", "device code: approved, the new device is signed in and leaves the code's URL");
+  expect(!byId("login-email") && !main.querySelector(".error") && win.location.hash !== "#/sign-in/code?c=k7qm4xpr", "device code: approved, the new device is signed in and leaves the code's URL");
   // A link by mail, and its six-digit code.
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
+  // §2.1, §2.6.7: past the limit the login says when the password goes through again, or opens
+  // the link by mail with the typed address.
+  const lpPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/auth/login"
+    ? Promise.reject(new win.Maity.api.ApiError("paused", 401, p, "unauthenticated", { reason: "password_paused", retry_after: 150 })) : lpPost(p, b));
+  byId("login-email").value = "Maintainer@Example.org"; byId("login-password").value = "a long new password";
+  main.querySelector("form.login").dispatch("submit"); await dsSettle();
+  const lpPaused = text(main.querySelector("form.login .send-status"));
+  expect(lpPaused === "Signing in with the password is paused here for a while. Try again in about 3 min." && byId("login-password").value === ""
+    && !byId("sign-in-address"), "login: password_paused says when to try again (retry_after 150 s: about 3 min) " + lpPaused);
+  win.Maity.api.post = (p, b) => (p === "/auth/login"
+    ? Promise.reject(new win.Maity.api.ApiError("link", 401, p, "unauthenticated", { reason: "email_link" })) : lpPost(p, b));
+  byId("login-email").value = " maintainer@example.org "; byId("login-password").value = "a long new password";
+  main.querySelector("form.login").dispatch("submit"); await dsSettle();
+  const lpLink = byId("sign-in-address"), lpSaid = text(main.querySelector("form.login .send-status"));
+  expect(lpLink && lpLink.value === "maintainer@example.org" && lpSaid === "Not signed in: link",
+    "login: email_link opens the link by mail with the typed address filled in " + (lpLink && lpLink.value) + " | " + lpSaid);
+  win.Maity.api.post = lpPost;
+  await go("#/maintainer/maity/inbox"); await go("#/"); await dsSettle();
   btn(main.querySelector(".sign-in-mail"), "Email me a sign-in link").click(); await tick();
   byId("sign-in-address").value = "maintainer@example.org";
   main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
@@ -7190,10 +7272,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "sign-in link: the same answer for any address, with a field for the code");
   byId("sign-in-mail-code").value = "000 000";
   main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
-  expect(text(main.querySelector(".sign-in-mail")).includes("that code does not match") && byId("login-handle"), "sign-in link: a wrong code is said and signs nobody in");
+  expect(text(main.querySelector(".sign-in-mail")).includes("that code does not match") && byId("login-email"), "sign-in link: a wrong code is said and signs nobody in");
   byId("sign-in-mail-code").value = "482 913";
   main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
-  expect(!byId("login-handle") && !main.querySelector(".error"), "sign-in link: the code signs this browser in");
+  expect(!byId("login-email") && !main.querySelector(".error"), "sign-in link: the code signs this browser in");
   // A methods call that fails (404, 5xx): the password alone, and no error on the page.
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
@@ -7201,13 +7283,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   for (const status of [404, 503]) {
     win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", status, p, status === 404 ? "not_found" : "unavailable", {})) : dsGet(p));
     await go("#/maintainer/maity/inbox"); await go("#/"); await dsSettle();
-    expect(byId("login-handle") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail") && !main.querySelector(".error") && !main.querySelector(".send-status.failed"),
+    expect(byId("login-email") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail") && !main.querySelector(".error") && !main.querySelector(".send-status.failed"),
       "sign-in: a methods call that answers " + status + " leaves the password form alone, with no error");
   }
   win.Maity.api.get = dsGet;
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); await dsSettle();
-  expect(!byId("login-handle"), "sign-in: and the password signs in as before");
+  expect(!byId("login-email"), "sign-in: and the password signs in as before");
   Object.getPrototypeOf(main).focus = dsFocus; document.activeElement = undefined;
 
   // No memberships: the empty state, then creating a project.
@@ -9371,24 +9453,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { seCalls.push("POST " + p); return sePost(p, b); };
   win.Maity.api.del = (p) => { seCalls.push("DELETE " + p); return seDel(p); };
   await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
-  expect(byId("login-handle") && main.querySelector(".session-ended") && text(main.querySelector(".session-ended")).includes("Your session has ended")
+  expect(byId("login-email") && main.querySelector(".session-ended") && text(main.querySelector(".session-ended")).includes("Your session has ended")
     && win.location.hash === "#/maintainer/maity/board" && win.Maity.notify.state.settings === null && !win.Maity.notify.running(),
     "session: the first 401 under the page shows sign-in with a note, the route kept; the browser notifications' settings go with it");
   const seAfter = seCalls.length;
   await fireIntervals(); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
   expect(seCalls.length === seAfter, "session: after it ended nothing more is asked " + JSON.stringify(seCalls.slice(seAfter)));
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-  expect(!byId("login-handle") && main.querySelector("section.view-board") && win.location.hash === "#/maintainer/maity/board" && !main.querySelector(".session-ended"),
+  expect(!byId("login-email") && main.querySelector("section.view-board") && win.location.hash === "#/maintainer/maity/board" && !main.querySelector(".session-ended"),
     "session: signing in again returns to the same route");
   // A late 401 of the old session ends the new one not; a 401 on a session's own /auth/ call ends it.
   win.Maity.onSessionEnded("/me", seEpoch); for (let k = 0; k < 4; k++) await tick();
-  expect(!byId("login-handle") && main.querySelector("section.view-board"), "session: a late 401 from the session before ends nothing");
+  expect(!byId("login-email") && main.querySelector("section.view-board"), "session: a late 401 from the session before ends nothing");
   win.Maity.api.post = sePost; win.Maity.api.del = seDel;
   await win.Maity.api.post("/auth/logout");
   await win.Maity.api.get("/auth/sessions").catch(() => null); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("login-handle") && main.querySelector(".session-ended"), "session: a 401 on the session's own /auth/sessions ends it too");
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  expect(byId("login-email") && main.querySelector(".session-ended"), "session: a 401 on the session's own /auth/sessions ends it too");
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   win.Maity.api.get = seGet; win.Maity.api.getAll = seGetAll;
 
@@ -10767,12 +10849,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/auth/session" || p === "/me" ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viSoGet(p));
   await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
   viOverview("visitor: without a session, /overview of a public project is its public overview, not the login");
-  expect(header.querySelector(".visitor-sign-in") && !byId("login-handle"), "visitor: without a session, /overview has the way to the sign-in in its header");
+  expect(header.querySelector(".visitor-sign-in") && !byId("login-email"), "visitor: without a session, /overview has the way to the sign-in in its header");
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
   await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
-  expect(!viView() && byId("login-handle"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
+  expect(!viView() && byId("login-email"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
   win.Maity.api.get = viSoGet;
   await go("#/stranger/none"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && text(main).includes("You are not a member"), "visitor: no public page: a non-member's error stays");
@@ -12516,7 +12598,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A visitor without a session: the full page through the drawing itself, with the way to the sign-in.
   win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p));
   await go("#/all"); await mtSettle();
-  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-handle")
+  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-email")
     && !header.querySelector("button.maintenance-sign-out"), "maintenance: a visitor without a session gets the full page, not the public page or the sign-in, and no Sign out");
   // The sign-in page draws itself again on a change of language, not through `render`: the banner follows it there too.
   {
@@ -12534,7 +12616,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const mtBefore = mtBanner() && mtBanner().textContent;
     if (mtPicker) { mtPicker.value = "de"; mtPicker.dispatch("change"); await mtSettle(); }
     mtM.fresh = mtFresh; mtM.know = mtKnow; win.Maity.onMaintenance = mtTold;
-    expect(mtPicker && i18n.language === "de" && byId("login-handle") && mtBefore && mtBefore.startsWith("Maintenance ")
+    expect(mtPicker && i18n.language === "de" && byId("login-email") && mtBefore && mtBefore.startsWith("Maintenance ")
       && mtBanner() && mtBanner().textContent.startsWith("Wartung "),
       "maintenance: on the sign-in page a change of language reaches the banner " + JSON.stringify([mtBefore, mtBanner() && mtBanner().textContent]));
     i18n.available.length = 1;
@@ -12668,7 +12750,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   finish("/held-page?limit=200", 200, { items: [], next_cursor: "more" });
   expect((await oldPage).code === "aborted" && oldPageReads === 1, "stale session: a late successful page sends no next-page request");
   ctx.fetch = staleFetch; mode = "ok";
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "correct";
+  byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "correct";
   main.querySelector(".login").dispatch("submit"); await tick(); await tick();
   expect(!main.querySelector(".login") && header.querySelector(".switcher"), "stale session: sign-in reopens authenticated reads");
   finish("/held-success", 200, { old: true });

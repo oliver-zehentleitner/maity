@@ -137,7 +137,7 @@ def test_only_the_session_that_made_it_sees_it(
 ) -> None:
     code = started(desk)
     other = make_client()
-    other.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(other, "maintainer")
     csrf = other.get("/api/v1/auth/session").json()["csrf_token"]
     same_human = flow.Human(other, csrf, desk.id)
     for response in (
@@ -290,7 +290,7 @@ def test_a_browser_that_signed_in_before_is_not_new(
     make_client: ClientFactory, desk: flow.Human
 ) -> None:
     known = phone(make_client)
-    known.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(known, "maintainer")
     csrf = known.get("/api/v1/auth/session").json()["csrf_token"]
     known.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf})
     assert "maity_device" in known.cookies  # kept on logout
@@ -371,7 +371,7 @@ def test_completing_ends_the_session_the_browser_held(
 ) -> None:
     factory.human(migrated, "someone")
     new = phone(make_client)
-    new.post("/api/v1/auth/login", json={"handle": "someone", "password": factory.PASSWORD})
+    factory.login_handle(new, "someone")
     held = new.cookies[SESSION_COOKIE]
     code = started(desk)
     match = redeem(new, code["code"]).json()["match_number"]

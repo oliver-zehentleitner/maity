@@ -322,12 +322,10 @@ def test_a_runner_credential_in_a_payload_is_revoked(
 ) -> None:
     runner = paired(make_client, owner)
     looks_like = runner.value[:-4] + "AAAA"
-    refused = make_client().post("/api/v1/auth/login", json={"handle": looks_like, "password": "x"})
+    refused = make_client().post("/api/v1/auth/login", json={"email": looks_like, "password": "x"})
     assert (refused.status_code, error(refused)) == (400, "credential_in_payload")
     assert owner.get(f"/runners/{runner.id}").json()["credential_state"] == "active"
-    leaked = make_client().post(
-        "/api/v1/auth/login", json={"handle": runner.value, "password": "x"}
-    )
+    leaked = make_client().post("/api/v1/auth/login", json={"email": runner.value, "password": "x"})
     assert (leaked.status_code, error(leaked)) == (400, "credential_in_payload")
     view = owner.get(f"/runners/{runner.id}").json()
     assert view["credential_state"] == "revoked"
