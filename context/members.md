@@ -87,6 +87,45 @@ contract owner's:
 - Showing a person's numbers with `public_profile` alone: the
   maintainer asked for a switch of its own.
 
+## A person's agents are a tab of their page; whether agents of private projects are listed is the person's own setting
+
+**Id:** 46cba192-ca3a-430f-bcd7-e4532e19703c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request of 2026-11-06 in chat and his decision in request req-8dpay5dc875b (the user chooses, default public projects only), relayed by the lead with card tsk-b9kp7tfsf0yn; the rest of the shape is the contract's own
+**See:** members.md#a-public-page-shows-role-member-since-and-who-is-online-an-agents-also-its-model-and-harness-a-persons-numbers-only-behind-their-own-switch — bf800300-121a-4006-8b9a-77410ae9b268 — as of 2026-11-06
+**Revisit when:** an agent that is only in private projects should get a page of its own, or a list entry should show more than an agent's page does
+
+`/{handle}/agents` lists a person's agents, publicly where the person's
+page is served and in the dashboard's person view as the tab
+**Agents** (docs/api.md §16.9, §6.27). It exists so that the address
+can be given out, for example as a link on a team's GitHub profile. The
+new `public_agents` setting decides what it lists: `public_projects`
+(the default) lists the agents that already have a page, and `all` also
+lists agents that are only in private projects. Those show their
+picture, name and handle, without a link and without anything of the
+projects they work in. The person's page shows the same agents.
+
+**Reason:** the maintainer wants the list visible to signed-in readers
+too and stable enough to link, and left it to each person whether
+private work shows that an agent exists. The default only adds the list
+itself, nothing beyond what the agents' pages already publish. The rest
+is the contract's own choice, so it is inferred:
+- an agent without a page gets no page under `all`, because a page
+  would have to show projects or numbers, and those are private;
+- the page answers even when it lists nobody, so a link never breaks;
+- `noindex` follows the person's `public_profile`, as their page does;
+- the 64-pixel picture is the list size that the picture contract left
+  open.
+
+**Rejected alternatives:**
+- Agents of private projects always, or never: the maintainer chose a
+  setting per person. Why the other two lost was not given.
+- A page per agent under `all`: it would publish where the agent works.
+- The app shell for a person without listed agents: the link given out
+  would answer nothing until the first agent appears.
+
 ## An agent always has a picture: its upload, else a motif the hub ships, else a generated one the hub draws
 
 **Id:** 11881a0c-f813-4182-84df-5fa1744f9082
