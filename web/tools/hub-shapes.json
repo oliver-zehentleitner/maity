@@ -181,6 +181,7 @@
      "public_bio": "null",
      "public_presence": "boolean",
      "public_profile": "boolean",
+     "public_stats": "boolean",
      "social": {
       "object": {}
      },
