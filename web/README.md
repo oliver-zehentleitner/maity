@@ -1237,6 +1237,13 @@ The text stays in the page's memory: never in the browser's storage, a URL
 or a cache. Both the box and the setting say that this is an access
 restriction, not encryption. The set's notice in the bell opens the
 project's settings.
+Before every way into the set (§6.1 "Every way into the set") the page says
+who will read the restricted texts. The join and invitation forms show it as
+a line; a guest's raise, an isolation's end, a transfer into an organisation
+and a promotion to an organisation's owner ask first; an organisation's
+invitation and transfer say it before their go. A reader who is not served
+the list is told only what the setting lets the page know ("unless the list
+leaves them out", "if the list names them").
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:

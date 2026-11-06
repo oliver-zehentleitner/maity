@@ -351,5 +351,77 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.restricted = { resolve, settingsSection, cardBox };
+  // ---- before a way into the set (§6.1 "Every way into the set") -------------
+
+  // What the page says before an action that brings a member into the set: a join, a
+  // guest's raise, an isolation's end. `change(members)` returns the project's members
+  // as the action would leave them (copies, to change freely); `fresh` lists ids the
+  // action makes new, which no list can name. The text names who enters, with the count
+  // of cards with a text where the reader is served it; null when nobody does, and
+  // nothing is said while the set names nobody.
+  // A reader served only `{mode, included}` sees no list (§6.1 "Reading the setting"),
+  // so the page says no more than it knows: under all_except "unless the list leaves
+  // them out", under nobody_except "if the list names them" (lotse, tsk-g8ts5vxhj1md).
+  function ahead(ctx, change, fresh) {
+    const value = setting(ctx);
+    if (!value || !MODES.includes(value.mode)) return null;
+    const members = ctx.members || [];
+    const after = change(members.map((m) => Object.assign({}, m)));
+    const known = Array.isArray(value.members);
+    const freshIds = new Set(fresh || []);
+    const meListed = value.mode === "all_except" ? value.included === false : value.included === true;
+    // Without the list: the widest list the page cannot rule out, the reader's own
+    // place on it from `included`.
+    const list = known ? value.members
+      : value.mode === "all_except" ? (meListed ? [ctx.me.id] : [])
+        : after.map((m) => m.id).filter((id) => !freshIds.has(id) && (id !== ctx.me.id || meListed));
+    const assumed = { mode: value.mode, members: list };
+    const before = resolve(assumed, members);
+    const later = resolve(assumed, after);
+    const entering = after.filter((m) => later.has(m.id) && !before.has(m.id));
+    if (!entering.length) return null;
+    const names = entering.map((m) => who(ctx, m)).join(", ");
+    const words = [known ? M.t("restricted.ahead.will", { list: names })
+      : value.mode === "all_except" ? M.t("restricted.ahead.unless_listed", { list: names })
+        : M.t("restricted.ahead.if_listed", { list: names })];
+    if (typeof value.cards_with_text === "number") words.push(M.t("restricted.settings.cards", { count: value.cards_with_text }));
+    return words.join(" ");
+  }
+
+  // The same, for the owners of an organisation the project moves into (§6.26): who they
+  // are the page does not know, so it says what the setting lets them do. Under all_except
+  // they read unless the list leaves them out; under nobody_except only if it names them,
+  // which a list the reader sees rules out when it names nobody outside the set now.
+  function aheadOrgOwners(ctx, org) {
+    const value = setting(ctx);
+    if (!value || !MODES.includes(value.mode)) return null;
+    let text;
+    if (value.mode === "all_except") {
+      text = M.t("restricted.ahead.org_owners_unless", { org });
+    } else {
+      if (Array.isArray(value.members)) {
+        const now = resolve(value, ctx.members || []);
+        const agentIds = new Set((ctx.members || []).filter((m) => m.kind === "agent").map((m) => m.id));
+        if (!value.members.some((id) => !now.has(id) && !agentIds.has(id))) return null;
+      }
+      text = M.t("restricted.ahead.org_owners_if_listed", { org });
+    }
+    return typeof value.cards_with_text === "number"
+      ? text + " " + M.t("restricted.settings.cards", { count: value.cards_with_text }) : text;
+  }
+
+  // Where a human becomes an owner of an organisation (an invitation's go, a promotion,
+  // §6.26), the page reads no project's setting: one general sentence, said whatever the
+  // projects hold (lotse, tsk-g8ts5vxhj1md). `who` null speaks to the reader.
+  function aheadOrg(org, whoName) {
+    return whoName ? M.t("restricted.ahead.org_member", { org, who: whoName }) : M.t("restricted.ahead.org_you", { org });
+  }
+
+  // The sentence as a line in a form, drawn again by `draw()` as the form changes.
+  function aheadLine() {
+    const line = h("p", { class: "restricted-ahead", hidden: true });
+    return { el: line, show: (text) => { line.textContent = text || ""; line.hidden = !text; } };
+  }
+
+  M.restricted = { resolve, settingsSection, cardBox, ahead, aheadOrgOwners, aheadOrg, aheadLine };
 })(window.Maity);

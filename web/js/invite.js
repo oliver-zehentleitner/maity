@@ -172,6 +172,16 @@ window.Maity = window.Maity || {};
     const roleHelp = M.trust.roleHint(role);
     trust.addEventListener("change", roles);
     roles();
+    // Before the invitation: whether the human who accepts it will read the project's
+    // restricted texts (§6.1 "Every way into the set"), with the trust it offers.
+    const ahead = M.restricted ? M.restricted.aheadLine() : null;
+    const drawAhead = () => {
+      if (!ahead) return;
+      ahead.show(M.restricted.ahead(ctx, (members) => members.concat([{ id: "invite:new-member", kind: "human", trust: trust.value,
+        display_name: M.t("invite.ahead.who"), handle: null, isolated: null }]), ["invite:new-member"]));
+    };
+    trust.addEventListener("change", drawAhead);
+    drawAhead();
     const address = h("input", { id: "invite-address", type: "email", autocomplete: "off", placeholder: M.t("invite.address.placeholder") });
     const ttl = h("select", { id: "invite-ttl" }, TTLS.map(([v, l]) => h("option", { value: String(v) }, l())));
     ttl.value = "86400";
@@ -223,6 +233,7 @@ window.Maity = window.Maity || {};
     h("label", { for: "invite-note" }, M.t("invite.note")), note,
     viaJoin ? h("label", { class: "check", for: "invite-via-join" }, viaJoin, " ", M.t("invite.via_join", { host: joinHost })) : null,
     viaJoin ? h("p", { class: "hint" }, M.t("invite.via_join.hint")) : null,
+    ahead ? ahead.el : null,
     submit, status.el);
 
     // The link exists once, in this answer (§3.4): shown with a copy button

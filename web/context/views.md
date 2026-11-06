@@ -5130,3 +5130,47 @@ can be linked.
   row that scrolls, with the fade on the side that has more.
 - Resetting the scroll on every change of address: opening a card on the board would jump to
   the top, and the board's place on return would be lost.
+
+## Before a way into the restricted-access set, the page says who will read, and no more than it knows
+
+**Id:** c6ad8006-f67b-4cfe-a383-7141ca7dfb8b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g8ts5vxhj1md, Web 2 (2026-11-07): the plan with three questions to the lead and the lead's answers on the card; docs/api.md §6.1 "Every way into the set" and "Reading the setting"
+**Revisit when:** the hub serves a reader without `members` more of the set, an organisation's invitation carries what its go would bring into a set, or an owner change of an agent profile is built
+**See:** refresh.md#the-restricted-access-sets-notice-is-a-projects-setting-read-by-a-read-mark-though-its-target-says-settings — aefe70f5-509b-47ea-9768-02623c68016a — as of 2026-11-07
+
+Where the dashboard creates a join or a project invitation, raises a guest, ends an isolation,
+transfers a project into an organisation, promotes a human to an organisation's owner, or shows
+an organisation's invitation or transfer for its go, it says beforehand who will read the
+project's restricted texts (`M.restricted.ahead`, `aheadOrgOwners`, `aheadOrg` in
+`js/restricted.js`). The set before and after the action comes from the same resolution as the
+setting's own widening preview. The join and invitation forms show it as a line that follows the
+form. A raise, a lift, a transfer and a promotion ask with `window.confirm`. Nothing is said
+while the set names nobody.
+
+The wording follows what the reader is served:
+- A human with `project:admin` gets the list, so the page names who enters, with the count of
+  cards with a text.
+- A reader served `{mode, included}` alone sees no list (§6.1 "Reading the setting"). Under
+  `all_except` the page says "unless the restricted-access list leaves them out". Under
+  `nobody_except` it says "may read, if the list names them". The reader's own place on the list
+  comes from `included`.
+- An organisation's invitation and a promotion to owner reach projects whose settings the page
+  does not read. There the page says one general sentence: an owner may enter a project's set.
+
+**Reason:** the contract asks for the sentence at each of these places, and a sentence the page
+cannot know to be true would be a false one. A reader without the list cannot tell whether an id
+is listed, so the wording says exactly that.
+
+**Rejected alternatives:**
+- "Will read" under every mode for a reader without the list: under `nobody_except` it is false
+  for anyone the list does not name.
+- Saying nothing where the list is unknown: the contract asks for the sentence, and under
+  `all_except` the member does enter unless listed.
+- A hub field on an organisation's invitation counting the sets its go would enter: a hub change
+  for a sentence the general wording already gives honestly. It can follow as a card of its own
+  if wanted.
+- Reading every project of an organisation before a promotion: one request per project for one
+  confirmation, and its owners are not always admins in each of them.

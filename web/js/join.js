@@ -221,6 +221,22 @@ window.Maity = window.Maity || {};
     const roleHelp = M.trust.roleHint(role);
     trust.addEventListener("change", fillRoles);
     fillRoles();
+    // Before the join: whether the agent will read the project's restricted texts (§6.1
+    // "Every way into the set"). It is the creator's agent, as every agent a join makes.
+    const ahead = M.restricted ? M.restricted.aheadLine() : null;
+    const drawAhead = () => {
+      if (!ahead) return;
+      const id = agentSelect.value;
+      if (id && memberOf(id)) { ahead.show(null); return; } // a new instance enters nothing
+      const fresh = id || "join:new-agent";
+      const profile = id ? profiles.offered.find((p) => p.id === id) : null;
+      const name = profile ? profile.display_name : display.value.trim() || handle.value.trim() || M.t("join.ahead.the_agent");
+      ahead.show(M.restricted.ahead(ctx, (members) => members.concat([{ id: fresh, kind: "agent", owner_id: ctx.me.id,
+        trust: trust.value, display_name: name, handle: profile ? profile.handle : handle.value.trim() || null, isolated: null }]),
+      id ? [] : [fresh]));
+    };
+    [agentSelect, trust].forEach((f) => f.addEventListener("change", drawAhead));
+    [handle, display].forEach((f) => f.addEventListener("input", drawAhead));
     const reportsTo = h("select", { id: "join-reports" },
       h("option", { value: "" }, M.t("join.reports.nobody")),
       // A guest is never reported to (§2.3).
@@ -484,11 +500,12 @@ window.Maity = window.Maity || {};
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
         h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+    ahead ? ahead.el : null,
     stepSlot,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
-    function showForm() { append(clear(body), form); }
+    function showForm() { append(clear(body), form); drawAhead(); }
     showForm();
     showAgent();
     append(clear(panel), panelHead(ctx, () => close(true), own), body);
