@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import catalog
 from maity_hub import tables as t
@@ -220,3 +220,93 @@ def _last_changed(engine: Engine) -> Any:
         ).first()
     assert event is not None
     return event.payload["changed"]
+
+
+def test_an_owner_outside_the_project_is_told_join_rule(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_mentions import second_owners_agent
+
+    anna = flow.human(make_client, migrated, "anna")
+    agent_id = second_owners_agent(migrated, "anna", "builder")
+    forbidden(anna.patch(f"{PROJECT}/members/{agent_id}", {"subagents": False}), "join_rule")
+    # Anyone else who is no member: the project does not exist (§2.3).
+    stranger = flow.human(make_client, migrated, "stranger")
+    response = stranger.patch(f"{PROJECT}/members/{agent_id}", {"subagents": False})
+    assert response.status_code == 404, response.text
+
+
+def test_the_briefing_view_carries_the_instruction(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§19.3.1: as a resume computes it, for the owner in the project, an admin and an owner
+    outside the project."""
+    agent = exchanged(make_client, new_join(owner).json())
+    packet = agent.resume().json()["membership"]["subagents"]
+    admin = flow.human(make_client, migrated, "second-admin")
+    factory.membership(migrated, _project_id(migrated), "admin", human_id=admin.id)
+    for reader in (owner, admin):
+        view = reader.get(f"{PROJECT}/members/{agent.id}/briefing")
+        assert view.status_code == 200, view.text
+        assert view.json()["membership"]["subagents"] == packet
+    from tests.test_mentions import second_owners_agent
+
+    anna = flow.human(make_client, migrated, "anna")
+    agent_id = second_owners_agent(migrated, "anna", "builder")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id)
+            .values(subagents=True, subagents_language="en", subagents_by=anna.id)
+        )
+    outside = anna.get(f"{PROJECT}/members/{agent_id}/briefing")
+    assert outside.status_code == 200, outside.text
+    assert outside.json()["membership"]["subagents"] == {
+        "on": True,
+        "language": "en",
+        "by": {"kind": "human", "id": anna.id, "handle": "anna"},
+        "instruction": told("en", "anna"),
+    }
+
+
+def test_a_language_sent_is_checked_even_where_the_instruction_is_off(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    refused(
+        new_join(owner, subagents=False, subagents_language="tlh"),
+        "subagents_language",
+        "not_interface",
+    )
+    refused(
+        new_join(owner, 2, role="tester", subagents_language="tlh"),
+        "subagents_language",
+        "not_interface",
+    )
+    agent = exchanged(make_client, new_join(owner, 3).json())
+    path = f"{PROJECT}/members/{agent.id}"
+    refused(
+        owner.patch(path, {"subagents": False, "subagents_language": "tlh"}),
+        "subagents_language",
+        "not_interface",
+    )
+    assert agent.resume().json()["membership"]["subagents"]["on"] is True  # nothing changed
+
+
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        ({"subagents": None}, {"subagents": "bool_type"}),
+        ({"subagents_language": None}, {"subagents_language": "string_type"}),
+        (
+            {"subagents": None, "subagents_language": None},
+            {"subagents": "bool_type", "subagents_language": "string_type"},
+        ),
+    ],
+)
+def test_null_is_no_value_for_either_field(
+    owner: flow.Human, make_client: ClientFactory, body: dict[str, Any], fields: dict[str, str]
+) -> None:
+    agent = exchanged(make_client, new_join(owner).json())
+    response = owner.patch(f"{PROJECT}/members/{agent.id}", body)
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == fields

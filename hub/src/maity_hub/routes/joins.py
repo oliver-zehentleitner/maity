@@ -226,10 +226,14 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 if body.subagents is not None
                 else subagents.default_for(values["role"])
             )
-            language = (
+            # A language sent is checked even where the instruction is off and keeps none.
+            asked = (
                 subagents.language_of(conn, body.subagents_language, caller.principal_id)
-                if told
+                if body.subagents_language is not None
                 else None
+            )
+            language = (
+                (asked or subagents.language_of(conn, None, caller.principal_id)) if told else None
             )
         token, code = new_token(), new_code()
         now = clock.now()

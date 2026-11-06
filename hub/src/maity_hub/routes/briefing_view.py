@@ -28,6 +28,7 @@ from maity_hub import (
     preferences,
     rules,
     setup_cards,
+    subagents,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -174,6 +175,8 @@ def _view(
     outside = {
         **briefing_block(conn, project, target),
         "owner_preferences": given if owns else _outline(given),
+        # The owner's instruction as the resume packet carries it (§5.2, §19.3.1).
+        "subagents": subagents.block(conn, target),
         "team": instances.team(conn, target),
         "paused": paused(target) or (credential and instances.paused_view(credential)) or None,
     }
