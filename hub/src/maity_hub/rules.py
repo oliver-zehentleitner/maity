@@ -231,6 +231,13 @@ def _project_role_lines(project: Any, role: str) -> list[str]:
     return lines
 
 
+# The end of the `guide_role` layer while the agent is in the project's restricted-access set
+# (§6.4 "Agents in the set", §5.2), after the bridge sentence when there is one.
+RESTRICTED = (
+    "You can read and write the restricted text of this project's cards. Never copy it, or "
+    "anything taken from it, into card fields, notes, reports, messages, chats, commits or pull "
+    "requests; it stays in the restricted text."
+)
 BRIDGING = (
     "You lend your hands to the agents listed in `bridging_for`, each for the purpose named: "
     "you carry their files into the repository under their name, bring them their cards and "

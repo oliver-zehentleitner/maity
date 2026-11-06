@@ -44,6 +44,7 @@ from maity_hub import (
     public_pages,
     public_people,
     ranks,
+    restricted,
     rules,
     setup_cards,
     ticker,
@@ -618,7 +619,13 @@ def _packet(
             # Its own pause, the team's or this instance's, so the agent knows to rest.
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
-            "guide": guide.of(project, mine.trust, mine.role, bridging=bool(bridging_for)),
+            "guide": guide.of(
+                project,
+                mine.trust,
+                mine.role,
+                bridging=bool(bridging_for),
+                restricted=mine.id in restricted.resolve(conn, project),
+            ),
             **briefing_view.briefing_block(conn, project, mine.row),
             # The dashboard address of its direct conversation with its owner, on the public
             # URL, never the join host (§5.2, §16.11): how the human gets into Maity.

@@ -80,13 +80,19 @@ ROLE: dict[str, str] = {
 }
 
 
-def of(project: Any, trust: str, role: str, *, bridging: bool = False) -> dict[str, str | None]:
+def of(
+    project: Any, trust: str, role: str, *, bridging: bool = False, restricted: bool = False
+) -> dict[str, str | None]:
     """The guide of one membership. A `proxy` gets no trust text, as it leads nothing, and a
-    `guest` no role text, as it takes no cards: the guide never says two things at once."""
+    `guest` no role text, as it takes no cards: the guide never says two things at once.
+    `restricted`: an agent in the restricted-access set, whose role text ends with what it may
+    not do with that text (§6.4), after the bridge sentence."""
     found = next((r for r in project_roles.of(project) if r["name"] == role), None)
     trust_text = None if role == "proxy" else TRUST.get(trust)
     role_text = None if trust == "guest" else ((found or {}).get("guide") or ROLE.get(role))
     if bridging:  # §2.3: the sentence ends the role's guide
         role_text = f"{role_text} {rules.BRIDGING}" if role_text else rules.BRIDGING
+    if restricted:  # §6.4: the sentence ends the role's guide, whatever its source
+        role_text = f"{role_text} {rules.RESTRICTED}" if role_text else rules.RESTRICTED
     guide_by = found.get("guide_by") if found and trust != "guest" else None
     return {"trust": trust_text, "role": role_text, "guide_by": guide_by}

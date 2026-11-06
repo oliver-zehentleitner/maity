@@ -445,6 +445,7 @@
      "release_checklist": {
       "array": "string"
      },
+     "restricted_access": "null",
      "ticker": {
       "object": {
        "contract_files": {

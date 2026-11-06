@@ -26,6 +26,7 @@ from maity_hub import (
     namespace,
     onboarding,
     preferences,
+    restricted,
     rules,
     setup_cards,
 )
@@ -194,7 +195,13 @@ def _view(
         "membership": {
             "trust": told.trust,
             "role": told.role,
-            "guide": guide.of(project, told.trust, told.role, bridging=bridging),
+            "guide": guide.of(
+                project,
+                told.trust,
+                told.role,
+                bridging=bridging,
+                restricted=told.id in restricted.resolve(conn, project),
+            ),
             "isolated": None,
             **outside,
         },
