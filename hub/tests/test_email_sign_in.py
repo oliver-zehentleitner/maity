@@ -274,12 +274,7 @@ def test_password_change_voids_flow(make_client: ClientFactory, migrated: Engine
     client, _ = setup(make_client, migrated)
     ask(client)
     url, code = mail(migrated)
-    assert (
-        client.post(
-            "/api/v1/auth/login", json={"handle": "ada", "password": factory.PASSWORD}
-        ).status_code
-        == 200
-    )
+    assert factory.login_handle(client, "ada").status_code == 200
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     changed = client.post(
         "/api/v1/auth/password",
@@ -296,7 +291,7 @@ def test_opt_out_then_back_in_does_not_revive_link(
     client, _ = setup(make_client, migrated)
     ask(client)
     url, _ = mail(migrated)
-    client.post("/api/v1/auth/login", json={"handle": "ada", "password": factory.PASSWORD})
+    factory.login_handle(client, "ada")
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     for on in (False, True):
         result = client.patch(
@@ -315,7 +310,7 @@ def test_mail_factor_does_not_bypass_totp(make_client: ClientFactory, migrated: 
 
     client, _ = setup(make_client, migrated)
     clock.set_source(lambda: datetime(2026, 10, 28, 12, 0, tzinfo=UTC))
-    client.post("/api/v1/auth/login", json={"handle": "ada", "password": factory.PASSWORD})
+    factory.login_handle(client, "ada")
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     headers = {"x-csrf-token": csrf}
     start = client.post("/api/v1/auth/second-factor/totp", headers=headers).json()
@@ -362,7 +357,7 @@ def test_existing_session_requires_csrf_but_expired_cookie_can_sign_in(
     from maity_hub.auth.caller import SESSION_COOKIE
 
     client, _ = setup(make_client, migrated)
-    client.post("/api/v1/auth/login", json={"handle": "ada", "password": factory.PASSWORD})
+    factory.login_handle(client, "ada")
     assert (
         client.post("/api/v1/auth/email-link", json={"address": "ada@example.com"}).status_code
         == 403

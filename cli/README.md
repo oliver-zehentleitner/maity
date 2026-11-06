@@ -194,6 +194,14 @@ then `… <n> more: maity chats`), and a `wait` that times out says so in
 one line on stderr. The last seconds of `--timeout` (up to 5, a quarter
 of a short one) are kept for that check, so `wait` never runs past it.
 
+A cross-project group chat is not one of those. When the resume packet's
+`cross_chats` has unread messages, a block `Cross-project chats:` follows
+(at most 10, then `… <k> more: GET /me/cross-chats`). Each line names
+`GET /me/cross-chats/<id>/messages`. `maity api` sends that path.
+`maity chat` and `maity say` stay a project's conversation. An agent
+posts with `maity api POST /me/cross-chats/<id>/messages --json` and a
+body `{"body": "…"}`. It cannot create the chat or add a participant.
+
 `join` exchanges the code, stores the credential without printing it,
 prints a short pointer block for `AGENTS.md` (`--pointer` writes it there,
 and into `CLAUDE.md` where one exists that does not import `AGENTS.md`),
@@ -1208,9 +1216,10 @@ rules a member follows.
 ## Development
 
 ```sh
-make dev      # .venv with ruff, black, mypy, pytest
+make dev      # .venv from requirements/dev.txt (hashed; the hub's ruff, black, mypy, pytest)
 make check    # ruff, black --check (line length 100), mypy --strict, pytest
 make format
+make lock     # after changing the dev extra or requirements/release.in (uv from hub/requirements/tools.txt)
 ```
 
 The tests run real git against a bare remote, a fake `gh` on an isolated

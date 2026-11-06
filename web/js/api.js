@@ -171,12 +171,13 @@ window.Maity = window.Maity || {};
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
   }
-  // §6.25: at most 8 earlier names, and 3 renames and transfers a day.
+  // §6.25: at most max_aliases earlier names (§16.5), and 3 renames and transfers a day.
   const nameChanges = {};
   // `full`: the name it would have; taking back one's own earlier name
   // adds none, so the limit does not stop it (as the hub, #487).
   function renameCheck(p, path, full) {
-    if ((p.aliases || []).length >= 8 && !(p.aliases || []).includes(full)) fail(409, "alias_limit", "at most 8 earlier names", path, { limit: 8, aliases: p.aliases });
+    const limit = limitsSetting.max_aliases.value;
+    if ((p.aliases || []).length >= limit && !(p.aliases || []).includes(full)) fail(409, "alias_limit", "at most " + limit + " earlier names", path, { limit, aliases: p.aliases });
     const day = (nameChanges[p.id] || []).filter((t) => Date.now() - t < 86400000);
     if (day.length >= 3) fail(429, "rate_limited", "at most 3 renames and transfers a day", path);
   }
@@ -1026,7 +1027,7 @@ window.Maity = window.Maity || {};
     if (held) fail(400, "invalid", "handle", path, { fields: { handle: "taken" } });
     const aliases = mm.aliases || [];
     const back = aliases.indexOf(wanted) >= 0;
-    if (!back && aliases.length >= 8) fail(409, "alias_limit", "alias limit", path, { limit: 8, aliases: aliases.slice() });
+    if (!back && aliases.length >= limitsSetting.max_aliases.value) fail(409, "alias_limit", "alias limit", path, { limit: limitsSetting.max_aliases.value, aliases: aliases.slice() });
     const now = Date.now();
     while (selfRenames.length && now - selfRenames[0] >= 86400000) selfRenames.shift();
     if (selfRenames.length >= 3) fail(429, "rate_limited", "too many renames", path);
@@ -1514,6 +1515,7 @@ window.Maity = window.Maity || {};
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
     max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
+    max_aliases: { value: 3, source: "default" }, names_at_alias_limit: 0,
     max_attachment_storage: { value: "unlimited", source: "default" }, attachment_storage_used: 734003200,
   };
 
@@ -1811,10 +1813,13 @@ window.Maity = window.Maity || {};
       email.address_change = null;
       return fixtures()["notifications.json"].settings;
     }],
+    // §2.1: the verified address signs in, compared as the hub does (trimmed, lower-cased).
     ["POST", /^\/auth\/login$/, (m, body, path) => {
-      if (body.handle !== me().member.handle || !body.password
+      const email = fixtures()["notifications.json"].settings.email;
+      const given = String(body.email || "").trim().toLowerCase();
+      if (!email.address || !email.verified_at || given !== email.address.toLowerCase() || !body.password
         || (fixturePassword !== null && body.password !== fixturePassword)) {
-        fail(401, "unauthenticated", "Handle or password is wrong", path);
+        fail(401, "unauthenticated", "the address or password is wrong", path);
       }
       fixtureSignedIn = true;
       return { member: me().member, next: body.next || "/" };
@@ -2364,14 +2369,14 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_attachment_storage: "unlimited" };
-      const ranges = { max_attachment_storage: [1024 ** 3, 1024 ** 5] };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_aliases: 3, max_attachment_storage: "unlimited" };
+      const ranges = { max_aliases: [1, 8], max_attachment_storage: [1024 ** 3, 1024 ** 5] };
       Object.entries(body).forEach(([k, v]) => {
         const [low, high] = ranges[k] || [1, 10000];
-        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";
+        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "names_at_alias_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";
         else if (!(k in defaults)) fields[k] = "extra_forbidden";
         else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
-        else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= low && v <= high))) fields[k] = "invalid";
+        else if (!(v === null || (v === "unlimited" && k !== "max_aliases") || (Number.isInteger(v) && v >= low && v <= high))) fields[k] = "invalid";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       Object.entries(body).forEach(([k, v]) => {
@@ -5060,6 +5065,8 @@ window.Maity = window.Maity || {};
 
   function request(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
+    // A write may change what the dashboard keeps between page switches (js/app.js): told first.
+    if (method !== "GET" && M.onWrite) M.onWrite();
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
     // place (js/maintenance.js), and the caller gets the refusal as before.

@@ -28,7 +28,6 @@ from maity_hub.errors import ApiError, rate_limited
 PREFIX = "/api/v1/projects/"
 # A project's aliases (§6.25), as a handle's (§6.24): at most 8, and renames and transfers
 # together at most 3 per 24 hours per project.
-ALIAS_LIMIT = 8
 CHANGES_PER_DAY = 3
 DAY_SECONDS = 24 * 3600
 FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
@@ -265,10 +264,12 @@ def aliases_by(conn: Connection, project_ids: Iterable[str]) -> dict[str, list[s
     return found
 
 
-def check_change(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
+def check_change(
+    conn: Connection, project: Any, owner_id: str, slug: str, *, alias_limit: int
+) -> None:
     """Before a rename or a transfer to `owner_id`/`slug` (§6.25): the slug free in that
     namespace (the project may take back its own alias), the alias the change adds within
-    `ALIAS_LIMIT`, and the project's changes within `CHANGES_PER_DAY`."""
+    `alias_limit` (`max_aliases`, §16.5), and the project's changes within `CHANGES_PER_DAY`."""
     if taken(conn, owner_id, slug, project.id):
         raise ApiError(
             400, "invalid", "the slug is taken in that namespace", {"fields": {"slug": "taken"}}
@@ -277,12 +278,14 @@ def check_change(conn: Connection, project: Any, owner_id: str, slug: str) -> No
     given_up = _own_alias(conn, project.id, project.owner_id, project.slug)
     names = aliases_of(conn, project.id)
     after = len(names) - (back is not None) + (given_up is None)
-    if after > ALIAS_LIMIT:  # taking a name back never adds one, so it stays possible
+    # Only a change that adds a name is refused: taking one back never adds one, so it stays
+    # possible, also for a project over a lowered value, which keeps every alias (§16.5).
+    if after > alias_limit and after > len(names):
         raise ApiError(
             409,
             "alias_limit",
-            f"a project keeps at most {ALIAS_LIMIT} former names",
-            {"limit": ALIAS_LIMIT, "aliases": names},
+            f"a project keeps at most {alias_limit} former names",
+            {"limit": alias_limit, "aliases": names},
         )
     _check_rate(conn, project.id)
 

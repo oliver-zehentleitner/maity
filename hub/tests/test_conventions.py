@@ -52,7 +52,7 @@ def test_an_unknown_path_is_the_not_found_envelope(make_client: ClientFactory) -
 
 def test_unknown_fields_are_invalid_with_the_field_named(make_client: ClientFactory) -> None:
     response = make_client().post(
-        "/api/v1/auth/login", json={"handle": "x", "password": "y", "extra": 1}
+        "/api/v1/auth/login", json={"email": "x", "password": "y", "extra": 1}
     )
     assert response.status_code == 400
     assert response.headers["Maity-Error"] == "invalid"
@@ -60,7 +60,7 @@ def test_unknown_fields_are_invalid_with_the_field_named(make_client: ClientFact
 
 
 def test_a_validation_error_never_quotes_the_input(make_client: ClientFactory) -> None:
-    response = make_client().post("/api/v1/auth/login", json={"handle": "", "password": "s3cr3t"})
+    response = make_client().post("/api/v1/auth/login", json={"email": "", "password": "s3cr3t"})
     assert response.status_code == 400
     assert "s3cr3t" not in response.text
 
@@ -149,7 +149,7 @@ def test_a_steady_body_inside_the_deadline_is_read_whole(
 ) -> None:
     monkeypatch.setattr(body_reader, "BODY_SECONDS", 1.0)
     client = make_client()
-    parts = [b'{"handle": "x", ', b'"password": "y"', b"}"]
+    parts = [b'{"email": "x@example.org", ', b'"password": "y"', b"}"]
 
     async def steady() -> dict[str, object]:
         await asyncio.sleep(0.05)
@@ -174,7 +174,7 @@ def test_a_steady_body_inside_the_deadline_is_read_whole(
 
 
 def test_a_body_at_the_cap_passes_the_cap(make_client: ClientFactory) -> None:
-    body = b'{"handle": "x", "password": "' + b"y" * (64 * 1024 - 40) + b'"}'
+    body = b'{"email": "x", "password": "' + b"y" * (64 * 1024 - 39) + b'"}'
     response = make_client().post(
         "/api/v1/auth/login", content=body, headers={"Content-Type": "application/json"}
     )
@@ -187,7 +187,7 @@ def test_a_credential_shaped_string_is_refused_without_excerpt(
     fake = "mty1.crd-unknown.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     client = make_client()
     for response in (
-        client.post("/api/v1/auth/login", json={"handle": fake, "password": "x"}),
+        client.post("/api/v1/auth/login", json={"email": fake, "password": "x"}),
         client.get(f"/api/v1/health?note={fake}"),
     ):
         assert response.status_code == 400
@@ -205,7 +205,7 @@ def test_a_real_credential_in_a_payload_is_revoked_and_reported(
     agent = factory.agent(migrated, project_id, owner)
 
     response = make_client().post(
-        "/api/v1/auth/login", json={"handle": "x", "password": f"see {agent.value} here"}
+        "/api/v1/auth/login", json={"email": "x", "password": f"see {agent.value} here"}
     )
     assert response.status_code == 400
     assert response.headers["Maity-Error"] == "credential_in_payload"
@@ -240,7 +240,7 @@ def test_a_public_id_with_a_guessed_secret_revokes_nothing(
     owner = factory.human(migrated)
     agent = factory.agent(migrated, project_id, owner)
     guess = f"mty1.{agent.credential_id}.{'B' * 43}"
-    response = make_client().post("/api/v1/auth/login", json={"handle": guess, "password": "x"})
+    response = make_client().post("/api/v1/auth/login", json={"email": guess, "password": "x"})
     assert response.headers["Maity-Error"] == "credential_in_payload"
     with migrated.connect() as conn:
         revoked = conn.execute(
@@ -303,7 +303,7 @@ def test_a_body_full_of_fake_credentials_costs_one_bounded_lookup(
     try:
         fakes = " ".join(f"mty1.crd-{i}.x" for i in range(6000))
         response = make_client().post(
-            "/api/v1/auth/login", json={"handle": "x", "password": fakes[:60000]}
+            "/api/v1/auth/login", json={"email": "x", "password": fakes[:60000]}
         )
     finally:
         sa_event.remove(migrated, "before_cursor_execute", listener)

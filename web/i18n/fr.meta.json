@@ -4796,8 +4796,8 @@
     "text": "545bd080ad11bb42"
   },
   "handles.aliases": {
-    "en": "5a6dfee2685fd642",
-    "text": "59ac78b8587e9a9c"
+    "en": "761b044beeac0866",
+    "text": "7fc7e49a34e7eacf"
   },
   "handles.aliases_none": {
     "en": "e9cbae354863e00e",
@@ -5828,8 +5828,12 @@
     "text": "5c8eec13fb9489db"
   },
   "jf.enabled": {
-    "en": "ea32e9bdd8064432",
-    "text": "f3b2e66986ed2a12"
+    "en": "60a7b879d02b645b",
+    "text": "486b06fa2312c9c7"
+  },
+  "jf.enabled.hint": {
+    "en": "140267b4030ef581",
+    "text": "ba788640e07c0ef1"
   },
   "jf.error.time": {
     "en": "7d7a5978e2666f65",
@@ -6042,10 +6046,6 @@
   "jf.rounds.reading": {
     "en": "d9f368c2d320ec2c",
     "text": "c7c39642bfa546d3"
-  },
-  "jf.settings_link": {
-    "en": "701fab0b12e1172e",
-    "text": "80eb31a4797b9f2c"
   },
   "jf.skip.hub_down": {
     "en": "338c6cb639de63d0",
@@ -6638,6 +6638,10 @@
   "jfs.hint": {
     "en": "f496ad7da5050f5b",
     "text": "186d844704f5fd75"
+  },
+  "jfs.kept_on_page": {
+    "en": "dbcf6830b5d345c6",
+    "text": "5990f8c390519057"
   },
   "jfs.moderators": {
     "en": "95ba7594a758cfad",
@@ -8383,6 +8387,10 @@
     "en": "8f8f7a7d741ceb59",
     "text": "ce09308e7a750194"
   },
+  "login.email": {
+    "en": "c6394f33e6b9bb97",
+    "text": "1a7d028283bf742f"
+  },
   "login.failed": {
     "en": "0c16e564176f0925",
     "text": "97fdff3512751dc2"
@@ -8391,10 +8399,6 @@
     "en": "f47e2ac03d287b36",
     "text": "2cccb09827878011"
   },
-  "login.handle": {
-    "en": "41483b645efc0c65",
-    "text": "651c3623da936744"
-  },
   "login.page_title": {
     "en": "ade68277aa732e36",
     "text": "210e5ded75b8c198"
@@ -8402,6 +8406,10 @@
   "login.password": {
     "en": "9e10723b04013059",
     "text": "87f992617eaeee02"
+  },
+  "login.paused": {
+    "en": "faa3623d3dffd777",
+    "text": "85d723b7d0324bc4"
   },
   "login.public_page": {
     "en": "749d5ea463603454",
@@ -10520,8 +10528,8 @@
     "text": "a886e7672ac0a593"
   },
   "names.rename.hint": {
-    "en": "85a6c142b16caac9",
-    "text": "bab7245cd46d17e7"
+    "en": "90c478359bdb09cc",
+    "text": "5d69ddf90cfa12e2"
   },
   "names.renaming": {
     "en": "55f8d0e263c5fefb",
