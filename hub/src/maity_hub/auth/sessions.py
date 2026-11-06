@@ -19,6 +19,7 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import clock, ids
 from maity_hub import tables as t
+from maity_hub.auth import known_sources
 from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
     SESSION_IDLE,
@@ -276,7 +277,7 @@ def create(
         raise unauthenticated("this account was deleted")
     if account is not None and account.suspended_at is not None:
         # and none for a suspended one, answered as a wrong password is (§16.8).
-        raise unauthenticated("handle or password is wrong")
+        raise unauthenticated("address or password is wrong")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)
@@ -316,6 +317,7 @@ def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -
         select(t.human_session).where(t.human_session.c.public_id == public_id)
     ).one()
     conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_login_at=now))
+    known_sources.remember(conn, human_id, row.source)  # a known source from now on (§2.1)
     # Every new session tells its human, whichever the method (§2.6.5).
     data: dict[str, Any] = {
         "session_id": public_id,
