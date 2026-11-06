@@ -1514,6 +1514,7 @@ window.Maity = window.Maity || {};
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
     max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
+    max_attachment_storage: { value: "unlimited", source: "default" }, attachment_storage_used: 734003200,
   };
 
   // §16.12 The fixture hub's maintenance window: none at first; ?maintenance=upcoming or
@@ -2354,7 +2355,8 @@ window.Maity = window.Maity || {};
       return Object.assign({}, r);
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
-    // null restores the default, "unlimited" is no limit, an integer 1–10000.
+    // null restores the default, "unlimited" is no limit, an integer 1–10000; the
+    // attachment storage of the instance in bytes, 1 GiB to 1 PiB, with what is stored.
     ["GET", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       return JSON.parse(JSON.stringify(limitsSetting));
@@ -2362,12 +2364,14 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10 };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_attachment_storage: "unlimited" };
+      const ranges = { max_attachment_storage: [1024 ** 3, 1024 ** 5] };
       Object.entries(body).forEach(([k, v]) => {
-        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit"].includes(k)) fields[k] = "read_only";
+        const [low, high] = ranges[k] || [1, 10000];
+        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";
         else if (!(k in defaults)) fields[k] = "extra_forbidden";
         else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
-        else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= 1 && v <= 10000))) fields[k] = "invalid";
+        else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= low && v <= high))) fields[k] = "invalid";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       Object.entries(body).forEach(([k, v]) => {

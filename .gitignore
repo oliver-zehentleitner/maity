@@ -12,6 +12,7 @@ site/
 __pycache__/
 *.py[cod]
 .venv/
+.release-env/
 node_modules/
 dist/
 .pytest_cache/

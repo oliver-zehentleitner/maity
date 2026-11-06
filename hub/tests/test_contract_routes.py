@@ -14,32 +14,22 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # and path, its reason on the same line: a pull request adding or removing an entry touches only
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
-    ("DELETE", "/me/cross-chats/{}/participants/{}"),  # §9.5, not built: tsk-fvh80q02772c
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
-    ("DELETE", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
+    ("GET", "/avatars/motifs"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
+    ("GET", "/avatars/public/{}"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/me/cross-chats"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("GET", "/me/cross-chats/{}"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("GET", "/me/cross-chats/{}/messages"),  # contract only, §9.5, not built: tsk-fvh80q02772c
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("PATCH", "/me/cross-chats/{}"),  # contract only, §9.5, not built: tsk-fvh80q02772c
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
-    ("POST", "/me/cross-chats"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("POST", "/me/cross-chats/{}/messages"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("POST", "/me/cross-chats/{}/messages/{}/redact"),  # §9.5, not built: tsk-fvh80q02772c
-    ("POST", "/me/cross-chats/{}/participants"),  # contract only, §9.5, not built: tsk-fvh80q02772c
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
-    ("PUT", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an

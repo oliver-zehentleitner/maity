@@ -185,7 +185,7 @@ value, since a row written by an older version or by hand is still shown to the 
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`), `contract_text.py` (`_atx`), `ktw.py` (`_setting`, `_child`)
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`), `contract_text.py` (`_atx`), `ktw.py` (`_setting`, `_child`), `notifications/mailer.py` (`_schemes`) and `auth/sessions.py` (`_safari`), the last two replaced in PR 5 of the card (2026-11-04)
 **Revisit when:** the renderer gets a construct with a pattern of its own, a member text may grow beyond its current limit (a card's 16 KiB, a note's 4 KiB), or the hub gains a way to stop a render that runs too long
 
 The renderer above runs on members' words too: the text of a public project, a card's body and its
@@ -207,6 +207,11 @@ with the text's length and never with the ways of splitting it:
 - A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
   it, is cut by string operations. The output is the old pattern's, checked against it as an
   oracle on short lines.
+- Two patterns outside the renderer were replaced the same way, with the old patterns as the
+  tests' oracle: `mailer.defang`'s schemes (`_schemes`), where each `://` looks back over its own
+  run instead of every word start trying the run to its end, and `sessions.describe`'s Safari
+  (`_safari`), two searches per line instead of a pattern that tried every split between its
+  `[\d.]+` and `.*`.
 - Quotes nest at most 8 deep, as in the dashboard (`web/js/markdown.js`), which renders the same
   cards and notes: the lines of a ninth quote are a paragraph in the eighth, without their own
   `>`, and any deeper `>` stays text. The recursion is bounded with it.
@@ -315,7 +320,8 @@ Since they have the landing page's header and footer, the legal pages and their 
 `/assets/landing/landing.css`, `public-pages.css` and the fonts the stylesheet names, each under its
 digest, and answer with `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self';
 img-src 'self'; base-uri 'none'; frame-ancestors 'none'`, the last two as on the landing page. There is still no `script-src`, so `default-src 'none'` forbids every script, and the
-page holds none. `img-src 'self'` is for the favicon and the pictures `public-pages.css` names
+page holds none. `img-src 'self'` is for the browser's own favicon request (the page links no icon)
+and the pictures `public-pages.css` names
 (`brand/`); the legal text itself never holds an image. If the stylesheets cannot be read, the page
 carries the old inline style. Those two pictures, `brand/door-art.svg` and `brand/door-mail.svg`, are
 the designer's files unchanged, checked before they were taken in for anything active (no script, no

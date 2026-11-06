@@ -185,10 +185,16 @@ def test_a_further_patch_of_reports_to_supersedes_the_open_requests(
 ) -> None:
     friend, other, lent, boss = _two_sides(owner, make_client, migrated)
     put(owner, lent, reports_to=boss)
-    assert put(owner, lent, reports_to=None).status_code == 200  # a human who may PATCH
-    for request in _requests(migrated):
-        assert request.status == "withdrawn" and request.withdraw_reason == "superseded"
-    assert _boss_of(migrated, lent) is None
+    # Clearing the edge is a `reports_to` inside the agent's owner: it waits for that
+    # owner, and it ends the open pair (§6.2).
+    clearing = put(owner, lent, reports_to=None)
+    assert clearing.status_code == 202, clearing.text
+    rows = _requests(migrated)
+    pair = [r for r in rows if r.proposal["kind"] == "cross_owner_reports_to"]
+    assert pair and all(r.status == "withdrawn" and r.withdraw_reason == "superseded" for r in pair)
+    [fresh] = [r for r in rows if r.proposal["kind"] == "foreign_agent_change"]
+    assert fresh.status == "open" and fresh.proposal["values"]["reports_to"] is None
+    assert _boss_of(migrated, lent) is None  # the edge was never set
 
 
 def test_removing_either_member_withdraws_the_requests(
@@ -563,8 +569,17 @@ def test_an_admin_agent_asks_both_owners_and_only_its_own_request_may_be_ended_b
     assert refused.status_code == 403
     assert refused.json()["error"]["details"] == {"reason": "pending_consent"}
     assert all(r.status == "open" for r in _requests(migrated))
-    assert put(admin, lent, reports_to=None).status_code == 200  # the asker may supersede
-    assert all(r.status == "withdrawn" for r in _requests(migrated))
+    # The asker may end the pair. Clearing the edge still waits for the agent's owner.
+    clearing = put(admin, lent, reports_to=None)
+    assert clearing.status_code == 202, clearing.text
+    rows = _requests(migrated)
+    pair = [r for r in rows if r.proposal["kind"] == "cross_owner_reports_to"]
+    assert pair and all(r.status == "withdrawn" and r.withdraw_reason == "superseded" for r in pair)
+    [fresh] = [
+        r for r in rows if r.proposal["kind"] == "foreign_agent_change" and r.status == "open"
+    ]
+    assert fresh.proposal["values"]["reports_to"] is None
+    assert _boss_of(migrated, lent) is None
 
 
 def test_an_admin_agents_change_waiting_for_a_go_does_not_end_the_owners_decision(

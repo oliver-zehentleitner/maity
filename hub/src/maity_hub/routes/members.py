@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, StringConstraints, field_validator
 from pydantic_core import PydanticCustomError
@@ -28,6 +28,7 @@ from maity_hub import (
     instance_counts,
     instances,
     isolation,
+    jcs,
     line,
     namespace,
     person_links,
@@ -104,6 +105,26 @@ class MemberPatch(Strict):
     def _language_read_only(cls, _value: Any) -> Any:
         raise PydanticCustomError("read_only", "a human sets their language in their settings")
 
+    @field_validator(
+        "trust",
+        "role",
+        "reports_to",
+        "areas",
+        "capabilities",
+        "paused",
+        "dormant",
+        "availability_policy",
+        "briefing",
+        "instance",
+        mode="before",
+    )
+    @classmethod
+    def _no_lone_surrogate(cls, value: Any) -> Any:
+        # Before the string type rejects it as `string_unicode`: the consent's code (§6.2).
+        if jcs.has_lone_surrogate(value):
+            raise PydanticCustomError("lone_surrogate", "a string holds a lone surrogate")
+        return value
+
 
 class RevokeIn(Strict):
     reason: str | None = markdown(default=None)
@@ -113,6 +134,42 @@ def _request(conn: Connection, request_id: str) -> dict[str, Any]:
     from maity_hub.routes.requests import load_request  # it imports this module's peers
 
     return load_request(conn, request_id)
+
+
+def _member_patch_answer(conn: Connection, request_id: str) -> dict[str, Any]:
+    """The `202` of this PATCH when it files the owner's consent, pair ids included."""
+    from maity_hub.routes.requests import load_member_patch  # it imports this module's peers
+
+    return load_member_patch(conn, request_id)
+
+
+def _awaits_owner_consent(conn: Connection, caller: Caller, slug: str, member_id: str) -> bool:
+    """The change waits for another owner's consent, so its tokens are checked before a model
+    reads them. A caller who may apply the change at once, a manager inside its reach
+    included, is not that case. A lookup that does not find the member is not either: the
+    route's own answer stands."""
+    try:
+        mine = membership(conn, caller, slug)
+        target = member_row(conn, mine.project.id, member_id)
+    except ApiError:
+        return False
+    if not foreign_agent.is_foreign(conn, mine.row, target):
+        return False
+    agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
+    line_lead = not agent_admin and not mine.may("members:admin") and mine.may("line:lead")
+    return not line_lead
+
+
+def _reject_foreign_tokens(slug: str, member_id: str, request: Request, caller: AnyCaller) -> None:
+    """Before `MemberPatch` reads the body (§6.2). A fraction pydantic would reject, and a
+    `1.0` it would accept as `true`, are both `not_an_integer` here."""
+    raw: bytes = request.scope["state"].get("body", b"")
+    if not raw:
+        return
+    with engine_of(request).begin() as conn:
+        foreign = _awaits_owner_consent(conn, caller, slug, member_id)
+    if foreign:
+        foreign_agent.reject_tokens(raw)
 
 
 def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
@@ -462,13 +519,20 @@ def apply_patch(
     return old
 
 
-@router.patch("/projects/{owner}/{slug}/members/{member_id}")
+@router.patch(
+    "/projects/{owner}/{slug}/members/{member_id}",
+    dependencies=[Depends(_reject_foreign_tokens)],
+)
 def patch_member(
     slug: str, member_id: str, body: MemberPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
+        # Again inside the call, before `dormant` returns and before a policy error: the
+        # raw tokens, in case the target is foreign only as the call runs.
+        if _awaits_owner_consent(conn, caller, slug, member_id):
+            foreign_agent.reject_tokens(request.scope["state"].get("body", b""))
         if "team" in given:
             # The rulebook is the agent's owner's alone, member or not (§6.18): its own
             # path, before the member check, and never mixed with an admin's fields. An
@@ -578,35 +642,42 @@ def patch_member(
         change = change_of(mine, caller, line=line_lead)
         asked: list[str] | None = None
         consent_id: str | None = None
+        cross_boss = None
+        if "reports_to" in given and body.reports_to is not None:
+            named = member_row(conn, mine.project.id, body.reports_to)
+            if cross_owner.owners(conn, target, named) is not None:
+                cross_boss = named
         if not line_lead and foreign_agent.is_foreign(conn, mine.row, target):
-            # Another owner's agent: these fields wait for its owner (§6.2). A further PATCH
-            # ends the open request and files a new one for the fields it names.
+            # Another owner's agent: these fields, and a `reports_to` that stays inside
+            # its owner, wait for that owner (§6.2). A cross-owner edge stays the pair.
+            # A further PATCH ends the open request and files a new one for the fields it names.
             foreign_agent.withdraw_open(conn, target.id, change.actor, "superseded")
+            held = foreign_agent.for_consent(values, cross_reports_to=cross_boss is not None)
             consent_id = foreign_agent.file(
-                conn, mine.project, mine, caller, target, values, pause, instance
+                conn, mine.project, mine, caller, target, held, pause, instance
             )
             if consent_id is not None:
-                values = {k: v for k, v in values.items() if k not in foreign_agent.FIELDS}
+                values = foreign_agent.without_consent(values, held)
                 pause, instance = (False, None), None
         if "reports_to" in given:
             # §6.2 "Pending": a further PATCH of `reports_to` ends every open consent request
             # of the member (who may do so is checked above).
             cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
-            boss_row = (
-                member_row(conn, mine.project.id, body.reports_to)
-                if body.reports_to is not None
-                else None
-            )
-            if boss_row is not None and cross_owner.owners(conn, target, boss_row) is not None:
-                # The edge waits for both owners: the other fields apply at once (§6.2).
+            if cross_boss is not None:
+                # The edge waits for both owners and is not also a field of the owner's
+                # request. The other fields wait with that request when the caller must.
                 values = {k: v for k, v in values.items() if k != "reports_to"}
-                asked = cross_owner.file(conn, mine.project, mine, caller, target, boss_row)
+                asked = cross_owner.file(conn, mine.project, mine, caller, target, cross_boss)
         old = apply_patch(conn, change, target, values, pause, instance=instance)
         for field in ("trust", "role"):
             if agent_admin and field in old:
                 admin_agents.announce(conn, change, target, field, old[field], values[field])
         if consent_id is not None:
-            return idempotency.Outcome(202, "request", consent_id, _request(conn, consent_id))
+            if asked:
+                foreign_agent.remember_pair(conn, consent_id, asked)
+            return idempotency.Outcome(
+                202, "member_patch", consent_id, _member_patch_answer(conn, consent_id)
+            )
         if asked:
             return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
@@ -958,6 +1029,10 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    if removed.agent_id is not None:
+        from maity_hub import cross_chats
+
+        cross_chats.membership_ended(conn, removed.agent_id, change.by)
     pins.prune(conn, change.project.id)  # its direct chats go with it (§9.1, §9.3)
     attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)

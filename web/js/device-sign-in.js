@@ -1,7 +1,7 @@
 // Signing in without a password (docs/api.md §2.6). On the login page, as
 // GET /auth/methods offers them: "Have a code?" for the new device (§2.6.2)
 // and "Email me a sign-in link" (§2.6.3). On a signed-in device, "Sign in
-// another device" (/account/sign-in-device): the code, its QR, a countdown
+// another device" (/account/security/device): the code, its QR, a countdown
 // and then the approval, which leads with what the hub observed, labels
 // what the device claims, and has the human pick the number the device
 // shows; Deny is the default and there is no plain Approve (§2.6.7).
@@ -252,14 +252,16 @@ window.Maity = window.Maity || {};
 
   // ---- the signed-in device: /account/sign-in-device ----------------------
 
+  // A tab of the account's Security (js/account.js), which focuses the heading where asked (the
+  // old address /account/sign-in-device): only once the view is in the page.
   async function anotherDevice(ctx, root) {
-    const heading = h("h2", { tabindex: "-1" }, M.t("device.other.title"));
+    const heading = h("h3", { tabindex: "-1" }, M.t("device.other.title"));
     const stage = h("div", { class: "device-stage" });
     append(root, heading,
       h("p", { class: "muted" }, M.t("device.other.intro")),
       stage);
-    window.setTimeout(() => heading.focus(), 0);
     await start(ctx, stage);
+    return { heading };
   }
 
   // The QR of the code's URL; the code and Cancel stand without it.

@@ -332,3 +332,6 @@ def delete_profile(
         .where(t.agent_profile.c.id == agent_id)
         .values(deleted_at=now, live=None)
     )
+    from maity_hub import cross_chats
+
+    cross_chats.profile_left(conn, agent_id, by, "membership_removed")
