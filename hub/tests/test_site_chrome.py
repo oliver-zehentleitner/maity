@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub import public_pages
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
@@ -246,3 +248,20 @@ def test_every_picture_the_public_pages_stylesheet_names_is_served(
         assert answer.status_code == 200, name
         assert answer.headers["content-type"].startswith("image/svg+xml"), name
         assert "<script" not in answer.text, name
+
+
+def test_explore_has_the_landing_pages_header_and_footer_in_english(
+    owner: flow.Human, make_client: ClientFactory, settings: Any
+) -> None:
+    """§16.7.5: `/explore` draws the frame's model like the legal pages; the page is in English,
+    so the frame is too, whatever the reader's language, and the footer has no switch."""
+    public_pages.configure(replace(settings, public_pages=True))
+    publish(owner)
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    flow.project(owner, public_page="on")
+    page = make_client(public_pages=True).get("/explore", headers={"Accept-Language": "de"}).text
+    assert '<html lang="en"' in page and '<header class="site-header dz">' in page
+    assert 'href="/?lang=en#s0">Start</a>' in page and ">Los</a>" not in page
+    assert '<footer class="site-footer">' in page and "Maity, Austria" in page
+    assert '<p class="langs">' not in page and 'hreflang="de"' not in page
+    assert 'href="/maintainer/maity"' in page

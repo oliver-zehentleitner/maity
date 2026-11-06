@@ -10,8 +10,10 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import public_pages
+from maity_hub import public_pages, public_projects
 from maity_hub import tables as t
+from maity_hub.routes import pages
+from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_public_project_views import World
 from tests.test_reports import report
@@ -273,3 +275,44 @@ def test_the_old_members_path_has_no_page(world: World) -> None:
     world.touch()
     assert read(world, f"{BASE}/team")["kind"] == "team"
     assert world.anyone.get(f"{ROUTE}/{BASE}/members").status_code == 404
+
+
+def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
+    """§16.7.5, §16.9: `/explore` stands in the landing page's header and footer, with the
+    stylesheets that draw them, and shows each project as one card that is one link."""
+    got = world.anyone.get("/explore")
+    html = got.text
+    assert '<header class="site-header dz">' in html and '<footer class="site-footer">' in html
+    assert "/assets/landing/public-pages.css?v=" in html and "<script" not in html
+    assert got.headers["content-security-policy"] == pages.LEGAL_CSP
+    assert "Accept-Language" in got.headers["vary"]
+    letter, tone = public_projects.monogram("maintainer/maity", "Maity")
+    assert (
+        '<li><a class="project-card" href="/maintainer/maity">'
+        f'<span class="mono t{tone}" aria-hidden="true">{letter}</span>'
+        '<span class="name">Maity</span><span class="slug">maintainer/maity</span></a></li>'
+    ) in html
+    assert "<span><b>1</b> public project</span>" in html
+    # The page is in one language: its footer has no language switch.
+    assert '<p class="langs">' not in html
+    # No inline style: the policy would block it (the mark's colours come from the sheet).
+    assert ' style="' not in html.split("<body", 1)[1]
+    flow.project(world.owner, "second", public_page="on")
+    assert "<span><b>2</b> public projects</span>" in world.anyone.get("/explore").text
+
+
+def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:
+    world.owner.patch(f"/projects/{BASE}", {"public_page": "off"})
+    html = world.anyone.get("/explore").text
+    assert '<p class="empty-note">No project has a public page yet.</p>' in html
+    assert "project-grid" not in html and "public project<" not in html
+
+
+def test_a_monogram_is_the_names_first_letter_in_a_tone_by_the_full_name() -> None:
+    assert public_projects.monogram("a/web", "maity web")[0] == "M"
+    assert public_projects.monogram("a/web", "2 · ünd")[0] == "Ü"
+    assert public_projects.monogram("a/x9", "42")[0] == "X"
+    tones = {public_projects.monogram(f"o/p{n}", "P")[1] for n in range(64)}
+    assert tones == set(range(public_projects.TONES))
+    # The tone follows the full name only: a renamed project keeps its colour.
+    assert public_projects.monogram("o/p1", "P")[1] == public_projects.monogram("o/p1", "Z")[1]

@@ -1019,6 +1019,34 @@ DOOR_CSP = (
 )
 
 
+def framed_document(
+    *,
+    lang: str,
+    title: str,
+    canonical: str,
+    content: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """A public page the hub renders itself in the frame of §16.7.5: the landing page's header
+    and footer around `content` (HTML of escaped text and elements), in the design of
+    `public-pages.css`. The footer has no language switch: the page is in one language."""
+    model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    frame = public_frame(model, lang)
+    return _document(
+        lang=lang,
+        title=title,
+        description="",
+        head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">' + frame.head,
+        body=frame.header + f"<main>{content}</main>" + frame.footer,
+        languages=[],
+        style=frame.style,
+    )
+
+
 def door_document(
     *,
     lang: str,
