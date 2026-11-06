@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
@@ -142,6 +143,60 @@ def test_repositories_are_normalised_and_matched_alike() -> None:
 def test_only_the_owner_wide_glob_is_accepted(entry: str) -> None:
     found = problems(minimal().replace("github.com/oliver-zehentleitner/maity", entry))
     assert any(p.startswith("limits.repositories:") for p in found), found
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "FOO=1 make test",
+        "FOO+=1 make test",
+        "env make test",
+        "/usr/bin/env FOO=1 make test",
+        "make test && maity report *",
+        "make test; ./maity report",
+        "maity *",
+        "maity:*",
+        "maity.exe *",
+        "MAITY.CMD report",
+        "/home/a/.local/bin/maity report",
+        "xargs maity",
+        "xargs /tmp/tools:local/maity",
+        "cmd /c C:/tools/maity.exe",
+        "xargs C:/bin/MAITY.CMD",
+        "cmd /c C:maity.exe",
+        "find . -exec=maity",
+        "make $TARGET",
+        "make `id`",
+        "make test | tee out",
+        "make\ttest",
+        "* make",
+        '"maity" *',
+        "'maity' report",
+        'make "a b"',
+    ],
+)
+def test_a_repository_grant_allows_only_plain_commands(rule: str) -> None:
+    """A program and plain arguments only: nothing set in front of it, no quotes, variables
+    or shell operators, and not maity in any spelling, which is granted on its own and runs
+    outside the harness's sandbox."""
+    allow = json.dumps(rule)  # a JSON string is a TOML basic string
+    grant = f'\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = [{allow}]\n'
+    found = problems(minimal(grant=grant))
+    assert any("not a plain command" in p and repr(rule) in p for p in found), found
+
+
+def test_a_plain_repository_grant_is_kept() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test", "uv run pytest *", "./gradlew build --info", "pip show maity-hub"]\n'
+    )
+    cfg = parse(minimal(grant=grant))
+    assert cfg.repositories["github.com/oliver-zehentleitner/maity"].allow == (
+        "make test",
+        "uv run pytest *",
+        "./gradlew build --info",
+        "pip show maity-hub",
+    )
 
 
 def test_harness_without_allowlist_is_refused() -> None:
@@ -457,7 +512,7 @@ def test_check_warns_about_inherited_claude_settings(
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.308 (Claude Code)")
+    fake_tool(bin_dir, "claude", "2.1.318 (Claude Code)")  # the checked one: no warning for it
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
     (home / ".claude").mkdir()
@@ -469,6 +524,23 @@ def test_check_warns_about_inherited_claude_settings(
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     warnings = [line for line in lines(capsys) if line.startswith("warn")]
     assert len(warnings) == 2, warnings
+
+
+@pytest.mark.parametrize(("version", "warned"), [("2.1.318", False), ("2.1.330", True)])
+def test_check_warns_when_claude_code_is_not_the_checked_version(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
+) -> None:
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    fake_tool(bin_dir, "bwrap")
+    fake_tool(bin_dir, "socat")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
+    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.318" in line]
+    assert bool(found) is warned, found
+    assert all(line.startswith("warn") for line in found)
 
 
 def test_check_requires_the_sandbox_when_configured(

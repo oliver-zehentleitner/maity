@@ -1985,19 +1985,21 @@ the fixture's default status, its `closed_at` on a second resolve and
 the snapshot missing from its `resolve` answer had drifted once (review
 of #778).
 
-## The limits per person are chosen as a number, no limit or the default, the environment's shown locked
+## The limits per person are chosen as a number, no limit where the contract has it, or the default, the environment's shown locked
 
 **Id:** 28adb478-d5fa-450b-9bbd-e985d93405c4
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub had `GET`/`PATCH /admin/settings/limits`, the dashboard no screen), 2026-10-30; docs/api.md §16.5 (the values, `unlimited`, `null` restores the default), §16.2 (sources), §2.8.4 (step-up); the dashboard's implementation
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub had `GET`/`PATCH /admin/settings/limits`, the dashboard no screen), 2026-10-30; docs/api.md §16.5 (the values, `unlimited`, `null` restores the default; `max_aliases` 1–8 without `unlimited`), §16.2 (sources), §2.8.4 (step-up); the dashboard's implementation; card tsk-1zng488dbprp (`max_aliases`), 2026-11-06
 **Revisit when:** plans set the limits per plan (§2.7, part two), or the hub adds a limit
 
 The **Limits** section (`js/admin-limits.js`) shows each value with a
 choice of how it is set — a number, no limit, or the default — the
 number field only for the first, the value's source in words and the
-people at or over it. A value from the environment is shown, its
+people at or over it. A bounded value (today `max_aliases`, 1–8)
+offers only a number or the default, because the contract has no
+"no limit" for it and the hub refuses `unlimited`. A value from the environment is shown, its
 controls disabled. Only changed values are sent: a number, `unlimited`,
 or `null` for the default; the call goes through `M.stepUp.run`, so a
 missing second factor or password is asked where it stands.
