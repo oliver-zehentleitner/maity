@@ -29,7 +29,7 @@ from maity_hub.auth.sign_in_settings import second_factor_policy
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, rate_limited, unauthenticated
 from maity_hub.notifications import records
-from maity_hub.ratelimit import Limiter
+from maity_hub.ratelimit import Attempt, Limiter
 
 SECOND_STEP = timedelta(minutes=5)  # a second-factor session's life
 # The longest of them, a mail session's: what the wrong codes of one session are counted over, so
@@ -43,6 +43,8 @@ WRONG_PER_SESSION = 5
 
 # 10 wrong codes per human in 15 minutes, every kind of check alike (§2.8.6).
 WRONG_BY_HUMAN = Limiter(10, 15 * 60, name="auth.second_factor.WRONG_BY_HUMAN")
+
+
 ENROLMENTS_BY_HUMAN = Limiter(5, 60 * 60, name="auth.second_factor.ENROLMENTS_BY_HUMAN")
 # Wrong codes per second-factor session: (count, first seen), pruned once a session's
 # five minutes are over.
@@ -416,28 +418,26 @@ def check(
     """Check one code of an enrolled human: `totp` or `recovery_code` when right, None
     when wrong (counted against the human's limit). `rate_limited` once the limit is
     spent, before anything is checked (§2.8.6)."""
-    wait = WRONG_BY_HUMAN.blocked(human_id)
-    if wait:
-        raise rate_limited(wait)
-    # The factor's row first, locked to the end of the transaction: a confirmation, a
-    # reset or new recovery codes (which lock it first too) wait for this check, in one
-    # lock order with the recovery codes below.
-    factor = factor_of(conn, human_id, lock=True)
-    if not enrolled(factor):
+    with Attempt(WRONG_BY_HUMAN, human_id) as attempt:
+        # The factor's row first, locked to the end of the transaction: a confirmation, a
+        # reset or new recovery codes (which lock it first too) wait for this check, in one
+        # lock order with the recovery codes below.
+        factor = factor_of(conn, human_id, lock=True)
+        if not enrolled(factor):
+            return None
+        if code is not None and _consume_totp(conn, hub, factor, code):
+            return "totp"
+        if recovery_code is not None and _consume_recovery(conn, hub, human_id, recovery_code):
+            changed(
+                conn,
+                human_id,
+                "recovery_code_used",
+                _handle(conn, human_id),
+                recovery_codes_left=recovery_codes_left(conn, human_id),
+            )
+            return "recovery_code"
+        attempt.wrong()
         return None
-    if code is not None and _consume_totp(conn, hub, factor, code):
-        return "totp"
-    if recovery_code is not None and _consume_recovery(conn, hub, human_id, recovery_code):
-        changed(
-            conn,
-            human_id,
-            "recovery_code_used",
-            _handle(conn, human_id),
-            recovery_codes_left=recovery_codes_left(conn, human_id),
-        )
-        return "recovery_code"
-    WRONG_BY_HUMAN.hit(human_id)
-    return None
 
 
 def _check_mail(
@@ -446,15 +446,13 @@ def _check_mail(
     """`email` when the mailed code or token is right, None when wrong, counted against the
     human's limit like any wrong code (§2.8.6, §2.8.8). Only for a human without TOTP, under the
     `email` policy."""
-    wait = WRONG_BY_HUMAN.blocked(row.human_id)
-    if wait:
-        raise rate_limited(wait)
-    if policy(conn, hub) != "email" or via(conn, hub, row.human_id) != mail_factor.VIA:
+    with Attempt(WRONG_BY_HUMAN, row.human_id) as attempt:
+        if policy(conn, hub) != "email" or via(conn, hub, row.human_id) != mail_factor.VIA:
+            return None
+        if mail_factor.check(conn, hub, row, code=code, token=token):
+            return mail_factor.VIA
+        attempt.wrong()
         return None
-    if mail_factor.check(conn, hub, row, code=code, token=token):
-        return mail_factor.VIA
-    WRONG_BY_HUMAN.hit(row.human_id)
-    return None
 
 
 def _refuse_off(conn: Connection, hub: Settings) -> None:
@@ -662,24 +660,22 @@ def confirm(conn: Connection, hub: Settings, caller: Caller, code: str) -> dict[
         raise unauthenticated("this endpoint needs a dashboard session")
     _refuse_off(conn, hub)
     human_id = caller.principal_id
-    wait = WRONG_BY_HUMAN.blocked(human_id)
-    if wait:
-        raise rate_limited(wait)
-    factor = factor_of(conn, human_id, lock=True)
-    now = clock.now()
-    if (
-        factor is None
-        or factor.pending_secret is None
-        or factor.pending_session != caller.human_session
-        or factor.pending_expires_at is None
-        or factor.pending_expires_at <= now
-    ):
-        raise code_invalid()
-    secret = _open(hub, factor.pending_secret)
-    step = totp.matching_step(secret, code, now.timestamp(), None)
-    if step is None:
-        WRONG_BY_HUMAN.hit(human_id)
-        raise code_invalid()
+    with Attempt(WRONG_BY_HUMAN, human_id) as attempt:
+        factor = factor_of(conn, human_id, lock=True)
+        now = clock.now()
+        if (
+            factor is None
+            or factor.pending_secret is None
+            or factor.pending_session != caller.human_session
+            or factor.pending_expires_at is None
+            or factor.pending_expires_at <= now
+        ):
+            raise code_invalid()
+        secret = _open(hub, factor.pending_secret)
+        step = totp.matching_step(secret, code, now.timestamp(), None)
+        if step is None:
+            attempt.wrong()
+            raise code_invalid()
     conn.execute(
         update(t.second_factor)
         .where(t.second_factor.c.human_id == human_id)

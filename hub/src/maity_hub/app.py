@@ -59,8 +59,9 @@ from maity_hub import (
     wakeups,
     write_guard,
 )
+from maity_hub import admin as instance_admin
 from maity_hub.auth import device_codes as codes
-from maity_hub.auth import mail_factor
+from maity_hub.auth import known_sources, mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
@@ -143,6 +144,7 @@ from maity_hub.routes import people as people_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
+from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
@@ -193,6 +195,12 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, a former name: its namespace is "
                 "served only under its current handle (§11.4)",
                 name,
+            )
+        # Not a refusal: a session of theirs may still set one.
+        if instance_admin.without_address(conn):
+            log.warning(
+                "the instance admin has no verified address, so their password signs them in "
+                "nowhere (docs/api.md §2.1); give the account one"
             )
         try:
             mail.check_at_startup(conn, settings.mail, settings.secret_key)
@@ -287,6 +295,7 @@ def create_app(
     )
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
+    known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -322,6 +331,9 @@ def create_app(
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)
         reports_worker.start()
+        # A known source's fingerprint goes after 30 days, sign-ins or not (§2.1).
+        sources_worker = known_sources.Worker(engine)
+        sources_worker.start()
         # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
         invitations_worker = org_invitations.Worker(engine)
         invitations_worker.start()
@@ -377,6 +389,7 @@ def create_app(
         takeover_worker.stop()
         jour_fixe_clock.stop()
         reports_worker.stop()
+        sources_worker.stop()
         invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
@@ -452,6 +465,7 @@ def create_app(
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(board.router, prefix=prefix)
+    app.include_router(restricted_routes.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
     app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(overview.router, prefix=prefix)

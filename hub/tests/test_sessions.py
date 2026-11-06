@@ -30,11 +30,7 @@ def sign_in(
     make_client: ClientFactory, handle: str = "maintainer", agent: str = FIREFOX, **body: Any
 ) -> flow.Human:
     client = make_client()
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"handle": handle, "password": factory.PASSWORD, **body},
-        headers={"User-Agent": agent},
-    )
+    response = factory.login_handle(client, handle, headers={"User-Agent": agent}, **body)
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, "")
@@ -202,14 +198,10 @@ def test_a_login_ends_the_session_the_browser_holds(
 ) -> None:
     factory.human(migrated, "someone")
     browser = make_client()
-    first = browser.post(
-        "/api/v1/auth/login", json={"handle": "someone", "password": factory.PASSWORD}
-    )
+    first = factory.login_handle(browser, "someone")
     assert first.status_code == 200
     presented = browser.cookies[SESSION_COOKIE]
-    second = browser.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    second = factory.login_handle(browser, "maintainer")
     assert second.status_code == 200
     assert browser.cookies[SESSION_COOKIE] != presented
     with migrated.begin() as conn:
@@ -250,10 +242,11 @@ def test_a_login_ends_the_session_the_browser_holds(
 def test_login_answers_a_safe_next(
     make_client: ClientFactory, human: str, given: str | None, answered: str
 ) -> None:
-    body = {"handle": "maintainer", "password": factory.PASSWORD}
-    if given is not None:
-        body["next"] = given
-    response = make_client().post("/api/v1/auth/login", json=body)
+    client = make_client()
+    if given is None:
+        response = factory.login_handle(client, "maintainer")
+    else:
+        response = factory.login_handle(client, "maintainer", next=given)
     assert response.status_code == 200
     assert response.json()["next"] == answered
 
@@ -442,7 +435,7 @@ def test_the_admin_switches_a_method_and_the_environment_wins(
 ) -> None:
     flow.human(make_client, migrated)
     client = make_client(sign_in_device_code=False)
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     owner = flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], "")
     assert owner.get(SIGN_IN).json()["device_code"] == {"value": False, "source": "env"}
     refused = owner.patch(SIGN_IN, {"device_code": True})

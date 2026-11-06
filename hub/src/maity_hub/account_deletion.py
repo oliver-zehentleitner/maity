@@ -414,6 +414,7 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     org_invitations.withdraw_by_inviter_everywhere(conn, human_id, "inviter_deleted")
     project_names.withdraw_started_by(conn, human_id, "initiator_deleted")
     conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
+    _off_restricted_lists(conn, human_id, owned)
     _leave_projects(conn, human_id)
     _forget_confirmations(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
@@ -471,6 +472,17 @@ def _return_held(conn: Connection, human_id: str) -> None:
         .order_by(t.request.c.created_at, t.request.c.id),
     ):
         return_held(conn, request_id, human_id, "the holder's account was deleted")
+
+
+def _off_restricted_lists(conn: Connection, human_id: str, owned: list[str]) -> None:
+    """The account leaves the private lists of the restricted-text events (§2.9, §6.4): its
+    memberships' and its agents', the ended ones included. The events stay as written."""
+    mine = select(t.membership.c.id).where(
+        (t.membership.c.human_id == human_id) | t.membership.c.agent_id.in_(owned)
+    )
+    conn.execute(
+        delete(t.restricted_event_list).where(t.restricted_event_list.c.membership_id.in_(mine))
+    )
 
 
 def _leave_projects(conn: Connection, human_id: str) -> None:
@@ -541,6 +553,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.second_factor_reset).where(t.second_factor_reset.c.human_id == human_id))
     conn.execute(delete(t.second_factor).where(t.second_factor.c.human_id == human_id))
     conn.execute(delete(t.human_device).where(t.human_device.c.human_id == human_id))
+    conn.execute(delete(t.known_source).where(t.known_source.c.human_id == human_id))
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
     conn.execute(

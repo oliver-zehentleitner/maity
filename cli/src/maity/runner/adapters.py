@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import __version__
+from .. import __version__, clonecheck, proc
 from . import config, stub
 from .asuser import AsUser
 
@@ -105,6 +105,14 @@ def launch(ctx: Context) -> Launch:
         **SESSION_GIT_CONFIG,
         **ctx.extra_env,
     }
+    # The mark that this clone runs under the runner: maity refuses its git here when the
+    # session's variables are gone (clonecheck.placement_root), instead of trusting that.
+    ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
+    ctx.as_user.write(ctx.clone / clonecheck.MARKER_PATH, ctx.placement["id"] + "\n")
+    # The git maity starts there: this one, found on the runner's PATH, not the agent's.
+    git = proc.program("git")
+    if git is not None:
+        ctx.as_user.write(ctx.clone / clonecheck.GIT_PATH, git + "\n")
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)

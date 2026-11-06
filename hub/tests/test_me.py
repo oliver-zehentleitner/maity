@@ -58,7 +58,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     _request(migrated, sample, agent.membership_id, to_kind="owner")  # the proxy is not owner
 
     client = make_client()
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     body = client.get("/api/v1/me").json()
     assert body["member"] == {
         "id": owner,
