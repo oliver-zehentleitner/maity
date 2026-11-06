@@ -1607,6 +1607,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
 /* The panel is the card: no frame inside the frame, no second id, no second title. */
 .card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
+/* A card's restricted text (docs/api.md §6.4): plain text, its line breaks kept, a long word wrapped. */
+.card-restricted { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.card-restricted h3 { margin-top: 0; }
+.restricted-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.card-restricted textarea { width: 100%; box-sizing: border-box; }
+.restricted-members .check { display: block; }
+.restricted-confirm { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
 /* One style for the panel's section headings. */
 .card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }

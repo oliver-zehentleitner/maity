@@ -1214,6 +1214,30 @@ Members, demoting or removing the namespace owner is refused with
 project, its owners stay owners the same way). The ticker names a `rename`
 item as such.
 
+**Restricted access** (`docs/api.md` §6.1, §6.4, `js/restricted.js`) is in
+the same panel for those with `project:admin`. A human chooses who reads
+and writes the cards' restricted texts: closed (`null`, nobody), only the
+members ticked (`nobody_except`) or every member but those ticked
+(`all_except`), each agent shown with its owner; a guest is never in the
+set. A change that lets someone new read — or switches to `all_except`,
+which takes in every future member — first shows how many cards have a
+text, who newly reads them, and under `all_except` that every later member
+does too, and is saved only after **Save and let them read**. The save asks
+for the password or a code where the hub wants the step-up; the hub's
+refusals are said at the member they name. An admin agent sees the mode
+and whether it is in the set, never the list.
+**Restricted** is a box on a card, shown only to a member in the set
+(`settings.restricted_access.included`) and read with `GET …/restricted`
+when the card opens, never with the board. It shows the text as plain
+text, who changed it last and the changes (who and when, never the text),
+and offers **Edit** and **Clear** with the version read (`base_version`): a
+`conflict` reads the text again and keeps what was typed. Outside a session
+in good standing it says so and links the sessions instead of the text.
+The text stays in the page's memory: never in the browser's storage, a URL
+or a cache. Both the box and the setting say that this is an access
+restriction, not encryption. The set's notice in the bell opens the
+project's settings.
+
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
 optional or required, with a reason. Before it becomes required, the

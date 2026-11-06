@@ -770,6 +770,9 @@ window.Maity = window.Maity || {};
     if (humanAdmin) {
       append(panel, doneAuthorityForm(ctx, save), memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
     }
+    // Who reads and writes the cards' restricted texts (§6.1, §6.4): a human with
+    // project:admin changes it after a step-up; an admin agent reads its mode alone.
+    if (ctx.canAdmin && M.restricted) append(panel, M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }));
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
