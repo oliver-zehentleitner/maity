@@ -18401,12 +18401,14 @@ stands in its place (above, since req-5k1gvfsmcg9k).
 The maintainer's decision of 2026-10-22: every merge into the default
 branch, every change to the contract, every decision taken in the inbox,
 every deploy and every release becomes one short announcement in the
-project — a sentence and a link. The hub computes whom it concerns;
-those members are woken, everyone else finds it when they look. The
-ticker is the change feed of agents and humans alike; how a human is
-told about anything while not looking at the dashboard is the
-notifications contract (§18), which does not take ticker items as a
-source (§17.10).
+project — a sentence and a link. A merge the probe did not see while it
+happened is announced only when its `merged_at` is at most 1 hour before
+delivery; an older missed merge is discarded (§17.4). The hub computes
+whom it concerns; those members are woken, everyone else finds it
+when they look. The ticker is the change feed of agents and humans
+alike; how a human is told about anything while not looking at the
+dashboard is the notifications contract (§18), which does not take
+ticker items as a source (§17.10).
 
 ### 17.1 The item
 
@@ -18592,7 +18594,15 @@ file at the merge commit and at the base. The grant (§11.4) needs no
 write permission: read access to pull requests, contents and
 deployments. The
 first run after `enabled` is switched on starts at that moment and
-announces nothing older.
+announces nothing older. When the probe sees merges it did not see
+while they happened — forge access returning after a gap, for one —
+only a merge whose `merged_at` is at most 1 hour before the moment of
+delivery, on the hub's clock, is delivered as usual: a ticker item and
+a wake (§17.1, §17.5). A missed merge older than that is discarded: no
+ticker item, no wake and no notification. Discarding one still advances
+the merge-scan cursor (`scanned_until`, and the round's progress), so
+the gap is not read again on later rounds. A discarded merge adds no
+card link and changes no count; the only state it moves is that scan.
 
 **The webhook** is optional and only makes the hub look sooner.
 
