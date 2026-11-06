@@ -236,3 +236,35 @@ def test_a_new_account_starts_with_public_stats_off(
 ) -> None:
     who = flow.human(make_client, migrated)
     assert who.get("/me").json()["member"]["public_stats"] is False
+
+
+def test_an_agent_present_only_through_its_bridge_is_not_online_on_its_page(
+    world: World, hub: Any, make_client: ClientFactory
+) -> None:
+    """§16.9 counts the agent's own instances; the bridges' presence (§2.3) is not its own."""
+    from tests.test_bridge_reads import _get
+
+    served = factory.agent(
+        world.migrated, world.project_id, world.owner.id, "coder", with_session=False
+    )
+    bridge = factory.agent(world.migrated, world.project_id, world.owner.id, "coder")
+    made = world.owner.post(
+        f"/projects/maintainer/maity/members/{served.agent_id}/bridges",
+        {"bridge": bridge.agent_id, "purpose": "git for the designer"},
+    )
+    assert made.status_code == 201, made.text
+    assert _get(make_client(), bridge, "/me").status_code == 200  # the bridge is seen now
+    view = world.owner.get(f"/projects/maintainer/maity/members/{served.agent_id}").json()
+    assert view["presence"] == "online"  # the member view keeps the carried presence
+    public_snapshot.Worker(world.migrated, hub).run_once()
+    with world.migrated.connect() as conn:
+        handles = dict(
+            conn.execute(
+                select(t.agent_profile.c.id, t.agent_profile.c.handle).where(
+                    t.agent_profile.c.id.in_([served.agent_id, bridge.agent_id])
+                )
+            ).all()
+        )
+    assert data(world, f"maintainer/agents/{handles[served.agent_id]}")["online"] is False
+    assert "<li>Online</li>" not in html(world, f"maintainer/agents/{handles[served.agent_id]}")
+    assert data(world, f"maintainer/agents/{handles[bridge.agent_id]}")["online"] is True

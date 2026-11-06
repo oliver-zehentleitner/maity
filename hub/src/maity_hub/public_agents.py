@@ -94,6 +94,25 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
     return totals
 
 
+def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
+    """Whether one of the agent's own instances is `online` (§2.4) in one of the projects of its
+    page: a membership with a live session of its own. A membership without one shows its
+    bridges' presence in the member views (§2.3); that is not the agent's own, so it does not
+    count here (§16.9)."""
+    s = t.agent_session.c
+    own = list(
+        conn.execute(
+            select(s.membership_id)
+            .where(
+                s.membership_id.in_([membership_id for _, membership_id in found]),
+                s.live.is_(True),
+            )
+            .distinct()
+        ).scalars()
+    )
+    return public_people.any_online(conn, own)
+
+
 def latest_session(conn: Connection, found: list[tuple[Any, int]]) -> tuple[str | None, str | None]:
     """The `model` and `harness` of the agent's most recent session in one of the projects of
     its page, each `None` when that session did not give it, both when there is none (§16.9)."""
@@ -125,10 +144,10 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         for project, full in listed
     )
     since = public_people.member_since(agent.created_at)
-    online = public_people.any_online(conn, [membership_id for _, membership_id in found])
+    up = online(conn, found)
     model, harness = latest_session(conn, found)
     facts = [f"<li>Member since {escape(since)}</li>"]
-    if online:
+    if up:
         facts.append("<li>Online</li>")
     if model:
         facts.append(f"<li>Model: {escape(model)}</li>")
@@ -167,7 +186,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         ],
         "statistics": totals,
         "member_since": since,
-        "online": online,
+        "online": up,
         "model": model,
         "harness": harness,
     }
