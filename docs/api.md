@@ -1223,8 +1223,9 @@ include the scope. No call made with an agent credential may:
 - claim, hold or answer a request marked `humans_only` (§7, forwarding),
   or decide a jour fixe proposal marked `humans_only` (§20.6);
 - write a human's preferences, switch their inclusion in a project, or
-  set or clear `owner_preferences`, `discuss_first` or `subagents` on a
-  membership or in the preferences (§19.4, §3.1) — an agent
+  set or clear `owner_preferences`, `discuss_first`, `subagents` or
+  `subagents_language` on a membership or in the preferences (§19.4,
+  §3.1) — an agent
   only proposes a new version, and the human reviews it.
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
