@@ -133,14 +133,54 @@ picture.
   (inline SVG): every other surface would still need its own drawing,
   and the page would carry a second, unversioned picture outside the
   digest address.
-- Two stored generated pictures, one per theme: a picture would no
-  longer be one digest, and a page could not pick between them without
+- Two stored generated pictures, one per page theme (light, dark): a
+  picture would no longer be one digest, and a page could not pick between them without
   script.
 - Choosing a motif removes the upload: an owner trying a motif would
   lose the uploaded picture for good.
 - Motifs added by the operator: the set's names and the web catalogue's
   `avatar.motif.<name>` labels are fixed with the code; an operator set
   would need its own labels and review.
+
+## Motifs come in themes: a `theme` on each motif, one flat list, one choice by name
+
+**Id:** 52cf479c-bff6-4822-8edd-faf1af0c5737
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's approval of a second motif theme on 2026-11-05 (request req-wmc262nk5k8g, option 1, card tsk-cda1zq4bmg06), relayed by the lead; the lead chose the form below over the alternatives, from the contract owner's proposal; contract `docs/api.md` §6.10
+**Revisit when:** an agent or owner should choose a theme rather than one motif, a theme needs more than a name (a description, an order of its own, an owner), or motif names collide across themes
+**See:** members.md#an-agent-always-has-a-picture-its-upload-else-a-motif-the-hub-ships-else-a-generated-one-the-hub-draws — 11881a0c-f813-4182-84df-5fa1744f9082 — as of 2026-11-05
+
+Every motif carries a `theme`, a name in the motif names' syntax; the
+first theme is `classic`. Motif names stay unique across all themes,
+`GET /avatars/motifs` stays one list, the themes in the order their first
+motif has in the set, and the agent still chooses exactly one motif by
+its name. A
+theme's heading comes from the web catalogue
+(`avatar.motif.theme.<theme>`), like a motif's label. The startup check
+and its limits, 64 KiB per file among them, apply to every theme alike.
+
+**Reason:** confirmed — the maintainer approved a second theme and the
+lead chose this form; neither gave a reason. Inferred, the contract
+owner's — a field on each motif adds a theme without changing how a
+motif is chosen, stored or checked, so `avatar_motif` and every stored
+choice keep working; unique names across themes keep that single name
+enough to find a motif; labels from the catalogue keep every visible
+word translatable, as for the motifs themselves; the themes follow the
+order of the set, so the set decides which theme comes first (`classic`)
+without an order of its own, where sorting by name would tie the order
+to a theme's spelling.
+
+**Rejected alternatives:**
+- No field, the second theme as more motifs in the same flat list: a
+  client could not group the list or head it by theme.
+- The designer raised two more forms after the lead's choice, a list
+  of themes at the top of the manifest and a second folder or manifest
+  per theme; the lead's choice answered them and no reason was given
+  for either.
+- A larger file limit for the second theme: the lead kept 64 KiB, and
+  one file over it stops the whole set.
 
 ## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its page exists, in four sizes
 
