@@ -1,6 +1,7 @@
 """The caps of the admin section Limits (docs/api.md §16.5): agent profiles and organisations
-owned by a human, projects in one namespace (a human's or an organisation's), and the
-attachment storage of the whole instance, each from the environment, else from the instance
+owned by a human, projects in one namespace (a human's or an organisation's), the aliases of
+one id (`max_aliases`, 1–8, never `unlimited`), and the attachment storage of the whole
+instance, each from the environment, else from the instance
 admin, else its default, by `instance_settings.effective`. A cap on an account is a whole
 number from 1 to 10000, the storage a number of bytes from 1 GiB to 1 PiB, either one or
 `unlimited`; the creations and moves the caps gate read the effective value through `of`, and
@@ -21,10 +22,12 @@ from maity_hub.errors import ApiError, invalid
 
 UNLIMITED = "unlimited"
 STORAGE = "max_attachment_storage"
+ALIASES = "max_aliases"
 DEFAULTS: dict[str, object] = {
     "max_agents_per_human": 100,
     "max_orgs_per_human": 5,
     "max_projects_per_owner": 10,
+    ALIASES: 3,
     STORAGE: UNLIMITED,
 }
 NAMES = tuple(DEFAULTS)
@@ -32,9 +35,10 @@ READ_ONLY = (
     "humans_at_limit",
     "humans_at_org_limit",
     "owners_at_project_limit",
+    "names_at_alias_limit",
     "attachment_storage_used",
 )
-RANGES = {name: (1, 10000) for name in NAMES} | {STORAGE: (1024**3, 1024**5)}
+RANGES = {name: (1, 10000) for name in NAMES} | {STORAGE: (1024**3, 1024**5), ALIASES: (1, 8)}
 
 
 def _checker(name: str) -> Any:
@@ -43,7 +47,7 @@ def _checker(name: str) -> Any:
     def check(value: object) -> object | None:
         """The value to store, or None when it is no cap."""
         if value == UNLIMITED:
-            return value
+            return None if name == ALIASES else value
         if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high:
             return value
         return None
@@ -64,6 +68,13 @@ def of(conn: Connection, hub: Settings, name: str) -> int | None:
     """The cap in force, None for `unlimited`."""
     value = resolve(conn, hub)[name][0]
     return None if value == UNLIMITED else int(value)
+
+
+def aliases(conn: Connection, hub: Settings | None) -> int:
+    """`max_aliases` in force (§16.5). Without the hub's settings (a request the hub closes
+    itself) the environment is not known here, so the admin's value or the default applies."""
+    env = None if hub is None else hub.max_aliases
+    return int(store.effective(f"limits.{ALIASES}", env, store.stored(conn, "limits"))[0])
 
 
 def agent_limit(limit: int, count: int) -> ApiError:
@@ -137,9 +148,21 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         "owners_at_project_limit": _humans_at(
             conn, namespaces, of(conn, hub, "max_projects_per_owner")
         ),
+        ALIASES: _answer(values[ALIASES]),
+        "names_at_alias_limit": _names_at(conn, aliases(conn, hub)),
         STORAGE: _answer(values[STORAGE]),
         "attachment_storage_used": attachments.used_total(conn),
     }
+
+
+def _names_at(conn: Connection, limit: int) -> int:
+    """The humans, organisations, agent profiles and projects holding `limit` aliases or more
+    (§16.5); a deleted profile's retired aliases do not count."""
+    alias = t.handle_alias.c
+    owner = func.coalesce(alias.human_id, alias.org_id, alias.agent_id).label("owner")
+    handles = select(owner).where(alias.live.is_(True))
+    projects = select(t.project_alias.c.project_id)
+    return _humans_at(conn, handles, limit) + _humans_at(conn, projects, limit)
 
 
 def _answer(resolved: tuple[Any, str]) -> dict[str, Any]:
