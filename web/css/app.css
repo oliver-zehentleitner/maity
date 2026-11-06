@@ -1564,6 +1564,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The join dialog's three lines (js/join.js): one row each, so each reads as its own offer. */
 .join-offers { border: 0; padding: 0; margin: 8px 0; }
 .join-offer { min-height: 28px; display: flex; align-items: center; gap: 6px; }
+.join-instruction { margin: 8px 0; }
+.join-instruction p { margin: 0 0 4px; }
+.join-instruction-text { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 40rem; }
 
 /* The theme in Your account (js/account.js): three radios in a row. */
 .theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }

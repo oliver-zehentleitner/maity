@@ -7075,6 +7075,10 @@
     "en": "2f3839b754bb3c45",
     "text": "3da6c935841a9ee5"
   },
+  "join.line.instruction": {
+    "en": "7d0edfc1e4e18452",
+    "text": "25f8b7b1a5755500"
+  },
   "join.line.paste": {
     "en": "467135c1c96f9e6d",
     "text": "a70404925c5b9f6f"
@@ -7238,6 +7242,18 @@
   "join.step_up": {
     "en": "0365bc43945f8179",
     "text": "92eccb2da4e00279"
+  },
+  "join.subagents.english": {
+    "en": "7c6e4d24c8258b2f",
+    "text": "19bb267749b716b9"
+  },
+  "join.subagents.hint": {
+    "en": "c0f81e2ade89b7f3",
+    "text": "f2718de2432f3fae"
+  },
+  "join.subagents.label": {
+    "en": "fe8fc0bf69c31d0f",
+    "text": "763f0594fda33565"
   },
   "join.takes_over.both": {
     "en": "ebfd426a5da19bf1",

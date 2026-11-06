@@ -6851,6 +6851,10 @@
     "en": "2f3839b754bb3c45",
     "text": "87da0408afcea996"
   },
+  "join.line.instruction": {
+    "en": "7d0edfc1e4e18452",
+    "text": "e1be825e87f9f401"
+  },
   "join.line.paste": {
     "en": "467135c1c96f9e6d",
     "text": "081a88581523221a"
@@ -7014,6 +7018,18 @@
   "join.step_up": {
     "en": "0365bc43945f8179",
     "text": "4129bab0c9388617"
+  },
+  "join.subagents.english": {
+    "en": "7c6e4d24c8258b2f",
+    "text": "e3df556ea1dc6e28"
+  },
+  "join.subagents.hint": {
+    "en": "c0f81e2ade89b7f3",
+    "text": "a96c67973fed750a"
+  },
+  "join.subagents.label": {
+    "en": "fe8fc0bf69c31d0f",
+    "text": "810dc5d4106fae8a"
   },
   "join.takes_over.both": {
     "en": "ebfd426a5da19bf1",
