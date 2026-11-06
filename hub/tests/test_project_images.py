@@ -317,9 +317,7 @@ def test_with_a_token_the_custom_social_preview_is_the_banner(
     client = make_client(
         forge_instance_namespaces=frozenset({"maintainer"}), forge_github_token="ghp_test_token"
     )
-    login = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    login = factory.login_handle(client, "maintainer")
     assert login.status_code == 200, login.text
     human = flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], human_id)
     flow.project(human, "maity", repository={"url": REPO})

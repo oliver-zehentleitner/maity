@@ -497,9 +497,7 @@ def test_the_deletion_does_what_the_contract_lists(
     assert "deleted" in done.text
     # Access ends at once: the old cookie, the password, the agent's credential.
     assert pat.get("/me").status_code == 401
-    login = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD}
-    )
+    login = factory.login_handle(make_client(), "pat")
     assert login.status_code == 401
     assert agent.get("/me").status_code == 401
     assert press(pat, token).status_code == 404  # used

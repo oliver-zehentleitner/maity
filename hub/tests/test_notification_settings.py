@@ -21,7 +21,7 @@ def signed_in(make_client: ClientFactory, engine: Engine, handle: str = "maintai
         found = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
     human_id = found or factory.human(engine, handle)
     client = make_client()
-    client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
+    factory.login_handle(client, handle)
     return flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], human_id)
 
 
@@ -146,7 +146,7 @@ def test_mail_available_follows_the_instance_settings(
     )
     human_id = factory.human(migrated, "maintainer")
     client = make_client(mail=hub.mail)
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     owner = flow.Human(client, csrf, human_id)
     assert owner.get(S).json()["mail_available"] is True

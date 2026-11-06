@@ -1361,7 +1361,7 @@ History API anywhere else in `js/` (`context/routing.md`). Fixture
 mode is labelled **Fixtures** in the header. Every write in fixture mode (answers, messages, revocations,
 pauses, state, absence, joins, created projects) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
-the sign-in (handle `maintainer`, any password); `?no_projects=1` starts
+the sign-in (address `maintainer@example.org`, any password); `?no_projects=1` starts
 it without memberships, to show the empty state; `?as=<member id>` makes
 the mock take membership changes as coming from that member, to show how
 the hub answers an admin agent (`docs/api.md` §2.3 ᵃ: a reviewer's role or
