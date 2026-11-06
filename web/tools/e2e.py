@@ -4261,12 +4261,18 @@ def project_links_step(run: Run, page: Page) -> None:
 
 
 def jour_fixe_step(run: Run, page: Page) -> None:
-    """The jour fixe (docs/api.md §20): a series kept in Project settings against the real hub,
-    the owner granted the right to moderate it, the view says its next slot and the member's part,
-    and a start by hand opens a round of that series or says why not."""
-    run.step("jour fixe: a series saved in Project settings, a moderator granted, a start by hand")
+    """The jour fixe (docs/api.md §20): a series kept at the top of the jour fixe page against the
+    real hub (Project settings link there), the owner granted the right to moderate it, the view
+    says its next slot and the member's part, and a start by hand opens a round of that series or
+    says why not."""
+    run.step("jour fixe: a series saved on the jour fixe page, a moderator granted, a start by hand")
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    page.locator("section.jf-series-moved").get_by_role("link", name="Jour fixe", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/jour-fixe$"))
+    fold = page.locator("details.jf-series-settings")
+    expect(fold).not_to_have_attribute("open", "")
+    fold.locator("summary").click()
     page.get_by_role("button", name="New series", exact=True).click()
     form = page.locator("form.jf-series-form")
     expect(form).to_be_visible()
@@ -4285,9 +4291,10 @@ def jour_fixe_step(run: Run, page: Page) -> None:
     row.locator("input[id^=jfs-reason-]").fill("e2e: the owner moderates")
     row.get_by_role("button", name="Grant", exact=True).click()
     expect(row.locator("ul.jf-moderators-list li")).to_have_count(1)
-    page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
+    # The series' block below is drawn again after each change, the settings staying open.
     block = page.locator("section.jf-series-block", has_text="e2e: how we work")
     expect(block).to_contain_text("Next round:")
+    expect(fold).to_have_attribute("open", "")
     # Opting out and back in, as the member's own part in the series (§20.2).
     block.locator("li.jf-part .jf-optout").first.click()
     expect(block.locator("li.jf-part").first).to_contain_text("opted out")

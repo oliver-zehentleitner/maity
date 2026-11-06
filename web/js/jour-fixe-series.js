@@ -1,6 +1,7 @@
-// The jour fixe's series (docs/api.md §20.1, §20.2). In Project settings a
-// human with project:admin keeps the series of the circles `humans` and `all`
-// and deletes an owner's series; the owner keeps their own series. Per series:
+// The jour fixe's series (docs/api.md §20.1, §20.2). At the top of the jour
+// fixe view, folded until opened, a human with project:admin keeps the series of
+// the circles `humans` and `all` and deletes an owner's series; the owner keeps
+// their own series. Per series:
 // topic, circle, schedule, windows, and its moderators, granted with consent
 // (a grant waits in pending_moderators for the agent owner's and a keeper's
 // consent) and ended. The view js/jour-fixe.js reads the same helpers to say
@@ -78,7 +79,7 @@ window.Maity = window.Maity || {};
     const humans = (ctx.members || []).filter((x) => !x.removed_at && x.kind === "human");
     const circleOwner = h("select", { id: id("circle_owner"), disabled: series ? true : null }, humans.map((x) => h("option", { value: x.id }, handle(ctx, x.id))));
     circleOwner.value = s.circle_owner || (humans.some((x) => x.id === ctx.me.id) ? ctx.me.id : (humans[0] || {}).id || "");
-    const enabled = h("input", { type: "checkbox", id: id("enabled") });
+    const enabled = h("input", { type: "checkbox", id: id("enabled"), "aria-describedby": id("enabled") + "-hint" });
     enabled.checked = !!s.enabled;
     const freq = h("select", { id: id("freq") }, Object.keys(FREQ).map((f) => h("option", { value: f }, FREQ[f]())));
     freq.value = r.freq;
@@ -196,6 +197,7 @@ window.Maity = window.Maity || {};
     h("label", { for: id("topic") }, M.t("jfs.topic")), topic, at("topic", topic), at("series", topic),
     h("label", { for: id("circle") }, M.t("jfs.circle")), circle, at("circle", circle), ownerRow,
     h("p", { class: "check" }, enabled, h("label", { for: id("enabled") }, " " + M.t("jf.enabled"))),
+    h("p", { class: "hint", id: id("enabled") + "-hint" }, M.t("jf.enabled.hint")),
     h("label", { for: id("freq") }, M.t("jf.freq")), freq, at("recurrence.freq", freq), weekly, monthly,
     h("label", { for: id("time") }, M.t("jf.time")), time, at("time", time),
     h("label", { for: id("timezone") }, M.t("jf.timezone")), zone, zoneList, at("timezone", zone),
@@ -303,19 +305,20 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  function settingsPart(ctx) {
-    const box = h("section", { class: "jf-series-settings", "aria-labelledby": "jfs-title" });
+  // Folded by default, read when first opened; `changed` runs after each change, for the rounds below.
+  function settingsPart(ctx, changed) {
+    const box = h("details", { class: "jf-series-settings" });
     const status = M.statusLine();
     const list = h("ul", { class: "jf-series-list" });
     const slot = h("div", { class: "jfs-form-slot" });
     const note = h("p", { class: "jfs-note", role: "status" });
     const create = h("button", { type: "button", class: "jfs-new", onclick: () => open(null) }, M.t("jfs.new"));
-    append(box, h("h2", { class: "panel-title", id: "jfs-title" }, M.t("jfs.title")), h("p", { class: "hint" }, M.t("jfs.hint")), status.el, note, list, slot, h("div", { class: "actions" }, create));
+    append(box, h("summary", { id: "jfs-title" }, M.t("jfs.title")), h("p", { class: "hint" }, M.t("jfs.hint")), status.el, note, list, slot, h("div", { class: "actions" }, create));
     let items = [];
     function open(s) {
       const close = () => { clear(slot); create.hidden = false; };
       create.hidden = true;
-      append(clear(slot), seriesForm(ctx, s, (text) => { close(); load(text); }, close));
+      append(clear(slot), seriesForm(ctx, s, (text) => { close(); after(text); }, close));
       slot.querySelector("input").focus();
     }
     // What a grant became, read from the series as the hub has it (a 201 holds the right, a 202 waits).
@@ -324,6 +327,8 @@ window.Maity = window.Maity || {};
       const who = handle(ctx, member);
       return (s.moderators || []).some((x) => x.member_id === member) ? M.t("jfs.grant.done", { who }) : M.t("jfs.grant.waiting", { who });
     };
+    // After a change here: this list read again, and the rounds below.
+    const after = (text) => { if (changed) changed(); return load(text); };
     async function load(text) {
       try {
         items = (await M.api.get(ctx.base + "/jour-fixe")).series || [];
@@ -334,14 +339,15 @@ window.Maity = window.Maity || {};
       status.done();
       const edit = (s) => open(s);
       append(clear(list), items.length ? items.map((s) => {
-        const li = seriesItem(ctx, s, load, say);
+        const li = seriesItem(ctx, s, after, say);
         const btn = li.querySelector(".jfs-edit");
         if (btn) btn.addEventListener("click", () => edit(s));
         return li;
       }) : h("li", { class: "muted" }, M.t("jfs.none")));
       note.textContent = (typeof text === "function" ? text() : text) || "";
     }
-    load();
+    let read = false;
+    box.addEventListener("toggle", () => { if (box.open && !read) { read = true; load(); } });
     return box;
   }
 
