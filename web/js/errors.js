@@ -14,6 +14,11 @@ window.Maity = window.Maity || {};
     observer: () => M.tOwn("error.reason.observer"),
     owner_only: () => M.tOwn("error.reason.owner_only"),
     registration_closed: () => M.tOwn("error.reason.registration_closed"),
+    // The second factor (§2.8): said as what is missing, never as missing rights.
+    reauthentication_required: () => M.tOwn("error.reason.reauthentication_required"),
+    second_factor_enrolment_required: () => M.tOwn("error.reason.second_factor_enrolment_required"),
+    second_factor_required: () => M.tOwn("error.reason.second_factor_required"),
+    step_up_required: () => M.tOwn("error.reason.step_up_required"),
   };
   const CODES = {
     account_suspended: () => M.tOwn("error.account_suspended"),
@@ -114,7 +119,11 @@ window.Maity = window.Maity || {};
 
   M.errorWords = (code, details, message) => {
     const reason = details && details.reason;
-    const said = (Object.hasOwn(REASONS, reason || "") && REASONS[reason]()) || (Object.hasOwn(CODES, code || "") && CODES[code]());
+    const said = (Object.hasOwn(REASONS, reason || "") && REASONS[reason]())
+      // A refusal whose reason has no words yet keeps the reason, in brackets, rather than
+      // the bare "no rights".
+      || (code === "forbidden" && reason && M.tOwn("error.forbidden.reason", { reason }))
+      || (Object.hasOwn(CODES, code || "") && CODES[code]());
     return said || message;
   };
 })(window.Maity);
