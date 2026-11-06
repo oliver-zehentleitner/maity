@@ -200,6 +200,7 @@ window.Maity = window.Maity || {};
     const panel = h("section", { class: "sign-in-mail", "aria-labelledby": "sign-in-mail-title" });
     const status = M.statusLine();
     const address = h("input", { id: "sign-in-address", type: "email", autocomplete: "email", required: true });
+    const send = h("button", { type: "submit", class: "btn btn-secondary" }, M.t("device.mail.send"));
     const ask = h("form", {
       class: "sign-in-form",
       onsubmit: async (e) => {
@@ -218,7 +219,7 @@ window.Maity = window.Maity || {};
     },
     h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.title")),
     h("label", { for: "sign-in-address" }, M.t("device.mail.address")), address,
-    h("button", { type: "submit", class: "btn btn-secondary" }, M.t("device.mail.send")), status.el);
+    send, status.el);
     function codeForm() {
       const code = h("input", { id: "sign-in-mail-code", inputmode: "numeric", autocomplete: "one-time-code", "aria-describedby": "sign-in-mail-sent" });
       const status2 = M.statusLine();
@@ -247,6 +248,13 @@ window.Maity = window.Maity || {};
     const open = h("button", { type: "button", class: "link-button", "aria-expanded": "false",
       onclick: () => { append(clear(panel), ask); address.focus(); } }, M.t("device.mail.send"));
     append(panel, open);
+    // The password form's refusal `email_link` (§2.1, §2.6.7): the form opened with the
+    // address the human typed there, ready to send.
+    panel.openWith = (value) => {
+      if (!ask.isConnected) append(clear(panel), ask);
+      address.value = value;
+      send.focus();
+    };
     return panel;
   }
 
@@ -332,15 +340,20 @@ window.Maity = window.Maity || {};
           : d.os ? M.t("device.approval.claims_os", { os: d.os })
             : M.t("device.approval.claims_nothing");
       const status2 = M.statusLine();
-      const busy = (yes) => dialog.querySelectorAll("button").forEach((b) => { b.disabled = yes; });
+      // Approving is a sensitive call (§2.8.4): an enrolled human whose second factor is
+      // older than 10 minutes is asked for it here, and the approval is sent again.
+      const stepSlot = h("div", { class: "step-up-slot", hidden: true });
+      const busy = (yes) => dialog.querySelectorAll(".match-choice, .deny").forEach((b) => { b.disabled = yes; });
       const send = async (verb, body, words) => {
         busy(true);
         status2.busy(words);
+        const call = () => M.api.post("/auth/device-codes/" + encodeURIComponent(made.id) + "/" + verb, body);
         try {
-          await M.api.post("/auth/device-codes/" + encodeURIComponent(made.id) + "/" + verb, body);
+          await (verb === "approve" ? M.stepUp.run(call, stepSlot) : call());
           stop();
           ended(verb === "approve" ? M.t("device.other.approved") : M.t("device.other.denied"), verb === "approve");
         } catch (err) {
+          if (err.code === "cancelled") { busy(false); status2.done(); return; }
           stop();
           if (err.code === "code_invalid") ended(M.t("device.approval.wrong_number"));
           else { busy(false); status2.fail(M.t("device.not_sent"), said(err)); }
@@ -359,6 +372,7 @@ window.Maity = window.Maity || {};
         h("div", { class: "match-choices", role: "group", "aria-label": M.t("device.approval.choices") },
           (now.choices || []).map((n) => h("button", { type: "button", class: "match-choice", onclick: () => send("approve", { number: n }, M.t("device.approval.approving")) }, String(n)))),
         h("div", { class: "actions" }, deny),
+        stepSlot,
         status2.el);
       append(clear(stage), dialog);
       window.setTimeout(() => deny.focus(), 0);

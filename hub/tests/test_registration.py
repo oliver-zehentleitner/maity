@@ -79,9 +79,7 @@ def client_for(make_client: ClientFactory, settings: Settings) -> Any:
 def admin(make_client: ClientFactory, engine: Engine, settings: Settings) -> flow.Human:
     human_id = factory.human(engine, "maintainer")  # the first human: the instance admin
     client = client_for(make_client, settings)
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, "maintainer")
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, human_id)

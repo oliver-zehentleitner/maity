@@ -1193,9 +1193,10 @@ rules a member follows.
 ## Development
 
 ```sh
-make dev      # .venv with ruff, black, mypy, pytest
+make dev      # .venv from requirements/dev.txt (hashed; the hub's ruff, black, mypy, pytest)
 make check    # ruff, black --check (line length 100), mypy --strict, pytest
 make format
+make lock     # after changing the dev extra or requirements/release.in (uv from hub/requirements/tools.txt)
 ```
 
 The tests run real git against a bare remote, a fake `gh` on an isolated

@@ -81,7 +81,7 @@ def setup(
 
 
 def login(client: TestClient) -> Any:
-    return client.post("/api/v1/auth/login", json={"handle": "ada", "password": factory.PASSWORD})
+    return factory.login_handle(client, "ada")
 
 
 def mails(engine: Engine) -> list[Any]:
@@ -239,9 +239,15 @@ def test_a_human_with_totp_is_asked_for_totp_never_for_mail(
 def test_an_account_that_never_had_an_address_enrols_instead(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    client, _ = setup(make_client, migrated, verified=False)
-    answer = login(client)
-    assert answer.json() == {"second_factor": "enrolment_required"}
+    # Without an address there is no password sign-in (§2.1): such an account's first factor
+    # is a device code, approved where it is still signed in.
+    client, human = setup(make_client, migrated, verified=False)
+    hub: Settings = client.app.state.settings
+    with migrated.begin() as conn:
+        _, _, _, state = second_factor.begin(
+            conn, hub, human, method="device_code", address="198.51.100.5", user_agent=None
+        )
+    assert state == "enrolment"
     assert mails(migrated) == []
 
 
@@ -628,6 +634,7 @@ def test_the_second_step_shows_the_address_masked(
 def test_a_human_without_totp_cannot_remove_the_address_under_email(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
+    factory.earlier_admin(migrated)  # the admin's address is never removed at all (§18.4)
     client, human = setup(make_client, migrated)
     login(client)
     _, code, _ = last_mail(migrated)
@@ -704,6 +711,7 @@ def test_approving_a_held_removal_keeps_the_factor(
         called.append(True)
         raise ApiError(403, "forbidden", "kept", {"reason": "second_factor_required"})
 
+    factory.earlier_admin(migrated)  # the admin's address is never removed at all (§18.4)
     _, human = setup(make_client, migrated, stored=True)
     change = {"id": "adc-1", "address": None, "requested_at": "2026-10-31T12:00:00Z"}
     with migrated.begin() as conn:
