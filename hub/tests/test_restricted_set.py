@@ -616,9 +616,7 @@ def test_a_late_joiner_does_not_see_an_old_restricted_event(
     _set(migrated, "nobody_except", [anna.id])
     _write(anna, card["id"], MARKER)
     [event] = [
-        e
-        for e in _events(anna, "restricted_changed")
-        if e["payload"].get("task_id") == card["id"]
+        e for e in _events(anna, "restricted_changed") if e["payload"].get("task_id") == card["id"]
     ][-1:]
     _set(migrated, "nobody_except", [anna.id, bert.id])
     assert [
