@@ -216,3 +216,94 @@ def test_no_code_reads_no_card(
     assert cli.main(["report", "--task", "tsk-0004", "--summary", "x", "--no-code"]) == 0
     assert not any(r.method == "GET" and r.path == TASK for r in fake.signed())
     assert "reporting" not in capsys.readouterr().err
+
+
+# Without a working gh (a cloud session: gh missing, or its GraphQL refused), the card's
+# linked pull request is read through the hub's probe (§11) and reported only when its head
+# is the head git pushed (tsk-grk7tg5temyc).
+PROBE = "/api/v1/projects/oliver/maity/probe"
+
+
+def _probe(fake: fakehub.FakeHub, heads: dict[int, str], state: str = "open") -> list[str]:
+    """The probe's answer for each linked pull request; returns the queries it was asked."""
+    asked: list[str] = []
+
+    def answer(seen: fakehub.Seen) -> tuple[Any, ...]:
+        asked.append(seen.query)
+        number = int(dict(p.split("=", 1) for p in seen.query.split("&"))["pr"])
+        if number not in heads:
+            return 200, {"repository": "acme/widget", "pr": {"number": number, "found": False}}
+        pr = {"number": number, "found": True, "url": f"{REPO}/pull/{number}",
+              "state": state, "head_sha": heads[number]}  # fmt: skip
+        return 200, {"forge": "github", "repository": "acme/widget", "fresh": True, "pr": pr}
+
+    fake.routes[("GET", PROBE)] = answer
+    return asked
+
+
+def _report_body(fake: fakehub.FakeHub) -> dict[str, Any]:
+    return next(r.json() for r in fake.signed() if r.path == f"{TASK}/report")
+
+
+def test_without_gh_the_linked_pull_request_with_the_pushed_head_is_reported(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    head = _head(joined)
+    asked = _probe(fake, {12: head})
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_OK
+    body = _report_body(fake)
+    assert body["pr_status"] == "found" and body["pr_unknown_reason"] is None
+    assert body["pr"] == {"number": 12, "url": f"{REPO}/pull/12", "head": head, "state": "open"}
+    assert [dict(p.split("=", 1) for p in q.split("&")) for q in asked] == [
+        {"pr": "12", "max_age": "0"}  # a fresh read, never the hub's cache
+    ]
+    assert "PR #12 (open, read by the hub's probe)" in capsys.readouterr().err
+
+
+def test_without_gh_a_linked_pull_request_with_another_head_is_refused(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _probe(fake, {12: "f" * 40})
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert f"PR #12 has head {'f' * 40}" in err and _head(joined) in err
+    assert not _sent(fake)
+
+
+def test_a_failing_gh_falls_back_to_the_probe_for_a_linked_pull_request(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    """gh installed, but its GraphQL refused, as in a Claude Code cloud session."""
+    fake_gh(bin_dir, "", exit_code=1, stderr="HTTP 403: GitHub GraphQL is not available")
+    head = _head(joined)
+    _probe(fake, {780: "e" * 40, 12: head})
+    _card(fake, links=[_link(780), _link(12)])
+    assert _report() == cli.EXIT_OK
+    assert _report_body(fake)["pr"]["number"] == 12
+
+
+def test_without_a_probe_the_unknown_pull_request_is_still_refused(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", PROBE)] = lambda seen: (
+        409,
+        {"error": {"code": "probe_not_configured", "message": "no grant", "details": {}}},
+    )
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "this checkout has an unknown pull request (gh is not installed)" in err
+    assert not _sent(fake)
+
+
+def test_a_failing_gh_without_a_linked_pull_request_stays_an_error(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """66da7721: a forge tool that fails is never reported as "no pull request"."""
+    fake_gh(bin_dir, "", exit_code=1, stderr="HTTP 403: GitHub GraphQL is not available")
+    _card(fake)
+    assert _report() == cli.EXIT_ERROR
+    assert "gh could not list pull requests" in capsys.readouterr().err
+    assert not _sent(fake)

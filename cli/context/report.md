@@ -4,12 +4,13 @@
 
 **Id:** 66da7721-2f51-4105-b82f-4c06cbb9e984
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** CLI skeleton design, 2026-10-21; the refusal on mismatch is from the task brief; re-confirmed by the coordinator after the merged-branch case, 2026-10-22 (a merged head is a forge fact, not an override)
 **Revisit when:** the hub's forge probe makes the agent-side check redundant, or agents routinely hit a refusal that is not a real mismatch
 **See:** https://github.com/oliver-zehentleitner/maity — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-21
 **See:** report.md — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-10-22
+**See:** report.md#without-a-working-gh-the-cards-linked-pull-request-is-read-through-the-hubs-probe — a8ce93bb-51ca-49cb-9782-46f15eaa49e2 — as of 2026-11-07
 
 `maity report` reads the head commit from git, the remote head from
 `git ls-remote` on the branch's upstream, and the pull request from `gh`
@@ -107,11 +108,12 @@ itself.
 
 **Id:** 8c58cebb-b7e1-4947-8776-8f5bcb6c566c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** a member's report that `maity report` for a merged pull request, sent from the branch of the next one, filed the wrong head and pull request on the card (2026-10-30); the coordinator's decision on the card tsk-scw537kndwwg between a `--pr` flag and a card check, and to refuse a checkout without a found pull request, 2026-10-31; the contract text of §6.6 in PR #816
 **See:** report.md — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-10-31
 **Revisit when:** reports for a pull request other than the checked-out one become routine, or cards carry no pull request link and no earlier report often enough that the check never applies
+**See:** report.md#without-a-working-gh-the-cards-linked-pull-request-is-read-through-the-hubs-probe — a8ce93bb-51ca-49cb-9782-46f15eaa49e2 — as of 2026-11-07
 
 Before sending, `maity report` prints the branch, head and pull request it
 reports, and reads the card. It refuses (exit 4) when the card links pull
@@ -218,3 +220,44 @@ before PATH for a bare program name.
   script, `../remote.git`, an ssh alias as `host:path`), and the
   transports are limited by the environment anyway.
 - `shutil.which`: on Windows it searches the current directory first.
+
+## Without a working gh, the card's linked pull request is read through the hub's probe
+
+**Id:** a8ce93bb-51ca-49cb-9782-46f15eaa49e2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-grk7tg5temyc, from two Claude Code cloud sessions whose `gh` was missing or got HTTP 403 on GraphQL, so their reports were refused on linked cards (2026-11-07); the lead's go on the plan (Maity message, 2026-11-07); docs/api.md §11 (`GET /probe?pr=N&max_age=0`)
+**See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-07
+**See:** report.md#a-report-is-checked-against-the-cards-pull-request-without-a-flag-to-name-one — 8c58cebb-b7e1-4947-8776-8f5bcb6c566c — as of 2026-11-07
+**Revisit when:** the probe's pull request read gains or loses `head_sha`, gh works in cloud sessions again, or a report should name a pull request the card does not link
+
+When gh is missing, or is installed and fails (`gitfacts.collect` keeps that
+failure as `forge_error` instead of raising it), `maity report` reads the card
+and asks the hub's probe about each pull request the card links in the
+project's repository, at most five, with `max_age=0`. A pull request whose
+`head_sha` equals what `git ls-remote` answered for the branch, compared whole,
+is reported as `pr_status: found` with number, URL, head and state from the
+probe, and the terminal line says it was read by the hub's probe. Linked pull
+requests with another head refuse (exit 4), naming each head and the branch's.
+A probe that is not configured, unavailable or finds nothing changes nothing:
+the report goes on as before, refused on a linked card as 8c58cebb says, and a
+gh that failed is raised as the error it was, as 66da7721 says.
+
+**Reason:** in cloud sessions gh is often missing or cannot use GraphQL, and the
+card then stayed `in_progress` with nothing wrong in the work. The probe is the
+hub's own forge read, with the operator's or the owner's grant and of the
+project's repository only, so the pull request still comes from the forge, not
+from the agent; asking only about pull requests the card links keeps the
+choice out of the agent's hands, and the exact head match keeps the report tied
+to what git pushed. Both earlier entries name this as their revisit trigger.
+
+**Rejected alternatives:**
+- A `--pr N` flag: 8c58cebb rejected it, and the probe makes it no safer, since
+  the number would still be the agent's.
+- The hub's cached observation of the link: a pull request link's `observed`
+  carries no head (§6.13), and a cached read may be older than the push.
+- gh's REST API as a fallback for gh's GraphQL: helps only where gh is
+  installed and logged in, not where it is missing.
+- Reporting `pr_status: unknown` on a linked card: that is the partial truth
+  66da7721 and 8c58cebb refuse.
