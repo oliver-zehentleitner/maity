@@ -1243,6 +1243,20 @@ restriction, not encryption. The set's notice in the bell opens the
 project's settings; a member in the set without `project:admin` is led
 from there to their own settings (`settings/mine`), which show the setting
 to read: its mode, that they are in the set, the set and the count.
+Before every way into the set (§6.1 "Every way into the set") the page says
+who will read the restricted texts. The join and invitation forms show it as
+a line; a guest's raise, an isolation's end, a transfer into an organisation
+and a promotion to an organisation's owner ask first; an organisation's
+invitation and transfer say it before their go. A reader who is not served
+the list is told only what the setting lets the page know ("unless the list
+leaves them out", "if the list names them"). Whoever accepts an invitation
+may be a former member whose id the list still holds: while the list names
+someone who is no member now, the invitation's line says so conditionally
+too. The accepter may also be the returning owner of an agent that stayed a
+member (not isolated) after its owner left: such agents the setting would
+let in are named, "if their owner is the one who accepts". A transfer into an organisation also names the project's agents it may
+let in, those whose owner is a guest or no member and may be one of the
+organisation's owners.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
