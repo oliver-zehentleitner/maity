@@ -61,6 +61,19 @@ the other author or the lead before you push. Exit 2 means the check could
 not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetches
 `origin main` and the head of every pull request open in origin's repository.
 
+## The guard tests before a review request
+
+Run `tools/guards.sh` before you ask for a review (`HUB_PYTHON=` a Python
+with the hub's test requirements). In about half a minute it runs what
+otherwise fails in CI one round at a time: the hub's per-human tables test,
+`make -C web shapes`, `make -C web fixtures` and `make -C web check`. It
+fails while any of them fails or leaves the work tree changed. Commit what
+it rewrote. Add a field the check names to the fixture under
+`web/fixtures/` by hand; `web/tools/fixture-shapes-baseline.json` is never
+extended for it. It needs a clean work tree to start, so after a red run commit
+what it rewrote (or `git checkout -- .`) before the next one. Exit 2 means
+the guards could not run, and it never ends in 0 then.
+
 ## Before merging a change to the web catalogs
 
 A pull request that changes `web/i18n/en.json` or a language file in
