@@ -30,11 +30,16 @@ die() {
 
 # HUB_PYTHON as an absolute path, resolved where the caller stands: the steps run it from
 # hub/ and web/, where a relative path or a bare name could name another file or none.
+# A bare name is looked up on PATH first, and what that gives can still be relative (a PATH
+# entry such as `.venv/bin`).
 hub_python=${HUB_PYTHON:-python3}
 case $hub_python in
-  /*) ;;
-  */*) hub_python="$PWD/$hub_python" ;;
+  */*) ;;
   *) hub_python=$(command -v "$hub_python") || die "no ${HUB_PYTHON:-python3} on PATH (HUB_PYTHON)" ;;
+esac
+case $hub_python in
+  /*) ;;
+  *) hub_python="$PWD/$hub_python" ;;
 esac
 # git takes its repository, index and settings from GIT_* variables as well; this work tree's
 # own, as found from where the caller stands, is the one checked.

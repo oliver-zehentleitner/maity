@@ -1789,9 +1789,13 @@ this work tree's `hub/src`. Both refusals, and a missing `make`, `node`, `pytest
 never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps run it from `hub/` and `web/`.
 Every step, and the check of where the hub is imported from, runs in a cleared environment (`env -i`) that carries
 only `PATH`, `HOME`, `TMPDIR`, `LC_ALL=C`, `PYTHONNOUSERSITE=1` and `PYTHONPATH` set to the work tree's `hub/src`.
-The script drops the caller's `GIT_*` variables and reads `git status` with `--untracked-files=all`. What it cannot
-reach is the caller's own shell: a startup file that ends the shell before the script runs, or a `PATH` that names
-other programs.
+The cleared environment also drops `MAITY_TEST_DATABASE_URL`, so these steps always use the test suite's SQLite;
+they say nothing about PostgreSQL. The script drops the caller's `GIT_*` variables. It reads tracked changes from
+`git status` and untracked files by the repository's `.gitignore` files alone, since a personal exclude
+(`core.excludesFile`, `.git/info/exclude`) could hide a file a step wrote. It refuses (exit 2) to start while an
+index entry is marked skip-worktree or assume-unchanged, because `git status` does not show such a file even when a
+step rewrites it. What it cannot reach is the caller's own shell: a startup file that ends the shell before the
+script runs, or a `PATH` that names other programs.
 
 **Reason:**
 - After approval, #1447 and #1443 together needed four more CI rounds for these guards: a new column that names
@@ -1808,6 +1812,9 @@ other programs.
   a `PYTHON` in the environment takes over make's own (`PYTHON=true`), and a `BASH_ENV` runs in the per-human step.
   Before the cleared environment, each of them gave "all passed" on a branch with an undecided column or a fixture
   lacking a field.
+- In the second review round, a stale `web/tools/hub-shapes.json` marked skip-worktree or assume-unchanged, and a
+  stray file hidden by a personal exclude, each gave "all passed": `git status` reported nothing. The start now
+  refuses the flags, and untracked files are read by the repository's ignore rules alone.
 - A field the check names goes into the fixture by hand. `web/tools/fixture-shapes-baseline.json` only shrinks
   for a request it already lists, so extending it would hide the gap the guard found.
 
