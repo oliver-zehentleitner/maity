@@ -1787,6 +1787,11 @@ it fails unless `git status` is clean. Every step runs, so one run names every f
 a work tree that is not clean, and refuses a `HUB_PYTHON` that would import the hub from somewhere other than
 this work tree's `hub/src`. Both refusals, and a missing `make`, `node`, `pytest` or `HUB_PYTHON`, end in exit 2,
 never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps run it from `hub/` and `web/`.
+Every step, and the check of where the hub is imported from, runs in a cleared environment (`env -i`) that carries
+only `PATH`, `HOME`, `TMPDIR`, `LC_ALL=C`, `PYTHONNOUSERSITE=1` and `PYTHONPATH` set to the work tree's `hub/src`.
+The script drops the caller's `GIT_*` variables and reads `git status` with `--untracked-files=all`. What it cannot
+reach is the caller's own shell: a startup file that ends the shell before the script runs, or a `PATH` that names
+other programs.
 
 **Reason:**
 - After approval, #1447 and #1443 together needed four more CI rounds for these guards: a new column that names
@@ -1798,6 +1803,11 @@ never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps 
   another checkout. Without `PYTHONPATH` pointing at the work tree, the per-human test and the shapes would test
   that checkout's tables and answers, and could pass for code that is not the branch's (reproduced: the import
   resolved to another checkout's `hub/src`).
+- Inherited settings made steps end in 0 without testing, each reproduced in review: `PYTEST_ADDOPTS=--collect-only`
+  collects the per-human tests without running them, `MAKEFLAGS=-n` or `-i` skips the recipes or their errors,
+  a `PYTHON` in the environment takes over make's own (`PYTHON=true`), and a `BASH_ENV` runs in the per-human step.
+  Before the cleared environment, each of them gave "all passed" on a branch with an undecided column or a fixture
+  lacking a field.
 - A field the check names goes into the fixture by hand. `web/tools/fixture-shapes-baseline.json` only shrinks
   for a request it already lists, so extending it would hide the gap the guard found.
 
@@ -1806,5 +1816,8 @@ never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps 
   rounds the script is meant to save.
 - Compare `git status` before and after instead of requiring a clean start: a file both the author and a step
   changed would pass unseen.
+- Unsetting a list of known variables (`PYTEST_ADDOPTS`, `MAKEFLAGS`, `MFLAGS`): each tool reads more than that
+  (`PYTEST_PLUGINS`, `MAKEFILES`, `GNUMAKEFLAGS`, `BASH_ENV`, `NODE_OPTIONS`, make's variables from the environment),
+  and the list would miss the next one; a cleared environment names what the steps need instead.
 - The `make` targets with the Python as the author's environment finds it: the case above, where the shared
   environment tests another checkout.
