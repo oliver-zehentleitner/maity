@@ -4,9 +4,10 @@
 #
 #   tools/overlap.sh [<branch>]       # default: the checked-out branch
 #
-# It fetches the head of every open pull request (`gh pr list`) and keeps those that change a
-# file the branch changes, each against origin/main (`git diff --no-renames base...head`, so a
-# renamed file counts under its old name as well). For each one it runs
+# It fetches the head of every open pull request (`gh pr list` of origin's repository), checks
+# that it is the head gh listed, and keeps those that change a file the branch changes, each
+# against origin/main (`git diff --no-renames base...head`, so a renamed file counts under its
+# old name as well). For each one it runs
 # `git merge-tree --write-tree` of the branch with the pull request's head and decides by the
 # exit code alone (0 clean, 1 conflict), never by git's message, which is in the locale's
 # language (KONFLIKT, CONFLICT, ...). For each conflict it runs the same check of origin/main
@@ -114,7 +115,10 @@ if [ -z "$mine" ]; then
   exit 0
 fi
 
-prs=$(gh pr list --state open --limit "$LIMIT" --json number,headRefOid,headRefName,isCrossRepository \
+# gh is told origin's repository: on its own it may list another one (GH_REPO, `gh repo
+# set-default`, an `upstream` remote), whose pull requests are other changes or none.
+origin=$(git remote get-url origin) || die "no remote origin"
+prs=$(gh pr list --repo "$origin" --state open --limit "$LIMIT" --json number,headRefOid,headRefName,isCrossRepository \
   --jq '.[] | "\(.number) \(.headRefOid) \(.isCrossRepository) \(.headRefName)"') || die "gh pr list failed"
 # Counted in bash: a counting program's failure could pass for a short list.
 count=0
@@ -128,6 +132,7 @@ tmp="refs/maity-overlap/$$"
 trap 'git for-each-ref --format="%(refname)" "$tmp" | xargs -r -n1 git update-ref -d' EXIT
 numbers=()
 specs=()
+declare -A listed=()
 while read -r number head fork name; do
   [ -n "${number:-}" ] || continue
   # The branch's own pull request, also while its pushed head is older than the branch: by its
@@ -135,15 +140,24 @@ while read -r number head fork name; do
   [ "$head" = "$own" ] && continue
   [ "$fork" = false ] && [ "$name" = "$branch" ] && continue
   numbers+=("$number")
+  listed[$number]=$head
   specs+=("+refs/pull/$number/head:$tmp/$number")
 done <<<"$prs"
 if [ "${#specs[@]}" -gt 0 ]; then
   git fetch --quiet --no-tags origin "${specs[@]}" || die "fetching the heads of pull requests ${numbers[*]} failed"
 fi
+# The head checked must be the head gh listed, or the check reads another change than the one
+# listed: a push between the list and the fetch moves it (running again settles that), and this
+# still holds should gh and origin ever name different repositories despite --repo.
+for number in ${numbers[@]+"${numbers[@]}"}; do
+  fetched=$(git rev-parse --verify --quiet "$tmp/$number^{commit}") || die "no fetched head of pull request $number"
+  [ "$fetched" = "${listed[$number]}" ] \
+    || die "pull request $number is at ${listed[$number]} in gh's list but at $fetched on origin"
+done
 
 found=0
 conflicts=0
-for number in "${numbers[@]}"; do
+for number in ${numbers[@]+"${numbers[@]}"}; do
   ref="$tmp/$number"
   theirs=$(changed "$base" "$ref") || exit 2
   shared=$(pick "$mine" "$theirs" 1) || die "comparing the files of pull request $number failed"

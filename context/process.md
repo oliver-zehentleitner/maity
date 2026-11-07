@@ -1693,7 +1693,8 @@ even when the branch changes how it conflicts there. That pull request's line na
 A check that did not run never ends in 0. Every command whose answer the check needs stops it with
 exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
 which would otherwise read as "changes no file"), the list of open pull requests (also when it reaches
-`gh`'s limit and may be cut short), the fetch of their heads, a merge, and each step that turns
+`gh`'s limit and may be cut short), the fetch of their heads (also when a fetched head is not the
+head `gh` listed), a merge, and each step that turns
 git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
 name only when it comes from the same repository, not from a fork.
 
@@ -1716,6 +1717,11 @@ name only when it comes from the same repository, not from a fork.
 - `sort` follows the locale's collation, which can order paths differently from bytes; in one review
   run `comm` then warned that its input was not sorted (not reproduced on the development machine).
   Bytewise order is the same everywhere.
+- `gh` is told origin's repository (`--repo`), and each fetched head must be the head `gh` listed.
+  On its own `gh` may list another repository (`GH_REPO`, `gh repo set-default`, an `upstream`
+  remote). The check then fetched origin's pull requests of the same numbers, other changes, and
+  in a probe during the review ended in 0 where the listed pull request conflicted. A head that moved between
+  the list and the fetch stops the check too; running it again settles that.
 - Two lists are compared in bash (an associative array, so bash 4 or newer), not with `comm` on
   `<(...)`: a program inside `<(...)` is outside `pipefail`, so its failure was lost and both lists
   read as empty. With a failing `tr` there, a conflict came out "clean for this branch" with exit 0.

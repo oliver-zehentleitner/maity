@@ -28,16 +28,21 @@ def installed(name: str) -> bool:
     )
     return "setlocale" not in probe.stderr
 # A stand-in for gh: the open pull requests from prs.json next to it, as many as --limit lets
-# through. `{"flood": true, "head": sha}` stands for more open pull requests than the limit, each
+# through, and only when asked for origin's repository. `{"flood": true, "head": sha}` stands for more open pull requests than the limit, each
 # at that head.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
-    import json, pathlib, sys
+    import json, pathlib, subprocess, sys
     prs = json.loads((pathlib.Path(__file__).parent / "prs.json").read_text())
     args = sys.argv[1:]
     if args[:2] != ["pr", "list"]:
         sys.exit(3)
+    origin = subprocess.run(
+        ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    if args[args.index("--repo") + 1] != origin:
+        sys.exit(4)
     limit = int(args[args.index("--limit") + 1])
     if prs and prs[0].get("flood"):
         head = prs[0]["head"]
@@ -254,6 +259,23 @@ class OverlapTest(unittest.TestCase):
         self.assertEqual(got.returncode, 2)
         self.assertIn("fetching the heads of pull requests 12 failed", got.stderr)
         self.assertNotIn("clean", got.stdout)
+
+    def test_a_head_origin_serves_other_than_gh_lists_stops_the_check(self) -> None:
+        """gh may list another repository than origin, or the head moved after the list: the
+        commit checked would be another change than the pull request listed. Exit 2."""
+        prs = self.scenario()
+        seven = next(pr for pr in prs if pr["number"] == 7)
+        self.git("checkout", "-q", "--detach", self.base)
+        other = self.commit({"b.txt": lines("other")}, "another change numbered 7")
+        self.git("push", "-q", "origin", f"+{other}:refs/pull/7/head")
+        self.git("checkout", "-q", "mine")
+        got = self.run_check([seven], "en")
+        self.assertEqual(got.returncode, 2, got.stdout)
+        self.assertIn(
+            f"pull request 7 is at {seven['head']} in gh's list but at {other} on origin",
+            got.stderr,
+        )
+        self.assertEqual(got.stdout, "")
 
     def test_a_pull_request_without_common_history_stops_the_check(self) -> None:
         """Its files cannot be listed against main: exit 2, never a "clean" or "no file"."""
