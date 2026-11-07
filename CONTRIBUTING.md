@@ -54,10 +54,12 @@ tools/overlap.sh            # the checked-out branch; or tools/overlap.sh <branc
 It prints one line per such pull request: the shared files, and `clean` or
 the files that conflict. It decides by `git merge-tree`'s exit code, never
 by git's message, so the locale doesn't matter. A file that already
-conflicts with `main` alone is named but not counted. Exit 1 means your
-branch adds a conflict: settle the order with the other author or the lead
-before you push. It needs `gh`, and it fetches `origin main` and each pull
-request's head.
+conflicts with `main` alone is named but not counted, so exit 0 means your
+branch adds no conflict, not that it merges cleanly with everything: read
+the lines. Exit 1 means your branch adds a conflict: settle the order with
+the other author or the lead before you push. Exit 2 means the check could
+not run; it never ends in 0 then. It needs `gh`, and it fetches
+`origin main` and every open pull request's head.
 
 ## Before merging a change to the web catalogs
 
