@@ -9685,6 +9685,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
+  // The mock as the hub answers an owner with trust member who changes their agent's role (§3.1 "The owner changes the role"):
+  // a project role counts by its base, stored with it; ops and a project role on ops are beyond the limits.
+  const owFixtures = win.MAITY_FIXTURES, owSearch = win.location.search;
+  const owF = JSON.parse(JSON.stringify(owFixtures));
+  owF["maity/members.json"].items.push({ ...owF["maity/members.json"].items.find((x) => x.id === "hum-maintainer"), id: "hum-friend", handle: "friend", display_name: "Friend", trust: "member", role: "coder", role_base: "coder" });
+  owF["maity/members.json"].items.forEach((x) => { if (x.id === "agt-b") x.owner_id = "hum-friend"; });
+  owF["maity/project.json"].roles = [{ name: "docs", base: "writer" }, { name: "deployer", base: "ops" }];
+  win.MAITY_FIXTURES = owF; win.location.search = "?as=hum-friend";
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const owTry = (role) => win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { role }).catch((err) => err);
+  const owReviewer = await owTry("reviewer"), owDocs = await owTry("docs"), owOps = await owTry("ops"), owDeployer = await owTry("deployer"), owNone = await owTry("nonesuch");
+  const owAreas = await win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { areas: ["web/"] }).catch((err) => err);
+  const owNotOwn = await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "reviewer" }).catch((err) => err);
+  win.MAITY_FIXTURES = owFixtures; win.location.search = owSearch;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const owLimit = (e) => e && e.status === 403 && e.details.reason === "member_join_limit" && e.details.field === "role";
+  expect(owReviewer.role === "reviewer" && owReviewer.role_base === "reviewer" && owDocs.role === "docs" && owDocs.role_base === "writer"
+    && owLimit(owOps) && owLimit(owDeployer) && owNone.status === 400 && owNone.details.fields.role === "unknown"
+    && owAreas.status === 403 && owAreas.details.scope === "members:admin" && owNotOwn.status === 403 && owNotOwn.details.scope === "members:admin",
+    "mock as an owner with trust member: their agent's role within the limits, a project role by its base; ops, one on ops, areas and another's agent refused "
+    + JSON.stringify([owDocs.role_base, owDeployer.details, owNone.details]));
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
@@ -11729,6 +11750,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.owner-reports").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { reports_to: "agt-d" }]),
     "owner reports_to: only reports_to is sent " + JSON.stringify(orPatches));
+  // The owner changes their agent's role within a member join's roles (§3.1 "The owner changes the role",
+  // tsk-0xrm35721btd); its areas are shown, set by the admins.
+  const owRole = () => byId("owner-role-agt-b");
+  const owOffered = () => owRole().querySelectorAll("option").map((o) => o.getAttribute("value"));
+  expect(owRole() && owRole().value === "coder" && !owOffered().includes("ops") && !owOffered().includes("proxy")
+    && owOffered().includes("manager") && owOffered().includes("reviewer"),
+    "owner role: one's own agent's role offered among a member join's roles, never ops or proxy " + JSON.stringify(owRole() && owOffered()));
+  expect(text(main.querySelector("form.owner-role .owner-role-areas")).includes("hub/") && !byId("member-areas-agt-b"),
+    "owner role: the areas shown as the admins set them, no field for them");
+  owRole().value = "reviewer";
+  main.querySelector("form.owner-role").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { role: "reviewer" }]),
+    "owner role: only role is sent " + JSON.stringify(orPatches[orPatches.length - 1]));
+  await orPatch("/projects/maintainer/maity/members/agt-b", { role: "coder" });
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  orManage("Agent A").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("owner-role-agt-a") && text(main.querySelector(".owner-role-fixed")).includes("The project's admins change it"),
+    "owner role: an agent an admin raised beyond the limits (trust admin) keeps its role with the admins, said so");
   // A guest is never offered; a boss of another owner stays chosen and marked, so saving does not end it unasked.
   const orAll = win.Maity.api.getAll, orGet2 = win.Maity.api.get;
   const orShape = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { reports_to: "hum-other" })
@@ -11744,6 +11783,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   expect(byId("owner-reports-agt-b") && main.querySelector("section.agent-here form.owner-reports"),
     "owner reports_to: the project's Agents has it beside the rulebook");
+  expect(byId("owner-role-agt-b") && main.querySelector("section.agent-here form.owner-role"),
+    "owner role: the project's Agents has it beside whom it reports to");
+  // The project's roles answer after several pickers are drawn: each one takes them in, not only the first.
+  let orRelease = null;
+  const orGet3 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/roles"
+    ? new Promise((done) => { orRelease = () => done({ custom: [{ name: "docs", base: "writer" }, { name: "deployer", base: "ops" }] }); })
+    : orGet3(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
+  const orPickers = () => main.querySelectorAll("select").filter((x) => (x.getAttribute("id") || "").startsWith("owner-role-"));
+  const orBefore = orPickers().length;
+  if (orRelease) orRelease();
+  for (let k = 0; k < 4; k++) await tick();
+  expect(orBefore >= 2 && orPickers().length === orBefore
+    && orPickers().every((x) => { const v = x.querySelectorAll("option").map((o) => o.getAttribute("value")); return v.includes("docs") && !v.includes("deployer"); }),
+    "owner role: project roles arriving late reach every drawn picker, never one on ops " + orBefore);
   // tsk-nbadjbr9zpg7: a member of another owner is offered too, marked; saving it waits for that side's consent, said so (§6.2).
   const orForeign = { id: "agt-f8", kind: "agent", owner_id: "hum-else", display_name: "Else Lead", handle: "else-lead", trust: "member", role: "manager", reports_to: null, removed_at: null, instances: [] };
   const orWith = (r) => Object.assign({}, r, { items: r.items.concat([orForeign]) });
