@@ -6163,6 +6163,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("public-stats").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_stats: false }) && !byId("public-stats").checked,
       "numbers switch: unticking it sends public_stats false " + JSON.stringify(psSent));
+    // The agents tab (`public_agents`, §16.9): the agents with a page by default; ticked, all of them, sent alone.
+    expect(byId("public-agents") && !byId("public-agents").checked, "agents switch: the account page shows it off by default");
+    byId("public-agents").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_agents: "all" }) && byId("public-agents").checked,
+      "agents switch: ticking it sends public_agents all alone and keeps the answer " + JSON.stringify(psSent));
+    byId("public-agents").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_agents: "public_projects" }) && !byId("public-agents").checked,
+      "agents switch: unticking it sends public_agents public_projects " + JSON.stringify(psSent));
+    const paErr = async (b) => { try { await psPatch("/me", b); return null; } catch (err) { return err.details && err.details.fields; } };
+    expect(JSON.stringify(await paErr({ public_agents: null })) === JSON.stringify({ public_agents: "required" })
+      && JSON.stringify(await paErr({ public_agents: "none" })) === JSON.stringify({ public_agents: "unknown" }),
+      "agents switch: the fixture hub refuses null and an unknown word as the hub does");
     win.Maity.api.patch = psPatch;
   }
   // The link to one's public page (tsk-4e17b8xnp8eq): directly under the name and handle,
@@ -6175,11 +6187,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && plLink().querySelector("a").getAttribute("href") === "#/maintainer?as=public" && plLink().querySelector("a").getAttribute("target") === "_blank"
       && text(plLink()) === "View public page" && !main.querySelector("form.public-profile-form").querySelector(".public-profile-link"),
       "public profile: View public page sits right under the name and handle, outside the form, opened at ?as=public");
+    const paLink = () => main.querySelector("form.public-profile-form p.public-agents-link a");
+    expect(paLink() && paLink().getAttribute("href").endsWith("/maintainer/agents?as=public") && paLink().getAttribute("target") === "_blank"
+      && text(paLink()) === "View my agents tab",
+      "public profile: the agents switch links to the agents tab, opened at ?as=public");
+    // A save draws the links again from the hub's answer: still one link to the tab, not one more.
+    byId("public-agents").checked = true; main.querySelector("form.public-profile-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    byId("public-agents").checked = false; main.querySelector("form.public-profile-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(main.querySelectorAll("form.public-profile-form p.public-agents-link a").length === 1,
+      "public profile: after a save the agents tab is linked once");
     const plGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/people/maintainer" ? plGet(p).then((x) => ({ ...x, page_served: false })) : plGet(p));
     await go("#/account/settings"); await go("#/account"); for (let k = 0; k < 4; k++) await tick();
     expect(plFacts() && plFacts().nextSibling === plLink() && !plLink().querySelector("a") && text(plLink()) === "",
       "public profile: no page served, no link under the name and handle");
+    expect(!paLink(), "public profile: no page served, no link to the agents tab");
     win.Maity.api.get = plGet;
   }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the

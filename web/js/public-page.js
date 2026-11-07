@@ -91,6 +91,8 @@ window.Maity = window.Maity || {};
     const presence = h("input", { type: "checkbox", id: "public-presence" });
     // The person's own numbers on their page, separate from the profile and off until chosen (§16.9).
     const stats = h("input", { type: "checkbox", id: "public-stats" });
+    // The agents tab lists the agents with a page; ticked, every agent of the person (`public_agents` all, §16.9).
+    const agents = h("input", { type: "checkbox", id: "public-agents" });
     // One line: the hub refuses every line break in this text.
     const bio = profileField("public-bio", M.t("public_profile.bio"), { maxlength: "280" });
     const website = profileField("public-website", M.t("public_profile.website"), { type: "url", translate: "no", placeholder: "https://example.org", maxlength: "200" });
@@ -111,17 +113,24 @@ window.Maity = window.Maity || {};
       h("option", { value: "everyone" }, M.t("public_profile.links.everyone")));
     const fieldFor = (key) => key === "public_bio" ? bio : key === "website" ? website : key.startsWith("social.") ? networks[key.slice(7)] : null;
     const link = h("p", { class: "public-profile-link" });
+    const agentsLink = h("p", { class: "public-agents-link" });
     async function showLink() {
       clear(link);
+      clear(agentsLink);
       let person = null;
       try { person = await M.api.get("/people/" + encodeURIComponent(ctx.me.handle)); } catch (err) { person = null; }
       // page_served: the hub serves it now, with the instance's own switch counted.
-      if (person && person.page_served) append(link, h("a", { class: "button-link", href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
+      if (person && person.page_served) {
+        append(link, h("a", { class: "button-link", href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
+        // The agents tab is served with the person's page, whatever it lists.
+        append(agentsLink, h("a", { href: "/" + encodeURIComponent(ctx.me.handle) + "/agents?as=public", target: "_blank", rel: "noopener" }, M.t("public_profile.agents.view")));
+      }
     }
     function show() {
       box.checked = !!ctx.me.public_profile;
       presence.checked = ctx.me.public_presence !== false;
       stats.checked = ctx.me.public_stats === true;
+      agents.checked = ctx.me.public_agents === "all";
       bio.input.value = ctx.me.public_bio || "";
       website.input.value = ctx.me.website || "";
       const social = ctx.me.social || {};
@@ -139,6 +148,7 @@ window.Maity = window.Maity || {};
         if (box.checked !== !!ctx.me.public_profile) body.public_profile = box.checked;
         if (presence.checked !== (ctx.me.public_presence !== false)) body.public_presence = presence.checked;
         if (stats.checked !== (ctx.me.public_stats === true)) body.public_stats = stats.checked;
+        if (agents.checked !== (ctx.me.public_agents === "all")) body.public_agents = agents.checked ? "all" : "public_projects";
         const bioText = bio.input.value.trim();
         if (bioText !== (ctx.me.public_bio || "")) body.public_bio = bioText || null;
         const site = website.input.value.trim();
@@ -157,7 +167,7 @@ window.Maity = window.Maity || {};
         try {
           const answer = await M.api.patch("/me", body);
           const member = (answer && answer.member) || {};
-          ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible"].forEach((k) => { if (k in member) ctx.me[k] = member[k]; });
+          ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible"].forEach((k) => { if (k in member) ctx.me[k] = member[k]; });
           show();
           await showLink();
           status.done();
@@ -179,6 +189,9 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint" }, M.t("public_profile.presence.hint")),
     h("label", { class: "check", for: "public-stats" }, stats, " ", M.t("public_profile.stats")),
     h("p", { class: "hint" }, M.t("public_profile.stats.hint")),
+    h("label", { class: "check", for: "public-agents" }, agents, " ", M.t("public_profile.agents")),
+    h("p", { class: "hint" }, M.t("public_profile.agents.hint")),
+    agentsLink,
     ...bio.nodes,
     h("h4", null, M.t("public_profile.links")),
     ...website.nodes,
