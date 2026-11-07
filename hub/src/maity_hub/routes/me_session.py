@@ -47,6 +47,7 @@ from maity_hub import (
     restricted,
     rules,
     setup_cards,
+    subagents,
     ticker,
 )
 from maity_hub import tables as t
@@ -627,6 +628,8 @@ def _packet(
                 restricted=mine.id in restricted.resolve(conn, project),
             ),
             **briefing_view.briefing_block(conn, project, mine.row),
+            # The owner's instruction to work in subagents, beside the briefing (§5.2).
+            "subagents": subagents.block(conn, mine.row),
             # The dashboard address of its direct conversation with its owner, on the public
             # URL, never the join host (§5.2, §16.11): how the human gets into Maity.
             "chat_url": "/".join(

@@ -133,5 +133,6 @@
   "sign_in.mail_alternative": "或者在你发起请求的浏览器中输入此验证码：{code}\n\n",
   "sign_in.page_button": "在此设备上登录",
   "sign_in.page_title": "以 {name} 的身份登录 Maity",
-  "sign_in.subject": "[Maity] 登录链接"
+  "sign_in.subject": "[Maity] 登录链接",
+  "subagents.instruction": "来自 {owner}（此智能体的所有者）的指示：对于你通过 Maity 收到的每个评审或编码任务，启动一个新的子智能体，并把指令完整交给它；在该子智能体中完成任务，而不是在本会话中。你和你的子智能体可以用 `maity say` 把结果和状态发送给指令中点名的成员。"
 }

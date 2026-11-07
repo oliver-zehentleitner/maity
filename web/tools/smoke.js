@@ -3248,9 +3248,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   byId("join-handle").value = "my-helper"; byId("join-display").value = "My helper"; byId("join-role").value = "tester"; byId("join-trust").value = "guest"; byId("join-ttl").value = "900";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(byoPosts[0]) === JSON.stringify({ agent: { handle: "my-helper", display_name: "My helper" }, trust: "guest", role: "tester", ttl_seconds: 900 })
+  // A tester has no subagents by default (§3.1), whatever the box showed for the coder before.
+  expect(JSON.stringify(byoPosts[0]) === JSON.stringify({ agent: { handle: "my-helper", display_name: "My helper" }, trust: "guest", role: "tester", ttl_seconds: 900, subagents: false })
     && text(main.querySelector(".join-panel")).includes("a member may not set this for their own agent: the role"),
-    "own agents: the join carries trust and role only, and the hub's limit is said with its field " + JSON.stringify(byoPosts[0]));
+    "own agents: the join carries trust, role and subagents only, and the hub's limit is said with its field " + JSON.stringify(byoPosts[0]));
   win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_agents_max", max: 10 }));
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector(".join-panel")).includes("you hold as many agents in this project as it allows (10)"), "own agents: the hub's count limit in words");
@@ -5580,6 +5581,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
   expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join, a leading # dropped");
+  // The owner's subagent instruction (§3.1): on for a coder by default, in the dashboard's language,
+  // with no English switch where the dashboard is English.
+  expect(joinPosts[0][1].role === "coder" && joinPosts[0][1].subagents === true && joinPosts[0][1].subagents_language === "en" && !byId("join-subagents-english"),
+    "join: a coder's join asks for subagents by default, in the dashboard's language " + JSON.stringify(joinPosts[0][1]));
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("install the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
@@ -5611,14 +5616,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll("article.seat").length + main.querySelectorAll(".closed-joins li").length === joinsBefore && text(main).includes("No join created: the handle: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."),
     "a handle against the rule is refused before sending, with the rule");
   byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
+  // A tester's join has no subagents until the box is ticked; ticked, it stays when the role changes.
+  byId("join-role").value = "tester"; byId("join-role").dispatch("change");
+  const subOff = byId("join-subagents").checked;
+  byId("join-subagents").checked = true; byId("join-subagents").dispatch("change");
+  byId("join-role").value = "writer"; byId("join-role").dispatch("change");
+  expect(!subOff && byId("join-subagents").checked, "join: subagents follows the role until the box is ticked");
+  const SUBAGENT_TEXT = "Instruction from maintainer, who owns this agent: start a fresh subagent.";
   // An install line PowerShell cannot run (§3.2), in a browser on Windows that remembers nothing.
   const postBefore = win.Maity.api.post, lsBefore = win.localStorage;
-  win.Maity.api.post = async (p, b) => { const r = await postBefore(p, b); return { ...r, paste_lines: { ...r.paste_lines, windows: null } }; };
+  const subPosts = [];
+  win.Maity.api.post = async (p, b) => { subPosts.push(b); const r = await postBefore(p, b); return { ...r, instruction: SUBAGENT_TEXT, paste_lines: { ...r.paste_lines, windows: null } }; };
   win.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   ctx.navigator.platform = "Win32";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
   expect(byId("join-line-join").checked === true && !byId("join-line-windows") && text(main.querySelector(".join-result .paste-line")).startsWith("maity join "),
     "no Windows line: a browser on Windows starts at only join, and no Windows offer is shown");
+  expect(subPosts.length === 1 && subPosts[0].subagents === true && text(main.querySelector(".join-result .join-instruction-text")) === SUBAGENT_TEXT,
+    "join: the instruction the hub wrote is shown above the line");
+  btn(main, "Copy").click(); await tick();
+  expect(ctx.copied === SUBAGENT_TEXT + "\n\n" + text(main.querySelector(".join-result .paste-line")),
+    "join: copy puts the instruction, a blank line and the line on the clipboard");
   win.Maity.api.post = postBefore; win.localStorage = lsBefore; delete ctx.navigator.platform;
   btn(main.querySelector(".join-result"), "Join another").click(); await tick();
   const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));

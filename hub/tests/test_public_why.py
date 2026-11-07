@@ -51,6 +51,11 @@ def settings(settings: Any) -> Any:
 
 @pytest.fixture
 def world(make_client: ClientFactory, migrated: Engine, settings: Any, monkeypatch: Any) -> World:
+    # No app here runs the public-pages worker: it renders with the settings its app started
+    # with, and a test below changes them through `configure` alone. Its start-up render,
+    # late on a loaded runner, would write the page back as the old settings show it. The
+    # renders these tests read come from the app's start and from `touch`.
+    monkeypatch.setattr(public_pages.Worker, "start", lambda self: None)
     public_pages.configure(replace(settings, public_pages=True))
     world = World(make_client, migrated)
     fresh = ktw.Cache()

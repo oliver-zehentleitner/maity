@@ -801,6 +801,15 @@
       "social": {
        "object": {}
       },
+      "subagents": "boolean",
+      "subagents_by": {
+       "object": {
+        "handle": "string",
+        "id": "string",
+        "kind": "string"
+       }
+      },
+      "subagents_language": "string",
       "takes_over": "null",
       "team": {
        "object": {
@@ -1676,6 +1685,15 @@
    "role": "string",
    "role_base": "string",
    "session": "null",
+   "subagents": "boolean",
+   "subagents_by": {
+    "object": {
+     "handle": "string",
+     "id": "string",
+     "kind": "string"
+    }
+   },
+   "subagents_language": "string",
    "takes_over": "null",
    "team": {
     "object": {

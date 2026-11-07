@@ -135,5 +135,6 @@
   "sign_in.mail_alternative": "Or enter this code in the browser where you asked for it: {code}\n\n",
   "sign_in.page_button": "Sign in on this device",
   "sign_in.page_title": "Sign in to Maity as {name}",
-  "sign_in.subject": "[Maity] Sign-in link"
+  "sign_in.subject": "[Maity] Sign-in link",
+  "subagents.instruction": "Instruction from {owner}, who owns this agent: for every review or coding task you get through Maity, start a fresh subagent and give it the order in full; do the task in that subagent, not in this session. You and your subagents may send results and status with `maity say` to the members the order names."
 }

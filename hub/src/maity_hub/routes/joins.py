@@ -46,6 +46,7 @@ from maity_hub import (
     product_line,
     project_roles,
     restricted,
+    subagents,
     takeovers,
     write_guard,
 )
@@ -107,6 +108,10 @@ class JoinCreate(Strict):
     # the hand-over is written, a card id of the project or the `seq` of a message to `all`.
     takes_over: str | None = Field(default=None, max_length=40)
     handover: Annotated[str, Field(max_length=200)] | int | None = None
+    # The owner's instruction to work in subagents and its language (§3.1); without
+    # `subagents` it follows the role.
+    subagents: bool | None = None
+    subagents_language: str | None = Field(default=None, max_length=16)
 
 
 class Exchange(Strict):
@@ -183,6 +188,13 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             }
             if body.briefing is not None and body.briefing != existing.briefing:
                 differing["briefing"] = "differs_from_membership"
+            if body.subagents is not None and body.subagents != existing.subagents:
+                differing["subagents"] = "differs_from_membership"
+            if (
+                body.subagents_language is not None
+                and body.subagents_language != existing.subagents_language
+            ):
+                differing["subagents_language"] = "differs_from_membership"
             if differing:
                 raise invalid(differing, "the agent is a member; change its membership instead")
             values = {
@@ -206,6 +218,24 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         values.setdefault("role", "coder")
         values.setdefault("areas", [])
         values.setdefault("capabilities", [])
+        if existing is not None:
+            # A new instance carries the membership's instruction as it is (§3.1).
+            told, language = bool(existing.subagents), existing.subagents_language
+        else:
+            told = (
+                body.subagents
+                if body.subagents is not None
+                else subagents.default_for(values["role"])
+            )
+            # A language sent is checked even where the instruction is off and keeps none.
+            asked = (
+                subagents.language_of(conn, body.subagents_language, caller.principal_id)
+                if body.subagents_language is not None
+                else None
+            )
+            language = (
+                (asked or subagents.language_of(conn, None, caller.principal_id)) if told else None
+            )
         token, code = new_token(), new_code()
         now = clock.now()
         join_id = new_id("join")
@@ -227,6 +257,8 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 replaces=body.replaces,
                 takes_over=body.takes_over,
                 handover=handed,
+                subagents=told,
+                subagents_language=language,
                 created_by=caller.principal_id,
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
@@ -249,6 +281,13 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                     "windows": join_line.windows(settings.cli_install, join_url, code),
                 },
                 "agent_id": agent_id,
+                "instruction": (
+                    subagents.instruction(
+                        language or "en", subagents.handle_of(conn, caller.principal_id)
+                    )
+                    if told
+                    else None
+                ),
                 "project": namespace.full_name(conn, mine.project),
                 "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
                 "via": via,
@@ -351,7 +390,7 @@ def _limit(field: str) -> ApiError:
     )
 
 
-def _may_bring(mine: Any) -> bool:
+def may_bring(mine: Any) -> bool:
     """A human with trust `member` who may bring agents of their own: never an agent,
     whose joins go through `members:admin` alone."""
     return bool(mine.kind == "human" and mine.trust == "member")
@@ -360,18 +399,18 @@ def _may_bring(mine: Any) -> bool:
 def _require_own_joins(mine: Any) -> None:
     """Listing and revoking one's own joins (§3.1): whoever may bring agents, also while
     `member_agents` is `off`, since the joins already handed out stay usable."""
-    if not _may_bring(mine):
+    if not may_bring(mine):
         raise forbidden("members:admin")
 
 
 def _require_member_rule(mine: Any) -> None:
     """Without `members:admin`, a join is a member's under `policy.member_agents`, or
     the scope's `forbidden` as before the rule (§3.1)."""
-    if not _may_bring(mine) or mine.project.member_agents != "on":
+    if not may_bring(mine) or mine.project.member_agents != "on":
         raise forbidden("members:admin")
 
 
-def _within_limits(membership_row: Any) -> bool:
+def within_limits(membership_row: Any) -> bool:
     """A membership a member's join may add an instance to: trust and role within §3.1."""
     return bool(
         membership_row.trust in MEMBER_RULE_TRUSTS and membership_row.role_base in MEMBER_RULE_ROLES
@@ -412,7 +451,7 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
         raise _limit("areas")
     if body.capabilities:
         raise _limit("capabilities")
-    if existing is not None and not _within_limits(existing):
+    if existing is not None and not within_limits(existing):
         # A membership an admin raised beyond the limits gets new instances only
         # through `members:admin`.
         raise _limit("agent")
@@ -487,7 +526,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     if creator.trust != "member":  # a guest now, or anything else below: void
         raise not_found()
     if member is not None:
-        if not _within_limits(member):
+        if not within_limits(member):
             raise not_found()
         return
     # What the member would hold once this join is exchanged: the distinct profiles of
@@ -704,6 +743,7 @@ def render_page(
         "join_command": join_command,
         "ensurepath": join_line.ENSUREPATH,
         "takes_over": _takes_over_sentence(conn, row),
+        "subagents": _subagents_quote(conn, row),
         "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
             _SIGNING_REQUIRED.replace("{{hub}}", hub)
@@ -736,6 +776,17 @@ def _takes_over_sentence(conn: Connection, row: Any) -> str:
     if handle is None:
         return ""
     return f"You continue the work of `{handle}`; the hand-over is in your first resume.\n"
+
+
+def _subagents_quote(conn: Connection, row: Any) -> str:
+    """Item 2's quote of the owner's instruction (§3.2), the words the human copied and the
+    resume packet carries."""
+    if not row.subagents:
+        return ""
+    text = subagents.instruction(
+        row.subagents_language or "en", subagents.handle_of(conn, row.created_by)
+    )
+    return f"> {text}\n"
 
 
 def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
@@ -1001,6 +1052,9 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 briefing=row.briefing,
                 takes_over=_takes_over_of(conn, row),
                 handover=row.handover,
+                subagents=bool(row.subagents),
+                subagents_language=row.subagents_language if row.subagents else None,
+                subagents_by=row.created_by if row.subagents else None,
                 joined_at=now,
             )
         )
