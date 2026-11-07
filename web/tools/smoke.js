@@ -7432,6 +7432,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "picture: an owner sets an agent's picture, which its member view carries");
   expect(avRow() && text(main).includes("Picture uploaded.") && btn(avRow(), "Remove the upload"),
     "picture: the row stays open, says so and offers Remove");
+  // The motif in the Manage row on Members (§6.10): the chosen one selected, and clearing it sent.
+  {
+    const mmPatches = [], mmPatch = win.Maity.api.patch;
+    await win.Maity.api.patch("/agents/agt-c", { avatar_motif: "owl" });
+    win.Maity.api.patch = (p, b) => { mmPatches.push([p, b]); return mmPatch(p, b); };
+    await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick(); await agOpen("agt-c");
+    for (let k = 0; k < 4; k++) await tick();
+    const mmSel = byId("avatar-motif-agt-c");
+    expect(mmSel && mmSel.value === "owl", "motif: the Manage row on Members selects the agent's chosen motif");
+    if (mmSel) { mmSel.value = ""; mmSel.dispatch("change"); }
+    const mmRow = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-c");
+    if (mmRow && btn(mmRow, "Save the motif")) btn(mmRow, "Save the motif").click();
+    for (let k = 0; k < 6; k++) await tick();
+    const mmAfter = (await win.Maity.api.get("/agents")).items.find((a) => a.id === "agt-c") || {};
+    expect(JSON.stringify(mmPatches) === JSON.stringify([["/agents/agt-c", { avatar_motif: null }]]) && mmAfter.avatar_motif === null,
+      "motif: No motif in the Manage row clears the chosen one: " + JSON.stringify(mmPatches));
+    win.Maity.api.patch = mmPatch;
+  }
   await go("#/account/picture");
   // The hub's refusals in words.
   const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));

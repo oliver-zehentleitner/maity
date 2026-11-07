@@ -663,20 +663,17 @@ window.Maity = window.Maity || {};
       const key = "avatar/" + id;
       if (uploaded[key] && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(uploaded[key]);
       delete uploaded[key];
-      if (!body || !body.blob) return Object.assign(shownWithoutUpload(id), agentMotif(id));
+      if (!body || !body.blob) return shownWithoutUpload(id);
       uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body.blob) : "uploaded-" + key;
-      return Object.assign(setAvatar(id, uploaded[key], "uploaded"), agentMotif(id));
+      return setAvatar(id, uploaded[key], "uploaded");
     };
   }
   // §6.10, "An agent's motif": the motifs of fixtures/avatar-motifs.json, and
   // the picture an agent shows without an upload: its motif, else the generated
-  // one (here without an address, so the client draws it, as for a human).
+  // one (here without an address, so the client draws it, as for a human). A
+  // PUT or DELETE of the picture answers its url and source alone, as the hub's.
   const motifSet = () => (fixtures()["avatar-motifs.json"] || { version: "", motifs: [] });
   const profileOf = (id) => ((fixtures()["agents.json"] || { items: [] }).items).find((a) => a.id === id);
-  function agentMotif(id) {
-    const agent = /^agt-/.test(id) ? profileOf(id) : null;
-    return agent ? { avatar_motif: agent.avatar_motif || null } : {};
-  }
   function shownWithoutUpload(id) {
     const agent = /^agt-/.test(id) ? profileOf(id) : null;
     if (!agent) return setAvatar(id, null, null);
