@@ -186,6 +186,7 @@
      "social": {
       "object": {}
      },
+     "start_tabs": "null",
      "terms": "null",
      "website": "null"
     }
@@ -194,6 +195,7 @@
     "array": {
      "object": {
       "full_name": "string",
+      "id": "string",
       "logo": {
        "object": {
         "available": "boolean",

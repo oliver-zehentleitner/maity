@@ -2066,7 +2066,16 @@ window.Maity = window.Maity || {};
         mm.interface_language = chosen;
         fixtures()["auth-session.json"].member.interface_language = chosen;
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      // §5.1 "Start tabs": always the whole list, projects of one's own, each once; null resets.
+      if ("start_tabs" in body) {
+        const list = body.start_tabs;
+        const mine = me().projects.map((p) => p.id);
+        if (list !== null && !Array.isArray(list)) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "list_type" } });
+        if (list && new Set(list).size !== list.length) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "duplicate" } });
+        if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
+        mm.start_tabs = list ? list.slice() : null;
+      }
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
