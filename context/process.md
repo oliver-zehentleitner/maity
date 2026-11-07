@@ -1668,6 +1668,77 @@ check job and `make dev` install from it, then the CLI editable without build is
 - Pinning the tools by version in `pyproject.toml`'s dev extra without hashes: the versions would hold, but
   not the files.
 
+## The overlap check before a push decides by merge-tree's exit code, and counts only the conflicts the branch adds
+
+**Id:** 53705871-3016-476f-8482-392106c6f450
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-kpbatay0r79a, from the jour fixe of 2026-11-07 (proposal t5.s1, adopted by the maintainer as req-pcxh3qdmser4); the not-counting rule is the author's and the review of #1462 agreed with it; `tools/overlap.sh`, `tools/test_overlap.py`, `CONTRIBUTING.md` ("The overlap check before a push")
+**Revisit when:** git's `merge-tree --write-tree` changes its exit codes, or the team wants a branch to stop for conflicts it does not cause
+
+`tools/overlap.sh` checks a branch against every open pull request that changes one of its files. It
+fetches every open pull request's head and takes each one's files from git (`git diff --no-renames
+--name-only origin/main...head`), as it takes the branch's own. It three-way merges the branch with each
+pull request that shares a file (`git merge-tree --write-tree --no-messages`), and reads only the exit
+code: 0 clean, 1 conflict, anything else stops the check with exit 2. For each conflict it runs the same
+merge of `origin/main` with that pull request. A file that conflicts there too is named but not counted,
+so exit 1 means the branch adds a conflict. Path lists are sorted bytewise (`LC_ALL=C` for `sort`) and
+compared in bash itself, while git keeps the reader's locale.
+
+Exit 0 says "this branch adds no conflict", which is weaker than "this branch merges cleanly with every
+open pull request": a file that already conflicts between `main` and a pull request is not counted,
+even when the branch changes how it conflicts there. That pull request's line names the file.
+
+A check that did not run never ends in 0. Every command whose answer the check needs stops it with
+exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
+which would otherwise read as "changes no file"), the list of open pull requests (also when it reaches
+`gh`'s limit and may be cut short), the fetch of their heads (also when a fetched head is not the
+head `gh` listed), a merge, and each step that turns
+git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
+name only when it comes from the same repository, not from a fork.
+
+**Reason:**
+- The checks the authors wrote by hand grepped git's message for `CONFLICT`. On a machine with a German
+  locale git writes `KONFLIKT`, and one check reported a pull request as conflict-free when it was not.
+  An exit code is the same in every language. A test runs the check under a German and an English
+  locale, and the old grep fails exactly in the German one.
+- A merge that git cannot compute (no common history, a missing object) must not read as
+  "clean". Every exit other than 0 and 1 stops the check.
+- A pull request that already conflicts with `main` is that pull request's to resolve. Counting it
+  would make every branch that shares one of its files exit 1, whatever the branch does. The line
+  still names it, so the author sees it.
+- The files of a pull request come from git, not from `gh pr view --json files`: GitHub's list names a
+  renamed file only under its new name, so a pull request renaming a file the branch edits would be
+  skipped; its paths are not quoted the way git quotes them, so a path beyond ASCII never matched; and
+  it stops at 100 files per pull request (#1431 changes 113, `gh pr view --json files` lists 100).
+  With `--no-renames` a rename counts under both names, and `core.quotePath=false` gives one form for
+  every list.
+- `sort` follows the locale's collation, which can order paths differently from bytes; in one review
+  run `comm` then warned that its input was not sorted (not reproduced on the development machine).
+  Bytewise order is the same everywhere.
+- `gh` is told origin's repository (`--repo`), and each fetched head must be the head `gh` listed.
+  On its own `gh` may list another repository (`GH_REPO`, `gh repo set-default`, an `upstream`
+  remote). The check then fetched origin's pull requests of the same numbers, other changes, and
+  in a probe during the review ended in 0 where the listed pull request conflicted. A head that moved between
+  the list and the fetch stops the check too; running it again settles that.
+- Two lists are compared in bash (an associative array, so bash 4 or newer), not with `comm` on
+  `<(...)`: a program inside `<(...)` is outside `pipefail`, so its failure was lost and both lists
+  read as empty. With a failing `tr` there, a conflict came out "clean for this branch" with exit 0.
+
+**Rejected alternatives:**
+- `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
+  protects against, and the test for the German case would prove nothing.
+- Count every conflict, including those that exist against `main` alone: a branch would stop for
+  conflicts it does not cause.
+- Leave the check to each author: the jour fixe had just seen it go wrong once.
+- Exit 0 only when the branch merges cleanly with every pull request: a pull request's own conflict
+  with `main` would stop every branch that touches its files, as with counting every conflict.
+- `gh`'s file list per pull request, with a fetch only of those that share a file: fewer fetches, but
+  the gaps above, each of which ends in a silent "no overlap".
+- `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
+  up and a program whose exit status still has to be read at every call; bash alone has neither.
+
 ## One shared CI watcher reads the pull request's own newest ci run, never the commit's checks
 
 **Id:** 67edbcd8-634f-42c8-9a22-107dbe246bef

@@ -1579,6 +1579,7 @@ window.Maity = window.Maity || {};
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
     max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
     max_aliases: { value: 3, source: "default" }, names_at_alias_limit: 0,
+    max_attachment_storage_per_project: { value: 1073741824, source: "default" },
     max_attachment_storage: { value: "unlimited", source: "default" }, attachment_storage_used: 734003200,
   };
 
@@ -2437,7 +2438,8 @@ window.Maity = window.Maity || {};
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
     // null restores the default, "unlimited" is no limit, an integer 1–10000; the
-    // attachment storage of the instance in bytes, 1 GiB to 1 PiB, with what is stored.
+    // attachment storage of each project in bytes, 1 MiB to 1 PiB, and of the instance,
+    // 1 GiB to 1 PiB, with what is stored.
     ["GET", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       return JSON.parse(JSON.stringify(limitsSetting));
@@ -2445,8 +2447,8 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_aliases: 3, max_attachment_storage: "unlimited" };
-      const ranges = { max_aliases: [1, 8], max_attachment_storage: [1024 ** 3, 1024 ** 5] };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_aliases: 3, max_attachment_storage_per_project: 1024 ** 3, max_attachment_storage: "unlimited" };
+      const ranges = { max_aliases: [1, 8], max_attachment_storage_per_project: [1024 ** 2, 1024 ** 5], max_attachment_storage: [1024 ** 3, 1024 ** 5] };
       Object.entries(body).forEach(([k, v]) => {
         const [low, high] = ranges[k] || [1, 10000];
         if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "names_at_alias_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";

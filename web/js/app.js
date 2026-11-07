@@ -142,6 +142,15 @@ window.Maity = window.Maity || {};
     return { scope: "unknown" };
   }
 
+  // Whether an address shows a visitor nothing once its public page, if any, was asked for
+  // (§16.11): a handle, or a project address whose view word is none of the dashboard's. An
+  // address under one of the dashboard's own first words keeps the sign-in, which leads on
+  // there (`/sign-in/code`, `/requests/<id>` from a mail, `/inbox`), even where it names no view.
+  function showsVisitorNothing(where) {
+    if (where.scope === "person") return true;
+    return where.scope === "project" && !NAV.some((n) => n.route === where.route);
+  }
+
   function errorBox(err) {
     const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
     return h("div", { class: "error", role: "alert" },
@@ -2160,8 +2169,14 @@ window.Maity = window.Maity || {};
             if (seq === renderSeq) M.siteChrome.leave();
             return;
           }
-          // The hub's own page in <main> stands when its data could not be read.
-          if (seq === renderSeq && !hubPage) renderLogin(main);
+          // The hub's own page in <main> stands when its data could not be read. A dashboard
+          // route asks for the sign-in; an address that shows a visitor nothing says so
+          // (js/not-found.js), with the sign-in one link away.
+          if (seq === renderSeq && !hubPage) {
+            if (M.notFound && showsVisitorNothing(where)) {
+              M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
+            } else renderLogin(main);
+          }
           return;
         }
         throw err;
@@ -2302,7 +2317,7 @@ window.Maity = window.Maity || {};
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
-        append(root, h("p", null, M.tn("view.none_link", { link: h("a", { href: "/all" }, M.t("view.none_go")) })));
+        M.notFound.view(root);
       }
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -2319,7 +2334,7 @@ window.Maity = window.Maity || {};
     ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     watch(ctx, where, known ? item : null, main);
     if (reuse) keepFresh(seq, reuse, keptSlug, keptSlug ? null : ctx.keptProject || null);
-    let label = M.t("view.none");
+    let label = M.t("not_found.title");
     if (empty) label = M.t("view.no_projects");
     else if (where.scope === "all") label = M.t("header.all_projects");
     else if (where.scope === "notifications") label = M.t("view.notifications");
