@@ -2,7 +2,8 @@ name: ci
 
 # The changelog fragments; the dashboard's checks and smoke test; the hub's
 # checks: lint, types and tests on SQLite; the test suite against PostgreSQL
-# and MariaDB; the built wheel on Python 3.13; the image; the Helm chart.
+# and MariaDB; the built wheel on Python 3.13; the sdist and wheel as PyPI gets
+# them (hub-dist); the image; the Helm chart.
 # Every hub job installs the locked set from hub/requirements/, and hub-lock
 # checks the locks follow pyproject.toml.
 on:
@@ -57,6 +58,7 @@ jobs:
       helm: ${{ steps.paths.outputs.helm }}
       contract: ${{ steps.paths.outputs.contract }}
       vendor: ${{ steps.paths.outputs.vendor }}
+      dist: ${{ steps.paths.outputs.dist }}
     defaults:
       run:
         working-directory: .
@@ -70,7 +72,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
         run: |
-          parts="hub image join web e2e cli helm contract vendor"
+          parts="hub image join web e2e cli helm contract vendor dist"
           if [ "$EVENT" != pull_request ]; then
             for part in $parts; do echo "$part=true" >> "$GITHUB_OUTPUT"; done
             exit 0
@@ -92,6 +94,7 @@ jobs:
                 helm:deploy/*) hit=true ;;
                 contract:docs/api.md|contract:hub/*) hit=true ;;
                 vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;
+                dist:hub/*|dist:web/*|dist:docs/join-page.md) hit=true ;;
               esac
             done <<< "$changed"
             echo "$part=$hit" >> "$GITHUB_OUTPUT"
@@ -309,6 +312,25 @@ jobs:
       - run: pip install --no-deps "$(ls dist/*.whl)"
       - run: rm -rf src && pytest -m wheel
 
+  # The sdist and wheel as release-hub.yml builds them for PyPI, on every pull request that
+  # changes the hub or the files its wheel carries (web/, docs/join-page.md): built from the
+  # hashed release lock, then scripts/check_dist.py proves the bundled files, a wheel rebuilt
+  # from the sdist, and an install outside the checkout that serves the dashboard.
+  hub-dist:
+    needs: changes
+    if: needs.changes.outputs.dist == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: make release-build
+      - run: make release-check
+
   # The locks in hub/requirements/ follow pyproject.toml: recompiled with the
   # pinned uv, they must come out unchanged (`make lock` was run).
   hub-lock:
@@ -509,7 +531,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-vendor, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
+    needs: [changes, changelog, web, web-vendor, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-dist, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -632,6 +632,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
         conn,
         {r.asked_by_human for r in requests_by_id.values() if not r.asked_by and r.asked_by_human},
     )
+    restricted_reads = _RestrictedNotices(conn)
     items = []
     for row in rows:
         data = row.data or {}
@@ -825,6 +826,34 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     urgent=data.get("action") == "suspend",
                 )
             )
+        elif row.type == "restricted_changed" and row.at >= now - WINDOW:
+            # A restricted text, or the set, changed (§6.4): listed only while the human
+            # reads the event now, on its list and in the set; never the text, its length or
+            # the card's title, here nor in a mail or a push.
+            mine = where.membership(str(data.get("project_id")))
+            if mine is None or not restricted_reads.reads(mine, data.get("seq")):
+                continue
+            home = f"/{namespace.full_name(conn, mine.project)}"
+            task_id = data.get("task_id")
+            items.append(
+                Item(
+                    kind="inbox",
+                    at=row.at,
+                    record=row.n,
+                    project_id=mine.project.id,
+                    title=_cut(where.say("restricted_text" if task_id else "restricted_set")),
+                    target=(
+                        {"type": "task", "id": str(task_id)}
+                        if task_id
+                        else {"type": "settings", "id": "restricted_access"}
+                    ),
+                    url=_url(
+                        where, f"{home}/board?task={task_id}" if task_id else f"{home}/settings"
+                    ),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
         elif row.type == "mail_disabled" and row.at >= now - WINDOW:
             # TODO(#280): listed and counted while the address stays disabled, however old,
             # and read once it is set again (§18.1, §18.7); the address state comes with
@@ -844,6 +873,33 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                 )
             )
     return items
+
+
+class _RestrictedNotices:
+    """Whether the human reads the event a `restricted_changed` notice names (§6.4, §18.1):
+    on its private list and in the set at this read, the set resolved once per project."""
+
+    def __init__(self, conn: Connection) -> None:
+        self.conn = conn
+        self._in_set: dict[str, bool] = {}
+
+    def reads(self, mine: Membership, seq: Any) -> bool:
+        from maity_hub import restricted
+
+        if not isinstance(seq, int) or isinstance(seq, bool):
+            return False
+        project_id = mine.project.id
+        if project_id not in self._in_set:
+            self._in_set[project_id] = mine.id in restricted.resolve(self.conn, mine.project)
+        if not self._in_set[project_id]:
+            return False
+        listed = self.conn.execute(
+            select(t.restricted_event_list.c.seq).where(
+                t.restricted_event_list.c.seq == seq,
+                t.restricted_event_list.c.membership_id == mine.id,
+            )
+        ).first()
+        return listed is not None
 
 
 def _waiting_registrations(conn: Connection, rows: Sequence[Any]) -> set[str]:

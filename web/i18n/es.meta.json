@@ -4796,8 +4796,8 @@
     "text": "d4896f6a74dde266"
   },
   "handles.aliases": {
-    "en": "5a6dfee2685fd642",
-    "text": "18c0f1c68e3eb732"
+    "en": "761b044beeac0866",
+    "text": "baab6fdb82dac1c0"
   },
   "handles.aliases_none": {
     "en": "e9cbae354863e00e",
@@ -10528,8 +10528,8 @@
     "text": "4607ae7a9d4cc77a"
   },
   "names.rename.hint": {
-    "en": "85a6c142b16caac9",
-    "text": "d707cfae25d3816d"
+    "en": "90c478359bdb09cc",
+    "text": "1eff0029392467ef"
   },
   "names.renaming": {
     "en": "55f8d0e263c5fefb",
@@ -13248,8 +13248,8 @@
     "text": "014e6e7062d0abcb"
   },
   "public_profile.hint": {
-    "en": "bdc3c71606e891f1",
-    "text": "211c4eed8268070f"
+    "en": "16a9b3b304f23a2e",
+    "text": "2a37ac993b19ba6d"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -13288,8 +13288,8 @@
     "text": "1910a347cc42e84b"
   },
   "public_profile.presence": {
-    "en": "13fd36440a3dfcb7",
-    "text": "b216d6694b947487"
+    "en": "85290daeb7c9b9b2",
+    "text": "3136f29c9144fd1a"
   },
   "public_profile.presence.hint": {
     "en": "e340a78a7fa20d30",
@@ -13302,6 +13302,14 @@
   "public_profile.saved": {
     "en": "29e85f4550e3e09e",
     "text": "195f47712c7abfd4"
+  },
+  "public_profile.stats": {
+    "en": "f9d3ac541a31f9f8",
+    "text": "3302a1419cd638cf"
+  },
+  "public_profile.stats.hint": {
+    "en": "e9406d3f7a9d91da",
+    "text": "08fe3d7147904655"
   },
   "public_profile.switch": {
     "en": "1524f31d11656ff9",
@@ -17675,6 +17683,10 @@
     "en": "21cf98a292e94015",
     "text": "eddfaa05c60f272a"
   },
+  "visitor.harness": {
+    "en": "b3ae7ee4d934d009",
+    "text": "b3ae7ee4d934d009"
+  },
   "visitor.holder.agent": {
     "en": "aec70cfd47032616",
     "text": "f0bf1eca13a602a7"
@@ -17682,6 +17694,14 @@
   "visitor.holder.member": {
     "en": "5327c7984ea05cf1",
     "text": "737b080086f4c8b4"
+  },
+  "visitor.member_since": {
+    "en": "068cef0810198a3d",
+    "text": "b41f86169028f3ad"
+  },
+  "visitor.model": {
+    "en": "00d5d0c26a1a0925",
+    "text": "7eab3e45dea36262"
   },
   "visitor.note.dismissed": {
     "en": "bf453bab232ef9e9",
@@ -17750,6 +17770,10 @@
   "visitor.statistics": {
     "en": "f7e895590e4ed336",
     "text": "4d887d7b1d505704"
+  },
+  "visitor.statistics.own": {
+    "en": "068dce52f609b9c3",
+    "text": "8ef012ddb3736ba6"
   },
   "visitor.why.attention": {
     "en": "f98f532ad04f9c38",

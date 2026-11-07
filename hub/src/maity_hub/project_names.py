@@ -337,7 +337,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     )
     moved = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     org_projects.moved(
-        conn, moved, sending, moved.owner_org_id, to if to.startswith("hum-") else None
+        conn, moved, sending, moved.owner_org_id, to if to.startswith("hum-") else None, by
     )
     owner = namespace.owner_of(conn, moved)
     announce(conn, project.id, old_full, {"owner": owner}, actor, by)

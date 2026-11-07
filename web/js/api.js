@@ -171,12 +171,13 @@ window.Maity = window.Maity || {};
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
   }
-  // §6.25: at most 8 earlier names, and 3 renames and transfers a day.
+  // §6.25: at most max_aliases earlier names (§16.5), and 3 renames and transfers a day.
   const nameChanges = {};
   // `full`: the name it would have; taking back one's own earlier name
   // adds none, so the limit does not stop it (as the hub, #487).
   function renameCheck(p, path, full) {
-    if ((p.aliases || []).length >= 8 && !(p.aliases || []).includes(full)) fail(409, "alias_limit", "at most 8 earlier names", path, { limit: 8, aliases: p.aliases });
+    const limit = limitsSetting.max_aliases.value;
+    if ((p.aliases || []).length >= limit && !(p.aliases || []).includes(full)) fail(409, "alias_limit", "at most " + limit + " earlier names", path, { limit, aliases: p.aliases });
     const day = (nameChanges[p.id] || []).filter((t) => Date.now() - t < 86400000);
     if (day.length >= 3) fail(429, "rate_limited", "at most 3 renames and transfers a day", path);
   }
@@ -281,6 +282,69 @@ window.Maity = window.Maity || {};
 
   function project(slug, path) {
     return file(slug, "project.json", path);
+  }
+
+  // §6.1 "Restricted access", §6.4 "Restricted text": the set resolved on every call from the
+  // stored setting and the project's members, as the hub resolves it; the texts live in this
+  // tab only, never in storage.
+  const RESTRICTED_MODES = ["nobody_except", "all_except"];
+  const restrictedTexts = {};  // "<slug> <task id>" -> { task_id, text, version, updated_by, updated_at, history }
+  function restrictedSet(slug) {
+    const value = (project(slug, "").settings || {}).restricted_access;
+    const found = new Set();
+    if (!value || !RESTRICTED_MODES.includes(value.mode)) return found;
+    const listed = new Set(value.members || []);
+    const allExcept = value.mode === "all_except";
+    const named = (id) => (allExcept ? !listed.has(id) : listed.has(id));
+    const items = (fixtures()[slug + "/members.json"] || { items: [] }).items;
+    const byId = {};
+    items.forEach((x) => { byId[x.id] = x; });
+    const seated = (x) => !!x && x.kind === "human" && x.trust !== "guest";
+    const eligible = (x) => !!x && x.trust !== "guest" && !x.isolated;
+    const humanIn = (x) => seated(x) && eligible(x) && named(x.id);
+    items.forEach((x) => {
+      if (x.kind !== "agent") { if (humanIn(x)) found.add(x.id); return; }
+      const owner = byId[x.owner_id];
+      if (!(eligible(x) && seated(owner) && named(x.id))) return;
+      if (allExcept && !humanIn(owner)) return;
+      found.add(x.id);
+    });
+    return found;
+  }
+  const restrictedCount = (slug) => Object.keys(restrictedTexts).filter((k) => k.startsWith(slug + " ") && restrictedTexts[k].text !== null).length;
+  // The project as its reader gets it: `members` and `cards_with_text` to a human with
+  // project:admin and to a member in the set, `{mode, included}` to every other (§6.1).
+  function servedProject(slug, p) {
+    const value = (p.settings || {}).restricted_access;
+    if (!value) return p;
+    const who = caller(slug, "").member;
+    const included = restrictedSet(slug).has(who.id);
+    const admin = who.kind === "human" && ["owner", "admin"].includes(fixtureAs ? who.trust : trustIn(slug));
+    const served = admin || included
+      ? { mode: value.mode, members: (value.members || []).slice(), included, cards_with_text: restrictedCount(slug) }
+      : { mode: value.mode, included };
+    return Object.assign({}, p, { settings: Object.assign({}, p.settings, { restricted_access: served }) });
+  }
+  // A card's restricted text, after the card is found and the set checked: the same answer
+  // whether the card has one or not (§6.4 "Access").
+  function restrictedCard(slug, id, path) {
+    const card = file(slug, "tasks.json", path).items.find((x) => x.id === id);
+    if (!card) fail(404, "not_found", "no such card", path);
+    if (!restrictedSet(slug).has(caller(slug, path).member.id)) fail(403, "forbidden", "not in the restricted-access set", path, { reason: "restricted" });
+    const key = slug + " " + id;
+    if (!restrictedTexts[key]) restrictedTexts[key] = { task_id: id, text: null, version: 0, updated_by: null, updated_at: null, history: [] };
+    return restrictedTexts[key];
+  }
+  const restrictedState = (r) => ({ task_id: r.task_id, version: r.version, updated_by: r.updated_by, updated_at: r.updated_at });
+  function restrictedWrite(r, action, text) {
+    const who = me().member;
+    const by = { kind: who.kind, id: who.id, handle: who.handle };
+    r.text = text;
+    r.version += 1;
+    r.updated_by = by;
+    r.updated_at = nowIso();
+    r.history.unshift({ version: r.version, action, by, at: r.updated_at });
+    r.history.length = Math.min(r.history.length, 50);
   }
 
   // Logo and banner (docs/api.md §11.2). A fixture project points at an
@@ -1026,7 +1090,7 @@ window.Maity = window.Maity || {};
     if (held) fail(400, "invalid", "handle", path, { fields: { handle: "taken" } });
     const aliases = mm.aliases || [];
     const back = aliases.indexOf(wanted) >= 0;
-    if (!back && aliases.length >= 8) fail(409, "alias_limit", "alias limit", path, { limit: 8, aliases: aliases.slice() });
+    if (!back && aliases.length >= limitsSetting.max_aliases.value) fail(409, "alias_limit", "alias limit", path, { limit: limitsSetting.max_aliases.value, aliases: aliases.slice() });
     const now = Date.now();
     while (selfRenames.length && now - selfRenames[0] >= 86400000) selfRenames.shift();
     if (selfRenames.length >= 3) fail(429, "rate_limited", "too many renames", path);
@@ -1514,6 +1578,7 @@ window.Maity = window.Maity || {};
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
     max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
+    max_aliases: { value: 3, source: "default" }, names_at_alias_limit: 0,
     max_attachment_storage: { value: "unlimited", source: "default" }, attachment_storage_used: 734003200,
   };
 
@@ -1969,6 +2034,10 @@ window.Maity = window.Maity || {};
       }
       if ("public_profile" in body) mm.public_profile = !!body.public_profile;
       if ("public_presence" in body) mm.public_presence = !!body.public_presence;
+      if ("public_stats" in body) {
+        if (typeof body.public_stats !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { public_stats: "required" } });
+        mm.public_stats = body.public_stats;
+      }
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
       // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
       if ("website" in body || "social" in body || "links_visible" in body) {
@@ -1996,7 +2065,7 @@ window.Maity = window.Maity || {};
         mm.interface_language = chosen;
         fixtures()["auth-session.json"].member.interface_language = chosen;
       }
-      const profileFields = ["public_profile", "public_presence", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -2367,14 +2436,14 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_attachment_storage: "unlimited" };
-      const ranges = { max_attachment_storage: [1024 ** 3, 1024 ** 5] };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_aliases: 3, max_attachment_storage: "unlimited" };
+      const ranges = { max_aliases: [1, 8], max_attachment_storage: [1024 ** 3, 1024 ** 5] };
       Object.entries(body).forEach(([k, v]) => {
         const [low, high] = ranges[k] || [1, 10000];
-        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";
+        if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "names_at_alias_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";
         else if (!(k in defaults)) fields[k] = "extra_forbidden";
         else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
-        else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= low && v <= high))) fields[k] = "invalid";
+        else if (!(v === null || (v === "unlimited" && k !== "max_aliases") || (Number.isInteger(v) && v >= low && v <= high))) fields[k] = "invalid";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       Object.entries(body).forEach(([k, v]) => {
@@ -2863,7 +2932,7 @@ window.Maity = window.Maity || {};
       me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", trust: "owner", role: "coder", open_requests: 0 });
       return created;
     }],
-    ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => project(m[1], path)],
+    ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => servedProject(m[1], project(m[1], path))],
     ["GET", /^\/projects$/, () => ({ items: me().projects.map((p) => project(p.slug, "/projects/" + p.slug)) })],
     ["PUT", /^\/projects\/([^/]+)\/(logo|banner)$/, (m, body, path) => {
       const p = project(m[1], path);
@@ -2940,6 +3009,36 @@ window.Maity = window.Maity || {};
         p.settings = next;
       }
 
+      // §6.1 restricted access: a human with project:admin, sent whole; the hub's refusals by field.
+      if (body.settings && "restricted_access" in body.settings) {
+        const who = caller(m[1], path).member;
+        if (who.kind !== "human") fail(403, "forbidden", "a human's change", path, { reason: "humans_only" });
+        if (!["owner", "admin"].includes(fixtureAs ? who.trust : trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const v = body.settings.restricted_access;
+        if (v === null) p.settings = Object.assign({}, p.settings, { restricted_access: null });
+        else {
+          const K = "settings.restricted_access";
+          const fields = {};
+          const list = v && Array.isArray(v.members) ? v.members : null;
+          if (!v || !RESTRICTED_MODES.includes(v.mode)) fields[K + ".mode"] = "unknown_mode";
+          if (!list) fields[K + ".members"] = "missing";
+          else if (list.length > 200) fields[K + ".members"] = "too_many";
+          else if (new Set(list).size !== list.length) fields[K + ".members"] = "duplicate";
+          else {
+            const stored = ((p.settings || {}).restricted_access || {}).members || [];
+            const items = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
+            list.filter((id) => !stored.includes(id)).forEach((id) => {
+              const x = items.find((i) => i.id === id);
+              const owner = x && items.find((i) => i.id === x.owner_id);
+              if (!x) fields[K + ".members." + id] = "not_a_member";
+              else if (x.trust === "guest") fields[K + ".members." + id] = "guest";
+              else if (v.mode === "nobody_except" && x.kind === "agent" && (!owner || owner.trust === "guest")) fields[K + ".members." + id] = "owner_not_a_member";
+            });
+          }
+          if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+          p.settings = Object.assign({}, p.settings, { restricted_access: { mode: v.mode, members: list.slice() } });
+        }
+      }
       if (body.settings && "onboarding" in body.settings) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path);
         const value = body.settings.onboarding || { check_in_with: "coordinator" };
@@ -3062,7 +3161,7 @@ window.Maity = window.Maity || {};
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
-      return p;
+      return servedProject(m[1], p);
     }],
     // §20.9 the jour fixe: the series with their next slot and rounds, the rounds; members only.
     ["GET", /^\/projects\/([^/]+)\/jour-fixe$/, (m, body, path) => {
@@ -3812,6 +3911,30 @@ window.Maity = window.Maity || {};
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and
     // its history (§6.15, fixtures/<slug>/task-history.json), newest first.
+    // §6.4 a card's restricted text: the set first, then the body, the caps left out here.
+    ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/restricted$/, (m, body, path) => restrictedCard(m[1], m[2], path)],
+    ["PUT", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/restricted$/, (m, body, path) => {
+      const r = restrictedCard(m[1], m[2], path);
+      const text = typeof body.text === "string" ? body.text.replace(/\r\n?/g, "\n") : "";
+      const bad = !text.trim() ? "empty" : [...text].length > 1000 ? "too_long"
+        : /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}]/u.test(text.replace(/[\n\t]/g, "")) ? "control_character" : null;
+      if (bad) fail(400, "invalid", "the request does not validate", path, { fields: { text: bad } });
+      if (!("base_version" in body)) fail(400, "invalid", "the request does not validate", path, { fields: { base_version: "required" } });
+      if (text === r.text) return restrictedState(r);
+      if (body.base_version !== r.version) fail(409, "conflict", "the restricted text changed", path, { current_version: r.version, base_version: body.base_version });
+      if (r.text === null && restrictedCount(m[1]) >= 200) fail(409, "restricted_quota", "200 cards with a restricted text", path, { max: 200 });
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is archived", path);
+      restrictedWrite(r, "set", text);
+      return restrictedState(r);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/restricted$/, (m, body, path, query) => {
+      const r = restrictedCard(m[1], m[2], path);
+      if (r.text === null) return restrictedState(r);
+      const base = query.get("base_version");
+      if (base !== null && Number(base) !== r.version) fail(409, "conflict", "the restricted text changed", path, { current_version: r.version, base_version: Number(base) });
+      restrictedWrite(r, "cleared", null);
+      return restrictedState(r);
+    }],
     ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
       const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
       if (!card) fail(404, "not_found", "Not found", path);
@@ -5063,6 +5186,8 @@ window.Maity = window.Maity || {};
 
   function request(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
+    // A write may change what the dashboard keeps between page switches (js/app.js): told first.
+    if (method !== "GET" && M.onWrite) M.onWrite();
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
     // place (js/maintenance.js), and the caller gets the refusal as before.
