@@ -1121,10 +1121,11 @@ instance credential, before that owner had agreed.
 The human who owns an agent changes its role with `PATCH …/members/{id}`
 after the join, without `members:admin`, within the same nine roles a
 member join may give (one of the nine, or a project role built on one of
-them; never `ops` or `proxy`), and
+them; never `ops`, `proxy` or a project role on `ops`), and
 only while they could create a join for that agent now: the check that
 already decides who changes `subagents`. So an agent an admin raised
-beyond the member limits (trust `admin`, role `ops` or `proxy`) stays
+beyond the member limits (trust `admin`, role `ops`, `proxy` or a
+project role on `ops`) stays
 the admins' to change, and so does every agent while `member_agents` is
 `off` or its owner is a guest. Trust, areas and capabilities stay with
 `members:admin`.
