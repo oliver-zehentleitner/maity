@@ -711,12 +711,16 @@ visitor views in German, in the same visit. One rule that both sides can read is
 
 **Consequence:** a visitor who chose a language and later types a bare address gets the browser's
 language again, on every page alike. An address copied from a page after a choice carries
-`?lang=` and opens in that language, as the landing page's links already do. A gap remains where the
-two fallbacks differ: on an instance whose landing page has `default_language: de`, a browser asking
-only for a language without a landing page (`sv`) gets the landing page in German and the dashboard
-in English. With `default_language: en`, as on maity.team, the two agree. Closing it means taking the
-visitor's language from `GET /site/chrome`, which the hub chooses exactly as the landing page's; that
-is a change of behaviour, left to a card of its own rather than to the review of this one.
+`?lang=` and opens in that language, as the landing page's links already do. Two gaps remain. Where
+the fallbacks differ: with `default_language: de`, a browser asking only for a language without a
+landing page (`sv`) gets the landing page in German and the dashboard in English. Where the offered
+sets differ: with `default_language: en` and pages only in `en` and `fr`, a browser asking for `de`
+gets the landing page in English and the dashboard in German, and one asking for `de, fr;q=0.8` gets
+it in French and the dashboard in German (likewise `?lang=de-AT`). The two agree only where the
+landing page has a page in each of the ten languages and `default_language` is `en`, as on
+maity.team. Closing both means taking the visitor's language from `GET /site/chrome`, which the hub
+chooses exactly as the landing page's; that is a change of behaviour, left to a card of its own
+rather than to the review of this one.
 
 **Rejected alternative:** a language cookie the hub reads too: it would keep the choice across visits,
 but the public pages set no language or tracking cookie (context/scope.md, hub/context/landing.md;
