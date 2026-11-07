@@ -275,9 +275,10 @@ window.Maity = window.Maity || {};
       : M.t("members.reports.cross", { name: x.display_name, handle: M.dom.handleOf(ctx, x) }));
     // A guest is never reported to (§2.3). A member's own join offers oneself and one's own
     // managers here only (§3.1), oneself first and chosen; an admin's, every other member too.
+    // A manager by the literal role, as the hub checks it: not a project role based on manager.
     const bosses = () => {
       const list = ctx.members.filter((x) => !x.removed_at && !M.trust.guest(x)
-        && (!own || x.id === ctx.me.id || (x.kind === "agent" && x.owner_id === ctx.me.id && M.trust.roleIs(x, "manager"))));
+        && (!own || x.id === ctx.me.id || (x.kind === "agent" && x.owner_id === ctx.me.id && x.role === "manager")));
       return own && !list.some((x) => x.id === ctx.me.id) ? [ctx.me].concat(list) : list;
     };
     const reportsTo = h("select", { id: "join-reports" });
@@ -289,7 +290,8 @@ window.Maity = window.Maity || {};
       reportsTo.value = list.some((x) => x.id === kept) ? kept : own ? ctx.me.id : "";
     };
     // An agent already here keeps its membership's boss unless it is changed here: its owner's
-    // own PATCH (§2.3), sent before the join, so the join page and the first resume show it.
+    // own PATCH (§2.3), sent before the join, so the join page and the first resume show it where
+    // it applies at once (200); waiting for the other side's consent (202) the old boss stays till then.
     const memberReports = h("select", { id: "join-member-reports", "aria-describedby": "join-member-reports-hint" });
     // The boss asked for while a consent is open, per member: chosen again, it is not asked twice.
     const asked = new Map();

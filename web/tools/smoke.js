@@ -3384,6 +3384,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
     && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
+  // One's own agent with the role manager is offered as its boss; one on a project role based on
+  // manager is not: the hub takes the literal role here (§3.1, _own_manager; review of #1477).
+  const byoAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? byoAll(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => (
+    x.id === "agt-a" ? Object.assign({}, x, { role: "manager", role_base: "manager" })
+    : x.id === "agt-c" ? Object.assign({}, x, { role: "lead", role_base: "manager" }) : x)) })) : byoAll(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
+  byoButton().click(); await tick();
+  const byoBosses = byId("join-reports") ? byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() : null;
+  expect(byoBosses === "hum-maintainer,agt-a",
+    "own agents: reports to offers one's own agent with the role manager, not one on a project role based on manager " + byoBosses);
+  win.Maity.api.getAll = byoAll;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
+  byoButton().click(); await tick();
   const byoPosts = [];
   const byoPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) byoPosts.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_join_limit", field: "role" })); };
