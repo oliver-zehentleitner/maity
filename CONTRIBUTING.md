@@ -42,6 +42,23 @@ commit or a touched package has uncommitted changes. `git push
 Not in a clone a maity runner manages: the runner's clone check refuses
 a clone whose `.git/config` sets `core.hooksPath`.
 
+## The overlap check before a push
+
+Before you push a branch, check it against the open pull requests that
+change the same files:
+
+```sh
+tools/overlap.sh            # the checked-out branch; or tools/overlap.sh <branch>
+```
+
+It prints one line per such pull request: the shared files, and `clean` or
+the files that conflict. It decides by `git merge-tree`'s exit code, never
+by git's message, so the locale doesn't matter. A file that already
+conflicts with `main` alone is named but not counted. Exit 1 means your
+branch adds a conflict: settle the order with the other author or the lead
+before you push. It needs `gh`, and it fetches `origin main` and each pull
+request's head.
+
 ## Before merging a change to the web catalogs
 
 A pull request that changes `web/i18n/en.json` or a language file in
