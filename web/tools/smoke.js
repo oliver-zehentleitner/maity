@@ -6191,6 +6191,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(paLink() && paLink().getAttribute("href").endsWith("/maintainer/agents?as=public") && paLink().getAttribute("target") === "_blank"
       && text(paLink()) === "View my agents tab",
       "public profile: the agents switch links to the agents tab, opened at ?as=public");
+    // A save draws the links again from the hub's answer: still one link to the tab, not one more.
+    byId("public-agents").checked = true; main.querySelector("form.public-profile-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    byId("public-agents").checked = false; main.querySelector("form.public-profile-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(main.querySelectorAll("form.public-profile-form p.public-agents-link a").length === 1,
+      "public profile: after a save the agents tab is linked once");
     const plGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/people/maintainer" ? plGet(p).then((x) => ({ ...x, page_served: false })) : plGet(p));
     await go("#/account/settings"); await go("#/account"); for (let k = 0; k < 4; k++) await tick();
