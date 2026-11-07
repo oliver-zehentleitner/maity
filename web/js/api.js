@@ -2039,6 +2039,12 @@ window.Maity = window.Maity || {};
         if (typeof body.public_stats !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { public_stats: "required" } });
         mm.public_stats = body.public_stats;
       }
+      // Which agents the person's agents tab lists (§16.9): one of two words, `null` included invalid.
+      if ("public_agents" in body) {
+        if (body.public_agents === null) fail(400, "invalid", "the request does not validate", path, { fields: { public_agents: "required" } });
+        if (!["public_projects", "all"].includes(body.public_agents)) fail(400, "invalid", "the request does not validate", path, { fields: { public_agents: "unknown" } });
+        mm.public_agents = body.public_agents;
+      }
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
       // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
       if ("website" in body || "social" in body || "links_visible" in body) {
@@ -2075,7 +2081,7 @@ window.Maity = window.Maity || {};
         if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
         mm.start_tabs = list ? list.slice() : null;
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
