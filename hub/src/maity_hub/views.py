@@ -266,7 +266,7 @@ def project_view(
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
     aliases: list[str] | None = None,
-    stored: dict[str, int] | None = None,
+    stored: dict[str, int | None] | None = None,
     confirmed_by: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
