@@ -1316,9 +1316,19 @@ window.Maity = window.Maity || {};
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
       h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
-      ctx.projects.map((p) => h("a", {
+      // The tabs this browser has open, in its order (js/tabs.js): dragged
+      // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
+      M.tabs.open(ctx).map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
+        "data-project": p.id,
+        draggable: M.tabs.managed(ctx) ? "true" : null,
+        title: M.tabs.managed(ctx) ? M.t("tabs.move_hint") : null,
+        ondragstart: (e) => dragTab.start(e, p.id),
+        ondragover: (e) => dragTab.over(e),
+        ondrop: (e) => dragTab.drop(ctx, e, p.id),
+        ondragend: () => dragTab.end(),
+        onkeydown: (e) => moveTabByKey(ctx, e, p),
       },
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
@@ -1327,6 +1337,108 @@ window.Maity = window.Maity || {};
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
     h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, M.t("header.new_project")));
+  }
+
+  // Dragging a tab onto another puts it there: before the tab dropped on,
+  // or after it when dropped on its second half. The id travels in the drag
+  // itself and here, for a drag that carries no data (the smoke test's).
+  const dragTab = {
+    id: null,
+    start(e, id) {
+      dragTab.id = id;
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", id); } catch (err) { /* the id is kept here too */ }
+      }
+    },
+    over(e) {
+      if (!dragTab.id) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    },
+    drop(ctx, e, targetId) {
+      const id = dragTab.id;
+      dragTab.id = null;
+      if (!id || id === targetId) return;
+      e.preventDefault();
+      const box = e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
+      const after = box && box.width && typeof e.clientX === "number" && e.clientX > box.left + box.width / 2;
+      const order = M.tabs.open(ctx).map((p) => p.id);
+      const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
+      if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
+    },
+    end() { dragTab.id = null; },
+  };
+
+  // The keyboard's way, and the one without a drag (WCAG 2.5.7): Alt+Shift
+  // with the left or right arrow moves the focused tab one place.
+  function moveTabByKey(ctx, e, p) {
+    if (!M.tabs.managed(ctx) || !e.altKey || !e.shiftKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const rtl = document.documentElement && document.documentElement.getAttribute("dir") === "rtl";
+    const step = (e.key === "ArrowRight") !== rtl ? 1 : -1;
+    if (M.tabs.move(ctx, p.id, step)) tabsMoved(ctx, p.id);
+  }
+
+  // After a move: the row again, the focus on the moved tab, and its new
+  // place said for a screen reader.
+  function tabsMoved(ctx, id) {
+    renderSwitcher(ctx);
+    tabsChanged(ctx);
+    const order = M.tabs.open(ctx);
+    const at = order.findIndex((p) => p.id === id);
+    const nav = document.getElementById("header").querySelector("nav.switcher");
+    const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-project") === id);
+    if (link) link.focus();
+    tabsSaid(M.t("tabs.moved", { name: order[at].name, place: at + 1, total: order.length }));
+  }
+  // The view drawn from the open tabs (the inbox's filter and grouping) follows them.
+  function tabsChanged(ctx) {
+    if (ctx.tabsChanged) ctx.tabsChanged();
+  }
+  function tabsSaid(text) {
+    const live = document.getElementById("header").querySelector(".tabs-said");
+    if (live) live.textContent = text;
+  }
+
+  // Beside the row: which projects are tabs, moving the current one, and
+  // the row as the account's start set (docs/api.md §5.1 "Start tabs").
+  function tabsMenu(ctx) {
+    if (!M.tabs.managed(ctx) || !ctx.projects.length) return null;
+    const current = ctx.scope === "project" ? ctx.projects.find((p) => p.full_name === ctx.slug) : null;
+    const menu = M.menuButton({
+      label: M.t("tabs.menu"),
+      class: "tabs-menu",
+      face: h("span", { "aria-hidden": "true" }, "⋯"),
+      items: () => {
+        const open = M.tabs.open(ctx);
+        const closed = ctx.projects.filter((p) => !open.includes(p)).sort((a, b) => a.name.localeCompare(b.name));
+        const at = current ? open.indexOf(current) : -1;
+        return [
+          ...open.concat(closed).map((p) => ({
+            label: p.name,
+            checkbox: true,
+            checked: open.includes(p),
+            onSelect: () => {
+              M.tabs.setOpen(ctx, p.id, !open.includes(p));
+              renderSwitcher(ctx);
+              tabsChanged(ctx);
+              tabsSaid(open.includes(p) ? M.t("tabs.closed", { name: p.name }) : M.t("tabs.opened", { name: p.name }));
+            },
+          })),
+          current && at >= 0 ? { separator: true } : null,
+          current && at > 0 ? { label: M.t("tabs.move_left"), onSelect: () => { if (M.tabs.move(ctx, current.id, -1)) tabsMoved(ctx, current.id); } } : null,
+          current && at >= 0 && at < open.length - 1
+            ? { label: M.t("tabs.move_right"), onSelect: () => { if (M.tabs.move(ctx, current.id, 1)) tabsMoved(ctx, current.id); } } : null,
+          { separator: true },
+          { label: M.t("tabs.keep_at_start"), onSelect: () => {
+            M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
+          } },
+        ].filter(Boolean);
+      },
+    });
+    return h("span", { class: "tabs-menu-box" }, menu.el,
+      h("span", { class: "visually-hidden tabs-said", role: "status", "aria-live": "polite" }));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -1549,6 +1661,7 @@ window.Maity = window.Maity || {};
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
         switcher(ctx),
+        tabsMenu(ctx),
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
             // On a phone the links are one row that scrolls; the state beside it stays in sight
@@ -1704,6 +1817,8 @@ window.Maity = window.Maity || {};
       throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
+    // A project opened by a link while its tab is closed gets its tab back, at the end (js/tabs.js).
+    if (M.tabs.managed(ctx) && !M.tabs.isOpen(ctx, mine.id)) M.tabs.setOpen(ctx, mine.id, true);
     // Trust × role (docs/api.md §2.3): owner and admin hold project:admin and
     // members:admin for a human; absence is the owner's alone.
     ctx.trust = mine.trust;

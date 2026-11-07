@@ -6283,11 +6283,13 @@ window.MAITY_FIXTURES = {
       "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first.",
       "public_agents": "public_projects",
       "public_presence": true,
-      "public_stats": false
+      "public_stats": false,
+      "start_tabs": null
     },
     "projects": [
       {
         "full_name": "maintainer/maity",
+        "id": "prj-maity0000001",
         "name": "Maity",
         "open_requests": 7,
         "role": "coder",
@@ -6297,6 +6299,7 @@ window.MAITY_FIXTURES = {
       },
       {
         "full_name": "maintainer/sample",
+        "id": "prj-sample000001",
         "name": "Sample shop",
         "open_requests": 1,
         "role": "coder",

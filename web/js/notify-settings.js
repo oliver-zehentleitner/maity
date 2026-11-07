@@ -573,8 +573,36 @@ window.Maity = window.Maity || {};
       h("label", { class: "check", for: "my-nl-here" }, useHere, " " + M.t("mine.here")),
       h("label", { class: "visually-hidden", for: "my-nl-minutes" }, M.t("mine.minutes_label")), minutes, error,
       h("p", { class: "hint" }, M.t("mine.hint_minutes"))),
-    now, button, status.el));
+    now, button, status.el), startTab(ctx));
   };
+
+  // Whether this project opens as a tab in a browser that has no tabs of
+  // its own yet (docs/api.md §5.1 "Start tabs"). The account keeps one list
+  // for every project; it is set here one project at a time, saved at once.
+  function startTab(ctx) {
+    const mine = ctx.projects.find((p) => p.full_name === ctx.slug);
+    if (!mine || !M.tabs.managed(ctx)) return null;
+    const status = M.statusLine();
+    const box = h("input", { type: "checkbox", id: "my-start-tab", "aria-describedby": "my-start-tab-hint" });
+    box.checked = M.tabs.inStart(ctx, mine.id);
+    box.addEventListener("change", async () => {
+      const on = box.checked;
+      box.disabled = true;
+      status.busy(M.t("notify.saving"));
+      try {
+        await M.tabs.startWith(ctx, mine.id, on);
+        status.done();
+        append(status.el, h("span", { class: "ok" }, on ? M.t("mine.start_tab.saved_on") : M.t("mine.start_tab.saved_off")));
+      } catch (err) {
+        box.checked = !on;
+        status.fail(M.t("notify.not_saved"), err);
+      }
+      box.disabled = false;
+    });
+    return h("fieldset", { class: "my-start-tab" }, h("legend", null, M.t("mine.start_tab.legend")),
+      h("label", { class: "check", for: "my-start-tab" }, box, " " + M.t("mine.start_tab.label")),
+      h("p", { class: "hint", id: "my-start-tab-hint" }, M.t("mine.start_tab.hint")), status.el);
+  }
 
   // The hub's list (§6.2), read once a page; null if it can't be had, and then the next call tries again.
   let languages = null;
