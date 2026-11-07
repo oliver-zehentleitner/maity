@@ -23,6 +23,14 @@ die() {
   exit 2
 }
 
+# Path lists sorted and compared bytewise: `sort` and `comm` follow the locale's collation
+# otherwise, which can order or equate paths differently between the two (a German locale
+# warned "not in sorted order"). git itself keeps the reader's locale; only its exit codes
+# are read.
+paths() {
+  LC_ALL=C sort -u
+}
+
 command -v gh >/dev/null || die "needs the gh CLI"
 git merge-tree --help >/dev/null 2>&1 || die "needs git"
 branch="${1:-$(git branch --show-current)}"
@@ -44,12 +52,12 @@ merge_check() {
   merge_files=""
   case $merge_status in
     0) ;;
-    1) merge_files=$(printf '%s\n' "$out" | sed -n '2,$p' | sed '/^$/d' | sort -u | paste -sd, -) ;;
+    1) merge_files=$(printf '%s\n' "$out" | sed -n '2,$p' | sed '/^$/d' | paths | paste -sd, -) ;;
     *) die "git merge-tree $1 $2 failed with exit $merge_status" ;;
   esac
 }
 
-mine=$(git diff --name-only "$base...$branch" | sort -u)
+mine=$(git diff --name-only "$base...$branch" | paths)
 if [ -z "$mine" ]; then
   echo "overlap: $branch changes no file against origin/main"
   exit 0
@@ -66,9 +74,9 @@ trap 'git for-each-ref --format="%(refname)" "$tmp" | xargs -r -n1 git update-re
 while read -r number head; do
   [ -n "${number:-}" ] || continue
   [ "$head" = "$own" ] && continue  # the branch's own pull request
-  theirs=$(gh pr view "$number" --json files --jq '.files[].path' | sort -u) \
+  theirs=$(gh pr view "$number" --json files --jq '.files[].path' | paths) \
     || die "gh pr view $number failed"
-  shared=$(comm -12 <(printf '%s\n' "$mine") <(printf '%s\n' "$theirs") | paste -sd, -)
+  shared=$(LC_ALL=C comm -12 <(printf '%s\n' "$mine") <(printf '%s\n' "$theirs") | paste -sd, -)
   [ -n "$shared" ] || continue
   found=$((found + 1))
   ref="$tmp/$number"
@@ -81,7 +89,7 @@ while read -r number head; do
     merge_check "$base" "$ref"
     already=$merge_files
     # The conflicts the branch adds: files that conflict with it and not with origin/main alone.
-    added=$(comm -23 <(tr , '\n' <<<"$files") <(tr , '\n' <<<"$already") | paste -sd, -)
+    added=$(LC_ALL=C comm -23 <(tr , '\n' <<<"$files") <(tr , '\n' <<<"$already") | paste -sd, -)
     if [ -n "$added" ]; then
       conflicts=$((conflicts + 1))
       echo "#$number [$shared]: CONFLICT in $added${already:+ (and against origin/main alone in $already)}"

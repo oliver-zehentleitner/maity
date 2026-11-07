@@ -200,6 +200,27 @@ class OverlapTest(unittest.TestCase):
         self.assertIn("git merge-tree", got.stderr)
         self.assertNotIn("clean", got.stdout)
 
+    def test_paths_are_compared_bytewise_whatever_the_locale(self) -> None:
+        """Paths whose order differs between a German collation and bytes (case, `-`, `_`)
+        come out in byte order and without a word from `sort` or `comm`, in every locale."""
+        names = ["web_b.txt", "Zeta.txt", "web-a.txt", "Web.txt"]
+        theirs = {name: lines(name) for name in [*names, "b-only.txt", "Y_only.txt"]}
+        pr = self.pull_request(14, self.base, theirs)
+        self.git("checkout", "-q", "-b", "mine", self.base)
+        own = {name: lines(f"{name} mine") for name in [*names, "A-only.txt", "x_only.txt"]}
+        self.commit(own, "mine")
+        for locale in LOCALES:
+            with self.subTest(locale=locale):
+                got = self.run_check([pr], locale)
+                self.assertEqual(got.stderr, "")
+                self.assertEqual(
+                    got.stdout.splitlines(),
+                    [
+                        "#14 [Web.txt,Zeta.txt,web-a.txt,web_b.txt]: CONFLICT in"
+                        " Web.txt,Zeta.txt,web-a.txt,web_b.txt"
+                    ],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

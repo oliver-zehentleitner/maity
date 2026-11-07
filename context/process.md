@@ -1667,3 +1667,43 @@ check job and `make dev` install from it, then the CLI editable without build is
   hub's lock holds the hub's runtime dependencies, which the CLI must not be tested with.
 - Pinning the tools by version in `pyproject.toml`'s dev extra without hashes: the versions would hold, but
   not the files.
+
+## The overlap check before a push decides by merge-tree's exit code, and counts only the conflicts the branch adds
+
+**Id:** 53705871-3016-476f-8482-392106c6f450
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-kpbatay0r79a, from the jour fixe of 2026-11-07 (proposal t5.s1, adopted by the maintainer as req-pcxh3qdmser4); the not-counting rule is the author's and the review of #1462 agreed with it; `tools/overlap.sh`, `tools/test_overlap.py`, `CONTRIBUTING.md` ("The overlap check before a push")
+**Revisit when:** git's `merge-tree --write-tree` changes its exit codes, or the team wants a branch to stop for conflicts it does not cause
+
+`tools/overlap.sh` checks a branch against every open pull request that changes one of its files. It
+three-way merges the branch with each one (`git merge-tree --write-tree --no-messages`), and reads only
+the exit code: 0 clean, 1 conflict, anything else stops the check with exit 2. For each conflict it runs
+the same merge of `origin/main` with that pull request. A file that conflicts there too is named but not
+counted, so exit 1 means the branch adds a conflict. Path lists are sorted and compared bytewise
+(`LC_ALL=C` for `sort` and `comm`), while git keeps the reader's locale.
+
+**Reason:**
+- The checks the authors wrote by hand grepped git's message for `CONFLICT`. On a machine with a German
+  locale git writes `KONFLIKT`, and one check reported a pull request as conflict-free when it was not.
+  An exit code is the same in every language. A test runs the check under a German and an English
+  locale, and the old grep fails exactly in the German one.
+- A merge that git cannot compute (no common history, a missing object) must not read as
+  "clean". Every exit other than 0 and 1 stops the check.
+- A pull request that already conflicts with `main` is that pull request's to resolve. Counting it
+  would make every branch that shares one of its files exit 1, whatever the branch does. The line
+  still names it, so the author sees it.
+- `sort` and `comm` follow the locale's collation, which can order paths differently from bytes and,
+  in one review run, made `comm` warn that its input was not sorted. Bytewise order is the same
+  everywhere. That warning was not reproduced on the development machine.
+
+**Rejected alternatives:**
+- `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
+  protects against, and the test for the German case would prove nothing.
+- Count every conflict, including those that exist against `main` alone: a branch would stop for
+  conflicts it does not cause.
+- Leave the check to each author: the jour fixe had just seen it go wrong once.
+
+A file that conflicts against both is counted as already conflicting, even if the branch changes how it
+conflicts. The line names the file, so the author can look.
