@@ -45,6 +45,7 @@ class AgentPatch(Strict):
     git_identity: GitIdentity | None = None
     # null: any project; a list of full names limits where the agent may go (§6.3)
     allowed_projects: Any = None
+    avatar_motif: Any = None  # a motif's name or null (§6.10), checked against the set
 
 
 def load_agent(conn: Connection, agent_id: str) -> dict[str, Any]:
@@ -114,6 +115,7 @@ def create_profile(
             created_at=clock.now(),
         )
     )
+    avatars.store_generated(conn, agent_id)  # an agent always has a picture (§6.10)
     return agent_id
 
 
@@ -197,6 +199,8 @@ def patch_agent(
         if "display_name" in values:  # a text shown on public pages is replaced at once (§16.9)
             public_projects.touch_of_agent(conn, agent_id)
             public_people.touch_owner_of(conn, agent_id)  # its owner's agents page lists it
+        if "avatar_motif" in given:  # the owner's change: the event names no actor (§6.10)
+            avatars.choose_motif(conn, agent_id, body.avatar_motif, caller)
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -335,7 +339,7 @@ def delete_profile(
     conn.execute(
         update(t.agent_profile)
         .where(t.agent_profile.c.id == agent_id)
-        .values(deleted_at=now, live=None)
+        .values(deleted_at=now, live=None, avatar_motif=None)
     )
     from maity_hub import cross_chats
 

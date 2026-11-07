@@ -908,6 +908,7 @@ window.MAITY_FIXTURES = {
   "agents.json": {
     "items": [
       {
+        "avatar_motif": null,
         "created_at": "2026-10-21T07:50:00Z",
         "display_name": "Agent A",
         "git_identity": null,
@@ -924,6 +925,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "avatar_motif": null,
         "created_at": "2026-10-21T10:10:00Z",
         "display_name": "Agent B",
         "git_identity": null,
@@ -940,6 +942,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "avatar_motif": null,
         "created_at": "2026-10-21T09:38:00Z",
         "display_name": "Agent C",
         "git_identity": null,
@@ -956,6 +959,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "avatar_motif": null,
         "created_at": "2026-10-21T12:58:00Z",
         "display_name": "Agent D",
         "git_identity": null,
@@ -972,6 +976,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "avatar_motif": null,
         "created_at": "2026-10-20T17:58:00Z",
         "display_name": "Reviewer",
         "git_identity": null,
@@ -988,6 +993,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "avatar_motif": null,
         "created_at": "2026-10-21T08:28:00Z",
         "display_name": "Shop Dev",
         "git_identity": null,
@@ -1004,6 +1010,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "avatar_motif": null,
         "created_at": "2026-10-19T12:00:00Z",
         "display_name": "Spare",
         "git_identity": null,

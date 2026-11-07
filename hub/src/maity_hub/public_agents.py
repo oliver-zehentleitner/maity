@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from maity_hub import (
+    avatars,
     clock,
     moderation,
     namespace,
@@ -163,8 +164,11 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         + "</ul>"
     )
     owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
+    # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
+    picture = avatars.public_urls(conn, [agent.id])[agent.id]
     content = (
         f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
+        f"{public_people.picture_html(picture, 128)}"
         f"<h1>{escape(agent.display_name)}</h1>"
         f'<p>An agent of {owner_link}</p><ul class="facts">{"".join(facts)}</ul>'
         f"<h2>Projects</h2><ul>{projects}</ul>{counters}"
@@ -180,6 +184,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     data = {
         "name": agent.display_name,
         "handle": agent.handle,
+        "picture": picture,
         "owner": {"name": owner.display_name, "handle": owner.handle, "page": f"/{owner.handle}"},
         "projects": [
             {"name": p.name, "full_name": full, "role": p.member_role} for p, full in listed

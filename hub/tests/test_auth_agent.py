@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import OperationalError
 
-from maity_hub import clock
+from maity_hub import avatar_generated, avatars, clock, images
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import RequestFacts, authenticate
@@ -84,9 +84,13 @@ def test_bearer_over_tls_answers_the_agents_me(
         "aliases": [],
         "name": f"maintainer/{agent.agent_id}",  # the global name (§6.3)
         "display_name": f"Agent {agent.agent_id}",
-        "avatar_url": None,  # no upload: the client draws the generated one (§6.10)
+        # no upload: the hub's generated picture (§6.10)
+        "avatar_url": avatars.url_of(
+            agent.agent_id, images.etag(avatar_generated.draw(agent.agent_id))
+        ),
         "owner_id": agent.owner_id,
-        "avatar_source": None,
+        "avatar_source": "generated",
+        "avatar_motif": None,
     }
     assert body["projects"][0]["id"].startswith("prj-")  # its fixed id (§5.1, §6.25)
     assert [{k: v for k, v in p.items() if k != "id"} for p in body["projects"]] == [

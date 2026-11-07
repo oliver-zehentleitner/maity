@@ -35,7 +35,8 @@ from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
 
-CSP = "default-src 'none'; style-src 'unsafe-inline'"
+# `img-src 'self'` for the pictures of a person's and an agent's page (§6.10, §16.9).
+CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
 CACHE = "public, max-age=60"
 READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per

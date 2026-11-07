@@ -58,6 +58,7 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                     ),
                     "aliases": handles.aliases(conn, [agent.id])[agent.id],
                     **avatars.state(conn, agent.id),
+                    "avatar_motif": agent.avatar_motif,
                 },
                 "projects": _agent_project(conn, caller),
                 "membership": {"isolated": _isolated(conn, caller)},

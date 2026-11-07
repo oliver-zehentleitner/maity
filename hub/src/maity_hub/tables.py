@@ -366,6 +366,8 @@ agent_profile = Table(
     Column("git_email", String(TITLE)),
     # The projects its owner lets it go to (§6.3): null for any, else up to 200 full names.
     Column("allowed_projects", JSON_VALUE),
+    # The motif it chose (§6.10), kept while an upload shows and while the set lacks it.
+    Column("avatar_motif", String(32)),
     Column("created_at", UtcDateTime, nullable=False),
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
@@ -2210,12 +2212,30 @@ avatar_image = Table(
     "avatar_image",
     metadata,
     _id("owner_id", nullable=False),  # the human or agent profile the picture belongs to
-    Column("source", String(16), nullable=False),  # uploaded, forge
+    Column("source", String(16), nullable=False),  # uploaded, forge, generated (agents)
     Column("data", IMAGE_BYTES, nullable=False),
-    Column("etag", String(80), nullable=False),
+    # The public address names the picture by this digest (§6.10), hence the index.
+    Column("etag", String(80), nullable=False, index=True),
     Column("updated_at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("owner_id", "source"),
-    CheckConstraint("source IN ('uploaded', 'forge')", name="source"),
+    CheckConstraint("source IN ('uploaded', 'forge', 'generated')", name="source"),
+    **MYSQL_TABLE,
+)
+
+# A smaller size of a stored picture (§6.10, `?s=`): scaled once from the `avatar_image`
+# row whose `ETag` is `base_etag`, at the first request for that size, and kept. Dropped with
+# that row; a row whose `base_etag` is not the stored image's any more is never served.
+avatar_size = Table(
+    "avatar_size",
+    metadata,
+    _id("owner_id", nullable=False),
+    Column("source", String(16), nullable=False),
+    Column("size", Integer, nullable=False),  # 32, 64 or 128; 256 is the stored image
+    Column("base_etag", String(80), nullable=False),
+    Column("data", IMAGE_BYTES, nullable=False),
+    Column("etag", String(80), nullable=False),
+    PrimaryKeyConstraint("owner_id", "source", "size"),
+    CheckConstraint("size IN (32, 64, 128)", name="size"),
     **MYSQL_TABLE,
 )
 

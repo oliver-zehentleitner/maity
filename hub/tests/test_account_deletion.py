@@ -331,6 +331,27 @@ def test_the_start_tabs_go_with_the_account(
     assert gone.start_tabs is None
 
 
+def test_the_kept_sizes_of_the_picture_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The smaller sizes of the person's picture (§6.10) are their picture too: the deletion
+    takes them with the stored image."""
+    from tests.test_avatars import image, put_human
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    url = put_human(pat, "/me/avatar", image()).json()["avatar_url"]
+    assert pat.client.get(f"{url}&s=32").status_code == 200
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.avatar_size.c.owner_id)).scalars().all()
+    assert kept == [pat.id]
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.avatar_size)).first() is None
+        assert conn.execute(select(t.avatar_image)).first() is None
+
+
 def test_the_confirmation_of_a_deleted_account_ends_with_its_grants(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
