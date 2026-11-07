@@ -1335,9 +1335,9 @@ like the hub while one runs. Why it is built this way:
 
 Every page the dashboard draws ends with one line about Maity
 (`docs/api.md` §16.13), in `<footer id="product-line">` after `<main>`
-(`js/product-line.js`): the mark, `Maity <year>`, **Found a bug?** and the
-credit, with three absolute links in a new tab with
-`rel="noopener noreferrer"`. It is in the page's language and drawn again
+(`js/product-line.js`): the mark, `Maity <year>`, the credit, **Found a
+bug?** and **Found a vulnerability?**, with four absolute links in a new
+tab with `rel="noopener noreferrer"`. It is in the page's language and drawn again
 whenever the language changes; a translation of `product.made_by` that
 does not name each of its four placeholders once falls back to English.
 A stored public page the hub put into `<main>` stands without it, and so do
