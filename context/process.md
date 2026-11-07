@@ -1683,8 +1683,8 @@ fetches every open pull request's head and takes each one's files from git (`git
 pull request that shares a file (`git merge-tree --write-tree --no-messages`), and reads only the exit
 code: 0 clean, 1 conflict, anything else stops the check with exit 2. For each conflict it runs the same
 merge of `origin/main` with that pull request. A file that conflicts there too is named but not counted,
-so exit 1 means the branch adds a conflict. Path lists are sorted and compared bytewise (`LC_ALL=C` for
-`sort` and `comm`), while git keeps the reader's locale.
+so exit 1 means the branch adds a conflict. Path lists are sorted bytewise (`LC_ALL=C` for `sort`) and
+compared in bash itself, while git keeps the reader's locale.
 
 Exit 0 says "this branch adds no conflict", which is weaker than "this branch merges cleanly with every
 open pull request": a file that already conflicts between `main` and a pull request is not counted,
@@ -1693,8 +1693,9 @@ even when the branch changes how it conflicts there. That pull request's line na
 A check that did not run never ends in 0. Every command whose answer the check needs stops it with
 exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
 which would otherwise read as "changes no file"), the list of open pull requests (also when it reaches
-`gh`'s limit and may be cut short), the fetch of their heads, a merge, and each comparison of path
-lists.
+`gh`'s limit and may be cut short), the fetch of their heads, a merge, and each step that turns
+git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
+name only when it comes from the same repository, not from a fork.
 
 **Reason:**
 - The checks the authors wrote by hand grepped git's message for `CONFLICT`. On a machine with a German
@@ -1712,9 +1713,12 @@ lists.
   it stops at 100 files per pull request (#1431 changes 113, `gh pr view --json files` lists 100).
   With `--no-renames` a rename counts under both names, and `core.quotePath=false` gives one form for
   every list.
-- `sort` and `comm` follow the locale's collation, which can order paths differently from bytes and,
-  in one review run, made `comm` warn that its input was not sorted. Bytewise order is the same
-  everywhere. That warning was not reproduced on the development machine.
+- `sort` follows the locale's collation, which can order paths differently from bytes; in one review
+  run `comm` then warned that its input was not sorted (not reproduced on the development machine).
+  Bytewise order is the same everywhere.
+- Two lists are compared in bash (an associative array, so bash 4 or newer), not with `comm` on
+  `<(...)`: a program inside `<(...)` is outside `pipefail`, so its failure was lost and both lists
+  read as empty. With a failing `tr` there, a conflict came out "clean for this branch" with exit 0.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -1726,6 +1730,8 @@ lists.
   with `main` would stop every branch that touches its files, as with counting every conflict.
 - `gh`'s file list per pull request, with a fetch only of those that share a file: fewer fetches, but
   the gaps above, each of which ends in a silent "no overlap".
+- `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
+  up and a program whose exit status still has to be read at every call; bash alone has neither.
 
 ## One shared CI watcher reads the pull request's own newest ci run, never the commit's checks
 

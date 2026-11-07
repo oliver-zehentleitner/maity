@@ -58,7 +58,7 @@ conflicts with `main` alone is named but not counted, so exit 0 means your
 branch adds no conflict, not that it merges cleanly with everything: read
 the lines. Exit 1 means your branch adds a conflict: settle the order with
 the other author or the lead before you push. Exit 2 means the check could
-not run; it never ends in 0 then. It needs `gh`, and it fetches
+not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetches
 `origin main` and every open pull request's head.
 
 ## Before merging a change to the web catalogs

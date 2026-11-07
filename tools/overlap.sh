@@ -36,12 +36,36 @@ git() {
   command git -c core.quotePath=false "$@"
 }
 
-# Path lists sorted and compared bytewise: `sort` and `comm` follow the locale's collation
-# otherwise, which can order or equate paths differently between the two (a German locale
-# warned "not in sorted order"). git itself keeps the reader's locale; only its exit codes
-# are read.
+# Path lists, one path a line, sorted bytewise: `sort` follows the locale's collation
+# otherwise. git itself keeps the reader's locale; only its exit codes are read.
 paths() {
   LC_ALL=C sort -u
+}
+
+# The lines of list $1 that are (keep=1) or are not (keep=0) in list $2, in $1's order, one a
+# line. Bash alone, no other program: no exit status of a helper can get lost on the way, as
+# one inside `<(...)` would, outside pipefail.
+pick() {
+  local -A seen=()
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] && seen["p/$line"]=1
+  done <<<"$2"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if [ -n "${seen["p/$line"]+x}" ]; then
+      [ "$3" = 1 ] && printf '%s\n' "$line"
+    else
+      [ "$3" = 0 ] && printf '%s\n' "$line"
+    fi
+  done <<<"$1"
+  return 0
+}
+
+# A list as the output names it: comma-separated.
+named() {
+  local list=${1%$'\n'}
+  printf '%s' "${list//$'\n'/,}"
 }
 
 # The files $2 changes against its merge base with $1, sorted. No merge base (unrelated
@@ -52,6 +76,8 @@ changed() {
   printf '%s\n' "$out" | sed '/^$/d' | paths || die "sorting the files of $2 failed"
 }
 
+# `pick` keeps a set in an associative array; bash 3 (macOS's own) has none.
+[ "${BASH_VERSINFO[0]}" -ge 4 ] || die "needs bash 4 or newer"
 command -v gh >/dev/null || die "needs the gh CLI"
 branch="${1:-$(git branch --show-current)}"
 [ -n "$branch" ] || die "no branch given and none checked out"
@@ -63,7 +89,7 @@ fi
 base=$(git rev-parse --verify --quiet origin/main) || die "no origin/main"
 
 # A three-way merge of $1 and $2 by git's exit code: sets `merge_status` (0 clean, 1 conflict)
-# and `merge_files` (the conflicting paths, comma-separated). Any other exit (a missing
+# and `merge_files` (the conflicting paths, one a line). Any other exit (a missing
 # object, unrelated history, an old git without --write-tree) stops the check: it is never
 # read as "clean". A conflict without a file stops it too, since nothing could be compared.
 merge_check() {
@@ -74,7 +100,7 @@ merge_check() {
   case $merge_status in
     0) ;;
     1)
-      merge_files=$(printf '%s\n' "$out" | sed -n '2,$p' | sed '/^$/d' | paths | paste -sd, -) \
+      merge_files=$(printf '%s\n' "$out" | sed -n '2,$p' | sed '/^$/d' | paths) \
         || die "reading the conflicts of $1 and $2 failed"
       [ -n "$merge_files" ] || die "git merge-tree $1 $2 named a conflict but no file"
       ;;
@@ -116,10 +142,10 @@ conflicts=0
 for number in "${numbers[@]}"; do
   ref="$tmp/$number"
   theirs=$(changed "$base" "$ref") || exit 2
-  shared=$(LC_ALL=C comm -12 <(printf '%s\n' "$mine") <(printf '%s\n' "$theirs") | sed '/^$/d' | paste -sd, -) \
-    || die "comparing the files of pull request $number failed"
+  shared=$(pick "$mine" "$theirs" 1) || die "comparing the files of pull request $number failed"
   [ -n "$shared" ] || continue
   found=$((found + 1))
+  shared=$(named "$shared") || die "naming the files of pull request $number failed"
   merge_check "$branch" "$ref"
   if [ "$merge_status" -eq 0 ]; then
     echo "#$number [$shared]: clean"
@@ -128,13 +154,12 @@ for number in "${numbers[@]}"; do
     merge_check "$base" "$ref"
     already=$merge_files
     # The conflicts the branch adds: files that conflict with it and not with origin/main alone.
-    added=$(LC_ALL=C comm -23 <(tr , '\n' <<<"$files") <(tr , '\n' <<<"$already") | sed '/^$/d' | paste -sd, -) \
-      || die "comparing the conflicts of pull request $number failed"
+    added=$(pick "$files" "$already" 0) || die "comparing the conflicts of pull request $number failed"
     if [ -n "$added" ]; then
       conflicts=$((conflicts + 1))
-      echo "#$number [$shared]: CONFLICT in $added${already:+ (and against origin/main alone in $already)}"
+      echo "#$number [$shared]: CONFLICT in $(named "$added")${already:+ (and against origin/main alone in $(named "$already"))}"
     else
-      echo "#$number [$shared]: clean for this branch; conflicts with origin/main alone in $already"
+      echo "#$number [$shared]: clean for this branch; conflicts with origin/main alone in $(named "$already")"
     fi
   fi
 done

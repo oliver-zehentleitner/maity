@@ -123,6 +123,7 @@ class OverlapTest(unittest.TestCase):
         return subprocess.run(
             ["bash", str(SCRIPT), branch],
             cwd=self.clone,
+            stdin=subprocess.DEVNULL,
             env={**self.env, **LOCALES[locale]},
             capture_output=True,
             text=True,
@@ -201,6 +202,47 @@ class OverlapTest(unittest.TestCase):
         got = self.run_check([seven], "en")
         self.assertEqual(got.returncode, 1, got.stderr)
         self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
+
+    def failing(self, program: str, when: str) -> None:
+        """`program` fails (exit 4, no output, its input unread) when its arguments contain
+        `when`, else runs."""
+        real = shutil.which(program)
+        fake = self.bin / program
+        fake.write_text(
+            textwrap.dedent(
+                f"""\
+                #!/usr/bin/env bash
+                case " $* " in *{when}*) exit 4 ;; esac
+                exec {real} "$@"
+                """
+            )
+        )
+        fake.chmod(0o755)
+
+    def test_a_failing_step_between_git_and_the_answer_stops_the_check(self) -> None:
+        """A helper that fails on the way from git's answer to the line, never an empty list read
+        as "no file" or "clean": `sort` on the branch's files, `sed` on merge-tree's file list."""
+        prs = self.scenario()
+        for program, when in (("sort", "-u"), ("sed", "2,$p")):
+            with self.subTest(program=program):
+                self.failing(program, when)
+                got = self.run_check(prs, "en")
+                (self.bin / program).unlink()
+                self.assertEqual(got.returncode, 2, got.stdout)
+                self.assertNotIn("clean", got.stdout)
+
+    def test_the_lists_are_compared_without_a_helper_that_could_fail_unseen(self) -> None:
+        """The comparison of two lists runs in bash alone: a failing `tr` or `comm` (each once
+        inside `<(...)`, outside pipefail) changes nothing, the conflict is still counted."""
+        prs = self.scenario()
+        expected = self.run_check(prs, "en")
+        self.assertEqual(expected.returncode, 1, expected.stderr)
+        for program in ("tr", "comm"):
+            with self.subTest(program=program):
+                self.failing(program, "")
+                got = self.run_check(prs, "en")
+                (self.bin / program).unlink()
+                self.assertEqual((got.returncode, got.stdout), (1, expected.stdout))
 
     def test_a_pull_request_it_cannot_read_stops_the_check(self) -> None:
         """A head origin does not serve is an error (exit 2), never a "clean"."""
