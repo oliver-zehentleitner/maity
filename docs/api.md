@@ -3258,7 +3258,7 @@ member_join_limit` and `details.field` naming the field when broken:
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
-  `ops` or `proxy`) gets new instances only through `members:admin`
+  `ops`, `proxy` or a project role on `ops`) gets new instances only through `members:admin`
   (`forbidden`, `member_join_limit`, `details.field: "agent"`);
 - the caller's agents in the project stay within
   `policy.member_agents_max` (default 3), else `forbidden` with
