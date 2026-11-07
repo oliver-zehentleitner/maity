@@ -5272,7 +5272,7 @@ TEXT_ARGS: dict[Handler, tuple[tuple[str, str | None, str, bool], ...]] = {
     cmd_note_add: (("body", "body_file", "the note", True),),
     cmd_task_create: (("body", "body_file", "--body", False),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
-    cmd_jourfixe_post: (("body", "body_file", "the post", True),),
+    cmd_jourfixe_post: (("body", None, "the post", True),),  # stdin only, no file flag
     cmd_memory_add: (("text", None, "the entry", False),),  # stdin only, no file flag
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
