@@ -5262,7 +5262,7 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
 TEXT_ARGS: dict[Handler, tuple[tuple[str, str | None, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
     cmd_note_add: (("body", "body_file", "the note", True),),
-    cmd_task_create: (("body", "body_file", "--body", False),),
+    cmd_task_create: (("body", None, "--body", False),),  # stdin only, no file flag
     cmd_report: (("summary", "summary_file", "--summary", True),),
     cmd_jourfixe_post: (("body", None, "the post", True),),  # stdin only, no file flag
     cmd_memory_add: (("text", None, "the entry", False),),  # stdin only, no file flag
