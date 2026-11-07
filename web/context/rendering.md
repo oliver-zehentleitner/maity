@@ -1161,6 +1161,34 @@ Each case is settled once:
 - French `fil d'actualité` in full in every sentence: nine sentences grow long for no gain once `le fil` means the
   ticker alone.
 
+## `make check` holds every translation to the glossary's fixed terms and form of address
+
+**Id:** 7d49c1e3-32a6-4a9e-af9e-c385ee719ee0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-47tbmmmemf6x and the reviews of PR #1457, 2026-11-07; findings of the reviews of #1451 (a translated `harness`, Portuguese `tu` forms)
+**Revisit when:** the address table of `web/i18n/glossary.md` changes its shape, or informal French possessives (`ton`, `ta`) appear in a catalog
+
+See: rendering.md#one-word-per-thing-in-the-translations — fc2e6592-2711-447a-978c-75a9ccce1e0a — as of 2026-11-07
+
+Reviews kept finding the same two slips by hand: a term the glossary keeps as it is came back translated, and a text
+used the other form of address than the one the glossary names. `web/tools/check.py` now reads both rules from
+`glossary.md` itself and checks every catalog and the hub's mail words: a term its Words table keeps `unchanged` in
+every language must stay in a text whose English holds it, and a text uses no word of the other address
+(`GLOSSARY_OTHER_ADDRESS`). Code spans and placeholders are taken out first, and a placeholder reads as a number, so
+`{harness}` is no harness and Dutch `{count} u` stays hours. German `Sie` and `Ihr…` count only inside a sentence. An
+address in the table that the check does not know is itself a finding, so the table cannot change unseen.
+
+**Rejected alternatives:**
+- Checking `resume` with the other fixed terms: the glossary translates it as an ordinary verb, so the check would flag
+  correct sentences; it stays a reviewer's call (`GLOSSARY_NOT_CHECKED`).
+- Flagging French `ton`, `ta` and `te` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses
+  it so (« Le ton, la longueur … »), which the check would flag; noted for later instead.
+- A word list for Japanese, Korean and Chinese: their address is a register (です・ます, 해요체), not a set of words a
+  pattern can find; nothing is checked there and reviewers keep it.
+- Leaving both rules to review alone: the same findings came back on #1451 after the glossary named them.
+
 ## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
 
 **Id:** af756909-d3b0-4484-af3f-f88c41014ac4
