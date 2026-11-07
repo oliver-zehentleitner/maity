@@ -466,15 +466,21 @@ unreachable URL through `safe_url` like the other hub errors.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` for an expired code left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j; the lead's go on the plan, with the definition of "created" to be stated (Maity message, 2026-11-07); `cli/src/maity/cli.py` `cmd_join`, `state.missing_dirs`, `state.remove_empty`
+**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` for an expired code left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j; the lead's go on the plan, with the definition of "created" to be stated (Maity message, 2026-11-07); the review of #1478 by 399x (a path snapshot let a race or a replaced parent make the cleanup remove another process's directory); `cli/src/maity/cli.py` `cmd_join`, `state.prepare_for_join`, `state.remove_created`
 **Revisit when:** a join keeps something in the state directory before the exchange, or a failed join should leave a marker behind for its retry
 
-Before `prepare_for_join` creates anything, `cmd_join` records what is missing: the state
-directory and each missing parent up to the first one that exists (`state.missing_dirs`). These,
-and only these, count as "created by this join". When anything up to and including the hub's
-answer fails (`prepare_for_join`, the exchange, `accept_hub`), they are removed again, deepest first,
-and only while they are empty (`rmdir`, never recursive); a removal that fails stops there and
-leaves the rest. A directory that existed before the join, and everything outside that chain, is
+`prepare_for_join` creates the missing state directory and its missing parents itself, one
+`mkdir` at a time from the topmost missing one, and records each directory its own `mkdir`
+created: one that appeared meanwhile (`FileExistsError`) is someone else's and is never recorded.
+Once it is done with them (after its `chmod` and the children's `mkdir`, also when a check
+refused), it records each one's identity: device, inode and change time from `lstat`, which does
+not follow a link at that path. These, and only these, count as "created by this join". When
+anything up to and including the hub's answer fails (`prepare_for_join`, the exchange,
+`accept_hub`), every recorded identity is checked first, and those still matching are removed,
+deepest first, only while empty (`rmdir`, never recursive); a removal that fails stops there and
+leaves the rest. A directory replaced meanwhile, even one that got the same inode number back,
+or one reached through a parent swapped for a link or a junction, has another identity and stays
+(review of #1478, 399x). A directory that existed before the join, and everything outside that chain, is
 never touched. Once the exchange has answered and the credential is being written, nothing is
 removed: the code is spent, and a credential the directory refuses then is rescued, as before.
 A second instance's directory (`<handle>#<instance>`) is created only after the exchange and is not
@@ -486,6 +492,11 @@ had to check. Removing exactly what this join created makes the retry start as t
 did.
 
 **Rejected alternatives:**
+- Recording the missing paths before the join and removing whatever empty directory stands
+  there afterwards (the first version of this change): another process's directory created or
+  swapped in meanwhile, or a child reached through a replaced parent, would have gone too.
+- Device and inode alone as the identity: a file system may hand the same inode number to a
+  directory created anew in the same place; the change time tells them apart.
 - Removing the state directory whatever it holds: a directory someone named by mistake (a home, a
   clone) could lose its content; only an empty directory this join created goes.
 - Creating the directory only after the exchange: `prepare_for_join` checks before the single-use

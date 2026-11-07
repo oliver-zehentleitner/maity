@@ -1158,3 +1158,83 @@ def test_a_failed_join_keeps_a_state_directory_that_existed(
     line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
     assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
     assert directory.is_dir()
+
+
+def _failing_exchange(effect: Any) -> Any:
+    """An exchange that first does `effect` (what another process does meanwhile), then fails
+    as an expired code does."""
+
+    def exchange(*args: Any, **kwargs: Any) -> Any:
+        effect()
+        raise hub.HubError("not_found", code="not_found", status=404)
+
+    return exchange
+
+
+def test_a_failed_join_leaves_a_directory_replaced_during_the_exchange(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """Another process replaced the created directory with one of its own (a new inode):
+    the cleanup recognises it is no longer the join's and leaves it."""
+    root = no_clone / "existing"
+    root.mkdir(parents=True)
+    directory = root / "agent"
+
+    def replace() -> None:
+        directory.rmdir()
+        directory.mkdir()
+
+    monkeypatch.setattr("maity.hub.exchange", _failing_exchange(replace))
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
+    assert directory.is_dir()
+
+
+@posix
+def test_a_failed_join_removes_nothing_through_a_replaced_parent(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """The created parent was swapped for a link to another tree with the same names in it:
+    nothing in that other tree is removed, and the link stays."""
+    root = no_clone / "existing"
+    root.mkdir(parents=True)
+    other = no_clone / "other"
+    directory = root / "a" / "b" / "agent"
+
+    def swap() -> None:
+        (root / "a").rename(no_clone / "a-moved")
+        (other / "b" / "agent").mkdir(parents=True)
+        (root / "a").symlink_to(other, target_is_directory=True)
+
+    monkeypatch.setattr("maity.hub.exchange", _failing_exchange(swap))
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
+    assert (other / "b" / "agent").is_dir() and (root / "a").is_symlink()
+
+
+def test_a_failed_join_leaves_a_directory_another_process_created_first(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """Between the check and its own mkdir, another process created the directory: the
+    join's mkdir fails with FileExistsError, so the directory is not the join's to remove."""
+    fake.join_used = True
+    root = no_clone / "existing"
+    root.mkdir(parents=True)
+    directory = root / "agent"
+    real_mkdir = os.mkdir
+
+    def racing_mkdir(path: Any, mode: int = 0o777, *args: Any, **kwargs: Any) -> None:
+        if Path(path) == directory and not directory.exists():
+            real_mkdir(path, 0o700)  # the other process, first
+        real_mkdir(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("maity.state.os.mkdir", racing_mkdir)
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
+    assert directory.is_dir()
