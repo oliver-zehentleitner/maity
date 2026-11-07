@@ -1614,6 +1614,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .restricted-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .card-restricted textarea { width: 100%; box-sizing: border-box; }
 .restricted-confirm { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+/* Before a way into the restricted-access set (§6.1): who will read the restricted texts. */
+.restricted-ahead { margin: 8px 0; padding: 6px 10px; border-left: 3px solid var(--border); }
+.restricted-ahead[hidden] { display: none; }
 .card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
 /* One style for the panel's section headings. */
 .card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }

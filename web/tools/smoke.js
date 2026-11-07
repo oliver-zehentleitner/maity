@@ -3395,6 +3395,117 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!raBox() && main.querySelector("aside.card-panel"), "restricted: once the set is closed no card shows the box");
   await go("#/maintainer/maity/inbox");
 
+  // Before every way into the set (§6.1 "Every way into the set", tsk-g8ts5vxhj1md Web 2): who will read, said first.
+  const rwR = win.Maity.restricted;
+  const rwMembers = [{ id: "hum-o", kind: "human", trust: "owner", display_name: "Olga", handle: "olga" },
+    { id: "hum-g", kind: "human", trust: "guest", display_name: "Gus", handle: "gus" },
+    { id: "agt-g", kind: "agent", trust: "member", owner_id: "hum-g", display_name: "Gus Bot", handle: "gus-bot" },
+    { id: "agt-i", kind: "agent", trust: "member", owner_id: "hum-o", display_name: "Iso", handle: "iso", isolated: { by: "hum-o" } }];
+  const rwCtx = (value) => ({ me: { id: "hum-o", kind: "human" }, members: rwMembers,
+    memberById: Object.fromEntries(rwMembers.map((m) => [m.id, m])), project: { settings: { restricted_access: value } } });
+  const rwRaise = (ms) => ms.map((m) => (m.id === "hum-g" ? Object.assign(m, { trust: "member" }) : m));
+  const rwLift = (ms) => ms.map((m) => (m.id === "agt-i" ? Object.assign(m, { isolated: null }) : m));
+  expect(rwR.ahead(rwCtx(null), rwRaise) === null && rwR.ahead(rwCtx({ mode: "nobody_except", members: [], included: false, cards_with_text: 2 }), rwRaise) === null,
+    "restricted ahead: nothing is said while the set is closed or names nobody");
+  expect(rwR.ahead(rwCtx({ mode: "all_except", members: [], included: true, cards_with_text: 2 }), rwRaise)
+    === "Gus (@gus), Gus Bot (@gus-bot), agent of Gus (@gus) will then read and write this project's restricted texts, those written before included. 2 cards have a restricted text.",
+    "restricted ahead: a guest raised under all_except enters with its agent, the count said");
+  expect(rwR.ahead(rwCtx({ mode: "nobody_except", members: ["agt-g"], included: false, cards_with_text: 1 }), rwRaise)
+    === "Gus Bot (@gus-bot), agent of Gus (@gus) will then read and write this project's restricted texts, those written before included. 1 card has a restricted text."
+    && rwR.ahead(rwCtx({ mode: "nobody_except", members: ["hum-o"], included: true }), rwRaise) === null
+    && rwR.ahead(rwCtx({ mode: "nobody_except", members: ["hum-g", "agt-g"], included: false, cards_with_text: 1 }), rwRaise).startsWith("Gus (@gus), Gus Bot (@gus-bot)"),
+    "restricted ahead: under nobody_except only whom the list names enters; a listed agent comes back with its owner's raise");
+  expect(rwR.ahead(rwCtx({ mode: "nobody_except", included: true }), rwLift)
+    === "Iso (@iso), agent of Olga (@olga) may then read and write this project's restricted texts, if the restricted-access list names them."
+    && rwR.ahead(rwCtx({ mode: "all_except", included: true }), rwLift)
+    === "Iso (@iso), agent of Olga (@olga) will then read and write this project's restricted texts, unless the restricted-access list leaves them out."
+    && rwR.ahead(rwCtx({ mode: "all_except", included: false }), rwLift) === null,
+    "restricted ahead: without the list the page says no more than it knows; outside the set one's own agent enters nothing");
+  const rwNew = (ms) => ms.concat([{ id: "x:new", kind: "agent", owner_id: "hum-o", trust: "member", display_name: "New", handle: "new" }]);
+  expect(rwR.ahead(rwCtx({ mode: "nobody_except", included: true }), rwNew, ["x:new"]) === null
+    && rwR.ahead(rwCtx({ mode: "all_except", members: [], included: true }), rwNew, ["x:new"]).startsWith("New (@new), agent of Olga (@olga) will then read"),
+    "restricted ahead: a new id is on no list, so under nobody_except a new agent enters nothing");
+  expect(rwR.aheadOrgOwners(rwCtx({ mode: "nobody_except", members: ["hum-o"], included: true }), "@acme") === null
+    && rwR.aheadOrgOwners(rwCtx({ mode: "nobody_except", members: ["hum-o", "hum-z"], included: true, cards_with_text: 3 }), "@acme")
+    === "Owners of @acme join this project with trust owner; any of them the restricted-access list names will read and write its restricted texts. 3 cards have a restricted text."
+    && rwR.aheadOrgOwners(rwCtx({ mode: "all_except", included: false }), "@acme").startsWith("Owners of @acme join this project with trust owner and will read"),
+    "restricted ahead: a transfer into an organisation says what the setting lets its owners do");
+  // Whoever accepts an invitation may be a former member, back with the same id, which the list keeps (akbp, #1450).
+  const rwInv = (ms) => ms.concat([{ id: "inv:x", kind: "human", trust: "member", display_name: "Whoever accepts", handle: null }]);
+  expect(rwR.ahead(rwCtx({ mode: "nobody_except", members: ["hum-gone"], included: false }), rwInv, ["inv:x"], ["inv:x"])
+    === "Whoever accepts may then read and write this project's restricted texts, if the restricted-access list names them."
+    && rwR.ahead(rwCtx({ mode: "all_except", members: ["hum-gone"], included: true, cards_with_text: 2 }), rwInv, ["inv:x"], ["inv:x"])
+    === "Whoever accepts will then read and write this project's restricted texts, unless the restricted-access list leaves them out. 2 cards have a restricted text."
+    && rwR.ahead(rwCtx({ mode: "nobody_except", included: false }), rwInv, ["inv:x"], ["inv:x"]).endsWith("if the restricted-access list names them.")
+    && rwR.ahead(rwCtx({ mode: "nobody_except", members: ["hum-o"], included: true }), rwInv, ["inv:x"], ["inv:x"]) === null
+    && rwR.ahead(rwCtx({ mode: "all_except", members: [], included: true }), rwInv, ["inv:x"], ["inv:x"]).startsWith("Whoever accepts will then read and write this project's restricted texts, those written before"),
+    "restricted ahead: an invitation's accepter may be a listed former member, so while the list names a non-member the line is conditional");
+  // ... or the owner of an agent that stayed a member after its owner left (§6.1, akbp on #1450's delta).
+  const rwOrphan = { id: "agt-o", kind: "agent", trust: "member", owner_id: "hum-left", display_name: "Orphan", handle: "orphan" };
+  const rwOCtx = (value) => Object.assign(rwCtx(value), { members: rwMembers.concat([rwOrphan]) });
+  const rwInvAs = (trust) => (ms) => ms.concat([{ id: "inv:x", kind: "human", trust, display_name: "Whoever accepts", handle: null }]);
+  expect(rwR.ahead(rwOCtx({ mode: "nobody_except", members: ["agt-o"], included: false, cards_with_text: 1 }), rwInvAs("member"), ["inv:x"], ["inv:x"])
+    === "Orphan (@orphan), agent of hum-left will then read and write this project's restricted texts too, if their owner is the one who accepts. 1 card has a restricted text."
+    && rwR.ahead(rwOCtx({ mode: "nobody_except", members: ["agt-o"], included: false }), rwInvAs("guest"), ["inv:x"], ["inv:x"]) === null
+    && rwR.ahead(rwOCtx({ mode: "all_except", members: ["hum-left"], included: true }), rwInvAs("member"), ["inv:x"], ["inv:x"]).indexOf("Orphan") === -1
+    && rwR.ahead(rwOCtx({ mode: "all_except", members: [], included: true }), rwInvAs("member"), ["inv:x"], ["inv:x"]).endsWith("too, if their owner is the one who accepts.")
+    && rwR.ahead(rwOCtx({ mode: "nobody_except", included: false }), rwInvAs("member"), ["inv:x"], ["inv:x"]).includes("Orphan (@orphan), agent of hum-left may then read and write this project's restricted texts too, if their owner is the one who accepts and the restricted-access list names them."),
+    "restricted ahead: an invitation's accepter may be the returning owner of an agent that stayed, which then comes back into the set");
+  // A transfer seats the organisation's owners: a listed agent whose owner is a guest here may then enter (akbp, #1450).
+  expect(rwR.aheadOrgOwners(rwCtx({ mode: "nobody_except", members: ["agt-g"], included: false, cards_with_text: 1 }), "@acme")
+    === "Gus Bot (@gus-bot), agent of Gus (@gus) will then read and write this project's restricted texts too, if their owner is one of the owners of @acme. 1 card has a restricted text."
+    && rwR.aheadOrgOwners(rwCtx({ mode: "all_except", members: ["agt-g"], included: true }), "@acme")
+    === "Owners of @acme join this project with trust owner and will read and write its restricted texts, unless the restricted-access list leaves them out."
+    && rwR.aheadOrgOwners(rwCtx({ mode: "all_except", members: [], included: true }), "@acme").endsWith("if their owner is one of the owners of @acme.")
+    && rwR.aheadOrgOwners(rwCtx({ mode: "nobody_except", included: false }), "@acme").includes("Gus Bot (@gus-bot), agent of Gus (@gus) may then read and write this project's restricted texts too"),
+    "restricted ahead: a transfer names the agents whose owner it may seat, under either mode");
+  // In the pages: the join and invitation forms, the guest's raise and the isolation's end asked first, the transfer, a promotion.
+  await win.Maity.api.patch("/projects/maintainer/maity", { settings: { restricted_access: { mode: "all_except", members: [] } } });
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
+  main.querySelector("button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  const rwJoinLine = () => main.querySelector(".join-panel .restricted-ahead");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  byId("join-handle").value = "scout"; byId("join-handle").dispatch("input");
+  expect(rwJoinLine() && !rwJoinLine().hidden && text(rwJoinLine()).startsWith("scout (@scout), agent of Maintainer (@maintainer) will then read and write"),
+    "restricted ahead: the join form says the new agent will read the restricted texts " + (rwJoinLine() && text(rwJoinLine())));
+  byId("join-trust").value = "guest"; byId("join-trust").dispatch("change");
+  expect(rwJoinLine().hidden, "restricted ahead: a guest's join says nothing, a guest is never in the set");
+  byId("join-trust").value = "member"; byId("join-trust").dispatch("change");
+  byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
+  expect(rwJoinLine().hidden, "restricted ahead: a new instance of a member enters nothing");
+  // Opened on a profile (Add to a project, a new profile, ?agent=): the line follows that profile, not the first option (be2n, #1450).
+  const rwOpts = byId("join-agent").querySelectorAll("option").filter((o) => o.getAttribute("value"))
+    .map((o) => ({ id: o.getAttribute("value"), name: text(o).split(" (@")[0], member: text(o).includes("already a member") }));
+  const rwTarget = rwOpts.find((o) => o.member !== rwOpts[0].member);
+  expect(rwTarget, "restricted ahead: the fixture offers a member and a non-member profile " + JSON.stringify(rwOpts));
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/agents/join?agent=" + rwTarget.id); for (let k = 0; k < 8; k++) await tick();
+  expect(byId("join-agent").value === rwTarget.id && (rwTarget.member ? rwJoinLine().hidden
+    : !rwJoinLine().hidden && text(rwJoinLine()).startsWith(rwTarget.name + " (@")),
+  "restricted ahead: the join panel opened on a profile says what joining that profile does " + JSON.stringify(rwTarget) + " " + (rwJoinLine() && text(rwJoinLine())));
+  await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+  const rwInvLine = () => main.querySelector("section.invitations .restricted-ahead");
+  expect(rwInvLine() && text(rwInvLine()).startsWith("Whoever accepts this invitation will then read and write this project's restricted texts"),
+    "restricted ahead: the invitation form says whoever accepts will read " + (rwInvLine() && text(rwInvLine())));
+  byId("invite-trust").value = "guest"; byId("invite-trust").dispatch("change");
+  expect(rwInvLine().hidden, "restricted ahead: an invitation as guest says nothing");
+  const rwConfirm = win.confirm;
+  const rwAsked = [];
+  win.confirm = (q) => { rwAsked.push(q); return false; };
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await nsSettle();
+  byId("project-transfer-to").value = "org-oz00team0001"; nsTr().dispatch("submit"); await nsSettle();
+  expect(rwAsked.length === 1 && rwAsked[0].includes("\n\nOwners of @oz-team join this project with trust owner and will read and write its restricted texts, unless the restricted-access list leaves them out."),
+    "restricted ahead: the transfer's question says what the organisation's owners will read " + JSON.stringify(rwAsked));
+  await go("#/account/orgs/oz-team"); for (let k = 0; k < 6; k++) await tick();
+  const rwPick = byId("org-role-hum-anna");
+  const rwWas = rwPick.value;
+  rwPick.value = "owner"; rwPick.dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(rwAsked.length === 2 && rwAsked[1].startsWith("If a project of @oz-team restricts its cards' restricted texts to a set, @anna may enter that set as an owner")
+    && byId("org-role-hum-anna").value === rwWas,
+    "restricted ahead: a promotion to owner asks first; declined, the role stays " + JSON.stringify(rwAsked[1]));
+  win.confirm = rwConfirm;
+  await win.Maity.api.patch("/projects/maintainer/maity", { settings: { restricted_access: null } });
+  await go("#/maintainer/maity/inbox");
+
   // Agents of owners who are not members (§6.1, §6.2): settings, the mark, the hub's isolation, the refused lift.
   await projectSettings();
   const aoForm = () => main.querySelector("form.agent-owners-form");
@@ -8312,6 +8423,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     while_open: "wait", personal: true, status: "open", answer: null, project: null, org, created_at: "2026-10-29T10:00:00Z" });
   win.Maity.api.getAll = (p) => (p === "/requests" ? oiGetAll(p).then((r) => Object.assign({}, r, { items: r.items.concat([
     oiReq("req-oi01", "Join @oz-team as admin", undefined),
+    oiReq("req-oi03", "Join @crew as owner", { id: "org-oz00crew0001", handle: "crew" }),
     Object.assign(oiReq("req-oi02", "Take over anna/shop into @guild as guild/shop", { id: "org-oz00guild001", handle: "guild" }), { project: { full_name: "anna/shop", name: "Anna's shop" } })]) })) : oiGetAll(p));
   await go("#/all"); await hgSettle();
   const oiLabels = main.querySelectorAll(".project-label.personal").map((el) => text(el));
@@ -8322,9 +8434,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".current")).includes("ProjectAnna's shop — a personal request: for you as an owner of @guild")
     && text(main.querySelector(".current")).includes("Into@guild") && !text(main.querySelector(".current")).includes("not for a project")
     && oiHead.textContent.includes("Anna's shop, into @guild: "), "personal request: a transfer into an organisation shows the project and where it goes");
+  expect(text(main.querySelector(".current .restricted-ahead")) === "Once Anna's shop moves into @guild, you join it as an owner; if it restricts its cards' restricted texts to a set, you may enter that set and read them.",
+    "restricted ahead: the go to a transfer into an organisation says the answering owner may enter a restricted-access set");
   const oiInvite = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Join @oz-team"));
   if (oiInvite.attrs["aria-expanded"] !== "true") { oiInvite.click(); await tick(); }
   expect(!text(main.querySelector(".current")).includes("Project"), "personal request: an invitation without org or project names no project");
+  const oiOrgInvite = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Join @crew as owner"));
+  if (oiOrgInvite.attrs["aria-expanded"] !== "true") { oiOrgInvite.click(); await tick(); }
+  expect(text(main.querySelector(".current .restricted-ahead")).startsWith("If you join @crew as an owner, you join each of its projects; where one restricts"),
+    "restricted ahead: an organisation's invitation says, before its go, that an owner may enter a restricted-access set");
   win.Maity.api.getAll = oiGetAll;
   // Personal requests (§7): in the cross-project inbox only, answered and withdrawn on /requests/{id}.
   const psCalls = [];
