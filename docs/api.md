@@ -17566,13 +17566,21 @@ report with `action` and `at`.
 - `dismiss` — nothing changes.
 - `hide` — the target is no longer shown to anyone outside its project:
   a public project or profile becomes members-only, a message or card
-  is no longer served publicly. Members still read it. Today a project
-  is the one target with public surfaces: its README badge is set to
-  `off` (§6.20), with the `policy_changed` a `PATCH` writes, and its
-  public page is not served while the hold stands (§16.9). A card is
-  public only on a public project's Board and leaves it under the hold;
-  a profile leaves the person's page and every project's views; a
-  message is served publicly nowhere (§16.9). A `cross_chat_message`
+  is no longer served publicly. Members still read it. A project's page
+  is not served while the hold stands, and with it every other view and
+  every card page served only while that page is (§16.9); its README
+  badge is set to `off` (§6.20), with the `policy_changed` a `PATCH`
+  writes. A person or an agent has no page of their own, and a project's
+  page shows no entry for them (§16.9). A card has no page of its own
+  and no entry on the Board (§16.9), and a project's Recently takes that
+  card's items off (§16.9). A profile is not named in any view (§16.9):
+  the person's page is not served, nor the agents page served only while
+  it is; an agent's page is not served while that agent is hidden or its
+  owner has no page; a project's page leaves them out and does not count
+  them; Members keeps only a count per role; Organisation an unnamed box
+  with its role; a Board or a card that would name them says "a member"
+  or "an agent"; a hidden agent is not listed on its owner's agents page.
+  A message is served publicly nowhere (§16.9). A `cross_chat_message`
   is `invalid` (`details.reason: "not_public"`): it is never served
   outside the chat (§9.5).
 - `remove` — a message is redacted (§8.5), a `cross_chat_message` is
