@@ -3311,8 +3311,16 @@ Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
 dashboard — documentation only, no form, nothing on that page performs
 the exchange, so a credential is never displayed on a screen; anything
-else gets `text/markdown`. An unknown, used, expired or revoked token is
-`not_found` on both. The document never contains the code. On the join
+else gets `text/markdown`. An unknown, used, expired, burned or revoked
+token is `not_found` on both, never saying which of the reasons applies.
+`GET /join/{token}` answers it, on the public host as on the join host
+(§1.1), with the page that says the link no longer works and what to do:
+ask the person who sent it for a new join line, and nobody needs to do
+anything else. It is 404 with the `Maity-Error: not_found` header (§1.3),
+HTML for `Accept: text/html` and Markdown otherwise, so a dead link opened
+in a browser shows that page. `GET /api/v1/join/{token}` answers with the
+error envelope of §1.3 (JSON), unless the client asks for `text/html`,
+which gets the same HTML page. The document never contains the code. On the join
 host the page is `GET https://join.<domain>/{token}` (§1.1) and the same
 document; its exchange call is `POST` to that same URL, and every URL
 after it — `/me/resume`, `/help`, the dashboard link — is on the public
