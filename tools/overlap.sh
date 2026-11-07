@@ -88,8 +88,8 @@ if [ -z "$mine" ]; then
   exit 0
 fi
 
-prs=$(gh pr list --state open --limit "$LIMIT" --json number,headRefOid,headRefName \
-  --jq '.[] | "\(.number) \(.headRefOid) \(.headRefName)"') || die "gh pr list failed"
+prs=$(gh pr list --state open --limit "$LIMIT" --json number,headRefOid,headRefName,isCrossRepository \
+  --jq '.[] | "\(.number) \(.headRefOid) \(.isCrossRepository) \(.headRefName)"') || die "gh pr list failed"
 count=$(printf '%s' "$prs" | grep -c '^') || true
 [ "$count" -lt "$LIMIT" ] || die "$count open pull requests, the list may be cut short at $LIMIT"
 
@@ -98,10 +98,12 @@ tmp="refs/maity-overlap/$$"
 trap 'git for-each-ref --format="%(refname)" "$tmp" | xargs -r -n1 git update-ref -d' EXIT
 numbers=()
 specs=()
-while read -r number head name; do
+while read -r number head fork name; do
   [ -n "${number:-}" ] || continue
-  # The branch's own pull request, also while its pushed head is older than the branch.
-  [ "$head" = "$own" ] || [ "$name" = "$branch" ] && continue
+  # The branch's own pull request, also while its pushed head is older than the branch: by its
+  # head, or by its branch name in this repository. A fork's branch of the same name is another's.
+  [ "$head" = "$own" ] && continue
+  [ "$fork" = false ] && [ "$name" = "$branch" ] && continue
   numbers+=("$number")
   specs+=("+refs/pull/$number/head:$tmp/$number")
 done <<<"$prs"

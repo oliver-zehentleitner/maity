@@ -41,7 +41,7 @@ FAKE_GH = textwrap.dedent(
     if prs and prs[0].get("flood"):
         prs = [{"number": n, "head": "0" * 40, "name": f"pr-{n}"} for n in range(1, limit + 5)]
     for pr in prs[:limit]:
-        print(pr["number"], pr["head"], pr["name"])
+        print(pr["number"], pr["head"], str(pr.get("fork", False)).lower(), pr["name"])
     """
 )
 
@@ -193,6 +193,14 @@ class OverlapTest(unittest.TestCase):
                 self.assertEqual(
                     got.stdout.strip(), "overlap: no open pull request changes a file of mine"
                 )
+
+    def test_a_forks_branch_of_the_same_name_is_checked(self) -> None:
+        """Another's pull request from a fork, on a branch named like mine: not left out as own."""
+        prs = self.scenario()
+        seven = {**prs[0], "name": "mine", "fork": True}
+        got = self.run_check([seven], "en")
+        self.assertEqual(got.returncode, 1, got.stderr)
+        self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
 
     def test_a_pull_request_it_cannot_read_stops_the_check(self) -> None:
         """A head origin does not serve is an error (exit 2), never a "clean"."""
