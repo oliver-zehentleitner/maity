@@ -4,7 +4,7 @@
 // sign-in, the invitation and the full maintenance page end with it, whatever
 // replaced <main>; render() draws it again with each view (the language may change).
 //
-// [Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+// [Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability?
 //
 // The icons are inline SVG with presentation attributes only (§16.13, "The icons");
 // css/app.css switches the Maity mark's fill under a dark theme.
@@ -86,11 +86,11 @@ window.Maity = window.Maity || {};
     return [
       h("span", { class: "product-part" }, maityMark(), " ", h("span", { translate: "no" }, "Maity"), " ", String(new Date().getFullYear())),
       h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
+      h("span", { class: "product-part" }, sentence(values)),
+      h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
       h("span", { class: "product-part" }, external(ISSUES, null, M.t("product.bug"))),
       h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
       h("span", { class: "product-part" }, external(SECURITY, null, M.t("product.security"))),
-      h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
-      h("span", { class: "product-part" }, sentence(values)),
     ];
   }
 
