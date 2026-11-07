@@ -3428,14 +3428,15 @@ JOIN_REPORTS_MEASURE = """() => {
 
 
 def join_reports_layout(run: Run, browser) -> None:
-    """The join panel's Reports to (tsk-nbadjbr9zpg7) in fixture mode, at 1280 x 900 and
-    390 x 844, light and dark, with the sign-in banner and without: for a new agent the select
+    """The join panel's Reports to (tsk-nbadjbr9zpg7) in fixture mode, at 1280 x 900, 390 x 844
+    and 360 x 780, light and dark, with the sign-in banner and without: for a new agent the select
     among the membership's fields, for an agent already here its own field with the current boss
     and its hint; each field and its children inside the form's column (LINES_MEASURE over the
     fields, the page never wider than the window)."""
-    run.step("fixtures: Reports to in the join panel at 1280 and 390 px, light and dark, banner on and off, new agent and member")
+    run.step("fixtures: Reports to in the join panel at 1280, 390 and 360 px, light and dark, banner on and off, new agent and member")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((1280, 900), (390, 844)):
+    # 360 px as well: there the profile's two links wrap whatever the fonts (at 390 only with CI's).
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
         for scheme in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme)
             context.add_init_script(f"try {{ localStorage.setItem('maity.theme', '{scheme}'); }} catch (e) {{}}")

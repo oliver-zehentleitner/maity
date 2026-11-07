@@ -491,6 +491,9 @@ window.Maity = window.Maity || {};
         // An agent already here whose boss was changed in the panel: that PATCH first (§2.3),
         // then the join. Refused, nothing is sent after it; taken, it stays whatever the join
         // does, and the panel says so beside the join's own outcome.
+        // This submission's number, taken before the first wait: a panel closed meanwhile
+        // (close() counts on) ends it, so neither the PATCH's outcome nor a join follows.
+        const mine = ++submission;
         let bossSaid = null;
         if (member && memberReports.value !== bossNow(member)) {
           const to = memberReports.value || null;
@@ -501,6 +504,7 @@ window.Maity = window.Maity || {};
             answer = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(member.id), { reports_to: to });
           } catch (err) {
             create.disabled = false;
+            if (mine !== submission) return;
             status.fail(M.t("join.reports.failed"), err);
             memberReports.focus();
             return;
@@ -515,6 +519,8 @@ window.Maity = window.Maity || {};
             member.reports_to = to;
             bossSaid = to ? M.t("join.reports.saved", { name, boss: ctx.nameOf(to) }) : M.t("join.reports.saved_nobody", { name });
           }
+          // Taken, the boss stays (kept above for the next submission); closed meanwhile, no join.
+          if (mine !== submission) { create.disabled = false; return; }
         }
         const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
@@ -523,7 +529,6 @@ window.Maity = window.Maity || {};
         try {
           // Creating a join is a sensitive call (§2.8.4): the hub asks for the
           // second factor first, by app or by mail, and the join is sent again.
-          const mine = ++submission;
           j = await M.stepUp.run(() => (mine === submission ? M.api.post(ctx.base + "/joins", req)
             : Promise.reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled"))), stepSlot, M.t("join.step_up"));
         } catch (err) {

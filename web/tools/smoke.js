@@ -6043,6 +6043,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
     expect(calls.length === 1 && calls[0][0] === "patch" && panelText().includes("Whom it reports to was not changed, and no join was created: ")
       && !main.querySelector(".join-result"), "reports to: a refused PATCH sends no join " + JSON.stringify(calls));
+    // The panel closed while the PATCH is under way (review of #1477): the PATCH's answer
+    // arrives after the close and no join follows, taken or refused.
+    // Both answers are made here, so the fixture's agt-b keeps its boss for the tests after.
+    for (const [kind, answer] of [["taken", () => Promise.resolve({ id: "agt-b", reports_to: "agt-d" })],
+      ["refused", () => Promise.reject(new win.Maity.api.ApiError("would close a circle", 400, "", "invalid", {}))]]) {
+      let release = null;
+      patchAnswer = () => new Promise((done) => { release = () => done(answer()); });
+      await openPanel("agt-b");
+      byId("join-member-reports").value = "agt-d";
+      calls = [];
+      main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+      const pending = calls.length === 1 && calls[0][0] === "patch" && typeof release === "function";
+      main.querySelector(".join-panel button.join-close").click(); await tick();
+      release(); for (let k = 0; k < 6; k++) await tick();
+      expect(pending && main.querySelector(".join-panel").hidden && calls.length === 1 && calls[0][0] === "patch"
+        && !main.querySelector(".join-result") && !main.querySelector(".join-panel .join-reports-said"),
+      "reports to: the panel closed while the PATCH is under way, " + kind + ", sends no join " + JSON.stringify(calls));
+    }
     win.Maity.api.getAll = rtAll; win.Maity.api.post = rtPost; win.Maity.api.patch = rtPatch;
   }
   // A failed read of the joins stays in the panel, with a retry; the agents' cards are drawn all the same.

@@ -1329,6 +1329,9 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
 .join-fields [hidden], .join-briefing[hidden] { display: none; }
 /* One column no wider than the form: a long instance name in the select shrinks it, never the page (tsk-nbadjbr9zpg7, 390 px). */
+/* The profile's links under the agent's select: where they wrap, each link stands whole on its
+   own line, 8 px apart, so neither small target crowds the other (24 px spacing). */
+.join-profile-links { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.3em; row-gap: 8px; }
 .join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
 .join-instance legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
 .join-instance .hint { margin: 0; }
