@@ -158,6 +158,9 @@ def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> N
     assert html.status_code == 404 and "<h1>This join link no longer works</h1>" in html.text
     unknown = join_client(make_client).get("/" + "A" * 22)
     assert unknown.status_code == 404 and unknown.text == dead.text  # never says why
+    # The same page as the public host's `/join/{token}` (§3.2), apart from the dashboard link.
+    public = make_client(join_url=JOIN).get(f"/join/{token_of(created)}")
+    assert public.status_code == 404 and public.text == dead.text
     exchange = join_client(make_client).post(
         f"/{token_of(created)}", json={"code": created["code"], "client": "curl"}
     )
