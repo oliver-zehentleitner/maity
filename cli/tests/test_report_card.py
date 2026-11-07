@@ -256,7 +256,7 @@ def test_without_gh_the_linked_pull_request_with_the_pushed_head_is_reported(
     assert body["pr_status"] == "found" and body["pr_unknown_reason"] is None
     assert body["pr"] == {"number": 12, "url": f"{REPO}/pull/12", "head": head, "state": "open"}
     assert [dict(p.split("=", 1) for p in q.split("&")) for q in asked] == [
-        {"pr": "12", "max_age": "0"}  # a fresh read, never the hub's cache
+        {"pr": "12", "max_age": "0"}  # a forced read (the hub's floor may still be 30 s)
     ]
     assert "PR #12 (open, read by the hub's probe)" in capsys.readouterr().err
 
@@ -358,3 +358,17 @@ def test_without_gh_a_deleted_branch_on_a_card_without_a_linked_pull_request_is_
     assert _report() == cli.EXIT_REFUSED
     assert "does not exist on" in capsys.readouterr().err
     assert asked == [] and not _sent(fake)
+
+
+def test_links_past_the_cap_are_named_not_read(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    head = _head(joined)
+    numbers = list(range(1, cli.PROBED_LINKS_MAX + 2))
+    asked = _probe(fake, {numbers[0]: head})
+    _card(fake, links=[_link(n) for n in numbers])
+    assert _report() == cli.EXIT_OK
+    assert len(asked) == 1  # the first matched; past the cap nothing would be read
+    err = capsys.readouterr().err
+    assert f"the card links {len(numbers)} pull requests" in err
+    assert f"first {cli.PROBED_LINKS_MAX} only" in err

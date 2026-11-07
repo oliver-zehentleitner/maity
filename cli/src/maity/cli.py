@@ -962,6 +962,11 @@ def _probed_pr(
             if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
         }
     )
+    if len(linked) > PROBED_LINKS_MAX:
+        _err(
+            f"the card links {len(linked)} pull requests; the hub's probe is asked about the "
+            f"first {PROBED_LINKS_MAX} only"
+        )
     others: list[str] = []
     for repository, number in linked[:PROBED_LINKS_MAX]:
         try:

@@ -4,7 +4,7 @@
 
 **Id:** 66da7721-2f51-4105-b82f-4c06cbb9e984
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** CLI skeleton design, 2026-10-21; the refusal on mismatch is from the task brief; re-confirmed by the coordinator after the merged-branch case, 2026-10-22 (a merged head is a forge fact, not an override)
 **Revisit when:** the hub's forge probe makes the agent-side check redundant, or agents routinely hit a refusal that is not a real mismatch
@@ -108,7 +108,7 @@ itself.
 
 **Id:** 8c58cebb-b7e1-4947-8776-8f5bcb6c566c
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** a member's report that `maity report` for a merged pull request, sent from the branch of the next one, filed the wrong head and pull request on the card (2026-10-30); the coordinator's decision on the card tsk-scw537kndwwg between a `--pr` flag and a card check, and to refuse a checkout without a found pull request, 2026-10-31; the contract text of §6.6 in PR #816
 **See:** report.md — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-10-31
@@ -236,7 +236,10 @@ before PATH for a bare program name.
 When gh is missing, or is installed and fails (`gitfacts.collect` keeps that
 failure as `forge_error` instead of raising it), `maity report` reads the card
 and asks the hub's probe about each pull request the card links in the
-project's repository, at most five, with `max_age=0`. A pull request whose
+project's repository, at most five (more are named in one line and not read),
+with `max_age=0`; the hub may still answer from a read up to 30 seconds old
+(`FORCED_FLOOR`, §11.4), and a head that is that stale refuses, never files
+another commit. A pull request whose
 `head_sha` equals what `git ls-remote` answered for the branch, compared whole,
 is reported as `pr_status: found` with number, URL, head and state from the
 probe, and the terminal line says it was read by the hub's probe. Linked pull
@@ -265,7 +268,10 @@ hub's own forge read, with the operator's or the owner's grant and of the
 project's repository only, so the pull request still comes from the forge, not
 from the agent; asking only about pull requests the card links keeps the
 choice out of the agent's hands, and the exact head match keeps the report tied
-to what git pushed. Both earlier entries name this as their revisit trigger.
+to what git pushed. Both earlier entries name this as their revisit trigger;
+re-checked on 2026-11-07, both stay active: this entry extends them (a forge
+read when gh cannot answer), it replaces neither the refusal on a mismatch nor
+the check against the card's pull request.
 
 **Rejected alternatives:**
 - A `--pr N` flag: 8c58cebb rejected it, and the probe makes it no safer, since
