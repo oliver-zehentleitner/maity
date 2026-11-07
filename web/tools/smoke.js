@@ -4130,6 +4130,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await deAt.i18n.follow(null);
     expect(deAt.i18n.language === "en" && JSON.stringify(deAt.asked) === '["/site/chrome?lang=de-AT"]',
       "visitor language: ?lang=de-AT is asked as written and read as the landing page reads it " + deAt.asked);
+    expect(deAt.i18n.explicit() === null, "visitor language: an overridden ?lang=de-AT is no account choice either");
+    // An unknown ?lang=xx: the hub ignores it, so does the page, and it is no choice to store.
+    const xx = visitor({ search: "?lang=xx", languages: ["de"], answer: frame(hubPage(["en", "fr"], "en", ["de"])) });
+    await xx.i18n.follow(null);
+    expect(xx.i18n.language === "en" && xx.i18n.explicit() === null && JSON.stringify(xx.asked) === '["/site/chrome?lang=xx"]',
+      "visitor language: ?lang=xx with a frame reads the landing page's en and stores nothing " + [xx.i18n.language, xx.i18n.explicit()]);
     // 4. A reload with ?lang= the landing page has no page in follows the frame, the address unchanged.
     const ko = visitor({ search: "?lang=ko", languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
     await ko.i18n.follow(null);
@@ -4186,6 +4192,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await picked.i18n.follow(null);
     const pickedChanged = await picked.i18n.frame("en");
     expect(picked.i18n.language === "ko" && pickedChanged === false, "visitor language: a pick on the page holds against the frame");
+    expect(picked.i18n.explicit() === "ko", "visitor language: a pick that holds against the frame is the person's choice for the account");
     // The frame's own read draws the page again once where it differs, never where it agrees.
     const drawn = visitor({ languages: ["de"], answer: () => new Promise(() => {}) });
     drawn.i18n.frameWait = 20;
