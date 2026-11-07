@@ -3466,6 +3466,13 @@ window.MAITY_FIXTURES = {
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T07:55:00Z"
         },
+        "subagents": true,
+        "subagents_by": {
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "kind": "human"
+        },
+        "subagents_language": "en",
         "trust": "admin"
       },
       {
