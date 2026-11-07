@@ -65,19 +65,31 @@ window.Maity = window.Maity || {};
   };
   const fieldWords = (why) => (Object.hasOwn(FIELD_WORDS, why) ? FIELD_WORDS[why]() : why);
 
-  // The section in the project's settings, for those with project:admin. A human edits it;
-  // an admin agent reads only its mode and whether it is in the set (`{mode, included}`).
-  // `saved(words)` draws the settings again with what the save did.
+  // The section in the project's settings. A human with project:admin edits it (`saved(words)`
+  // draws the settings again with what the save did). Everyone else reads it: an admin agent,
+  // and on settings/mine a human member in the set, where the set's notice leads (§19) — its
+  // mode, whether they are in it, and the set and the count where the hub serves them (§6.1
+  // "Reading the setting"). Nothing there changes it.
   function settingsSection(ctx, saved) {
     const value = setting(ctx);
     const section = h("section", { class: "restricted-settings", id: "restricted-access", "aria-labelledby": "restricted-title" },
       h("h2", { class: "panel-title", id: "restricted-title" }, M.t("restricted.settings.title")),
       h("p", { class: "hint" }, M.t("restricted.settings.hint")),
       h("p", { class: "restricted-not-encryption" }, M.t("restricted.not_encryption")));
-    if (ctx.me.kind !== "human") {
+    if (ctx.me.kind !== "human" || !ctx.canAdmin) {
       append(section, h("p", { class: "restricted-state" }, !value ? M.t("restricted.settings.closed")
         : value.included ? M.t("restricted.settings.you_in", { mode: modeWords(value.mode) })
           : M.t("restricted.settings.you_out", { mode: modeWords(value.mode) })));
+      if (value && Array.isArray(value.members)) {
+        const now = resolve(value, ctx.members || []);
+        const inSet = (ctx.members || []).filter((m) => now.has(m.id));
+        append(section, h("p", { class: "restricted-in-set" }, inSet.length
+          ? M.t("restricted.settings.in_set", { list: inSet.map((m) => who(ctx, m)).join(", ") }) : M.t("restricted.settings.nobody")));
+      }
+      if (value && typeof value.cards_with_text === "number") {
+        append(section, h("p", { class: "restricted-count" }, M.t("restricted.settings.cards", { count: value.cards_with_text })));
+      }
+      if (ctx.me.kind === "human") append(section, h("p", { class: "muted" }, M.t("restricted.settings.admins_change")));
       return section;
     }
     const stored = value ? { mode: value.mode, members: (value.members || []).slice() } : null;

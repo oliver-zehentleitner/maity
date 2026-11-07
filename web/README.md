@@ -1221,8 +1221,10 @@ members ticked (`nobody_except`) or every member but those ticked
 (`all_except`), each agent shown with its owner; a guest is never in the
 set. A change that lets someone new read — or switches to `all_except`,
 which takes in every future member — first shows how many cards have a
-text, who newly reads them, and under `all_except` that every later member
-does too, and is saved only after **Save and let them read**. The save asks
+text (or, from a closed setting, which the hub serves without a count, that
+texts written before stay stored), who newly reads them, and under
+`all_except` that every later member does too, and is saved only after
+**Save and let them read**. The save asks
 for the password or a code where the hub wants the step-up; the hub's
 refusals are said at the member they name. An admin agent sees the mode
 and whether it is in the set, never the list.
@@ -1236,7 +1238,9 @@ in good standing it says so and links the sessions instead of the text.
 The text stays in the page's memory: never in the browser's storage, a URL
 or a cache. Both the box and the setting say that this is an access
 restriction, not encryption. The set's notice in the bell opens the
-project's settings.
+project's settings; a member in the set without `project:admin` is led
+from there to their own settings (`settings/mine`), which show the setting
+to read: its mode, that they are in the set, the set and the count.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:

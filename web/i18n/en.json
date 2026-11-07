@@ -3848,6 +3848,7 @@
   "restricted.mode.hint.nobody_except": "Only the members ticked read and write. Whoever controls a ticked agent reads through it.",
   "restricted.mode.nobody_except": "Only the members ticked",
   "restricted.not_encryption": "Access restriction, not encryption — project admins can add themselves, the server's operators can read it, and an agent in the list passes it to its owner and its model provider.",
+  "restricted.settings.admins_change": "Only a human with the right to administer the project changes who is in the set.",
   "restricted.settings.cards": {
     "one": "{count} card has a restricted text.",
     "other": "{count} cards have a restricted text."

@@ -3361,6 +3361,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && win.Maity.notify.linkOf({ kind: "inbox", target: { type: "settings", id: "notifications" } }) === "/account/notifications"
     && win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "settings", id: "notifications" } }),
     "restricted: the set's notice opens the project's settings and is read by a read mark");
+  // Where that notice leads a member in the set without project:admin (§19): settings sends them to
+  // settings/mine, which shows the setting to read, with the set the hub serves them, and no control.
+  await win.Maity.api.patch("/projects/maintainer/maity", { settings: { restricted_access: { mode: "nobody_except", members: ["hum-maintainer"] } } });
+  const raMeGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? raMeGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "member"; return x; }) : raMeGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
+  expect(/settings\/mine$/.test(win.location.hash) && raSection() && !byId("restricted-mode") && !raSection().querySelector("form")
+    && text(raSection()).includes("Only the members ticked. You are in the set.")
+    && text(raSection()).includes("In the set now: Maintainer (@maintainer).")
+    && text(raSection()).includes("Only a human with the right to administer the project changes who is in the set."),
+    "restricted: a member in the set without the right reads the setting on settings/mine, where the notice leads, and changes nothing " + win.location.hash);
+  win.Maity.api.get = raMeGet;
+  await go("#/maintainer/maity/inbox"); await projectSettings();
+  expect(byId("restricted-mode") && byId("restricted-mode").value === "nobody_except", "restricted: an admin still edits the setting on the project's settings");
   // Closed again: nobody is in the set, and no card shows the box.
   await projectSettings();
   byId("restricted-mode").value = ""; byId("restricted-mode").dispatch("change");
