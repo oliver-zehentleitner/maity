@@ -122,6 +122,8 @@ const intervals = new Map();
 let intervalId = 0;
 const win = {
   location: { protocol: "file:", search: "", hash: "", replace(h) { this.hash = h; setTimeout(() => win.onhashchange(), 0); } },
+  // As a browser's: the entry changes, no hashchange (js/route.js, go with quiet: the page's ?lang=).
+  history: { state: null, replaceState(state, title, address) { this.state = state; if (typeof address === "string" && address.startsWith("#")) win.location.hash = address; } },
   addEventListener: (t, f) => { win["on" + t] = f; },
   removeEventListener: (t, f) => { if (win["on" + t] === f) win["on" + t] = null; },
   confirm: () => true,
@@ -4184,6 +4186,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     i18n.language = was;
     delete win.MAITY_I18N.de;
   }
+  // A visitor's language is the landing page's rule (tsk-a9n9p6952wwb): ?lang=, then the browser's,
+  // then en, never a choice stored in the browser, which the hub's pages cannot read. js/i18n.js loaded
+  // afresh, as a new page is, over a browser that still keeps an older version's stored choice.
+  {
+    const freshPage = (search, languages) => {
+      const kept = { "maity.language": "de", "maity.theme": "dark", "other.key": "x" };
+      const removed = [];
+      const page = {
+        MAITY_I18N: { en: {}, de: {} }, MAITY_I18N_LANGUAGES: ["en", "de"],
+        location: { search }, navigator: { languages },
+        localStorage: { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = String(v); }, removeItem: (k) => { removed.push(k); delete kept[k]; } },
+        document: { documentElement: { lang: "" }, baseURI: "https://hub.example/", currentScript: null },
+        URLSearchParams, URL, Intl, Promise, Object, console,
+      };
+      page.window = page;
+      const fresh = vm.createContext(page);
+      vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), fresh, { filename: "js/i18n.js" });
+      return { i18n: page.Maity.i18n, kept, removed };
+    };
+    const stale = freshPage("", ["en-US", "en"]);
+    await stale.i18n.ready;
+    expect(stale.i18n.language === "en" && stale.i18n.explicit() === null,
+      "language: a choice an older page stored is not read; the visitor gets the browser's language, as on the landing page");
+    expect(JSON.stringify(stale.removed) === '["maity.language"]' && stale.kept["maity.theme"] === "dark" && stale.kept["other.key"] === "x",
+      "language: the stored choice is removed, and no other stored key is touched");
+    await stale.i18n.follow("de");
+    expect(stale.i18n.language === "de", "language: a signed-in account's interface language still decides");
+    const asked = freshPage("?lang=de", ["en-US"]);
+    await asked.i18n.ready;
+    expect(asked.i18n.language === "de" && asked.i18n.explicit() === "de" && !("maity.language" in asked.kept),
+      "language: ?lang= is the visitor's choice, and nothing is stored for it");
+  }
   // The reader's language (§6.2): the account's, else ?lang= or the choice, then the browser's, then en.
   {
     const i18n = win.Maity.i18n;
@@ -4220,25 +4254,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.navigator = { languages: ["zh-CN"] };
     await i18n.follow(null);
     expect(i18n.language === "zh-Hans", "language: zh-CN reads zh-Hans");
+    const replaced = [], oldHistory = win.history;
+    win.history = { state: null, replaceState: (state, title, address) => { replaced.push(address); } };
     await i18n.choose("de");
+    win.history = oldHistory;
+    expect(replaced.length === 1 && /[?&]lang=de(&|$)/.test(replaced[0]) && !("maity.language" in kept),
+      "language: a choice made on the page writes ?lang= into the address, also where it had none, and stores nothing " + JSON.stringify(replaced));
     win.navigator = { languages: ["en"] };
     await i18n.follow(null);
     expect(i18n.language === "de", "language: an explicit choice comes before the browser's");
     win.location.search = "?lang=zh-Hans";
     await i18n.follow(null);
     win.location.search = "";
-    expect(i18n.language === "zh-Hans" && kept["maity.language"] === "zh-Hans" && i18n.explicit() === "zh-Hans", "language: ?lang= is a choice, and stays one");
+    expect(i18n.language === "zh-Hans" && !("maity.language" in kept) && i18n.explicit() === "zh-Hans", "language: ?lang= is a choice, and stays one for this page, stored nowhere");
     expect(i18n.fromBrowser(["de", "zh-Hans"]) === null, "language: the browser's first among some tags, none here");
     win.navigator = { languages: ["zh-CN"] };
     expect(i18n.fromBrowser(["de", "zh-Hans", "zh-Hant"]) === "zh-Hans", "language: the agents' language is matched as the page's is, zh-CN to zh-Hans");
     win.navigator = { languages: ["en"] };
-    delete kept["maity.language"];
-    expect(i18n.explicit() === null, "language: what the browser says is no choice of the person's");
-    kept["maity.language"] = "zh-Hans";
+    expect(i18n.explicit() === "zh-Hans", "language: what the browser says is no choice of the person's; the page's choice stays");
+    kept["maity.language"] = "de";
     win.location.search = "?lang=xx";
     await i18n.follow(null);
     win.location.search = "";
-    expect(i18n.language === "zh-Hans", "language: ?lang= without a catalog changes nothing");
+    expect(i18n.language === "zh-Hans", "language: ?lang= without a catalog changes nothing, and a stored value is not read");
     await i18n.follow("de");
     expect(i18n.language === "de", "language: the account's comes before any choice");
     win.MAITY_I18N.de["test.forms"] = { one: "ein", other: "viele" };
