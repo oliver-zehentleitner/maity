@@ -27,28 +27,43 @@ def installed(name: str) -> bool:
         ["bash", "-c", "true"], env={**os.environ, **LOCALES[name]}, capture_output=True, text=True
     )
     return "setlocale" not in probe.stderr
-# A stand-in for gh: the open pull requests from prs.json next to it, as many as --limit lets
-# through, and only when asked for origin's repository. `{"flood": true, "head": sha}` stands for more open pull requests than the limit, each
-# at that head.
+# A stand-in for gh: `gh api` of origin's repository, answering GitHub's REST list of open pull
+# requests from prs.json next to it, 100 to a page, every page with --paginate, the first alone
+# without; `head_repo` is the pull request's head repository (default origin's, None for a deleted
+# fork). The --jq filter must be the one the script uses, which the stand-in applies itself (the
+# machine may have no jq). An entry `{"fail_page": n}` makes page n fail after the pages before it.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
-    import json, pathlib, subprocess, sys
-    prs = json.loads((pathlib.Path(__file__).parent / "prs.json").read_text())
+    import json, pathlib, sys
+    here = pathlib.Path(__file__).parent
+    prs = json.loads((here / "prs.json").read_text())
+    repo = (here / "repo.txt").read_text().strip()
     args = sys.argv[1:]
-    if args[:2] != ["pr", "list"]:
+    if args[:1] != ["api"]:
         sys.exit(3)
-    origin = subprocess.run(
-        ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    if args[args.index("--repo") + 1] != origin:
+    args = args[1:]
+    paginate = "--paginate" in args
+    jq = args[args.index("--jq") + 1]
+    paths = [a for i, a in enumerate(args) if not a.startswith("-") and args[i - 1] != "--jq"]
+    if paths != [f"repos/{repo}/pulls?state=open&per_page=100"]:
         sys.exit(4)
-    limit = int(args[args.index("--limit") + 1])
-    if prs and prs[0].get("flood"):
-        head = prs[0]["head"]
-        prs = [{"number": n, "head": head, "name": f"pr-{n}"} for n in range(1, limit + 5)]
-    for pr in prs[:limit]:
-        print(pr["number"], pr["head"], str(pr.get("fork", False)).lower(), pr["name"])
+    if jq != (
+        r'.[] | "\\(.number) \\(.head.sha) \\(.head.repo.full_name != .base.repo.full_name)'
+        r' \\(.head.ref)"'
+    ):
+        sys.exit(5)
+    fail = next((p["fail_page"] for p in prs if "fail_page" in p), None)
+    prs = [p for p in prs if "fail_page" not in p]
+    pages = [prs[i : i + 100] for i in range(0, len(prs), 100)] or [[]]
+    for number, page in enumerate(pages if paginate else pages[:1], 1):
+        if number == fail:
+            print("gh: HTTP 502", file=sys.stderr)
+            sys.exit(1)
+        for pr in page:
+            # head.repo.full_name: a fork's, origin's own, or null for a deleted fork.
+            head_repo = pr.get("head_repo", repo)
+            print(pr["number"], pr["head"], str(head_repo != repo).lower(), pr["name"])
     """
 )
 
@@ -89,9 +104,16 @@ class OverlapTest(unittest.TestCase):
         }
         self.git("init", "-q", "--bare", "-b", "main", str(self.origin), cwd=self.tmp)
         self.git("clone", "-q", str(self.origin), str(self.clone), cwd=self.tmp)
+        # origin as GitHub names it, served from the bare repository here.
+        self.set_origin("https://github.com/acme/widgets.git")
+        (self.bin / "repo.txt").write_text("acme/widgets")
         self.git("checkout", "-q", "-b", "main")
         self.base = self.commit(BASE, "base")
         self.git("push", "-q", "origin", "main")
+
+    def set_origin(self, url: str) -> None:
+        self.git("config", "remote.origin.url", url)
+        self.git("config", "--add", f"url.{self.origin}.insteadOf", url)
 
     def git(self, *args: str, cwd: Path | None = None) -> str:
         done = subprocess.run(
@@ -203,12 +225,15 @@ class OverlapTest(unittest.TestCase):
                 )
 
     def test_a_forks_branch_of_the_same_name_is_checked(self) -> None:
-        """Another's pull request from a fork, on a branch named like mine: not left out as own."""
+        """Another's pull request from a fork, or from a fork deleted since, on a branch named like
+        mine: not left out as own."""
         prs = self.scenario()
-        seven = {**prs[0], "name": "mine", "fork": True}
-        got = self.run_check([seven], "en")
-        self.assertEqual(got.returncode, 1, got.stderr)
-        self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
+        for head_repo in ("someone/widgets", None):
+            with self.subTest(head_repo=head_repo):
+                seven = {**prs[0], "name": "mine", "head_repo": head_repo}
+                got = self.run_check([seven], "en")
+                self.assertEqual(got.returncode, 1, got.stderr)
+                self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
 
     def failing(self, program: str, when: str, output: str = "") -> None:
         """`program` fails (exit 4, its input unread, `output` on stdout) when its arguments
@@ -319,23 +344,60 @@ class OverlapTest(unittest.TestCase):
         self.assertIn("git merge-tree", got.stderr)
         self.assertNotIn("clean", got.stdout)
 
-    def test_more_open_pull_requests_than_it_reads_stop_the_check(self) -> None:
-        """A list cut at gh's limit would leave pull requests out unseen: exit 2. Every one of
-        them can be fetched (at main's base, changing nothing), so only the count stops the check,
-        also when `grep` or `wc`, once a way to count, fail with a number on their output."""
-        self.scenario()
-        refs = [f"+{self.base}:refs/pull/{n}/head" for n in range(1, 1100)]
+    def many(self, prs: list[dict[str, object]]) -> list[dict[str, object]]:
+        """250 more open pull requests at main's base (changing nothing) ahead of `prs`, so
+        these come on the third page of the list."""
+        refs = [f"+{self.base}:refs/pull/{n}/head" for n in range(100, 350)]
         self.git("push", "-q", "origin", *refs)
-        for program in ("", "grep", "wc"):
-            with self.subTest(program=program or "none"):
-                if program:
-                    self.failing(program, "", output="0")
-                got = self.run_check([{"flood": True, "head": self.base}], "en")
-                if program:
-                    (self.bin / program).unlink()
+        filler = [{"number": n, "head": self.base, "name": f"pr-{n}"} for n in range(100, 350)]
+        return [*filler, *prs]
+
+    def test_every_page_of_open_pull_requests_is_read(self) -> None:
+        """#7 is on the third page of the list and still checked."""
+        prs = self.scenario()
+        got = self.run_check(self.many([prs[0]]), "en")
+        self.assertEqual(got.returncode, 1, got.stderr)
+        self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
+
+    def test_a_page_that_fails_stops_the_check(self) -> None:
+        """The list ends at a failing page: exit 2, never a check of the pages before it alone."""
+        prs = self.scenario()
+        got = self.run_check([{"fail_page": 2}, *self.many([prs[0]])], "en")
+        self.assertEqual(got.returncode, 2, got.stdout)
+        self.assertIn("listing the open pull requests of acme/widgets failed", got.stderr)
+        self.assertEqual(got.stdout, "")
+
+    def test_a_list_of_another_shape_stops_the_check(self) -> None:
+        """A line the list should not hold (a head that is no commit id, a branch name missing):
+        exit 2, never fewer pull requests."""
+        prs = self.scenario()
+        for case, pr in (("head", {**prs[0], "head": "null"}), ("name", {**prs[0], "name": ""})):
+            with self.subTest(case=case):
+                got = self.run_check([pr], "en")
                 self.assertEqual(got.returncode, 2, got.stdout)
-                self.assertIn("the list may be cut short", got.stderr)
+                self.assertIn("unexpected line in the list of open pull requests", got.stderr)
                 self.assertEqual(got.stdout, "")
+
+    def test_the_repository_is_read_from_origins_url_in_each_form(self) -> None:
+        """https with or without .git or a slash, ssh, and a proxy's path: each names acme/widgets
+        (the stand-in answers nothing else). A URL without an owner stops the check."""
+        prs = self.scenario()
+        for url in (
+            "https://github.com/acme/widgets",
+            "https://github.com/acme/widgets/",
+            "git@github.com:acme/widgets.git",
+            "ssh://git@github.com/acme/widgets.git",
+            "http://local_proxy@127.0.0.1:9/git/acme/widgets",
+        ):
+            with self.subTest(url=url):
+                self.set_origin(url)
+                got = self.run_check([prs[0]], "en")
+                self.assertEqual(got.returncode, 1, got.stderr)
+                self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
+        self.set_origin("widgets")
+        got = self.run_check([prs[0]], "en")
+        self.assertEqual(got.returncode, 2, got.stdout)
+        self.assertIn("cannot read an owner and a repository from origin's URL widgets", got.stderr)
 
     def test_a_file_the_pull_request_renames_is_shared(self) -> None:
         """mine edits b.txt, #16 renames it: the pull request is checked, not skipped."""

@@ -1674,8 +1674,8 @@ check job and `make dev` install from it, then the CLI editable without build is
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-kpbatay0r79a, from the jour fixe of 2026-11-07 (proposal t5.s1, adopted by the maintainer as req-pcxh3qdmser4); the not-counting rule is the author's and the review of #1462 agreed with it; `tools/overlap.sh`, `tools/test_overlap.py`, `CONTRIBUTING.md` ("The overlap check before a push")
-**Revisit when:** git's `merge-tree --write-tree` changes its exit codes, or the team wants a branch to stop for conflicts it does not cause
+**Source:** card tsk-kpbatay0r79a, from the jour fixe of 2026-11-07 (proposal t5.s1, adopted by the maintainer as req-pcxh3qdmser4); the REST list from card tsk-epkk0yd19wxs, reported by a cloud coder; the not-counting rule is the author's and the review of #1462 agreed with it; `tools/overlap.sh`, `tools/test_overlap.py`, `CONTRIBUTING.md` ("The overlap check before a push")
+**Revisit when:** git's `merge-tree --write-tree` changes its exit codes, the team wants a branch to stop for conflicts it does not cause, or GitHub's REST list of pull requests changes its fields or paging
 
 `tools/overlap.sh` checks a branch against every open pull request that changes one of its files. It
 fetches every open pull request's head and takes each one's files from git (`git diff --no-renames
@@ -1686,14 +1686,21 @@ merge of `origin/main` with that pull request. A file that conflicts there too i
 so exit 1 means the branch adds a conflict. Path lists are sorted bytewise (`LC_ALL=C` for `sort`) and
 compared in bash itself, while git keeps the reader's locale.
 
+It lists the open pull requests over GitHub's REST API, `gh api --paginate
+"repos/<owner>/<repo>/pulls?state=open&per_page=100"`, every page, with the owner and name taken from
+the last two parts of origin's URL as configured (https, ssh, or a proxy's path), never from `gh`'s
+default. Each line of the list must have the shape it writes (number, a commit id, whether the head is
+in a fork, the branch name); a pull request whose fork was deleted has no head repository and counts
+as a fork.
+
 Exit 0 says "this branch adds no conflict", which is weaker than "this branch merges cleanly with every
 open pull request": a file that already conflicts between `main` and a pull request is not counted,
 even when the branch changes how it conflicts there. That pull request's line names the file.
 
 A check that did not run never ends in 0. Every command whose answer the check needs stops it with
 exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
-which would otherwise read as "changes no file"), the list of open pull requests (also when it reaches
-`gh`'s limit and may be cut short), the fetch of their heads (also when a fetched head is not the
+which would otherwise read as "changes no file"), the list of open pull requests (also when a page
+fails, when a line has another shape, or when origin's URL names no owner and repository), the fetch of their heads (also when a fetched head is not the
 head `gh` listed), a merge, and each step that turns
 git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
 name only when it comes from the same repository, not from a fork.
@@ -1725,6 +1732,16 @@ name only when it comes from the same repository, not from a fork.
 - Two lists are compared in bash (an associative array, so bash 4 or newer), not with `comm` on
   `<(...)`: a program inside `<(...)` is outside `pipefail`, so its failure was lost and both lists
   read as empty. With a failing `tr` there, a conflict came out "clean for this branch" with exit 0.
+- The list comes over REST, not from `gh pr list`: that asks GitHub's GraphQL API, which Claude Code's
+  cloud sessions cannot reach (HTTP 403), so the check ended in 2 on every push there and the cloud
+  coders checked by hand. The REST list needs only what `git fetch` and `gh api` already need.
+- `--paginate` reads every page and ends `gh` with an error when one fails, so the list cannot be cut
+  short unseen. `gh pr list` stopped at its `--limit` without a word, which the check guarded with a
+  count; with every page read that count has nothing left to guard.
+- The owner and name come from origin's URL as configured (`git config remote.origin.url`), not from
+  `git remote get-url`, which applies `url.<base>.insteadOf` and can name a mirror or a proxy whose
+  path is not the repository's. The host stays `gh`'s; a list from another server would name heads
+  that origin does not serve, and the check stops on the first one.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -1736,6 +1753,10 @@ name only when it comes from the same repository, not from a fork.
   with `main` would stop every branch that touches its files, as with counting every conflict.
 - `gh`'s file list per pull request, with a fetch only of those that share a file: fewer fetches, but
   the gaps above, each of which ends in a silent "no overlap".
+- `gh pr list` with a fallback to REST when GraphQL fails: two ways to list, each needing its own
+  guards and tests, where the REST list alone works everywhere.
+- `gh api`'s `{owner}/{repo}` placeholders: `gh` fills them from its own default repository, the same
+  choice `--repo` was there to override.
 - `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
   up and a program whose exit status still has to be read at every call; bash alone has neither.
 
