@@ -5264,15 +5264,16 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
     return True
 
 
-# Where each command's free text lives: (attribute, its --…-file attribute, the flag named in
-# errors, required). A value of `-` reads standard input, once per command.
-TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
+# Where each command's free text lives: (attribute, its --…-file attribute or None for a
+# command without a file flag, the flag named in errors, required). A value of `-` reads
+# standard input, once per command.
+TEXT_ARGS: dict[Handler, tuple[tuple[str, str | None, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
     cmd_note_add: (("body", "body_file", "the note", True),),
     cmd_task_create: (("body", "body_file", "--body", False),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
     cmd_jourfixe_post: (("body", "body_file", "the post", True),),
-    cmd_memory_add: (("text", "text_file", "the entry", False),),
+    cmd_memory_add: (("text", None, "the entry", False),),  # stdin only, no file flag
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
         ("next", "next_file", "--next", True),
@@ -5280,7 +5281,7 @@ TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
 }
 
 
-def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
+def _texts(args: argparse.Namespace) -> tuple[tuple[str, str | None, str, bool], ...]:
     handler = getattr(args, "handler", None)
     if handler is cmd_say:  # with --chat the text is the first positional
         return (("to" if args.chat is not None else "body", "body_file", "the message", False),)
@@ -5331,7 +5332,8 @@ def _load_texts(args: argparse.Namespace) -> None:
     _say_update_text(args)
     stdin_used = False
     for attr, file_attr, flag, required in _texts(args):
-        value, path = getattr(args, attr, None), getattr(args, file_attr, None)
+        value = getattr(args, attr, None)
+        path = getattr(args, file_attr, None) if file_attr is not None else None
         if path is not None:
             if value is not None:
                 raise UsageError(f"{flag}: give the text or a file, not both")
