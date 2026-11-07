@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, loop, operate, serve, stub, supervisor, targets
+from . import capabilities, config, limitread, loop, operate, serve, stub, supervisor, targets
 from .asuser import RUNNER, AsUser
 
 STATE_FILE = serve.RUNNER_FILE
@@ -618,6 +618,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = rsub.add_parser("loop")
     r.add_argument("--spec", required=True)
     r.set_defaults(handler=lambda a: loop.main(["--spec", a.spec]))
+    # Internal too: the loop's limit file, read on the agents' side (limitread).
+    r = rsub.add_parser("limitread")
+    r.add_argument("path")
+    r.set_defaults(handler=lambda a: limitread.main([a.path]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)
