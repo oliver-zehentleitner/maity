@@ -70,8 +70,9 @@ otherwise fails in CI one round at a time: the hub's per-human tables test,
 fails while any of them fails or leaves the work tree changed. Commit what
 it rewrote. Add a field the check names to the fixture under
 `web/fixtures/` by hand; `web/tools/fixture-shapes-baseline.json` is never
-extended for it. It needs a clean work tree to start. Exit 2 means the
-guards could not run, and it never ends in 0 then.
+extended for it. It needs a clean work tree to start, so after a red run commit
+what it rewrote (or `git checkout -- .`) before the next one. Exit 2 means
+the guards could not run, and it never ends in 0 then.
 
 ## Before merging a change to the web catalogs
 

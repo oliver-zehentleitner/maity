@@ -1785,7 +1785,8 @@ The queue line holds no path, state directory or credential.
 `hub/tests/test_per_human_tables.py`, `make -C web shapes`, `make -C web fixtures` and `make -C web check`. Then
 it fails unless `git status` is clean. Every step runs, so one run names every failure. It refuses to start on
 a work tree that is not clean, and refuses a `HUB_PYTHON` that would import the hub from somewhere other than
-this work tree's `hub/src`. Both refusals, and a missing `pytest` or `node`, end in exit 2, never 0.
+this work tree's `hub/src`. Both refusals, and a missing `make`, `node`, `pytest` or `HUB_PYTHON`, end in exit 2,
+never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps run it from `hub/` and `web/`.
 
 **Reason:**
 - After approval, #1447 and #1443 together needed four more CI rounds for these guards: a new column that names

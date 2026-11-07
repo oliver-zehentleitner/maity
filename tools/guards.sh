@@ -5,12 +5,12 @@
 #
 # 1. hub/tests/test_per_human_tables.py: a new column that names a human is decided for the
 #    account deletion and the export (docs/api.md §2.9).
-# 2. make -C web shapes: tools/hub-shapes.json is rewritten from the hub as it is now.
+# 2. make -C web shapes: web/tools/hub-shapes.json is rewritten from the hub as it is now.
 # 3. make -C web fixtures: the generated files (fixtures/fixtures.js, js/i18n/*.js) are
 #    rewritten from their sources.
 # 4. make -C web check: among others, the fixture hub answers in the hub's shapes. A field the
 #    hub sends and a fixture lacks is named; add it to the fixture under web/fixtures/ by hand.
-#    tools/fixture-shapes-baseline.json is never extended for it.
+#    web/tools/fixture-shapes-baseline.json is never extended for it.
 # 5. git status is clean: whatever steps 2 and 3 rewrote belongs in a commit.
 #
 # Every step runs, so one run names every failure. Exit 0 when all pass, 1 when a guard fails
@@ -27,9 +27,16 @@ die() {
   exit 2
 }
 
+# HUB_PYTHON as an absolute path, resolved where the caller stands: the steps run it from
+# hub/ and web/, where a relative path or a bare name could name another file or none.
+hub_python=${HUB_PYTHON:-python3}
+case $hub_python in
+  /*) ;;
+  */*) hub_python="$PWD/$hub_python" ;;
+  *) hub_python=$(command -v "$hub_python") || die "no ${HUB_PYTHON:-python3} on PATH (HUB_PYTHON)" ;;
+esac
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
 cd "$root" || die "cannot enter $root"
-hub_python=${HUB_PYTHON:-python3}
 
 dirty=$(git status --porcelain) || die "git status failed"
 [ -z "$dirty" ] || die "the work tree is not clean; commit or set aside first:
@@ -40,6 +47,7 @@ command -v node >/dev/null || die "needs node (web/tools/check.py runs the fixtu
 # The hub of this work tree, never one installed from another checkout (`pip install -e`
 # elsewhere would test that one's tables and shapes, and pass for the wrong code).
 export PYTHONPATH="$root/hub/src${PYTHONPATH:+:$PYTHONPATH}"
+[ -x "$hub_python" ] || die "HUB_PYTHON=$hub_python is not an executable file"
 hub_src=$("$hub_python" -c 'import pytest, maity_hub; print(maity_hub.__file__)') \
   || die "HUB_PYTHON=$hub_python lacks pytest or the hub's requirements"
 case $hub_src in
