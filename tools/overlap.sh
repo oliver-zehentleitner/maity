@@ -25,6 +25,7 @@
 # A convenience before a push, not the gate: the coordinator's merge-base and merge-tree check
 # before every merge is. Two matching reads of a list GitHub pages by offset are a best effort,
 # not a snapshot, and the caller's GH_HOST, gh login and clone configuration are trusted.
+#
 # MAITY_OVERLAP_NO_FETCH=1 skips `git fetch origin main` (the tests set it).
 set -uo pipefail
 
