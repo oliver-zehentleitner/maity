@@ -520,6 +520,9 @@ window.Maity = window.Maity || {};
     // included. Otherwise, and for its areas always, the line says who sets them.
     const projectRoles = [];
     let rolesAsked = false;
+    let rolesKnown = false;
+    // Every picker drawn before the roles arrive takes them in when they do.
+    const roleFills = new Set();
     function rolePart(m, memberPath) {
       if (!ownAgent(m) || m.removed_at || ctx.canAdmin) return null;
       const id = "owner-role-" + m.id;
@@ -541,12 +544,15 @@ window.Maity = window.Maity || {};
       const help = M.trust.roleHint(pick);
       fill();
       // The project's own roles on a base a member join may give (§2.3), read once.
+      if (!rolesKnown) roleFills.add(fill);
       if (!rolesAsked) {
         rolesAsked = true;
+        const settle = () => { rolesKnown = true; const waiting = [...roleFills]; roleFills.clear(); return waiting; };
         M.api.get(ctx.base + "/roles").then((r) => {
           ((r && r.custom) || []).filter((x) => M.trust.MEMBER_ROLES.includes(x.base)).forEach((x) => projectRoles.push(x.name));
-          if (projectRoles.length) fill();
-        }).catch(() => {});
+          const waiting = settle();
+          if (projectRoles.length) waiting.forEach((f) => f());
+        }).catch(settle);
       }
       const save = h("button", { type: "submit", class: "small" }, M.t("members.owner_role.save"));
       return h("form", {

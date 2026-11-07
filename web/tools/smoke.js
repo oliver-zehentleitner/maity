@@ -11652,6 +11652,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "owner reports_to: the project's Agents has it beside the rulebook");
   expect(byId("owner-role-agt-b") && main.querySelector("section.agent-here form.owner-role"),
     "owner role: the project's Agents has it beside whom it reports to");
+  // The project's roles answer after several pickers are drawn: each one takes them in, not only the first.
+  let orRelease = null;
+  const orGet3 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/roles"
+    ? new Promise((done) => { orRelease = () => done({ custom: [{ name: "docs", base: "writer" }, { name: "deployer", base: "ops" }] }); })
+    : orGet3(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
+  const orPickers = () => main.querySelectorAll("select").filter((x) => (x.getAttribute("id") || "").startsWith("owner-role-"));
+  const orBefore = orPickers().length;
+  if (orRelease) orRelease();
+  for (let k = 0; k < 4; k++) await tick();
+  expect(orBefore >= 2 && orPickers().length === orBefore
+    && orPickers().every((x) => { const v = x.querySelectorAll("option").map((o) => o.getAttribute("value")); return v.includes("docs") && !v.includes("deployer"); }),
+    "owner role: project roles arriving late reach every drawn picker, never one on ops " + orBefore);
   win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
   await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
   await go("#/maintainer/maity/inbox");
