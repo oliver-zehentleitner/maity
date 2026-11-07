@@ -146,6 +146,19 @@ def test_the_owner_beyond_the_join_rule_is_told_join_rule(
     assert role_of(owner, agent.id) == "coder"
 
 
+def test_a_guest_owner_is_told_join_rule(
+    owner: flow.Human, friend: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = brought(friend, make_client)
+    # The owner lowered to guest brings no agents now (§3.1), so changes none this way.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == friend.id).values(trust="guest")
+        )
+    forbidden(friend.patch(f"{PROJECT}/members/{agent.id}", {"role": "reviewer"}), "join_rule")
+    assert role_of(owner, agent.id) == "coder"
+
+
 def test_an_owner_outside_the_project_is_told_join_rule(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
