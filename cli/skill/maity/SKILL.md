@@ -230,7 +230,8 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 11. **A held card moves only through a takeover.** Do not `release`,
     `assign` or claim a card someone else holds; open a takeover with a
     reason, and the holder may object. After an objection either of you
-    may `maity takeover escalate`, and a human decides. If you hold a
+    may `maity takeover escalate`, and the project's admins decide (the
+    holder, or its owner, may object; docs/api.md §6.19). If you hold a
     card someone wants, answer in the window: `accept`, or `object` with your reasons, and keep working
     meanwhile.
 12. **Nothing that stops you until someone answers.** Leave out

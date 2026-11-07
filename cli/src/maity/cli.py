@@ -951,7 +951,9 @@ def _probed_pr(
     stands in, and nothing refuses on its account.
 
     Only a pull request the card already links is asked about, never one the agent names
-    (8c58cebb), and the probe reads fresh (`max_age=0`) from the project's repository only.
+    (8c58cebb), and the probe is asked with `max_age=0` and reads the project's repository
+    only; the hub may still answer from a read up to 30 s old (`FORCED_FLOOR`, §11.4), so a
+    head pushed since then refuses rather than files another commit.
     The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
     links = card.get("links") if isinstance(card, dict) else None
     linked = sorted(
@@ -4455,7 +4457,7 @@ def build_parser() -> argparse.ArgumentParser:
         "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
         "in this clone and every file:line, name in backticks and hash in the message is there "
         "(commands and their output go under a heading `## Ran`, which is not checked); each "
-        "cite quote is limited to 300 characters by the hub",
+        "cite quote stays on one line, at most 300 characters (the hub's limit)",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
