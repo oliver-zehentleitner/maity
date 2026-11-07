@@ -4,8 +4,8 @@
 #
 #   tools/overlap.sh [<branch>]       # default: the checked-out branch
 #
-# It fetches the head of every open pull request (`gh pr list` of origin's repository), checks
-# that it is the head gh listed, and keeps those that change a file the branch changes, each
+# It fetches the head of every open pull request of origin's repository (listed over GitHub's
+# REST API, `gh api .../pulls`), checks that it is the head gh listed, and keeps those that change a file the branch changes, each
 # against origin/main (`git diff --no-renames base...head`, so a renamed file counts under its
 # old name as well). For each one it runs
 # `git merge-tree --write-tree` of the branch with the pull request's head and decides by the
@@ -21,11 +21,13 @@
 # the branch changes how; read that pull request's line. Exit 1 when the branch adds a
 # conflict, 2 when the check could not run: every command whose answer it needs stops the
 # check when it fails, so a check that did not run never ends in 0.
+#
+# A convenience before a push, not the gate: the coordinator's merge-base and merge-tree check
+# before every merge is. Two matching reads of a list GitHub pages by offset are a best effort,
+# not a snapshot, and the caller's GH_HOST, gh login and clone configuration are trusted.
+#
 # MAITY_OVERLAP_NO_FETCH=1 skips `git fetch origin main` (the tests set it).
 set -uo pipefail
-
-# The most open pull requests read at once; a list that reaches it may be cut short.
-LIMIT=1000
 
 die() {
   echo "overlap: $*" >&2
@@ -115,17 +117,89 @@ if [ -z "$mine" ]; then
   exit 0
 fi
 
-# gh is told origin's repository: on its own it may list another one (GH_REPO, `gh repo
-# set-default`, an `upstream` remote), whose pull requests are other changes or none.
-origin=$(git remote get-url origin) || die "no remote origin"
-prs=$(gh pr list --repo "$origin" --state open --limit "$LIMIT" --json number,headRefOid,headRefName,isCrossRepository \
-  --jq '.[] | "\(.number) \(.headRefOid) \(.isCrossRepository) \(.headRefName)"') || die "gh pr list failed"
-# Counted in bash: a counting program's failure could pass for a short list.
-count=0
-while IFS= read -r line; do
-  [ -n "$line" ] && count=$((count + 1))
-done <<<"$prs"
-[ "$count" -lt "$LIMIT" ] || die "$count open pull requests, the list may be cut short at $LIMIT"
+# The open pull requests of origin's repository, over REST: `gh pr list` asks GitHub's GraphQL
+# API, which some sessions cannot reach (HTTP 403 in Claude Code's cloud sessions). The owner and
+# name are the last two parts of origin's URL (https://github.com/o/r.git, git@github.com:o/r.git,
+# or a proxy's http://host/git/o/r), never gh's own choice: on its own it may name another
+# repository (GH_REPO, `gh repo set-default`, an `upstream` remote), whose pull requests are other
+# changes or none. The host is origin's too, given to gh with --hostname: gh's own (GH_HOST, or
+# the one host it is logged in to) could be another server, whose empty list of a repository of
+# the same name would read as "no open pull request" with nothing left to compare.
+# The URL as configured: `git remote get-url` applies url.<base>.insteadOf, which can name a
+# mirror whose path is not the repository's on GitHub.
+origin=$(git config --get remote.origin.url) || die "no remote origin"
+slug=${origin%/}
+slug=${slug%.git}
+slug=${slug//:/\/}
+[[ $slug == */*/* || $slug == [!/]*/* ]] || die "cannot read an owner and a repository from origin's URL $origin"
+repo_name=${slug##*/}
+slug=${slug%/*}
+repo_owner=${slug##*/}
+[[ $repo_owner =~ ^[A-Za-z0-9._-]+$ && $repo_name =~ ^[A-Za-z0-9._-]+$ ]] \
+  || die "cannot read an owner and a repository from origin's URL $origin"
+# The host: scheme://[user@]host[:port]/... or scp's [user@]host:path. A host on the loopback is
+# a proxy in front of github.com (Claude Code's cloud sessions fetch through one), which serves
+# git and not the API. A URL without a host (a local path) names no server to ask.
+case $origin in
+  file://*) authority="" ;;
+  *://*)
+    authority=${origin#*://}
+    authority=${authority%%/*}
+    ;;
+  */*:* | *:*) authority=${origin%%:*} ;;
+  *) authority="" ;;
+esac
+[[ $origin == *://* || $authority != */* ]] || authority=""
+authority=${authority##*@}
+case $authority in
+  \[*) repo_host=${authority%%]*}] ;;
+  *) repo_host=${authority%%:*} ;;
+esac
+repo_host=${repo_host,,}
+# Loopback by its literal form only: a name such as 127.example.com is a server of its own.
+if [[ $repo_host == localhost || $repo_host == "[::1]" || $repo_host =~ ^127(\.[0-9]{1,3}){3}$ ]]; then
+  repo_host=github.com
+fi
+[[ $repo_host =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]] \
+  || die "cannot read a host from origin's URL $origin"
+# Every page: --paginate follows GitHub's links to the last one, and a page that fails ends gh
+# with an error. A deleted fork has no head repository (null), which counts as a fork.
+# Sets `prs` (one line a pull request) and `pr_count`.
+PAGE=100
+list_prs() {
+  local line
+  local -A seen=()
+  prs=$(gh api --hostname "$repo_host" --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=$PAGE" \
+    --jq '.[] | "\(.number) \(.head.sha) \(.head.repo.full_name != .base.repo.full_name) \(.head.ref)"') \
+    || die "listing the open pull requests of $repo_owner/$repo_name on $repo_host failed (gh api)"
+  # Every line as the list writes it, checked in bash: an answer of another shape (an error
+  # object instead of a list, a field GitHub renamed) would otherwise read as fewer pull requests.
+  pr_count=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [[ $line =~ ^[0-9]+\ ([0-9a-f]{40}|[0-9a-f]{64})\ (true|false)\ [^\ ]+$ ]] \
+      || die "unexpected line in the list of open pull requests: $line"
+    # A pull request on two pages: one opened while the pages were read moved the others along.
+    [ -z "${seen[${line%% *}]+x}" ] \
+      || die "pull request ${line%% *} is listed twice; the list changed while it was read; run again"
+    seen[${line%% *}]=1
+    pr_count=$((pr_count + 1))
+  done <<<"$prs"
+}
+list_prs
+# GitHub pages this list by offset: a pull request that closes on a page already read moves the
+# first one of the next page onto it, and no page returns that one. A list of a full page or more
+# may have taken more than one request (a skip can leave exactly $PAGE lines) and is read again;
+# the second read must be the first line for line, so a duplicate a set would merge still counts.
+# Fewer lines than a page were one request, which cannot shift. A skip leaves the closed pull
+# request in the first read and out of the second, so the two differ, unless the same churn
+# repeats in step with the second read: two reads are a best effort, not a snapshot. Any other
+# change between them stops the check too, and running again settles it.
+if [ "$pr_count" -ge "$PAGE" ]; then
+  first=$prs
+  list_prs
+  [ "$prs" = "$first" ] || die "the list of open pull requests changed while it was read; run again"
+fi
 
 # Every other pull request's head in one fetch, under refs of this run only.
 tmp="refs/maity-overlap/$$"
@@ -148,7 +222,8 @@ if [ "${#specs[@]}" -gt 0 ]; then
 fi
 # The head checked must be the head gh listed, or the check reads another change than the one
 # listed: a push between the list and the fetch moves it (running again settles that), and this
-# still holds should gh and origin ever name different repositories despite --repo.
+# still holds should gh and origin ever name different repositories (another host, a renamed
+# repository).
 for number in ${numbers[@]+"${numbers[@]}"}; do
   fetched=$(git rev-parse --verify --quiet "$tmp/$number^{commit}") || die "no fetched head of pull request $number"
   [ "$fetched" = "${listed[$number]}" ] \
