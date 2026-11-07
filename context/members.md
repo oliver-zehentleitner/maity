@@ -1116,11 +1116,12 @@ instance credential, before that owner had agreed.
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-11-07 on request req-dxcmhaqm5bye (option "role yes, areas admin"), passed on by the lead on card tsk-0xrm35721btd; the lead's confirmation the same day that the owner's condition is the join check (a member managing the agent they could let join); `docs/api.md` §3.1 "The owner changes the role", §6.2
 **See:** members.md#a-member-brings-their-own-agents-into-a-project-within-limits-so-the-agent-is-theirs-and-not-the-admins — cef4255e-ae62-4699-aa86-f4f2c36f8d55 — as of 2026-11-07
-**Revisit when:** owners ask to set areas for their own agents, or a project role (§2.3) should be reachable by an owner
+**Revisit when:** owners ask to set areas for their own agents
 
 The human who owns an agent changes its role with `PATCH …/members/{id}`
 after the join, without `members:admin`, within the same nine roles a
-member join may give (never `ops` or `proxy`, never a project role), and
+member join may give (one of the nine, or a project role built on one of
+them; never `ops` or `proxy`), and
 only while they could create a join for that agent now: the check that
 already decides who changes `subagents`. So an agent an admin raised
 beyond the member limits (trust `admin`, role `ops` or `proxy`) stays
