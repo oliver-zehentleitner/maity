@@ -18402,7 +18402,10 @@ where the first segment is not reserved (below):
   app shell everywhere else: a page that is not public, an unknown
   name, an old name, a page off on the instance. Never another status,
   so the answer does not tell whether a project or a person exists; the
-  dashboard then asks for sign-in.
+  dashboard then asks for sign-in at a project's address, and at
+  `/<handle>` or under a project at a word that is no view shows its "not
+  found", worded for a page that does not exist or is not public, with the
+  sign-in one link away.
 - With a valid session the path is always the app shell: the dashboard
   shows the project, or its own view of the person or organisation, and
   offers **View public page** where a page is served, which opens the
