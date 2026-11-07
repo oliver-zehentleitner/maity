@@ -3753,6 +3753,16 @@ def visitor_step(run: Run, page: Page) -> None:
     assert page.request.get(f"{run.base}/owner/e2e-alpha?as=public").headers.get("etag"), "no public page served"
     context = page.context.browser.new_context()
     guest = context.new_page()
+    # An address that shows nothing (tsk-h1e5zmq1wnhj): "not found" in the frame, no sign-in form.
+    # Its "Public projects" is the hub's page: a page load, not a route change (tsk-mg681fdn8p6m).
+    guest.goto(f"{run.base}/no-such-page-here")
+    not_found = guest.locator("section.view-not-found")
+    expect(not_found).to_be_visible()
+    expect(guest.locator("#login-email")).to_have_count(0)
+    not_found.get_by_role("link", name="Public projects", exact=True).click()
+    expect(guest).to_have_url(f"{run.base}/explore")
+    expect(guest.locator("h1")).to_have_text("Public projects")
+    assert not guest.evaluate("!!(window.Maity && window.Maity.route)"), "/explore: still the dashboard"
     guest.goto(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
     guest.locator('a[href="/owner/e2e-alpha"]').click()
