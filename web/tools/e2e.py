@@ -4218,7 +4218,8 @@ def join_reports_to_step(run: Run, page: Page, agent_id: str) -> None:
     assert agent_id not in values and found["e2e-reviewer"]["id"] not in values and me["id"] in values, values
     pick.select_option(me["id"])
     page.get_by_role("button", name="Create join line", exact=True).click()
-    expect(page.locator(".paste-line")).to_be_visible()
+    # An instance's line comes with its state-dir line, also a .paste-line.
+    expect(page.locator(".join-result .paste-line:not(.state-dir-line)")).to_be_visible()
     expect(page.locator(".join-result p.join-reports-said")).to_have_text(f"E2E Agent now reports to {me['display_name']}.")
     assert by_handle()["e2e-agent"]["reports_to"] == me["id"]
     run.shot(page, "join-reports-to-member")
@@ -4226,9 +4227,11 @@ def join_reports_to_step(run: Run, page: Page, agent_id: str) -> None:
     # The line is not used: revoked, so no open join of this step counts later; and the boss
     # undone on the agent's card (its owner's own form, §2.3), as the later steps expect it.
     page.locator(".join-result").get_by_role("button", name="Done", exact=True).click()
-    seat = page.locator("article.seat", has_text="E2E Agent").filter(has=page.get_by_role("button", name="Revoke", exact=True))
+    # The button's name is its label, which names the agent.
+    revoke = page.get_by_role("button", name="Revoke the join for E2E Agent", exact=True)
+    seat = page.locator("article.seat").filter(has=revoke)
     expect(seat).to_have_count(1)
-    seat.get_by_role("button", name="Revoke", exact=True).click()
+    seat.get_by_role("button", name="Revoke the join for E2E Agent", exact=True).click()
     expect(seat).to_have_count(0)
     page.goto(f"{run.base}/owner/e2e-alpha/agents/{agent_id}")
     own = page.locator(f"#owner-reports-{agent_id}")
