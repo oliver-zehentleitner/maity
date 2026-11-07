@@ -19,6 +19,9 @@
 # no make, node or HUB_PYTHON, a HUB_PYTHON without pytest or one that would test another
 # checkout's hub. A run that did not check never ends in 0: every step runs in an environment
 # of its own (see `clean`), so no inherited setting can make it pass without testing.
+#
+# Trusted, not checked: the caller's shell and PATH, and the clone's own git configuration and
+# hooks. An author who sets their clone against the guards can get past them; CI stays the gate.
 set -uo pipefail
 # Messages from git, make and Python in one language, whatever the reader's locale.
 export LC_ALL=C
@@ -52,16 +55,17 @@ cd "$root" || die "cannot enter $root"
 # The work tree's changes, as step 5 reads them: tracked files from git status, untracked ones
 # by the repository's .gitignore files alone. A personal exclude (core.excludesFile,
 # .git/info/exclude) or status.showUntrackedFiles=no could otherwise hide a file a step wrote.
+# Without a filesystem monitor: a hook that answers "nothing changed" would hide a rewrite.
 tree_changes() {
-  git status --porcelain --untracked-files=no || return 1
-  git ls-files --others --exclude-per-directory=.gitignore | sed 's/^/?? /'
+  git -c core.fsmonitor=false status --porcelain --untracked-files=no || return 1
+  git -c core.fsmonitor=false ls-files --others --exclude-per-directory=.gitignore | sed 's/^/?? /'
 }
 dirty=$(tree_changes) || die "git status failed"
 [ -z "$dirty" ] || die "the work tree is not clean; commit or set aside first:
 $dirty"
 # git status leaves out a file whose index entry says skip-worktree (S, also set by a sparse
 # checkout) or assume-unchanged (a lowercase tag): a step could rewrite it unseen.
-entries=$(git ls-files -v) || die "git ls-files failed"
+entries=$(git -c core.fsmonitor=false ls-files -v) || die "git ls-files failed"
 flagged=""
 while IFS= read -r entry; do
   case $entry in
