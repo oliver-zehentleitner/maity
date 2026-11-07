@@ -16,8 +16,9 @@
 # Every step runs, so one run names every failure. Exit 0 when all pass, 1 when a guard fails
 # (the steps that failed are named), 2 when the guards could not run: no git work tree, a work
 # tree not clean before the run (step 5 could not tell the run's changes from the author's),
-# a HUB_PYTHON without pytest or one that would test another checkout's hub. A run that did
-# not check never ends in 0.
+# no make, node or HUB_PYTHON, a HUB_PYTHON without pytest or one that would test another
+# checkout's hub. A run that did not check never ends in 0: every step runs in an environment
+# of its own (see `clean`), so no inherited setting can make it pass without testing.
 set -uo pipefail
 # Messages from git, make and Python in one language, whatever the reader's locale.
 export LC_ALL=C
@@ -35,20 +36,33 @@ case $hub_python in
   */*) hub_python="$PWD/$hub_python" ;;
   *) hub_python=$(command -v "$hub_python") || die "no ${HUB_PYTHON:-python3} on PATH (HUB_PYTHON)" ;;
 esac
+# git takes its repository, index and settings from GIT_* variables as well; this work tree's
+# own, as found from where the caller stands, is the one checked.
+for v in $(compgen -e); do
+  case $v in GIT_*) unset "$v" ;; esac
+done
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
 cd "$root" || die "cannot enter $root"
 
-dirty=$(git status --porcelain) || die "git status failed"
+dirty=$(git status --porcelain --untracked-files=all) || die "git status failed"
 [ -z "$dirty" ] || die "the work tree is not clean; commit or set aside first:
 $dirty"
 
 command -v make >/dev/null || die "needs make"
 command -v node >/dev/null || die "needs node (web/tools/check.py runs the fixture hub)"
-# The hub of this work tree, never one installed from another checkout (`pip install -e`
+# Each step, and the check of the hub below, runs with only these variables. Inherited, any of
+# PYTEST_ADDOPTS (--collect-only, -k), PYTEST_PLUGINS, MAKEFLAGS (-n, -i, -k, -t), MAKEFILES, a
+# PYTHON or NODE that takes over make's own, BASH_ENV, NODE_OPTIONS or PYTHONSTARTUP could let a
+# step end in 0 without testing; a list of what to drop would miss the next one. PYTHONPATH is
+# this work tree's hub alone, never one installed from another checkout (`pip install -e`
 # elsewhere would test that one's tables and shapes, and pass for the wrong code).
-export PYTHONPATH="$root/hub/src${PYTHONPATH:+:$PYTHONPATH}"
+keep=(PATH="$PATH" HOME="${HOME:-/}" LC_ALL=C PYTHONPATH="$root/hub/src" PYTHONNOUSERSITE=1)
+[ -n "${TMPDIR:-}" ] && keep+=(TMPDIR="$TMPDIR")
+clean() {
+  env -i "${keep[@]}" "$@"
+}
 [ -x "$hub_python" ] || die "HUB_PYTHON=$hub_python is not an executable file"
-hub_src=$("$hub_python" -c 'import pytest, maity_hub; print(maity_hub.__file__)') \
+hub_src=$(clean "$hub_python" -c 'import pytest, maity_hub; print(maity_hub.__file__)') \
   || die "HUB_PYTHON=$hub_python lacks pytest or the hub's requirements"
 case $hub_src in
   "$root/hub/src/"*) ;;
@@ -66,12 +80,12 @@ step() {
 }
 
 step "per-human tables" \
-  bash -c 'cd hub && "$0" -m pytest -q -p no:cacheprovider tests/test_per_human_tables.py' "$hub_python"
-step "web shapes" make -C web shapes HUB_PYTHON="$hub_python"
-step "web fixtures" make -C web fixtures
-step "web check" make -C web check
+  clean bash -c 'cd hub && "$0" -m pytest -q -p no:cacheprovider tests/test_per_human_tables.py' "$hub_python"
+step "web shapes" clean make -C web shapes HUB_PYTHON="$hub_python"
+step "web fixtures" clean make -C web fixtures
+step "web check" clean make -C web check
 
-changed=$(git status --porcelain) || die "git status failed"
+changed=$(git status --porcelain --untracked-files=all) || die "git status failed"
 if [ -n "$changed" ]; then
   echo "guards: these files changed; commit them:" >&2
   printf '%s\n' "$changed" >&2
