@@ -278,6 +278,7 @@
   "attach.admin.off": "Attachments are not set up on this instance.",
   "attach.admin.read_failed": "Could not read them: ",
   "attach.admin.stored": "Stored: {used} of {quota}.",
+  "attach.admin.stored_unlimited": "Stored: {used}, no limit.",
   "attach.admin.title": "Files waiting to be sent",
   "attach.attach": "Attach",
   "attach.attach_earlier.label": "Attach {name} to this message",
@@ -2213,6 +2214,7 @@
   "limits.error.env": "Set by the environment; change it there.",
   "limits.error.invalid": "A whole number from 1 to 10000.",
   "limits.error.invalid_aliases": "A whole number from 1 to 8.",
+  "limits.error.invalid_project_storage": "A whole number of MiB from 1 to 1073741824.",
   "limits.error.invalid_storage": "A whole number of GiB from 1 to 1048576.",
   "limits.error.read_only": "This value is counted by the hub and cannot be set.",
   "limits.error.unknown": "Not a limit this hub knows.",
@@ -2230,6 +2232,8 @@
   },
   "limits.orgs.hint": "Organisations in which one person is an owner; creating one more is refused.",
   "limits.orgs.label": "Organisations owned per person",
+  "limits.project_storage.hint": "Bytes of attachments one project may store, pending uploads included. Uploads over it are refused; lowering it deletes nothing. In MiB.",
+  "limits.project_storage.label": "Attachment storage per project",
   "limits.projects.at": {
     "one": "{count} owner is at or over this limit.",
     "other": "{count} owners are at or over this limit."

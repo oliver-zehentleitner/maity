@@ -377,6 +377,21 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
+    if (
+        kind in MEMBER_KINDS
+        and project.public_page != "on"
+        and subject
+        and subject[0] == "member"
+        and _shown_member_change(kind, payload)
+    ):
+        # Under `public_agents: all` an agent's membership in any project lists it on its
+        # owner's agents page (§16.9, "A person's agents"); a public project's change reaches
+        # that page above, as a dependent of the project's page.
+        from maity_hub import public_people
+
+        public_people.touch_owner_of(
+            conn, subject[1], removal=kind != "member_joined", only_all=True
+        )
     return seq
 
 

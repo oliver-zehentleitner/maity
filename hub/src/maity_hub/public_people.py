@@ -1,4 +1,5 @@
-"""A person's public page (docs/api.md §16.9): `GET /{handle}` for every active account.
+"""A person's public page (docs/api.md §16.9): `GET /{handle}` for every active account, and
+its tab of their agents, `GET /{handle}/agents` ("A person's agents").
 
 The maintainer's decision of 2026-11-02: profiles are public by default, and one turned off
 is not invisible. The page always shows the `display_name` and the `handle`, with the agents
@@ -6,6 +7,8 @@ that have a page; with `public_profile` on also the `public_bio`, the links, the
 with a public page they are a member of with their role in each, the month they joined, and
 whether they are online in one of those projects while `public_presence` is on as well; their
 numbers there only while `public_stats` is on too (the maintainer's decisions of 2026-11-05).
+The agents page lists the agents the person's `public_agents` names, with what of each a visitor
+may see; it is a page of the same target, rendered with the person's page and taken off with it.
 A page whose profile is off is `noindex` and out of the sitemap. Never an address or a
 session. A person who is suspended, waits
 for approval, is deleted or is hidden by moderation (§16.8) has no page: the page is taken off
@@ -27,6 +30,9 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 
 KIND = "person"
+AGENTS_VIEW = "person_agents"
+# What the agents page lists (§16.9): the agents that have a page, or every one with a membership.
+PUBLIC_AGENTS = ("public_projects", "all")
 BIO_MAX = 280
 # Every C0 control character, and the bidirectional overrides and isolates (§16.9).
 _FORBIDDEN = re.compile("[\u0000-\u001f\u202a-\u202e\u2066-\u2069]")
@@ -104,10 +110,76 @@ def any_online(conn: Connection, membership_ids: list[int]) -> bool:
     return any(presence == "online" for presence in presences_of(conn, rows).values())
 
 
-def _listed(conn: Connection, human: Any) -> tuple[list[Listed], list[tuple[str, str]]]:
+class ListedAgent(NamedTuple):
+    """An agent the person's agents page lists (§16.9): its page's path, the roles of the
+    public projects that page lists and the model and harness it shows; `None`, `[]`, `None`
+    and `None` for an agent without a page, which shows only its name and handle."""
+
+    agent: Any
+    page: str | None
+    roles: list[str]
+    model: str | None
+    harness: str | None
+
+
+def listed_agents(conn: Connection, human: Any) -> list[ListedAgent]:
+    """The agents the person's agents page lists, by handle (§16.9, "A person's agents"):
+    those that have a page, and under `public_agents: all` also every other one with an active
+    membership in any project; never a deleted one or one held by moderation. Nothing while the
+    person has no page. One list for the page, the visitors' route and `GET /people`, so they
+    never disagree; the picture's public rule asks it too (§6.10)."""
+    from maity_hub import public_agents
+
+    if not served(conn, human):
+        return []
+    agents = conn.execute(
+        select(t.agent_profile).where(
+            t.agent_profile.c.owner_id == human.id, t.agent_profile.c.deleted_at.is_(None)
+        )
+    ).all()
+    m = t.membership.c
+    working = (
+        set(
+            conn.execute(
+                select(m.agent_id).where(
+                    m.agent_id.in_([agent.id for agent in agents]), m.active.is_(True)
+                )
+            ).scalars()
+        )
+        if human.public_agents == "all" and agents
+        else set()
+    )
+    listed: list[ListedAgent] = []
+    for agent in sorted(agents, key=lambda row: row.handle):
+        found = public_agents.served(conn, agent, human)
+        if found is not None:
+            model, harness = public_agents.latest_session(conn, found)
+            roles = sorted({project.member_role for project, _ in found})
+            page = f"/{human.handle}/agents/{agent.handle}"
+            listed.append(ListedAgent(agent, page, roles, model, harness))
+        elif agent.id in working and moderation.hold(conn, "profile", agent.id) is None:
+            listed.append(ListedAgent(agent, None, [], None, None))
+    return listed
+
+
+def agent_entry(listed: ListedAgent) -> dict[str, Any]:
+    """One agent as the visitors' route answers it (§16.9, `person_agents`). `picture` stays
+    `null` until the public picture address exists (tsk-q155psrk6tzz)."""
+    return {
+        "name": listed.agent.display_name,
+        "handle": listed.agent.handle,
+        "picture": None,
+        "page": listed.page,
+        "roles": listed.roles,
+        "model": listed.model,
+        "harness": listed.harness,
+    }
+
+
+def _listed(conn: Connection, human: Any) -> list[Listed]:
     """The projects with a public page the person is a member of, by full name, only while
-    their profile is on, and their agents that have a page, as `(handle, name)` (§16.9)."""
-    from maity_hub import namespace, public_agents, public_projects
+    their profile is on (§16.9)."""
+    from maity_hub import namespace, public_projects
 
     m = t.membership.c
     projects = conn.execute(
@@ -116,7 +188,7 @@ def _listed(conn: Connection, human: Any) -> tuple[list[Listed], list[tuple[str,
         .where(t.project.c.public_page == "on", m.human_id == human.id, m.active.is_(True))
         .order_by(t.project.c.id)
     ).all()
-    named = (
+    return (
         sorted(
             (
                 Listed(namespace.full_name(conn, p), p.name, p.member_role, p, p.membership_id)
@@ -128,12 +200,6 @@ def _listed(conn: Connection, human: Any) -> tuple[list[Listed], list[tuple[str,
         if human.public_profile
         else []
     )
-    agents = sorted(
-        (a.handle, a.display_name)
-        for a in conn.execute(select(t.agent_profile).where(t.agent_profile.c.owner_id == human.id))
-        if public_agents.served(conn, a, human) is not None
-    )
-    return named, agents
 
 
 class Shown(NamedTuple):
@@ -171,9 +237,41 @@ def _shown(conn: Connection, human: Any, named: list[Listed]) -> Shown:
     return Shown(member_since(human.created_at), online, numbers)
 
 
-def _listed_html(
-    human: Any, named: list[Listed], agents: list[tuple[str, str]], shown: Shown
-) -> str:
+CURRENT = ' aria-current="page"'
+
+
+def _tabs(human: Any, current: str) -> str:
+    """The tabs **Profile** and **Agents** both pages carry (§16.9)."""
+    base = f"/{escape(human.handle, quote=True)}"
+    tabs = (("profile", base, "Profile"), ("agents", f"{base}/agents", "Agents"))
+    links = "".join(
+        f'<a href="{href}"{CURRENT if name == current else ""}>{label}</a>'
+        for name, href, label in tabs
+    )
+    return f'<nav aria-label="Tabs">{links}</nav>'
+
+
+def _agent_item(listed: ListedAgent, *, details: bool) -> str:
+    """One agent: its name, linked where it has a page, and its handle; on the agents page
+    (`details`) also its roles, model and harness, which only an agent with a page has."""
+    agent = listed.agent
+    name = escape(agent.display_name)
+    if listed.page is not None:
+        name = f'<a href="{escape(listed.page, quote=True)}">{name}</a>'
+    item = f"{name} ({escape(agent.handle)})"
+    if details:
+        item += "".join(f' <span class="tag">{escape(role)}</span>' for role in listed.roles)
+        facts = [
+            f"{label}: {escape(value)}"
+            for label, value in (("Model", listed.model), ("Harness", listed.harness))
+            if value
+        ]
+        if facts:
+            item += f'<br><span class="sub">{" · ".join(facts)}</span>'
+    return f"<li>{item}</li>"
+
+
+def _listed_html(human: Any, named: list[Listed], agents: list[ListedAgent], shown: Shown) -> str:
     from maity_hub import public_projects
 
     html = ""
@@ -200,18 +298,19 @@ def _listed_html(
         )
         html += f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>{lines}</ul>"
     if agents:
-        base = f"/{escape(human.handle, quote=True)}/agents/"
-        items = "".join(
-            f'<li><a href="{base}{escape(handle, quote=True)}">{escape(display_name)}</a> '
-            f"({escape(handle)})</li>"
-            for handle, display_name in agents
-        )
-        html += f"<h2>Agents</h2><ul>{items}</ul>"
+        items = "".join(_agent_item(listed, details=False) for listed in agents)
+        tab = f"/{escape(human.handle, quote=True)}/agents"
+        html += f'<h2>Agents</h2><ul>{items}</ul><p><a href="{tab}">All agents</a></p>'
     return html
 
 
+def _person(human: Any) -> dict[str, Any]:
+    """The person as the visitors' route names them beside a list (`owner`)."""
+    return {"name": human.display_name, "handle": human.handle, "page": f"/{human.handle}"}
+
+
 def _data(
-    human: Any, named: list[Listed], agents: list[tuple[str, str]], shown: Shown
+    human: Any, named: list[Listed], agents: list[ListedAgent], shown: Shown
 ) -> dict[str, Any]:
     """What the visitors' route answers; `website` and `social` only as the page shows them."""
     data: dict[str, Any] = {
@@ -222,10 +321,7 @@ def _data(
             {"name": listed.name, "full_name": listed.full_name, "role": listed.role}
             for listed in named
         ],
-        "agents": [
-            {"name": name, "handle": handle, "page": f"/{human.handle}/agents/{handle}"}
-            for handle, name in agents
-        ],
+        "agents": [agent_entry(listed) for listed in agents],
         "member_since": shown.member_since,
         "online": shown.online,
         "statistics": shown.statistics,
@@ -245,13 +341,12 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     chosen = bool(human.public_profile)  # the personal details, by the person's choice
     bio = f'<p class="sub">{escape(human.public_bio)}</p>' if chosen and human.public_bio else ""
     links = _links(human) if chosen else ""
-    named, agents = _listed(conn, human)
+    named = _listed(conn, human)
+    agents = listed_agents(conn, human)
     shown = _shown(conn, human, named)
     listed = _listed_html(human, named, agents, shown)
-    content = (
-        f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
-        f"{bio}{links}{listed}"
-    )
+    heading = f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
+    content = f'{heading}{_tabs(human, "profile")}{bio}{links}{listed}'
     path = f"/{human.handle}"
     body = render.page_document(
         lang="en",
@@ -281,8 +376,53 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
             view="person",
             data=_data(human, named, agents, shown),
             indexed=chosen,
-        )
+        ),
+        _agents_page(hub, human, heading, agents, chosen),
     ]
+
+
+def _agents_page(
+    hub: Settings, human: Any, heading: str, agents: list[ListedAgent], indexed: bool
+) -> public_pages.Page:
+    """`/{handle}/agents` (§16.9, "A person's agents"): the listed agents with what of each a
+    visitor may see, or a sentence when none is listed; `noindex` with the person's page."""
+    items = "".join(_agent_item(listed, details=True) for listed in agents)
+    shown = f"<ul>{items}</ul>" if agents else "<p>No agents are listed here.</p>"
+    content = f'{heading}{_tabs(human, "agents")}<h2>Agents</h2>{shown}'
+    path = f"/{human.handle}/agents"
+    body = render.page_document(
+        lang="en",
+        title=f"Agents of {human.display_name} ({human.handle})",
+        canonical=f"{hub.public_url.rstrip('/')}{path}",
+        content=content,
+        indexed=indexed,
+    )
+    inputs = hashlib.sha256("\x00".join((path, "on" if indexed else "off", content)).encode())
+    return public_pages.Page(
+        path=path,
+        body=body,
+        inputs=inputs.hexdigest(),
+        lastmod=clock.now(),
+        view=AGENTS_VIEW,
+        data={"owner": _person(human), "agents": [agent_entry(listed) for listed in agents]},
+        indexed=indexed,
+    )
+
+
+def touch_owner_of(
+    conn: Connection, agent_id: str, *, removal: bool = True, only_all: bool = False
+) -> None:
+    """The owner's pages of an agent that changed (§16.9, "A person's agents"): its name, or
+    with `only_all` a membership that only `public_agents: all` lists. Nothing for a member
+    that is no agent."""
+    owner = conn.execute(
+        select(t.human)
+        .join(t.agent_profile, t.agent_profile.c.owner_id == t.human.c.id)
+        .where(t.agent_profile.c.id == agent_id)
+    ).first()
+    if owner is None or (only_all and owner.public_agents != "all"):
+        return
+    public_pages.touch(conn, KIND, owner.id, removal=removal, dependents=False)
 
 
 def targets(conn: Connection) -> list[str]:

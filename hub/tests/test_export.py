@@ -404,9 +404,12 @@ def test_the_public_profile_fields_are_in_the_export_public_stats_among_them(
     account = export(owner).json()["account"]
     assert (account["public_profile"], account["public_presence"]) == (True, True)
     assert (account["public_stats"], account["public_bio"]) == (False, None)
-    assert owner.patch("/me", {"public_stats": True, "public_bio": "hi"}).status_code == 200
+    assert account["public_agents"] == "public_projects"
+    changed = {"public_stats": True, "public_bio": "hi", "public_agents": "all"}
+    assert owner.patch("/me", changed).status_code == 200
     account = export(owner).json()["account"]
     assert (account["public_stats"], account["public_bio"]) == (True, "hi")
+    assert account["public_agents"] == "all"
     assert (account["website"], account["social"], account["links_visible"]) == (
         None,
         {},
