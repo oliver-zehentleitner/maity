@@ -5397,7 +5397,7 @@ it takes the landing page's own language: the `language` of `GET /site/chrome`
 which the hub chooses exactly as the landing page does. A choice made on the
 page comes first and holds for the page; a reload with a `?lang=` the landing
 page has no page in follows the landing page, though the address still shows
-it. Without that read (a failed or late answer, the join host) the dashboard
+it, and the registration does not store that tag as `interface_language`. Without that read (a failed or late answer, the join host) the dashboard
 takes, among the ten, `?lang=` (the closest catalog: `de-AT` reads `de`), then
 `navigator.languages`, then `en`. It passes the language as `lang` to the page
 texts of §16.7.4. A choice made on a page writes `?lang=` into the address;

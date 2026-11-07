@@ -655,7 +655,7 @@ Plural forms follow the catalog's language, not the locale of the numbers: a Ger
 the English catalog needs English forms.
 
 The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
-or `?lang=`). Without one it leaves the field out, so the account keeps
+or `?lang=`, unless the landing page's frame overrode that `?lang=`: fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
 `?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
@@ -747,7 +747,8 @@ the landing page's languages and its `default_language` (§16.7.5). The frame on
 `/register` reads the same address (the browser's cache answers it) and its `language` counts the
 same way; where it differs from what the page was drawn in, the page draws itself again once, never
 when they agree. Precedence: the account's language, then a choice made on the page (it holds for
-the page's life, until an address with another `?lang=`, also one without a catalog here), then the
+the page's life, until an address whose `?lang=` reads another catalog or none here, as `sv` or
+`xx`; `de-AT` after a pick of `de` keeps it), then the
 frame's, then `?lang=` (the closest catalog), the browser's languages and `en`. A signed-in account
 without an `interface_language` (the session read answered 200) is no visitor: it keeps the
 browser's rule and never reads the frame. Nothing goes into the browser's storage, as
@@ -763,7 +764,10 @@ and `default_language: en`.
 
 **Consequence:** a reload with a `?lang=` the landing page has no page in (pages `en` and `fr`,
 `?lang=ko`) follows the landing page, though the address still shows `?lang=ko`, as the landing page
-itself does; only a choice made on the page holds against the frame, for that page. Every signed-out
+itself does; only a choice made on the page holds against the frame, for that page. Such an
+overridden `?lang=` is no choice of the person's either: `/register` does not store it as the
+account's `interface_language`, or the account would read Korean while the landing page reads
+English, the split this entry closes. Every signed-out
 page load costs one more `GET`, `Cache-Control: public, max-age=60`.
 
 **Rejected alternatives:**

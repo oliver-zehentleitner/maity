@@ -112,10 +112,25 @@ window.Maity = window.Maity || {};
   }
   // Without an account's language: a choice made on this page, the landing page's (the frame),
   // then the rule below.
-  function visitorChoice() {
+  // A newer address whose ?lang= reads another catalog, or none here (sv, xx), ends a pick.
+  function releasePick() {
     const raw = askedRaw();
-    // A newer address with another ?lang= decides, also one without a catalog here (sv).
     if (raw && picked && closest(raw) !== closest(picked)) picked = null;
+  }
+  // What the person chose, for the account (js/register.js): a pick on the page, else ?lang= or
+  // the choice kept for the page, unless the landing page's frame overrode that ?lang= (a reload
+  // with ?lang=ko and no ko page): the page shows the frame's language then, and an address the
+  // landing page ignores is no choice to store.
+  function personChoice() {
+    releasePick();
+    const pick = closest(picked);
+    if (pick) return pick;
+    const asked = explicitChoice();
+    const shown = framed[frameAddress()];
+    return asked && shown && shown !== asked ? null : asked;
+  }
+  function visitorChoice() {
+    releasePick();
     const pick = closest(picked);
     if (pick) return pick;
     return closest(framed[frameAddress()]) || browserChoice();
@@ -244,7 +259,7 @@ window.Maity = window.Maity || {};
     when,
   };
   i18n.available = available;
-  i18n.explicit = explicitChoice;
+  i18n.explicit = personChoice;
   // The first of the browser's languages among these tags, or null.
   i18n.fromBrowser = (tags) => {
     for (const tag of browserList()) {

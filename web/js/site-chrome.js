@@ -197,7 +197,8 @@ window.Maity = window.Maity || {};
     if (drawn) drawn(model);
     // The page follows the landing page's language (js/i18n.js): drawn again once where the
     // two differed, never when they agree, under an account or after a choice on the page.
-    if (!M.api.session() && model.language) {
+    // i18n.frame itself refuses under an account's language, also after a session that ended.
+    if (model.language) {
       M.i18n.frame(model.language).then((changed) => { if (changed && mine === round && M.redraw) M.redraw(); });
     }
     return true;

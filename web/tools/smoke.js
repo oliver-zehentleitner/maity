@@ -4133,8 +4133,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // 4. A reload with ?lang= the landing page has no page in follows the frame, the address unchanged.
     const ko = visitor({ search: "?lang=ko", languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
     await ko.i18n.follow(null);
-    expect(ko.i18n.language === "en" && ko.i18n.explicit() === "ko",
-      "visitor language: a reload with ?lang=ko and no ko page follows the landing page; the address still says ko");
+    expect(ko.i18n.language === "en" && ko.i18n.explicit() === null,
+      "visitor language: a reload with ?lang=ko and no ko page follows the landing page; the address still says ko, and registration stores no ko");
+    // Where the landing page has the page, ?lang= stays the person's choice for the account.
+    const fr = visitor({ search: "?lang=fr", languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await fr.i18n.follow(null);
+    expect(fr.i18n.language === "fr" && fr.i18n.explicit() === "fr", "visitor language: ?lang=fr with a fr page is shown and stays the person's choice");
     // A signed-in account decides, without a read.
     const own = visitor({ languages: ["sv"], answer: frame(() => "de") });
     await own.i18n.follow("fr");
