@@ -525,6 +525,8 @@ window.Maity = window.Maity || {};
         M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
         // Whom it reports to, as its owner sets it (§2.3); an admin also on Members.
         P.reportsToPart(m, memberPath),
+        // Its role, as its owner sets it within a member join's roles (§3.1).
+        P.rolePart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
         // Its owner puts an instance to rest or wakes it (§6.17).

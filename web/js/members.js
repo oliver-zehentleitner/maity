@@ -83,6 +83,14 @@ window.Maity = window.Maity || {};
     if (err.code === "forbidden" && err.details && err.details.reason === "agent_owner") {
       return { message: M.t("bridges.refused.agent_owner") };
     }
+    // §3.1 "The owner changes the role": a role a member join may not give, or an
+    // owner who could not create a join for the agent now.
+    if (err.code === "forbidden" && err.details && err.details.reason === "member_join_limit" && err.details.field === "role") {
+      return { message: M.t("members.owner_role.refused_limit") };
+    }
+    if (err.code === "forbidden" && err.details && err.details.reason === "join_rule") {
+      return { message: M.t("members.owner_role.refused_join_rule") };
+    }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
     const said = Object.entries(fields).map(([f, reason]) => (Object.hasOwn(REFUSALS, f + ":" + reason) ? REFUSALS[f + ":" + reason]()
@@ -505,6 +513,62 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("members.reports.hint")));
     }
 
+    // The role of one's own agent, as its owner without members:admin sets it
+    // (§3.1 "The owner changes the role"): while they could create a join for it
+    // now (trust member, member_agents on, the membership within the member
+    // limits), to a role a member join could give, a project role on such a base
+    // included. Otherwise, and for its areas always, the line says who sets them.
+    const projectRoles = [];
+    let rolesAsked = false;
+    let rolesKnown = false;
+    // Every picker drawn before the roles arrive takes them in when they do.
+    const roleFills = new Set();
+    function rolePart(m, memberPath) {
+      if (!ownAgent(m) || m.removed_at || ctx.canAdmin) return null;
+      const id = "owner-role-" + m.id;
+      const policy = (ctx.project && ctx.project.policy) || {};
+      const within = M.trust.MEMBER_TRUSTS.includes(m.trust) && M.trust.MEMBER_ROLES.includes(m.role_base || m.role);
+      const may = ctx.trust === "member" && policy.member_agents !== "off" && within;
+      const areas = h("p", { class: "muted owner-role-areas" }, (m.areas || []).length
+        ? M.t("members.owner_role.areas", { areas: M.fmt.list(m.areas) }) : M.t("members.owner_role.no_areas"));
+      if (!may) {
+        return h("div", { class: "owner-role" },
+          h("p", { class: "muted owner-role-fixed" }, M.t("members.owner_role.fixed", { role: M.trust.roleLabel(m.role) })), areas);
+      }
+      const pick = keyed("owner-role:" + m.id, h("select", { id }));
+      const fill = () => {
+        const offered = M.trust.MEMBER_ROLES.concat(projectRoles.filter((r) => !M.trust.MEMBER_ROLES.includes(r)));
+        if (!offered.includes(m.role)) offered.push(m.role);
+        M.trust.fillRoles(pick, offered, pick.value || m.role, m.role);
+      };
+      const help = M.trust.roleHint(pick);
+      fill();
+      // The project's own roles on a base a member join may give (§2.3), read once.
+      if (!rolesKnown) roleFills.add(fill);
+      if (!rolesAsked) {
+        rolesAsked = true;
+        const settle = () => { rolesKnown = true; const waiting = [...roleFills]; roleFills.clear(); return waiting; };
+        M.api.get(ctx.base + "/roles").then((r) => {
+          ((r && r.custom) || []).filter((x) => M.trust.MEMBER_ROLES.includes(x.base)).forEach((x) => projectRoles.push(x.name));
+          const waiting = settle();
+          if (projectRoles.length) waiting.forEach((f) => f());
+        }).catch(settle);
+      }
+      const save = h("button", { type: "submit", class: "small" }, M.t("members.owner_role.save"));
+      return h("form", {
+        class: "inline-form owner-role",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          if (pick.value === m.role) { status.done(); append(status.el, h("span", null, M.t("members.owner_role.unchanged"))); return; }
+          save.disabled = true;
+          await act(M.t("members.owner_role.saving"), M.t("members.owner_role.saved", { name: m.display_name, role: M.trust.roleLabel(pick.value) }),
+            () => M.api.patch(memberPath, { role: pick.value }), "owner-role:" + m.id);
+          save.disabled = false;
+        },
+      }, h("label", { for: id }, M.t("members.owner_role.label")), pick, save, help,
+      h("p", { class: "hint" }, M.t("members.owner_role.hint")), areas);
+    }
+
     // Bridges (§2.3 "The bridge"): the connections that serve this agent and those it
     // serves, each with its purpose; End for either agent's owner or members:admin.
     // Its owner connects a new one: an agent of the project and what for (1–200
@@ -589,7 +653,7 @@ window.Maity = window.Maity || {};
         : h("span", { class: "ok" }, done));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, bridgesPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, rolePart, bridgesPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -658,7 +722,7 @@ window.Maity = window.Maity || {};
       // preferences switch.
       if (!ctx.canAdmin) {
         return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
-          P.reportsToPart(m, memberPath),
+          P.reportsToPart(m, memberPath), P.rolePart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
       }
