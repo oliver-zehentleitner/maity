@@ -1771,3 +1771,67 @@ The queue line holds no path, state directory or credential.
 - `gh pr checks`: its exit code and its table both need workarounds (exit 8, cancelled older runs).
 - Filtering runs by their `pull_requests` field: GitHub does not always fill it (the runs of one pull request head
   seen on 2026-11-07 had it empty), so the branch decides.
+
+## The guard tests run in one script before a review request, against the work tree's own hub
+
+**Id:** aced0267-da94-4245-9c71-bff08d2ff54e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-z7prb2vtrnmy, from the jour fixe of 2026-11-07 (proposal t2.s1, adopted by the maintainer as req-kzqbz6b17a8m); `tools/guards.sh`, `CONTRIBUTING.md` ("The guard tests before a review request")
+**Revisit when:** CI gains or drops a guard test (another per-table rule, another generated file), or the hub's test environment stops being shared between checkouts
+
+`tools/guards.sh` runs, in about half a minute, the steps that otherwise turn red in CI one round at a time:
+`hub/tests/test_per_human_tables.py`, `make -C web shapes`, `make -C web fixtures` and `make -C web check`. Then
+it fails unless `git status` is clean. Every step runs, so one run names every failure. It refuses to start on
+a work tree that is not clean, and refuses a `HUB_PYTHON` that would import the hub from somewhere other than
+this work tree's `hub/src`. Both refusals, and a missing `make`, `node`, `pytest` or `HUB_PYTHON`, end in exit 2,
+never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps run it from `hub/` and `web/`.
+Every step, and the check of where the hub is imported from, runs in a cleared environment (`env -i`) that carries
+only `PATH`, `HOME`, `TMPDIR`, `LC_ALL=C`, `PYTHONNOUSERSITE=1` and `PYTHONPATH` set to the work tree's `hub/src`.
+The cleared environment also drops `MAITY_TEST_DATABASE_URL`, so these steps always use the test suite's SQLite;
+they say nothing about PostgreSQL. The script drops the caller's `GIT_*` variables. It reads tracked changes from
+`git status` and untracked files by the repository's `.gitignore` files alone, since a personal exclude
+(`core.excludesFile`, `.git/info/exclude`) could hide a file a step wrote. It refuses (exit 2) to start while an
+index entry is marked skip-worktree or assume-unchanged, because `git status` does not show such a file even when a
+step rewrites it, and it reads the work tree with `core.fsmonitor` off, since a filesystem monitor that answers
+"nothing changed" hides a rewrite too.
+
+The guards are a convenience before the review, not a security boundary; CI stays the gate. They trust the caller's
+shell and `PATH`, and the clone's own git configuration and hooks: an author who sets these against the check can
+get past it (a startup file that ends the shell before the script runs, a `PATH` that names other programs, a
+clean filter that reports old content).
+
+**Reason:**
+- After approval, #1447 and #1443 together needed four more CI rounds for these guards: a new column that names
+  a human not yet decided in `NAMES_A_HUMAN`, `web/tools/hub-shapes.json` not rewritten after the hub's answer
+  gained a field, and a fixture lacking a field the hub sends.
+- A clean start is what makes the last step mean something: a file the author changed and a file a step rewrote
+  cannot be told apart afterwards.
+- On the shared development machine the hub's virtual environment has the hub installed in editable mode from
+  another checkout. Without `PYTHONPATH` pointing at the work tree, the per-human test and the shapes would test
+  that checkout's tables and answers, and could pass for code that is not the branch's (reproduced: the import
+  resolved to another checkout's `hub/src`).
+- Inherited settings made steps end in 0 without testing, each reproduced in review: `PYTEST_ADDOPTS=--collect-only`
+  collects the per-human tests without running them, `MAKEFLAGS=-n` or `-i` skips the recipes or their errors,
+  a `PYTHON` in the environment takes over make's own (`PYTHON=true`), and a `BASH_ENV` runs in the per-human step.
+  Before the cleared environment, each of them gave "all passed" on a branch with an undecided column or a fixture
+  lacking a field.
+- In the second review round, a stale `web/tools/hub-shapes.json` marked skip-worktree or assume-unchanged, and a
+  stray file hidden by a personal exclude, each gave "all passed": `git status` reported nothing. The start now
+  refuses the flags, and untracked files are read by the repository's ignore rules alone. In the third round a
+  repository-local `core.fsmonitor` hook that reports no change did the same; the work tree is now read with the
+  monitor off. The coordinator then set the boundary above, so the list of such cases ends there.
+- A field the check names goes into the fixture by hand. `web/tools/fixture-shapes-baseline.json` only shrinks
+  for a request it already lists, so extending it would hide the gap the guard found.
+
+**Rejected alternatives:**
+- Stop at the first failing step: the author would fix one guard and meet the next in another run, the very
+  rounds the script is meant to save.
+- Compare `git status` before and after instead of requiring a clean start: a file both the author and a step
+  changed would pass unseen.
+- Unsetting a list of known variables (`PYTEST_ADDOPTS`, `MAKEFLAGS`, `MFLAGS`): each tool reads more than that
+  (`PYTEST_PLUGINS`, `MAKEFILES`, `GNUMAKEFLAGS`, `BASH_ENV`, `NODE_OPTIONS`, make's variables from the environment),
+  and the list would miss the next one; a cleared environment names what the steps need instead.
+- The `make` targets with the Python as the author's environment finds it: the case above, where the shared
+  environment tests another checkout.
