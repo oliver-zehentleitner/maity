@@ -3439,6 +3439,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && rwR.ahead(rwCtx({ mode: "nobody_except", members: ["hum-o"], included: true }), rwInv, ["inv:x"], ["inv:x"]) === null
     && rwR.ahead(rwCtx({ mode: "all_except", members: [], included: true }), rwInv, ["inv:x"], ["inv:x"]).startsWith("Whoever accepts will then read and write this project's restricted texts, those written before"),
     "restricted ahead: an invitation's accepter may be a listed former member, so while the list names a non-member the line is conditional");
+  // ... or the owner of an agent that stayed a member after its owner left (§6.1, akbp on #1450's delta).
+  const rwOrphan = { id: "agt-o", kind: "agent", trust: "member", owner_id: "hum-left", display_name: "Orphan", handle: "orphan" };
+  const rwOCtx = (value) => Object.assign(rwCtx(value), { members: rwMembers.concat([rwOrphan]) });
+  const rwInvAs = (trust) => (ms) => ms.concat([{ id: "inv:x", kind: "human", trust, display_name: "Whoever accepts", handle: null }]);
+  expect(rwR.ahead(rwOCtx({ mode: "nobody_except", members: ["agt-o"], included: false, cards_with_text: 1 }), rwInvAs("member"), ["inv:x"], ["inv:x"])
+    === "Orphan (@orphan), agent of hum-left will then read and write this project's restricted texts too, if their owner is the one who accepts. 1 card has a restricted text."
+    && rwR.ahead(rwOCtx({ mode: "nobody_except", members: ["agt-o"], included: false }), rwInvAs("guest"), ["inv:x"], ["inv:x"]) === null
+    && rwR.ahead(rwOCtx({ mode: "all_except", members: ["hum-left"], included: true }), rwInvAs("member"), ["inv:x"], ["inv:x"]).indexOf("Orphan") === -1
+    && rwR.ahead(rwOCtx({ mode: "all_except", members: [], included: true }), rwInvAs("member"), ["inv:x"], ["inv:x"]).endsWith("too, if their owner is the one who accepts.")
+    && rwR.ahead(rwOCtx({ mode: "nobody_except", included: false }), rwInvAs("member"), ["inv:x"], ["inv:x"]).includes("Orphan (@orphan), agent of hum-left may then read and write this project's restricted texts too, if their owner is the one who accepts and the restricted-access list names them."),
+    "restricted ahead: an invitation's accepter may be the returning owner of an agent that stayed, which then comes back into the set");
   // A transfer seats the organisation's owners: a listed agent whose owner is a guest here may then enter (akbp, #1450).
   expect(rwR.aheadOrgOwners(rwCtx({ mode: "nobody_except", members: ["agt-g"], included: false, cards_with_text: 1 }), "@acme")
     === "Gus Bot (@gus-bot), agent of Gus (@gus) will then read and write this project's restricted texts too, if their owner is one of the owners of @acme. 1 card has a restricted text."

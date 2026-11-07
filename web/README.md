@@ -1252,7 +1252,9 @@ the list is told only what the setting lets the page know ("unless the list
 leaves them out", "if the list names them"). Whoever accepts an invitation
 may be a former member whose id the list still holds: while the list names
 someone who is no member now, the invitation's line says so conditionally
-too. A transfer into an organisation also names the project's agents it may
+too. The accepter may also be the returning owner of an agent that stayed a
+member (not isolated) after its owner left: such agents the setting would
+let in are named, "if their owner is the one who accepts". A transfer into an organisation also names the project's agents it may
 let in, those whose owner is a guest or no member and may be one of the
 organisation's owners.
 

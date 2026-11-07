@@ -5163,7 +5163,11 @@ The wording follows what the reader is served:
   same id comes back, and the list, never pruned, may still hold it. While the list names
   someone who is no member now, or the reader sees no list, the line says "if the list names
   them" or "unless the list leaves them out" for the accepter; otherwise the accepter is new
-  and treated as on no list.
+  and treated as on no list. The accepter may also be the owner of an agent that stayed a
+  member after its owner left (not isolated, §6.1 "Every way into the set"), which comes back
+  into the set with its owner. The page names such agents the setting would let in, "if their
+  owner is the one who accepts", rather than marking the accepter as listed, which would name
+  the wrong reader.
 - A transfer into an organisation seats its owners, and with them their agents: an agent of the
   project that is out of the set only because its owner is a guest or no member may enter. The
   page knows those agents and names them, "if their owner is one of the owners".

@@ -402,7 +402,6 @@ window.Maity = window.Maity || {};
     const before = resolve(assumed, members);
     const later = resolve(assumed, after);
     const entering = after.filter((m) => later.has(m.id) && !before.has(m.id));
-    if (!entering.length) return null;
     const maybe = (ms) => {
       const list = ms.map((m) => who(ctx, m)).join(", ");
       return value.mode === "all_except" ? M.t("restricted.ahead.unless_listed", { list }) : M.t("restricted.ahead.if_listed", { list });
@@ -412,6 +411,22 @@ window.Maity = window.Maity || {};
     const words = [];
     if (sure.length) words.push(M.t("restricted.ahead.will", { list: sure.map((m) => who(ctx, m)).join(", ") }));
     if (unsure.length) words.push(maybe(unsure));
+    // A returning accepter may also be the owner of an agent that stayed a member (§6.1 "Every
+    // way into the set"): not isolated, so the hub let it stay, and back in the set once its
+    // owner joins again with trust member or above. Which owner accepts the page cannot know.
+    const back = after.find((m) => (returning || []).includes(m.id));
+    if (back && back.trust !== "guest") {
+      const listed = new Set(known ? value.members : []);
+      const orphans = members.filter((m) => m.kind === "agent" && m.trust !== "guest" && !m.isolated && !nowIds.has(m.owner_id)
+        && !before.has(m.id) && (!known || (value.mode === "all_except" ? !listed.has(m.id) && !listed.has(m.owner_id) : listed.has(m.id))));
+      if (orphans.length) {
+        const list = orphans.map((m) => who(ctx, m)).join(", ");
+        words.push(known ? M.t("restricted.ahead.owner_returns", { list })
+          : value.mode === "all_except" ? M.t("restricted.ahead.owner_returns_unless", { list })
+            : M.t("restricted.ahead.owner_returns_if_listed", { list }));
+      }
+    }
+    if (!words.length) return null;
     if (typeof value.cards_with_text === "number") words.push(M.t("restricted.settings.cards", { count: value.cards_with_text }));
     return words.join(" ");
   }
