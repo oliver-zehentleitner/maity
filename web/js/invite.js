@@ -178,7 +178,7 @@ window.Maity = window.Maity || {};
     const drawAhead = () => {
       if (!ahead) return;
       ahead.show(M.restricted.ahead(ctx, (members) => members.concat([{ id: "invite:new-member", kind: "human", trust: trust.value,
-        display_name: M.t("invite.ahead.who"), handle: null, isolated: null }]), ["invite:new-member"]));
+        display_name: M.t("invite.ahead.who"), handle: null, isolated: null }]), ["invite:new-member"], ["invite:new-member"]));
     };
     trust.addEventListener("change", drawAhead);
     drawAhead();

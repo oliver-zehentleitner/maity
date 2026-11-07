@@ -178,6 +178,7 @@ window.Maity = window.Maity || {};
     }
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
+    let drawAhead = null; // set with the restricted-access line below
     function showAgent() {
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
       const fresh = (m ? m.id : "") !== shownFor;
@@ -187,6 +188,9 @@ window.Maity = window.Maity || {};
       membershipFields.forEach((f) => { f.hidden = !!m; });
       takeOverOptions();
       profileLinksFor(agentSelect.value, m);
+      // The line before the join follows the profile chosen, also when `open()` chooses it
+      // (no `change` event) or the members are read again.
+      if (drawAhead) drawAhead();
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -224,7 +228,7 @@ window.Maity = window.Maity || {};
     // Before the join: whether the agent will read the project's restricted texts (§6.1
     // "Every way into the set"). It is the creator's agent, as every agent a join makes.
     const ahead = M.restricted ? M.restricted.aheadLine() : null;
-    const drawAhead = () => {
+    drawAhead = () => {
       if (!ahead) return;
       const id = agentSelect.value;
       if (id && memberOf(id)) { ahead.show(null); return; } // a new instance enters nothing

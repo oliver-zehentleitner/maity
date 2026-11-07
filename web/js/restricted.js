@@ -377,28 +377,41 @@ window.Maity = window.Maity || {};
   // A reader served only `{mode, included}` sees no list (§6.1 "Reading the setting"),
   // so the page says no more than it knows: under all_except "unless the list leaves
   // them out", under nobody_except "if the list names them" (lotse, tsk-g8ts5vxhj1md).
-  function ahead(ctx, change, fresh) {
+  // `returning` lists ids of `fresh` whose member the page cannot identify: whoever
+  // accepts an invitation may be a former member, back with the same id, which the list
+  // keeps (it is never pruned). While the list names someone who is no member now, or
+  // the reader sees no list, such an id is spoken of as the list would treat it either
+  // way: "if the list names them", "unless the list leaves them out".
+  function ahead(ctx, change, fresh, returning) {
     const value = setting(ctx);
     if (!value || !MODES.includes(value.mode)) return null;
     const members = ctx.members || [];
     const after = change(members.map((m) => Object.assign({}, m)));
     const known = Array.isArray(value.members);
     const freshIds = new Set(fresh || []);
+    const nowIds = new Set(members.map((m) => m.id));
+    const maybeBack = new Set(!known || value.members.some((id) => !nowIds.has(id)) ? returning || [] : []);
     const meListed = value.mode === "all_except" ? value.included === false : value.included === true;
     // Without the list: the widest list the page cannot rule out, the reader's own
-    // place on it from `included`.
-    const list = known ? value.members
+    // place on it from `included`. A returning id is on neither: under nobody_except the
+    // widest list names it, under all_except it leaves it out.
+    const list = known ? (value.mode === "nobody_except" ? value.members.concat([...maybeBack]) : value.members)
       : value.mode === "all_except" ? (meListed ? [ctx.me.id] : [])
-        : after.map((m) => m.id).filter((id) => !freshIds.has(id) && (id !== ctx.me.id || meListed));
+        : after.map((m) => m.id).filter((id) => (!freshIds.has(id) || maybeBack.has(id)) && (id !== ctx.me.id || meListed));
     const assumed = { mode: value.mode, members: list };
     const before = resolve(assumed, members);
     const later = resolve(assumed, after);
     const entering = after.filter((m) => later.has(m.id) && !before.has(m.id));
     if (!entering.length) return null;
-    const names = entering.map((m) => who(ctx, m)).join(", ");
-    const words = [known ? M.t("restricted.ahead.will", { list: names })
-      : value.mode === "all_except" ? M.t("restricted.ahead.unless_listed", { list: names })
-        : M.t("restricted.ahead.if_listed", { list: names })];
+    const maybe = (ms) => {
+      const list = ms.map((m) => who(ctx, m)).join(", ");
+      return value.mode === "all_except" ? M.t("restricted.ahead.unless_listed", { list }) : M.t("restricted.ahead.if_listed", { list });
+    };
+    const sure = known ? entering.filter((m) => !maybeBack.has(m.id)) : [];
+    const unsure = known ? entering.filter((m) => maybeBack.has(m.id)) : entering;
+    const words = [];
+    if (sure.length) words.push(M.t("restricted.ahead.will", { list: sure.map((m) => who(ctx, m)).join(", ") }));
+    if (unsure.length) words.push(maybe(unsure));
     if (typeof value.cards_with_text === "number") words.push(M.t("restricted.settings.cards", { count: value.cards_with_text }));
     return words.join(" ");
   }
@@ -407,22 +420,41 @@ window.Maity = window.Maity || {};
   // are the page does not know, so it says what the setting lets them do. Under all_except
   // they read unless the list leaves them out; under nobody_except only if it names them,
   // which a list the reader sees rules out when it names nobody outside the set now.
+  // An owner the move seats also brings in their agents: an agent of the project that is
+  // out of the set only because its owner is a guest or no member may enter, if its owner
+  // is one of the organisation's owners. Those agents the page knows, and names.
   function aheadOrgOwners(ctx, org) {
     const value = setting(ctx);
     if (!value || !MODES.includes(value.mode)) return null;
-    let text;
-    if (value.mode === "all_except") {
-      text = M.t("restricted.ahead.org_owners_unless", { org });
+    const members = ctx.members || [];
+    const known = Array.isArray(value.members);
+    const allExcept = value.mode === "all_except";
+    const listed = new Set(known ? value.members : []);
+    const now = resolve(value, members);
+    const byId = {};
+    members.forEach((m) => { byId[m.id] = m; });
+    const seated = (m) => !!m && m.kind === "human" && m.trust !== "guest";
+    const agents = members.filter((m) => m.kind === "agent" && m.trust !== "guest" && !m.isolated && !now.has(m.id)
+      && !seated(byId[m.owner_id])
+      && (!known || (allExcept ? !listed.has(m.id) && !listed.has(m.owner_id) : listed.has(m.id))));
+    const words = [];
+    if (allExcept) {
+      words.push(M.t("restricted.ahead.org_owners_unless", { org }));
     } else {
-      if (Array.isArray(value.members)) {
-        const now = resolve(value, ctx.members || []);
-        const agentIds = new Set((ctx.members || []).filter((m) => m.kind === "agent").map((m) => m.id));
-        if (!value.members.some((id) => !now.has(id) && !agentIds.has(id))) return null;
+      const agentIds = new Set(members.filter((m) => m.kind === "agent").map((m) => m.id));
+      if (!known || value.members.some((id) => !now.has(id) && !agentIds.has(id))) {
+        words.push(M.t("restricted.ahead.org_owners_if_listed", { org }));
       }
-      text = M.t("restricted.ahead.org_owners_if_listed", { org });
     }
-    return typeof value.cards_with_text === "number"
-      ? text + " " + M.t("restricted.settings.cards", { count: value.cards_with_text }) : text;
+    if (agents.length) {
+      const list = agents.map((m) => who(ctx, m)).join(", ");
+      words.push(known ? M.t("restricted.ahead.org_owner_agents", { list, org })
+        : allExcept ? M.t("restricted.ahead.org_owner_agents_unless", { list, org })
+          : M.t("restricted.ahead.org_owner_agents_if_listed", { list, org }));
+    }
+    if (!words.length) return null;
+    if (typeof value.cards_with_text === "number") words.push(M.t("restricted.settings.cards", { count: value.cards_with_text }));
+    return words.join(" ");
   }
 
   // Where a human becomes an owner of an organisation (an invitation's go, a promotion,

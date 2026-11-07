@@ -5137,7 +5137,7 @@ can be linked.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-g8ts5vxhj1md, Web 2 (2026-11-07): the plan with three questions to the lead and the lead's answers on the card; docs/api.md §6.1 "Every way into the set" and "Reading the setting"
+**Source:** card tsk-g8ts5vxhj1md, Web 2 (2026-11-07): the plan with three questions to the lead and the lead's answers on the card; docs/api.md §6.1 "Every way into the set" and "Reading the setting"; the review of #1450 (2026-11-07) for the returning accepter and the agents a transfer seats; `hub/src/maity_hub/restricted.py` `resolve`, which reads the list by member id
 **Revisit when:** the hub serves a reader without `members` more of the set, an organisation's invitation carries what its go would bring into a set, or an owner change of an agent profile is built
 **See:** refresh.md#the-restricted-access-sets-notice-is-a-projects-setting-read-by-a-read-mark-though-its-target-says-settings — aefe70f5-509b-47ea-9768-02623c68016a — as of 2026-11-07
 
@@ -5159,12 +5159,24 @@ The wording follows what the reader is served:
   comes from `included`.
 - An organisation's invitation and a promotion to owner reach projects whose settings the page
   does not read. There the page says one general sentence: an owner may enter a project's set.
+- Whoever accepts a project invitation is not known beforehand and may be a former member: the
+  same id comes back, and the list, never pruned, may still hold it. While the list names
+  someone who is no member now, or the reader sees no list, the line says "if the list names
+  them" or "unless the list leaves them out" for the accepter; otherwise the accepter is new
+  and treated as on no list.
+- A transfer into an organisation seats its owners, and with them their agents: an agent of the
+  project that is out of the set only because its owner is a guest or no member may enter. The
+  page knows those agents and names them, "if their owner is one of the owners".
 
 **Reason:** the contract asks for the sentence at each of these places, and a sentence the page
 cannot know to be true would be a false one. A reader without the list cannot tell whether an id
 is listed, so the wording says exactly that.
 
 **Rejected alternatives:**
+- Treating whoever accepts an invitation as a new id that no list names: wrong for a former
+  member whose id the list keeps, who would enter under `nobody_except` with no word said.
+- Leaving agents out of the transfer's sentence: a listed agent whose guest owner becomes an
+  owner enters the set unannounced.
 - "Will read" under every mode for a reader without the list: under `nobody_except` it is false
   for anyone the list does not name.
 - Saying nothing where the list is unknown: the contract asks for the sentence, and under

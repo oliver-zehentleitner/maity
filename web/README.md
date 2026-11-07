@@ -1249,7 +1249,12 @@ a line; a guest's raise, an isolation's end, a transfer into an organisation
 and a promotion to an organisation's owner ask first; an organisation's
 invitation and transfer say it before their go. A reader who is not served
 the list is told only what the setting lets the page know ("unless the list
-leaves them out", "if the list names them").
+leaves them out", "if the list names them"). Whoever accepts an invitation
+may be a former member whose id the list still holds: while the list names
+someone who is no member now, the invitation's line says so conditionally
+too. A transfer into an organisation also names the project's agents it may
+let in, those whose owner is a guest or no member and may be one of the
+organisation's owners.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
