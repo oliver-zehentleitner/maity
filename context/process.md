@@ -749,7 +749,7 @@ next test survivable whichever it is. The machine does other work: a second cras
 
 **Id:** d621283e-1580-4220-8c72-ca1d5804d0aa
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go, a Vultr dedicated-CPU plan of 8 cores and 16 GB for one week, was given in the project chat on 2026-10-29
 **Revisit when:** the week is over, or a rented server stalls with the caps in place
