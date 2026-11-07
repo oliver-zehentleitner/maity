@@ -458,10 +458,11 @@ def choose_motif(conn: Connection, agent_id: str, name: Any, caller: Any) -> Non
 
     if name is not None and (not isinstance(name, str) or motifs.current().named(name) is None):
         raise invalid({"avatar_motif": "unknown"}, "the hub ships no motif of that name")
+    # The lock first: a reset holds it until its hold is written, so the check reads that hold.
+    lock_owner(conn, agent_id)
     if name is not None:  # a motif restores a reset picture: not while its hold stands (§16.8)
         moderation.refuse_held(conn, "profile", agent_id, "remove")
     count_change(conn, agent_id)  # given back if this transaction rolls back
-    lock_owner(conn, agent_id)
     before = state(conn, agent_id)
     conn.execute(
         update(t.agent_profile).where(t.agent_profile.c.id == agent_id).values(avatar_motif=name)

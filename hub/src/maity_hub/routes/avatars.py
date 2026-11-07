@@ -140,10 +140,11 @@ def _change(
     def action(conn: Connection) -> idempotency.Outcome:
         if check is not None:
             check(conn)
+        # The lock first: a reset holds it until its hold is written, so the check reads it.
+        avatars.lock_owner(conn, owner_id)
         if png is not None:  # a picture moderation reset stays so while its hold stands
             moderation.refuse_held(conn, "profile", owner_id, "remove")
         avatars.count_change(conn, owner_id)  # given back if this transaction rolls back
-        avatars.lock_owner(conn, owner_id)
         before = avatars.state(conn, owner_id)
         if png is None:
             avatars.remove_upload(conn, owner_id)

@@ -161,6 +161,68 @@ def test_remove_drops_an_agents_motif_and_the_hold_refuses_a_new_one(
     assert again.status_code == 200, again.text  # the hold lifted, the choice is the owner's
 
 
+@contextmanager
+def reset_waiting(migrated: Engine, agent_id: str, report_id: str) -> Iterator[Any]:
+    """A `remove` of the agent's profile in progress, as `_reset_profile` and the hold it
+    writes leave it: the picture's lock held, the hold written, nothing committed yet.
+    Yields a function that runs a change in the other transaction and then commits the
+    reset (PostgreSQL, MariaDB)."""
+    from maity_hub import avatars, clock
+    from tests.concurrency import finished, race, waiting
+
+    with race(migrated) as r:
+        reset = r.first
+        avatars.lock_owner(reset, agent_id)
+        reset.execute(
+            t.moderation_hold.insert().values(
+                report_id=report_id,
+                target_type="profile",
+                target_id=agent_id,
+                action="remove",
+                at=clock.now(),
+            )
+        )
+
+        def change(send: Callable[[], Any]) -> Any:
+            step = r.run(r.second, send)
+            assert waiting(step)  # on the picture's lock, which the reset holds
+            reset.commit()
+            return finished(step)
+
+        yield change
+
+
+def test_a_motif_chosen_while_a_reset_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8: the choice reads the hold after the picture's lock, so a choice that waited for
+    a reset sees the hold it wrote; read before the lock, it found none and set the motif."""
+    from maity_hub import motifs
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    name = motifs.current().motifs[0].name
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    with reset_waiting(migrated, agent.id, made["id"]) as change:
+        held(change(lambda: owner.patch(f"/agents/{agent.id}", {"avatar_motif": name})))
+    profile = owner.get(f"/agents/{agent.id}").json()
+    assert (profile["avatar_source"], profile["avatar_motif"]) == ("generated", None)
+
+
+def test_an_upload_while_a_reset_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8, the upload's path: the same order, the lock before the hold is read."""
+    from tests.test_avatars import image, put_agent
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    with reset_waiting(migrated, agent.id, made["id"]) as change:
+        held(change(lambda: put_agent(agent, image())))
+    assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "generated"
+
+
 def test_the_affected_account_is_told_never_who_reported(
     team: dict[str, Any], migrated: Engine
 ) -> None:
