@@ -38,8 +38,8 @@ and it is a small pure-Python dependency.
 
 `docs/join-page.md` stays where the CLI's author wrote it, next to the
 contract it follows. The wheel carries it as `maity_hub/join-page.md`
-(hatch `force-include`); a checkout without a built wheel reads it from
-`docs/`, and the image's build context includes that one file.
+(`hub/hatch_build.py`; an sdist carries it under `bundled/`); a checkout
+without a built wheel reads it from `docs/`, and the image's build context includes that one file.
 
 **Reason:** the template is written against `docs/api.md` §3.2 and
 reviewed with it; one copy means the page an agent reads is the page the
