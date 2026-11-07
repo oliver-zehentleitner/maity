@@ -697,7 +697,9 @@ the session themselves. A catalog per language keeps nine languages off every pa
 
 Without an account's `interface_language` the dashboard takes the landing page's order: `?lang=`,
 then the browser's languages, then `en`. The landing page itself offers only the languages it has a
-page in and falls back to its `default_language`, not to `en` (`render.choose_language`, §16.7). A choice made on a page (`M.i18n.choose`) holds
+page in, takes `?lang=` only as an exact offered tag where the dashboard reads the closest catalog
+(`de-AT` reads `de`), and falls back to its `default_language`, not to `en`
+(`render.choose_language`, `render.best_language`, §16.7). A choice made on a page (`M.i18n.choose`) holds
 for the page while it lives and writes `?lang=` into the address, also one that had none; the
 frame's and the landing page's links carry `?lang=` from page to page. Nothing goes into
 `localStorage`: the key an older version wrote, `maity.language`, is removed once when the

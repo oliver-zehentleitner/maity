@@ -5393,8 +5393,9 @@ sign-in: `language` reads as `en` for everyone who never set it, so it says
 nothing about what a person wants to read. Before sign-in the dashboard takes,
 among the ten, `?lang=`, then `navigator.languages`, then `en`: the landing
 page's order (§16.7), except that the landing page offers only the languages
-it has a page in and falls back to its `default_language` where the dashboard
-falls back to `en`. It passes the language as `lang` to the page texts of §16.7.4. A
+it has a page in, takes `?lang=` only as an exact offered tag (the dashboard
+reads the closest catalog: `de-AT` reads `de`) and falls back to its
+`default_language` where the dashboard falls back to `en`. It passes the language as `lang` to the page texts of §16.7.4. A
 choice made on a page writes `?lang=` into the address; nothing is stored in
 the browser for it, so a page the hub renders says the same. A key without a
 translation reads in English. The API stays in English in every language: a
