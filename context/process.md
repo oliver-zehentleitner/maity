@@ -1708,7 +1708,8 @@ name only when it comes from the same repository, not from a fork.
 
 The check is a convenience before a push, not the gate: the coordinating agent's merge-base and
 merge-tree check before every merge is. Two matching reads of a list that GitHub pages by offset are
-a best effort, not a snapshot, and the caller's `GH_HOST`, `gh` login and clone configuration are
+a best effort, not a snapshot: a pull request that closes, reopens and closes again in step with both
+reads can still be missed by both, with each read the same line for line. The caller's `GH_HOST`, `gh` login and clone configuration are
 trusted. Further findings on list churn, or on a caller pointing `GH_HOST` or the clone at another
 server, count as minor (the coordinator's scope for #1475).
 
@@ -1748,13 +1749,16 @@ server, count as minor (the coordinator's scope for #1475).
 - GitHub pages the REST list by offset (`page=N`), where GraphQL's cursors did not shift: a pull
   request that closes on a page already read moves the first one of the next page onto it, and no page
   returns that one, without an error. The review of #1475 found it. A list of a full page (100) or more
-  is therefore read a second time and must name the same pull requests at the same heads: a skip in a
-  list of 101 leaves exactly 100 lines, so the line count cannot tell one request from two (found in
-  the delta review). Fewer than 100 lines were a single request, which cannot shift. A skip leaves the
-  closed pull request in the first read and out of the second, so the two differ unless the same churn
-  (a close and a reopen at the same place) repeats during the second read; two scans are not a
-  snapshot. A pull request opened, closed or pushed between the reads stops the check too, and running
-  again settles it.
+  is therefore read a second time and must be the first line for line: a skip in a list of 101 leaves
+  exactly 100 lines, so the line count cannot tell one request from two. The comparison is of the text,
+  not of the set of pull requests: one opened during a read repeats a pull request at a page edge and
+  is itself missing, and as sets both reads were equal. A pull request listed twice in one read stops
+  the check as well. Fewer than 100 lines were a single request, which cannot shift. A skip leaves the
+  closed pull request in the first read and out of the second, so the two differ, unless the same
+  churn repeats in step with the second read (above); two reads are not a snapshot. A pull request
+  opened, closed or pushed between the reads stops the check too, and running again settles it. The
+  delta reviews of #1475 found the 100-line edge and the set comparison; the tests' stand-in for `gh`
+  changes the list between pages as GitHub would.
 - The owner and name come from origin's URL as configured (`git config remote.origin.url`), not from
   `git remote get-url`, which applies `url.<base>.insteadOf` and can name a mirror or a proxy whose
   path is not the repository's.
@@ -1762,9 +1766,10 @@ server, count as minor (the coordinator's scope for #1475).
   (`GH_HOST`, or the one host it is logged in to) can be another server: a non-empty list from there
   names heads origin does not serve and stops the check, but an empty one has nothing to compare and
   read as "no open pull request", exit 0 (the review of #1475 found it). A host on the loopback
-  (`localhost`, an IPv4 literal `127.x.x.x`, `[::1]`; a name such as `127.example.com` is not) is a proxy in front of github.com, as in Claude Code's cloud
-  sessions, which serves git and not the API, so it stands for github.com. A URL without a host (a
-  local path) names no server to ask and stops the check.
+  (`localhost` in any case, an IPv4 literal in 127.0.0.0/8, `[::1]`; a name such as `127.example.com`
+  is a server of its own) is a proxy in front of github.com, as in Claude Code's cloud sessions, which
+  serves git and not the API, so it stands for github.com. A URL without a host (a local path,
+  `file://` with or without `localhost`) names no server to ask and stops the check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -1781,7 +1786,8 @@ server, count as minor (the coordinator's scope for #1475).
 - Exit 2 when `GH_HOST` names another host than origin's: it leaves the host to `gh` whenever
   `GH_HOST` is unset, and `gh` may still pick another server it is logged in to.
 - More than one page of open pull requests as exit 2, like the old limit: the check would stop
-  working for a repository with more than 100 open pull requests, where reading twice still works.
+  working for a repository with more than 100 open pull requests. Reading twice keeps it working
+  there, with the limit above: a best effort, not a snapshot.
 - `gh api`'s `{owner}/{repo}` placeholders: `gh` fills them from its own default repository, the same
   choice `--repo` was there to override.
 - `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean

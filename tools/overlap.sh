@@ -141,6 +141,7 @@ repo_owner=${slug##*/}
 # a proxy in front of github.com (Claude Code's cloud sessions fetch through one), which serves
 # git and not the API. A URL without a host (a local path) names no server to ask.
 case $origin in
+  file://*) authority="" ;;
   *://*)
     authority=${origin#*://}
     authority=${authority%%/*}
@@ -154,6 +155,7 @@ case $authority in
   \[*) repo_host=${authority%%]*}] ;;
   *) repo_host=${authority%%:*} ;;
 esac
+repo_host=${repo_host,,}
 # Loopback by its literal form only: a name such as 127.example.com is a server of its own.
 if [[ $repo_host == localhost || $repo_host == "[::1]" || $repo_host =~ ^127(\.[0-9]{1,3}){3}$ ]]; then
   repo_host=github.com
@@ -166,6 +168,7 @@ fi
 PAGE=100
 list_prs() {
   local line
+  local -A seen=()
   prs=$(gh api --hostname "$repo_host" --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=$PAGE" \
     --jq '.[] | "\(.number) \(.head.sha) \(.head.repo.full_name != .base.repo.full_name) \(.head.ref)"') \
     || die "listing the open pull requests of $repo_owner/$repo_name on $repo_host failed (gh api)"
@@ -176,6 +179,10 @@ list_prs() {
     [ -n "$line" ] || continue
     [[ $line =~ ^[0-9]+\ ([0-9a-f]{40}|[0-9a-f]{64})\ (true|false)\ [^\ ]+$ ]] \
       || die "unexpected line in the list of open pull requests: $line"
+    # A pull request on two pages: one opened while the pages were read moved the others along.
+    [ -z "${seen[${line%% *}]+x}" ] \
+      || die "pull request ${line%% *} is listed twice; the list changed while it was read; run again"
+    seen[${line%% *}]=1
     pr_count=$((pr_count + 1))
   done <<<"$prs"
 }
@@ -183,16 +190,15 @@ list_prs
 # GitHub pages this list by offset: a pull request that closes on a page already read moves the
 # first one of the next page onto it, and no page returns that one. A list of a full page or more
 # may have taken more than one request (a skip can leave exactly $PAGE lines) and is read again;
-# it must name the same pull requests at the same heads. Fewer lines than a page were one request,
-# which cannot shift. A skip leaves the closed pull request in the first read and out of the
-# second, so the two differ unless the same churn repeats during the second read; any other
+# the second read must be the first line for line, so a duplicate a set would merge still counts.
+# Fewer lines than a page were one request, which cannot shift. A skip leaves the closed pull
+# request in the first read and out of the second, so the two differ, unless the same churn
+# repeats in step with the second read: two reads are a best effort, not a snapshot. Any other
 # change between them stops the check too, and running again settles it.
 if [ "$pr_count" -ge "$PAGE" ]; then
   first=$prs
   list_prs
-  gone=$(pick "$first" "$prs" 0) || die "comparing the two lists of open pull requests failed"
-  new=$(pick "$prs" "$first" 0) || die "comparing the two lists of open pull requests failed"
-  [ -z "$gone$new" ] || die "the list of open pull requests changed while it was read; run again"
+  [ "$prs" = "$first" ] || die "the list of open pull requests changed while it was read; run again"
 fi
 
 # Every other pull request's head in one fetch, under refs of this run only.

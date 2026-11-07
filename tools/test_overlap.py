@@ -30,10 +30,12 @@ def installed(name: str) -> bool:
 # A stand-in for gh: `gh api` of origin's repository, answering GitHub's REST list of open pull
 # requests from prs.json next to it, 100 to a page, every page with --paginate, the first alone
 # without; `head_repo` is the pull request's head repository (default origin's, None for a deleted
-# fork), and `read` (1 or 2), if set, the one read of the list that names it (calls.txt counts the
-# reads). The --jq filter must be exactly the script's; the stand-in does not run it (the machine
+# fork). The --jq filter must be exactly the script's; the stand-in does not run it (the machine
 # may have no jq) but prints the lines it gives for such an answer. An entry `{"fail_page": n}`
-# makes page n fail after the pages before it.
+# makes page n fail after the pages before it. The list changes as GitHub's does under offset
+# paging: `{"close": n, "at": [r, p]}` closes pull request n and `{"open": pr, "at": [r, p]}` opens
+# pr as the newest (first) right before page p of read r (calls.txt counts the reads), and a page
+# has a next one when the list is longer than the pages so far at the time it is served.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
@@ -68,16 +70,32 @@ FAKE_GH = textwrap.dedent(
     read = len(calls.read_text().splitlines()) + 1 if calls.exists() else 1
     calls.write_text("call\\n" * read)
     fail = next((p["fail_page"] for p in prs if "fail_page" in p), None)
-    prs = [p for p in prs if "fail_page" not in p and p.get("read", read) == read]
-    pages = [prs[i : i + 100] for i in range(0, len(prs), 100)] or [[]]
-    for number, page in enumerate(pages if paginate else pages[:1], 1):
+    events = [p for p in prs if "at" in p]
+    prs = [p for p in prs if "fail_page" not in p and "at" not in p]
+    def state(when):
+        now = list(prs)
+        for event in events:
+            if tuple(event["at"]) > when:
+                continue
+            if "close" in event:
+                now = [p for p in now if p["number"] != event["close"]]
+            else:
+                now.insert(0, event["open"])
+        return now
+    number = 0
+    while True:
+        number += 1
         if number == fail:
             print("gh: HTTP 502", file=sys.stderr)
             sys.exit(1)
+        now = state((read, number))
+        page = now[(number - 1) * 100 : number * 100]
         for pr in page:
             # head.repo.full_name: a fork's, origin's own, or null for a deleted fork.
             head_repo = pr.get("head_repo", repo)
             print(pr["number"], pr["head"], str(head_repo != repo).lower(), pr["name"])
+        if not paginate or len(now) <= number * 100:
+            break
     """
 )
 
@@ -369,7 +387,9 @@ class OverlapTest(unittest.TestCase):
     def many(self, prs: list[dict[str, object]], count: int = 250) -> list[dict[str, object]]:
         """`count` more open pull requests at main's base (changing nothing) ahead of `prs`; with
         250, these come on the third page of the list."""
-        numbers = range(1000, 1000 + count)
+        start = 1000 + getattr(self, "fillers", 0)
+        self.fillers = start - 1000 + count
+        numbers = range(start, start + count)
         refs = [f"+{self.base}:refs/pull/{n}/head" for n in numbers]
         self.git("push", "-q", "origin", *refs)
         filler = [{"number": n, "head": self.base, "name": f"pr-{n}"} for n in numbers]
@@ -390,24 +410,40 @@ class OverlapTest(unittest.TestCase):
         self.assertEqual(got.returncode, 1, got.stderr)
         self.assertEqual(self.reads(), 1)
 
-    def test_a_pull_request_skipped_while_the_pages_are_read_stops_the_check(self) -> None:
-        """Offset paging: #9 closes after the first page was read, so #7 moves onto that page and
-        the first read misses it. The second read has #7 and not #9: exit 2, never a check
-        without #7. A pull request opened or closed between the reads stops it the same way."""
+    def test_a_list_that_changes_while_it_is_read_stops_the_check(self) -> None:
+        """Offset paging, as GitHub serves it. #7 conflicts, #9 does not; every case would end
+        in 0 or miss #7 without the second read, its line-for-line comparison or the duplicate
+        check: exit 2 instead."""
         prs = self.scenario()
-        nine, seven = prs[2], prs[0]
+        seven, nine = prs[0], prs[2]
+
+        def filler(count: int) -> list[dict[str, object]]:
+            return self.many([], count)
+
         cases = {
-            "skipped": [{**nine, "read": 1}, *self.many([{**seven, "read": 2}])],
-            "opened": self.many([{**seven, "read": 2}]),
-            "closed": [{**nine, "read": 1}, *self.many([seven])],
-            # 101 open, #9 closes after page 1: each read has exactly one page's worth, 100.
-            "skipped at 100": [{**nine, "read": 1}, *self.many([{**seven, "read": 2}], 99)],
+            # #9 closes after page 1 of the first read: #7 moves from page 2 onto page 1, unread.
+            "skipped": [nine, *filler(99), seven, *filler(50), {"close": 9, "at": [1, 2]}],
+            # The same with 101 open: the first read has exactly 100 lines.
+            "skipped at 100": [nine, *filler(99), seven, {"close": 9, "at": [1, 2]}],
+            # #7 opens after page 1 of the second read: page 2 repeats a pull request, #7 is in
+            # neither read, and both name the same set.
+            "opened while read": [*filler(150), {"open": seven, "at": [2, 2]}],
+            "opened between reads": [*filler(150), {"open": seven, "at": [2, 1]}],
+            "closed between reads": [nine, *filler(150), seven, {"close": 9, "at": [2, 1]}],
+            # #7 opens, closes and opens again in step with both reads: the two reads are the
+            # same line for line, each with a pull request twice and without #7.
+            "same churn in both reads": [
+                *filler(150),
+                {"open": seven, "at": [1, 2]},
+                {"close": 7, "at": [2, 1]},
+                {"open": seven, "at": [2, 2]},
+            ],
         }
         for case, listed in cases.items():
             with self.subTest(case=case):
                 got = self.run_check(listed, "en")
                 self.assertEqual(got.returncode, 2, got.stdout)
-                self.assertIn("the list of open pull requests changed while it was read", got.stderr)
+                self.assertIn("changed while it was read; run again", got.stderr)
                 self.assertEqual(got.stdout, "")
 
     def test_a_page_that_fails_stops_the_check(self) -> None:
@@ -470,6 +506,7 @@ class OverlapTest(unittest.TestCase):
             "git@ghe.example.com:acme/widgets.git": "ghe.example.com",
             "https://127.example.com/acme/widgets.git": "127.example.com",
             "http://127.0.0.1:9/git/acme/widgets": "github.com",
+            "http://LocalHost:9/git/acme/widgets": "github.com",
         }
         for url, host in cases.items():
             with self.subTest(url=url):
@@ -478,10 +515,12 @@ class OverlapTest(unittest.TestCase):
                 got = self.run_check([prs[0]], "en", extra={"GH_HOST": "other.example"})
                 self.assertEqual(got.returncode, 1, got.stderr)
                 self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
-        self.set_origin("/srv/git/acme/widgets.git")
-        got = self.run_check([prs[0]], "en")
-        self.assertEqual(got.returncode, 2, got.stdout)
-        self.assertIn("cannot read a host from origin's URL /srv/git/acme/widgets.git", got.stderr)
+        for url in ("/srv/git/acme/widgets.git", "file://localhost/srv/git/acme/widgets.git"):
+            with self.subTest(url=url):
+                self.set_origin(url)
+                got = self.run_check([prs[0]], "en")
+                self.assertEqual(got.returncode, 2, got.stdout)
+                self.assertIn(f"cannot read a host from origin's URL {url}", got.stderr)
 
     def test_an_empty_list_from_origins_host_exits_0(self) -> None:
         """No open pull request on the right server: nothing to check, exit 0."""
