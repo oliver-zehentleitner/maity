@@ -650,9 +650,11 @@ def join_line(
     role: str = "coder",
     takes_over: str | None = None,
     handover: str | None = None,
+    reports_to: str | None = None,
 ) -> tuple[str, str]:
     """Create a join line in the join panel on Agents; a new profile when handle is given.
-    takes_over: the label of the agent member whose work the new one continues (§3.1)."""
+    takes_over: the label of the agent member whose work the new one continues (§3.1).
+    reports_to: the member id the new agent reports to (tsk-nbadjbr9zpg7); left out, nobody."""
     view_tab(page, "Agents").click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     # A project without an agent of one's own opens the panel itself;
@@ -686,6 +688,9 @@ def join_line(
     assert not outside, outside
     page.locator("#join-role").select_option(role)
     page.locator("#join-areas").fill("web/")
+    expect(page.locator("#join-reports")).to_have_value("")
+    if reports_to:
+        page.locator("#join-reports").select_option(reports_to)
     if takes_over:
         page.locator("#join-takes-over").select_option(label=takes_over)
     if handover:
@@ -772,6 +777,7 @@ def main() -> int:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
+                    join_reports_layout(run, browser)
                     profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
                     paths_views(run, browser)
@@ -3407,6 +3413,63 @@ def profile_public_link_layout(run: Run, browser) -> None:
                 context.close()
 
 
+JOIN_REPORTS_MEASURE = """() => {
+  const shown = (el) => !!el && !!el.offsetParent;
+  const field = (sel) => { const el = document.querySelector(sel); return el && el.closest(".field"); };
+  const box = (el) => el ? el.getBoundingClientRect() : null;
+  const fields = document.querySelector(".join-panel .join-fields"), f = box(fields);
+  const out = Array.from(document.querySelectorAll(".join-panel .join-fields .field")).filter(shown)
+    .flatMap((x) => Array.from(x.children).filter((c) => shown(c) && (box(c).right > box(x).right + 1 || box(c).left < f.left - 1)).map((c) => c.id || c.tagName));
+  return { reports: shown(document.querySelector("#join-reports")), member: shown(document.querySelector("#join-member-reports")),
+           member_hint: shown(document.querySelector("#join-member-reports-hint")), out,
+           member_field_in: fields && field("#join-member-reports") ? fields.contains(field("#join-member-reports")) : null,
+           theme: document.documentElement.getAttribute("data-theme") };
+}"""
+
+
+def join_reports_layout(run: Run, browser) -> None:
+    """The join panel's Reports to (tsk-nbadjbr9zpg7) in fixture mode, at 1280 x 900, 390 x 844
+    and 360 x 780, light and dark, with the sign-in banner and without: for a new agent the select
+    among the membership's fields, for an agent already here its own field with the current boss
+    and its hint; each field and its children inside the form's column (LINES_MEASURE over the
+    fields, the page never wider than the window)."""
+    run.step("fixtures: Reports to in the join panel at 1280, 390 and 360 px, light and dark, banner on and off, new agent and member")
+    index = (WEB / "index.html").as_uri()
+    # 360 px as well: there the profile's two links wrap whatever the fonts (at 390 only with CI's).
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme)
+            context.add_init_script(f"try {{ localStorage.setItem('maity.theme', '{scheme}'); }} catch (e) {{}}")
+            page = context.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                for agent, kind in (("", "new"), ("agt-b", "member")):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en#/maintainer/maity/agents/join")
+                    expect(page.locator(".join-panel #join-agent")).to_be_visible()
+                    page.locator("#join-agent").select_option(agent)
+                    if kind == "member":
+                        expect(page.locator("#join-member-reports")).to_have_value("agt-a")
+                    expect(page.locator("main .signin-banner")).to_be_visible()
+                    for banner in (True, False):
+                        if not banner:
+                            page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        where = f"the join panel at {width}x{height} {scheme}, {kind}" + (", with the banner" if banner else "")
+                        m = page.evaluate(JOIN_REPORTS_MEASURE)
+                        lines = page.evaluate(LINES_MEASURE, ".join-panel .join-fields")
+                        assert not lines["problems"] and not errors, f"{where}: {lines['problems'] + errors}"
+                        assert m["theme"] == scheme and not m["out"], f"{where}: {m}"
+                        if kind == "new":
+                            assert m["reports"] and not m["member"], f"{where}: {m}"
+                        else:
+                            assert m["member"] and m["member_hint"] and m["member_field_in"] and not m["reports"], f"{where}: {m}"
+                        page.locator(".join-panel #join-member-reports" if kind == "member" else ".join-panel #join-reports").scroll_into_view_if_needed()
+                        run.shot(page, f"fixtures-join-reports-{width}-{scheme}-{kind}" + ("-banner" if banner else ""))
+            finally:
+                context.close()
+
+
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
     """What `maity runner pair` does on the runner host: the exchange of §15.2."""
     words = shlex.split(pair_line)
@@ -4133,6 +4196,53 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "why")
 
 
+def join_reports_to_step(run: Run, page: Page, agent_id: str) -> None:
+    """Whom an agent reports to, chosen in the join panel (tsk-nbadjbr9zpg7, §3.1, §2.3): the
+    first agent joined without one reports to nobody, the reviewer joined with the first agent as
+    its boss reports to it after the exchange; an agent already here gets a new boss in the panel,
+    sent as its owner's PATCH before the join, said beside the new line and read back from the hub."""
+    run.step("reports to: chosen in the join panel, for a new agent and for one already here")
+    members_path = f"{run.base}/api/v1/projects/owner/e2e-alpha/members"
+    by_handle = lambda: {m.get("handle"): m for m in page.request.get(members_path).json()["items"]}
+    found = by_handle()
+    assert found["e2e-agent"]["reports_to"] is None, found["e2e-agent"]
+    assert found["e2e-reviewer"]["reports_to"] == agent_id, found["e2e-reviewer"]
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    page.goto(f"{run.base}/owner/e2e-alpha/agents/join?agent={agent_id}")
+    expect(page.locator(".join-panel")).to_be_visible()
+    expect(page.locator("#join-agent")).to_have_value(agent_id)
+    pick = page.locator("#join-member-reports")
+    expect(pick).to_be_visible()
+    expect(pick).to_have_value("")
+    # The agent itself is never offered, nor the reviewer below it (a circle).
+    values = pick.locator("option").evaluate_all("(all) => all.map((o) => o.value)")
+    assert agent_id not in values and found["e2e-reviewer"]["id"] not in values and me["id"] in values, values
+    pick.select_option(me["id"])
+    page.get_by_role("button", name="Create join line", exact=True).click()
+    # An instance's line comes with its state-dir line, also a .paste-line.
+    expect(page.locator(".join-result .paste-line:not(.state-dir-line)")).to_be_visible()
+    expect(page.locator(".join-result p.join-reports-said")).to_have_text(f"E2E Agent now reports to {me['display_name']}.")
+    assert by_handle()["e2e-agent"]["reports_to"] == me["id"]
+    run.shot(page, "join-reports-to-member")
+    no_problems(run, "reports to in the join panel")
+    # The line is not used: revoked, so no open join of this step counts later; and the boss
+    # undone on the agent's card (its owner's own form, §2.3), as the later steps expect it.
+    page.locator(".join-result").get_by_role("button", name="Done", exact=True).click()
+    # The button's name is its label, which names the agent.
+    revoke = page.get_by_role("button", name="Revoke the join for E2E Agent", exact=True)
+    seat = page.locator("article.seat").filter(has=revoke)
+    expect(seat).to_have_count(1)
+    seat.get_by_role("button", name="Revoke the join for E2E Agent", exact=True).click()
+    expect(seat).to_have_count(0)
+    page.goto(f"{run.base}/owner/e2e-alpha/agents/{agent_id}")
+    own = page.locator(f"#owner-reports-{agent_id}")
+    expect(own).to_have_value(me["id"])
+    own.select_option("")
+    page.locator("form.owner-reports", has=own).get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("main")).to_contain_text("E2E Agent now reports to nobody.")
+    assert by_handle()["e2e-agent"]["reports_to"] is None
+
+
 def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:
     run.step("release: a reviewer joins and opens a release; the hub has no forge probe here")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
@@ -4146,11 +4256,13 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
         "reviewer",
         takes_over="E2E Agent (@e2e-agent)",
         handover=card_id,
+        reports_to=agent_id,
     )
     rev = run.clone("clone-reviewer")
     run.maity(
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
     )
+    join_reports_to_step(run, page, agent_id)
     view_tab(page, "Members").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
     expect(over).to_have_text(f"Takes over from @e2e-agent; the hand-over is in {card_id}.")
