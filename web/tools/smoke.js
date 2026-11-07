@@ -7098,6 +7098,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const orgMembers = () => main.querySelector("section.org-members");
   expect(orgMembers() && byId("org-role-hum-maintainer") && byId("org-role-hum-anna") && text(orgMembers()).includes("@maintainer (you)")
     && btn(orgMembers(), "Leave") && btn(orgMembers(), "Remove"), "orgs: an owner may change every role, remove others and leave");
+  expect(main.querySelector("section.org-picture") && !main.querySelector("section.org-picture .picture-motif"),
+    "motif: an organisation's picture has no motif to choose");
   byId("org-role-hum-maintainer").value = "admin"; byId("org-role-hum-maintainer").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(text(orgMembers()).includes("Not changed: the organisation would have no owner left") && byId("org-role-hum-maintainer").value === "owner",
     "orgs: the last owner's demotion is refused in words and the role shown again");
@@ -7160,6 +7162,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const avHeading = main.querySelector(".picture-heading");
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
+  expect(!main.querySelector(".picture-motif"), "motif: the account's own picture has no motif to choose");
   // The agents' pictures are on /agents now (tsk-hn82893h9sdh): the account only points there.
   expect(!main.querySelector(".picture-list") && !byId("avatar-file-agt-x") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/agents" && text(a) === "Your agents"),
     "picture: the account has no agents of its own any more, a link to Your agents instead");
@@ -7235,7 +7238,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && groups[1].getAttribute("label") === "Office robots" && groups[0].querySelectorAll("option").length === 3
       && !mpCard().querySelector(".picture-motif-preview img"),
       "motif: the picker on an agent's card, themes as groups in the catalog's words, none chosen, no preview");
-    expect(!byId("avatar-motif-hum-maintainer"), "motif: a human has no motif to choose");
+    // The gate (account.js): one's own picture never, whatever the id, and only an agent's id.
+    const mpOwn = win.Maity.pictureEditor({ id: "agt-b", display_name: "Agent B", avatar_source: "generated", avatar_motif: null }, "/me/avatar", true, () => {});
+    const mpOrg = win.Maity.pictureEditor({ id: "org-oz00team0001", display_name: "OZ Team", avatar_source: null }, "/orgs/oz-team/avatar", false, () => {});
+    expect(!mpOwn.querySelector(".picture-motif") && !mpOrg.querySelector(".picture-motif") && mpCard().querySelector(".picture-motif"),
+      "motif: no picker for one's own picture, even an agent's, nor for an organisation's; an owner's agent has one");
     mpSel().value = "fox"; mpSel().dispatch("change"); await tick();
     const mpImg = mpCard().querySelector(".picture-motif-preview img");
     expect(mpImg && mpImg.getAttribute("src") === "/api/v1/avatars/public/73880339f1ff49f8aeabdfba2a82f696"
@@ -7263,6 +7270,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("unknown", 400, "/agents/agt-b", "invalid", { fields: { avatar_motif: "unknown" } }));
     btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
     expect(text(mpCard()).includes("Motif not saved: the hub has no motif of that name"), "motif: a name the set no longer holds is said in words");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("limited", 429, "/agents/agt-b", "rate_limited", {}));
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: too many changes of this picture in the last hour"), "motif: the per-avatar limit is said in words");
     win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
     mpPatches.length = 0;
     mpSel().value = ""; mpSel().dispatch("change");

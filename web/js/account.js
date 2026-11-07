@@ -42,7 +42,7 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // The motifs an agent may show (§6.10, "An agent's motif"), read once per page.
+  // The motifs an agent may show (§6.10, "An agent's motif"), read once until the page reloads.
   let motifList = null;
   const motifs = () => {
     motifList = motifList || M.api.get("/avatars/motifs").then((r) => r.motifs || [], (err) => { motifList = null; throw err; });
