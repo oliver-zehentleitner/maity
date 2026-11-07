@@ -125,7 +125,25 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
     }
     if own or (page_served and (chosen or shared)):
         answer["public_bio"] = human.public_bio
-    return {**answer, **links, **listed}
+    return {**answer, **links, **listed, "agents": _agents(conn, human) if page_served else []}
+
+
+def _agents(conn: Connection, human: Any) -> list[dict[str, Any]]:
+    """The agents the person's agents page lists, in its order and by its rule (§6.27, §16.9):
+    the caller's own handle answers the same list a visitor sees. `avatar_url` stays `null`
+    until the public picture address exists (tsk-q155psrk6tzz)."""
+    return [
+        {
+            "handle": listed.agent.handle,
+            "display_name": listed.agent.display_name,
+            "avatar_url": None,
+            "page": listed.page,
+            "roles": listed.roles,
+            "model": listed.model,
+            "harness": listed.harness,
+        }
+        for listed in public_people.listed_agents(conn, human)
+    ]
 
 
 def _links(conn: Connection, human: Any, me: str) -> dict[str, Any]:

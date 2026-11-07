@@ -176,7 +176,8 @@ class ResumeIn(Strict):
 
 class MePatch(Strict):
     """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2) and their
-    public page (`public_profile`, `public_presence`, `public_stats`, `public_bio`, §16.9)."""
+    public page (`public_profile`, `public_presence`, `public_stats`, `public_agents`,
+    `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
     dormant: StrictBool | None = None  # the calling instance rests or wakes (§6.17)
@@ -187,6 +188,7 @@ class MePatch(Strict):
     public_profile: StrictBool | None = None
     public_presence: StrictBool | None = None
     public_stats: StrictBool | None = None
+    public_agents: str | None = None
     public_bio: str | None = None
     website: str | None = None
     social: Any = None  # an object, checked with the other fields: `social: "format"`
@@ -202,6 +204,7 @@ HUMAN_FIELDS = (
     "public_profile",
     "public_presence",
     "public_stats",
+    "public_agents",
     "public_bio",
     "website",
     "social",
@@ -865,7 +868,13 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
         if "paused" in given or "dormant" in given:
             raise invalid({"paused" if "paused" in given else "dormant": "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
-        public = {"public_profile", "public_presence", "public_stats", "public_bio"} & given
+        public = {
+            "public_profile",
+            "public_presence",
+            "public_stats",
+            "public_agents",
+            "public_bio",
+        } & given
         links = {"website", "social", "links_visible"} & given
         if (
             body.meat_proxy is None
@@ -911,6 +920,12 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if body.public_stats is None:
                 raise invalid({"public_stats": "required"})
             values["public_stats"] = body.public_stats
+        if "public_agents" in given:
+            if body.public_agents is None:
+                raise invalid({"public_agents": "required"})
+            if body.public_agents not in public_people.PUBLIC_AGENTS:
+                raise invalid({"public_agents": "unknown"})
+            values["public_agents"] = body.public_agents
         if "public_bio" in given:
             problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
             if problem is not None:

@@ -654,9 +654,10 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
-def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] | None:
-    """The project's attachment bytes against its quota, for a caller with `project:admin`
-    in it (§8.7); anyone else gets None."""
+def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int | None] | None:
+    """The project's attachment bytes against its limit `max_attachment_storage_per_project`
+    (`quota`, None under `unlimited`), for a caller with `project:admin` in it (§8.7); anyone
+    else gets None."""
     caller = getattr(request.state, "caller", None)
     if caller is None:
         return None
@@ -668,7 +669,7 @@ def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] 
         return None
     return {
         "used": attachments.used(conn, project.id),
-        "quota": settings_of(request).attachment_quota,
+        "quota": limits.of(conn, settings_of(request), limits.PROJECT_STORAGE),
     }
 
 

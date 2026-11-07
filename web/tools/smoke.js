@@ -8735,6 +8735,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aoAdmin && text(aoAdmin).includes("Attachments are not set up on this instance.") && text(aoAdmin).includes("Stored: 0 B of 1024.0 MB.")
     && !btn(aoAdmin, "Delete"), "attachments off: settings say so in words and keep the storage line");
   await projectSettings();
+  // Under no limit the project's quota is null (§8.7): the line says so instead of a size.
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? aoGet(p).then((x) => Object.assign({}, x, { attachments: { used: 2048, quota: null } })) : aoGet(p));
+  win.Maity.attachments.forget();
+  await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  const aoUnlimited = main.querySelector(".attach-admin-box");
+  expect(aoUnlimited && text(aoUnlimited).includes("Stored: 2.0 KB, no limit.") && !text(aoUnlimited).includes(" of "),
+    "attachments: under no limit the storage line names no quota " + (aoUnlimited ? text(aoUnlimited) : ""));
+  await projectSettings();
   win.Maity.api.get = aoGet;
   win.Maity.api.postRaw = atRaw; win.Maity.api.attachmentUrl = atUrl;
   win.location.search = "";
@@ -12769,6 +12777,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await lmSubmit();
   expect(JSON.stringify(lmPatches[9]) === JSON.stringify({ max_aliases: null }) && byId("limits-max_aliases-mode").value === "default",
     "limits: earlier names back to the default " + JSON.stringify(lmPatches));
+  // Each project's attachment storage (§16.5, tsk-qa9r26kb2teq PR 2): 1 GiB by default, in MiB here, bytes for the hub; no count beside it.
+  const lmProject = byId("limits-max_attachment_storage_per_project");
+  expect(byId("limits-max_attachment_storage_per_project-mode").value === "default" && lmProject.value === "1024"
+    && text(lmSection()).includes("Attachment storage per project") && !lmProject.parentNode.querySelector(".limits-at"),
+    "limits: a project's attachment storage defaults to 1 GiB, shown as 1024 MiB, with no count beside it");
+  byId("limits-max_attachment_storage_per_project-mode").value = "number"; byId("limits-max_attachment_storage_per_project-mode").dispatch("change");
+  byId("limits-max_attachment_storage_per_project").value = "0";
+  await lmSubmit();
+  expect(lmPatches.length === 10 && text(byId("limits-max_attachment_storage_per_project-error")) === "A whole number of MiB from 1 to 1073741824.",
+    "limits: a project storage out of range is said at its field in MiB and nothing is sent " + JSON.stringify(lmPatches));
+  byId("limits-max_attachment_storage_per_project").value = "1";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[10]) === JSON.stringify({ max_attachment_storage_per_project: 1024 ** 2 })
+    && byId("limits-max_attachment_storage_per_project").value === "1",
+    "limits: the smallest project storage, 1 MiB, is sent in bytes " + JSON.stringify(lmPatches));
+  byId("limits-max_attachment_storage_per_project-mode").value = "unlimited"; byId("limits-max_attachment_storage_per_project-mode").dispatch("change");
+  await lmSubmit();
+  byId("limits-max_attachment_storage_per_project-mode").value = "default"; byId("limits-max_attachment_storage_per_project-mode").dispatch("change");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches.slice(11)) === JSON.stringify([{ max_attachment_storage_per_project: "unlimited" }, { max_attachment_storage_per_project: null }]),
+    "limits: a project's storage takes no limit and the default " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
