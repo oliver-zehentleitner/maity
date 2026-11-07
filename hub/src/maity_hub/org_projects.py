@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, start_tabs
+from maity_hub import clock, restricted, start_tabs
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.views import member_view
@@ -60,11 +60,14 @@ def _membership(conn: Connection, project_id: str, human_id: str) -> Any:
     ).first()
 
 
-def keep_owner(conn: Connection, project: Any, human_id: str) -> None:
-    """Make `human_id`, an owner of the project's organisation, a member with trust `owner`."""
+def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = None) -> None:
+    """Make `human_id`, an owner of the project's organisation, a member with trust `owner`.
+    `by`: the human whose call made it, named when it lets them into the project's
+    restricted-access set (§6.1, §6.4); the owner themselves when not given."""
     lock_project(conn, project.id)
     found = _membership(conn, project.id, human_id)
     now = clock.now()
+    in_set_before = restricted.snapshot(conn, project.id)
     if found is None:
         made = conn.execute(
             t.membership.insert().values(
@@ -93,6 +96,7 @@ def keep_owner(conn: Connection, project: Any, human_id: str) -> None:
             actor=HUB,
             subject=("member", human_id),
         )
+        _entered(conn, project, in_set_before, "joined", by or human_id)
         return
     if found.trust == "owner":
         return  # their own ownership, or one the hub keeps already
@@ -102,6 +106,11 @@ def keep_owner(conn: Connection, project: Any, human_id: str) -> None:
         .values(trust="owner", org_keep="raised", org_keep_trust=found.trust)
     )
     _announce(conn, project, found.id, human_id)
+    _entered(conn, project, in_set_before, "trust_raised", by or human_id)
+
+
+def _entered(conn: Connection, project: Any, before: set[int], cause: str, by: str) -> None:
+    restricted.entered(conn, project.id, before, cause, restricted.human_person(conn, by), HUB)
 
 
 def release_owner(conn: Connection, project: Any, human_id: str) -> None:
@@ -139,10 +148,11 @@ def _announce(conn: Connection, project: Any, membership_id: int, human_id: str)
     )
 
 
-def keep_in_all(conn: Connection, org_id: str, human_id: str) -> None:
-    """A human became an owner of the organisation: every project it owns now."""
+def keep_in_all(conn: Connection, org_id: str, human_id: str, by: str | None = None) -> None:
+    """A human became an owner of the organisation: every project it owns now. `by`: who
+    promoted them, the human themselves for an invitation's `go` (§6.4)."""
     for project in projects_of(conn, org_id):
-        keep_owner(conn, project, human_id)
+        keep_owner(conn, project, human_id, by)
 
 
 def release_in_all(conn: Connection, org_id: str, human_id: str) -> None:
@@ -179,6 +189,7 @@ def moved(
     sending: str | None,
     receiving: str | None,
     receiving_human: str | None,
+    by: str | None = None,
 ) -> None:
     """A project moved from the namespace of `sending` (an organisation, or None for a human)
     to `receiving` (an organisation) or to `receiving_human`: the memberships the hub kept
@@ -201,4 +212,4 @@ def moved(
             .values(org_keep=None, org_keep_trust=None)
         )
     for human_id in sorted(gained):
-        keep_owner(conn, project, human_id)
+        keep_owner(conn, project, human_id, by if (by or "").startswith("hum-") else None)

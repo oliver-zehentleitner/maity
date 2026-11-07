@@ -88,6 +88,9 @@ def test_the_member_view_has_the_contract_shape(
         "owner_preferences",  # likewise (§19.4)
         "takes_over",  # agents only, in every reader's view (§3.1)
         "handover",
+        "subagents",  # agents only: the owner's instruction, never its words (§6.2)
+        "subagents_language",
+        "subagents_by",
         "team",  # the team's rulebook and its instances (§6.17, §6.18)
         "instances",
         "keep_the_why_unconfirmed",  # §6.1: set while the commitment is open

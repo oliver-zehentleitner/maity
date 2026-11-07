@@ -106,6 +106,14 @@
   --ktw-muted: var(--muted);
   --ktw-line: var(--border);
   --ktw-accent: var(--accent);
+  /* the library's text on its accent (0.11.44) is Maity's own pair: --accent-text on --accent,
+     5.32:1 light, 6.0:1 dark. Its accent-coloured text (links, counts, the type pill) is the
+     accent a fifth of the way to --text, as --ktw-warn: --accent itself is only 4.11:1 light and
+     3.98:1 dark on the type pill's 18% tint; the mix is 4.84:1 at least on --bg, --surface and
+     that tint over either, in both themes (WCAG AA) */
+  --ktw-accent-fill: var(--accent);
+  --ktw-on-accent: var(--accent-text);
+  --ktw-accent-text: color-mix(in srgb, var(--accent) 80%, var(--text));
   /* text in the plan's and the warning's hue, a fifth of the way to --text: 4.95:1 at least
      on --bg, --surface, --surface-2 and the type pill's accent tint in light, 5.16:1 in dark
      (axe color-contrast, WCAG AA); --plan and --warn themselves are 3.95:1 and 4.26:1 there */
@@ -118,6 +126,7 @@
   --ktw-inferred: var(--ktw-warn);
   --ktw-unknown: var(--muted);
   --ktw-status-active: var(--ok);
+  --ktw-status-active-text: var(--ok); /* a host that sets the active Status sets its text too */
   --ktw-status-open: var(--accent);
   --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
@@ -126,17 +135,6 @@
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
 }
-/* The library writes #fff on its accent in its selected controls: 3.2:1 on the dark theme's
-   --accent; Maity's own text for its accent passes in both themes (5.32:1 light, 6.0:1 dark).
-   Every such rule of ktw-views.css, so one the views mount later is covered too. */
-.ktw-root .ktw-search-scope a.ktw-on,
-.ktw-root .ktw-mode button.ktw-on,
-.ktw-root.ktw-aside .ktw-mini .ktw-mini-seg button.ktw-on,
-.ktw-root.ktw-aside .ktw-thought-min button.ktw-on,
-.ktw-root.ktw-aside .ktw-pane-width button.ktw-on,
-.ktw-root .ktw-thought-reader .ktw-timeline-bar .ktw-tick,
-.ktw-root .ktw-stage-wrap .ktw-stage-seg button.ktw-on,
-.ktw-root .ktw-stage-card .ktw-stage-card-held:hover { color: var(--accent-text); }
 
 .why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
 .why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }
@@ -245,6 +243,16 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
   opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
 .page-loading .maity-loader { width: 48px; height: 48px; }
 @keyframes page-loading-shows { to { opacity: 1; } }
+/* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
+   A bar and the dimmed view say at once that the click was taken. The bar stands in main's top
+   padding, under the header and above the sign-in banner, and its margins give back the 3 px, so
+   nothing moves; sticky, it stays in sight on a page scrolled down. */
+main:has(> [inert])::before { content: ""; display: block; position: sticky; top: 0; height: 3px; z-index: 10;
+  margin: calc(-1 * var(--main-pad)) 0 calc(var(--main-pad) - 3px); background: var(--accent); transform-origin: left;
+  pointer-events: none; animation: view-switching 1.2s ease-out infinite; }
+main > [inert] { opacity: 0.6; transition: opacity 0.15s; }
+@keyframes view-switching { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { main:has(> [inert])::before { animation: none; } main > [inert] { transition: none; } }
 /* A calm block, not an alarm: the mark at rest, a plain title, what to do,
    the reason folded away, Try again at the right edge. */
 .page-failed { display: grid; gap: 8px; max-width: 28rem; width: 100%; margin: 24px auto; text-align: start; box-sizing: border-box; }
@@ -350,7 +358,7 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
-main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
+main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; margin: 0 auto; }
 
 .error {
   background: var(--error-bg);
@@ -662,8 +670,8 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .pair-projects input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .project-private { display: grid; gap: 4px; }
 .outside-roles { border: 0; margin: 0; padding: 0; }
-.outside-roles .check { min-height: 28px; }
-.outside-roles input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
+.outside-roles .check, .restricted-members .check { min-height: 28px; }
+.outside-roles input[type=checkbox], .restricted-members input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
 .runner-config { max-height: 16rem; overflow: auto; background: var(--surface); padding: 8px; border-radius: 4px; font-size: 0.8rem; white-space: pre; }
@@ -1035,6 +1043,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jfa-triage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series .actions, .jf-participation .jf-part { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* The series' settings at the top of the jour fixe view, folded until opened (js/jour-fixe-series.js). */
+.jf-series-settings { margin: 8px 0 16px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.jf-series-settings > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+.jf-series-settings[open] > summary { margin-bottom: 8px; }
 .jf-series-block { margin: 12px 0; }
 .jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
 .jf-weekly[hidden], .jf-monthly[hidden], .jfs-owner[hidden] { display: none; }
@@ -1075,7 +1087,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 /* ---- phone width ---------------------------------------------------- */
 
 @media (max-width: 600px) {
-  main { padding: 12px; }
+  main { --main-pad: 12px; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
@@ -1527,7 +1539,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The frame of the pages without a session (js/site-chrome.js, docs/api.md §16.7.5): the hub's
    landing.css and public-pages.css, loaded after this file, lay out /login and /register; the
    shell's own spacing steps aside for them. */
-.public-frame #main { padding: 0; max-width: none; }
+.public-frame #main { --main-pad: 0px; max-width: none; }
 .public-frame .door-form .login, .public-frame .door-form .sign-in-options { margin: 0; max-width: none; }
 .public-frame .door-form .legal-links { text-align: start; }
 .landing-preview .landing { margin: 16px auto; }
@@ -1564,6 +1576,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The join dialog's three lines (js/join.js): one row each, so each reads as its own offer. */
 .join-offers { border: 0; padding: 0; margin: 8px 0; }
 .join-offer { min-height: 28px; display: flex; align-items: center; gap: 6px; }
+.join-instruction { margin: 8px 0; }
+.join-instruction p { margin: 0 0 4px; }
+.join-instruction-text { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 40rem; }
 
 /* The theme in Your account (js/account.js): three radios in a row. */
 .theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
@@ -1597,6 +1612,15 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
 /* The panel is the card: no frame inside the frame, no second id, no second title. */
 .card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
+/* A card's restricted text (docs/api.md §6.4): plain text, its line breaks kept, a long word wrapped. */
+.card-restricted { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.card-restricted h3 { margin-top: 0; }
+.restricted-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.card-restricted textarea { width: 100%; box-sizing: border-box; }
+.restricted-confirm { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+/* Before a way into the restricted-access set (§6.1): who will read the restricted texts. */
+.restricted-ahead { margin: 8px 0; padding: 6px 10px; border-left: 3px solid var(--border); }
+.restricted-ahead[hidden] { display: none; }
 .card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
 /* One style for the panel's section headings. */
 .card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
@@ -1764,6 +1788,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
 .meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+/* One's public page, right under the name and handle (js/account.js); empty while none is served. */
+.public-profile-link { margin: 4px 0 12px; }
+.public-profile-link:empty { display: none; }
 
 /* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
 .person-head { display: flex; align-items: center; gap: 14px; }
@@ -1827,6 +1854,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
   padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .product-line:empty { display: none; }
+/* At phone width the credit right after the year wraps the line onto one more row: less padding
+   above and below keeps the group chat inside the window at 390 x 844. The links keep their
+   24 px targets. */
+@media (max-width: 600px) { .product-line { padding-top: 8px; padding-bottom: 12px; } }
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
 /* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line

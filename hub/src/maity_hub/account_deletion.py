@@ -623,6 +623,8 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            public_stats=False,
+            public_agents="public_projects",
             interface_language=None,
             start_tabs=None,  # project ids only, but the person's choice (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)

@@ -39,6 +39,8 @@ checks the working tree, so it also stops when HEAD is not the pushed
 commit or a touched package has uncommitted changes. `git push
 --no-verify` skips it; `git config --unset core.hooksPath` turns it off.
 `tools/pre_push.py` has the details.
+Not in a clone a maity runner manages: the runner's clone check refuses
+a clone whose `.git/config` sets `core.hooksPath`.
 
 ## Before merging a change to the web catalogs
 

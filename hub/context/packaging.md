@@ -189,9 +189,10 @@ stream from HMAC in the standard library: a home-made cipher.
 **Source:** the coordinator's ruling on the local quickstart card, 2026-10-25; docs/install/quickstart.md
 **Revisit when:** the dashboard gets a build step, its own release cadence, or a second server that serves it
 
-The `maity-hub` wheel force-includes `web/index.html`, `css/`, `js/`
+The `maity-hub` wheel carries `web/index.html`, `css/`, `js/`
 and `brand/` as `maity_hub/web`, the same way it already carries
-`docs/join-page.md`. web/'s `fixtures/`, `tools/` and `context/`
+`docs/join-page.md` (since 2026-11-05 through `hub/hatch_build.py`,
+which also puts them into the sdist; see c36f4a54). web/'s `fixtures/`, `tools/` and `context/`
 stay in the checkout. `checkout_web_dir()` still prefers `web/` beside
 `hub/` in a checkout, and otherwise falls back to the packaged
 directory. The image keeps `MAITY_WEB_DIR=/app/web`. `serve` prints
@@ -267,3 +268,100 @@ registry alone.
   stored long-lived token; kept as a further step if needed.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
+
+## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
+
+**Id:** 843b8d35-45c7-4b91-827f-7109f470ca54
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-yb8ceadp1gpw (the maintainer, 2026-11-05: versioned PyPI installs instead of the Git URL; plan and the `v*` tag approved by the team lead); `.github/workflows/release-hub.yml`, `hub/requirements/release.in`, `hub/Makefile`, `hub/scripts/check_dist.py`
+**Revisit when:** the hub and the CLI start sharing one version, the image and the package stop releasing together, or PyPI's trusted publishing starts attesting how the files were built
+**See:** https://github.com/oliver-zehentleitner/maity — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-05
+**See:** https://github.com/oliver-zehentleitner/maity — a8dd1473-5aff-4f32-a3fe-89c0498a208d — as of 2026-11-05
+**See:** packaging.md#the-sdist-carries-the-dashboard-and-the-join-page-under-bundled — c36f4a54-432f-4fe2-82ab-377690759268 — as of 2026-11-05
+
+A tag `v<version>` runs `release-hub.yml` beside `publish-image.yml`, so
+one tag gives the package and the image the same version. The workflow
+stops unless the tag names the version in `hub/pyproject.toml`, which
+is the only place it is written (`__version__` reads the package
+metadata). Versions are pre-releases (`0.1.0a1`, …) before the beta, as
+the CLI's are. As in the CLI's release, a `check` job runs the hub's
+checks with the hashed dev lock, a `build` job installs only
+`hub/requirements/release.txt` (build, twine and hatchling, compiled
+with the `build.txt` pins as constraints) into a fresh environment and
+builds without isolation (`make release-build`), and `publish` uploads
+that job's artifact with trusted publishing from the `pypi`
+environment. Before the upload, `make release-check` proves the files:
+the wheel carries the dashboard and the join page byte for byte, a
+wheel rebuilt from the sdist is the same, and the wheel installed
+outside the checkout from the hashed runtime lock migrates SQLite,
+serves its page and every file the page names. The `hub-dist` job of
+ci.yml runs the same two targets on every pull request that touches
+`hub/`, `web/` or the join page, so a tag never finds them broken.
+
+**Reason:** the quickstart installs the hub from the Git URL, so the
+version a person runs is whatever main holds that day and cannot be
+named or pinned. The image already releases on `v*`, and its check
+holds the tag to the version the hub reports; a second tag prefix for
+the package would give one hub version two tags that can point at
+different commits. The release lock follows the CLI's: what PyPI gets
+is built only with reviewed, hashed tools. The proof runs before the
+upload because a file on PyPI cannot be replaced under the same
+version.
+
+The name was taken on PyPI with a final `0.0.0` placeholder. pip
+prefers any final release to pre-releases, so while `0.0.0` stands,
+`pipx install maity-hub` installs the placeholder, not `0.1.0a1`
+(checked with pip against a local index holding both); a yanked
+release is skipped unless pinned exactly, so the placeholder is yanked
+before the first tag. For the same reason the quickstart keeps the Git
+URL until `0.1.0a1` is on PyPI: merging the workflow publishes nothing,
+and `pipx install maity-hub` before the first release installs the
+placeholder, which has no `maity-hub` command (the review of this change).
+The quickstart switches to `pipx install maity-hub` in a pull request of
+its own once the release is verified.
+
+**Rejected alternatives:**
+- A tag prefix of its own, `hub-v*`, as the CLI has `cli-v*`: two tags
+  for one hub version, and the image and the package could name the
+  same version for different code.
+- Installing from the Git URL for good: no version to name or pin, and
+  nobody tests the path most users take.
+- Uploading the wheel alone: the sdist is what a source build or a
+  platform without the wheel uses; it is kept and proven instead.
+- An API token stored as a repository secret: a long-lived credential;
+  trusted publishing needs none.
+
+## The sdist carries the dashboard and the join page under `bundled/`
+
+**Id:** c36f4a54-432f-4fe2-82ab-377690759268
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-yb8ceadp1gpw (2026-11-05): on main, a wheel built from the hub's sdist failed with `Forced include not found: …/docs/join-page.md`; `hub/hatch_build.py`
+**Revisit when:** the dashboard gets a build step or a package of its own, or hatch can name files outside the project root in an sdist
+**See:** packaging.md#the-wheel-carries-the-dashboard — df58484e-1f02-4949-bd3c-3d32456fb57a — as of 2026-11-05
+
+The wheel's extra files (`docs/join-page.md`, and `web/index.html`,
+`css/`, `js/`, `brand/`, `vendor/`) live outside `hub/`. A build hook,
+`hub/hatch_build.py`, names them in one table: building from the
+checkout it takes them from the repository root; building the sdist it
+puts them under `bundled/`; building from an unpacked sdist, where
+`bundled/` exists, it takes them from there. The wheel from either path
+has the same files with the same bytes (`make release-check`), and the
+editable install keeps the copies it had before.
+
+**Reason:** the wheel's `force-include` in `pyproject.toml` pointed at
+`../docs` and `../web`, which an sdist built in `hub/` does not hold, so
+pip could not install the hub from its sdist. The image and CI build
+the wheel from the checkout and never noticed. One table in the hook
+keeps the list in one place for both targets.
+
+**Rejected alternatives:**
+- Uploading only the wheel: leaves a broken sdist or none.
+- Copying `web/` into `hub/` in the repository: a second copy that
+  drifts from the one the dashboard's checks test.
+- A second, sdist-only `force-include` table in `pyproject.toml`: the
+  wheel's table would still name `../` paths, which the unpacked sdist
+  does not have.

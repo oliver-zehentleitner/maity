@@ -12,7 +12,7 @@ its verifier, a join or enrollment token, a code hash, a nonce, a second factor'
 or recovery code. What the document shows is picked field by field; where a row is read
 whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
-Not in this hub yet, so not in the export: handle aliases (§6.24) and the public profile (§16.9).
+Not in this hub yet, so not in the export: handle aliases (§6.24).
 """
 
 from __future__ import annotations
@@ -246,6 +246,15 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         ),
         "addresses": addresses,
         "broadcasts": maintenance.choice(human.broadcasts),  # §16.12
+        # The public profile's fields as the person set them (§16.9), whatever the page shows.
+        "public_profile": human.public_profile,
+        "public_presence": human.public_presence,
+        "public_stats": human.public_stats,
+        "public_agents": human.public_agents,
+        "public_bio": human.public_bio,
+        "website": human.website,
+        "social": human.social or {},
+        "links_visible": human.links_visible,
         "start_tabs": _start_tabs(conn, human.start_tabs),  # §5.1
         "preferences": (
             {

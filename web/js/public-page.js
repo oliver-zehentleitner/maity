@@ -89,6 +89,8 @@ window.Maity = window.Maity || {};
     const box = h("input", { type: "checkbox", id: "public-profile" });
     // Named and counted as online on the projects' public pages; off, neither (§16.9).
     const presence = h("input", { type: "checkbox", id: "public-presence" });
+    // The person's own numbers on their page, separate from the profile and off until chosen (§16.9).
+    const stats = h("input", { type: "checkbox", id: "public-stats" });
     // One line: the hub refuses every line break in this text.
     const bio = profileField("public-bio", M.t("public_profile.bio"), { maxlength: "280" });
     const website = profileField("public-website", M.t("public_profile.website"), { type: "url", translate: "no", placeholder: "https://example.org", maxlength: "200" });
@@ -114,11 +116,12 @@ window.Maity = window.Maity || {};
       let person = null;
       try { person = await M.api.get("/people/" + encodeURIComponent(ctx.me.handle)); } catch (err) { person = null; }
       // page_served: the hub serves it now, with the instance's own switch counted.
-      if (person && person.page_served) append(link, h("a", { href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
+      if (person && person.page_served) append(link, h("a", { class: "button-link", href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
     }
     function show() {
       box.checked = !!ctx.me.public_profile;
       presence.checked = ctx.me.public_presence !== false;
+      stats.checked = ctx.me.public_stats === true;
       bio.input.value = ctx.me.public_bio || "";
       website.input.value = ctx.me.website || "";
       const social = ctx.me.social || {};
@@ -135,6 +138,7 @@ window.Maity = window.Maity || {};
         const body = {};
         if (box.checked !== !!ctx.me.public_profile) body.public_profile = box.checked;
         if (presence.checked !== (ctx.me.public_presence !== false)) body.public_presence = presence.checked;
+        if (stats.checked !== (ctx.me.public_stats === true)) body.public_stats = stats.checked;
         const bioText = bio.input.value.trim();
         if (bioText !== (ctx.me.public_bio || "")) body.public_bio = bioText || null;
         const site = website.input.value.trim();
@@ -153,7 +157,7 @@ window.Maity = window.Maity || {};
         try {
           const answer = await M.api.patch("/me", body);
           const member = (answer && answer.member) || {};
-          ["public_profile", "public_presence", "public_bio", "website", "social", "links_visible"].forEach((k) => { if (k in member) ctx.me[k] = member[k]; });
+          ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible"].forEach((k) => { if (k in member) ctx.me[k] = member[k]; });
           show();
           await showLink();
           status.done();
@@ -173,16 +177,20 @@ window.Maity = window.Maity || {};
     h("label", { class: "check", for: "public-profile" }, box, " ", M.t("public_profile.switch")),
     h("label", { class: "check", for: "public-presence" }, presence, " ", M.t("public_profile.presence")),
     h("p", { class: "hint" }, M.t("public_profile.presence.hint")),
+    h("label", { class: "check", for: "public-stats" }, stats, " ", M.t("public_profile.stats")),
+    h("p", { class: "hint" }, M.t("public_profile.stats.hint")),
     ...bio.nodes,
     h("h4", null, M.t("public_profile.links")),
     ...website.nodes,
     ...Object.values(networks).flatMap((f) => f.nodes),
     h("label", { for: "public-links-visible" }, M.t("public_profile.links.visible")), visibility,
     h("p", { class: "hint" }, M.t("public_profile.links.hint")),
-    h("button", { type: "submit" }, M.t("board.save")), status.el, link);
+    h("button", { type: "submit" }, M.t("board.save")), status.el);
     show();
     await showLink();
-    return { el: form };
+    // The link to one's public page goes under the name and handle (account.js), not
+    // under the form; a save above still redraws it, so it shows only while served.
+    return { el: form, link };
   }
 
   M.publicPage = { projectPart, profileSection };

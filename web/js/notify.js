@@ -68,12 +68,15 @@ window.Maity = window.Maity || {};
   // agents), read as read only once the matter is closed, never by opening or
   // marking them: the hub ignores their ids. A new abuse report is a personal
   // request to the instance admin (§16.8, §7), listed in the inbox.
-  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings", "agents"].includes((x.target || {}).type);
+  // The restricted-access set's notice (§6.4) points at a project's setting, not at
+  // one's own: read by a read mark as any notice.
+  const projectSetting = (t) => t.type === "settings" && t.id === "restricted_access";
+  const keepsUnread = (x) => x.kind === "security" || (["registration", "settings", "agents"].includes((x.target || {}).type) && !projectSetting(x.target || {}));
 
   function linkOf(item) {
     const t0 = item.target || {};
     if (t0.type === "session" || item.kind === "security") return "/account/security/sessions";
-    if (t0.type === "settings") return "/account/notifications";
+    if (t0.type === "settings" && !projectSetting(t0)) return "/account/notifications";
     // Agent instances not listening (agents_not_listening, §5.3): one's agents.
     if (t0.type === "agents") return "/agents";
     // A registration waiting for the instance admin (§16.4): Admin → Registration.
@@ -85,6 +88,8 @@ window.Maity = window.Maity || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
     if (t.type === "request") return base + "inbox/" + encodeURIComponent(t.id);
+    // The restricted-access set changed (§6.4): the project's setting.
+    if (projectSetting(t)) return base + "settings";
     return base + "inbox";
   }
 

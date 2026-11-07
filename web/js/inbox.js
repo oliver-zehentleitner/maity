@@ -324,6 +324,14 @@ window.Maity = window.Maity || {};
     // Drawn by the one renderer of chats, cards and messages (js/markdown.js): code with its Copy, links, mentions.
     const said = (field, text, mentions) => M.markdown(text, at, { mentions, field, hrefOf: memberHref, ctx });
     if (req.summary) append(body, h("div", { class: "md summary" }, said("summary", req.summary, req.mentions)));
+    // An organisation's invitation, or a transfer into one: its go can make the human an
+    // owner in projects whose restricted-access settings this page does not read; one
+    // general sentence says so before (§6.1 "Every way into the set", §6.26).
+    if (M.restricted && req.personal && req.org && req.status === "open") {
+      append(body, h("p", { class: "restricted-ahead" }, req.project
+        ? M.t("restricted.ahead.org_transfer_you", { project: names.project(req), org: "@" + req.org.handle })
+        : M.restricted.aheadOrg("@" + req.org.handle, null)));
+    }
     if (req.tried) append(body, h("h3", { class: "sub" }, M.t("inbox.tried")), h("div", { class: "md" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {
       append(body, h("h3", { class: "sub" }, M.t("inbox.options")),

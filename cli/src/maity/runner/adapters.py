@@ -162,11 +162,12 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
-    allow += [f"Bash({cmd})" for cmd in ctx.grant.allow]
+    allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     # Agents commit through git and never edit .git: its config and hooks would turn an
     # allowed `git status` into anything. The credential is not readable through Read.
-    deny = [f"{tool}(/{ws}/.git/**)" for tool in ("Edit", "Write")]
+    # `Edit(…)` covers every file-editing tool; Claude Code ignores a `Write(…)` deny rule.
+    deny = [f"Edit(/{ws}/.git/**)"]
     deny += [f"Read(/{ws}/.git/maity/**)"]
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
     settings: dict[str, Any] = {
@@ -285,7 +286,8 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
     project's configuration switched off, `AGENTS.md` is named as an instruction."""
     bash = {"*": "deny", "maity *": "allow"}
-    for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *ctx.grant.allow):
+    granted = [cmd for cmd in ctx.grant.allow if config.plain_command(cmd)]
+    for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
     bash.update({rule: "deny" for rule in GIT_DENIED})  # after the allows: the last match wins

@@ -83,6 +83,8 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             # The person's own page, whatever it shows to others (§16.9).
             "public_profile": human.public_profile,
             "public_presence": human.public_presence,
+            "public_stats": human.public_stats,
+            "public_agents": human.public_agents,
             "public_bio": human.public_bio,
             "website": human.website,
             "social": human.social or {},

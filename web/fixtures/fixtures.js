@@ -3466,6 +3466,13 @@ window.MAITY_FIXTURES = {
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T07:55:00Z"
         },
+        "subagents": true,
+        "subagents_by": {
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "kind": "human"
+        },
+        "subagents_language": "en",
         "trust": "admin"
       },
       {
@@ -4078,6 +4085,7 @@ window.MAITY_FIXTURES = {
         "CHANGELOG has a section for this version",
         "live version equals the tag"
       ],
+      "restricted_access": null,
       "ticker": {
         "contract_files": [
           "docs/api.md"
@@ -6273,7 +6281,9 @@ window.MAITY_FIXTURES = {
       "meat_proxy_hands": false,
       "meat_proxy_lead": false,
       "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first.",
+      "public_agents": "public_projects",
       "public_presence": true,
+      "public_stats": false,
       "start_tabs": null
     },
     "projects": [
@@ -7639,7 +7649,8 @@ window.MAITY_FIXTURES = {
       "release_checklist": [
         "CHANGELOG has a section for this version",
         "live version equals the tag"
-      ]
+      ],
+      "restricted_access": null
     },
     "setup": {
       "cards": [],

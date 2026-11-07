@@ -26,6 +26,7 @@ from maity_hub import (
     paging,
     project_roles,
     registration,
+    restricted,
     start_tabs,
 )
 from maity_hub import tables as t
@@ -367,6 +368,7 @@ def _accept(
         invitations.void(conn, row, outsider)
         return _refused("invitation_void", "the inviter can no longer grant this invitation")
     now = clock.now()
+    in_set_before = restricted.resolve(conn, project)  # who enters is told to the set (§6.4)
     result = conn.execute(
         insert(t.membership).values(
             project_id=row.project_id,
@@ -401,6 +403,9 @@ def _accept(
         view,
         actor=actor,
         subject=("member", caller.human_id),
+    )
+    restricted.entered(
+        conn, row.project_id, in_set_before, "joined", restricted.person(conn, membership_id), actor
     )
     return None, view
 

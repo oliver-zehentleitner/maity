@@ -35,7 +35,8 @@
     "release_checklist": [
       "CHANGELOG has a section for this version",
       "live version equals the tag"
-    ]
+    ],
+    "restricted_access": null
   },
   "rules_version": 3,
   "created_at": "2026-09-02T10:00:00Z",

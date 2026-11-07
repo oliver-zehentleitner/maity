@@ -2,9 +2,9 @@
 with no tabs of its own opens. NULL, every existing account's value, opens every membership,
 as the dashboard did before. The downgrade drops the column and the lists with it.
 
-Revision ID: 20261106160000_start_tabs
-Revises: 20261105090000_restricted_text
-Create Date: 2026-11-06
+Revision ID: 20261107100000_start_tabs
+Revises: 20261107090000_public_agents
+Create Date: 2026-11-07
 """
 
 from collections.abc import Sequence
@@ -14,8 +14,8 @@ from alembic import op
 
 from maity_hub.types import JSON_VALUE
 
-revision: str = "20261106160000_start_tabs"
-down_revision: str | None = "20261105090000_restricted_text"
+revision: str = "20261107100000_start_tabs"
+down_revision: str | None = "20261107090000_public_agents"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

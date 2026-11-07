@@ -392,6 +392,9 @@ window.Maity = window.Maity || {};
         class: "inline-form member-lift",
         onsubmit: (e) => {
           e.preventDefault();
+          // The end of an isolation can bring the agent into the restricted-access set (§6.1).
+          const ahead = M.restricted ? M.restricted.ahead(ctx, (members) => members.map((x) => (x.id === m.id ? Object.assign(x, { isolated: null }) : x))) : null;
+          if (ahead && !window.confirm(ahead + "\n\n" + M.t("members.ahead.confirm"))) return;
           const done = hide.checked ? M.t("members.isolate.lifted_hidden", { name: m.display_name }) : M.t("members.isolate.lifted", { name: m.display_name });
           act(M.t("members.isolate.lifting"), done,
             () => (hide.checked ? M.api.del(isoPath, { hide_isolation_events: true }) : M.api.del(isoPath)), "isolate-reason:" + m.id,
@@ -768,6 +771,11 @@ window.Maity = window.Maity || {};
           const capList = kept.concat(caps.filter((c) => c.box.checked).map((c) => c.cap));
           if ([...capList].sort().join() !== [...(m.capabilities || [])].sort().join()) body.capabilities = capList;
           if (!Object.keys(body).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("members.unchanged"))); return; }
+          // A guest raised enters the restricted-access set, and its agents with it: said
+          // before the change is sent (§6.1 "Every way into the set").
+          const ahead = body.trust && M.restricted
+            ? M.restricted.ahead(ctx, (members) => members.map((x) => (x.id === m.id ? Object.assign(x, { trust: body.trust }) : x))) : null;
+          if (ahead && !window.confirm(ahead + "\n\n" + M.t("members.ahead.confirm"))) return;
           const said = { trust: () => M.t("members.edit.said.trust"), role: () => M.t("members.edit.said.role"), reports_to: () => M.t("members.edit.said.reports_to"),
             areas: () => M.t("members.edit.said.areas"), capabilities: () => M.t("members.edit.said.capabilities") };
           save.disabled = true;

@@ -7,8 +7,10 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.24 (contract #420); the coordinator's go on the plan for the card, 2026-10-28
+**Verification:** corroborated — re-checked 2026-11-06 when the cap became the instance setting `max_aliases` (1–8, default 3, `docs/api.md` §16.5): the table, the scope and the take-back do not depend on the cap's value, which `handles.rename` and `namespace.check_change` now take from `limits.aliases`; eight is still the most a list holds
 **See:** namespace.md#the-namespace-leaves-two-hooks-for-the-trust-and-alias-cards — 3de94ffb-3359-4af4-b0f7-0f6ffba9d903 — as of 2026-10-28
-**Revisit when:** a third kind of principal gets handles, or the alias cap moves
+**See:** https://github.com/oliver-zehentleitner/maity — d024809b-ebd2-45d9-8f61-364cd9583391 — as of 2026-11-06
+**Revisit when:** a third kind of principal gets handles, or `max_aliases` may go above 8
 
 `handle_alias` holds one row per handle an id gave up, for humans and agent
 profiles alike. Its `scope` is where the handle is unique: `human` for every
@@ -22,7 +24,7 @@ with it.
 
 **Reason:** an alias must stay with its id and block everyone else, which a
 column on `human` and `agent_profile` cannot express for a list of up to
-eight, oldest first. One table keeps the cap, the order and the take-back in
+`max_aliases` (at most eight), oldest first. One table keeps the cap, the order and the take-back in
 one place.
 
 **Rejected alternative:** a JSON list on each row — no unique constraint can

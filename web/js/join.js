@@ -178,6 +178,7 @@ window.Maity = window.Maity || {};
     }
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
+    let drawAhead = null; // set with the restricted-access line below
     function showAgent() {
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
       const fresh = (m ? m.id : "") !== shownFor;
@@ -187,6 +188,9 @@ window.Maity = window.Maity || {};
       membershipFields.forEach((f) => { f.hidden = !!m; });
       takeOverOptions();
       profileLinksFor(agentSelect.value, m);
+      // The line before the join follows the profile chosen, also when `open()` chooses it
+      // (no `change` event) or the members are read again.
+      if (drawAhead) drawAhead();
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -219,8 +223,45 @@ window.Maity = window.Maity || {};
       M.trust.fillRoles(role, offered, wanted, "coder");
     };
     const roleHelp = M.trust.roleHint(role);
+    // The owner's instruction to work in subagents (docs/api.md §3.1): on by default for
+    // coder and reviewer, following the role until the box is touched. It is written in the
+    // language this dashboard shows, or in English when asked: sent as `subagents_language`, so
+    // it never falls to a language the hub would pick without the human seeing it.
+    const subagents = h("input", { type: "checkbox", id: "join-subagents", "aria-describedby": "join-subagents-hint" });
+    const english = h("input", { type: "checkbox", id: "join-subagents-english" });
+    let subagentsTouched = false;
+    const SUBAGENT_ROLES = ["coder", "reviewer"];
+    const followRole = () => {
+      if (!subagentsTouched) subagents.checked = SUBAGENT_ROLES.includes(role.value);
+      english.disabled = !subagents.checked;
+    };
+    subagents.addEventListener("change", () => { subagentsTouched = true; followRole(); });
+    role.addEventListener("change", followRole);
     trust.addEventListener("change", fillRoles);
+    trust.addEventListener("change", followRole);
     fillRoles();
+    followRole();
+    const subagentsField = h("div", { class: "field wide join-subagents" },
+      h("div", { class: "join-offer" }, subagents, " ", h("label", { for: "join-subagents" }, M.t("join.subagents.label"))),
+      h("p", { class: "hint", id: "join-subagents-hint" }, M.t("join.subagents.hint")),
+      M.i18n.language === "en" ? null
+        : h("div", { class: "join-offer" }, english, " ", h("label", { for: "join-subagents-english" }, M.t("join.subagents.english"))));
+    // Before the join: whether the agent will read the project's restricted texts (§6.1
+    // "Every way into the set"). It is the creator's agent, as every agent a join makes.
+    const ahead = M.restricted ? M.restricted.aheadLine() : null;
+    drawAhead = () => {
+      if (!ahead) return;
+      const id = agentSelect.value;
+      if (id && memberOf(id)) { ahead.show(null); return; } // a new instance enters nothing
+      const fresh = id || "join:new-agent";
+      const profile = id ? profiles.offered.find((p) => p.id === id) : null;
+      const name = profile ? profile.display_name : display.value.trim() || handle.value.trim() || M.t("join.ahead.the_agent");
+      ahead.show(M.restricted.ahead(ctx, (members) => members.concat([{ id: fresh, kind: "agent", owner_id: ctx.me.id,
+        trust: trust.value, display_name: name, handle: profile ? profile.handle : handle.value.trim() || null, isolated: null }]),
+      id ? [] : [fresh]));
+    };
+    [agentSelect, trust].forEach((f) => f.addEventListener("change", drawAhead));
+    [handle, display].forEach((f) => f.addEventListener("input", drawAhead));
     const reportsTo = h("select", { id: "join-reports" },
       h("option", { value: "" }, M.t("join.reports.nobody")),
       // A guest is never reported to (§2.3).
@@ -316,7 +357,8 @@ window.Maity = window.Maity || {};
         type: "button",
         onclick: async () => {
           try {
-            await navigator.clipboard.writeText(j.paste_lines[platform]);
+            // The instruction first, a blank line, then the line (§3.1): one message.
+            await navigator.clipboard.writeText(j.instruction ? j.instruction + "\n\n" + j.paste_lines[platform] : j.paste_lines[platform]);
             copy.textContent = M.t("join.copy.done");
           } catch (err) {
             copy.textContent = M.t("join.copy.failed");
@@ -328,6 +370,9 @@ window.Maity = window.Maity || {};
         h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
         offers,
+        j.instruction ? h("div", { class: "join-instruction" },
+          h("p", null, M.t("join.line.instruction")),
+          h("blockquote", { class: "join-instruction-text" }, j.instruction)) : null,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, M.t("join.line.hint")),
         h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, M.t("join.line.done")))));
@@ -388,6 +433,11 @@ window.Maity = window.Maity || {};
             ttl_seconds: Number(ttl.value),
           };
         if (text) req.briefing = text;
+        if (!member) {
+          followRole();  // an untouched box takes the role chosen now
+          req.subagents = subagents.checked;
+          if (subagents.checked) req.subagents_language = english.checked ? "en" : M.i18n.language;
+        }
         if (!member && takesOver.value && !takeOverField.hidden) req.takes_over = takesOver.value;
         if (!member && handover.value.trim()) req.handover = handoverValue(handover.value.trim());
         status.busy(M.t("join.creating"));
@@ -478,17 +528,19 @@ window.Maity = window.Maity || {};
         own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
           : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
             membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas))],
+        membershipField(subagentsField),
         membershipField(takeOverField),
         handoverField,
         h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
         h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+    ahead ? ahead.el : null,
     stepSlot,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
-    function showForm() { append(clear(body), form); }
+    function showForm() { append(clear(body), form); drawAhead(); }
     showForm();
     showAgent();
     append(clear(panel), panelHead(ctx, () => close(true), own), body);

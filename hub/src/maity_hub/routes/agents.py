@@ -19,6 +19,7 @@ from maity_hub import (
     limits,
     moderation,
     namespace,
+    public_people,
     public_projects,
 )
 from maity_hub import tables as t
@@ -173,7 +174,10 @@ def patch_agent(
         if "handle" in given:
             if body.handle is None:  # as in `PATCH /me`: null renames nothing
                 raise invalid({"handle": "required"})
-            done = handles.rename(conn, agent_id, caller.principal_id, body.handle)
+            alias_limit = limits.aliases(conn, settings_of(request))
+            done = handles.rename(
+                conn, agent_id, caller.principal_id, body.handle, alias_limit=alias_limit
+            )
             if done is not None:
                 handles.announce(conn, caller, agent_id, caller.principal_id, *done)
         values: dict[str, Any] = {}
@@ -192,6 +196,7 @@ def patch_agent(
             )
         if "display_name" in values:  # a text shown on public pages is replaced at once (§16.9)
             public_projects.touch_of_agent(conn, agent_id)
+            public_people.touch_owner_of(conn, agent_id)  # its owner's agents page lists it
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
