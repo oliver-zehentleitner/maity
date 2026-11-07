@@ -149,9 +149,10 @@ case $authority in
   \[*) repo_host=${authority%%]*}] ;;
   *) repo_host=${authority%%:*} ;;
 esac
-case $repo_host in
-  localhost | 127.* | "[::1]") repo_host=github.com ;;
-esac
+# Loopback by its literal form only: a name such as 127.example.com is a server of its own.
+if [[ $repo_host == localhost || $repo_host == "[::1]" || $repo_host =~ ^127(\.[0-9]{1,3}){3}$ ]]; then
+  repo_host=github.com
+fi
 [[ $repo_host =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]] \
   || die "cannot read a host from origin's URL $origin"
 # Every page: --paginate follows GitHub's links to the last one, and a page that fails ends gh
@@ -175,11 +176,13 @@ list_prs() {
 }
 list_prs
 # GitHub pages this list by offset: a pull request that closes on a page already read moves the
-# first one of the next page onto it, and no page returns that one. A list of more than one page
-# is read again and must name the same pull requests at the same heads. A skip leaves the closed
-# pull request in the first read and out of the second, so the two differ; any other change
-# between them stops the check too, and running again settles it.
-if [ "$pr_count" -gt "$PAGE" ]; then
+# first one of the next page onto it, and no page returns that one. A list of a full page or more
+# may have taken more than one request (a skip can leave exactly $PAGE lines) and is read again;
+# it must name the same pull requests at the same heads. Fewer lines than a page were one request,
+# which cannot shift. A skip leaves the closed pull request in the first read and out of the
+# second, so the two differ unless the same churn repeats during the second read; any other
+# change between them stops the check too, and running again settles it.
+if [ "$pr_count" -ge "$PAGE" ]; then
   first=$prs
   list_prs
   gone=$(pick "$first" "$prs" 0) || die "comparing the two lists of open pull requests failed"

@@ -366,12 +366,13 @@ class OverlapTest(unittest.TestCase):
         self.assertIn("git merge-tree", got.stderr)
         self.assertNotIn("clean", got.stdout)
 
-    def many(self, prs: list[dict[str, object]]) -> list[dict[str, object]]:
-        """250 more open pull requests at main's base (changing nothing) ahead of `prs`, so
-        these come on the third page of the list."""
-        refs = [f"+{self.base}:refs/pull/{n}/head" for n in range(100, 350)]
+    def many(self, prs: list[dict[str, object]], count: int = 250) -> list[dict[str, object]]:
+        """`count` more open pull requests at main's base (changing nothing) ahead of `prs`; with
+        250, these come on the third page of the list."""
+        numbers = range(1000, 1000 + count)
+        refs = [f"+{self.base}:refs/pull/{n}/head" for n in numbers]
         self.git("push", "-q", "origin", *refs)
-        filler = [{"number": n, "head": self.base, "name": f"pr-{n}"} for n in range(100, 350)]
+        filler = [{"number": n, "head": self.base, "name": f"pr-{n}"} for n in numbers]
         return [*filler, *prs]
 
     def reads(self) -> int:
@@ -399,6 +400,8 @@ class OverlapTest(unittest.TestCase):
             "skipped": [{**nine, "read": 1}, *self.many([{**seven, "read": 2}])],
             "opened": self.many([{**seven, "read": 2}]),
             "closed": [{**nine, "read": 1}, *self.many([seven])],
+            # 101 open, #9 closes after page 1: each read has exactly one page's worth, 100.
+            "skipped at 100": [{**nine, "read": 1}, *self.many([{**seven, "read": 2}], 99)],
         }
         for case, listed in cases.items():
             with self.subTest(case=case):
@@ -465,6 +468,8 @@ class OverlapTest(unittest.TestCase):
             "http://local_proxy@127.0.0.1:9/git/acme/widgets": "github.com",
             "ssh://git@ghe.example.com:2222/acme/widgets.git": "ghe.example.com",
             "git@ghe.example.com:acme/widgets.git": "ghe.example.com",
+            "https://127.example.com/acme/widgets.git": "127.example.com",
+            "http://127.0.0.1:9/git/acme/widgets": "github.com",
         }
         for url, host in cases.items():
             with self.subTest(url=url):

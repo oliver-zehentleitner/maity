@@ -1700,7 +1700,7 @@ even when the branch changes how it conflicts there. That pull request's line na
 A check that did not run never ends in 0. Every command whose answer the check needs stops it with
 exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
 which would otherwise read as "changes no file"), the list of open pull requests (also when a page
-fails, when a line has another shape, when a list of more than one page reads differently a second
+fails, when a line has another shape, when a list of a full page or more reads differently a second
 time, or when origin's URL names no host, owner and repository), the fetch of their heads (also when a fetched head is not the
 head `gh` listed), a merge, and each step that turns
 git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
@@ -1741,11 +1741,14 @@ name only when it comes from the same repository, not from a fork.
   nothing left to guard.
 - GitHub pages the REST list by offset (`page=N`), where GraphQL's cursors did not shift: a pull
   request that closes on a page already read moves the first one of the next page onto it, and no page
-  returns that one, without an error. The review of #1475 found it. A list of more than one page is
-  therefore read a second time and must name the same pull requests at the same heads. A skip leaves
-  the closed pull request in the first read and out of the second, so the two always differ; a pull
-  request opened, closed or pushed between the reads stops the check too, and running again settles
-  it. A list of one page is a single request and cannot shift.
+  returns that one, without an error. The review of #1475 found it. A list of a full page (100) or more
+  is therefore read a second time and must name the same pull requests at the same heads: a skip in a
+  list of 101 leaves exactly 100 lines, so the line count cannot tell one request from two (found in
+  the delta review). Fewer than 100 lines were a single request, which cannot shift. A skip leaves the
+  closed pull request in the first read and out of the second, so the two differ unless the same churn
+  (a close and a reopen at the same place) repeats during the second read; two scans are not a
+  snapshot. A pull request opened, closed or pushed between the reads stops the check too, and running
+  again settles it.
 - The owner and name come from origin's URL as configured (`git config remote.origin.url`), not from
   `git remote get-url`, which applies `url.<base>.insteadOf` and can name a mirror or a proxy whose
   path is not the repository's.
@@ -1753,7 +1756,7 @@ name only when it comes from the same repository, not from a fork.
   (`GH_HOST`, or the one host it is logged in to) can be another server: a non-empty list from there
   names heads origin does not serve and stops the check, but an empty one has nothing to compare and
   read as "no open pull request", exit 0 (the review of #1475 found it). A host on the loopback
-  (`localhost`, `127.*`, `[::1]`) is a proxy in front of github.com, as in Claude Code's cloud
+  (`localhost`, an IPv4 literal `127.x.x.x`, `[::1]`; a name such as `127.example.com` is not) is a proxy in front of github.com, as in Claude Code's cloud
   sessions, which serves git and not the API, so it stands for github.com. A URL without a host (a
   local path) names no server to ask and stops the check.
 
