@@ -811,7 +811,9 @@ anything else.
 """
 
 
-async def _page(token: str, request: Request) -> Response:
+async def _page(token: str, request: Request, *, page: bool) -> Response:
+    """The join page (§3.2). A dead token is the dead-link page on the page path, on the public
+    host as on the join host; the API path keeps the error envelope unless HTML is asked for."""
     engine = engine_of(request)
     settings = settings_of(request)
     on_join_host = bool(request.scope["state"].get("join_host"))
@@ -825,7 +827,8 @@ async def _page(token: str, request: Request) -> Response:
         markdown, title_text = await run_in_threadpool(run)
         status = 200
     except ApiError as error:
-        if not (on_join_host and error.status == 404):
+        wants_html = "text/html" in request.headers.get("accept", "")
+        if not (error.status == 404 and (page or wants_html)):
             raise
         markdown, title_text, status = _DEAD_LINK, "This join link no longer works", 404
     # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
@@ -848,12 +851,12 @@ async def _page(token: str, request: Request) -> Response:
 
 @router.get("/join/{token}")
 async def join_page(token: str, request: Request) -> Response:
-    return await _page(token, request)
+    return await _page(token, request, page=False)
 
 
 @page_router.get("/join/{token}")
 async def public_join_page(token: str, request: Request) -> Response:
-    return await _page(token, request)
+    return await _page(token, request, page=True)
 
 
 # --- the exchange -------------------------------------------------------------------------

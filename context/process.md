@@ -1727,3 +1727,35 @@ lists.
 - `gh`'s file list per pull request, with a fetch only of those that share a file: fewer fetches, but
   the gaps above, each of which ends in a silent "no overlap".
 
+## One shared CI watcher reads the pull request's own newest ci run, never the commit's checks
+
+**Id:** 67edbcd8-634f-42c8-9a22-107dbe246bef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c93gkgd4gahv (the coordinator's card and the plan the coordinator approved, 2026-11-07); `tools/ci_watch.py`
+**Revisit when:** the `ci` workflow is renamed or split, its summary job is no longer `ci-ok`, or pull requests stop getting their own `pull_request` runs (a merge queue on GitHub, for example)
+
+Authors no longer start a watcher process per pull request. They add `<pr> <full head sha> <handle#instance>` to
+one queue file, and one `tools/ci_watch.py run` goes through it every two minutes. For a line it takes the newest
+run of `.github/workflows/ci.yml` with that head SHA, event `pull_request` and the pull request's branch, waits
+until it is completed, sends the `ci-ok` job's conclusion and the failed jobs to the author with `maity say`, and
+removes the line. A moved head, a merged or closed pull request and a conflict with main (no run starts then) are
+reported and removed too. The watcher posts under the Maity identity of the `MAITY_STATE_DIR` it is started with and
+refuses to start without one. It only reads: every GitHub call is a GET, and it never cancels, re-runs or merges.
+The queue line holds no path, state directory or credential.
+
+**Reason:**
+- One watcher process per pull request: the memory reaper on the shared machine ended such watchers.
+- After a fast-forward, a commit's check runs include main's old green `ci-ok` from a push run of the same SHA,
+  so a watcher reading the commit's checks can take that old green for the pull request's result while its own run
+  is still going.
+- `gh pr checks` exits 8 while a check fails or is pending and lists an older cancelled run beside the newer one,
+  which a watcher has to work around.
+
+**Rejected alternatives:**
+- The commit's check runs (`commits/<sha>/check-runs`), newest `ci-ok` by start time: an old push run on the same
+  SHA can be the only completed one, the case above.
+- `gh pr checks`: its exit code and its table both need workarounds (exit 8, cancelled older runs).
+- Filtering runs by their `pull_requests` field: GitHub does not always fill it (the runs of one pull request head
+  seen on 2026-11-07 had it empty), so the branch decides.
