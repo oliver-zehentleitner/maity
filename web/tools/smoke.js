@@ -536,9 +536,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // project without a shared handle keeps the short ones; the hub's refusal of the short form is said.
   // The old Join and Organisation addresses are gone (§16.11): no view, no redirect.
   await go("#/maintainer/sample/org"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("No such view") && !main.querySelector(".org-tree"), "org: the old address is no view");
+  expect(text(main).includes("Page not found") && !main.querySelector(".org-tree"), "org: the old address is no view");
   await go("#/maintainer/sample/join"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("No such view"), "join: the old address is no view");
+  expect(text(main).includes("Page not found"), "join: the old address is no view");
   await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes(" @anna/shop-dev") && text(main).includes(" @maintainer/shop-dev") && text(main).includes(" @maintainer") && !text(main).includes("@hum-"),
     "global names: and in Members; the human by the short handle");
@@ -684,9 +684,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/%E0%A4%A");
   expect(main.querySelector(".page-failed") && text(main.querySelector(".page-failed details")).includes("URI"), "malformed hash says the page could not load, the reason under Details");
   await go("#/maintainer/maity/constructor");
-  expect(text(main).includes("No such view") && plainTitle() === "No such view · Maity", "prototype key is no view, sane title");
+  expect(text(main).includes("Page not found") && plainTitle() === "Page not found · Maity", "prototype key is no view, sane title");
   await go("#/maintainer/maity/nonsense");
-  expect(text(main).includes("No such view"), "unknown view");
+  expect(text(main).includes("Page not found"), "unknown view");
   // Projects live in their owner's namespace (§6.25): /<owner>/<slug>. The address before it,
   // /p/<slug>, is gone (§16.11): read as any owner p, it leads nowhere, without a redirect.
   const nsSettle = async () => { await new Promise((r) => setTimeout(r, 5)); for (let k = 0; k < 4; k++) await tick(); };
@@ -1429,7 +1429,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   gearButton().click(); await tick();
   // The users are the Users section of #/admin; the old #/admin/users is no view (tsk-qeh64f8gpvnd).
   await go("#/admin/users"); await tick();
-  expect(text(main).includes("No such view") && !main.querySelector("table.users"), "users: #/admin/users is no longer a route of its own");
+  expect(text(main).includes("Page not found") && !main.querySelector("table.users"), "users: #/admin/users is no longer a route of its own");
   const usersOpen = async () => {
     await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
     const pickUsers = main.querySelectorAll("nav.admin-nav button").find((b) => b.textContent === "Users");
@@ -1658,7 +1658,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const prGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? prGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "member"; return m; }) : prGet(p));
   await go("#/maintainer/maity/runners"); await tick();
-  expect(!prTab() && text(main).includes("No such view."), "project runners: no tab and no view for a member");
+  expect(!prTab() && text(main).includes("Page not found"), "project runners: no tab and no view for a member");
   win.Maity.api.get = prGet;
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
 
@@ -6401,9 +6401,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     for (let k = 0; k < 10; k++) await tick();
     expect(["#/", "#/all"].includes(win.location.hash) && !main.querySelector(".second-factor-elsewhere") && !sfForm(),
       "second factor: with next \"/\" the link's sign-in goes on to the dashboard's start " + win.location.hash);
-    // The step's own address with the sign-in complete (a link's 303 landing late): the start, not "No such view".
+    // The step's own address with the sign-in complete (a link's 303 landing late): the start, not "Page not found".
     await go("#/sign-in/second-factor"); for (let k = 0; k < 8; k++) await tick();
-    expect(["#/", "#/all"].includes(win.location.hash) && !text(main).includes("No such view"), "second factor: /sign-in/second-factor with a full session goes to the start " + win.location.hash);
+    expect(["#/", "#/all"].includes(win.location.hash) && !text(main).includes("Page not found"), "second factor: /sign-in/second-factor with a full session goes to the start " + win.location.hash);
     sfSession = Object.assign({}, sfDone);
     // The link in a browser without that session: it completes nothing and says where to open it.
     win.Maity.api.get = (p, ...r) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated")) : sfGet(p, ...r));
@@ -11259,6 +11259,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viFramed = !!frFoot();
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   const viAfter = [!!viView(), !!frFoot(), header.hidden, productLine.querySelectorAll("a").length];
+  // An address that shows a visitor nothing (tsk-h1e5zmq1wnhj): "not found" in the frame instead of
+  // the sign-in form, worded so that a private name and a missing one read alike (routing.md
+  // e34ae588), the sign-in one link away and back here; a dashboard route keeps the login.
+  const nfPage = () => main.querySelector("section.view-not-found");
+  const nfHrefs = () => (nfPage() ? nfPage().querySelectorAll("a").map((a) => (a.getAttribute("href") || "").replace(/^#/, "")) : []);
+  await go("#/no-such-page-here"); for (let k = 0; k < 6; k++) await tick();
+  expect(nfPage() && !byId("login-email") && !!frFoot() && text(nfPage()).includes("This page does not exist, or it is not public.")
+    && nfHrefs().includes("/login?next=%2Fno-such-page-here") && nfHrefs().includes("/") && nfHrefs().includes("/explore")
+    && plainTitle() === "Page not found · Maity",
+    "not found: a handle without a public page shows a visitor \"not found\" in the frame, no sign-in form " + JSON.stringify(nfHrefs()));
+  await go("#/stranger/tool/no-such-view"); for (let k = 0; k < 6; k++) await tick();
+  const nfView = !!nfPage() && !byId("login-email");
+  expect(nfView, "not found: an unknown view of a project shows a visitor \"not found\"");
+  await go("#/stranger/hidden/board"); for (let k = 0; k < 6; k++) await tick();
+  const nfBoard = !nfPage() && !!byId("login-email");
+  await go("#/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const nfInbox = !nfPage() && !!byId("login-email");
+  await go("#/requests/req-1"); for (let k = 0; k < 6; k++) await tick();
+  const nfRequest = !nfPage() && !!byId("login-email");
+  expect(nfBoard && nfInbox && nfRequest, "not found: a dashboard route (a project's board without a public page, /inbox, a request from a mail) keeps the sign-in "
+    + nfBoard + nfInbox + nfRequest);
+  await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   viSignedOut = false;
   win.Maity.api.get = viChromeGet;
   await win.Maity.api.get("/auth/session");
@@ -12511,9 +12533,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();
     expect(siBox().parentNode.open, "pages: /admin/pages/site opens the whole site's file");
     await go("#/admin/site"); for (let k = 0; k < 4; k++) await tick();
-    expect(text(main).includes("No such view"), "pages: /admin/site is gone");
+    expect(text(main).includes("Page not found"), "pages: /admin/site is gone");
     await go("#/admin/pages/nothing"); for (let k = 0; k < 4; k++) await tick();
-    expect(text(main).includes("No such view"), "pages: an unknown part names no view");
+    expect(text(main).includes("Page not found"), "pages: an unknown part names no view");
   }
   await go("#/all");
 
@@ -12588,7 +12610,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const regShown = main.querySelectorAll(".admin-section").find((x) => !x.hidden);
   expect(regShown && regShown.getAttribute("aria-label") === "Registration", "admin: /admin/registration opens the Registration section");
   await go("#/admin/reports/rpt-0002/more"); await tick();
-  expect(text(main).includes("No such view"), "admin: no deeper address under /admin/reports/<id>");
+  expect(text(main).includes("Page not found"), "admin: no deeper address under /admin/reports/<id>");
   await go("#/admin"); for (let k = 0; k < 10; k++) await tick();
   // Sign-in (§2.6.6, §2.8.8): sources, only what changed is sent; Mail for everyone only with mail ready, and on only with the mailed code.
   {
