@@ -1088,6 +1088,7 @@ def scenario(run: Run, page: Page) -> None:
     members_step(run, page)
     dormant_step(run, page)
     my_settings_step(run, page)
+    project_tabs_step(run, page)
     invitations_step(run, page)
     agents_page_step(run, page)
     message_step(run, page, alpha, agent_id)
@@ -5271,6 +5272,78 @@ def invitations_step(run: Run, page: Page) -> None:
     finally:
         other.close()
     no_problems(run, "invitations")
+
+
+def project_tabs_step(run: Run, page: Page) -> None:
+    """Project tabs (docs/api.md §5.1 "Start tabs", tsk-p6aye59z0k7g): moved by key and drag,
+    closed from the menu, the inbox's filter to open tabs, the start set on a fresh browser."""
+    run.step("tabs: move by key and drag, close one, filter the inbox, keep a start set, a fresh browser")
+    page.goto(f"{run.base}/all")
+    tabs = page.locator("nav.switcher a[data-project]")
+
+    def names() -> list[str]:
+        return [t.strip() for t in tabs.evaluate_all("(els) => els.map((e) => e.textContent)")]
+
+    expect(tabs).to_have_count(2)
+    assert [n.startswith(("E2E Alpha", "EA")) for n in names()] == [True, False], names()
+    # The keyboard: Alt+Shift+ArrowLeft moves the focused tab, the focus stays on it, it is said.
+    beta = page.locator("nav.switcher a[data-project]", has_text="E2E Beta")
+    beta.focus()
+    page.keyboard.press("Alt+Shift+ArrowLeft")
+    expect(tabs.first).to_contain_text("E2E Beta")
+    expect(page.locator("nav.switcher a[data-project]", has_text="E2E Beta")).to_be_focused()
+    expect(page.locator(".tabs-said")).to_have_text("E2E Beta moved to place 1 of 2")
+    # A drag, as the browser's drag events: Alpha dropped on Beta's first half goes before it.
+    dt = page.evaluate_handle("() => new DataTransfer()")
+    alpha = page.locator("nav.switcher a[data-project]", has_text="E2E Alpha")
+    first = page.locator("nav.switcher a[data-project]", has_text="E2E Beta")
+    box = first.bounding_box()
+    assert box is not None
+    alpha.dispatch_event("dragstart", {"dataTransfer": dt})
+    first.dispatch_event("dragover", {"dataTransfer": dt, "clientX": box["x"] + 2})
+    first.dispatch_event("drop", {"dataTransfer": dt, "clientX": box["x"] + 2})
+    page.locator("nav.switcher a[data-project]", has_text="E2E Alpha").dispatch_event("dragend", {"dataTransfer": dt})
+    expect(tabs.first).to_contain_text("E2E Alpha")
+    # The tabs menu: one switch per project; switching one off closes its tab, the menu stays.
+    menu = page.locator(".tabs-menu-box")
+    menu.get_by_role("button", name="Project tabs", exact=True).click()
+    run.a11y(page, "tabs menu")
+    # A checked item's name starts with the stylesheet's "✓ " (.menu-item.checked::before), so not exact.
+    beta_item = menu.get_by_role("menuitemcheckbox", name="E2E Beta")
+    beta_item.click()
+    expect(tabs).to_have_count(1)
+    expect(beta_item).to_have_attribute("aria-checked", "false")
+    expect(beta_item).to_be_focused()
+    page.keyboard.press("Escape")
+    # The cross-project inbox's filter to open tabs, kept by this browser across a reload.
+    page.locator("#inbox-project").select_option("open-tabs")
+    page.reload()
+    expect(page.locator("#inbox-project")).to_have_value("open-tabs")
+    expect(tabs).to_have_count(1)
+    page.locator("#inbox-project").select_option("")
+    # The row as the account's start set.
+    menu.get_by_role("button", name="Project tabs", exact=True).click()
+    menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True).click()
+    expect(page.locator(".tabs-said")).to_have_text("Saved: a browser with no tabs of its own yet opens these.")
+    # A fresh browser profile: no tabs of its own, so it opens the account's start set.
+    fresh, other = signed_in_page(run, page.context.browser)
+    try:
+        other_tabs = other.locator("nav.switcher a[data-project]")
+        expect(other_tabs).to_have_count(1)
+        expect(other_tabs.first).to_contain_text("E2E Alpha")
+    finally:
+        fresh.close()
+    # Beta back in the start set from its own settings (Mine), and its tab back by its address.
+    page.goto(f"{run.base}/owner/e2e-beta/settings/mine")
+    expect(tabs).to_have_count(2)  # opened by its address, its tab is back
+    start = page.locator("#my-start-tab")
+    expect(start).not_to_be_checked()
+    run.a11y(page, "settings, mine, start tab")
+    start.check()
+    expect(page.locator("fieldset.my-start-tab")).to_contain_text("Saved: this project opens as a tab at start.")
+    page.reload()
+    expect(page.locator("#my-start-tab")).to_be_checked()
+    no_problems(run, "tabs")
 
 
 def my_settings_step(run: Run, page: Page) -> None:

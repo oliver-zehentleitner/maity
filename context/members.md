@@ -1107,3 +1107,43 @@ request and keep the placement pending — a join of a profile the
 caller does not own is `not_yours` and creates nothing, and a
 placement kept pending would exist, and its pickup would issue a new
 instance credential, before that owner had agreed.
+
+## The owner changes their agent's role after the join; areas and capabilities stay with the project's admins
+
+**Id:** d3167af5-4eaf-4840-8926-83f851ff1724
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-07 on request req-dxcmhaqm5bye (option "role yes, areas admin"), passed on by the lead on card tsk-0xrm35721btd; the lead's confirmation the same day that the owner's condition is the join check (a member managing the agent they could let join); `docs/api.md` §3.1 "The owner changes the role", §6.2
+**See:** members.md#a-member-brings-their-own-agents-into-a-project-within-limits-so-the-agent-is-theirs-and-not-the-admins — cef4255e-ae62-4699-aa86-f4f2c36f8d55 — as of 2026-11-07
+**Revisit when:** owners ask to set areas for their own agents
+
+The human who owns an agent changes its role with `PATCH …/members/{id}`
+after the join, without `members:admin`, within the same nine roles a
+member join may give (one of the nine, or a project role built on one of
+them; never `ops` or `proxy`), and
+only while they could create a join for that agent now: the check that
+already decides who changes `subagents`. So an agent an admin raised
+beyond the member limits (trust `admin`, role `ops` or `proxy`) stays
+the admins' to change, and so does every agent while `member_agents` is
+`off` or its owner is a guest. Trust, areas and capabilities stay with
+`members:admin`.
+
+**Reason:** the role was the owner's choice at the join, and changing it
+afterwards needed an admin for something the owner could have chosen
+on day one. Areas and capabilities are different: they decide which
+cards and wakes reach the agent, so they are how the project steers its
+work, not a property of the agent.
+
+**Rejected alternatives:**
+- Areas also by the owner: an owner could route the project's cards to
+  their own agent; rejected by the maintainer's choice of option.
+- Role stays admin-only, as before: the owner had to ask an admin to
+  undo a choice that was theirs at the join.
+- Every owner who is a member of the project, also under
+  `member_agents: off`, as a guest, or for an agent an admin raised to
+  trust `admin` or role `ops`: rejected by the lead's confirmation; the
+  join check is the one the hub already applies to the owner's
+  `subagents`, so one rule says which owner may still configure their
+  agent, and what an admin raised beyond the member limits stays the
+  admins'.

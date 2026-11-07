@@ -3,7 +3,9 @@
 // Arrow keys, Home and End move between the items; Escape and Tab close
 // it, and Escape puts the focus back on the button; a click elsewhere
 // closes it too. Items are links (href), actions (onSelect) or a
-// disabled note (disabled: true, with why).
+// disabled note (disabled: true, with why). An item with `checkbox: true`
+// and `checked` is a switch: it keeps the menu open, so several are
+// switched in one go, and the focus stays on it.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -136,7 +138,7 @@ window.Maity = window.Maity || {};
         if (it.separator) { append(list, h("li", { role: "separator", class: "menu-sep" })); return; }
         // An item of a choice (checked given) says whether it is the current one.
         const choice = typeof it.checked === "boolean";
-        const attrs = { role: choice ? "menuitemradio" : "menuitem", "aria-checked": choice ? String(it.checked) : null,
+        const attrs = { role: choice ? (it.checkbox ? "menuitemcheckbox" : "menuitemradio") : "menuitem", "aria-checked": choice ? String(it.checked) : null,
           tabindex: "-1", class: "menu-item" + (choice && it.checked ? " checked" : ""), title: it.title || null };
         let el;
         if (it.disabled) {
@@ -148,7 +150,10 @@ window.Maity = window.Maity || {};
         } else {
           // Back on the button before the action runs: whatever it does next
           // (moves the focus itself, fails, redraws) starts from a visible control.
-          el = h("button", Object.assign(attrs, { type: "button", onclick: () => { close(true); it.onSelect(); } }), it.label);
+          const index = items.length;
+          el = h("button", Object.assign(attrs, { type: "button", onclick: it.checkbox
+            ? () => { it.onSelect(); open(index); }
+            : () => { close(true); it.onSelect(); } }), it.label);
         }
         items.push(el);
         append(list, h("li", { role: "none" }, el));
@@ -156,7 +161,7 @@ window.Maity = window.Maity || {};
       list.hidden = false;
       button.setAttribute("aria-expanded", "true");
       document.addEventListener("click", outside, true);
-      if (items.length) items[at === "last" ? items.length - 1 : 0].focus();
+      if (items.length) items[typeof at === "number" ? Math.min(at, items.length - 1) : at === "last" ? items.length - 1 : 0].focus();
     }
     const move = (step) => {
       const at = items.indexOf(document.activeElement);
