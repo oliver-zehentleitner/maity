@@ -15,8 +15,6 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
-    ("GET", "/avatars/motifs"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
-    ("GET", "/avatars/public/{}"),  # contract first: tsk-q155psrk6tzz, the hub PR adds it
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul

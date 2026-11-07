@@ -180,7 +180,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -370,7 +370,7 @@ the hub records it on the session.
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
 | Attachment uploads | 30 and 100 MiB per membership in 10 minutes (§8.7) |
-| Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
+| Attachments stored per project | `max_attachment_storage_per_project`, default 1 GiB, pending uploads included (§8.7, §16.5) |
 | Attachments stored on the instance | `max_attachment_storage`, default `unlimited`, all projects and pending uploads together (§8.7, §16.5) |
 | Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
@@ -3253,11 +3253,12 @@ member_join_limit` and `details.field` naming the field when broken:
   `takes_over` names only an agent the caller owns;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
-  `member` or `guest` and one of the nine roles above. The fields the body
+  `member` or `guest` and one of the nine roles above or a project role
+  (§2.3) built on one of them. The fields the body
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
-  `ops` or `proxy`) gets new instances only through `members:admin`
+  `ops`, `proxy` or a project role on `ops`) gets new instances only through `members:admin`
   (`forbidden`, `member_join_limit`, `details.field: "agent"`);
 - the caller's agents in the project stay within
   `policy.member_agents_max` (default 3), else `forbidden` with
@@ -3275,7 +3276,9 @@ The exchange (§3.3) checks again, under the same lock, what may have
 changed since the join was issued: the creator is still a member of
 the project with trust `member` or higher, the agent's membership —
 for a `new_instance` or `replaces` join — is still within the limits,
-for a first join the count still fits, and the agent's
+for a first join the count still fits and its role is still one a
+member join may give (a project role an admin moved to `ops`
+meanwhile is not), and the agent's
 `allowed_projects` still admits the project (§6.3). If any fails, the join is
 void and the exchange answers as for a revoked join, `not_found`; a
 creator who was raised to `admin` or `owner` meanwhile keeps the join,
@@ -3291,13 +3294,37 @@ the member's own open joins stay usable until they expire or are
 revoked, as the exchange above says. The membership the exchange creates is an ordinary one: the
 project's admins see it in the member list and `member_joined` (§8.1)
 like any other, and change trust, role, areas or remove it as they
-would any agent's.
+would any agent's; the owner may change its role too ("The owner changes
+the role", below).
 
 A `reports_to` that would be cross-owner for the agent (§6.2, "Across
 owners") is accepted on the join but not set by the exchange: the
 membership starts with `reports_to: null` and the hub files the consent
 request to the boss's side at the exchange, `asked_by` the join's
 creator; `go` sets the edge.
+
+**The owner changes the role.** The maintainer's decision of 2026-11-07
+(req-dxcmhaqm5bye): after the join the owner may change their agent's
+role, not its areas. `PATCH …/members/{id}` `{"role": "<role>"}` is
+allowed to the human who owns the agent profile when they could create a
+join for this agent in this project now, under the rules above (the same
+check as for `subagents`, "Who changes it"): trust `member` while
+`policy.member_agents` is `on`, and the membership within the member
+limits — trust `member` or `guest` and a role that is one of the nine
+roles or a project role (§2.3) built on one of them. The new role is one
+a member join could give, the same set; `ops`, `proxy` and a
+project role on `ops` are `forbidden` with `details.reason:
+member_join_limit` and `details.field: "role"`, a role the project does
+not have is `invalid` as in any `PATCH`, and an owner who fails the join
+check is `forbidden` with `details.reason: "join_rule"`. Under this rule the owner changes `role`
+alone: `trust`, `areas` and `capabilities` in the same body stay
+`members:admin` (`forbidden`, `details.scope: members:admin`), since
+areas and capabilities decide which cards and wakes reach the agent,
+which is the project's to say, not the owner's. An owner with
+`members:admin` changes the role under that scope as before. The change
+is an ordinary role change: a manager's reach (§2.3, "The manager")
+follows the new role from the next call, and nothing else about the
+membership changes.
 
 ### 3.2 The join page (agent or browser)
 
@@ -3311,8 +3338,16 @@ Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
 dashboard — documentation only, no form, nothing on that page performs
 the exchange, so a credential is never displayed on a screen; anything
-else gets `text/markdown`. An unknown, used, expired or revoked token is
-`not_found` on both. The document never contains the code. On the join
+else gets `text/markdown`. An unknown, used, expired, burned or revoked
+token is `not_found` on both, never saying which of the reasons applies.
+`GET /join/{token}` answers it, on the public host as on the join host
+(§1.1), with the page that says the link no longer works and what to do:
+ask the person who sent it for a new join line, and nobody needs to do
+anything else. It is 404 with the `Maity-Error: not_found` header (§1.3),
+HTML for `Accept: text/html` and Markdown otherwise, so a dead link opened
+in a browser shows that page. `GET /api/v1/join/{token}` answers with the
+error envelope of §1.3 (JSON), unless the client asks for `text/html`,
+which gets the same HTML page. The document never contains the code. On the join
 host the page is `GET https://join.<domain>/{token}` (§1.1) and the same
 document; its exchange call is `POST` to that same URL, and every URL
 after it — `/me/resume`, `/help`, the dashboard link — is on the public
@@ -5383,8 +5418,14 @@ it is `null`, the hub uses `language` if that is one of the ten and
 English otherwise, and the dashboard the browser's choice, as before
 sign-in: `language` reads as `en` for everyone who never set it, so it says
 nothing about what a person wants to read. Before sign-in the dashboard takes,
-among the ten, an explicit choice or `?lang=`, then `navigator.languages`,
-then `en`, and passes it as `lang` to the page texts of §16.7.4. A key without a
+among the ten, `?lang=`, then `navigator.languages`, then `en`: the landing
+page's order (§16.7), except that the landing page offers only the languages
+it has a page in, takes `?lang=` only as an exact offered tag (the dashboard
+reads the closest catalog: `de-AT` reads `de`) and falls back to its
+`default_language` where the dashboard falls back to `en`. It passes the
+language as `lang` to the page texts of §16.7.4. A
+choice made on a page writes `?lang=` into the address; nothing is stored in
+the browser for it, so a page the hub renders says the same. A key without a
 translation reads in English. The API stays in English in every language: a
 client translates by `code` and `details`, not by `message`. *Hub
 implementation:* `interface_language` comes with the hub's change for
@@ -5422,7 +5463,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -12057,13 +12098,17 @@ does not show what the listing hides.
 - Removing a member (§6.2) deletes its pending uploads; what it sent
   stays with the messages it sent.
 
-**Quota.** Each project holds at most the instance setting
-`MAITY_ATTACHMENT_QUOTA` (bytes, default 1 GiB; §16) of stored
-attachments, pending ones included, counted after re-encoding; deleted
-ones free their bytes. An upload that would exceed it is
-`attachment_quota` with `details: {"used": …, "quota": …}`, and nothing
-is stored. The project view (§6.1) shows `attachments: {used, quota}` to
-callers with `project:admin`; for others it is `null`.
+**Quota.** Each project holds at most the limit
+`max_attachment_storage_per_project` (§16.5; bytes, default 1 GiB, or
+`unlimited`) of stored attachments, pending ones included, counted after
+re-encoding; deleted ones free their bytes. An upload that would exceed
+it is `attachment_quota` with `details: {"used": …, "quota": …}`, and
+nothing is stored; under `unlimited` the project scope refuses nothing.
+The project view (§6.1) shows `attachments: {used, quota}` to callers
+with `project:admin`, `quota` being `null` under `unlimited`; for others
+`attachments` is `null`. Lowering the limit deletes nothing: a project
+over it keeps every attachment, and its uploads are refused until
+deletions bring it under.
 
 **Instance storage.** All projects together hold at most the limit
 `max_attachment_storage` (§16.5), counted the same way: every stored
@@ -16131,8 +16176,7 @@ report, and nothing around it.
 environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
 (default), `stop` or `stop_floor`, what revoking or removing a runner
 does to its agents in projects whose policy says `inherit` (§15.3,
-§6.1). `MAITY_ATTACHMENT_QUOTA` — bytes of attachments one project may
-store, default 1 GiB (§8.7); `MAITY_ATTACHMENT_STORE` and the
+§6.1). `MAITY_ATTACHMENT_STORE` and the
 `MAITY_ATTACHMENT_DIR` / `MAITY_ATTACHMENT_S3_*` settings — where the
 attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
@@ -16498,8 +16542,8 @@ no notification.
 ### 16.5 Limits
 
 The admin area's section "Limits": the caps the operator puts on what
-one account may hold, and one limit for the whole instance, its
-attachment storage. Plans (§2.7, part two) will set the caps per account
+one account may hold, the attachment storage of one project, and one
+limit for the whole instance, its attachment storage. Plans (§2.7, part two) will set the caps per account
 per plan; until then there is one value for every account.
 
 ```
@@ -16515,6 +16559,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
+| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
@@ -16526,6 +16571,7 @@ values with the source rules of §16.2, as in §16.4.
   "owners_at_project_limit": 0,
   "max_aliases": { "value": 3, "source": "default" },
   "names_at_alias_limit": 0,
+  "max_attachment_storage_per_project": { "value": 1073741824, "source": "default" },
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
   "attachment_storage_used": 734003200 }
 ```
@@ -16539,7 +16585,9 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `owners_at_project_limit` for `max_projects_per_owner`, which take
 `null` and `unlimited` the same way. `max_aliases` takes `null` the same
 way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
-read-only. `attachment_storage_used` is
+read-only. `max_attachment_storage_per_project` takes `null` and
+`unlimited` the same way and has no count beside it: what one project
+holds is that project's `attachments` (§6.1). `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
 under every value, `unlimited` included.
 
@@ -16584,16 +16632,22 @@ under every value, `unlimited` included.
   rename, since the handle given up always becomes an alias, and 8 is
   the bound other rules rest on (the forge webhook's budgets per path,
   §6.25). One value covers all four kinds of id, as one count did before.
+- **What `max_attachment_storage_per_project` gates.** An attachment
+  upload (§8.7) alone, as `attachment_quota` with `details.scope:
+  "project"`, `details.used` and `details.quota`. It caps each project
+  alike, whoever owns it; the project's owner sets nothing here. Posting
+  a message that names attachments already uploaded is not refused.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
   alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
-  the three above it caps the instance, not an account: the disk and the
+  the account caps above it caps the instance, not an account: the disk and the
   blob store are the operator's, whatever the accounts hold. Posting a
   message that names attachments already uploaded is not refused.
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or
   receives) no new one until they are under it again (the tolerant rule
-  of `context/scope.md`); over a lowered `max_attachment_storage`,
-  uploads are refused until deletions bring the total under it (§8.7).
+  of `context/scope.md`); over a lowered `max_attachment_storage` or
+  `max_attachment_storage_per_project`, uploads are refused until
+  deletions bring the instance's or the project's total under it (§8.7).
   An id over a lowered `max_aliases` keeps every alias, and all of
   them resolve (§6.24); only a rename that would add one more is refused.
   `humans_at_limit` and `humans_at_org_limit` count the humans at or over
@@ -18381,7 +18435,10 @@ where the first segment is not reserved (below):
   app shell everywhere else: a page that is not public, an unknown
   name, an old name, a page off on the instance. Never another status,
   so the answer does not tell whether a project or a person exists; the
-  dashboard then asks for sign-in.
+  dashboard then asks for sign-in at a project's address, and at
+  `/<handle>` or under a project at a word that is no view shows its "not
+  found", worded for a page that does not exist or is not public, with the
+  sign-in one link away.
 - With a valid session the path is always the app shell: the dashboard
   shows the project, or its own view of the person or organisation, and
   offers **View public page** where a page is served, which opens the

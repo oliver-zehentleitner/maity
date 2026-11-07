@@ -202,7 +202,9 @@ def test_an_owner_sets_its_agents_picture(
     answer = put_human(owner, f"/agents/{agent.id}/avatar", image())
     assert answer.status_code == 200, answer.text
     assert answer.json()["avatar_url"].startswith(f"/api/v1/avatars/{agent.id}?v=")
-    assert owner.delete(f"/agents/{agent.id}/avatar").json()["avatar_source"] is None
+    removed = owner.delete(f"/agents/{agent.id}/avatar").json()
+    assert removed["avatar_source"] == "generated"  # an agent always has a picture (§6.10)
+    assert removed["avatar_url"].startswith(f"/api/v1/avatars/{agent.id}?v=")
     stranger = flow.human(make_client, migrated, "stranger")
     refused = put_human(stranger, f"/agents/{agent.id}/avatar", image())
     assert refused.status_code == 404

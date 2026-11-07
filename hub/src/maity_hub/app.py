@@ -35,6 +35,7 @@ from maity_hub import (
     languages,
     listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    motifs,
     namespace,
     not_listening,
     not_listening_digest,
@@ -225,6 +226,9 @@ def start_once(engine: Engine, settings: Settings) -> None:
         # The hub's own generated text is a rules input: a start with other text bumps
         # every project that has not counted it, once (§6.9).
         rules.sync_text(conn)
+    # The agents' motifs, read and checked before a page shows one (§6.10): a set that fails
+    # the check is logged here and not served. Each worker reads it again on its first use.
+    motifs.current()
     # Every public page again before any is served (§16.9), then the safety net's worker.
     public_pages.startup(engine, settings)
     with engine.begin() as conn:

@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import Connection, Engine, delete, insert, inspect, select, update
 
-from maity_hub import clock, handle_register, namespace
+from maity_hub import avatars, clock, handle_register, namespace
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.passwords import hash_password
@@ -290,6 +290,7 @@ def agent(
     trust: str | None = None,
     with_session: bool = True,
     instance: str = "wle2",
+    picture: bool = True,  # False on a database from before the generated picture (§6.10)
 ) -> Agent:
     agent_id = new_id("agent")
     with engine.begin() as conn:
@@ -302,6 +303,8 @@ def agent(
                 created_at=clock.now(),
             )
         )
+        if picture:
+            avatars.store_generated(conn, agent_id)
     membership_id = membership(engine, project_id, role, trust, agent_id=agent_id)
     credential_id = new_id("credential")
     value, verifier = credentials.issue(credential_id)

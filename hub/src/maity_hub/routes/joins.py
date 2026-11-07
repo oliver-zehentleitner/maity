@@ -180,6 +180,10 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             # A member's own boss again is no move: no depth check for it (§2.3).
             keeps_boss=existing.reports_to if existing else None,
         )
+        # The base again as read under the project's lock: a project role created on `ops`,
+        # or moved there, since `_check_member_limits` read it is refused the same way.
+        if member_rule and "role_base" in values and values["role_base"] not in MEMBER_RULE_ROLES:
+            raise member_join_limit("role")
         if existing is not None:
             # A second clone of a member: a new instance, the membership as it is.
             # A role change goes through PATCH …/members/{id}, never through a join.
@@ -381,7 +385,7 @@ def _check_instance(conn: Connection, body: JoinCreate, existing: Any) -> None:
 # --- bringing your own agent (§3.1) ------------------------------------------------
 
 
-def _limit(field: str) -> ApiError:
+def member_join_limit(field: str) -> ApiError:
     return ApiError(
         403,
         "forbidden",
@@ -437,24 +441,24 @@ def _own_manager(conn: Connection, mine: Any, member_id: str) -> bool:
 def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing: Any) -> None:
     """The limits of §3.1 a member's join stays within, the first broken one named."""
     if body.trust is not None and body.trust not in MEMBER_RULE_TRUSTS:
-        raise _limit("trust")
+        raise member_join_limit("trust")
     base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
     if base is not None and base not in MEMBER_RULE_ROLES:
-        raise _limit("role")  # a role the project does not have is `invalid` below
+        raise member_join_limit("role")  # a role the project does not have is `invalid` below
     if (
         body.reports_to is not None
         and body.reports_to != mine.principal_id
         and not _own_manager(conn, mine, body.reports_to)
     ):
-        raise _limit("reports_to")
+        raise member_join_limit("reports_to")
     if body.areas:
-        raise _limit("areas")
+        raise member_join_limit("areas")
     if body.capabilities:
-        raise _limit("capabilities")
+        raise member_join_limit("capabilities")
     if existing is not None and not within_limits(existing):
         # A membership an admin raised beyond the limits gets new instances only
         # through `members:admin`.
-        raise _limit("agent")
+        raise member_join_limit("agent")
     if body.takes_over is not None:
         own = conn.execute(
             select(t.agent_profile.c.id).where(
@@ -463,7 +467,7 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
             )
         ).first()
         if own is None:  # never another human's agent, nor one that is not an agent
-            raise _limit("takes_over")
+            raise member_join_limit("takes_over")
 
 
 def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
@@ -529,6 +533,10 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
         if not within_limits(member):
             raise not_found()
         return
+    # A first join's role, as it would be stored now: a project role an admin moved to
+    # `ops` while the join was open is beyond the member limits (§3.1).
+    if project_roles.base_of(project, row.role) not in MEMBER_RULE_ROLES:
+        raise not_found()
     # What the member would hold once this join is exchanged: the distinct profiles of
     # their memberships and open first joins, this join's own included, against the
     # maximum now. Another open join naming the same profile is no exemption: a lowered
@@ -568,7 +576,7 @@ def _agent_for_join(
             )
         ).first()
         if owned is None and member_rule:
-            raise _limit("agent")  # never another human's (§3.1)
+            raise member_join_limit("agent")  # never another human's (§3.1)
         if owned is None:
             raise invalid({"agent.id": "not_yours"}, "a join names one of your own agents")
         live_profile(conn, agent.id)
@@ -811,7 +819,9 @@ anything else.
 """
 
 
-async def _page(token: str, request: Request) -> Response:
+async def _page(token: str, request: Request, *, page: bool) -> Response:
+    """The join page (§3.2). A dead token is the dead-link page on the page path, on the public
+    host as on the join host; the API path keeps the error envelope unless HTML is asked for."""
     engine = engine_of(request)
     settings = settings_of(request)
     on_join_host = bool(request.scope["state"].get("join_host"))
@@ -825,7 +835,8 @@ async def _page(token: str, request: Request) -> Response:
         markdown, title_text = await run_in_threadpool(run)
         status = 200
     except ApiError as error:
-        if not (on_join_host and error.status == 404):
+        wants_html = "text/html" in request.headers.get("accept", "")
+        if not (error.status == 404 and (page or wants_html)):
             raise
         markdown, title_text, status = _DEAD_LINK, "This join link no longer works", 404
     # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
@@ -848,12 +859,12 @@ async def _page(token: str, request: Request) -> Response:
 
 @router.get("/join/{token}")
 async def join_page(token: str, request: Request) -> Response:
-    return await _page(token, request)
+    return await _page(token, request, page=False)
 
 
 @page_router.get("/join/{token}")
 async def public_join_page(token: str, request: Request) -> Response:
-    return await _page(token, request)
+    return await _page(token, request, page=True)
 
 
 # --- the exchange -------------------------------------------------------------------------

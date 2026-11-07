@@ -58,7 +58,11 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    committed and pushed, and again whenever the pull request is updated:
    report while the branch exists, not after the merge. The commit, the
    remote head and the pull request are read from git and gh, never
-   typed. A branch deleted after its pull request was merged still
+   typed. Without a working gh (missing, or its API refused, as in a
+   cloud session), the pull request the card links is read through the
+   hub's probe instead and reported only when its head is the head you
+   pushed, or for a branch deleted after the merge, the merged head you
+   have checked out. A branch deleted after its pull request was merged still
    reports, with the merged head. When the result is not code —
    a review, an investigation, a draft — report it with
    **`maity report --task <card> --summary "<result>" --no-code`**: the

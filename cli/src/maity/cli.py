@@ -917,11 +917,13 @@ def _why(args: argparse.Namespace) -> dict[str, str] | None:
 _PR_URL = re.compile(r"^https://[^/]+/([^/]+/[^/]+)/pull/(\d+)/?$")
 
 
-def _described(facts: gitfacts.Facts) -> str:
+def _described(facts: gitfacts.Facts, probed: bool = False) -> str:
     """What the report states, in one line: branch, head and pull request."""
     where = f"{onboarding.inline(facts.branch)} at {facts.head[:12]}"
     if facts.pr is not None:
-        return f"{where}, PR #{facts.pr.number} ({onboarding.inline(facts.pr.state.lower())})"
+        state = onboarding.inline(facts.pr.state.lower())
+        via = ", read by the hub's probe" if probed else ""
+        return f"{where}, PR #{facts.pr.number} ({state}{via})"
     if facts.pr_unknown_reason is not None:
         return f"{where}, pull request unknown: {onboarding.inline(facts.pr_unknown_reason)}"
     return f"{where}, no pull request"
@@ -933,6 +935,60 @@ def _pr_key(url: Any, number: Any = None) -> tuple[str, int] | None:
     if match is None:
         return None
     return match.group(1).lower(), int(number if isinstance(number, int) else match.group(2))
+
+
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+PROBED_LINKS_MAX = 5  # a card links one or two pull requests; more are not read one by one
+
+
+def _probed_pr(
+    session: Session, card: Any, head: str, merged_only: bool = False
+) -> tuple[gitfacts.PullRequest | None, list[str] | None]:
+    """The card's linked pull request whose head is `head`, read through the hub's probe (§11)
+    when gh could not answer, and with `merged_only` one the forge has merged; else the linked
+    pull requests the probe read that are not it (`PR #N has head …`), for the refusal. `None`
+    for those when the probe cannot say (not configured, unavailable, nothing found): nothing
+    stands in, and nothing refuses on its account.
+
+    Only a pull request the card already links is asked about, never one the agent names
+    (8c58cebb), and the probe reads fresh (`max_age=0`) from the project's repository only.
+    The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
+    links = card.get("links") if isinstance(card, dict) else None
+    linked = sorted(
+        {
+            key
+            for link in (links if isinstance(links, list) else [])
+            if isinstance(link, dict) and link.get("kind") == "pr"
+            if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
+        }
+    )
+    if len(linked) > PROBED_LINKS_MAX:
+        _err(
+            f"the card links {len(linked)} pull requests; the hub's probe is asked about the "
+            f"first {PROBED_LINKS_MAX} only"
+        )
+    others: list[str] = []
+    for repository, number in linked[:PROBED_LINKS_MAX]:
+        try:
+            answer = session.client.call(
+                "GET", session.project_path("probe"), query=[("pr", str(number)), ("max_age", "0")]
+            )
+        except hub.HubError:
+            return None, None
+        if not isinstance(answer, dict) or str(answer.get("repository", "")).lower() != repository:
+            continue  # a link to another repository of the owner: the probe reads only this one
+        pr = answer.get("pr")
+        if not isinstance(pr, dict) or pr.get("found") is not True or pr.get("number") != number:
+            continue
+        sha, state, url = pr.get("head_sha"), pr.get("state"), pr.get("url")
+        if not (isinstance(sha, str) and _SHA.match(sha)) or not isinstance(state, str):
+            continue
+        if not isinstance(url, str) or _pr_key(url) != (repository, number):
+            continue
+        if sha == head and (not merged_only or state.lower() == "merged"):
+            return gitfacts.PullRequest(number=number, head=sha, state=state, url=url), None
+        others.append(f"PR #{number} ({onboarding.inline(state.lower())}) has head {sha}")
+    return None, (others or None)
 
 
 def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
@@ -1010,18 +1066,62 @@ def cmd_report(args: argparse.Namespace) -> int:
         status = task.get("status") if isinstance(task, dict) else None
         return _done(args, task, f"reported {args.task} (no code); task is now {status}")
     facts = gitfacts.collect(Path.cwd())
+    card: Any = None
+    probed = False
+    no_forge = facts.pr is None and bool(facts.pr_unknown_reason or facts.forge_error)
+    gone = no_forge and facts.remote_branch and facts.remote_head is None and not facts.dirty
+    if gone and gitfacts.mismatches(facts):
+        # The branch is gone and gh cannot say whether its pull request was merged (f720dd3c):
+        # a merged pull request the card links, with this very head, stands in for it. The
+        # local refusal stands when the card cannot be read.
+        try:
+            card = session.client.call("GET", session.project_path("tasks", args.task))
+        except hub.HubError:
+            card = None
+        found, others = (
+            _probed_pr(session, card, facts.head, merged_only=True) if card else (None, None)
+        )
+        if others:
+            _err(
+                f"report refused: the branch {onboarding.inline(facts.remote_branch)} is gone on "
+                f"the remote and the hub's probe reads {'; '.join(others)}, local HEAD is at "
+                f"{facts.head}; check out the merged head of the card's pull request"
+            )
+            return EXIT_REFUSED
+        if found is not None:
+            facts = dataclasses.replace(
+                facts, remote_head=facts.head, branch_merged=True, pr=found,
+                pr_unknown_reason=None, forge_error=None,
+            )  # fmt: skip
+            probed = True
     problems = gitfacts.mismatches(facts)
     if problems:
         _err("report refused, the code does not match what would be reported:")
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return EXIT_REFUSED
+    if card is None:
+        card = session.client.call("GET", session.project_path("tasks", args.task))
+    if not probed and no_forge and facts.remote_head:
+        # gh missing or failing: the card's linked pull request may stand in, read by the hub.
+        found, others = _probed_pr(session, card, facts.remote_head)
+        if others:
+            _err(
+                f"report refused: the hub's probe reads {'; '.join(others)}, the branch "
+                f"{onboarding.inline(facts.remote_branch)} is at {facts.remote_head}; push the "
+                f"work to the card's pull request or report from its branch"
+            )
+            return EXIT_REFUSED
+        if found is not None:
+            facts = dataclasses.replace(facts, pr=found, pr_unknown_reason=None, forge_error=None)
+            probed = True
+    if facts.forge_error:
+        raise gitfacts.FactsError(facts.forge_error)  # 66da7721: never "no pull request"
     body = _report_body(facts, args.summary.strip(), args.done)
     if why is not None:
         body["why"] = why
     # Said before anything is sent, so a report from the wrong checkout shows as such.
-    _err(f"reporting {_described(facts)}")
-    card = session.client.call("GET", session.project_path("tasks", args.task))
+    _err(f"reporting {_described(facts, probed)}")
     mismatch = _card_pr_mismatch(card, facts, args.task)
     if mismatch:
         _err(f"report refused: {mismatch}")

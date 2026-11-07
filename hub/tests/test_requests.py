@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import avatar_generated, avatars, images
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -107,7 +108,7 @@ def test_a_request_has_the_contract_shape_and_goes_to_the_agents_human(
     assert body["asked_by"] == {
         "member_id": agent.id,
         "display_name": "Agent B",
-        "avatar_url": None,
+        "avatar_url": generated(agent.id),  # an agent always has a picture (§6.10)
         "trust": "member",
         "role": "coder",
         "session_id": session,
@@ -209,7 +210,7 @@ def test_needs_in_session_names_the_member_and_its_session(
         "display_name": "An agent",
         "session_id": session,
         "harness": "Claude Code",
-        "avatar_url": None,
+        "avatar_url": generated(agent.id),
     }
 
 
@@ -695,3 +696,8 @@ def test_a_listing_costs_its_page_not_every_request(
     page = owner.get("/requests", params={"limit": 10}).json()
     assert len(page["items"]) == 10 and page["next_cursor"] is not None
     assert all("_row" not in v and "_created" not in v for v in page["items"])
+
+
+def generated(agent_id: str) -> str:
+    """The `avatar_url` of an agent's generated picture (§6.10)."""
+    return avatars.url_of(agent_id, images.etag(avatar_generated.draw(agent_id)))

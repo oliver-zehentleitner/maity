@@ -61,15 +61,18 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
-**Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
+**Revisit when:** a human asks to land on one project
 **See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
-project switcher: each project with its state and the number of open
-requests waiting for this human, plus "All projects" with the total. The
+project switcher: each project this browser has open as a tab, with its
+state and the number of open requests waiting for this human, plus "All
+projects" with the total. A switcher row too long is answered by closing
+tabs (cd4fe2ba). The
 cross-project view (`/all`) is the inbox across every project, each
 entry labelled with its project and that project's state, answered in
 place. Opening the dashboard without a route lands there when the human
@@ -86,6 +89,38 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## The project tabs are the browser's own, moved by dragging, by Alt+Shift+Arrow or from the tabs menu
+
+**Id:** cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
+
+Which projects the header shows as tabs, and in which order, is kept in
+this browser per viewer (`js/tabs.js`); without storage it holds for the
+visit. A browser with nothing kept starts from the account's
+`start_tabs`, or with every project when that is `null`. A project the
+browser has not seen yet opens as the last tab; one opened by its
+address gets its tab back. A tab moves by dragging, by Alt+Shift+Arrow
+on the focused tab, or by Move this tab left/right in the tabs menu
+beside the row, which also opens and closes each project (switches that
+keep the menu open) and keeps the current row as the start set. Each
+move is announced with the new place. A project's start-set switch also
+sits in its own settings (Mine). The cross-project inbox can be filtered
+to projects with an open tab; personal requests always stay.
+
+**Reason:** the split between browser and account is the maintainer's
+(the contract entry above). The rest is inferred from the dashboard's
+existing rules: nothing is drag-only (the board's Move and Place menus),
+so a single pointer or a keyboard reaches every move a drag makes; and
+a filter that hides personal requests would hide requests with no tab
+to open them from.
+
+**Rejected alternatives:** unknown beyond the contract entry's.
 
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
@@ -1111,7 +1146,8 @@ six places to keep in step instead of one.
 **Revisit when:** the hub lets a member's join change the membership, or the designer reworks the join panel
 
 When the chosen agent is a member of the project, the join panel shows a
-choice instead of role, reports to, areas and briefing: **Replace
+choice instead of role, areas and briefing (whom it reports to has a field
+of its own, e69c571c): **Replace
 instance** with the member's active instances (presence, cards held) or
 **Start another instance** with the team's count against its limit.
 Replace is preselected when there is an active instance. The join then
@@ -2256,7 +2292,8 @@ not hold a token that names nobody yet, which the hub accepts.
 
 **Id:** c848b045-9411-43b3-8763-2fd998270a1d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e69c571c-3365-433a-b26d-245efff28a7d
 **Evidence:** confirmed
 **Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
 **Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
@@ -2293,6 +2330,27 @@ settled, so it is not offered until it has.
 would offer trust, role and areas the hub refuses them. Finding the
 pending request by its title: fragile and invisible to the reader when
 it breaks.
+
+## Whom an agent reports to is chosen where it joins, a boss of another owner offered and marked
+
+**Id:** e69c571c-3365-433a-b26d-245efff28a7d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (req-a5xxyvq74ft7, seq 86060): on Agents, letting agents join, Reports to should be settable there, not only under Management afterwards; card tsk-nbadjbr9zpg7 and the lead's go with its two points (seq 86087), 2026-11-07; docs/api.md §3.1, §2.3 ("to any other member, which is a cross-owner edge and takes effect only with the boss's side's consent"), §6.2 ("Own consent")
+**Revisit when:** the contract gives the member view the pending edge (`reports_to_pending`), or a join that names `reports_to` for an agent already a member
+
+The join panel offers **Reports to** in every case:
+
+- **A first join, by an admin:** every member who is not a guest. One's own agents and oneself are plain; anyone else is marked "waits for consent", and the hub files that consent at the exchange (§3.1).
+- **A member's own agent:** oneself (the default) and one's own managers in the project, the only bosses §3.1 lets a member's join name.
+- **An agent already here:** a field of its own with the current boss. A change is the owner's own `PATCH …/members/{id}` (§2.3), sent before the join, so where it applies at once (200) the join page and the first resume show the new boss. Where it waits for the boss's side's consent (202, §6.2), the join page keeps the boss it was issued with, since the hub copies the boss into the join when it is created; the resume after the consent shows the new one.
+
+If that `PATCH` is refused, no join is sent. If it is taken and the join then fails, the panel says both: the join's refusal, and the new boss, or the consent it waits for. A boss already asked for is not asked again in the same panel. The owner's **Reports to** on Members and Agents offers a boss of another owner too, marked the same way, its 202 said as the consent it waits for.
+
+**Reason:** the maintainer wants to place agents, other owners' among them, at the moment they join, and §2.3 lets the owner start a cross-owner edge whatever their trust. The earlier rule (c848b045) held them back only until the contract settled that, which it now has.
+
+**Rejected alternative:** a default boss on the agent profile, carried into every project: a boss is always a member of one project, and it would need a contract change (the lead, seq 86087). Sending `reports_to` in an instance's join: the hub refuses a membership field there (`differs_from_membership`). Undoing the `PATCH` when the join fails: the change was asked for on its own terms, and an undo could itself fail.
 
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 
@@ -5130,3 +5188,63 @@ can be linked.
   row that scrolls, with the fade on the side that has more.
 - Resetting the scroll on every change of address: opening a card on the board would jump to
   the top, and the board's place on return would be lost.
+
+## Before a way into the restricted-access set, the page says who will read, and no more than it knows
+
+**Id:** c6ad8006-f67b-4cfe-a383-7141ca7dfb8b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g8ts5vxhj1md, Web 2 (2026-11-07): the plan with three questions to the lead and the lead's answers on the card; docs/api.md §6.1 "Every way into the set" and "Reading the setting"; the review of #1450 (2026-11-07) for the returning accepter and the agents a transfer seats; `hub/src/maity_hub/restricted.py` `resolve`, which reads the list by member id
+**Revisit when:** the hub serves a reader without `members` more of the set, an organisation's invitation carries what its go would bring into a set, or an owner change of an agent profile is built
+**See:** refresh.md#the-restricted-access-sets-notice-is-a-projects-setting-read-by-a-read-mark-though-its-target-says-settings — aefe70f5-509b-47ea-9768-02623c68016a — as of 2026-11-07
+
+Where the dashboard creates a join or a project invitation, raises a guest, ends an isolation,
+transfers a project into an organisation, promotes a human to an organisation's owner, or shows
+an organisation's invitation or transfer for its go, it says beforehand who will read the
+project's restricted texts (`M.restricted.ahead`, `aheadOrgOwners`, `aheadOrg` in
+`js/restricted.js`). The set before and after the action comes from the same resolution as the
+setting's own widening preview. The join and invitation forms show it as a line that follows the
+form. A raise, a lift, a transfer and a promotion ask with `window.confirm`. Nothing is said
+while the set names nobody.
+
+The wording follows what the reader is served:
+- A human with `project:admin` gets the list, so the page names who enters, with the count of
+  cards with a text.
+- A reader served `{mode, included}` alone sees no list (§6.1 "Reading the setting"). Under
+  `all_except` the page says "unless the restricted-access list leaves them out". Under
+  `nobody_except` it says "may read, if the list names them". The reader's own place on the list
+  comes from `included`.
+- An organisation's invitation and a promotion to owner reach projects whose settings the page
+  does not read. There the page says one general sentence: an owner may enter a project's set.
+- Whoever accepts a project invitation is not known beforehand and may be a former member: the
+  same id comes back, and the list, never pruned, may still hold it. While the list names
+  someone who is no member now, or the reader sees no list, the line says "if the list names
+  them" or "unless the list leaves them out" for the accepter; otherwise the accepter is new
+  and treated as on no list. The accepter may also be the owner of an agent that stayed a
+  member after its owner left (not isolated, §6.1 "Every way into the set"), which comes back
+  into the set with its owner. The page names such agents the setting would let in, "if their
+  owner is the one who accepts", rather than marking the accepter as listed, which would name
+  the wrong reader.
+- A transfer into an organisation seats its owners, and with them their agents: an agent of the
+  project that is out of the set only because its owner is a guest or no member may enter. The
+  page knows those agents and names them, "if their owner is one of the owners".
+
+**Reason:** the contract asks for the sentence at each of these places, and a sentence the page
+cannot know to be true would be a false one. A reader without the list cannot tell whether an id
+is listed, so the wording says exactly that.
+
+**Rejected alternatives:**
+- Treating whoever accepts an invitation as a new id that no list names: wrong for a former
+  member whose id the list keeps, who would enter under `nobody_except` with no word said.
+- Leaving agents out of the transfer's sentence: a listed agent whose guest owner becomes an
+  owner enters the set unannounced.
+- "Will read" under every mode for a reader without the list: under `nobody_except` it is false
+  for anyone the list does not name.
+- Saying nothing where the list is unknown: the contract asks for the sentence, and under
+  `all_except` the member does enter unless listed.
+- A hub field on an organisation's invitation counting the sets its go would enter: a hub change
+  for a sentence the general wording already gives honestly. It can follow as a card of its own
+  if wanted.
+- Reading every project of an organisation before a promotion: one request per project for one
+  confirmation, and its owners are not always admins in each of them.

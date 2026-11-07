@@ -280,10 +280,4 @@ and with `local` they are there for the copy, which runs before the store is swi
 - name: MAITY_ATTACHMENT_DIR
   value: {{ $a.mountPath | quote }}
 {{- end }}
-{{- if or $s3 $a.existingClaim }}
-{{- with $a.quotaBytes }}
-- name: MAITY_ATTACHMENT_QUOTA
-  value: {{ . | int64 | toString | quote }}
-{{- end }}
-{{- end }}
 {{- end }}

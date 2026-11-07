@@ -655,12 +655,12 @@ Plural forms follow the catalog's language, not the locale of the numbers: a Ger
 the English catalog needs English forms.
 
 The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
-`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+or `?lang=`). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
 `?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
-pickers on `/login` and `/register`, the frame's languages) also writes its tag into an address
-that carries `?lang=`, through `M.route.go` with `quiet`, which replaces the address without
+pickers on `/login` and `/register`, the frame's languages) also writes its tag into the address
+(since 2026-11-07 also one without `?lang=`: 323db387-6c53-4a63-86bd-13a464b114e7), through `M.route.go` with `quiet`, which replaces the address without
 drawing the view again. The frame's links lead to `/register?lang=<the frame's language>`, and `/register`
 reads the session again when it is drawn: before, its 401 read the older `?lang=` back, and the
 page jumped back to the language it was reached in (tsk-7dty3gkegqgc; on `/login`, a reload did).
@@ -674,14 +674,59 @@ the session themselves. A catalog per language keeps nine languages off every pa
   ignore `language` (§6.2).
 - All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
 - Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
-- Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
-  the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+- Picking the language in the hub before sign-in: the dashboard chooses and passes `lang` to the
+  page texts (§16.7.4). (The first reason, a choice kept in the browser, is gone since 2026-11-07:
+  323db387-6c53-4a63-86bd-13a464b114e7.)
 - Reading `?lang=` only once, when the dashboard loads: an address with `?lang=` would then say
   another language than the page, and a reload would still take the choice back.
-- Writing `?lang=` into every address on a choice, also one without it: the choice is already kept in
-  the browser, and an address copied from the page would then fix the language for whoever opens it.
+- Writing `?lang=` into every address on a choice, also one without it: rejected while the choice was
+  kept in the browser; adopted on 2026-11-07, once nothing is kept there
+  (323db387-6c53-4a63-86bd-13a464b114e7).
 - `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
   so what was typed into the form so far would be lost.
+
+## Before sign-in the dashboard takes the landing page's order for the language, and keeps nothing in the browser
+
+**Id:** 323db387-6c53-4a63-86bd-13a464b114e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a9n9p6952wwb (landing in English, sign-in and visitor views in German for the same visitor, 2026-11-06), reproduced on maity.team 2026-11-07; the lead's go on the plan (Maity message, 2026-11-07); `web/js/i18n.js`, `hub/src/maity_hub/render.py` `choose_language`
+**See:** rendering.md#english-is-always-loaded-the-readers-language-comes-as-its-own-script-chosen-by-one-rule-in-one-place — 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6 — as of 2026-11-07
+**Revisit when:** the maintainer wants a visitor's choice kept across visits, the hub's public pages start reading a language cookie, or the dashboard takes the visitor's language from `GET /site/chrome` (which closes the gap below)
+
+Without an account's `interface_language` the dashboard takes the landing page's order: `?lang=`,
+then the browser's languages, then `en`. The landing page itself offers only the languages it has a
+page in, takes `?lang=` only as an exact offered tag where the dashboard reads the closest catalog
+(`de-AT` reads `de`), and falls back to its `default_language`, not to `en`
+(`render.choose_language`, `render.best_language`, §16.7). A choice made on a page (`M.i18n.choose`) holds
+for the page while it lives and writes `?lang=` into the address, also one that had none; the
+frame's and the landing page's links carry `?lang=` from page to page. Nothing goes into
+`localStorage`: the key an older version wrote, `maity.language`, is removed once when the
+dashboard loads, and no other key is touched.
+
+**Reason:** a choice kept in `localStorage` is invisible to the pages the hub renders itself. After
+one visit to `/signin?lang=de` an en-US browser got the landing page in English and the sign-in and
+visitor views in German, in the same visit. One rule that both sides can read is the fix.
+
+**Consequence:** a visitor who chose a language and later types a bare address gets the browser's
+language again, on every page alike. An address copied from a page after a choice carries
+`?lang=` and opens in that language, as the landing page's links already do. Two gaps remain. Where
+the fallbacks differ: with `default_language: de`, a browser asking only for a language without a
+landing page (`sv`) gets the landing page in German and the dashboard in English. Where the offered
+sets differ: with `default_language: en` and pages only in `en` and `fr`, a browser asking for `de`
+gets the landing page in English and the dashboard in German, and one asking for `de, fr;q=0.8` gets
+it in French and the dashboard in German (likewise `?lang=de-AT`). The two agree only where the
+landing page has a page in each of the ten languages and `default_language` is `en`, as on
+maity.team. Closing both means taking the visitor's language from `GET /site/chrome`, which the hub
+chooses exactly as the landing page's; that is a change of behaviour, left to a card of its own
+rather than to the review of this one.
+
+**Rejected alternative:** a language cookie the hub reads too: it would keep the choice across visits,
+but the public pages set no language or tracking cookie (context/scope.md, hub/context/landing.md;
+`/` reads only the session cookie, to choose between the landing page and the dashboard), and
+`GET /site/chrome` and `GET /auth/pages/{page}`, which vary on `Accept-Language` only, would need
+`Vary: Cookie`. Keeping the choice across visits is the maintainer's call, and it is that cookie.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 
@@ -1160,6 +1205,39 @@ Each case is settled once:
   catalogs build on it.
 - French `fil d'actualité` in full in every sentence: nine sentences grow long for no gain once `le fil` means the
   ticker alone.
+
+## `make check` holds every translation to the glossary's fixed terms and form of address
+
+**Id:** 7d49c1e3-32a6-4a9e-af9e-c385ee719ee0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-47tbmmmemf6x and the reviews of PR #1457, 2026-11-07; findings of the reviews of #1451 (a translated `harness`, Portuguese `tu` forms)
+**Revisit when:** the address table of `web/i18n/glossary.md` changes its shape, informal French possessives (`ton`, `ta`) appear in a catalog, or Chinese gets a check for `您`
+
+See: rendering.md#one-word-per-thing-in-the-translations — fc2e6592-2711-447a-978c-75a9ccce1e0a — as of 2026-11-07
+
+Reviews kept finding the same two slips by hand: a term the glossary keeps as it is came back translated, and a text
+used the other form of address than the one the glossary names. `web/tools/check.py` now reads both rules from
+`glossary.md` itself and checks every catalog and the hub's mail words: a term its Words table keeps `unchanged` in
+every language must stay in a text whose English holds it, and a text uses no word of the other address
+(`GLOSSARY_OTHER_ADDRESS`). Code spans and placeholders are taken out first, and a placeholder reads as a number, so
+`{harness}` is no harness and Dutch `{count} u` stays hours. German `Sie` and `Ihr…` count only inside a sentence. An
+address in the table that the check does not know is itself a finding, so the table cannot change unseen.
+
+Chinese is not checked, and no reason was weighed for that: the check grouped it with Japanese and Korean when it was
+written, as if its address were a register too. It is not: the glossary names `你`, and the other address is the
+single character `您`, which a pattern finds; neither Chinese catalog holds `您` (found in the delta review of #1457).
+
+**Rejected alternatives:**
+- Checking `resume` with the other fixed terms: the glossary translates it as an ordinary verb, so the check would flag
+  correct sentences; it stays a reviewer's call (`GLOSSARY_NOT_CHECKED`).
+- Flagging French `ton` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses it so
+  (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with no
+  reason of their own; neither occurs in a French catalog today.
+- A word list for Japanese and Korean: their address is a register (です・ます, 해요체), not a set of words a pattern
+  can find; nothing is checked there and reviewers keep it.
+- Leaving both rules to review alone: the same findings came back on #1451 after the glossary named them.
 
 ## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
 

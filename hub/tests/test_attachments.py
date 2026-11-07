@@ -331,7 +331,7 @@ def test_a_signed_upload_is_read_and_its_signature_checked_after(
 def test_the_project_quota_counts_pending_uploads_and_deleting_frees_it(
     stored: ClientFactory, migrated: Engine
 ) -> None:
-    owner = flow.human(lambda **kw: stored(attachment_quota=2048, **kw), migrated)
+    owner = flow.human(lambda **kw: stored(max_attachment_storage_per_project=2048, **kw), migrated)
     flow.project(owner, "maity")
     first = put(owner, "a.bin", b"x" * 1500, "application/octet-stream").json()
     over = put(owner, "b.bin", b"x" * 1000, "application/octet-stream")
@@ -369,7 +369,7 @@ def test_a_refused_upload_leaves_no_blob(
     stored: ClientFactory, migrated: Engine, blobs: Path
 ) -> None:
     """The blob is written before the transaction; a refusal in it removes the blob again."""
-    owner = flow.human(lambda **kw: stored(attachment_quota=2048, **kw), migrated)
+    owner = flow.human(lambda **kw: stored(max_attachment_storage_per_project=2048, **kw), migrated)
     flow.project(owner, "maity")
     first = put(owner, "a.bin", b"x" * 1500, "application/octet-stream").json()
     over = put(owner, "b.bin", b"x" * 1000, "application/octet-stream")
@@ -382,7 +382,7 @@ def test_a_refusal_after_the_write_keeps_the_rate_charged_and_the_quota_is_check
 ) -> None:
     """A refusal before the store is written costs no write; after it, the write happened, and
     the rate stays charged (a refusal cannot buy writes past the rate)."""
-    owner = flow.human(lambda **kw: stored(attachment_quota=1024, **kw), migrated)
+    owner = flow.human(lambda **kw: stored(max_attachment_storage_per_project=1024, **kw), migrated)
     flow.project(owner, "maity")
     writes: list[str] = []
     real = attachment_store.LocalStore.put
@@ -836,12 +836,11 @@ def test_the_settings_stop_the_hub_for_an_unusable_store(tmp_path: Path) -> None
         {"MAITY_ATTACHMENT_STORE": "tape"},
         {"MAITY_ATTACHMENT_DIR": "relative/dir"},
         {"MAITY_ATTACHMENT_DIR": str(tmp_path / "missing")},
-        {"MAITY_ATTACHMENT_QUOTA": "lots"},
     ):
         with pytest.raises(ConfigError):
             Settings.from_env({**base, **bad})
     ok = Settings.from_env({**base, "MAITY_ATTACHMENT_DIR": str(tmp_path)})
-    assert ok.attachment_dir == tmp_path and ok.attachment_quota == 1024**3
+    assert ok.attachment_dir == tmp_path
 
 
 def _membership_key(migrated: Engine, who: str) -> str:

@@ -149,17 +149,22 @@ def html(entries: list[dict[str, Any]], up: dict[str, Any]) -> str:
 
 
 def _members_of(conn: Connection, project_ids: list[str]) -> list[tuple[str, str]]:
-    """The person and agent pages of the active members of these projects."""
+    """The person and agent pages of the active members of these projects, and the person
+    pages of their agents' owners: the agents page shows an agent's model and harness (§16.9,
+    "A person's agents")."""
     from maity_hub import public_agents, public_people
 
     if not project_ids:
         return []
     m = t.membership.c
     rows = conn.execute(
-        select(m.human_id, m.agent_id).where(m.project_id.in_(project_ids), m.active.is_(True))
+        select(m.human_id, m.agent_id, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.project_id.in_(project_ids), m.active.is_(True))
     ).all()
-    return [(public_people.KIND, h) for h, _ in rows if h] + [
-        (public_agents.KIND, a) for _, a in rows if a
+    people = sorted({h for h, _, _ in rows if h} | {o for _, _, o in rows if o})
+    return [(public_people.KIND, h) for h in people] + [
+        (public_agents.KIND, a) for _, a, _ in rows if a
     ]
 
 

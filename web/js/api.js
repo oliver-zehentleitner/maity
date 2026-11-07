@@ -1579,6 +1579,7 @@ window.Maity = window.Maity || {};
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
     max_projects_per_owner: { value: 10, source: "default" }, owners_at_project_limit: 0,
     max_aliases: { value: 3, source: "default" }, names_at_alias_limit: 0,
+    max_attachment_storage_per_project: { value: 1073741824, source: "default" },
     max_attachment_storage: { value: "unlimited", source: "default" }, attachment_storage_used: 734003200,
   };
 
@@ -2038,6 +2039,12 @@ window.Maity = window.Maity || {};
         if (typeof body.public_stats !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { public_stats: "required" } });
         mm.public_stats = body.public_stats;
       }
+      // Which agents the person's agents tab lists (§16.9): one of two words, `null` included invalid.
+      if ("public_agents" in body) {
+        if (body.public_agents === null) fail(400, "invalid", "the request does not validate", path, { fields: { public_agents: "required" } });
+        if (!["public_projects", "all"].includes(body.public_agents)) fail(400, "invalid", "the request does not validate", path, { fields: { public_agents: "unknown" } });
+        mm.public_agents = body.public_agents;
+      }
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
       // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
       if ("website" in body || "social" in body || "links_visible" in body) {
@@ -2065,7 +2072,16 @@ window.Maity = window.Maity || {};
         mm.interface_language = chosen;
         fixtures()["auth-session.json"].member.interface_language = chosen;
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      // §5.1 "Start tabs": always the whole list, projects of one's own, each once; null resets.
+      if ("start_tabs" in body) {
+        const list = body.start_tabs;
+        const mine = me().projects.map((p) => p.id);
+        if (list !== null && !Array.isArray(list)) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "list_type" } });
+        if (list && new Set(list).size !== list.length) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "duplicate" } });
+        if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
+        mm.start_tabs = list ? list.slice() : null;
+      }
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -2428,7 +2444,8 @@ window.Maity = window.Maity || {};
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
     // null restores the default, "unlimited" is no limit, an integer 1–10000; the
-    // attachment storage of the instance in bytes, 1 GiB to 1 PiB, with what is stored.
+    // attachment storage of each project in bytes, 1 MiB to 1 PiB, and of the instance,
+    // 1 GiB to 1 PiB, with what is stored.
     ["GET", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       return JSON.parse(JSON.stringify(limitsSetting));
@@ -2436,8 +2453,8 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       const fields = {};
-      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_aliases: 3, max_attachment_storage: "unlimited" };
-      const ranges = { max_aliases: [1, 8], max_attachment_storage: [1024 ** 3, 1024 ** 5] };
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5, max_projects_per_owner: 10, max_aliases: 3, max_attachment_storage_per_project: 1024 ** 3, max_attachment_storage: "unlimited" };
+      const ranges = { max_aliases: [1, 8], max_attachment_storage_per_project: [1024 ** 2, 1024 ** 5], max_attachment_storage: [1024 ** 3, 1024 ** 5] };
       Object.entries(body).forEach(([k, v]) => {
         const [low, high] = ranges[k] || [1, 10000];
         if (["humans_at_limit", "humans_at_org_limit", "owners_at_project_limit", "names_at_alias_limit", "attachment_storage_used"].includes(k)) fields[k] = "read_only";
@@ -4343,6 +4360,29 @@ window.Maity = window.Maity || {};
           return target;
         }
       }
+      // §3.1 "The owner changes the role": the human who owns the agent, without
+      // members:admin, sets its role alone while they could let it join now
+      // (hub/routes/members.py _owner_sets_role), to a role a member join may give.
+      if (!who.admin && who.member.kind === "human" && Object.keys(body).length === 1 && "role" in body) {
+        const target = member(m[1], m[2], path);
+        if (target.kind === "agent" && target.owner_id === who.member.id) {
+          const pol = project(m[1], path).policy || {};
+          const within = ["member", "guest"].includes(target.trust) && MEMBER_ROLES.includes(target.role_base || target.role);
+          if ((fixtureAs ? who.member.trust : trustIn(m[1])) !== "member" || pol.member_agents === "off" || !within) {
+            fail(403, "forbidden", "only whoever may let the agent join", path, { reason: "join_rule" });
+          }
+          // A project role counts by its base, as project_roles.base_of resolves it (§2.3).
+          const custom = (project(m[1], path).roles || []).find((r) => r.name === body.role);
+          const base = custom ? custom.base : HUB_ROLES.includes(body.role) ? body.role : null;
+          if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          if (!MEMBER_ROLES.includes(base)) {
+            fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
+          }
+          target.role = body.role;
+          target.role_base = base;
+          return target;
+        }
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
@@ -4552,6 +4592,8 @@ window.Maity = window.Maity || {};
     }],
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
+    // §2.3 "Project roles": the project's own roles, read by every member.
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ custom: (project(m[1], path).roles || []).slice() })],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);
       list.items.forEach((j) => {

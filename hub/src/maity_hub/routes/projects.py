@@ -46,6 +46,7 @@ from maity_hub import (
     restricted,
     rules,
     setup_cards,
+    start_tabs,
     ticker,
     wakeups,
 )
@@ -654,9 +655,10 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
-def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] | None:
-    """The project's attachment bytes against its quota, for a caller with `project:admin`
-    in it (§8.7); anyone else gets None."""
+def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int | None] | None:
+    """The project's attachment bytes against its limit `max_attachment_storage_per_project`
+    (`quota`, None under `unlimited`), for a caller with `project:admin` in it (§8.7); anyone
+    else gets None."""
     caller = getattr(request.state, "caller", None)
     if caller is None:
         return None
@@ -668,7 +670,7 @@ def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] 
         return None
     return {
         "used": attachments.used(conn, project.id),
-        "quota": settings_of(request).attachment_quota,
+        "quota": limits.of(conn, settings_of(request), limits.PROJECT_STORAGE),
     }
 
 
@@ -883,6 +885,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         key = result.inserted_primary_key
         assert key is not None
         owner = int(key[0])
+        assert caller.human_id is not None  # a human's call: `HumanCaller`
+        start_tabs.append(conn, caller.human_id, project_id)  # a new project opens last (§5.1)
         if body.policy is not None:
             proposed = _apply_policy(
                 conn,
