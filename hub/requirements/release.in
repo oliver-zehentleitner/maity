@@ -1,0 +1,7 @@
+# What the release job builds and checks the hub's sdist and wheel with (release-hub.yml,
+# `make release-build`). hatchling is the build backend: the build runs without isolation
+# on this set, so it is pinned here, compiled against build.txt for the same version as
+# `make install` and the image build.
+build
+twine
+hatchling

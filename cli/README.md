@@ -848,7 +848,8 @@ written, `pair` says so and prints what to put in it. `--config` (or
 the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
-that every agent would inherit, a configuration file others could
+that every agent would inherit, a Claude Code version other than the one
+its sandbox was checked with (a warning), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
 (`--offline` skips it). A minimal configuration:
 
@@ -867,6 +868,25 @@ modes = ["interactive", "supervised"]
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
+
+A repository can get more than the default grant, in a table of its own:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+allow = ["make test", "python -m pytest *"]   # commands the agent may run
+network = ["pypi.org"]                        # hosts the sandbox may reach
+```
+
+Each `allow` entry is a plain command: a program (a name or a path),
+then arguments of letters, digits and `_ . / = : @ % + , -`, separated
+by single spaces, with `*` allowed in an argument. Anything else is
+refused when the configuration is read: a variable assignment in front
+(`FOO=1 make`, `FOO+=1 make`), `env` under any path, quotes, `$`,
+backticks, backslashes and shell operators, a `:` in the program
+(Claude Code's `prog:*` form: write `prog *`), `maity` as the program,
+and `maity` as any part of an argument (between `/`, `:`, `=` and the
+other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
+case or with a Windows extension. `maity` is the runner's own rule.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
@@ -1046,9 +1066,12 @@ Code's sandbox, as a plain `maity …` call. Checked with Claude Code
 2.1.318: a command, a variable or a PATH placed in front of that call
 does not run outside the sandbox (the runner's permission rules refuse
 it, and past them it runs inside). This is the harness's behaviour, not
-a contract; recheck it with other versions. Not covered: an allow rule
-from the repository's own grant that itself starts with such a prefix,
-and Codex. Where it does not hold, a prefixed call would run as the
+a contract: with another Claude Code version the runner still starts the
+agent, and `maity runner check` and the runner's log say that the
+version was not checked. A repository's grant may only add plain
+commands (below, under the configuration); a rule with a variable or
+`env` in front, or that names `maity`, is refused when the configuration
+is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
 operator's account in the `single` layout, as the agents' user's account
 in `agent_user`. Run agents that read untrusted text (issues, pull
 requests, web pages) in the `agent_user` layout, which keeps your own

@@ -230,12 +230,33 @@ window.Maity = window.Maity || {};
     if (args[0] === "at" && (args.length === 3 || args.length === 4)) {
       return { view: "entry", uuid: args[1], centre: { mode: "public", canonical: args[2], root: args[3] || "" } };
     }
+    if (args[0] === "centre" && args[1] === "public" && args.length >= 3) return publicCentre(K, args);
     return K.core.routes.parse("#" + args.map(encodeURIComponent).join("/").replace(/%2C/g, ","));
   }
 
-  // The path below Why of a route. The library's grammar has no place for a route's `centre`
-  // (another repository of the family): an entry there is the host's own `at/<uuid>/<canonical>
-  // [/<root>]`, drawn from that repository's export (atCentre); any other place there is the
+  // The library's `centre/public/<canonical>/<root>/<place>` (0.11.44), as a link from it or
+  // another host reaches this page. The router drops an empty segment, so a repository at its
+  // root arrives without one: the segment after the canonical is the root unless it names a
+  // place the grammar has (a root named like a place, `graph` say, reads as that place).
+  const PLACE_HEADS = ["entry", "topic", "timeline", "thought", "ref", "search"];
+  function publicCentre(K, args) {
+    const head = args[3];
+    const atRoot = head === undefined || PLACE_HEADS.includes(head) || (K.core.routes.PAGES || []).includes(head);
+    const root = atRoot ? "" : head;
+    const rest = args.slice(atRoot ? 3 : 4);
+    const enc = (s) => encodeURIComponent(s).replace(/%2C/g, ",");
+    const hash = "#centre/public/" + enc(args[2]) + "/" + enc(root) + (rest.length ? "/" + rest.map(enc).join("/") : "");
+    const r = K.core.routes.parse(hash);
+    // only an entry has a place of its own at another repository here (atCentre); the rest is
+    // the family page, which lists that repository
+    return r.view === "entry" && r.centre ? r : { view: "family" };
+  }
+
+  // The path below Why of a route. An entry in another repository of the family is written as the
+  // host's own `at/<uuid>/<canonical>[/<root>]`, drawn from that repository's export (atCentre),
+  // not as the library's `centre/public/<canonical>/<root>/entry/<uuid>`: the router drops the
+  // empty root of a repository at its root, so that form would not read back; routeOf takes it
+  // when it arrives from elsewhere. Any other place there is the
   // family page, which lists it. A topic's file is written segment by segment, encoded.
   function below(K, route) {
     let r = route;

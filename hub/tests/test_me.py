@@ -76,6 +76,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "meat_proxy_note": meat_proxy_note(True, True),  # what switching it on would send
         "public_profile": True,  # §16.9: the person's own page, public until they choose otherwise
         "public_presence": True,  # §16.9: named as online on public pages until they choose
+        "public_stats": False,  # §16.9: their numbers, off until they choose
         "public_bio": None,
         "website": None,  # §16.9: the person's links, private until they choose
         "social": {},
