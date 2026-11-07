@@ -91,7 +91,7 @@ window.Maity = window.Maity || {};
     const presence = h("input", { type: "checkbox", id: "public-presence" });
     // The person's own numbers on their page, separate from the profile and off until chosen (§16.9).
     const stats = h("input", { type: "checkbox", id: "public-stats" });
-    // The agents tab lists the agents with a page; ticked, every agent of the person (`public_agents` all, §16.9).
+    // The agents tab lists the agents with a page; ticked, also the person's other agents that work in a project (`public_agents` all, §16.9).
     const agents = h("input", { type: "checkbox", id: "public-agents" });
     // One line: the hub refuses every line break in this text.
     const bio = profileField("public-bio", M.t("public_profile.bio"), { maxlength: "280" });
