@@ -7214,6 +7214,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
     && text(agCard("agt-x")).includes("guest/guestlab") && byId("avatar-file-agt-x") && byId("avatar-file-agt-b"),
     "agents page: every profile of one's own, by global name, its memberships, each with its picture");
+  // An agent's motif (§6.10): chosen by its owner beside the upload, grouped by theme, with a preview;
+  // it shows while there is no upload, and the hub's refusals are said in words.
+  {
+    const mpSel = () => byId("avatar-motif-agt-b");
+    const mpCard = () => agCard("agt-b");
+    let mpStored = {};
+    const mpRead = async () => { mpStored = (await win.Maity.api.get("/agents")).items.find((a) => a.id === "agt-b") || {}; };
+    const mpProfile = () => mpStored;
+    const mpOpen = async () => {
+      await go("#/agents"); for (let k = 0; k < 8; k++) await tick();
+      const head = main.querySelectorAll("tr.agent-row").find((tr) => tr.getAttribute("data-agent") === "agt-b");
+      const row = head && head.querySelector("button.agent-manage");
+      if (row && row.getAttribute("aria-expanded") !== "true") { row.click(); for (let k = 0; k < 6; k++) await tick(); }
+    };
+    await mpOpen();
+    for (let k = 0; k < 4; k++) await tick();
+    const groups = mpSel() ? mpSel().querySelectorAll("optgroup") : [];
+    expect(mpSel() && mpSel().value === "" && groups.length === 2 && groups[0].getAttribute("label") === "Classic"
+      && groups[1].getAttribute("label") === "Office robots" && groups[0].querySelectorAll("option").length === 3
+      && !mpCard().querySelector(".picture-motif-preview img"),
+      "motif: the picker on an agent's card, themes as groups in the catalog's words, none chosen, no preview");
+    expect(!byId("avatar-motif-hum-maintainer"), "motif: a human has no motif to choose");
+    mpSel().value = "fox"; mpSel().dispatch("change"); await tick();
+    const mpImg = mpCard().querySelector(".picture-motif-preview img");
+    expect(mpImg && mpImg.getAttribute("src") === "/api/v1/avatars/public/73880339f1ff49f8aeabdfba2a82f696"
+      && mpImg.getAttribute("alt") === "A fox face, orange on teal", "motif: the chosen one previewed from its public address, with its alt text");
+    const mpPatches = [], mpPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 6; k++) await tick();
+    await mpRead();
+    expect(JSON.stringify(mpPatches) === JSON.stringify([["/agents/agt-b", { avatar_motif: "fox" }]])
+      && mpProfile().avatar_motif === "fox" && mpProfile().avatar_source === "motif"
+      && /^\/api\/v1\/avatars\/agt-b\?v=/.test(mpProfile().avatar_url || ""),
+      "motif: Save sends PATCH /agents/{id} with the name, and the motif shows: " + JSON.stringify(mpPatches));
+    expect(text(main).includes("Motif saved; it shows now."), "motif: saved, said");
+    await mpOpen();
+    expect(mpSel() && mpSel().value === "fox" && text(mpCard()).includes("A motif from the hub's set."),
+      "motif: drawn again, the chosen motif selected and the source named");
+    mpPatches.length = 0;
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!mpPatches.length && text(mpCard()).includes("Nothing changed."), "motif: the same choice again sends nothing");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("held", 403, "/agents/agt-b", "forbidden", { reason: "moderation_hold" }));
+    mpSel().value = "comet"; mpSel().dispatch("change");
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: a moderation decision reset this picture; no motif while it stands"),
+      "motif: a moderation hold is said in words");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("unknown", 400, "/agents/agt-b", "invalid", { fields: { avatar_motif: "unknown" } }));
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: the hub has no motif of that name"), "motif: a name the set no longer holds is said in words");
+    win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
+    mpPatches.length = 0;
+    mpSel().value = ""; mpSel().dispatch("change");
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 6; k++) await tick();
+    await mpRead();
+    expect(JSON.stringify(mpPatches) === JSON.stringify([["/agents/agt-b", { avatar_motif: null }]])
+      && mpProfile().avatar_motif === null && mpProfile().avatar_source === "generated" && text(main).includes("Motif cleared."),
+      "motif: No motif clears it with null, and the generated picture shows again");
+    win.Maity.api.patch = mpPatch;
+    await mpOpen();
+  }
   expect(text(agCard("agt-b")).includes("maintainer/maity · member · coder") && text(agCard("agt-b")).includes("1 of 1 instance active")
     && agCard("agt-b").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/agents/agt-b/rulebook"),
     "agents page: a membership with trust and role, the instances against the team's limit, the rulebook linked: " + text(agCard("agt-b")).slice(0, 200));

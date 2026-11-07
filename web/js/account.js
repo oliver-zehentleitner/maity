@@ -20,6 +20,12 @@ window.Maity = window.Maity || {};
   const SOURCE_WORDS = {
     get uploaded() { return M.t("picture.source.uploaded"); },
     get forge() { return M.t("picture.source.forge"); },
+    get motif() { return M.t("picture.source.motif"); },
+  };
+  // A theme's heading (§6.10): the catalog's where it has one, else its name.
+  const THEME_WORDS = {
+    get classic() { return M.t("avatar.motif.theme.classic"); },
+    get office() { return M.t("avatar.motif.theme.office"); },
   };
   // The hub's refusals of an upload (§6.10), in words.
   const REFUSED = {
@@ -33,6 +39,77 @@ window.Maity = window.Maity || {};
     if (why) return { message: Object.hasOwn(REFUSED, why) ? REFUSED[why] : why };
     if (err.code === "rate_limited") return { message: M.t("picture.refused.rate") };
     if (err.code === "not_found" && !own) return { message: M.t("picture.refused.not_yours") };
+    return err;
+  }
+
+  // The motifs an agent may show (§6.10, "An agent's motif"), read once per page.
+  let motifList = null;
+  const motifs = () => {
+    motifList = motifList || M.api.get("/avatars/motifs").then((r) => r.motifs || [], (err) => { motifList = null; throw err; });
+    return motifList;
+  };
+
+  // An agent's motif: chosen by its owner with PATCH /agents/{id} (§6.3), or
+  // cleared; it shows while the agent has no upload. who and done as in the
+  // picture editor below.
+  function motifPicker(who, path, status, done) {
+    const id = "avatar-motif-" + who.id;
+    const slot = h("div", { class: "picture-motif field-stack" },
+      h("p", { class: "muted" }, M.t("picture.motif.reading")));
+    motifs().then((list) => {
+      if (!list.length) { append(clear(slot), h("p", { class: "muted" }, M.t("picture.motif.none_served"))); return; }
+      const themes = [];
+      list.forEach((x) => { if (!themes.includes(x.theme)) themes.push(x.theme); });
+      const select = h("select", { id },
+        h("option", { value: "" }, M.t("picture.motif.generated")),
+        themes.map((theme) => h("optgroup", { label: Object.hasOwn(THEME_WORDS, theme) ? THEME_WORDS[theme] : theme },
+          list.filter((x) => x.theme === theme).map((x) => h("option", { value: x.name }, x.label)))));
+      select.value = list.some((x) => x.name === who.avatar_motif) ? who.avatar_motif : "";
+      const preview = h("span", { class: "picture-motif-preview" });
+      const show = () => {
+        const motif = list.find((x) => x.name === select.value);
+        clear(preview);
+        if (!motif) return;
+        try {
+          append(preview, h("img", { class: "avatar-img", src: motif.url, alt: motif.alt, width: "64", height: "64" }));
+        } catch (refused) {
+          // not an address the page may load: no preview, the choice stays possible
+        }
+      };
+      show();
+      select.addEventListener("change", show);
+      const save = h("button", { type: "button" }, M.t("picture.motif.save"));
+      save.addEventListener("click", async () => {
+        const name = select.value || null;
+        if (name === (who.avatar_motif || null)) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("picture.motif.unchanged"))); return; }
+        save.disabled = true;
+        status.busy(M.t("picture.motif.saving"));
+        try {
+          const answer = await M.api.patch(path, { avatar_motif: name });
+          who.avatar_motif = answer.avatar_motif === undefined ? name : answer.avatar_motif;
+          const words = !name ? M.t("picture.motif.cleared")
+            : answer.avatar_source === "uploaded" ? M.t("picture.motif.chosen_behind_upload") : M.t("picture.motif.chosen");
+          done({ avatar_url: answer.avatar_url, avatar_source: answer.avatar_source, avatar_motif: who.avatar_motif }, words);
+        } catch (err) {
+          status.fail(M.t("picture.motif.not_saved"), motifRefusal(err));
+        } finally {
+          save.disabled = false;
+        }
+      });
+      append(clear(slot),
+        h("label", { for: id }, M.t("picture.motif.label", { name: who.display_name })),
+        h("div", { class: "picture-motif-choice" }, select, preview),
+        h("p", { class: "hint" }, M.t("picture.motif.hint")),
+        h("div", { class: "actions" }, save));
+    }, (err) => append(clear(slot), h("p", { class: "send-status failed" }, M.t("picture.motif.unreadable", { reason: err.message }))));
+    return slot;
+  }
+  // The hub's refusals of a motif (§6.10, §16.8), in words.
+  function motifRefusal(err) {
+    const fields = err.code === "invalid" && err.details && err.details.fields;
+    if (fields && fields.avatar_motif === "unknown") return { message: M.t("picture.motif.refused.unknown") };
+    if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") return { message: M.t("picture.motif.refused.held") };
+    if (err.code === "rate_limited") return { message: M.t("picture.refused.rate") };
     return err;
   }
 
@@ -50,6 +127,7 @@ window.Maity = window.Maity || {};
     const done = (answer, words) => {
       who.avatar_url = answer.avatar_url;
       who.avatar_source = answer.avatar_source;
+      if ("avatar_motif" in answer) who.avatar_motif = answer.avatar_motif;
       changed(answer, words);
     };
     input.addEventListener("change", async () => {
@@ -77,7 +155,8 @@ window.Maity = window.Maity || {};
         status.busy(M.t("picture.removing"));
         try {
           const answer = await M.api.del(path);
-          done(answer, answer.avatar_source === "forge" ? M.t("picture.removed_forge") : M.t("picture.removed_generated"));
+          done(answer, answer.avatar_source === "forge" ? M.t("picture.removed_forge")
+            : answer.avatar_source === "motif" ? M.t("picture.removed_motif") : M.t("picture.removed_generated"));
         } catch (err) {
           status.fail(M.t("picture.not_removed"), refusal(err, own));
           remove.disabled = false;
@@ -92,6 +171,8 @@ window.Maity = window.Maity || {};
         input,
         h("p", { class: "hint" }, M.t("picture.hint")),
         h("div", { class: "actions" }, remove),
+        // An agent's motif (§6.10): its owner's choice here; a human has none.
+        !own && /^agt-/.test(who.id || "") ? motifPicker(who, "/agents/" + encodeURIComponent(who.id), status, done) : null,
         status.el));
   }
 
