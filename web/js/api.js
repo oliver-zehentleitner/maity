@@ -4366,17 +4366,16 @@ window.Maity = window.Maity || {};
       if (!who.admin && who.member.kind === "human" && Object.keys(body).length === 1 && "role" in body) {
         const target = member(m[1], m[2], path);
         if (target.kind === "agent" && target.owner_id === who.member.id) {
-          const memberRoles = ["coder", "reviewer", "tester", "designer", "writer", "manager", "red-team", "blue-team", "purple-team"];
           const pol = project(m[1], path).policy || {};
-          const within = ["member", "guest"].includes(target.trust) && memberRoles.includes(target.role_base || target.role);
+          const within = ["member", "guest"].includes(target.trust) && MEMBER_ROLES.includes(target.role_base || target.role);
           if ((fixtureAs ? who.member.trust : trustIn(m[1])) !== "member" || pol.member_agents === "off" || !within) {
             fail(403, "forbidden", "only whoever may let the agent join", path, { reason: "join_rule" });
           }
           // A project role counts by its base, as project_roles.base_of resolves it (§2.3).
           const custom = (project(m[1], path).roles || []).find((r) => r.name === body.role);
-          const base = custom ? custom.base : memberRoles.concat(["ops", "proxy"]).includes(body.role) ? body.role : null;
+          const base = custom ? custom.base : HUB_ROLES.includes(body.role) ? body.role : null;
           if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
-          if (!memberRoles.includes(base)) {
+          if (!MEMBER_ROLES.includes(base)) {
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
           target.role = body.role;
