@@ -136,6 +136,29 @@ def test_a_text_on_the_command_line_is_refused_without_repeating_it(
     assert not fake.signed()
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["task", "restricted", "set", "tsk-1", "--json=" + SECRET],
+        ["task", "restricted", "set", "tsk-1", "--help=" + SECRET],
+        ["task", "restricted", SECRET],
+        ["task", "restricted", "show", "tsk-1", SECRET],
+        ["task", "restricted", "clear", "tsk-1", SECRET],
+        ["task", "restricted", "show", "tsk-1", "--json=" + SECRET],
+    ],
+)
+def test_argparse_errors_under_restricted_do_not_repeat_what_was_typed(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(argv)
+    assert stopped.value.code == cli.EXIT_USAGE
+    captured = capsys.readouterr()
+    assert "never an argument" in captured.err
+    assert "vault" not in captured.out + captured.err
+    assert not fake.signed()
+
+
 def test_set_without_a_file_is_refused_before_any_call(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -204,6 +227,24 @@ def test_the_hubs_refusals_are_said_by_their_code(
     assert cli.main(["task", "restricted", "set", "tsk-1", "--file", str(source)]) == cli.EXIT_ERROR
     captured = capsys.readouterr()
     assert shown in captured.err and "vault" not in captured.out + captured.err
+
+
+def test_rate_limited_says_when_to_try_again_and_does_not_retry(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "text.txt"
+    source.write_text(SECRET, encoding="utf-8")
+    fake.routes[("GET", PATH)] = lambda s: (200, state(version=3))
+    fake.routes[("PUT", PATH)] = lambda s: (
+        *refusal(429, "rate_limited"),
+        {"Retry-After": "123"},
+    )
+    argv = ["task", "restricted", "set", "tsk-1", "--file", str(source)]
+    assert cli.main(argv) == cli.EXIT_ERROR
+    assert calls(fake) == [("GET", PATH), ("PUT", PATH)]
+    captured = capsys.readouterr()
+    assert "rate_limited" in captured.err and "retry after: 123 s" in captured.err
+    assert "vault" not in captured.out + captured.err
 
 
 # --- clear ---------------------------------------------------------------------------------

@@ -22,7 +22,7 @@ import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, NoReturn
 
 from maity import (
     __version__,
@@ -2555,6 +2555,18 @@ _RESTRICTED_ARGV_HINT = (
 )
 
 
+def _quiet_errors(parser: argparse.ArgumentParser) -> None:
+    """argparse's errors name what was typed (`unrecognized arguments: …`, `invalid choice: …`,
+    `ignored explicit argument …`): under `task restricted` that may be the restricted text
+    itself, so its parsers say a fixed sentence instead, with the usage, and exit 2."""
+
+    def error(message: str) -> NoReturn:
+        parser.print_usage(sys.stderr)
+        parser.exit(EXIT_USAGE, f"{parser.prog}: error: {_RESTRICTED_ARGV_HINT}\n")
+
+    parser.error = error  # type: ignore[method-assign]
+
+
 def _restricted_card(card: str) -> str:
     """Text where the card id belongs is refused without repeating it."""
     if any(ch.isspace() for ch in card):
@@ -2639,6 +2651,11 @@ def _restricted_write(args: argparse.Namespace, method: str, text: str | None) -
         else:
             state = session.client.call("DELETE", path, query=[("base_version", str(version))])
     except hub.HubError as exc:
+        if exc.code == "rate_limited" and exc.retry_after is not None:
+            # The cap's wait (§1.7), said; the write is not tried again.
+            raise CommandError(
+                f"{exc}\n  retry after: {exc.retry_after:.0f} s (nothing was written)"
+            ) from None
         if exc.code != "conflict":
             raise
         now = _obj(session.client.call("GET", path))
@@ -2669,6 +2686,14 @@ def cmd_task_restricted_set(args: argparse.Namespace) -> int:
 def cmd_task_restricted_clear(args: argparse.Namespace) -> int:
     """`DELETE …/restricted?base_version=` with the version just read."""
     return _restricted_write(args, "DELETE", None)
+
+
+# Every command whose leftover words are refused without repeating them (see `main`).
+_RESTRICTED_HANDLERS: tuple[Handler, ...] = (
+    cmd_task_restricted_show,
+    cmd_task_restricted_set,
+    cmd_task_restricted_clear,
+)
 
 
 def _releases(session: Session) -> list[dict[str, Any]]:
@@ -4855,11 +4880,13 @@ def build_parser() -> argparse.ArgumentParser:
         "process list and the shell's history. Access restriction, not encryption.",
         formatter_class=fmt,
     )
+    _quiet_errors(r)
     rsub = r.add_subparsers(dest="restricted_command", metavar="<action>", required=True)
     rr = rsub.add_parser("show", help="the text, its version and its changes", formatter_class=fmt)
     rr.add_argument("card", type=_id, help="the card id")
     _json_flag(rr)
     rr.set_defaults(handler=cmd_task_restricted_show)
+    _quiet_errors(rr)
     rr = rsub.add_parser(
         "set", help="set the text from a file or stdin (--file -)", formatter_class=fmt
     )
@@ -4869,10 +4896,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _json_flag(rr)
     rr.set_defaults(handler=cmd_task_restricted_set)
+    _quiet_errors(rr)
     rr = rsub.add_parser("clear", help="clear the text", formatter_class=fmt)
     rr.add_argument("card", type=_id, help="the card id")
     _json_flag(rr)
     rr.set_defaults(handler=cmd_task_restricted_clear)
+    _quiet_errors(rr)
 
     p = add(
         "note",
@@ -5225,7 +5254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
     args, extra = parser.parse_known_args(argv)
-    if extra and getattr(args, "handler", None) is cmd_task_restricted_set:
+    if extra and getattr(args, "handler", None) in _RESTRICTED_HANDLERS:
         # Never repeated: what is left over may be the restricted text itself (§13).
         parser.error(_RESTRICTED_ARGV_HINT)
     if extra and not _say_body_after_options(args, extra):

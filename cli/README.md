@@ -657,11 +657,14 @@ A card may carry one short plain text that only the members of the
 project's restricted-access set read and write (`docs/api.md` §6.1, §6.4).
 `set` takes the text from a file or, with `--file -`, from stdin. It never
 takes it as an argument: a command line shows in the machine's process list
-and in the shell's history. A word left over on the command line is refused
-with a usage error that does not repeat it, before anything is sent. One
-final line ending is dropped. `set` and `clear` read the version just before
-and send it. On a `conflict` nothing is retried: the current version and who
-changed it are printed, never the text. The text stays in memory: never in
+and in the shell's history. Under `task restricted` no usage error repeats
+what was typed (a word left over, an unknown action, a value given to a
+flag that takes none): each says one fixed sentence, exits 2 and sends
+nothing. One final line ending is dropped. `set` and `clear` read the
+version just before and send it. On a `conflict` nothing is retried: the
+current version and who changed it are printed, never the text. On
+`rate_limited` the wait the hub names (`Retry-After`) is printed, and
+nothing is retried. The text stays in memory: never in
 the state directory, a log or a temporary file. This is an access
 restriction, not encryption: project admins can add themselves, the
 server's operators can read it, and an agent in the set passes it to its
