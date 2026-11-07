@@ -178,6 +178,7 @@ window.Maity = window.Maity || {};
     }
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
+    let drawAhead = null; // set with the restricted-access line below
     function showAgent() {
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
       const fresh = (m ? m.id : "") !== shownFor;
@@ -190,6 +191,9 @@ window.Maity = window.Maity || {};
       if (m && fresh) memberReportsOptions(m);
       takeOverOptions();
       profileLinksFor(agentSelect.value, m);
+      // The line before the join follows the profile chosen, also when `open()` chooses it
+      // (no `change` event) or the members are read again.
+      if (drawAhead) drawAhead();
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -245,6 +249,22 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint", id: "join-subagents-hint" }, M.t("join.subagents.hint")),
       M.i18n.language === "en" ? null
         : h("div", { class: "join-offer" }, english, " ", h("label", { for: "join-subagents-english" }, M.t("join.subagents.english"))));
+    // Before the join: whether the agent will read the project's restricted texts (§6.1
+    // "Every way into the set"). It is the creator's agent, as every agent a join makes.
+    const ahead = M.restricted ? M.restricted.aheadLine() : null;
+    drawAhead = () => {
+      if (!ahead) return;
+      const id = agentSelect.value;
+      if (id && memberOf(id)) { ahead.show(null); return; } // a new instance enters nothing
+      const fresh = id || "join:new-agent";
+      const profile = id ? profiles.offered.find((p) => p.id === id) : null;
+      const name = profile ? profile.display_name : display.value.trim() || handle.value.trim() || M.t("join.ahead.the_agent");
+      ahead.show(M.restricted.ahead(ctx, (members) => members.concat([{ id: fresh, kind: "agent", owner_id: ctx.me.id,
+        trust: trust.value, display_name: name, handle: profile ? profile.handle : handle.value.trim() || null, isolated: null }]),
+      id ? [] : [fresh]));
+    };
+    [agentSelect, trust].forEach((f) => f.addEventListener("change", drawAhead));
+    [handle, display].forEach((f) => f.addEventListener("input", drawAhead));
     // Whom the agent reports to (§3.1, §2.3, §6.2). Every profile offered here is the caller's
     // own, so the caller is the subordinate's owner: oneself and one's own agents apply at once,
     // anyone else is a cross-owner edge, said so in its option, that waits for consent (filed at
@@ -594,11 +614,12 @@ window.Maity = window.Maity || {};
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
         h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+    ahead ? ahead.el : null,
     stepSlot,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
-    function showForm() { append(clear(body), form); }
+    function showForm() { append(clear(body), form); drawAhead(); }
     showForm();
     showAgent();
     append(clear(panel), panelHead(ctx, () => close(true), own), body);

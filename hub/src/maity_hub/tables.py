@@ -122,6 +122,9 @@ human = Table(
     # Whether the person's page shows their own numbers (§16.9, `public_stats`); off for every
     # account until they choose, separate from `public_profile`.
     Column("public_stats", Boolean, nullable=False, server_default=false()),
+    # Which of the person's agents their agents page lists (§16.9, "A person's agents"):
+    # `public_projects`, those with a page, or `all`, every one with an active membership.
+    Column("public_agents", String(16), nullable=False, server_default="public_projects"),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
@@ -133,6 +136,9 @@ human = Table(
     Column("broadcasts", JSON_VALUE),
     # The portal's language and that of the hub's own texts (§6.2); null until chosen.
     Column("interface_language", String(35)),
+    # The projects a browser with no tabs of its own opens, in order, as project ids (§5.1
+    # "Start tabs"); NULL opens every membership.
+    Column("start_tabs", JSON_VALUE),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration

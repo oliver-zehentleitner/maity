@@ -166,12 +166,15 @@ Until the counts are read, the switcher counts the open requests from
 Every route is a path (`docs/api.md` §16.11): the hub answers the app
 shell for every path that is not one of its own, and the dashboard
 routes with the History API and shows its own "not found" for a path it
-does not know. There are no `#/` routes and no redirects from them.
+does not know (`js/not-found.js`): signed in inside the app, without a
+session in the frame of the sign-in at a handle or a project's word that is
+no view, while an address under one of the dashboard's own first words keeps
+the sign-in, which leads on there. There are no `#/` routes and no redirects from them.
 
 | Route | What |
 |---|---|
-| `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard; signed in, **View public page** opens it with `?as=public` where one is served |
-| `/<owner>/<slug>` | a project: where it has a public page, a visitor and a signed-in non-member read it in the dashboard at the same address, read-only (`js/visitor.js`, `docs/api.md` §16.9); so do its `/overview` and `/overview/project`, which show the public overview. A visitor at any other address of the project gets the sign-in, which goes on there; a non-member at `/overview/swarm` is taken to `/overview`. Signed in as a member, the project's inbox, with **View public page** (`?as=public`) where one is served |
+| `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard, which shows a visitor "not found" in the frame ("does not exist, or it is not public", `js/not-found.js`) with the sign-in one link away; signed in, **View public page** opens it with `?as=public` where one is served |
+| `/<owner>/<slug>` | a project: where it has a public page, a visitor and a signed-in non-member read it in the dashboard at the same address, read-only (`js/visitor.js`, `docs/api.md` §16.9); so do its `/overview` and `/overview/project`, which show the public overview. A visitor at any other view of the project gets the sign-in, which goes on there, and at a word that is no view "not found" in the frame (`js/not-found.js`); a non-member at `/overview/swarm` is taken to `/overview`. Signed in as a member, the project's inbox, with **View public page** (`?as=public`) where one is served |
 | `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context, going from one to another changes the pane alone; **← Conversations** goes back to `/chats` |
 | `/all/jour-fixe`, `/all/why` | a project's Jour fixe and Why side by side for every project of the reader (`js/all-pages.js`), one read per project, each section filled when its answer comes |
@@ -1243,6 +1246,20 @@ restriction, not encryption. The set's notice in the bell opens the
 project's settings; a member in the set without `project:admin` is led
 from there to their own settings (`settings/mine`), which show the setting
 to read: its mode, that they are in the set, the set and the count.
+Before every way into the set (§6.1 "Every way into the set") the page says
+who will read the restricted texts. The join and invitation forms show it as
+a line; a guest's raise, an isolation's end, a transfer into an organisation
+and a promotion to an organisation's owner ask first; an organisation's
+invitation and transfer say it before their go. A reader who is not served
+the list is told only what the setting lets the page know ("unless the list
+leaves them out", "if the list names them"). Whoever accepts an invitation
+may be a former member whose id the list still holds: while the list names
+someone who is no member now, the invitation's line says so conditionally
+too. The accepter may also be the returning owner of an agent that stayed a
+member (not isolated) after its owner left: such agents the setting would
+let in are named, "if their owner is the one who accepts". A transfer into an organisation also names the project's agents it may
+let in, those whose owner is a guest or no member and may be one of the
+organisation's owners.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:

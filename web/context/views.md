@@ -61,15 +61,18 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
-**Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
+**Revisit when:** a human asks to land on one project
 **See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
-project switcher: each project with its state and the number of open
-requests waiting for this human, plus "All projects" with the total. The
+project switcher: each project this browser has open as a tab, with its
+state and the number of open requests waiting for this human, plus "All
+projects" with the total. A switcher row too long is answered by closing
+tabs (cd4fe2ba). The
 cross-project view (`/all`) is the inbox across every project, each
 entry labelled with its project and that project's state, answered in
 place. Opening the dashboard without a route lands there when the human
@@ -86,6 +89,38 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## The project tabs are the browser's own, moved by dragging, by Alt+Shift+Arrow or from the tabs menu
+
+**Id:** cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
+
+Which projects the header shows as tabs, and in which order, is kept in
+this browser per viewer (`js/tabs.js`); without storage it holds for the
+visit. A browser with nothing kept starts from the account's
+`start_tabs`, or with every project when that is `null`. A project the
+browser has not seen yet opens as the last tab; one opened by its
+address gets its tab back. A tab moves by dragging, by Alt+Shift+Arrow
+on the focused tab, or by Move this tab left/right in the tabs menu
+beside the row, which also opens and closes each project (switches that
+keep the menu open) and keeps the current row as the start set. Each
+move is announced with the new place. A project's start-set switch also
+sits in its own settings (Mine). The cross-project inbox can be filtered
+to projects with an open tab; personal requests always stay.
+
+**Reason:** the split between browser and account is the maintainer's
+(the contract entry above). The rest is inferred from the dashboard's
+existing rules: nothing is drag-only (the board's Move and Place menus),
+so a single pointer or a keyboard reaches every move a drag makes; and
+a filter that hides personal requests would hide requests with no tab
+to open them from.
+
+**Rejected alternatives:** unknown beyond the contract entry's.
 
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
@@ -5153,3 +5188,63 @@ can be linked.
   row that scrolls, with the fade on the side that has more.
 - Resetting the scroll on every change of address: opening a card on the board would jump to
   the top, and the board's place on return would be lost.
+
+## Before a way into the restricted-access set, the page says who will read, and no more than it knows
+
+**Id:** c6ad8006-f67b-4cfe-a383-7141ca7dfb8b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g8ts5vxhj1md, Web 2 (2026-11-07): the plan with three questions to the lead and the lead's answers on the card; docs/api.md §6.1 "Every way into the set" and "Reading the setting"; the review of #1450 (2026-11-07) for the returning accepter and the agents a transfer seats; `hub/src/maity_hub/restricted.py` `resolve`, which reads the list by member id
+**Revisit when:** the hub serves a reader without `members` more of the set, an organisation's invitation carries what its go would bring into a set, or an owner change of an agent profile is built
+**See:** refresh.md#the-restricted-access-sets-notice-is-a-projects-setting-read-by-a-read-mark-though-its-target-says-settings — aefe70f5-509b-47ea-9768-02623c68016a — as of 2026-11-07
+
+Where the dashboard creates a join or a project invitation, raises a guest, ends an isolation,
+transfers a project into an organisation, promotes a human to an organisation's owner, or shows
+an organisation's invitation or transfer for its go, it says beforehand who will read the
+project's restricted texts (`M.restricted.ahead`, `aheadOrgOwners`, `aheadOrg` in
+`js/restricted.js`). The set before and after the action comes from the same resolution as the
+setting's own widening preview. The join and invitation forms show it as a line that follows the
+form. A raise, a lift, a transfer and a promotion ask with `window.confirm`. Nothing is said
+while the set names nobody.
+
+The wording follows what the reader is served:
+- A human with `project:admin` gets the list, so the page names who enters, with the count of
+  cards with a text.
+- A reader served `{mode, included}` alone sees no list (§6.1 "Reading the setting"). Under
+  `all_except` the page says "unless the restricted-access list leaves them out". Under
+  `nobody_except` it says "may read, if the list names them". The reader's own place on the list
+  comes from `included`.
+- An organisation's invitation and a promotion to owner reach projects whose settings the page
+  does not read. There the page says one general sentence: an owner may enter a project's set.
+- Whoever accepts a project invitation is not known beforehand and may be a former member: the
+  same id comes back, and the list, never pruned, may still hold it. While the list names
+  someone who is no member now, or the reader sees no list, the line says "if the list names
+  them" or "unless the list leaves them out" for the accepter; otherwise the accepter is new
+  and treated as on no list. The accepter may also be the owner of an agent that stayed a
+  member after its owner left (not isolated, §6.1 "Every way into the set"), which comes back
+  into the set with its owner. The page names such agents the setting would let in, "if their
+  owner is the one who accepts", rather than marking the accepter as listed, which would name
+  the wrong reader.
+- A transfer into an organisation seats its owners, and with them their agents: an agent of the
+  project that is out of the set only because its owner is a guest or no member may enter. The
+  page knows those agents and names them, "if their owner is one of the owners".
+
+**Reason:** the contract asks for the sentence at each of these places, and a sentence the page
+cannot know to be true would be a false one. A reader without the list cannot tell whether an id
+is listed, so the wording says exactly that.
+
+**Rejected alternatives:**
+- Treating whoever accepts an invitation as a new id that no list names: wrong for a former
+  member whose id the list keeps, who would enter under `nobody_except` with no word said.
+- Leaving agents out of the transfer's sentence: a listed agent whose guest owner becomes an
+  owner enters the set unannounced.
+- "Will read" under every mode for a reader without the list: under `nobody_except` it is false
+  for anyone the list does not name.
+- Saying nothing where the list is unknown: the contract asks for the sentence, and under
+  `all_except` the member does enter unless listed.
+- A hub field on an organisation's invitation counting the sets its go would enter: a hub change
+  for a sentence the general wording already gives honestly. It can follow as a card of its own
+  if wanted.
+- Reading every project of an organisation before a promotion: one request per project for one
+  confirmation, and its owners are not always admins in each of them.

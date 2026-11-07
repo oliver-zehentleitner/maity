@@ -5223,6 +5223,10 @@
     "en": "074964d062492852",
     "text": "11ed2c92528251ee"
   },
+  "inbox.open_tabs": {
+    "en": "73e85032c53bf0b7",
+    "text": "26f394b2f67a2f23"
+  },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
     "text": "eb831f534530899a"
@@ -10462,6 +10466,26 @@
   "mine.saved_here": {
     "en": "c5fd8ba21d61c2fe",
     "text": "8841a3d17e0f4ae5"
+  },
+  "mine.start_tab.hint": {
+    "en": "32e2b2c7f09d2462",
+    "text": "8729976b689ececf"
+  },
+  "mine.start_tab.label": {
+    "en": "b1433ec21f04fa5f",
+    "text": "0e0ebb00764aae7c"
+  },
+  "mine.start_tab.legend": {
+    "en": "806935f0e9a21e7a",
+    "text": "6950b2babc23c2d5"
+  },
+  "mine.start_tab.saved_off": {
+    "en": "c7e34e324b69339f",
+    "text": "8a03d89925ae6013"
+  },
+  "mine.start_tab.saved_on": {
+    "en": "17461c0d0e4516b9",
+    "text": "f532859a9e74a3b4"
   },
   "mine.title": {
     "en": "7a21b6d58d3fa8fb",
@@ -16531,6 +16555,46 @@
     "en": "e7fed8cb843bdff1",
     "text": "dc4bb074079f263b"
   },
+  "tabs.closed": {
+    "en": "41a13659a8884709",
+    "text": "3365b3436d7d36b2"
+  },
+  "tabs.keep_at_start": {
+    "en": "bded12959749c950",
+    "text": "e403c8ebe2b3cd94"
+  },
+  "tabs.keep_failed": {
+    "en": "831641bc8e3a7e90",
+    "text": "419728a7845889a7"
+  },
+  "tabs.kept": {
+    "en": "2482794c67a6be13",
+    "text": "6dedca7cfeb1b573"
+  },
+  "tabs.menu": {
+    "en": "be9597d99ab83e55",
+    "text": "03904673383a7f1a"
+  },
+  "tabs.move_hint": {
+    "en": "84c7a82cd68e277d",
+    "text": "f5175827380cc60b"
+  },
+  "tabs.move_left": {
+    "en": "13921bad599da92d",
+    "text": "89258e275061dff2"
+  },
+  "tabs.move_right": {
+    "en": "cb3dbcadfd42ae03",
+    "text": "d696b9c465825002"
+  },
+  "tabs.moved": {
+    "en": "4db9451c5e9ac558",
+    "text": "d4c90d66f9c9f417"
+  },
+  "tabs.opened": {
+    "en": "1a8185ac38f28117",
+    "text": "2dd75784b601e0c5"
+  },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",
     "text": "3ddee09eb7d8efbb"
@@ -17662,18 +17726,6 @@
   "view.no_projects": {
     "en": "72c247a605290f76",
     "text": "878af8264802b555"
-  },
-  "view.none": {
-    "en": "d2eb84b809691f2a",
-    "text": "a3dce236b97e2a86"
-  },
-  "view.none_go": {
-    "en": "6d26d577999f452d",
-    "text": "2c3554f483ef3836"
-  },
-  "view.none_link": {
-    "en": "5fd347b963def318",
-    "text": "c5251f981271aa20"
   },
   "view.notifications": {
     "en": "bf6b93906d73e810",

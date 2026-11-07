@@ -533,3 +533,36 @@ own shell, so `cmd.exe` and fish are served by the first line.
   reading the line adapts it (the maintainer's narrowing of tsk-tq5n569zev9k,
   2026-11-01).
 - Asking the hub for the line per platform: the code is shown once.
+
+## A dead join link shows the dead-link page on the public host too
+
+**Id:** 9409ba26-5387-41ab-8be8-6b3b5d4a7ef0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-sm093ps0b35t with its reproduction note nte-7m62p1ad9hdf (curl against the hosted instance, 2026-11-07); the lead's choice of option A, 2026-11-07; contract #1455 (`docs/api.md` §3.2); the hub's `_page` in `hub/src/maity_hub/routes/joins.py`
+**Revisit when:** the dead-link page moves into the shared frame of the public pages, or a client starts reading the join page through `GET /api/v1/join/{token}` and needs another answer for a dead token
+
+A dead join token (unknown, used, expired, burned or revoked) at
+`GET /join/{token}` answers on the public host with the same page as on
+the join host (§1.1, §3.2): 404, `Maity-Error: not_found`, HTML for a
+browser, Markdown otherwise, the same for every reason. `GET
+/api/v1/join/{token}` keeps the JSON error envelope of §1.3 unless the
+client asks for `text/html`, which gets the same HTML page.
+
+**Reason:** without a join host, and for links made with `via: "public"`,
+the join URL is `https://<public host>/join/<token>`, and a browser that
+opened a dead one saw the JSON envelope, while the join host already
+showed "This join link no longer works". The person holding the link
+needs the same answer on both hosts. The API path is for machine clients,
+which read the envelope everywhere under `/api/v1`; no client reads the
+join page there, since the CLI only posts the exchange.
+
+**Rejected alternatives:**
+- Leaving the public host on the JSON envelope and documenting only the
+  join host: dead public links are opened in browsers just the same, and
+  the reproduction showed the hub answers, not the proxy.
+- Treating `/join/<token>` on the join host like `/<token>`, for a link
+  whose host was swapped by hand: it changes the §1.1 rule that every
+  other path there is a `302` to the start page, and stays out unless the
+  maintainer asks for it.

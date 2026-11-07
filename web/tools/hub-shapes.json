@@ -178,6 +178,7 @@
      "meat_proxy_hands": "boolean",
      "meat_proxy_lead": "boolean",
      "meat_proxy_note": "string",
+     "public_agents": "string",
      "public_bio": "null",
      "public_presence": "boolean",
      "public_profile": "boolean",
@@ -185,6 +186,7 @@
      "social": {
       "object": {}
      },
+     "start_tabs": "null",
      "terms": "null",
      "website": "null"
     }
@@ -193,6 +195,7 @@
     "array": {
      "object": {
       "full_name": "string",
+      "id": "string",
       "logo": {
        "object": {
         "available": "boolean",
