@@ -4079,6 +4079,104 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(asked.i18n.language === "de" && asked.i18n.explicit() === "de" && !("maity.language" in asked.kept),
       "language: ?lang= is the visitor's choice, and nothing is stored for it");
   }
+  // Before sign-in the page takes the landing page's own language, from GET /site/chrome
+  // (tsk-jh94ax9pphxs): the hub chooses it from the raw ?lang=, Accept-Language, the landing
+  // page's languages and its default_language. js/i18n.js afresh on a public host, with a hub
+  // that answers the frame as a landing page with these pages and this default would.
+  {
+    const TEN = ["en", "de", "fr", "es", "pt", "it", "nl", "ja", "ko", "zh-Hans"];
+    const hubPage = (pages, fallback, languages) => (asked) => {
+      if (asked !== null && pages.includes(asked)) return asked;  // ?lang= only as an exact page
+      for (const tag of languages) { const found = pages.find((p) => p === tag || p === tag.split("-")[0]); if (found) return found; }
+      return fallback;
+    };
+    const visitor = ({ search = "", languages = ["en-US"], answer, protocol = "https:" }) => {
+      const asked = [];
+      const timers = [];
+      const page = {
+        MAITY_I18N: Object.fromEntries(TEN.map((t) => [t, {}])), MAITY_I18N_LANGUAGES: TEN,
+        location: { search, protocol }, navigator: { languages },
+        localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+        document: { documentElement: { lang: "" }, baseURI: "https://hub.example/", currentScript: null },
+        setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; },
+        clearTimeout: (t) => clearTimeout(t),
+        AbortController, URLSearchParams, URL, Intl, Promise, Object, console,
+      };
+      page.window = page;
+      page.Maity = { api: { get: (path, opts) => {
+        asked.push(path);
+        const raw = new URLSearchParams(path.split("?")[1] || "").get("lang");
+        return answer(raw, opts, path);
+      } } };
+      vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
+      return { i18n: page.Maity.i18n, asked, page };
+    };
+    const frame = (pick) => (raw) => Promise.resolve({ language: pick(raw), header: {}, footer: {} });
+
+    // 1. default_language de, a browser that asks only for sv: the landing page's de.
+    const sv = visitor({ languages: ["sv"], answer: frame(hubPage(["de", "en"], "de", ["sv"])) });
+    await sv.i18n.follow(null);
+    expect(sv.i18n.language === "de" && JSON.stringify(sv.asked) === '["/site/chrome"]',
+      "visitor language: default_language de and a browser asking for sv read de, as the landing page " + sv.i18n.language);
+    // 2. Pages only in en and fr, a browser asking for de: the landing page's en, though de has a catalog.
+    const de = visitor({ languages: ["de"], answer: frame(hubPage(["en", "fr"], "en", ["de"])) });
+    await de.i18n.follow(null);
+    const deFr = visitor({ languages: ["de", "fr"], answer: frame(hubPage(["en", "fr"], "en", ["de", "fr"])) });
+    await deFr.i18n.follow(null);
+    expect(de.i18n.language === "en" && deFr.i18n.language === "fr",
+      "visitor language: pages en and fr, a browser asking for de reads en, one asking for de, fr reads fr " + [de.i18n.language, deFr.i18n.language]);
+    // 3. A non-exact ?lang= goes to the hub as written; the landing page ignores it, so does the page.
+    const deAt = visitor({ search: "?lang=de-AT", languages: ["en-US"], answer: frame(hubPage(TEN, "en", ["en-US"])) });
+    await deAt.i18n.follow(null);
+    expect(deAt.i18n.language === "en" && JSON.stringify(deAt.asked) === '["/site/chrome?lang=de-AT"]',
+      "visitor language: ?lang=de-AT is asked as written and read as the landing page reads it " + deAt.asked);
+    // 4. A reload with ?lang= the landing page has no page in follows the frame, the address unchanged.
+    const ko = visitor({ search: "?lang=ko", languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await ko.i18n.follow(null);
+    expect(ko.i18n.language === "en" && ko.i18n.explicit() === "ko",
+      "visitor language: a reload with ?lang=ko and no ko page follows the landing page; the address still says ko");
+    // A signed-in account decides, without a read.
+    const own = visitor({ languages: ["sv"], answer: frame(() => "de") });
+    await own.i18n.follow("fr");
+    expect(own.i18n.language === "fr" && own.asked.length === 0, "visitor language: an account's interface_language decides, no frame read");
+    // Read once per page and address, however often the session answers 401.
+    await sv.i18n.follow(null);
+    expect(sv.asked.length === 1, "visitor language: the frame is read once per page");
+    // A choice made on the page holds for the page's life, also against the frame.
+    const picked = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await picked.i18n.follow(null);
+    await picked.i18n.choose("ko");
+    await picked.i18n.follow(null);
+    const pickedChanged = await picked.i18n.frame("en");
+    expect(picked.i18n.language === "ko" && pickedChanged === false, "visitor language: a pick on the page holds against the frame");
+    // The frame's own read draws the page again once where it differs, never where it agrees.
+    const drawn = visitor({ languages: ["de"], answer: () => new Promise(() => {}) });
+    drawn.i18n.frameWait = 20;
+    await drawn.i18n.follow(null);
+    const first = await drawn.i18n.frame("en");
+    const again = await drawn.i18n.frame("en");
+    const agree = visitor({ languages: ["de"], answer: frame(() => "de") });
+    await agree.i18n.follow(null);
+    const agreeChanged = await agree.i18n.frame("de");
+    expect(first === true && again === false && agreeChanged === false && drawn.i18n.language === "en",
+      "visitor language: one redraw where the frame differs, none again, none where it agrees " + [first, again, agreeChanged]);
+    // A failed read, and a late one: the rule without the frame, and no view held past frameWait.
+    const failed = visitor({ languages: ["de-AT"], answer: () => Promise.reject(Object.assign(new Error("down"), { status: 503 })) });
+    await failed.i18n.follow(null);
+    const late = visitor({ languages: ["de-AT"], answer: (raw, opts) => new Promise((resolve, reject) => {
+      if (opts && opts.signal) opts.signal.addEventListener("abort", () => reject(new Error("aborted")));
+    }) });
+    late.i18n.frameWait = 30;
+    const started = Date.now();
+    await late.i18n.follow(null);
+    const waited = Date.now() - started;
+    expect(failed.i18n.language === "de" && late.i18n.language === "de" && waited < 1000,
+      "visitor language: a failed or late frame read leaves the browser's rule and holds nothing past frameWait " + [failed.i18n.language, late.i18n.language, waited]);
+    // Fixture mode: its frame answers English whatever is asked, so it is not read.
+    const fixture = visitor({ protocol: "file:", languages: ["de-AT"], answer: frame(() => "en") });
+    await fixture.i18n.follow(null);
+    expect(fixture.i18n.language === "de" && fixture.asked.length === 0, "visitor language: fixture mode reads no frame");
+  }
   // The reader's language (§6.2): the account's, else ?lang= or the choice, then the browser's, then en.
   {
     const i18n = win.Maity.i18n;

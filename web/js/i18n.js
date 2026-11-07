@@ -7,10 +7,13 @@
 //
 // Which language (docs/api.md §6.2): the account's interface_language, which
 // M.api gives M.i18n.follow with every GET /auth/session; without one, and
-// before sign-in, the landing page's order: ?lang= (or a choice made on this
-// page, which writes it), then the browser's, then en, where the landing page
-// falls back to its default_language instead. Nothing is stored in the browser
-// for it: the hub's own pages cannot read that (web/context/rendering.md).
+// before sign-in, the landing page's own choice, read from GET /site/chrome's
+// `language` once per page (the hub chooses it from the raw ?lang=, the
+// browser's Accept-Language, the landing page's languages and its
+// default_language); a choice made on this page comes first, and without that
+// read (fixture mode, the join host, an error, a late answer) ?lang=, the
+// browser's, then en. Nothing is stored in the browser for it: the hub's own
+// pages cannot read that (web/context/rendering.md).
 //
 // M.t(key, values): one key per sentence, never a sentence put together
 // from pieces. `{name}` in the text takes values.name, a number formatted
@@ -63,6 +66,42 @@ window.Maity = window.Maity || {};
     route.go(at.path + "?" + at.query.toString(), { quiet: true });
   }
 
+  // The landing page's language for this visitor, from GET /site/chrome (docs/api.md §16.7.5),
+  // once per page and per asked ?lang=: never in fixture mode, whose frame answers English
+  // whatever is asked, and given `i18n.frameWait` ms, so a read that fails or answers late
+  // leaves the rule below and never holds a view (the answer then counts for nothing).
+  let picked = null;  // a choice made on this page (choose), while the address says no other
+  const framed = {};  // the frame's language per address read
+  let account = false;  // the session's interface_language decides
+  const frameReads = {};
+  // The address's ?lang= as written, for the hub to match exactly as the landing page does.
+  function askedRaw() {
+    const raw = window.location ? new URLSearchParams(window.location.search).get("lang") : null;
+    return raw && raw.length <= 35 ? raw : null;
+  }
+  const frameAddress = () => {
+    const raw = askedRaw();
+    return "/site/chrome" + (raw ? "?lang=" + encodeURIComponent(raw) : "");
+  };
+  function readFrame() {
+    const address = frameAddress();
+    if (Object.hasOwn(frameReads, address)) return frameReads[address];
+    if (!M.api || !window.location || window.location.protocol === "file:") return Promise.resolve(null);
+    const stop = typeof AbortController === "function" ? new AbortController() : null;
+    let late;
+    const wait = new Promise((resolve) => {
+      late = window.setTimeout(() => { if (stop) stop.abort(); resolve(null); }, i18n.frameWait);
+    });
+    const answer = M.api.get(address, stop ? { signal: stop.signal } : undefined)
+      .then((model) => (model && typeof model.language === "string" ? closest(model.language) : null), () => null);
+    frameReads[address] = Promise.race([answer, wait]).then((tag) => {
+      window.clearTimeout(late);
+      if (tag) framed[address] = tag;
+      return tag;
+    });
+    return frameReads[address];
+  }
+
   // Without an account's language: ?lang= (which then stays the choice for this page), the
   // choice made on this page, the browser's list, English.
   // What the person chose themselves, or null: only this may go on an account.
@@ -70,6 +109,15 @@ window.Maity = window.Maity || {};
     const asked = window.location ? closest(new URLSearchParams(window.location.search).get("lang")) : null;
     if (asked) { chosen = asked; return asked; }
     return closest(chosen);
+  }
+  // Without an account's language: a choice made on this page, the landing page's (the frame),
+  // then the rule below.
+  function visitorChoice() {
+    const asked = closest(askedRaw());
+    if (asked && picked && asked !== closest(picked)) picked = null;  // a newer address decides
+    const pick = closest(picked);
+    if (pick) return pick;
+    return closest(framed[frameAddress()]) || browserChoice();
   }
   const browserList = () => (window.navigator && window.navigator.languages) || [];
   function browserChoice() {
@@ -206,10 +254,34 @@ window.Maity = window.Maity || {};
   };
   // The first language, before the first view is drawn.
   i18n.ready = use(browserChoice());
-  // The account's interface language, or null: the rule without an account.
-  i18n.follow = (tag) => use(closest(tag) || browserChoice());
+  // How long the frame's language may take before the rule without it decides.
+  i18n.frameWait = 1500;
+  // The account's interface language, or null: the visitor's language, the frame read first.
+  i18n.follow = (tag) => {
+    const own = closest(tag);
+    account = !!own;
+    if (own) return use(own);
+    return readFrame().then(() => (account ? undefined : use(visitorChoice())));
+  };
   // A choice made on a page before sign-in.
-  i18n.choose = (tag) => { chosen = closest(tag) || chosen; carry(tag); return use(tag); };
+  i18n.choose = (tag) => {
+    chosen = closest(tag) || chosen;
+    picked = closest(tag) || picked;
+    carry(tag);
+    return use(tag);
+  };
+  // The frame's own read (js/site-chrome.js) at the same address: its `language` counts as the
+  // read above does. True when the page's language changed, so the page draws itself again once;
+  // false when it agrees, under an account's language, or after a choice made on the page.
+  i18n.frameAddress = frameAddress;
+  i18n.frame = (tag) => {
+    const found = closest(tag);
+    if (!found) return Promise.resolve(false);
+    framed[frameAddress()] = found;
+    const next = visitorChoice();
+    if (account || next === i18n.language) return Promise.resolve(false);
+    return use(next).then(() => i18n.language === next);
+  };
   // A key's English text, for a translation that may not be used (the product line's
   // sentence with a placeholder missing or twice, docs/api.md §16.13).
   i18n.english = (key) => {

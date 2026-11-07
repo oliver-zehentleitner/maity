@@ -170,7 +170,9 @@ window.Maity = window.Maity || {};
     if (bar && !header) bar.hidden = true;
     let model;
     try {
-      model = await M.api.get("/site/chrome?lang=" + encodeURIComponent(M.i18n.language));
+      // The address i18n read the visitor's language from, with the raw ?lang= or none: the
+      // hub then chooses as the landing page does, and the browser's cache answers this read.
+      model = await M.api.get(M.i18n.frameAddress());
     } catch (err) {
       if (mine === round) { lineHeld = false; drop(); }
       return false;
@@ -193,6 +195,11 @@ window.Maity = window.Maity || {};
     app.hidden = true;
     line();
     if (drawn) drawn(model);
+    // The page follows the landing page's language (js/i18n.js): drawn again once where the
+    // two differed, never when they agree, under an account or after a choice on the page.
+    if (!M.api.session() && model.language) {
+      M.i18n.frame(model.language).then((changed) => { if (changed && mine === round && M.redraw) M.redraw(); });
+    }
     return true;
   }
 

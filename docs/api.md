@@ -5390,15 +5390,18 @@ and `GET /auth/session` carries it, and no agent reads or needs it. While
 it is `null`, the hub uses `language` if that is one of the ten and
 English otherwise, and the dashboard the browser's choice, as before
 sign-in: `language` reads as `en` for everyone who never set it, so it says
-nothing about what a person wants to read. Before sign-in the dashboard takes,
-among the ten, `?lang=`, then `navigator.languages`, then `en`: the landing
-page's order (§16.7), except that the landing page offers only the languages
-it has a page in, takes `?lang=` only as an exact offered tag (the dashboard
-reads the closest catalog: `de-AT` reads `de`) and falls back to its
-`default_language` where the dashboard falls back to `en`. It passes the
-language as `lang` to the page texts of §16.7.4. A
-choice made on a page writes `?lang=` into the address; nothing is stored in
-the browser for it, so a page the hub renders says the same. A key without a
+nothing about what a person wants to read. Before sign-in the dashboard takes
+the landing page's own language: the `language` of `GET /site/chrome`
+(§16.7.5), read once per page with the address's `?lang=` as written (or none),
+which the hub chooses exactly as the landing page does. A choice made on the
+page comes first and holds for the page; a reload with a `?lang=` the landing
+page has no page in follows the landing page, though the address still shows
+it. Without that read (a failed or late answer, the join host) the dashboard
+takes, among the ten, `?lang=` (the closest catalog: `de-AT` reads `de`), then
+`navigator.languages`, then `en`. It passes the language as `lang` to the page
+texts of §16.7.4. A choice made on a page writes `?lang=` into the address;
+nothing is stored in the browser for it, so a page the hub renders says the
+same. A key without a
 translation reads in English. The API stays in English in every language: a
 client translates by `code` and `details`, not by `message`. *Hub
 implementation:* `interface_language` comes with the hub's change for
