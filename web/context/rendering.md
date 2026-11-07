@@ -655,12 +655,12 @@ Plural forms follow the catalog's language, not the locale of the numbers: a Ger
 the English catalog needs English forms.
 
 The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
-`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+or `?lang=`). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
 `?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
-pickers on `/login` and `/register`, the frame's languages) also writes its tag into an address
-that carries `?lang=`, through `M.route.go` with `quiet`, which replaces the address without
+pickers on `/login` and `/register`, the frame's languages) also writes its tag into the address
+(since 2026-11-07 also one without `?lang=`: 323db387-6c53-4a63-86bd-13a464b114e7), through `M.route.go` with `quiet`, which replaces the address without
 drawing the view again. The frame's links lead to `/register?lang=<the frame's language>`, and `/register`
 reads the session again when it is drawn: before, its 401 read the older `?lang=` back, and the
 page jumped back to the language it was reached in (tsk-7dty3gkegqgc; on `/login`, a reload did).
@@ -674,14 +674,46 @@ the session themselves. A catalog per language keeps nine languages off every pa
   ignore `language` (§6.2).
 - All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
 - Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
-- Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
-  the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+- Picking the language in the hub before sign-in: the dashboard chooses and passes `lang` to the
+  page texts (§16.7.4). (The first reason, a choice kept in the browser, is gone since 2026-11-07:
+  323db387-6c53-4a63-86bd-13a464b114e7.)
 - Reading `?lang=` only once, when the dashboard loads: an address with `?lang=` would then say
   another language than the page, and a reload would still take the choice back.
-- Writing `?lang=` into every address on a choice, also one without it: the choice is already kept in
-  the browser, and an address copied from the page would then fix the language for whoever opens it.
+- Writing `?lang=` into every address on a choice, also one without it: rejected while the choice was
+  kept in the browser; adopted on 2026-11-07, once nothing is kept there
+  (323db387-6c53-4a63-86bd-13a464b114e7).
 - `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
   so what was typed into the form so far would be lost.
+
+## Before sign-in the dashboard takes the landing page's rule for the language, and keeps nothing in the browser
+
+**Id:** 323db387-6c53-4a63-86bd-13a464b114e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a9n9p6952wwb (landing in English, sign-in and visitor views in German for the same visitor, 2026-11-06), reproduced on maity.team 2026-11-07; the lead's go on the plan (Maity message, 2026-11-07); `web/js/i18n.js`, `hub/src/maity_hub/render.py` `choose_language`
+**See:** rendering.md#english-is-always-loaded-the-readers-language-comes-as-its-own-script-chosen-by-one-rule-in-one-place — 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6 — as of 2026-11-07
+**Revisit when:** the maintainer wants a visitor's choice kept across visits, or the hub's public pages start reading a cookie
+
+Without an account's `interface_language` the dashboard follows the rule the hub's own pages follow:
+`?lang=`, then the browser's languages, then `en`. A choice made on a page (`M.i18n.choose`) holds
+for the page while it lives and writes `?lang=` into the address, also one that had none; the
+frame's and the landing page's links carry `?lang=` from page to page. Nothing goes into
+`localStorage`: the key an older version wrote, `maity.language`, is removed once when the
+dashboard loads, and no other key is touched.
+
+**Reason:** a choice kept in `localStorage` is invisible to the pages the hub renders itself. After
+one visit to `/signin?lang=de` an en-US browser got the landing page in English and the sign-in and
+visitor views in German, in the same visit. One rule that both sides can read is the fix.
+
+**Consequence:** a visitor who chose a language and later types a bare address gets the browser's
+language again, on every page alike. An address copied from a page after a choice carries
+`?lang=` and opens in that language, as the landing page's links already do.
+
+**Rejected alternative:** a language cookie the hub reads too: it would keep the choice across visits,
+but the public pages set and read no cookie (context/scope.md, hub/context/landing.md), and `/`
+would need `Vary: Cookie`. Keeping the choice across visits is the maintainer's call, and it is that
+cookie.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 

@@ -7,7 +7,9 @@
 //
 // Which language (docs/api.md §6.2): the account's interface_language, which
 // M.api gives M.i18n.follow with every GET /auth/session; without one, and
-// before sign-in, the explicit choice or ?lang=, then the browser's, then en.
+// before sign-in, the landing page's rule: ?lang= (or a choice made on this
+// page, which writes it), then the browser's, then en. Nothing is stored in
+// the browser for it: the hub's own pages cannot read that (web/context/rendering.md).
 //
 // M.t(key, values): one key per sentence, never a sentence put together
 // from pieces. `{name}` in the text takes values.name, a number formatted
@@ -27,6 +29,7 @@ window.Maity = window.Maity || {};
   const i18n = { language: "en", locale: undefined };
   // The languages with a catalog: a tag outside them is never loaded.
   const available = window.MAITY_I18N_LANGUAGES || ["en"];
+  // Where an older version kept the visitor's choice: removed once, every other key left alone.
   const STORED = "maity.language";
   // js/i18n.js's own address: a route's path is deep, the bundles stay beside this file.
   const here = (window.document && window.document.currentScript && window.document.currentScript.src) || "js/i18n.js";
@@ -43,32 +46,29 @@ window.Maity = window.Maity || {};
   }
   const closest = (tag) => closestIn(available, tag);
 
-  function stored() {
-    try { return window.localStorage.getItem(STORED); } catch { return null; }
-  }
-  function remember(tag) {
-    try { window.localStorage.setItem(STORED, tag); } catch { /* the page still follows it */ }
-  }
-  // A choice made on the page writes its tag into an address's ?lang=, so a reload or a copied
-  // address says the same; without ?lang= the address stays as it is. Nothing is drawn again:
-  // the page that asked draws itself in the language (js/route.js, go with quiet).
+  try { window.localStorage.removeItem(STORED); } catch { /* nothing kept, or no storage */ }
+  // The visitor's choice while this page lives: a route without ?lang= keeps it, a new page
+  // starts from its own address and the browser again, as the hub's pages do.
+  let chosen = null;
+  // A choice made on the page writes its tag into the address's ?lang=, so a reload, a copied
+  // address and the hub's pages say the same. Nothing is drawn again: the page that asked
+  // draws itself in the language (js/route.js, go with quiet).
   function carry(tag) {
     const route = M.route;
     if (!route) return;
     const at = route.current();
-    if (!at.query.has("lang") || at.query.get("lang") === tag) return;
+    if (at.query.get("lang") === tag) return;
     at.query.set("lang", tag);
     route.go(at.path + "?" + at.query.toString(), { quiet: true });
   }
 
-  // Without an account's language: ?lang= (which then stays the choice), the
-  // explicit choice, the browser's list, English. A choice made on the page writes ?lang=
-  // too (carry), or a view drawn again would read the older one back.
+  // Without an account's language: ?lang= (which then stays the choice for this page), the
+  // choice made on this page, the browser's list, English.
   // What the person chose themselves, or null: only this may go on an account.
   function explicitChoice() {
     const asked = window.location ? closest(new URLSearchParams(window.location.search).get("lang")) : null;
-    if (asked) { remember(asked); return asked; }
-    return closest(stored());
+    if (asked) { chosen = asked; return asked; }
+    return closest(chosen);
   }
   const browserList = () => (window.navigator && window.navigator.languages) || [];
   function browserChoice() {
@@ -208,7 +208,7 @@ window.Maity = window.Maity || {};
   // The account's interface language, or null: the rule without an account.
   i18n.follow = (tag) => use(closest(tag) || browserChoice());
   // A choice made on a page before sign-in.
-  i18n.choose = (tag) => { remember(tag); carry(tag); return use(tag); };
+  i18n.choose = (tag) => { chosen = closest(tag) || chosen; carry(tag); return use(tag); };
   // A key's English text, for a translation that may not be used (the product line's
   // sentence with a placeholder missing or twice, docs/api.md §16.13).
   i18n.english = (key) => {
