@@ -1841,6 +1841,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
   padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .product-line:empty { display: none; }
+/* At phone width the credit right after the year wraps the line onto one more row: less padding
+   above and below keeps the group chat inside the window at 390 x 844. The links keep their
+   24 px targets. */
+@media (max-width: 600px) { .product-line { padding-top: 8px; padding-bottom: 12px; } }
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
 /* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line
