@@ -1111,7 +1111,8 @@ six places to keep in step instead of one.
 **Revisit when:** the hub lets a member's join change the membership, or the designer reworks the join panel
 
 When the chosen agent is a member of the project, the join panel shows a
-choice instead of role, reports to, areas and briefing: **Replace
+choice instead of role, areas and briefing (whom it reports to has a field
+of its own, e69c571c): **Replace
 instance** with the member's active instances (presence, cards held) or
 **Start another instance** with the team's count against its limit.
 Replace is preselected when there is an active instance. The join then
@@ -2256,7 +2257,8 @@ not hold a token that names nobody yet, which the hub accepts.
 
 **Id:** c848b045-9411-43b3-8763-2fd998270a1d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e69c571c-3365-433a-b26d-245efff28a7d
 **Evidence:** confirmed
 **Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
 **Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
@@ -2293,6 +2295,27 @@ settled, so it is not offered until it has.
 would offer trust, role and areas the hub refuses them. Finding the
 pending request by its title: fragile and invisible to the reader when
 it breaks.
+
+## Whom an agent reports to is chosen where it joins, a boss of another owner offered and marked
+
+**Id:** e69c571c-3365-433a-b26d-245efff28a7d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (req-a5xxyvq74ft7, seq 86060): on Agents, letting agents join, Reports to should be settable there, not only under Management afterwards; card tsk-nbadjbr9zpg7 and the lead's go with its two points (seq 86087), 2026-11-07; docs/api.md §3.1, §2.3 ("to any other member, which is a cross-owner edge and takes effect only with the boss's side's consent"), §6.2 ("Own consent")
+**Revisit when:** the contract gives the member view the pending edge (`reports_to_pending`), or a join that names `reports_to` for an agent already a member
+
+The join panel offers **Reports to** in every case:
+
+- **A first join, by an admin:** every member who is not a guest. One's own agents and oneself are plain; anyone else is marked "waits for consent", and the hub files that consent at the exchange (§3.1).
+- **A member's own agent:** oneself (the default) and one's own managers in the project, the only bosses §3.1 lets a member's join name.
+- **An agent already here:** a field of its own with the current boss. A change is the owner's own `PATCH …/members/{id}` (§2.3), sent before the join, so the join page and the first resume show the new boss.
+
+If that `PATCH` is refused, no join is sent. If it is taken and the join then fails, the panel says both: the join's refusal, and the new boss, or the consent it waits for. A boss already asked for is not asked again in the same panel. The owner's **Reports to** on Members and Agents offers a boss of another owner too, marked the same way, its 202 said as the consent it waits for.
+
+**Reason:** the maintainer wants to place agents, other owners' among them, at the moment they join, and §2.3 lets the owner start a cross-owner edge whatever their trust. The earlier rule (c848b045) held them back only until the contract settled that, which it now has.
+
+**Rejected alternative:** a default boss on the agent profile, carried into every project: a boss is always a member of one project, and it would need a contract change (the lead, seq 86087). Sending `reports_to` in an instance's join: the hub refuses a membership field there (`differs_from_membership`). Undoing the `PATCH` when the join fails: the change was asked for on its own terms, and an undo could itself fail.
 
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 

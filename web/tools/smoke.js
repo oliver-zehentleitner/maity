@@ -3240,8 +3240,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byoButton().click(); await tick();
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
     && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team"
-    && !byId("join-reports") && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
-    "own agents: the panel offers only member or guest, every role but ops and proxy (§3.1), no reports to and no areas");
+    && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
+    && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
+    "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
   const byoPosts = [];
   const byoPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) byoPosts.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_join_limit", field: "role" })); };
@@ -3249,9 +3250,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-handle").value = "my-helper"; byId("join-display").value = "My helper"; byId("join-role").value = "tester"; byId("join-trust").value = "guest"; byId("join-ttl").value = "900";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   // A tester has no subagents by default (§3.1), whatever the box showed for the coder before.
-  expect(JSON.stringify(byoPosts[0]) === JSON.stringify({ agent: { handle: "my-helper", display_name: "My helper" }, trust: "guest", role: "tester", ttl_seconds: 900, subagents: false })
+  expect(JSON.stringify(byoPosts[0]) === JSON.stringify({ agent: { handle: "my-helper", display_name: "My helper" }, trust: "guest", role: "tester", reports_to: "hum-maintainer", ttl_seconds: 900, subagents: false })
     && text(main.querySelector(".join-panel")).includes("a member may not set this for their own agent: the role"),
-    "own agents: the join carries trust, role and subagents only, and the hub's limit is said with its field " + JSON.stringify(byoPosts[0]));
+    "own agents: the join carries trust, role, reports to and subagents only, and the hub's limit is said with its field " + JSON.stringify(byoPosts[0]));
   win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_agents_max", max: 10 }));
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector(".join-panel")).includes("you hold as many agents in this project as it allows (10)"), "own agents: the hub's count limit in words");
@@ -5663,6 +5664,99 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jpProto.focus = jpFocus; document.activeElement = undefined;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector(".view-agents") && !jpPanel().hidden && main.querySelector(".profiles"), "join: /agents/join opens Agents with the panel open");
+  // tsk-nbadjbr9zpg7: whom the agent reports to, chosen in the join panel (§3.1, §2.3, §6.2).
+  // A member of another owner is offered, marked, and waits for consent; an agent already here
+  // gets its owner's PATCH first, then the join, each outcome said.
+  {
+    const rtAll = win.Maity.api.getAll, rtPost = win.Maity.api.post, rtPatch = win.Maity.api.patch;
+    const foreign = [{ id: "hum-other", kind: "human", display_name: "Other Owner", handle: "other", trust: "member", role: "coder", reports_to: null, removed_at: null },
+      { id: "agt-f9", kind: "agent", owner_id: "hum-other", display_name: "Foreign Lead", handle: "foreign-lead", trust: "member", role: "manager", reports_to: null, removed_at: null, instances: [] }];
+    win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? rtAll(p).then((r) => Object.assign({}, r, { items: r.items.concat(foreign) })) : rtAll(p));
+    let calls = [];
+    win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) calls.push(["post", p, b]); return rtPost(p, b); };
+    let patchAnswer = null;
+    win.Maity.api.patch = (p, b) => { calls.push(["patch", p, b]); return patchAnswer ? patchAnswer(p, b) : rtPatch(p, b); };
+    const opts = (id) => byId(id).querySelectorAll("option").map((o) => [o.getAttribute("value"), text(o)]);
+    const panelText = () => text(main.querySelector(".join-panel"));
+    const openPanel = async (agentId) => {
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 6; k++) await tick();
+      byId("join-agent").value = agentId; byId("join-agent").dispatch("change"); await tick();
+    };
+    // A new agent: every member who is not a guest, oneself and one's own agents plain, the other owner's marked.
+    await openPanel("");
+    const rtNew = opts("join-reports");
+    expect(rtNew[0][0] === "" && rtNew.some(([v, l]) => v === "hum-maintainer" && l === "you (Maintainer)")
+      && rtNew.some(([v, l]) => v === "agt-a" && l === "Agent A (@agent-a)")
+      && rtNew.some(([v, l]) => v === "agt-f9" && l.endsWith("waits for consent")) && rtNew.some(([v, l]) => v === "hum-other" && l.endsWith("waits for consent"))
+      && byId("join-member-reports") && main.querySelector(".join-member-reports").hidden,
+    "reports to: a new agent's select offers the members, another owner's marked as waiting for consent " + JSON.stringify(rtNew));
+    byId("join-handle").value = "rt-new"; byId("join-display").value = "RT New"; byId("join-reports").value = "agt-f9";
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 1 && calls[0][0] === "post" && calls[0][2].reports_to === "agt-f9" && main.querySelector(".join-result"),
+      "reports to: a new agent's join carries the boss chosen, also across owners (the hub files the consent at the exchange) " + JSON.stringify(calls));
+    // Without one: nobody, sent as null, as before.
+    await openPanel("");
+    byId("join-handle").value = "rt-none"; byId("join-display").value = "RT None";
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 1 && calls[0][2].reports_to === null, "reports to: left empty, a new agent's join reports to nobody " + JSON.stringify(calls));
+    // An agent already here: its boss shown and changeable, itself never offered.
+    await openPanel("agt-b");
+    const rtB = opts("join-member-reports");
+    expect(!main.querySelector(".join-member-reports").hidden && byId("join-member-reports").value === "agt-a"
+      && !rtB.some(([v]) => v === "agt-b") && rtB.some(([v]) => v === "agt-f9") && main.querySelector(".join-member-reports").querySelector("p.hint"),
+    "reports to: an agent already here shows its boss, itself not offered " + JSON.stringify(rtB));
+    // Unchanged: no PATCH, the join alone.
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 1 && calls[0][0] === "post" && !("reports_to" in calls[0][2]) && !main.querySelector(".join-result p.join-reports-said"),
+      "reports to: unchanged, an instance's join sends no PATCH and no reports_to " + JSON.stringify(calls));
+    // Changed to one's own agent: the PATCH first, then the join; the line says it.
+    await openPanel("agt-b");
+    byId("join-member-reports").value = "agt-d";
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 2 && calls[0][0] === "patch" && calls[0][1] === "/projects/maintainer/maity/members/agt-b"
+      && JSON.stringify(calls[0][2]) === JSON.stringify({ reports_to: "agt-d" }) && calls[1][0] === "post"
+      && text(main.querySelector(".join-result p.join-reports-said")) === "Agent B now reports to Agent D.",
+    "reports to: changed, the owner's PATCH goes first, then the join, and the line says the new boss " + JSON.stringify(calls));
+    // Across owners: 202, the consent named; the same choice again is not asked twice.
+    patchAnswer = () => Promise.resolve({ id: "req-c900", class: "consent", status: "open", to: "human:hum-other", title: "Take agent-b as a report" });
+    await openPanel("agt-b");
+    byId("join-member-reports").value = "agt-f9";
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 2 && calls[0][0] === "patch" && text(main.querySelector(".join-result p.join-reports-said")) === "Agent B reports to Foreign Lead once the consent is given (req-c900).",
+      "reports to: across owners the PATCH answers with the consent, said beside the line " + JSON.stringify(calls));
+    btn(main.querySelector(".join-result"), "Join another").click(); await tick();
+    byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change"); await tick();
+    const rtKept = byId("join-member-reports").value;
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(rtKept === "agt-f9" && calls.length === 1 && calls[0][0] === "post",
+      "reports to: the boss already asked for stays chosen and is not asked again " + rtKept + " " + JSON.stringify(calls));
+    // The PATCH taken, the join refused: both said, the change not undone.
+    patchAnswer = null;
+    win.Maity.api.post = (p, b) => { calls.push(["post", p, b]); return Promise.reject(new win.Maity.api.ApiError("the hub is busy", 503, p, "unavailable")); };
+    await openPanel("agt-b");
+    byId("join-member-reports").value = "agt-c";
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 2 && calls[0][0] === "patch" && panelText().includes("No join created: ") && panelText().includes("the hub is busy")
+      && text(main.querySelector(".join-panel .join-reports-said")) === "Agent B now reports to Agent C." && !main.querySelector(".join-result"),
+    "reports to: the PATCH taken and the join refused, the panel says both " + JSON.stringify(calls));
+    // The PATCH refused: no join is sent.
+    patchAnswer = () => Promise.reject(new win.Maity.api.ApiError("would close a circle", 400, "", "invalid", { fields: { reports_to: "cycle" } }));
+    win.Maity.api.post = (p, b) => { calls.push(["post", p, b]); return rtPost(p, b); };
+    await openPanel("agt-b");
+    byId("join-member-reports").value = "agt-d";
+    calls = [];
+    main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(calls.length === 1 && calls[0][0] === "patch" && panelText().includes("Whom it reports to was not changed, and no join was created: ")
+      && !main.querySelector(".join-result"), "reports to: a refused PATCH sends no join " + JSON.stringify(calls));
+    win.Maity.api.getAll = rtAll; win.Maity.api.post = rtPost; win.Maity.api.patch = rtPatch;
+  }
   // A failed read of the joins stays in the panel, with a retry; the agents' cards are drawn all the same.
   const jfAll = win.Maity.api.getAll;
   let jfFail = true;
@@ -11285,6 +11379,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   expect(byId("owner-reports-agt-b") && main.querySelector("section.agent-here form.owner-reports"),
     "owner reports_to: the project's Agents has it beside the rulebook");
+  // tsk-nbadjbr9zpg7: a member of another owner is offered too, marked; saving it waits for that side's consent, said so (§6.2).
+  const orForeign = { id: "agt-f8", kind: "agent", owner_id: "hum-else", display_name: "Else Lead", handle: "else-lead", trust: "member", role: "manager", reports_to: null, removed_at: null, instances: [] };
+  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then((r) => Object.assign({}, r, { items: r.items.concat([orForeign]) })) : orAll(p));
+  win.Maity.api.patch = (p, b) => { orPatches.push([p, b]); return Promise.resolve({ id: "req-c901", class: "consent", status: "open", to: "human:hum-else", title: "Take agent-b as a report of else-lead" }); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
+  const orB = byId("owner-reports-agt-b");
+  const orBOption = orB && orB.querySelectorAll("option").find((o) => o.getAttribute("value") === "agt-f8");
+  expect(orBOption && text(orBOption) === "Else Lead (@else-lead), waits for consent",
+    "owner reports_to: a member of another owner is offered, marked as waiting for consent");
+  orB.value = "agt-f8";
+  main.querySelectorAll("section.agent-here form.owner-reports").find((f) => f.querySelectorAll("select").some((x) => x.id === "owner-reports-agt-b")).dispatch("submit");
+  for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { reports_to: "agt-f8" }])
+    && text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c901, Take agent-b as a report of else-lead)."),
+  "owner reports_to: across owners the save says it waits for the boss's owner's consent " + JSON.stringify(orPatches[orPatches.length - 1]));
   win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
   await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
   await go("#/maintainer/maity/inbox");

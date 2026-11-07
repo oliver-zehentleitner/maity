@@ -185,6 +185,9 @@ window.Maity = window.Maity || {};
       newFields.hidden = agentSelect.value !== "";
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
+      memberReportsField.hidden = !m;
+      reportsOptions();
+      if (m && fresh) memberReportsOptions(m);
       takeOverOptions();
       profileLinksFor(agentSelect.value, m);
       if (!m) return;
@@ -242,10 +245,54 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint", id: "join-subagents-hint" }, M.t("join.subagents.hint")),
       M.i18n.language === "en" ? null
         : h("div", { class: "join-offer" }, english, " ", h("label", { for: "join-subagents-english" }, M.t("join.subagents.english"))));
-    const reportsTo = h("select", { id: "join-reports" },
-      h("option", { value: "" }, M.t("join.reports.nobody")),
-      // A guest is never reported to (§2.3).
-      ctx.members.filter((m) => !M.trust.guest(m)).map((m) => h("option", { value: m.id }, m.display_name)));
+    // Whom the agent reports to (§3.1, §2.3, §6.2). Every profile offered here is the caller's
+    // own, so the caller is the subordinate's owner: oneself and one's own agents apply at once,
+    // anyone else is a cross-owner edge, said so in its option, that waits for consent (filed at
+    // the exchange for a first join, at once by the PATCH below for an agent already here).
+    const ownBoss = (x) => x.id === ctx.me.id || (x.kind === "agent" && x.owner_id === ctx.me.id);
+    const bossLabel = (x) => (x.id === ctx.me.id ? M.t("members.reports.you", { name: x.display_name })
+      : ownBoss(x) ? M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })
+      : M.t("members.reports.cross", { name: x.display_name, handle: M.dom.handleOf(ctx, x) }));
+    // A guest is never reported to (§2.3). A member's own join offers oneself and one's own
+    // managers here only (§3.1), oneself first and chosen; an admin's, every other member too.
+    const bosses = () => {
+      const list = ctx.members.filter((x) => !x.removed_at && !M.trust.guest(x)
+        && (!own || x.id === ctx.me.id || (x.kind === "agent" && x.owner_id === ctx.me.id && M.trust.roleIs(x, "manager"))));
+      return own && !list.some((x) => x.id === ctx.me.id) ? [ctx.me].concat(list) : list;
+    };
+    const reportsTo = h("select", { id: "join-reports" });
+    const reportsOptions = () => {
+      const kept = reportsTo.value;
+      const list = bosses();
+      append(clear(reportsTo), own ? null : h("option", { value: "" }, M.t("join.reports.nobody")),
+        list.map((x) => h("option", { value: x.id }, bossLabel(x))));
+      reportsTo.value = list.some((x) => x.id === kept) ? kept : own ? ctx.me.id : "";
+    };
+    // An agent already here keeps its membership's boss unless it is changed here: its owner's
+    // own PATCH (§2.3), sent before the join, so the join page and the first resume show it.
+    const memberReports = h("select", { id: "join-member-reports", "aria-describedby": "join-member-reports-hint" });
+    // The boss asked for while a consent is open, per member: chosen again, it is not asked twice.
+    const asked = new Map();
+    const bossNow = (m) => (asked.has(m.id) ? asked.get(m.id) : m.reports_to || "");
+    const closesCircle = (m, boss) => {
+      const byId = Object.fromEntries(ctx.members.map((x) => [x.id, x]));
+      for (let at = boss, seen = new Set(); at && !seen.has(at); at = byId[at] && byId[at].reports_to) {
+        if (at === m.id) return true;
+        seen.add(at);
+      }
+      return false;
+    };
+    function memberReportsOptions(m) {
+      const list = ctx.members.filter((x) => !x.removed_at && !M.trust.guest(x) && x.id !== m.id && !closesCircle(m, x.id));
+      const now = bossNow(m);
+      append(clear(memberReports), h("option", { value: "" }, M.t("join.reports.nobody")),
+        list.map((x) => h("option", { value: x.id }, bossLabel(x))),
+        now && !list.some((x) => x.id === now) ? h("option", { value: now }, M.t("members.reports.unlisted", { name: ctx.nameOf(now) })) : null);
+      memberReports.value = now;
+    }
+    const memberReportsField = h("div", { class: "field join-member-reports", hidden: true },
+      h("label", { for: "join-member-reports" }, M.t("join.field.reports_to")), memberReports,
+      h("p", { class: "hint", id: "join-member-reports-hint" }, M.t("join.reports.member_hint")));
     const areas = h("input", { id: "join-areas", placeholder: "hub/, docs/" });
     // docs/api.md §3: the briefing reaches the agent in its resume packet
     // after the exchange, never on the join page.
@@ -309,7 +356,7 @@ window.Maity = window.Maity || {};
       return lines.windows ? "windows" : "join";
     }
 
-    function showLine(j, member) {
+    function showLine(j, member, bossSaid) {
       const lines = j.paste_lines;
       let platform = initialPlatform(lines);
       const line = h("code", { class: "paste-line" }, lines[platform]);
@@ -349,6 +396,7 @@ window.Maity = window.Maity || {};
       append(clear(body), h("div", { class: "join-result" },
         h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
+        bossSaid ? h("p", { class: "join-reports-said" }, bossSaid) : null,
         offers,
         j.instruction ? h("div", { class: "join-instruction" },
           h("p", null, M.t("join.line.instruction")),
@@ -401,8 +449,8 @@ window.Maity = window.Maity || {};
         const req = member
           ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
             replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
-          // One's own agent (§3.1): it reports to its owner by default, no field.
-          : own ? { agent, trust: trust.value, role: role.value, ttl_seconds: Number(ttl.value) }
+          // One's own agent (§3.1): oneself (the default) or one of one's own managers here.
+          : own ? { agent, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id, ttl_seconds: Number(ttl.value) }
           : {
             agent,
             trust: trust.value,
@@ -420,6 +468,35 @@ window.Maity = window.Maity || {};
         }
         if (!member && takesOver.value && !takeOverField.hidden) req.takes_over = takesOver.value;
         if (!member && handover.value.trim()) req.handover = handoverValue(handover.value.trim());
+        // An agent already here whose boss was changed in the panel: that PATCH first (§2.3),
+        // then the join. Refused, nothing is sent after it; taken, it stays whatever the join
+        // does, and the panel says so beside the join's own outcome.
+        let bossSaid = null;
+        if (member && memberReports.value !== bossNow(member)) {
+          const to = memberReports.value || null;
+          status.busy(M.t("join.reports.saving"));
+          create.disabled = true;
+          let answer;
+          try {
+            answer = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(member.id), { reports_to: to });
+          } catch (err) {
+            create.disabled = false;
+            status.fail(M.t("join.reports.failed"), err);
+            memberReports.focus();
+            return;
+          }
+          const name = profileName(member.id);
+          // 202: the edge waits for the other side's consent (§6.2), the membership as it was.
+          if (answer && answer.class === "consent" && /^req-/.test(answer.id || "")) {
+            asked.set(member.id, to || "");
+            bossSaid = M.t("join.reports.waiting", { name, boss: ctx.nameOf(to), id: answer.id });
+          } else {
+            asked.delete(member.id);
+            member.reports_to = to;
+            bossSaid = to ? M.t("join.reports.saved", { name, boss: ctx.nameOf(to) }) : M.t("join.reports.saved_nobody", { name });
+          }
+        }
+        const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
         create.disabled = true;
         let j;
@@ -430,7 +507,7 @@ window.Maity = window.Maity || {};
           j = await M.stepUp.run(() => (mine === submission ? M.api.post(ctx.base + "/joins", req)
             : Promise.reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled"))), stepSlot, M.t("join.step_up"));
         } catch (err) {
-          if (err.code === "cancelled") { status.done(); return; }
+          if (err.code === "cancelled") { status.done(); sayBoss(); return; }
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
           const d = err.details || {};
@@ -445,6 +522,7 @@ window.Maity = window.Maity || {};
             // No members:admin and the member's way closed (§3.1): say which right is missing.
             : err.code === "forbidden" && !d.reason && d.scope === "members:admin" ? { message: M.t("join.failed.no_admin") }
             : err);
+          sayBoss();
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (takeover || d.field === "takes_over") (takeover === "handover" ? handover : takesOver).focus();
           if (err.code === "instance_quota" && agent.id) {
@@ -465,7 +543,7 @@ window.Maity = window.Maity || {};
             await rereadMembers();
             if (notMember) M.withMembers(ctx, ctx.members.filter((m) => m.id !== agent.id));
             showAgent();
-            if (saysMember) status.fail(M.t("join.failed"), { message: M.t("join.failed.is_member") });
+            if (saysMember) { status.fail(M.t("join.failed"), { message: M.t("join.failed.is_member") }); sayBoss(); }
             (replaceOne.checked && !replaceOne.disabled ? replaced : another).focus();
           }
           if (why) {
@@ -482,7 +560,7 @@ window.Maity = window.Maity || {};
           create.disabled = false;
         }
         status.done();
-        showLine(j, member);
+        showLine(j, member, bossSaid);
         // A new profile is named in the select, the new join is a seat.
         try {
           [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
@@ -503,11 +581,12 @@ window.Maity = window.Maity || {};
         h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect, profileLinks),
         newFields,
         instanceBox,
+        memberReportsField,
         membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
         membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("join.field.role")), role, roleHelp)),
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
         own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
-          : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
-            membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas))],
+          : membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas)),
         membershipField(subagentsField),
         membershipField(takeOverField),
         handoverField,
