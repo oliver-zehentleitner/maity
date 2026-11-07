@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -47,6 +48,23 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     }  # fmt: skip
 
 
+def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) -> None:
+    """A grant that reached the adapters without the configuration's check: of its rules,
+    only the plain command reaches either harness's settings."""
+    refused = ("FOO=1 make test", "FOO+=1 make test", "env make test",
+               "/usr/bin/env FOO=1 make test", "make test; maity *", '"maity" *', "maity:*",
+               "maity.exe *", "xargs /tmp/tools:local/maity",
+               "cmd /c C:/tools/maity.exe")  # fmt: skip
+    plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
+    ctx = dataclasses.replace(plain, grant=config.RepositoryGrant(allow=("make test", *refused)))
+    claude = adapters.claude_settings(ctx)["permissions"]["allow"]
+    claude_base = adapters.claude_settings(plain)["permissions"]["allow"]
+    opencode = adapters.opencode_config(ctx)["permission"]["bash"]
+    opencode_base = adapters.opencode_config(plain)["permission"]["bash"]
+    assert [r for r in claude if r not in claude_base] == ["Bash(make test)"]
+    assert [r for r in opencode if r not in opencode_base] == ["make test", "make test *"]
+
+
 def test_claude_code_grant(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     settings = adapters.claude_settings(ctx)
@@ -59,7 +77,8 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny
-    assert f"Edit(/{ws}/.git/**)" in deny and f"Write(/{ws}/.git/**)" in deny  # config, hooks
+    assert f"Edit(/{ws}/.git/**)" in deny  # config, hooks; Edit covers every file tool
+    assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
     assert "sandbox" not in settings

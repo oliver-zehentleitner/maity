@@ -1596,7 +1596,16 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, M.t("settings.title")),
       tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": M.t("settings.title") },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
-    if (mine) { await M.mySettings(ctx, root); return; }
+    if (mine) {
+      await M.mySettings(ctx, root);
+      // A member in the restricted-access set who may not change it reads it here: the set's
+      // notice links to settings, which leads such a member to settings/mine (§6.1, §19).
+      const restricted = ((ctx.project && ctx.project.settings) || {}).restricted_access;
+      if (!ctx.canAdmin && human && M.restricted && restricted && restricted.included === true) {
+        append(root, M.restricted.settingsSection(ctx, null));
+      }
+      return;
+    }
     append(root,
       h("p", { class: "muted" }, M.t("settings.intro")),
       // The project's runners, no tab of their own any more.

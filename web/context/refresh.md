@@ -133,7 +133,7 @@ the sign-in.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §6.4 ("When the set changes without the setting": the notice links to the project's restricted-access setting) and §18.1; the hub's notification item for `restricted_changed` (`hub/src/maity_hub/notifications/items.py`, target `{type: "settings", id: "restricted_access"}`); card tsk-g8ts5vxhj1md, 2026-11-06
+**Source:** docs/api.md §6.4 ("When the set changes without the setting": the notice links to the project's restricted-access setting), §18.1 and §19 (the notice goes to the humans in the set); the review of #1448 (2026-11-07), which found that such a member was led to a page without the setting; the hub's notification item for `restricted_changed` (`hub/src/maity_hub/notifications/items.py`, target `{type: "settings", id: "restricted_access"}`); card tsk-g8ts5vxhj1md, 2026-11-06
 **Revisit when:** the hub gives the set's notice a target type of its own, or another notice points at a project's setting
 
 The bell treats a target `{type: "settings"}` as one's own notification
@@ -144,15 +144,27 @@ type with `id: "restricted_access"`, and is an ordinary notice about a
 project: the bell links it to that project's settings and lets a read mark
 read it, as any notice. `notify.js` tells the two apart by the id.
 
+The notice also reaches members in the set who may not change the setting
+(§19). The project's settings send such a member to `settings/mine`, and
+that page shows them the setting to read (`js/app.js`): its mode, that they
+are in the set, and the set and the count, which the hub serves to every
+member in the set (§6.1 "Reading the setting"). One link then works for both
+kinds of reader, and only a human with `project:admin` changes the setting.
+
 **Reason:** read as one's own settings, the set's notice would open the
 wrong page and stay unread for 30 days, since no matter of the human's
 closes it. The contract says what the notice links to, not which target
 type it carries, and the hub already ships that target.
 
-**Rejected alternative:** a target type of its own from the hub (for
-example `project_settings`): cleaner, but a hub change for one notice
-whose meaning the id already carries, and the dashboard would still need
-this rule until a deploy.
+**Rejected alternatives:**
+- A target type of its own from the hub (for example `project_settings`):
+  cleaner, but a hub change for one notice whose meaning the id already
+  carries, and the dashboard would still need this rule until a deploy.
+- A link of its own for members who may not administer the project (a
+  route only for the read-only setting): a second address for the same
+  setting, and the bell would have to know the reader's rights. The
+  existing redirect to `settings/mine` already sends exactly those members
+  there.
 
 
 ## The bell pins the unread security alerts, and Mark all read takes them only after asking

@@ -1221,11 +1221,15 @@ members ticked (`nobody_except`) or every member but those ticked
 (`all_except`), each agent shown with its owner; a guest is never in the
 set. A change that lets someone new read — or switches to `all_except`,
 which takes in every future member — first shows how many cards have a
-text, who newly reads them, and under `all_except` that every later member
-does too, and is saved only after **Save and let them read**. The save asks
+text (or, from a closed setting, which the hub serves without a count, that
+texts written before stay stored), who newly reads them, and under
+`all_except` that every later member does too, and is saved only after
+**Save and let them read**. The save asks
 for the password or a code where the hub wants the step-up; the hub's
-refusals are said at the member they name. An admin agent sees the mode
-and whether it is in the set, never the list.
+refusals are said at the member they name. An admin agent sees the
+setting to read, never to change: the mode and whether it is in the set,
+and the set and the count only when it is in the set and the hub serves
+them.
 **Restricted** is a box on a card, shown only to a member in the set
 (`settings.restricted_access.included`) and read with `GET …/restricted`
 when the card opens, never with the board. It shows the text as plain
@@ -1236,7 +1240,9 @@ in good standing it says so and links the sessions instead of the text.
 The text stays in the page's memory: never in the browser's storage, a URL
 or a cache. Both the box and the setting say that this is an access
 restriction, not encryption. The set's notice in the bell opens the
-project's settings.
+project's settings; a member in the set without `project:admin` is led
+from there to their own settings (`settings/mine`), which show the setting
+to read: its mode, that they are in the set, the set and the count.
 Before every way into the set (§6.1 "Every way into the set") the page says
 who will read the restricted texts. The join and invitation forms show it as
 a line; a guest's raise, an isolation's end, a transfer into an organisation
@@ -1366,9 +1372,9 @@ like the hub while one runs. Why it is built this way:
 
 Every page the dashboard draws ends with one line about Maity
 (`docs/api.md` §16.13), in `<footer id="product-line">` after `<main>`
-(`js/product-line.js`): the mark, `Maity <year>`, **Found a bug?** and the
-credit, with three absolute links in a new tab with
-`rel="noopener noreferrer"`. It is in the page's language and drawn again
+(`js/product-line.js`): the mark, `Maity <year>`, the credit, **Found a
+bug?** and **Found a vulnerability?**, with four absolute links in a new
+tab with `rel="noopener noreferrer"`. It is in the page's language and drawn again
 whenever the language changes; a translation of `product.made_by` that
 does not name each of its four placeholders once falls back to English.
 A stored public page the hub put into `<main>` stands without it, and so do
