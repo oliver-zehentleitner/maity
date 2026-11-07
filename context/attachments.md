@@ -191,6 +191,37 @@ area.
   not chosen; it would refuse uploads on self-hosted instances that never chose a
   limit.
 
+## A project's attachment quota is an admin limit with the source rules of every limit, and the old variable is gone
+
+**Id:** 24123f11-cf43-4cde-8a7f-bdd0b3b4cab3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qa9r26kb2teq; the maintainer's note of 2026-11-05 on the card (every limit has both sources, the environment variable and the admin field) and his decisions through the lead on 2026-11-07: requests req-h185j92my7zq (default and range), req-a4j6x89a679z (names, "no legacy"), req-xhz9dwn5z1a8 (wording); `docs/api.md` §8.7 and §16.5
+**Revisit when:** plans (§2.7) set storage per account or per plan, or a project's owner needs a quota of their own below the instance's value
+**See:** attachments.md#the-instance-caps-all-attachments-together-checked-under-the-projects-lock-and-without-numbers-for-the-member — 67adfb38-efa6-4636-986c-33fad578a128 — as of 2026-11-07
+
+The bytes one project may store are the limit `max_attachment_storage_per_project`
+in the admin section Limits (§16.5), with the environment variable
+`MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` under the same source rules as every
+other limit: a set variable wins and the field shows it read-only, else the
+admin's value, else the default of 1 GiB. The range is 1 MiB to 1 PiB, or
+`unlimited`. The refusal stays `attachment_quota` with `scope: "project"` and its
+numbers, and lowering the value deletes nothing.
+
+**Reason:** the operator sets every other limit in the admin area, and this one
+was the only one that needed a restart and a deployment change. The name
+follows `max_attachment_storage`, the instance's limit, so the two read as a
+pair. The minimum of 1 MiB is the proposal the maintainer adopted, because a
+smaller project quota refuses almost every upload.
+
+**Rejected alternatives:**
+- Keeping `MAITY_ATTACHMENT_QUOTA` as the environment variable, or as an alias
+  or fallback of the new one: the maintainer chose no legacy while the product
+  is in beta, so existing deployments switch to the new name or to the admin
+  field.
+- The environment variable alone, as before: every limit has both sources.
+
 ## While attachments are off, delete is refused too, and the upload keeps its own checks first
 
 **Id:** de8f3512-27b5-4b88-8751-6d5dc24dbe9c
