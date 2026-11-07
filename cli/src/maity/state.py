@@ -257,93 +257,20 @@ def _foreign(path: Path, owner: str, others: tuple[str, ...], revoke: str) -> st
     return f"{path} belongs to another user ({owner}){also}; refusing to use it; {revoke}"
 
 
-# A directory as `remove_created` recognises it again: its path, and its device, inode and
-# change time as `lstat` gave them once `prepare_for_join` was done with it. The change time
-# tells a directory created anew in its place from the join's own, also where the file system
-# hands the same inode number out again.
-Created = tuple[Path, int, int, int]
-
-
-def _identity(path: Path) -> tuple[int, int, int] | None:
-    """Device, inode and change time of the directory at `path`, read without following a
-    link at `path` itself; None for anything that is not a directory there now."""
-    try:
-        found = os.lstat(path)
-    except OSError:
-        return None
-    if not stat.S_ISDIR(found.st_mode):
-        return None
-    # A junction or another reparse point on Windows is no directory of this join's: refused.
-    if getattr(found, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
-        return None
-    return (found.st_dev, found.st_ino, found.st_ctime_ns)
-
-
-def prepare_for_join(path: Path, created: list[Created] | None = None) -> str | None:
+def prepare_for_join(path: Path) -> str | None:
     """Everything that could stop the credential from being written, checked before the
-    join's single-use code is spent: the directory exists (created 0700 when missing, its
-    missing parents as `mkdir` makes them), an empty one of this user's that is open to
-    others is set to 0700 (`tighten_for_join`), it is private and ours (`check_private`),
-    and writable. Each directory this call's own `mkdir` created goes into `created`, with
-    its identity, so a join that fails can remove exactly those (`remove_created`); one that
-    appeared meanwhile is someone else's and is never listed. Returns what was tightened, as
+    join's single-use code is spent: the directory exists (created 0700 when missing), an
+    empty one of this user's that is open to others is set to 0700 (`tighten_for_join`),
+    it is private and ours (`check_private`), and writable. Returns what was tightened, as
     words, or None."""
-    mine: list[Path] = []
-    try:
-        if not path.exists():
-            for one in reversed(missing_dirs(path)):  # the topmost missing one first
-                try:
-                    os.mkdir(one, 0o700 if one == path else 0o777)
-                except FileExistsError:
-                    continue
-                mine.append(one)
-            make_private(path)
-        was = tighten_for_join(path)
-        check_private(path, revoke="give this agent a directory of its own")
-        if not os.access(path, os.W_OK | os.X_OK):
-            raise StateError(f"{path} is not writable; give this agent a directory it can write")
-        return was
-    finally:
-        # Read once this call is done with them (its mkdir of a child and its chmod change
-        # a directory's change time), also when a check above refused.
-        if created is not None:
-            for one in mine:
-                identity = _identity(one)
-                if identity is not None:
-                    created.append((one, *identity))
-
-
-def missing_dirs(path: Path) -> list[Path]:
-    """The directories `prepare_for_join` would create for `path`: itself and each missing
-    parent up to the first one that exists, deepest first. Empty when `path` exists."""
-    missing: list[Path] = []
-    for one in (path, *path.parents):
-        if one.exists():
-            break
-        missing.append(one)
-    return missing
-
-
-def remove_created(created: list[Created]) -> None:
-    """Remove what `prepare_for_join` recorded as created, deepest first, each only while it
-    is still that very directory (the same device and inode, read without following a link
-    at its path) and empty. A directory someone replaced or created meanwhile, or one reached
-    through a replaced parent, has another identity and stays. Never recursive; a removal
-    that fails leaves the rest."""
-    # Every identity is checked, deepest first, before anything is removed: removing a child
-    # changes its parent's change time, which must not make the parent look like someone
-    # else's. The first doubt stops it: nothing at or above a directory that is not the
-    # join's own any more is removed (an empty leftover is harmless).
-    still: list[Path] = []
-    for one, *identity in reversed(created):
-        if _identity(one) != tuple(identity):
-            break
-        still.append(one)
-    for one in still:
-        try:
-            one.rmdir()
-        except OSError:
-            return
+    if not path.exists():
+        path.mkdir(mode=0o700, parents=True)
+        make_private(path)
+    was = tighten_for_join(path)
+    check_private(path, revoke="give this agent a directory of its own")
+    if not os.access(path, os.W_OK | os.X_OK):
+        raise StateError(f"{path} is not writable; give this agent a directory it can write")
+    return was
 
 
 def rescue_credential(value: Secret) -> Path:
