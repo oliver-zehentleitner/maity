@@ -381,7 +381,7 @@ def _check_instance(conn: Connection, body: JoinCreate, existing: Any) -> None:
 # --- bringing your own agent (§3.1) ------------------------------------------------
 
 
-def _limit(field: str) -> ApiError:
+def member_join_limit(field: str) -> ApiError:
     return ApiError(
         403,
         "forbidden",
@@ -437,24 +437,24 @@ def _own_manager(conn: Connection, mine: Any, member_id: str) -> bool:
 def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing: Any) -> None:
     """The limits of §3.1 a member's join stays within, the first broken one named."""
     if body.trust is not None and body.trust not in MEMBER_RULE_TRUSTS:
-        raise _limit("trust")
+        raise member_join_limit("trust")
     base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
     if base is not None and base not in MEMBER_RULE_ROLES:
-        raise _limit("role")  # a role the project does not have is `invalid` below
+        raise member_join_limit("role")  # a role the project does not have is `invalid` below
     if (
         body.reports_to is not None
         and body.reports_to != mine.principal_id
         and not _own_manager(conn, mine, body.reports_to)
     ):
-        raise _limit("reports_to")
+        raise member_join_limit("reports_to")
     if body.areas:
-        raise _limit("areas")
+        raise member_join_limit("areas")
     if body.capabilities:
-        raise _limit("capabilities")
+        raise member_join_limit("capabilities")
     if existing is not None and not within_limits(existing):
         # A membership an admin raised beyond the limits gets new instances only
         # through `members:admin`.
-        raise _limit("agent")
+        raise member_join_limit("agent")
     if body.takes_over is not None:
         own = conn.execute(
             select(t.agent_profile.c.id).where(
@@ -463,7 +463,7 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
             )
         ).first()
         if own is None:  # never another human's agent, nor one that is not an agent
-            raise _limit("takes_over")
+            raise member_join_limit("takes_over")
 
 
 def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
@@ -568,7 +568,7 @@ def _agent_for_join(
             )
         ).first()
         if owned is None and member_rule:
-            raise _limit("agent")  # never another human's (§3.1)
+            raise member_join_limit("agent")  # never another human's (§3.1)
         if owned is None:
             raise invalid({"agent.id": "not_yours"}, "a join names one of your own agents")
         live_profile(conn, agent.id)
