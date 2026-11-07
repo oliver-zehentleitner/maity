@@ -50,7 +50,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -580,6 +580,9 @@ def patch_member(
         moved = _owner_sets_reports_to(conn, caller, slug, member_id, body, given)
         if moved is not None:
             return moved
+        recast = _owner_sets_role(conn, caller, slug, member_id, body, given)
+        if recast is not None:
+            return recast
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row(conn, mine.project.id, member_id)
@@ -774,6 +777,60 @@ def _owner_lifts_line_pause(
         conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     )
     return idempotency.Outcome(200, "member_team", str(target.id), view)
+
+
+def _owner_sets_role(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome | None:
+    """The agent's owner changes its role without members:admin (§3.1, "The owner changes
+    the role"): `role` alone, while the owner could create a join for the agent now (the
+    check `subagents` uses), to a role a member join could give. None when the call is not
+    that: the ordinary rules then decide, `members:admin` for every other field included.
+    The owner outside the project, or no longer within the join rule, is told `join_rule`."""
+    if caller.kind != "human" or given != {"role"} or body.role is None:
+        return None
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        return None
+    if not instances.owns_agent(conn, caller, target):
+        return None
+    refused = ApiError(
+        403, "forbidden", "only whoever may let the agent join", {"reason": "join_rule"}
+    )
+    try:
+        mine = membership(conn, caller, slug)
+    except ApiError:
+        raise refused from None
+    if mine.may("members:admin"):
+        return None  # the admin's own path, with its checks and answer
+    owner_id = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+    ).scalar()
+    if not subagents.may_configure(mine, target, owner_id):
+        raise refused
+    from maity_hub.routes import joins  # the join rules live with the joins
+
+    base = project_roles.base_of(mine.project, body.role)
+    if base is not None and base not in MEMBER_RULE_ROLES:
+        raise joins.member_join_limit("role")  # a project lacking it: `invalid`, below
+    values = validate_assignment(
+        conn,
+        mine.project.id,
+        kind="agent",
+        role=body.role,
+        reports_to=None,
+        areas=None,
+        capabilities=None,
+        member=target.id,
+        current=(target.trust, target.role),
+    )
+    agent_owners.check_assignment(conn, mine.project, target, values)
+    apply_patch(conn, change_of(mine, caller), target, values, (False, None))
+    return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
 
 def _owner_sets_reports_to(
