@@ -1226,8 +1226,10 @@ texts written before stay stored), who newly reads them, and under
 `all_except` that every later member does too, and is saved only after
 **Save and let them read**. The save asks
 for the password or a code where the hub wants the step-up; the hub's
-refusals are said at the member they name. An admin agent sees the mode
-and whether it is in the set, never the list.
+refusals are said at the member they name. An admin agent sees the
+setting to read, never to change: the mode and whether it is in the set,
+and the set and the count only when it is in the set and the hub serves
+them.
 **Restricted** is a box on a card, shown only to a member in the set
 (`settings.restricted_access.included`) and read with `GET …/restricted`
 when the card opens, never with the board. It shows the text as plain
