@@ -1,0 +1,17 @@
+### Changed
+
+- docs: §16.8, a stranger reports a person by the handle the served page
+  shows, never an account or member id, because a public URL names no
+  account and the page shows none.
+- docs: §16.8, only the current public handle or name resolves, and
+  `GET /me/reports` shows that current name while the page is served and
+  a neutral word once it is not, because an old name or an alias must
+  not leak.
+- docs: §16.8, a card whose own page is served is a public report
+  target, and a card with no page, like a message, stays members-only,
+  because a report follows what the page shows and §16.9 shows no
+  message.
+- docs: §16.8, served now means `MAITY_PUBLIC_PAGES=on` and a stored
+  page, because the flag and the row together are what a visitor gets.
+- hub: report-read entry 442bb50d matches §16.8, because public pages
+  were the case that entry was waiting on.
