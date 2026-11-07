@@ -1966,6 +1966,11 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     run.a11y(page, "inbox with a logo and a banner")
     project_settings(page)
     run.a11y(page, "project settings with images")
+    # The restricted-access list open (§6.1): each member's box is a target of its own (WCAG 2.2).
+    page.select_option("#restricted-mode", "nobody_except")
+    expect(page.locator("fieldset.restricted-members")).to_be_visible()
+    run.a11y(page, "project settings, the restricted-access member list open")
+    page.select_option("#restricted-mode", "")
     page.get_by_role("button", name="Remove the uploaded logo", exact=True).click()
     expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
     expect(page.locator("#project-panel")).to_contain_text("Uploaded logo removed")

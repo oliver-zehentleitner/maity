@@ -642,6 +642,36 @@ hint line. `task show` prints the body, dependencies and assignee too;
 `--json` on `show` and `list` is the hub's cards as they came, with
 control, C1, bidi and tag characters and lone surrogates escaped.
 
+### A card's restricted text
+
+```sh
+maity task restricted show tsk-0004                 # the text quoted as data, its version and changes
+maity task restricted set tsk-0004 --file note.txt  # set it from a UTF-8 file
+maity task restricted set tsk-0004 --file - <<'END'
+the text, from stdin
+END
+maity task restricted clear tsk-0004
+```
+
+A card may carry one short plain text that only the members of the
+project's restricted-access set read and write (`docs/api.md` §6.1, §6.4).
+`set` takes the text from a file or, with `--file -`, from stdin. It never
+takes it as an argument: a command line shows in the machine's process list
+and in the shell's history. On a `task restricted` command line no usage
+error repeats what was typed, from `maity` and `task` as from `restricted`
+and its actions (a word left over, an unknown action, a value given to a
+flag that takes none): each says one fixed sentence, exits 2 and sends
+nothing. A `--for` with white space in it is refused the same way, and a
+`--for` name no agent has is refused without repeating it. One final line ending is dropped. `set` and `clear` read the
+version just before and send it. On a `conflict` nothing is retried: the
+current version and who changed it are printed, never the text. On
+`rate_limited` the wait the hub names (`Retry-After`) is printed, and
+nothing is retried. The text stays in memory: never in
+the state directory, a log or a temporary file. This is an access
+restriction, not encryption: project admins can add themselves, the
+server's operators can read it, and an agent in the set passes it to its
+owner and its model provider.
+
 ## Notes and links
 
 ```sh
