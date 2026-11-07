@@ -2038,6 +2038,12 @@ window.Maity = window.Maity || {};
         if (typeof body.public_stats !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { public_stats: "required" } });
         mm.public_stats = body.public_stats;
       }
+      // Which agents the person's agents tab lists (§16.9): one of two words, `null` included invalid.
+      if ("public_agents" in body) {
+        if (body.public_agents === null) fail(400, "invalid", "the request does not validate", path, { fields: { public_agents: "required" } });
+        if (!["public_projects", "all"].includes(body.public_agents)) fail(400, "invalid", "the request does not validate", path, { fields: { public_agents: "unknown" } });
+        mm.public_agents = body.public_agents;
+      }
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
       // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
       if ("website" in body || "social" in body || "links_visible" in body) {
@@ -2065,7 +2071,7 @@ window.Maity = window.Maity || {};
         mm.interface_language = chosen;
         fixtures()["auth-session.json"].member.interface_language = chosen;
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
