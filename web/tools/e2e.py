@@ -5308,10 +5308,12 @@ def project_tabs_step(run: Run, page: Page) -> None:
     menu = page.locator(".tabs-menu-box")
     menu.get_by_role("button", name="Project tabs", exact=True).click()
     run.a11y(page, "tabs menu")
-    menu.get_by_role("menuitemcheckbox", name="E2E Beta", exact=True).click()
+    # A checked item's name starts with the stylesheet's "✓ " (.menu-item.checked::before), so not exact.
+    beta_item = menu.get_by_role("menuitemcheckbox", name="E2E Beta")
+    beta_item.click()
     expect(tabs).to_have_count(1)
-    expect(menu.get_by_role("menuitemcheckbox", name="E2E Beta", exact=True)).to_have_attribute("aria-checked", "false")
-    expect(menu.get_by_role("menuitemcheckbox", name="E2E Beta", exact=True)).to_be_focused()
+    expect(beta_item).to_have_attribute("aria-checked", "false")
+    expect(beta_item).to_be_focused()
     page.keyboard.press("Escape")
     # The cross-project inbox's filter to open tabs, kept by this browser across a reload.
     page.locator("#inbox-project").select_option("open-tabs")
@@ -5324,15 +5326,8 @@ def project_tabs_step(run: Run, page: Page) -> None:
     menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True).click()
     expect(page.locator(".tabs-said")).to_have_text("Saved: a browser with no tabs of its own yet opens these.")
     # A fresh browser profile: no tabs of its own, so it opens the account's start set.
-    fresh = page.context.browser.new_context(viewport={"width": 1280, "height": 900})
+    fresh, other = signed_in_page(run, page.context.browser)
     try:
-        fresh.set_default_timeout(TIMEOUT_MS)
-        other = fresh.new_page()
-        watch_page(run, other)
-        other.goto(run.base + "/")
-        other.locator("#login-handle").fill(OWNER)
-        other.locator("#login-password").fill(OWNER_PASSWORD)
-        other.get_by_role("button", name="Sign in", exact=True).click()
         other_tabs = other.locator("nav.switcher a[data-project]")
         expect(other_tabs).to_have_count(1)
         expect(other_tabs.first).to_contain_text("E2E Alpha")
