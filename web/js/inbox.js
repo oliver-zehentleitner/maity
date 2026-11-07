@@ -600,6 +600,9 @@ window.Maity = window.Maity || {};
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
     ctx.quietReload = () => !ordered().some((r) => r.status === "open");
+    // The open tabs changed in the header (opened, closed, moved): the filter
+    // to open tabs and the grouped order follow at once (app.js, tabsChanged).
+    ctx.tabsChanged = () => { if (projectFilter() === TABS || grouped()) draw(); };
 
     // The entries in the order they are on screen: shown, filtered, sorted,
     // and grouped by project in the switcher's order. draw(), the next

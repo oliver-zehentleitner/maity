@@ -1375,12 +1375,17 @@ window.Maity = window.Maity || {};
   // place said for a screen reader.
   function tabsMoved(ctx, id) {
     renderSwitcher(ctx);
+    tabsChanged(ctx);
     const order = M.tabs.open(ctx);
     const at = order.findIndex((p) => p.id === id);
     const nav = document.getElementById("header").querySelector("nav.switcher");
     const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-project") === id);
     if (link) link.focus();
     tabsSaid(M.t("tabs.moved", { name: order[at].name, place: at + 1, total: order.length }));
+  }
+  // The view drawn from the open tabs (the inbox's filter and grouping) follows them.
+  function tabsChanged(ctx) {
+    if (ctx.tabsChanged) ctx.tabsChanged();
   }
   function tabsSaid(text) {
     const live = document.getElementById("header").querySelector(".tabs-said");
@@ -1408,6 +1413,7 @@ window.Maity = window.Maity || {};
             onSelect: () => {
               M.tabs.setOpen(ctx, p.id, !open.includes(p));
               renderSwitcher(ctx);
+              tabsChanged(ctx);
               tabsSaid(open.includes(p) ? M.t("tabs.closed", { name: p.name }) : M.t("tabs.opened", { name: p.name }));
             },
           })),

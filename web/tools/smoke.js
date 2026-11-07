@@ -408,6 +408,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && main.querySelector(".inbox-filter-hidden"), "tabs: the inbox's filter to open tabs hides the closed project, keeps the personal requests, and is kept");
     await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
     expect(byId("inbox-project").value === "open-tabs", "tabs: the filter to open tabs holds on the next visit");
+    // The inbox follows the tab row at once: a tab opened or closed from the menu, a move while grouped.
+    const tabsLabels = () => main.querySelectorAll(".project-label").map((el) => el.textContent);
+    const openTabsMenu = async () => { const ul = header.querySelector(".tabs-menu-box").querySelector("ul"); if (!ul || ul.hidden) { tabsButton().click(); await tick(); } };
+    await openTabsMenu();
+    tabsItems().find((i) => i.textContent === "Sample shop").click(); await tick();
+    expect(tabIds() === MA + "," + SA && byId("inbox-project").value === "open-tabs" && tabsLabels().some((t) => t.includes("Sample shop"))
+      && !main.querySelector(".inbox-filter-hidden"), "tabs: a tab opened from the menu shows its requests under the filter to open tabs at once");
+    const tabsGroup = byId("inbox-group");
+    tabsGroup.checked = true; tabsGroup.dispatch("change"); await tick();
+    const tabsHeads = () => main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent).join();
+    expect(tabsHeads() === "Personal,Maity,Sample shop", "tabs: grouped, the inbox follows the tab order " + tabsHeads());
+    tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true }); await tick();
+    expect(tabIds() === SA + "," + MA && tabsHeads() === "Personal,Sample shop,Maity", "tabs: a tab moved regroups the inbox at once " + tabsHeads());
+    tabChip(SA).dispatch("keydown", { key: "ArrowRight", altKey: true, shiftKey: true }); await tick();
+    tabsGroup.checked = false; tabsGroup.dispatch("change"); await tick();
+    await openTabsMenu();
+    tabsItems().find((i) => i.textContent === "Sample shop").click(); await tick();
+    expect(tabIds() === MA && tabsLabels().every((t) => !t.includes("Sample shop")) && main.querySelector(".inbox-filter-hidden"),
+      "tabs: a tab closed from the menu hides its requests under the filter at once");
     byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
     expect(!("maity.inbox.tabs.hum-maintainer" in tabStore), "tabs: every project again: the kept filter is gone");
     // Opening a closed project by its address gives it its tab back, at the end.
@@ -454,6 +473,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(byId("my-start-tab").checked === false && text(main).includes("Not saved"), "tabs: a refused save puts the switch back and says so");
     M_.api.patch = realPatchTabs;
     void failPatch;
+    // A store that still reads but refuses writes (a full one): this visit keeps what it holds,
+    // not the store's older value, for the tabs and the inbox's filter alike.
+    win.localStorage = { getItem: (k) => (k in tabStore ? tabStore[k] : null), setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("full"); } };
+    await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    const stored = tabIds();
+    tabChip(stored.split(",")[1]).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
+    byId("inbox-project").value = "open-tabs"; byId("inbox-project").dispatch("change"); await tick();
+    await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(tabIds() === stored.split(",").reverse().join() && byId("inbox-project").value === "open-tabs",
+      "tabs: a store that refuses writes keeps the moved tabs and the filter for the visit, not its older value");
+    byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
     // Without storage the tabs still hold for the visit.
     win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
     await go("#/all"); for (let k = 0; k < 3; k++) await tick();

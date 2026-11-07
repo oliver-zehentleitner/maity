@@ -274,8 +274,9 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
 
 
 def _start_tabs(conn: Connection, stored: list[str] | None) -> list[dict[str, str]] | None:
-    """The start tabs as stored, in order, each with the project's current full name; a
-    project that no longer exists is left out, as `GET /me` leaves it out (§5.1)."""
+    """The start tabs as stored, in order, each with the project's current full name. Only a
+    project that no longer exists is left out; one the human has left stays, as it is what the
+    hub keeps, while `GET /me` shows current memberships only (§5.1)."""
     if stored is None:
         return None
     names = namespace.full_names(conn, list(stored))

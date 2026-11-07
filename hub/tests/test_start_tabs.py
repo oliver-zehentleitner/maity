@@ -12,6 +12,7 @@ from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_invitations import accept, issue, token_of
+from tests.test_orgs import team
 
 
 def _ids(human: flow.Human) -> dict[str, str]:
@@ -96,6 +97,23 @@ def test_a_project_made_or_joined_later_goes_to_the_end(
     assert joined.status_code in (200, 201), joined.text
     now = _ids(guest)
     assert _tabs(guest) == [ids["second"], now["third"], now["maity"]]
+
+
+def test_an_organisations_new_owner_gets_its_projects_at_the_end(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The third way a membership comes about (`org_projects.keep_owner`): made an owner of the
+    organisation, the human joins its projects, each at the end of a list they set."""
+    owner = flow.human(make_client, migrated)
+    _, people = team(make_client, migrated, owner)
+    admin = people["admin"]
+    flow.project(admin, "own")
+    own = _ids(admin)["own"]
+    assert admin.patch("/me", {"start_tabs": [own]}).status_code == 200
+    made = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    assert made.status_code in (200, 201), made.text
+    assert owner.patch(f"/orgs/oz-team/members/{admin.id}", {"role": "owner"}).status_code == 200
+    assert _tabs(admin) == [own, _ids(admin)["shop"]]
 
 
 def test_null_stays_null_when_a_membership_is_added(

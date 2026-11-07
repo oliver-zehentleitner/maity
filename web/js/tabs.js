@@ -12,10 +12,29 @@ window.Maity = window.Maity || {};
 (function (M) {
   const key = (me) => "maity.tabs." + me.id;
   const filterKey = (me) => "maity.inbox.tabs." + me.id;
-  // A browser that keeps nothing still keeps the tabs for this visit.
+  // A browser that keeps nothing still keeps the tabs for this visit. Once a
+  // write failed (a full store that still reads), the store holds an older
+  // value: until a write of that key succeeds again (tried at each read), this
+  // visit reads what it kept here, not the store.
   const kept = {};
+  const unwritten = new Set();
+  function store(k, value) {
+    try {
+      if (value === null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, value);
+      unwritten.delete(k);
+    } catch (err) { unwritten.add(k); }
+  }
+
+  // A key whose last write failed: write what this visit holds again; false
+  // while the store still refuses it, so the caller reads from memory.
+  function healed(k, value) {
+    if (!unwritten.has(k)) return true;
+    store(k, value);
+    return !unwritten.has(k);
+  }
 
   function read(me) {
+    if (!healed(key(me), kept[me.id] ? JSON.stringify(kept[me.id]) : null)) return kept[me.id] || null;
     let raw;
     try { raw = window.localStorage.getItem(key(me)); } catch (err) { return kept[me.id] || null; }
     try {
@@ -26,7 +45,7 @@ window.Maity = window.Maity || {};
   }
   function write(me, value) {
     kept[me.id] = value;
-    try { window.localStorage.setItem(key(me), JSON.stringify(value)); } catch (err) { /* this browser keeps nothing */ }
+    store(key(me), JSON.stringify(value));
   }
 
   // Tabs make sense for a human with projects; an agent's one project stays as it is.
@@ -110,11 +129,12 @@ window.Maity = window.Maity || {};
   // The cross-project inbox's filter to projects with an open tab, kept per
   // viewer in this browser like the tabs.
   function onlyOpen(me) {
+    if (!healed(filterKey(me), kept["inbox." + me.id] ? "1" : null)) return !!kept["inbox." + me.id];
     try { return window.localStorage.getItem(filterKey(me)) === "1"; } catch (err) { return !!kept["inbox." + me.id]; }
   }
   function setOnlyOpen(me, on) {
     kept["inbox." + me.id] = on;
-    try { if (on) window.localStorage.setItem(filterKey(me), "1"); else window.localStorage.removeItem(filterKey(me)); } catch (err) { /* this browser keeps nothing */ }
+    store(filterKey(me), on ? "1" : null);
   }
 
   M.tabs = { open, isOpen, setOpen, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed };
