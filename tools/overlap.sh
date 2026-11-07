@@ -116,7 +116,11 @@ fi
 
 prs=$(gh pr list --state open --limit "$LIMIT" --json number,headRefOid,headRefName,isCrossRepository \
   --jq '.[] | "\(.number) \(.headRefOid) \(.isCrossRepository) \(.headRefName)"') || die "gh pr list failed"
-count=$(printf '%s' "$prs" | grep -c '^') || true
+# Counted in bash: a counting program's failure could pass for a short list.
+count=0
+while IFS= read -r line; do
+  [ -n "$line" ] && count=$((count + 1))
+done <<<"$prs"
 [ "$count" -lt "$LIMIT" ] || die "$count open pull requests, the list may be cut short at $LIMIT"
 
 # Every other pull request's head in one fetch, under refs of this run only.

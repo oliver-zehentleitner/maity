@@ -28,7 +28,8 @@ def installed(name: str) -> bool:
     )
     return "setlocale" not in probe.stderr
 # A stand-in for gh: the open pull requests from prs.json next to it, as many as --limit lets
-# through. `{"flood": true}` stands for more open pull requests than the limit.
+# through. `{"flood": true, "head": sha}` stands for more open pull requests than the limit, each
+# at that head.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
@@ -39,7 +40,8 @@ FAKE_GH = textwrap.dedent(
         sys.exit(3)
     limit = int(args[args.index("--limit") + 1])
     if prs and prs[0].get("flood"):
-        prs = [{"number": n, "head": "0" * 40, "name": f"pr-{n}"} for n in range(1, limit + 5)]
+        head = prs[0]["head"]
+        prs = [{"number": n, "head": head, "name": f"pr-{n}"} for n in range(1, limit + 5)]
     for pr in prs[:limit]:
         print(pr["number"], pr["head"], str(pr.get("fork", False)).lower(), pr["name"])
     """
@@ -203,16 +205,16 @@ class OverlapTest(unittest.TestCase):
         self.assertEqual(got.returncode, 1, got.stderr)
         self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
 
-    def failing(self, program: str, when: str) -> None:
-        """`program` fails (exit 4, no output, its input unread) when its arguments contain
-        `when`, else runs."""
+    def failing(self, program: str, when: str, output: str = "") -> None:
+        """`program` fails (exit 4, its input unread, `output` on stdout) when its arguments
+        contain `when`, else runs."""
         real = shutil.which(program)
         fake = self.bin / program
         fake.write_text(
             textwrap.dedent(
                 f"""\
                 #!/usr/bin/env bash
-                case " $* " in *{when}*) exit 4 ;; esac
+                case " $* " in *{when}*) printf '%s' '{output}'; exit 4 ;; esac
                 exec {real} "$@"
                 """
             )
@@ -296,12 +298,22 @@ class OverlapTest(unittest.TestCase):
         self.assertNotIn("clean", got.stdout)
 
     def test_more_open_pull_requests_than_it_reads_stop_the_check(self) -> None:
-        """A list cut at gh's limit would leave pull requests out unseen: exit 2."""
+        """A list cut at gh's limit would leave pull requests out unseen: exit 2. Every one of
+        them can be fetched (at main's base, changing nothing), so only the count stops the check,
+        also when `grep` or `wc`, once a way to count, fail with a number on their output."""
         self.scenario()
-        got = self.run_check([{"flood": True}], "en")
-        self.assertEqual(got.returncode, 2, got.stdout)
-        self.assertIn("the list may be cut short", got.stderr)
-        self.assertEqual(got.stdout, "")
+        refs = [f"+{self.base}:refs/pull/{n}/head" for n in range(1, 1100)]
+        self.git("push", "-q", "origin", *refs)
+        for program in ("", "grep", "wc"):
+            with self.subTest(program=program or "none"):
+                if program:
+                    self.failing(program, "", output="0")
+                got = self.run_check([{"flood": True, "head": self.base}], "en")
+                if program:
+                    (self.bin / program).unlink()
+                self.assertEqual(got.returncode, 2, got.stdout)
+                self.assertIn("the list may be cut short", got.stderr)
+                self.assertEqual(got.stdout, "")
 
     def test_a_file_the_pull_request_renames_is_shared(self) -> None:
         """mine edits b.txt, #16 renames it: the pull request is checked, not skipped."""
