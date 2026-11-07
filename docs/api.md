@@ -3253,7 +3253,8 @@ member_join_limit` and `details.field` naming the field when broken:
   `takes_over` names only an agent the caller owns;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
-  `member` or `guest` and one of the nine roles above. The fields the body
+  `member` or `guest` and one of the nine roles above or a project role
+  (§2.3) built on one of them. The fields the body
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
@@ -3305,11 +3306,11 @@ creator; `go` sets the edge.
 role, not its areas. `PATCH …/members/{id}` `{"role": "<role>"}` is
 allowed to the human who owns the agent profile when they could create a
 join for this agent in this project now, under the rules above (the same
-check as for `subagents`, "Who changes it"): trust `member` or higher,
-`policy.member_agents` `on`, and the membership within the member limits
-— trust `member` or `guest` and one of the nine roles. The new role is
-one a member join could give: one of those nine roles, or a project role
-(§2.3) built on one of them, as a join takes it; `ops`, `proxy` and a
+check as for `subagents`, "Who changes it"): trust `member` while
+`policy.member_agents` is `on`, and the membership within the member
+limits — trust `member` or `guest` and a role that is one of the nine
+roles or a project role (§2.3) built on one of them. The new role is one
+a member join could give, the same set; `ops`, `proxy` and a
 project role on `ops` are `forbidden` with `details.reason:
 member_join_limit` and `details.field: "role"`, a role the project does
 not have is `invalid` as in any `PATCH`, and an owner who fails the join
