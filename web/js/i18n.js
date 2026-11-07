@@ -75,12 +75,16 @@ window.Maity = window.Maity || {};
   let account = false;  // the session's interface_language decides
   const frameReads = {};
   // The address's ?lang= as written, for the hub to match exactly as the landing page does.
+  // The last one this page saw, or a pick on it, stays its ?lang= across routes without one
+  // (a link to /login from /register?lang=de), as `chosen` does for the rule below.
+  let pageAsked = null;
   function askedRaw() {
     const raw = window.location ? new URLSearchParams(window.location.search).get("lang") : null;
-    return raw && raw.length <= 35 ? raw : null;
+    if (raw && raw.length <= 35) { pageAsked = raw; return raw; }
+    return null;
   }
   const frameAddress = () => {
-    const raw = askedRaw();
+    const raw = askedRaw() || pageAsked;
     return "/site/chrome" + (raw ? "?lang=" + encodeURIComponent(raw) : "");
   };
   function readFrame() {
@@ -286,6 +290,7 @@ window.Maity = window.Maity || {};
   i18n.choose = (tag) => {
     chosen = closest(tag) || chosen;
     picked = closest(tag) || picked;
+    if (closest(tag)) pageAsked = tag;
     carry(tag);
     return use(tag);
   };

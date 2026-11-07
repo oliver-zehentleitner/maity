@@ -741,8 +741,9 @@ but the public pages set no language or tracking cookie (context/scope.md, hub/c
 
 Without an account's `interface_language` the dashboard takes the landing page's own language.
 On the 401 of `GET /auth/session`, which every view without a session waits for, `i18n` reads
-`GET /site/chrome` once per page and address, with the address's `?lang=` as written or without
-`lang`, and takes its `language`: the hub chooses it from the exact `?lang=`, `Accept-Language`,
+`GET /site/chrome` once per page and address, with the address's `?lang=` as written (or the last
+one this page saw, or a pick on it, across routes without one) or without `lang`, and takes its
+`language`: the hub chooses it from the exact `?lang=`, `Accept-Language`,
 the landing page's languages and its `default_language` (§16.7.5). The frame on `/login` and
 `/register` reads the same address (the browser's cache answers it) and its `language` counts the
 same way; where it differs from what the page was drawn in, the page draws itself again once, never
