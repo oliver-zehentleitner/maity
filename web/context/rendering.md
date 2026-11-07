@@ -748,8 +748,8 @@ the landing page's languages and its `default_language` (§16.7.5). The frame on
 `/register` reads the same address (the browser's cache answers it) and its `language` counts the
 same way; where it differs from what the page was drawn in, the page draws itself again once, never
 when they agree. Precedence: the account's language, then a choice made on the page (it holds for
-the page's life, until an address whose `?lang=` reads another catalog or none here, as `sv` or
-`xx`; `de-AT` after a pick of `de` keeps it), then the
+the page's life, until an address with any other `?lang=` value, as `sv`, `xx` or `de-AT` after
+a pick of `de`), then the
 frame's, then `?lang=` (the closest catalog), the browser's languages and `en`. A signed-in account
 without an `interface_language` (the session read answered 200) is no visitor: it keeps the
 browser's rule and never reads the frame. Nothing goes into the browser's storage, as

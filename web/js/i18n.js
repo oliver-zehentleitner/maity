@@ -116,10 +116,11 @@ window.Maity = window.Maity || {};
   }
   // Without an account's language: a choice made on this page, the landing page's (the frame),
   // then the rule below.
-  // A newer address whose ?lang= reads another catalog, or none here (sv, xx), ends a pick.
+  // A newer address with any other ?lang= value ends a pick: sv, xx, also de-AT after de (a
+  // pick writes its own tag into the address, so the address the pick made never ends it).
   function releasePick() {
     const raw = askedRaw();
-    if (raw && picked && closest(raw) !== closest(picked)) picked = null;
+    if (raw && picked && raw !== picked) picked = null;
   }
   // What the person chose, for the account (js/register.js): a pick on the page, else ?lang= or
   // the choice kept for the page, unless the landing page's frame overrode that ?lang= (a reload

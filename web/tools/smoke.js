@@ -4165,6 +4165,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await routed.i18n.follow(null);
     expect(routed.i18n.language === "de" && JSON.stringify(routed.asked) === '["/site/chrome?lang=de"]',
       "visitor language: a route without ?lang= after ?lang=de keeps de and reads the same address " + [routed.i18n.language, routed.asked]);
+    // A newer ?lang=de-AT after a pick of de ends the pick too (a raw value other than the pick's).
+    const deAt2 = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await deAt2.i18n.follow(null);
+    await deAt2.i18n.choose("de");
+    deAt2.page.location.search = "?lang=de";
+    await deAt2.i18n.follow(null);
+    const keptOwn = deAt2.i18n.language;
+    deAt2.page.location.search = "?lang=de-AT";
+    await deAt2.i18n.follow(null);
+    expect(keptOwn === "de" && deAt2.i18n.language === "en",
+      "visitor language: the pick's own ?lang=de keeps it, a newer ?lang=de-AT ends it " + [keptOwn, deAt2.i18n.language]);
     // Read once per page and address, however often the session answers 401.
     await sv.i18n.follow(null);
     expect(sv.asked.length === 1, "visitor language: the frame is read once per page");
