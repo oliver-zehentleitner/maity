@@ -4360,6 +4360,27 @@ window.Maity = window.Maity || {};
           return target;
         }
       }
+      // §3.1 "The owner changes the role": the human who owns the agent, without
+      // members:admin, sets its role alone while they could let it join now
+      // (hub/routes/members.py _owner_sets_role), to a role a member join may give.
+      if (!who.admin && who.member.kind === "human" && Object.keys(body).length === 1 && "role" in body) {
+        const target = member(m[1], m[2], path);
+        if (target.kind === "agent" && target.owner_id === who.member.id) {
+          const memberRoles = ["coder", "reviewer", "tester", "designer", "writer", "manager", "red-team", "blue-team", "purple-team"];
+          const pol = project(m[1], path).policy || {};
+          const within = ["member", "guest"].includes(target.trust) && memberRoles.includes(target.role_base || target.role);
+          if ((fixtureAs ? who.member.trust : trustIn(m[1])) !== "member" || pol.member_agents === "off" || !within) {
+            fail(403, "forbidden", "only whoever may let the agent join", path, { reason: "join_rule" });
+          }
+          if (body.role === "ops" || body.role === "proxy") {
+            fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
+          }
+          if (!memberRoles.includes(body.role)) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          target.role = body.role;
+          target.role_base = body.role;
+          return target;
+        }
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
@@ -4569,6 +4590,8 @@ window.Maity = window.Maity || {};
     }],
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
+    // §2.3 "Project roles": the project's own roles, read by every member.
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ custom: (project(m[1], path).roles || []).slice() })],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);
       list.items.forEach((j) => {
