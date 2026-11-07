@@ -37,7 +37,7 @@ def installed(name: str) -> bool:
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
-    import json, pathlib, sys
+    import json, os, pathlib, sys
     here = pathlib.Path(__file__).parent
     prs = json.loads((here / "prs.json").read_text())
     repo = (here / "repo.txt").read_text().strip()
@@ -45,6 +45,15 @@ FAKE_GH = textwrap.dedent(
     if args[:1] != ["api"]:
         sys.exit(3)
     args = args[1:]
+    # The server asked: --hostname, else GH_HOST, else github.com. Another server than the one
+    # in host.txt has a repository of the same name without open pull requests.
+    host = os.environ.get("GH_HOST", "github.com")
+    if "--hostname" in args:
+        i = args.index("--hostname")
+        host = args[i + 1]
+        del args[i : i + 2]
+    if host != (here / "host.txt").read_text().strip():
+        sys.exit(0)
     paginate = "--paginate" in args
     jq = args[args.index("--jq") + 1]
     paths = [a for i, a in enumerate(args) if not a.startswith("-") and args[i - 1] != "--jq"]
@@ -112,6 +121,7 @@ class OverlapTest(unittest.TestCase):
         # origin as GitHub names it, served from the bare repository here.
         self.set_origin("https://github.com/acme/widgets.git")
         (self.bin / "repo.txt").write_text("acme/widgets")
+        (self.bin / "host.txt").write_text("github.com")
         self.git("checkout", "-q", "-b", "main")
         self.base = self.commit(BASE, "base")
         self.git("push", "-q", "origin", "main")
@@ -150,7 +160,13 @@ class OverlapTest(unittest.TestCase):
         self.git("push", "-q", "origin", f"{head}:refs/pull/{number}/head")
         return {"number": number, "head": head, "name": f"pr-{number}"}
 
-    def run_check(self, prs: list[dict[str, object]], locale: str, branch: str = "mine"):
+    def run_check(
+        self,
+        prs: list[dict[str, object]],
+        locale: str,
+        branch: str = "mine",
+        extra: dict[str, str] | None = None,
+    ):
         if not installed(locale):
             self.skipTest(f"locale {LOCALES[locale]['LC_ALL']} is not installed")
         (self.bin / "prs.json").write_text(json.dumps(prs))
@@ -159,7 +175,7 @@ class OverlapTest(unittest.TestCase):
             ["bash", str(SCRIPT), branch],
             cwd=self.clone,
             stdin=subprocess.DEVNULL,
-            env={**self.env, **LOCALES[locale]},
+            env={**self.env, **LOCALES[locale], **(extra or {})},
             capture_output=True,
             text=True,
         )
@@ -396,7 +412,7 @@ class OverlapTest(unittest.TestCase):
         prs = self.scenario()
         got = self.run_check([{"fail_page": 2}, *self.many([prs[0]])], "en")
         self.assertEqual(got.returncode, 2, got.stdout)
-        self.assertIn("listing the open pull requests of acme/widgets failed", got.stderr)
+        self.assertIn("listing the open pull requests of acme/widgets on github.com failed", got.stderr)
         self.assertEqual(got.stdout, "")
 
     def test_a_list_of_another_shape_stops_the_check(self) -> None:
@@ -438,6 +454,38 @@ class OverlapTest(unittest.TestCase):
                 self.assertIn(
                     f"cannot read an owner and a repository from origin's URL {url}", got.stderr
                 )
+
+    def test_the_list_comes_from_origins_host(self) -> None:
+        """gh is asked origin's host, whatever GH_HOST says: another server with an empty list of
+        a repository of the same name would read as "no open pull request" (exit 0). A loopback
+        proxy stands for github.com; a URL without a host stops the check."""
+        prs = self.scenario()
+        cases = {
+            "https://github.com/acme/widgets.git": "github.com",
+            "http://local_proxy@127.0.0.1:9/git/acme/widgets": "github.com",
+            "ssh://git@ghe.example.com:2222/acme/widgets.git": "ghe.example.com",
+            "git@ghe.example.com:acme/widgets.git": "ghe.example.com",
+        }
+        for url, host in cases.items():
+            with self.subTest(url=url):
+                self.set_origin(url)
+                (self.bin / "host.txt").write_text(host)
+                got = self.run_check([prs[0]], "en", extra={"GH_HOST": "other.example"})
+                self.assertEqual(got.returncode, 1, got.stderr)
+                self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
+        self.set_origin("/srv/git/acme/widgets.git")
+        got = self.run_check([prs[0]], "en")
+        self.assertEqual(got.returncode, 2, got.stdout)
+        self.assertIn("cannot read a host from origin's URL /srv/git/acme/widgets.git", got.stderr)
+
+    def test_an_empty_list_from_origins_host_exits_0(self) -> None:
+        """No open pull request on the right server: nothing to check, exit 0."""
+        self.scenario()
+        got = self.run_check([], "en")
+        self.assertEqual(got.returncode, 0, got.stderr)
+        self.assertEqual(
+            got.stdout.strip(), "overlap: no open pull request changes a file of mine"
+        )
 
     def test_a_file_the_pull_request_renames_is_shared(self) -> None:
         """mine edits b.txt, #16 renames it: the pull request is checked, not skipped."""

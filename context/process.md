@@ -1689,7 +1689,7 @@ compared in bash itself, while git keeps the reader's locale.
 It lists the open pull requests over GitHub's REST API, `gh api --paginate
 "repos/<owner>/<repo>/pulls?state=open&per_page=100"`, every page, with the owner and name taken from
 the last two parts of origin's URL as configured (https, ssh, or a proxy's path), never from `gh`'s
-default. Each line of the list must have the shape it writes (number, a commit id, whether the head is
+default, and from origin's host (`--hostname`; a proxy on the loopback stands for github.com). Each line of the list must have the shape it writes (number, a commit id, whether the head is
 in a fork, the branch name); a pull request whose fork was deleted has no head repository and counts
 as a fork.
 
@@ -1701,7 +1701,7 @@ A check that did not run never ends in 0. Every command whose answer the check n
 exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
 which would otherwise read as "changes no file"), the list of open pull requests (also when a page
 fails, when a line has another shape, when a list of more than one page reads differently a second
-time, or when origin's URL names no owner and repository), the fetch of their heads (also when a fetched head is not the
+time, or when origin's URL names no host, owner and repository), the fetch of their heads (also when a fetched head is not the
 head `gh` listed), a merge, and each step that turns
 git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
 name only when it comes from the same repository, not from a fork.
@@ -1748,9 +1748,14 @@ name only when it comes from the same repository, not from a fork.
   it. A list of one page is a single request and cannot shift.
 - The owner and name come from origin's URL as configured (`git config remote.origin.url`), not from
   `git remote get-url`, which applies `url.<base>.insteadOf` and can name a mirror or a proxy whose
-  path is not the repository's. The host stays `gh`'s; a non-empty list from another server would name
-  heads that origin does not serve, and the check stops on the first one. An empty one has nothing to
-  compare and reads as "no open pull request", as it did with `gh pr list --repo`.
+  path is not the repository's.
+- The host comes from origin's URL too and is given to `gh` with `--hostname`. `gh`'s own host
+  (`GH_HOST`, or the one host it is logged in to) can be another server: a non-empty list from there
+  names heads origin does not serve and stops the check, but an empty one has nothing to compare and
+  read as "no open pull request", exit 0 (the review of #1475 found it). A host on the loopback
+  (`localhost`, `127.*`, `[::1]`) is a proxy in front of github.com, as in Claude Code's cloud
+  sessions, which serves git and not the API, so it stands for github.com. A URL without a host (a
+  local path) names no server to ask and stops the check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -1764,6 +1769,8 @@ name only when it comes from the same repository, not from a fork.
   the gaps above, each of which ends in a silent "no overlap".
 - `gh pr list` with a fallback to REST when GraphQL fails: two ways to list, each needing its own
   guards and tests, where the REST list alone works everywhere.
+- Exit 2 when `GH_HOST` names another host than origin's: it leaves the host to `gh` whenever
+  `GH_HOST` is unset, and `gh` may still pick another server it is logged in to.
 - More than one page of open pull requests as exit 2, like the old limit: the check would stop
   working for a repository with more than 100 open pull requests, where reading twice still works.
 - `gh api`'s `{owner}/{repo}` placeholders: `gh` fills them from its own default repository, the same

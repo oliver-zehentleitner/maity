@@ -117,9 +117,9 @@ fi
 # name are the last two parts of origin's URL (https://github.com/o/r.git, git@github.com:o/r.git,
 # or a proxy's http://host/git/o/r), never gh's own choice: on its own it may name another
 # repository (GH_REPO, `gh repo set-default`, an `upstream` remote), whose pull requests are other
-# changes or none. The host is gh's (github.com unless GH_HOST says otherwise); a non-empty list
-# from another server would not match the heads fetched from origin, which stops the check below
-# (an empty one has nothing to compare and reads as "no open pull request").
+# changes or none. The host is origin's too, given to gh with --hostname: gh's own (GH_HOST, or
+# the one host it is logged in to) could be another server, whose empty list of a repository of
+# the same name would read as "no open pull request" with nothing left to compare.
 # The URL as configured: `git remote get-url` applies url.<base>.insteadOf, which can name a
 # mirror whose path is not the repository's on GitHub.
 origin=$(git config --get remote.origin.url) || die "no remote origin"
@@ -132,15 +132,37 @@ slug=${slug%/*}
 repo_owner=${slug##*/}
 [[ $repo_owner =~ ^[A-Za-z0-9._-]+$ && $repo_name =~ ^[A-Za-z0-9._-]+$ ]] \
   || die "cannot read an owner and a repository from origin's URL $origin"
+# The host: scheme://[user@]host[:port]/... or scp's [user@]host:path. A host on the loopback is
+# a proxy in front of github.com (Claude Code's cloud sessions fetch through one), which serves
+# git and not the API. A URL without a host (a local path) names no server to ask.
+case $origin in
+  *://*)
+    authority=${origin#*://}
+    authority=${authority%%/*}
+    ;;
+  */*:* | *:*) authority=${origin%%:*} ;;
+  *) authority="" ;;
+esac
+[[ $origin == *://* || $authority != */* ]] || authority=""
+authority=${authority##*@}
+case $authority in
+  \[*) repo_host=${authority%%]*}] ;;
+  *) repo_host=${authority%%:*} ;;
+esac
+case $repo_host in
+  localhost | 127.* | "[::1]") repo_host=github.com ;;
+esac
+[[ $repo_host =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]] \
+  || die "cannot read a host from origin's URL $origin"
 # Every page: --paginate follows GitHub's links to the last one, and a page that fails ends gh
 # with an error. A deleted fork has no head repository (null), which counts as a fork.
 # Sets `prs` (one line a pull request) and `pr_count`.
 PAGE=100
 list_prs() {
   local line
-  prs=$(gh api --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=$PAGE" \
+  prs=$(gh api --hostname "$repo_host" --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=$PAGE" \
     --jq '.[] | "\(.number) \(.head.sha) \(.head.repo.full_name != .base.repo.full_name) \(.head.ref)"') \
-    || die "listing the open pull requests of $repo_owner/$repo_name failed (gh api)"
+    || die "listing the open pull requests of $repo_owner/$repo_name on $repo_host failed (gh api)"
   # Every line as the list writes it, checked in bash: an answer of another shape (an error
   # object instead of a list, a field GitHub renamed) would otherwise read as fewer pull requests.
   pr_count=0
