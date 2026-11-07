@@ -113,8 +113,9 @@ window.Maity = window.Maity || {};
   // Without an account's language: a choice made on this page, the landing page's (the frame),
   // then the rule below.
   function visitorChoice() {
-    const asked = closest(askedRaw());
-    if (asked && picked && asked !== closest(picked)) picked = null;  // a newer address decides
+    const raw = askedRaw();
+    // A newer address with another ?lang= decides, also one without a catalog here (sv).
+    if (raw && picked && closest(raw) !== closest(picked)) picked = null;
     const pick = closest(picked);
     if (pick) return pick;
     return closest(framed[frameAddress()]) || browserChoice();
@@ -256,11 +257,14 @@ window.Maity = window.Maity || {};
   i18n.ready = use(browserChoice());
   // How long the frame's language may take before the rule without it decides.
   i18n.frameWait = 1500;
-  // The account's interface language, or null: the visitor's language, the frame read first.
-  i18n.follow = (tag) => {
+  // The account's interface language, or null. Signed in without one (`signedIn`, the session
+  // read answered 200): the browser's rule, as docs/api.md §6.2 says, and no frame read. Signed
+  // out (the 401): the visitor's language, the frame read first.
+  i18n.follow = (tag, signedIn) => {
     const own = closest(tag);
-    account = !!own;
+    account = !!own || !!signedIn;
     if (own) return use(own);
+    if (signedIn) return use(browserChoice());
     return readFrame().then(() => (account ? undefined : use(visitorChoice())));
   };
   // A choice made on a page before sign-in.

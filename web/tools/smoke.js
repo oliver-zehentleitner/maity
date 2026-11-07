@@ -4139,6 +4139,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const own = visitor({ languages: ["sv"], answer: frame(() => "de") });
     await own.i18n.follow("fr");
     expect(own.i18n.language === "fr" && own.asked.length === 0, "visitor language: an account's interface_language decides, no frame read");
+    // Signed in without an interface_language (the session read answered 200): the browser's
+    // rule, as for an account before #1474, and no frame read.
+    const unset = visitor({ languages: ["en-US"], answer: frame(() => "de") });
+    await unset.i18n.follow(null, true);
+    const unsetChanged = await unset.i18n.frame("de");
+    expect(unset.i18n.language === "en" && unset.asked.length === 0 && unsetChanged === false,
+      "visitor language: a signed-in account without interface_language keeps the browser's rule, no frame read " + [unset.i18n.language, unset.asked]);
+    // A newer address with a ?lang= that has no catalog here ends a pick made on the page.
+    const sv2 = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await sv2.i18n.follow(null);
+    await sv2.i18n.choose("de");
+    sv2.page.location.search = "?lang=sv";
+    await sv2.i18n.follow(null);
+    expect(sv2.i18n.language === "en", "visitor language: a newer ?lang=sv ends the pick, the frame decides " + sv2.i18n.language);
     // Read once per page and address, however often the session answers 401.
     await sv.i18n.follow(null);
     expect(sv.asked.length === 1, "visitor language: the frame is read once per page");

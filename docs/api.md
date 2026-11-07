@@ -5390,8 +5390,9 @@ and `GET /auth/session` carries it, and no agent reads or needs it. While
 it is `null`, the hub uses `language` if that is one of the ten and
 English otherwise, and the dashboard the browser's choice, as before
 sign-in: `language` reads as `en` for everyone who never set it, so it says
-nothing about what a person wants to read. Before sign-in the dashboard takes
-the landing page's own language: the `language` of `GET /site/chrome`
+nothing about what a person wants to read. Signed in without an
+`interface_language`, the dashboard keeps the browser's choice. Before sign-in
+it takes the landing page's own language: the `language` of `GET /site/chrome`
 (§16.7.5), read once per page with the address's `?lang=` as written (or none),
 which the hub chooses exactly as the landing page does. A choice made on the
 page comes first and holds for the page; a reload with a `?lang=` the landing

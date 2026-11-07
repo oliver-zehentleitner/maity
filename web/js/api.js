@@ -5205,7 +5205,9 @@ window.Maity = window.Maity || {};
         sessionCsrf = s.csrf_token || null;
         lastSession = s;
         sessionBlocked = false;
-        return M.i18n.follow(s.member && s.member.interface_language).then(() => s);
+        // Signed in: the account's interface_language, or without one the browser's (never the
+        // frame, which is for visitors only: js/i18n.js).
+        return M.i18n.follow(s.member && s.member.interface_language, true).then(() => s);
       }, (err) => {
         if (err && err.status === 401) return M.i18n.follow(null).then(() => { throw err; });
         throw err;
