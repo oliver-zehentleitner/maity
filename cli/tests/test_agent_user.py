@@ -13,6 +13,19 @@ from maity import cli
 from maity.runner import capabilities, config, operate, supervisor, tmux
 from maity.runner.asuser import AsUser
 
+
+def skip_unless_maity_is_installed() -> None:
+    """Skip a test whose agents' side runs `python -I` with maity: `-I` ignores PYTHONPATH, so a
+    run from the source tree without an installed maity cannot pass it (cd cli && make dev)."""
+    import sys
+
+    isolated = subprocess.run([sys.executable, "-I", "-c", "import maity"], check=False,
+                              capture_output=True)  # fmt: skip
+    if isolated.returncode != 0:
+        pytest.skip(f"maity is not installed for {sys.executable}; -I ignores PYTHONPATH "
+                    "(cd cli && make dev)")  # fmt: skip
+
+
 CONFIG = """\
 [hub]
 url = "https://hub.example"
@@ -208,15 +221,8 @@ def test_check_passes_the_agent_user_prerequisites(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:  # fmt: skip
-    # `runner check` asks the agents' side for `python -I -c "import maity"`: `-I` ignores
-    # PYTHONPATH, so a run from the source tree without an installed maity cannot pass it.
-    import sys
-
-    isolated = subprocess.run([sys.executable, "-I", "-c", "import maity"], check=False,
-                              capture_output=True)  # fmt: skip
-    if isolated.returncode != 0:
-        pytest.skip(f"maity is not installed for {sys.executable}; -I ignores PYTHONPATH "
-                    "(cd cli && make dev)")  # fmt: skip
+    # `runner check` asks the agents' side for `python -I -c "import maity"`.
+    skip_unless_maity_is_installed()
     load(tmp_path, monkeypatch)
     (tmp_path / "ws").mkdir()
     (tmp_path / "agent-home").mkdir()
@@ -407,6 +413,7 @@ def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
 
     from maity.runner import adapters
 
+    skip_unless_maity_is_installed()  # the module runs as `python -I -m maity.runner.limitread`
     bsd_dd(fake_sudo.parent / "sbin")
     cfg = load(tmp_path, monkeypatch)
     assert cfg.local is not None

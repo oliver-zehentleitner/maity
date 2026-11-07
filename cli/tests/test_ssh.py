@@ -515,11 +515,13 @@ def test_a_limit_on_a_host_is_read_there_and_keeps_its_slot_there(
 ) -> None:
     import sys
 
-    from test_agent_user import bsd_dd
+    from test_agent_user import bsd_dd, skip_unless_maity_is_installed
 
     from maity.runner import adapters, loop
 
-    # The host's `dd` has no `iflag` (macOS); its `maity`, on the agents' PATH, is this one.
+    # The host's `dd` has no `iflag` (macOS); its `maity`, on the agents' PATH, is this one,
+    # started with -I like the runner's own module.
+    skip_unless_maity_is_installed()
     bsd_dd(fake_ssh.parent / "bin")
     host_maity = tmp_path / "remote" / "bin" / "maity"
     host_maity.write_text(f'#!/bin/sh\nexec {sys.executable} -I -m maity "$@"\n')
