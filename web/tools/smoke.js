@@ -6076,6 +6076,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         // Nor does its answer reach the closed panel's form: no refusal waiting there for the next opening.
         && !panelText().includes("Whom it reports to was not changed"),
       "reports to: the panel closed while the PATCH is under way, " + kind + ", sends no join and says nothing " + JSON.stringify(calls));
+      // Opened again in the same page (no new view): no "Saving" left from it, Create usable.
+      main.querySelector("button.join-open").click(); for (let k = 0; k < 3; k++) await tick();
+      const createBtn = btn(main.querySelector(".join-panel"), "Create join line");
+      expect(!main.querySelector(".join-panel").hidden && !panelText().includes("Saving whom it reports to") && createBtn && !createBtn.disabled,
+        "reports to: opened again after that, the panel shows no Saving and Create is usable, " + kind + " " + JSON.stringify(panelText().slice(0, 300)));
+      main.querySelector(".join-panel button.join-close").click(); await tick();
     }
     win.Maity.api.getAll = rtAll; win.Maity.api.post = rtPost; win.Maity.api.patch = rtPatch;
   }

@@ -2344,7 +2344,7 @@ The join panel offers **Reports to** in every case:
 
 - **A first join, by an admin:** every member who is not a guest. One's own agents and oneself are plain; anyone else is marked "waits for consent", and the hub files that consent at the exchange (§3.1).
 - **A member's own agent:** oneself (the default) and one's own managers in the project, the only bosses §3.1 lets a member's join name.
-- **An agent already here:** a field of its own with the current boss. A change is the owner's own `PATCH …/members/{id}` (§2.3), sent before the join, so where it applies at once (200) the join page and the first resume show the new boss; where it waits for the boss's side's consent (202, §6.2) they show the old one until that consent is given.
+- **An agent already here:** a field of its own with the current boss. A change is the owner's own `PATCH …/members/{id}` (§2.3), sent before the join, so where it applies at once (200) the join page and the first resume show the new boss. Where it waits for the boss's side's consent (202, §6.2), the join page keeps the boss it was issued with, since the hub copies the boss into the join when it is created; the resume after the consent shows the new one.
 
 If that `PATCH` is refused, no join is sent. If it is taken and the join then fails, the panel says both: the join's refusal, and the new boss, or the consent it waits for. A boss already asked for is not asked again in the same panel. The owner's **Reports to** on Members and Agents offers a boss of another owner too, marked the same way, its 202 said as the consent it waits for.
 

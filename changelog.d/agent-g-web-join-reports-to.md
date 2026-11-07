@@ -9,3 +9,4 @@
 ### Fixed
 
 - web: at 390 px the join panel for an agent that is already a member no longer makes the page wider than the window (the "Replace instance" select).
+- web: on a narrow phone the two links under the join panel's agent select ("Open this agent's profile", "Rulebook and instance limit") no longer wrap into each other; each wraps whole onto its own line.

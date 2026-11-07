@@ -291,7 +291,8 @@ window.Maity = window.Maity || {};
     };
     // An agent already here keeps its membership's boss unless it is changed here: its owner's
     // own PATCH (§2.3), sent before the join, so the join page and the first resume show it where
-    // it applies at once (200); waiting for the other side's consent (202) the old boss stays till then.
+    // it applies at once (200). Waiting for the other side's consent (202), the join page keeps the
+    // boss it was issued with (the hub copies it into the join); the resume after the consent shows the new one.
     const memberReports = h("select", { id: "join-member-reports", "aria-describedby": "join-member-reports-hint" });
     // The boss asked for while a consent is open, per member: chosen again, it is not asked twice.
     const asked = new Map();
@@ -506,7 +507,8 @@ window.Maity = window.Maity || {};
             answer = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(member.id), { reports_to: to });
           } catch (err) {
             create.disabled = false;
-            if (mine !== submission) return;
+            // Closed meanwhile: nothing said, and no "Saving" left for the next opening.
+            if (mine !== submission) { status.done(); return; }
             status.fail(M.t("join.reports.failed"), err);
             memberReports.focus();
             return;
@@ -522,7 +524,7 @@ window.Maity = window.Maity || {};
             bossSaid = to ? M.t("join.reports.saved", { name, boss: ctx.nameOf(to) }) : M.t("join.reports.saved_nobody", { name });
           }
           // Taken, the boss stays (kept above for the next submission); closed meanwhile, no join.
-          if (mine !== submission) { create.disabled = false; return; }
+          if (mine !== submission) { create.disabled = false; status.done(); return; }
         }
         const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
