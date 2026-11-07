@@ -9573,6 +9573,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
+  // The mock as the hub answers an owner with trust member who changes their agent's role (§3.1 "The owner changes the role"):
+  // a project role counts by its base, stored with it; ops and a project role on ops are beyond the limits.
+  const owFixtures = win.MAITY_FIXTURES, owSearch = win.location.search;
+  const owF = JSON.parse(JSON.stringify(owFixtures));
+  owF["maity/members.json"].items.push({ ...owF["maity/members.json"].items.find((x) => x.id === "hum-maintainer"), id: "hum-friend", handle: "friend", display_name: "Friend", trust: "member", role: "coder", role_base: "coder" });
+  owF["maity/members.json"].items.forEach((x) => { if (x.id === "agt-b") x.owner_id = "hum-friend"; });
+  owF["maity/project.json"].roles = [{ name: "docs", base: "writer" }, { name: "deployer", base: "ops" }];
+  win.MAITY_FIXTURES = owF; win.location.search = "?as=hum-friend";
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const owTry = (role) => win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { role }).catch((err) => err);
+  const owReviewer = await owTry("reviewer"), owDocs = await owTry("docs"), owOps = await owTry("ops"), owDeployer = await owTry("deployer"), owNone = await owTry("nonesuch");
+  const owAreas = await win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { areas: ["web/"] }).catch((err) => err);
+  const owNotOwn = await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "reviewer" }).catch((err) => err);
+  win.MAITY_FIXTURES = owFixtures; win.location.search = owSearch;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const owLimit = (e) => e && e.status === 403 && e.details.reason === "member_join_limit" && e.details.field === "role";
+  expect(owReviewer.role === "reviewer" && owReviewer.role_base === "reviewer" && owDocs.role === "docs" && owDocs.role_base === "writer"
+    && owLimit(owOps) && owLimit(owDeployer) && owNone.status === 400 && owNone.details.fields.role === "unknown"
+    && owAreas.status === 403 && owAreas.details.scope === "members:admin" && owNotOwn.status === 403 && owNotOwn.details.scope === "members:admin",
+    "mock as an owner with trust member: their agent's role within the limits, a project role by its base; ops, one on ops, areas and another's agent refused "
+    + JSON.stringify([owDocs.role_base, owDeployer.details, owNone.details]));
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,

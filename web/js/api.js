@@ -4372,12 +4372,15 @@ window.Maity = window.Maity || {};
           if ((fixtureAs ? who.member.trust : trustIn(m[1])) !== "member" || pol.member_agents === "off" || !within) {
             fail(403, "forbidden", "only whoever may let the agent join", path, { reason: "join_rule" });
           }
-          if (body.role === "ops" || body.role === "proxy") {
+          // A project role counts by its base, as project_roles.base_of resolves it (§2.3).
+          const custom = (project(m[1], path).roles || []).find((r) => r.name === body.role);
+          const base = custom ? custom.base : memberRoles.concat(["ops", "proxy"]).includes(body.role) ? body.role : null;
+          if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          if (!memberRoles.includes(base)) {
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
-          if (!memberRoles.includes(body.role)) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
           target.role = body.role;
-          target.role_base = body.role;
+          target.role_base = base;
           return target;
         }
       }
