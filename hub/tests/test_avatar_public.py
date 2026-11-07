@@ -329,6 +329,12 @@ def _manifest(folder: Path) -> dict[str, Any]:
         lambda m, f: m["motifs"][0].update(file="../manifest.json"),
         lambda m, f: (f / m["motifs"][0]["file"]).write_bytes(image(size=(512, 500))),
         lambda m, f: (f / m["motifs"][0]["file"]).write_bytes(b"\x89PNG" + bytes(70 * 1024)),
+        # a PNG signature without an IHDR: the header check refuses it, the start goes on
+        lambda m, f: (f / m["motifs"][0]["file"]).write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(40)),
+        # a valid header over broken data: the decoder refuses it
+        lambda m, f: (f / m["motifs"][0]["file"]).write_bytes(
+            (f / m["motifs"][0]["file"]).read_bytes()[:33] + bytes(200)
+        ),
     ],
 )
 def test_a_set_that_fails_the_check_is_not_served(

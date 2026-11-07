@@ -132,16 +132,18 @@ def _read(folder: Path) -> MotifSet:
             raise Refused(f"{where}: {len(source)} bytes, over {SOURCE_BYTES}")
         if images.sniff(source) != "image/png":
             raise Refused(f"{where}: not a PNG")
-        if avatar_decode.dimensions(source, "image/png") != (SOURCE_SIDE, SOURCE_SIDE):
-            raise Refused(f"{where}: not {SOURCE_SIDE} × {SOURCE_SIDE} pixels")
         try:
+            if avatar_decode.dimensions(source, "image/png") != (SOURCE_SIDE, SOURCE_SIDE):
+                raise Refused(f"{where}: not {SOURCE_SIDE} × {SOURCE_SIDE} pixels")
             stored = avatar_decode.process(source, "image/png")
             sizes = {}
             for side in avatar_decode.SIZES:
                 small = avatar_decode.process_size(stored, side)
                 sizes[side] = (small, images.etag(small))
-        except avatar_decode.Refused as why:
-            raise Refused(f"{where}: the decoder refused it ({why})") from None
+        except Refused:
+            raise
+        except Exception as why:  # a refusal, or whatever a broken file makes Pillow raise
+            raise Refused(f"{where}: the decoder refused it ({why!r})") from None
         read.append(Motif(name, theme, label, alt, stored, images.etag(stored), sizes))
     themes = list(dict.fromkeys(m.theme for m in read))  # in the order of their first motif
     ordered = sorted(read, key=lambda m: themes.index(m.theme))  # stable: the set's order

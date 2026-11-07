@@ -116,6 +116,51 @@ def test_remove_resets_an_agent_profile_and_holds_it(
     held(owner.patch(f"/agents/{agent.id}", {"display_name": "Totally Legit Bank"}))
 
 
+def test_remove_resets_an_uploaded_picture_as_the_moderation(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A reset that changes the picture emits `avatar_changed` with the moderation as actor;
+    it answered 500 before (`announce` read the actor as a caller)."""
+    from tests.test_avatars import image, put_agent
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    assert put_agent(agent, image()).status_code == 200
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    assert resolve(team, made["id"], "remove").status_code == 200
+    assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "generated"
+    [changed] = [e for e in events(owner) if e["kind"] == "avatar_changed"][-1:]
+    assert changed["actor"] == {"kind": "moderation", "report_id": made["id"]}
+
+
+def test_remove_drops_an_agents_motif_and_the_hold_refuses_a_new_one(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8: a reset drops an agent's upload and motif, so its generated picture shows, and
+    while the hold stands neither its owner nor the agent chooses a motif again; clearing
+    one stays allowed."""
+    from maity_hub import avatars, motifs
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    name = motifs.current().motifs[0].name
+    chose = owner.patch(f"/agents/{agent.id}", {"avatar_motif": name})
+    assert chose.status_code == 200 and chose.json()["avatar_source"] == "motif", chose.text
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    assert resolve(team, made["id"], "remove").status_code == 200
+    profile = owner.get(f"/agents/{agent.id}").json()
+    assert (profile["avatar_source"], profile["avatar_motif"]) == ("generated", None)
+    [changed] = [e for e in events(owner) if e["kind"] == "avatar_changed"][-1:]
+    assert changed["actor"] == {"kind": "moderation", "report_id": made["id"]}
+    held(owner.patch(f"/agents/{agent.id}", {"avatar_motif": name}))
+    held(agent.patch("/me", {"avatar_motif": name}))
+    avatars.CHANGES.reset()
+    assert owner.patch(f"/agents/{agent.id}", {"avatar_motif": None}).status_code == 200
+    assert resolve(team, made["id"], "dismiss").status_code == 200
+    again = owner.patch(f"/agents/{agent.id}", {"avatar_motif": name})
+    assert again.status_code == 200, again.text  # the hold lifted, the choice is the owner's
+
+
 def test_the_affected_account_is_told_never_who_reported(
     team: dict[str, Any], migrated: Engine
 ) -> None:

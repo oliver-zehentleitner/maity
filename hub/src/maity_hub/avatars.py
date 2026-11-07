@@ -454,8 +454,12 @@ def choose_motif(conn: Connection, agent_id: str, name: Any, caller: Any) -> Non
     of the set, or None to clear it (§6.10). A name the set does not hold is `invalid`; a
     choice counts as a change under the per-avatar limit, a repeat of the current one too.
     It shows while no upload does, and `avatar_changed` follows only when it shows."""
+    from maity_hub import moderation
+
     if name is not None and (not isinstance(name, str) or motifs.current().named(name) is None):
         raise invalid({"avatar_motif": "unknown"}, "the hub ships no motif of that name")
+    if name is not None:  # a motif restores a reset picture: not while its hold stands (§16.8)
+        moderation.refuse_held(conn, "profile", agent_id, "remove")
     count_change(conn, agent_id)  # given back if this transaction rolls back
     lock_owner(conn, agent_id)
     before = state(conn, agent_id)
@@ -465,11 +469,18 @@ def choose_motif(conn: Connection, agent_id: str, name: Any, caller: Any) -> Non
     announce(conn, agent_id, before, caller)
 
 
+def clear_motif(conn: Connection, agent_id: str) -> None:
+    """The agent's chosen motif dropped: a moderation reset (§16.8), a deleted profile."""
+    conn.execute(
+        update(t.agent_profile).where(t.agent_profile.c.id == agent_id).values(avatar_motif=None)
+    )
+
+
 def announce(conn: Connection, owner_id: str, before: dict[str, str | None], caller: Any) -> None:
     """`avatar_changed` in every project the member is in, when the effective picture's
     source or content changed (§6.10, §8.2). The member is the actor where it made the
     change itself; an owner's change has none, so the event does not name the owner."""
-    from maity_hub.events import emit
+    from maity_hub.events import Actor, emit
 
     after = state(conn, owner_id)
     if after == before:  # the same bytes give the same URL: nothing changed
@@ -481,7 +492,9 @@ def announce(conn: Connection, owner_id: str, before: dict[str, str | None], cal
             column == owner_id, t.membership.c.active.is_(True)
         )
     ).all()
-    own = caller.principal_id == owner_id
+    # A moderation reset passes its actor (`{kind: moderation, report_id}`, §8.2) as is.
+    from_moderation = isinstance(caller, Actor)
+    own = not from_moderation and caller.principal_id == owner_id
     for membership in sorted(memberships, key=lambda m: m.project_id):
         emit(
             conn,
@@ -489,7 +502,7 @@ def announce(conn: Connection, owner_id: str, before: dict[str, str | None], cal
             "avatar_changed",
             ["all"],
             {"member_id": owner_id, "avatar_url": after["avatar_url"]},
-            actor=caller.actor(membership.id) if own else None,
+            actor=caller if from_moderation else (caller.actor(membership.id) if own else None),
             subject=("member", owner_id),
         )
 
