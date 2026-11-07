@@ -2273,8 +2273,10 @@ def cmd_memory_delete(args: argparse.Namespace) -> int:
     """`DELETE …/memory/{id}` (§19.2): the hub decides who may; the answer is the tombstone."""
     _memory_flags_after_action(args)
     entry = _text(args.entry, "the entry")
-    if not re.fullmatch(r"mem-[a-z0-9]+", entry):
-        raise UsageError(f"{entry!r} is not an entry id (mem-…)")
+    # Ids are opaque (docs/api.md §1.1): only what would leave its path segment is refused
+    # here, as `_id` does; an id the hub does not have is its `not_found`.
+    if not entry.strip() or entry in (".", ".."):
+        raise UsageError(f"{entry!r} is not an entry id")
     session = Session()
     body = {"reason": _text(args.reason, "--reason")} if args.reason is not None else None
     answer = session.client.call("DELETE", session.project_path("memory", entry), body=body)
