@@ -1168,7 +1168,7 @@ Each case is settled once:
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-47tbmmmemf6x and the reviews of PR #1457, 2026-11-07; findings of the reviews of #1451 (a translated `harness`, Portuguese `tu` forms)
-**Revisit when:** the address table of `web/i18n/glossary.md` changes its shape, or informal French possessives (`ton`, `ta`) appear in a catalog
+**Revisit when:** the address table of `web/i18n/glossary.md` changes its shape, informal French possessives (`ton`, `ta`) appear in a catalog, or Chinese gets a check for `您`
 
 See: rendering.md#one-word-per-thing-in-the-translations — fc2e6592-2711-447a-978c-75a9ccce1e0a — as of 2026-11-07
 
@@ -1180,13 +1180,18 @@ every language must stay in a text whose English holds it, and a text uses no wo
 `{harness}` is no harness and Dutch `{count} u` stays hours. German `Sie` and `Ihr…` count only inside a sentence. An
 address in the table that the check does not know is itself a finding, so the table cannot change unseen.
 
+Chinese is not checked, and no reason was weighed for that: the check grouped it with Japanese and Korean when it was
+written, as if its address were a register too. It is not: the glossary names `你`, and the other address is the
+single character `您`, which a pattern finds; neither Chinese catalog holds `您` (found in the delta review of #1457).
+
 **Rejected alternatives:**
 - Checking `resume` with the other fixed terms: the glossary translates it as an ordinary verb, so the check would flag
   correct sentences; it stays a reviewer's call (`GLOSSARY_NOT_CHECKED`).
-- Flagging French `ton`, `ta` and `te` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses
-  it so (« Le ton, la longueur … »), which the check would flag; noted for later instead.
-- A word list for Japanese, Korean and Chinese: their address is a register (です・ます, 해요체), not a set of words a
-  pattern can find; nothing is checked there and reviewers keep it.
+- Flagging French `ton` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses it so
+  (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with no
+  reason of their own; neither occurs in a French catalog today.
+- A word list for Japanese and Korean: their address is a register (です・ます, 해요체), not a set of words a pattern
+  can find; nothing is checked there and reviewers keep it.
 - Leaving both rules to review alone: the same findings came back on #1451 after the glossary named them.
 
 ## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
