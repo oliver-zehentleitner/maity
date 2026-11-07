@@ -370,7 +370,7 @@ the hub records it on the session.
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
 | Attachment uploads | 30 and 100 MiB per membership in 10 minutes (§8.7) |
-| Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
+| Attachments stored per project | `max_attachment_storage_per_project`, default 1 GiB, pending uploads included (§8.7, §16.5) |
 | Attachments stored on the instance | `max_attachment_storage`, default `unlimited`, all projects and pending uploads together (§8.7, §16.5) |
 | Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
@@ -12065,13 +12065,17 @@ does not show what the listing hides.
 - Removing a member (§6.2) deletes its pending uploads; what it sent
   stays with the messages it sent.
 
-**Quota.** Each project holds at most the instance setting
-`MAITY_ATTACHMENT_QUOTA` (bytes, default 1 GiB; §16) of stored
-attachments, pending ones included, counted after re-encoding; deleted
-ones free their bytes. An upload that would exceed it is
-`attachment_quota` with `details: {"used": …, "quota": …}`, and nothing
-is stored. The project view (§6.1) shows `attachments: {used, quota}` to
-callers with `project:admin`; for others it is `null`.
+**Quota.** Each project holds at most the limit
+`max_attachment_storage_per_project` (§16.5; bytes, default 1 GiB, or
+`unlimited`) of stored attachments, pending ones included, counted after
+re-encoding; deleted ones free their bytes. An upload that would exceed
+it is `attachment_quota` with `details: {"used": …, "quota": …}`, and
+nothing is stored; under `unlimited` the project scope refuses nothing.
+The project view (§6.1) shows `attachments: {used, quota}` to callers
+with `project:admin`, `quota` being `null` under `unlimited`; for others
+`attachments` is `null`. Lowering the limit deletes nothing: a project
+over it keeps every attachment, and its uploads are refused until
+deletions bring it under.
 
 **Instance storage.** All projects together hold at most the limit
 `max_attachment_storage` (§16.5), counted the same way: every stored
@@ -16139,8 +16143,7 @@ report, and nothing around it.
 environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
 (default), `stop` or `stop_floor`, what revoking or removing a runner
 does to its agents in projects whose policy says `inherit` (§15.3,
-§6.1). `MAITY_ATTACHMENT_QUOTA` — bytes of attachments one project may
-store, default 1 GiB (§8.7); `MAITY_ATTACHMENT_STORE` and the
+§6.1). `MAITY_ATTACHMENT_STORE` and the
 `MAITY_ATTACHMENT_DIR` / `MAITY_ATTACHMENT_S3_*` settings — where the
 attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
@@ -16506,8 +16509,8 @@ no notification.
 ### 16.5 Limits
 
 The admin area's section "Limits": the caps the operator puts on what
-one account may hold, and one limit for the whole instance, its
-attachment storage. Plans (§2.7, part two) will set the caps per account
+one account may hold, the attachment storage of one project, and one
+limit for the whole instance, its attachment storage. Plans (§2.7, part two) will set the caps per account
 per plan; until then there is one value for every account.
 
 ```
@@ -16523,6 +16526,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
+| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
@@ -16534,6 +16538,7 @@ values with the source rules of §16.2, as in §16.4.
   "owners_at_project_limit": 0,
   "max_aliases": { "value": 3, "source": "default" },
   "names_at_alias_limit": 0,
+  "max_attachment_storage_per_project": { "value": 1073741824, "source": "default" },
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
   "attachment_storage_used": 734003200 }
 ```
@@ -16547,7 +16552,9 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `owners_at_project_limit` for `max_projects_per_owner`, which take
 `null` and `unlimited` the same way. `max_aliases` takes `null` the same
 way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
-read-only. `attachment_storage_used` is
+read-only. `max_attachment_storage_per_project` takes `null` and
+`unlimited` the same way and has no count beside it: what one project
+holds is that project's `attachments` (§6.1). `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
 under every value, `unlimited` included.
 
@@ -16592,16 +16599,22 @@ under every value, `unlimited` included.
   rename, since the handle given up always becomes an alias, and 8 is
   the bound other rules rest on (the forge webhook's budgets per path,
   §6.25). One value covers all four kinds of id, as one count did before.
+- **What `max_attachment_storage_per_project` gates.** An attachment
+  upload (§8.7) alone, as `attachment_quota` with `details.scope:
+  "project"`, `details.used` and `details.quota`. It caps each project
+  alike, whoever owns it; the project's owner sets nothing here. Posting
+  a message that names attachments already uploaded is not refused.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
   alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
-  the three above it caps the instance, not an account: the disk and the
+  the account caps above it caps the instance, not an account: the disk and the
   blob store are the operator's, whatever the accounts hold. Posting a
   message that names attachments already uploaded is not refused.
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or
   receives) no new one until they are under it again (the tolerant rule
-  of `context/scope.md`); over a lowered `max_attachment_storage`,
-  uploads are refused until deletions bring the total under it (§8.7).
+  of `context/scope.md`); over a lowered `max_attachment_storage` or
+  `max_attachment_storage_per_project`, uploads are refused until
+  deletions bring the instance's or the project's total under it (§8.7).
   An id over a lowered `max_aliases` keeps every alias, and all of
   them resolve (§6.24); only a rename that would add one more is refused.
   `humans_at_limit` and `humans_at_org_limit` count the humans at or over

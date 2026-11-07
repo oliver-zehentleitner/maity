@@ -906,6 +906,38 @@ sessions that simply work a while before each limit.
   reads the agent's directory, and an option would outlive the session's
   exit only by accident.
 
+## The limit file is read on the agents' side by the runner's own module, not by `dd`
+
+**Id:** aa29acab-65eb-4f60-a8da-ee284877266f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the macOS verification of #1411 (macOS 27.2: `/bin/dd` reads plainly but answers every `iflag=` with "unknown iflag", exit 1) and the team lead's go on the plan for card tsk-gvh28gtqjrb3, 2026-11-06
+**Revisit when:** the runner reads the agents' side through a channel of its own instead of running commands there
+**See:** runner.md#a-provider-limit-reaches-the-runner-as-the-loops-exit-22-and-no-harness-signals-one-yet — 924bb731-5f0d-4532-b785-e651d0949988 — as of 2026-11-06
+
+In the `agent_user` and `ssh` layouts the runner reads the loop's
+`limit.json` by starting `maity.runner.limitread` on the agents' side:
+`python -I -m maity.runner.limitread PATH` through sudo, `maity runner
+limitread PATH` on an ssh host, with the agents' PATH. The module opens
+the file as the runner does in its own process (no link followed, no
+blocking on a FIFO, a regular file only, at most 512 bytes) and prints
+it. A host whose `maity` has no `limitread` yet reads nothing, and the
+limit is recorded without an exit code.
+
+**Reason:** the read was `dd iflag=nofollow,nonblock`, and the `dd` on
+macOS has no `iflag`: there it never read the file, so a limit on a Mac
+host always lost its exit code. The runner's own module behaves the same
+on every POSIX host and is already how the loop and the stub start on
+the agents' side.
+
+**Rejected alternatives:**
+- `dd` without `iflag`, or `cat`: they follow a link and wait on a FIFO
+  the agents planted, which the read exists to refuse.
+- Falling back to `dd` when the host's `maity` lacks `limitread`: on
+  macOS that is the read that fails anyway, and elsewhere it would keep
+  two ways of reading alive. No exit code is the safe answer.
+
 ## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
 
 **Id:** 2718b0d9-cf5b-4758-9fca-a143fafce1d3
