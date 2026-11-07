@@ -6058,8 +6058,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       main.querySelector(".join-panel button.join-close").click(); await tick();
       release(); for (let k = 0; k < 6; k++) await tick();
       expect(pending && main.querySelector(".join-panel").hidden && calls.length === 1 && calls[0][0] === "patch"
-        && !main.querySelector(".join-result") && !main.querySelector(".join-panel .join-reports-said"),
-      "reports to: the panel closed while the PATCH is under way, " + kind + ", sends no join " + JSON.stringify(calls));
+        && !main.querySelector(".join-result") && !main.querySelector(".join-panel .join-reports-said")
+        // Nor does its answer reach the closed panel's form: no refusal waiting there for the next opening.
+        && !panelText().includes("Whom it reports to was not changed"),
+      "reports to: the panel closed while the PATCH is under way, " + kind + ", sends no join and says nothing " + JSON.stringify(calls));
     }
     win.Maity.api.getAll = rtAll; win.Maity.api.post = rtPost; win.Maity.api.patch = rtPatch;
   }
