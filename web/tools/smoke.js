@@ -3284,6 +3284,116 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 
+  // A card's restricted text (§6.1, §6.4, tsk-g8ts5vxhj1md): the setting with its widening preview,
+  // the box on a card for a member in the set alone, its refusals in words, the set's notice.
+  await projectSettings();
+  const raSection = () => byId("restricted-access");
+  const raSubmit = async () => { raSection().querySelector("form.restricted-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
+  const raConfirm = () => raSection().querySelector(".restricted-confirm");
+  expect(raSection() && byId("restricted-mode").value === "" && text(raSection()).includes("Closed: nobody reads or writes the cards' restricted texts.")
+    && text(raSection()).includes("Access restriction, not encryption — project admins can add themselves")
+    && raSection().querySelector("fieldset.restricted-members").hidden,
+    "restricted: closed by default, the not-encryption sentence said, no list");
+  const raPatches = [];
+  const raPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if (b && b.settings && "restricted_access" in b.settings) raPatches.push(b); return raPatch(p, b); };
+  byId("restricted-mode").value = "nobody_except"; byId("restricted-mode").dispatch("change");
+  byId("restricted-member-hum-maintainer").checked = true; byId("restricted-member-agt-b").checked = true;
+  await raSubmit();
+  expect(!raPatches.length && !raConfirm().hidden && text(raConfirm()).includes("Texts written while the set was open before stay stored, and they will read those too.") && !text(raConfirm()).includes("0 cards")
+    && text(raConfirm()).includes("Agent B (@agent-b), agent of Maintainer (@maintainer)") && !text(raConfirm()).includes("Every member who joins"),
+    "restricted: a change that widens the set asks first, each agent with its owner, nothing sent " + JSON.stringify(raPatches));
+  raConfirm().querySelector("button.restricted-widen-go").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(raPatches[0]) === JSON.stringify({ settings: { restricted_access: { mode: "nobody_except", members: ["hum-maintainer", "agt-b"] } } })
+    && text(main).includes("Restricted access saved.")
+    && text(raSection()).includes("In the set now: Maintainer (@maintainer), Agent B (@agent-b), agent of Maintainer (@maintainer).")
+    && text(raSection()).includes("0 cards have a restricted text."),
+    "restricted: saved once confirmed, the set said " + JSON.stringify(raPatches));
+  byId("restricted-member-agt-b").checked = false;
+  await raSubmit();
+  expect(raPatches.length === 2 && JSON.stringify(raPatches[1].settings.restricted_access) === JSON.stringify({ mode: "nobody_except", members: ["hum-maintainer"] }),
+    "restricted: a change that narrows the set is sent without asking " + JSON.stringify(raPatches));
+  byId("restricted-mode").value = "all_except"; byId("restricted-mode").dispatch("change");
+  byId("restricted-member-hum-maintainer").checked = false;
+  await raSubmit();
+  expect(raPatches.length === 2 && text(raConfirm()).includes("Every member who joins this project later will read them too.")
+    && text(raConfirm()).includes("Agent A (@agent-a), agent of Maintainer (@maintainer)"),
+    "restricted: under all_except the question says that every future member reads too");
+  raConfirm().querySelector("button.restricted-widen-back").click(); await tick();
+  expect(raPatches.length === 2 && raConfirm().hidden, "restricted: Back sends nothing");
+  // A refusal of the hub's is said at the member it names.
+  win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/projects/maintainer/maity", "invalid",
+    { fields: { "settings.restricted_access.members.agt-c": "owner_not_a_member" } }));
+  byId("restricted-mode").value = "nobody_except"; byId("restricted-mode").dispatch("change");
+  byId("restricted-member-hum-maintainer").checked = true; byId("restricted-member-agt-c").checked = true;
+  await raSubmit();
+  raConfirm().querySelector("button.restricted-widen-go").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(text(raSection().querySelector(".restricted-errors")) === "Agent C (@agent-c), agent of Maintainer (@maintainer): This agent's owner is no member of the project, or a guest.",
+    "restricted: the hub's refusal named at its member " + text(raSection().querySelector(".restricted-errors")));
+  win.Maity.api.patch = raPatch;
+  // The box on a card: read when the card opens, plain text, a refused text kept, a conflict, a clear.
+  await go("#/maintainer/maity/tasks/tsk-0004"); for (let k = 0; k < 8; k++) await tick();
+  const raBox = () => main.querySelector("section.card-restricted");
+  const raField = () => raBox().querySelector("textarea");
+  const raSave = async () => { raBox().querySelector("form.restricted-edit-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
+  expect(raBox() && text(raBox()).includes("No restricted text on this card.") && text(raBox()).includes("Access restriction, not encryption"),
+    "restricted: the box on a card for a member in the set, empty at first");
+  raBox().querySelector("button.restricted-edit").click(); await tick();
+  raField().value = "bad \u0007 bell";
+  await raSave();
+  expect(text(raBox().querySelector(".field-error")) === "The text holds a control or invisible character; take it out." && raField().value === "bad \u0007 bell",
+    "restricted: a text the hub refuses is said at the field and kept");
+  raField().value = "Line one\nLine two";
+  await raSave();
+  expect(raBox().querySelector(".restricted-text").textContent === "Line one\nLine two" && text(raBox()).includes("Saved.")
+    && text(raBox()).includes("Set by @maintainer"), "restricted: saved, shown as plain text with its line break and its history");
+  await win.Maity.api.put("/projects/maintainer/maity/tasks/tsk-0004/restricted", { text: "Changed elsewhere", base_version: 1 });
+  raBox().querySelector("button.restricted-edit").click(); await tick();
+  raField().value = "Mine";
+  await raSave();
+  expect(raField() && raField().value === "Mine" && text(raBox()).includes("It now reads: Changed elsewhere"),
+    "restricted: a conflict says the current text and keeps what was typed");
+  await raSave();
+  expect(raBox().querySelector(".restricted-text").textContent === "Mine", "restricted: saved again on the current version");
+  raBox().querySelector("button.restricted-clear").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(text(raBox()).includes("Cleared.") && text(raBox()).includes("No restricted text on this card.") && text(raBox()).includes("Cleared by @maintainer"),
+    "restricted: cleared, the history says by whom");
+  // Outside a session in good standing: the sentence and the session list, no text (§6.4 "Access").
+  const raGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (/\/restricted$/.test(p) ? Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "not_in_good_standing" })) : raGet(p));
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/tasks/tsk-0004"); for (let k = 0; k < 8; k++) await tick();
+  expect(raBox() && text(raBox()).includes("The restricted text is shown only on a session whose sign-in is confirmed.")
+    && raBox().querySelector("a").getAttribute("href").includes("account/security/sessions") && !raBox().querySelector("textarea"),
+    "restricted: outside a session in good standing the box says so and links the sessions");
+  win.Maity.api.get = raGet;
+  // The set's notice links the project's setting and reads as read like any notice; one's own settings stay as they were.
+  const raNote = { kind: "inbox", target: { type: "settings", id: "restricted_access" }, project: { full_name: "maintainer/maity", member: true } };
+  expect(win.Maity.notify.linkOf(raNote) === "/maintainer/maity/settings" && !win.Maity.notify.keepsUnread(raNote)
+    && win.Maity.notify.linkOf({ kind: "inbox", target: { type: "settings", id: "notifications" } }) === "/account/notifications"
+    && win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "settings", id: "notifications" } }),
+    "restricted: the set's notice opens the project's settings and is read by a read mark");
+  // Where that notice leads a member in the set without project:admin (§19): settings sends them to
+  // settings/mine, which shows the setting to read, with the set the hub serves them, and no control.
+  await win.Maity.api.patch("/projects/maintainer/maity", { settings: { restricted_access: { mode: "nobody_except", members: ["hum-maintainer"] } } });
+  const raMeGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? raMeGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "member"; return x; }) : raMeGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
+  expect(/settings\/mine$/.test(win.location.hash) && raSection() && !byId("restricted-mode") && !raSection().querySelector("form")
+    && text(raSection()).includes("Only the members ticked. You are in the set.")
+    && text(raSection()).includes("In the set now: Maintainer (@maintainer).")
+    && text(raSection()).includes("Only a human with the right to administer the project changes who is in the set."),
+    "restricted: a member in the set without the right reads the setting on settings/mine, where the notice leads, and changes nothing " + win.location.hash);
+  win.Maity.api.get = raMeGet;
+  await go("#/maintainer/maity/inbox"); await projectSettings();
+  expect(byId("restricted-mode") && byId("restricted-mode").value === "nobody_except", "restricted: an admin still edits the setting on the project's settings");
+  // Closed again: nobody is in the set, and no card shows the box.
+  await projectSettings();
+  byId("restricted-mode").value = ""; byId("restricted-mode").dispatch("change");
+  await raSubmit();
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/tasks/tsk-0004"); for (let k = 0; k < 8; k++) await tick();
+  expect(!raBox() && main.querySelector("aside.card-panel"), "restricted: once the set is closed no card shows the box");
+  await go("#/maintainer/maity/inbox");
+
   // Agents of owners who are not members (§6.1, §6.2): settings, the mark, the hub's isolation, the refused lift.
   await projectSettings();
   const aoForm = () => main.querySelector("form.agent-owners-form");
