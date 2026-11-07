@@ -224,8 +224,9 @@ window.Maity = window.Maity || {};
     try {
       answer = await M.api.get("/public/pages/" + stored.replace(/^\/+/, ""));
     } catch (err) {
-      // No page: the caller's answer stands. Signed out, so does a failed read: the login is
-      // still a way on. Signed in, it is said as any failed page is.
+      // No page: the caller's answer stands. Signed out, so does a failed read: false, as for no
+      // page, so the caller draws the login at a dashboard route and "not found" at a handle or an
+      // unknown view word (app.js, showsVisitorNothing). Signed in, it is said as any failed page is.
       if (err.status === 404 || !signedIn) return false;
       throw err;
     }
