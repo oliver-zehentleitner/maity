@@ -268,7 +268,7 @@ def test_without_gh_a_linked_pull_request_with_another_head_is_refused(
     _card(fake, links=[_link(12)])
     assert _report() == cli.EXIT_REFUSED
     err = capsys.readouterr().err
-    assert f"PR #12 has head {'f' * 40}" in err and _head(joined) in err
+    assert f"PR #12 (open) has head {'f' * 40}" in err and _head(joined) in err
     assert not _sent(fake)
 
 
@@ -307,3 +307,54 @@ def test_a_failing_gh_without_a_linked_pull_request_stays_an_error(
     assert _report() == cli.EXIT_ERROR
     assert "gh could not list pull requests" in capsys.readouterr().err
     assert not _sent(fake)
+
+
+# The branch deleted after its merge, gh missing (f720dd3c without gh): the card's linked pull
+# request, merged with this very head, stands in for the branch.
+def _delete_branch(joined: Path) -> None:
+    git(joined.parent.parent, "push", "--quiet", "origin", "--delete", "work")
+
+
+def test_without_gh_a_deleted_branch_reports_the_merged_head_of_the_linked_pull_request(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    head = _head(joined)
+    _delete_branch(joined)
+    _probe(fake, {12: head}, state="merged")
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_OK
+    body = _report_body(fake)
+    assert body["remote_head"] == head and body["head"] == head
+    assert body["pr_status"] == "found" and body["pr"]["state"] == "merged"
+    assert "PR #12 (merged, read by the hub's probe)" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("state", "same_head"), [("merged", False), ("open", True), ("closed", True)]
+)
+def test_without_gh_a_deleted_branch_without_a_matching_merge_is_refused(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    same_head: bool,
+) -> None:
+    head = _head(joined)
+    _delete_branch(joined)
+    _probe(fake, {12: head if same_head else "a" * 40}, state=state)
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "is gone on the remote and the hub's probe reads PR #12" in err and head in err
+    assert not _sent(fake)
+
+
+def test_without_gh_a_deleted_branch_on_a_card_without_a_linked_pull_request_is_refused(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _delete_branch(joined)
+    asked = _probe(fake, {})
+    _card(fake)
+    assert _report() == cli.EXIT_REFUSED
+    assert "does not exist on" in capsys.readouterr().err
+    assert asked == [] and not _sent(fake)

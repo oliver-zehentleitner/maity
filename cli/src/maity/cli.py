@@ -942,15 +942,17 @@ PROBED_LINKS_MAX = 5  # a card links one or two pull requests; more are not read
 
 
 def _probed_pr(
-    session: Session, card: Any, facts: gitfacts.Facts
-) -> tuple[gitfacts.PullRequest | None, str | None]:
-    """The card's linked pull request whose head is the pushed head, read through the hub's
-    probe (§11) when gh could not answer, or why none of them is; `(None, None)` when the
-    probe cannot say (not configured, unavailable, nothing found), so nothing stands in.
+    session: Session, card: Any, head: str, merged_only: bool = False
+) -> tuple[gitfacts.PullRequest | None, list[str] | None]:
+    """The card's linked pull request whose head is `head`, read through the hub's probe (§11)
+    when gh could not answer, and with `merged_only` one the forge has merged; else the linked
+    pull requests the probe read that are not it (`PR #N has head …`), for the refusal. `None`
+    for those when the probe cannot say (not configured, unavailable, nothing found): nothing
+    stands in, and nothing refuses on its account.
 
     Only a pull request the card already links is asked about, never one the agent names
     (8c58cebb), and the probe reads fresh (`max_age=0`) from the project's repository only.
-    Its head must equal what `git ls-remote` answered for the branch, compared whole."""
+    The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
     links = card.get("links") if isinstance(card, dict) else None
     linked = sorted(
         {
@@ -973,21 +975,15 @@ def _probed_pr(
         pr = answer.get("pr")
         if not isinstance(pr, dict) or pr.get("found") is not True or pr.get("number") != number:
             continue
-        head, state, url = pr.get("head_sha"), pr.get("state"), pr.get("url")
-        if not (isinstance(head, str) and _SHA.match(head)) or not isinstance(state, str):
+        sha, state, url = pr.get("head_sha"), pr.get("state"), pr.get("url")
+        if not (isinstance(sha, str) and _SHA.match(sha)) or not isinstance(state, str):
             continue
         if not isinstance(url, str) or _pr_key(url) != (repository, number):
             continue
-        if head == facts.remote_head:
-            return gitfacts.PullRequest(number=number, head=head, state=state, url=url), None
-        others.append(f"PR #{number} has head {head}")
-    if not others:
-        return None, None
-    return None, (
-        f"the hub's probe reads {'; '.join(others)}, the branch "
-        f"{onboarding.inline(facts.remote_branch)} is at {facts.remote_head}; push the work to "
-        f"the card's pull request or report from its branch"
-    )
+        if sha == head and (not merged_only or state.lower() == "merged"):
+            return gitfacts.PullRequest(number=number, head=sha, state=state, url=url), None
+        others.append(f"PR #{number} ({onboarding.inline(state.lower())}) has head {sha}")
+    return None, (others or None)
 
 
 def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
@@ -1065,19 +1061,51 @@ def cmd_report(args: argparse.Namespace) -> int:
         status = task.get("status") if isinstance(task, dict) else None
         return _done(args, task, f"reported {args.task} (no code); task is now {status}")
     facts = gitfacts.collect(Path.cwd())
+    card: Any = None
+    probed = False
+    no_forge = facts.pr is None and bool(facts.pr_unknown_reason or facts.forge_error)
+    gone = no_forge and facts.remote_branch and facts.remote_head is None and not facts.dirty
+    if gone and gitfacts.mismatches(facts):
+        # The branch is gone and gh cannot say whether its pull request was merged (f720dd3c):
+        # a merged pull request the card links, with this very head, stands in for it. The
+        # local refusal stands when the card cannot be read.
+        try:
+            card = session.client.call("GET", session.project_path("tasks", args.task))
+        except hub.HubError:
+            card = None
+        found, others = (
+            _probed_pr(session, card, facts.head, merged_only=True) if card else (None, None)
+        )
+        if others:
+            _err(
+                f"report refused: the branch {onboarding.inline(facts.remote_branch)} is gone on "
+                f"the remote and the hub's probe reads {'; '.join(others)}, local HEAD is at "
+                f"{facts.head}; check out the merged head of the card's pull request"
+            )
+            return EXIT_REFUSED
+        if found is not None:
+            facts = dataclasses.replace(
+                facts, remote_head=facts.head, branch_merged=True, pr=found,
+                pr_unknown_reason=None, forge_error=None,
+            )  # fmt: skip
+            probed = True
     problems = gitfacts.mismatches(facts)
     if problems:
         _err("report refused, the code does not match what would be reported:")
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return EXIT_REFUSED
-    card = session.client.call("GET", session.project_path("tasks", args.task))
-    probed = False
-    if facts.pr is None and (facts.pr_unknown_reason or facts.forge_error) and facts.remote_head:
+    if card is None:
+        card = session.client.call("GET", session.project_path("tasks", args.task))
+    if not probed and no_forge and facts.remote_head:
         # gh missing or failing: the card's linked pull request may stand in, read by the hub.
-        found, refusal = _probed_pr(session, card, facts)
-        if refusal:
-            _err(f"report refused: {refusal}")
+        found, others = _probed_pr(session, card, facts.remote_head)
+        if others:
+            _err(
+                f"report refused: the hub's probe reads {'; '.join(others)}, the branch "
+                f"{onboarding.inline(facts.remote_branch)} is at {facts.remote_head}; push the "
+                f"work to the card's pull request or report from its branch"
+            )
             return EXIT_REFUSED
         if found is not None:
             facts = dataclasses.replace(facts, pr=found, pr_unknown_reason=None, forge_error=None)
