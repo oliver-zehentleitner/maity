@@ -180,6 +180,10 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             # A member's own boss again is no move: no depth check for it (§2.3).
             keeps_boss=existing.reports_to if existing else None,
         )
+        # The base again as read under the project's lock: a project role created on `ops`,
+        # or moved there, since `_check_member_limits` read it is refused the same way.
+        if member_rule and "role_base" in values and values["role_base"] not in MEMBER_RULE_ROLES:
+            raise member_join_limit("role")
         if existing is not None:
             # A second clone of a member: a new instance, the membership as it is.
             # A role change goes through PATCH …/members/{id}, never through a join.
@@ -529,6 +533,10 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
         if not within_limits(member):
             raise not_found()
         return
+    # A first join's role, as it would be stored now: a project role an admin moved to
+    # `ops` while the join was open is beyond the member limits (§3.1).
+    if project_roles.base_of(project, row.role) not in MEMBER_RULE_ROLES:
+        raise not_found()
     # What the member would hold once this join is exchanged: the distinct profiles of
     # their memberships and open first joins, this join's own included, against the
     # maximum now. Another open join naming the same profile is no exemption: a lowered

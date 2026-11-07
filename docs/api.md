@@ -3276,7 +3276,9 @@ The exchange (§3.3) checks again, under the same lock, what may have
 changed since the join was issued: the creator is still a member of
 the project with trust `member` or higher, the agent's membership —
 for a `new_instance` or `replaces` join — is still within the limits,
-for a first join the count still fits, and the agent's
+for a first join the count still fits and its role is still one a
+member join may give (a project role an admin moved to `ops`
+meanwhile is not), and the agent's
 `allowed_projects` still admits the project (§6.3). If any fails, the join is
 void and the exchange answers as for a revoked join, `not_found`; a
 creator who was raised to `admin` or `owner` meanwhile keeps the join,
