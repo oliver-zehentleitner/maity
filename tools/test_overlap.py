@@ -18,6 +18,15 @@ LOCALES = {
     "de": {"LANGUAGE": "de", "LANG": "de_DE.UTF-8", "LC_ALL": "de_DE.UTF-8"},
     "en": {"LANGUAGE": "en", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
 }
+
+
+def installed(name: str) -> bool:
+    """Whether the machine has the locale: without it bash warns and git speaks English, so a
+    run "in German" would test nothing German."""
+    probe = subprocess.run(
+        ["bash", "-c", "true"], env={**os.environ, **LOCALES[name]}, capture_output=True, text=True
+    )
+    return "setlocale" not in probe.stderr
 # A stand-in for gh: the open pull requests from prs.json next to it, as many as --limit lets
 # through. `{"flood": true}` stands for more open pull requests than the limit.
 FAKE_GH = textwrap.dedent(
@@ -108,6 +117,8 @@ class OverlapTest(unittest.TestCase):
         return {"number": number, "head": head, "name": f"pr-{number}"}
 
     def run_check(self, prs: list[dict[str, object]], locale: str, branch: str = "mine"):
+        if not installed(locale):
+            self.skipTest(f"locale {LOCALES[locale]['LC_ALL']} is not installed")
         (self.bin / "prs.json").write_text(json.dumps(prs))
         return subprocess.run(
             ["bash", str(SCRIPT), branch],
@@ -187,7 +198,7 @@ class OverlapTest(unittest.TestCase):
         """A head origin does not serve is an error (exit 2), never a "clean"."""
         self.scenario()
         missing = {"number": 12, "head": "0" * 40, "name": "pr-12"}
-        got = self.run_check([missing], "de")
+        got = self.run_check([missing], "en")
         self.assertEqual(got.returncode, 2)
         self.assertIn("fetching the heads of pull requests 12 failed", got.stderr)
         self.assertNotIn("clean", got.stdout)
@@ -199,7 +210,7 @@ class OverlapTest(unittest.TestCase):
         head = self.commit({"a.txt": lines("other")}, "unrelated")
         self.git("push", "-q", "origin", f"{head}:refs/pull/13/head")
         self.git("checkout", "-q", "mine")
-        got = self.run_check([{"number": 13, "head": head, "name": "pr-13"}], "de")
+        got = self.run_check([{"number": 13, "head": head, "name": "pr-13"}], "en")
         self.assertEqual(got.returncode, 2, got.stdout)
         self.assertIn("git diff", got.stderr)
         self.assertEqual(got.stdout, "")
@@ -229,7 +240,7 @@ class OverlapTest(unittest.TestCase):
         pr = self.pull_request(15, root, {"a.txt": lines("fifteen")})
         self.git("checkout", "-q", "-b", "mine", self.base)
         self.commit(self.edit("a.txt", 1, "mine"), "mine")
-        got = self.run_check([pr], "de")
+        got = self.run_check([pr], "en")
         self.assertEqual(got.returncode, 2, got.stdout)
         self.assertIn("git merge-tree", got.stderr)
         self.assertNotIn("clean", got.stdout)
