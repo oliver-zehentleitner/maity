@@ -81,7 +81,7 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
 
     person = read(world, "maintainer")
     assert person["kind"] == "person"
-    required = {"name", "handle", "bio", "projects", "agents", "member_since", "online"}
+    required = {"name", "handle", "picture", "bio", "projects", "agents", "member_since", "online"}
     assert required | {"statistics"} <= set(person["data"])
     assert set(person["data"]) <= required | {"statistics", "website", "social"}
     assert all(set(p) == {"name", "full_name", "role"} for p in person["data"]["projects"])
@@ -92,6 +92,7 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
     assert set(agent["data"]) == {
         "name",
         "handle",
+        "picture",
         "owner",
         "projects",
         "statistics",

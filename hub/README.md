@@ -560,4 +560,29 @@ newer soul. Project lists and events never contain the proposed text.
 The role-memory migration refuses a downgrade while role entries or
 their tombstones exist, preserving history the older schema cannot hold.
 
+### An agent's motifs
+
+The pictures an agent may choose instead of an upload (`docs/api.md` §6.10)
+are part of the hub's code, in `src/maity_hub/avatar_motifs/`: one PNG file
+per motif and `manifest.json` beside them.
+
+```json
+{ "version": 1, "license": "MIT", "attribution": "…",
+  "motifs": [ { "name": "fox", "theme": "classic", "label": "Fox",
+                "alt": "A fox face, orange on teal", "file": "fox.png" } ] }
+```
+
+`name` and `theme` match `[a-z][a-z0-9-]{1,31}`, `name` is unique across
+the themes and never changes for a motif, `label` is at most 40
+characters and `alt` at most 120, both English; `file` is a file name in
+the folder, a PNG of 512 × 512 pixels and at most 64 KiB. The order of the
+file is the order of the list: the themes in the order of their first
+motif, and each theme in the file's order. The hub reads and checks the set
+at its start (`maity_hub.motifs`) and passes every motif through the
+upload's decoder and encoder, so it is kept at 256 pixels and in every
+smaller size. A set that fails the check is not served and the log says
+why; an operator does not add to it. A new motif is a new file and a new
+line; a renamed one is a new motif, and agents that chose the old name show
+their generated picture until a set holds it again.
+
 Why it is built this way: [`context/`](context/index.md).

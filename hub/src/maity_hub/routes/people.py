@@ -82,11 +82,14 @@ def _listed(conn: Connection, ids: set[str], mine: set[str]) -> dict[str, Any]:
     return {"projects": items[:PROJECTS_SHOWN], "projects_total": len(items)}
 
 
-def _avatar(conn: Connection, caller: Any, owner_id: str) -> str | None:
-    """The image's address only where the caller may read it (§6.10), else None."""
-    if not avatars.may_read(conn, caller, owner_id):
-        return None
-    return avatars.urls(conn, [owner_id])[owner_id]
+def _avatar(conn: Connection, request: Request, caller: Any, owner_id: str) -> str | None:
+    """The image's address where the caller may read it (§6.10); else, for a public picture,
+    its public address, which names no account; else None."""
+    if avatars.may_read(conn, caller, owner_id):
+        return avatars.urls(conn, [owner_id])[owner_id]
+    if avatars.is_public(conn, settings_of(request), owner_id):
+        return avatars.public_urls(conn, [owner_id])[owner_id]
+    return None
 
 
 def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict[str, Any]:
@@ -120,29 +123,35 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
         "kind": "human",
         "handle": human.handle,
         "display_name": human.display_name,
-        "avatar_url": _avatar(conn, caller, human.id),
+        "avatar_url": _avatar(conn, request, caller, human.id),
         "page_served": page_served,
     }
     if own or (page_served and (chosen or shared)):
         answer["public_bio"] = human.public_bio
-    return {**answer, **links, **listed, "agents": _agents(conn, human) if page_served else []}
+    agents = _agents(conn, caller, human) if page_served else []
+    return {**answer, **links, **listed, "agents": agents}
 
 
-def _agents(conn: Connection, human: Any) -> list[dict[str, Any]]:
+def _agents(conn: Connection, caller: Any, human: Any) -> list[dict[str, Any]]:
     """The agents the person's agents page lists, in its order and by its rule (§6.27, §16.9):
-    the caller's own handle answers the same list a visitor sees. `avatar_url` stays `null`
-    until the public picture address exists (tsk-q155psrk6tzz)."""
+    the caller's own handle answers the same list a visitor sees. A listed agent's picture is
+    public (§6.10): `avatar_url` is the image's address where the caller may read it, its
+    public address otherwise."""
+    listed_agents = public_people.listed_agents(conn, human)
+    own = avatars.urls(
+        conn, [a.agent.id for a in listed_agents if avatars.may_read(conn, caller, a.agent.id)]
+    )
     return [
         {
             "handle": listed.agent.handle,
             "display_name": listed.agent.display_name,
-            "avatar_url": None,
+            "avatar_url": own.get(listed.agent.id) or listed.picture,
             "page": listed.page,
             "roles": listed.roles,
             "model": listed.model,
             "harness": listed.harness,
         }
-        for listed in public_people.listed_agents(conn, human)
+        for listed in listed_agents
     ]
 
 
@@ -181,7 +190,7 @@ def _organisation(conn: Connection, request: Request, caller: Any, org: Any) -> 
         "kind": "organisation",
         "handle": org.handle,
         "display_name": org.display_name,
-        "avatar_url": _avatar(conn, caller, org.id),
+        "avatar_url": _avatar(conn, request, caller, org.id),
         "page_served": page_served,
         **listed,
     }
@@ -190,9 +199,7 @@ def _organisation(conn: Connection, request: Request, caller: Any, org: Any) -> 
             {
                 "handle": member["handle"],
                 "display_name": member["display_name"],
-                "avatar_url": (
-                    member["avatar_url"] if avatars.may_read(conn, caller, member["id"]) else None
-                ),
+                "avatar_url": _avatar(conn, request, caller, member["id"]),
                 "role": member["role"],
             }
             for member in orgs.members(conn, org.id)

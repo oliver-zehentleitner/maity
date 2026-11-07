@@ -606,6 +606,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))
+    conn.execute(delete(t.avatar_size).where(t.avatar_size.c.owner_id == human_id))
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == human_id)

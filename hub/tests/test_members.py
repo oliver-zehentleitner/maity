@@ -325,6 +325,7 @@ def test_profiles_belong_to_their_human(
         "display_name",
         "avatar_url",
         "avatar_source",  # the profile's owner reads it (§6.10)
+        "avatar_motif",  # the motif it chose, null until one is (§6.10)
         "owner_id",
         "git_identity",
         "allowed_projects",

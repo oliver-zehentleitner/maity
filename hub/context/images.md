@@ -213,3 +213,80 @@ one file to audit and patch.
 - A second child that imports the avatar module's helpers: `python -I` leaves
   the script's directory off `sys.path`, so the child could not import it
   without widening what it loads.
+
+## A smaller size runs through the same child in a size mode and is kept next to the picture it was made from
+
+**Id:** 76c6f13e-6c46-4d71-bc4e-3eb93b7c7ff8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of card tsk-q155psrk6tzz, 2026-11-07 (`docs/api.md` §6.10, Sizes: every size scaled once and kept, its own `ETag`, dropped with any change of the picture); how a size is made and kept is the implementer's
+**Revisit when:** the stored side changes from 256, a size is added, or the hub stores pictures outside its database
+**See:** images.md#an-attachments-image-goes-through-the-avatar-decoders-child-process-in-a-mode-of-its-own — d5b69637-6f20-4b71-a9c7-213a87f171d8 — as of 2026-11-07
+**See:** https://github.com/oliver-zehentleitner/maity — 294d6f7b-2701-4cb0-a0b4-11430b34f246 — as of 2026-11-07
+
+`?s=32`, `64` and `128` are made at the first request for the size by
+the decoder's child in a mode `size<side>` (`avatar_decode.process_size`):
+the stored PNG goes through the upload's checks again and is scaled
+down, never up. The result is a row of `avatar_size` keyed by owner,
+source and size, with the stored image's `ETag` as `base_etag`. A row
+is written only while that `ETag` is still the stored one, and only a
+row whose `base_etag` matches is served, so a size made from a picture
+replaced meanwhile is never kept or shown. An upload or a delete drops
+the sizes of its source. The decode runs outside a transaction: the
+read of a kept size and the write of a new one each take their own.
+
+**Reason:** a size request is open to anyone on the public address, so
+it must cost a decode once and never again, and the stored picture is
+bytes the hub wrote but still goes through the one guarded parser
+(entry d5b69637). Checking `base_etag` on write and on read makes the
+race between a scale and a new upload harmless without a lock on the
+owner for the length of a decode.
+
+**Rejected alternatives:**
+- Scaling every size at upload time: three more decodes inside every
+  `PUT`, under the per-avatar limit, for sizes most pictures are never
+  shown in; the contract allows either.
+- Scaling in the hub's own process with Pillow: it would open stored
+  bytes outside the decoder's limits, the one place this file keeps
+  Pillow.
+- Holding the transaction across the decode: a database connection held
+  for up to the decode budget on a request anyone can send.
+
+## The motif set is decoded in the hub's own process at its start; the generated picture is drawn without Pillow
+
+**Id:** 9cffca11-d24a-4b5b-9bd5-32297387343c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of card tsk-q155psrk6tzz, 2026-11-07 (`docs/api.md` §6.10, "An agent's motif" and "An agent's generated picture": the set passes the upload's decoder and encoder, the generated picture is drawn at the profile's creation and by the upgrade for every existing one); where each runs is the implementer's
+**Revisit when:** an operator may add motifs, a motif comes from anywhere but the hub's own code, or the generated picture's algorithm changes
+**See:** images.md#an-avatar-is-decoded-in-a-process-of-its-own-that-limits-itself — 28da8cdf-5d46-4306-a49a-9ef02bb2185d — as of 2026-11-07
+**See:** https://github.com/oliver-zehentleitner/maity — 11881a0c-f813-4182-84df-5fa1744f9082 — as of 2026-11-07
+
+`maity_hub.motifs` reads `avatar_motifs/manifest.json` once per process,
+checks it, and runs `avatar_decode.process` and `process_size` on each
+file in the hub's own process, keeping the 256-pixel picture and its
+three smaller sizes in memory; nothing of a motif is in the database,
+and an agent stores only the name it chose. `maity_hub.avatar_generated`
+draws the generated picture in plain Python and zlib and stores it as
+the source `generated` when the profile is created; the migration that
+brought it imports the same module.
+
+**Reason:** the motif files are the hub's own code, not bytes a caller
+sent, so the child process's limits guard against nothing here, while
+36 children at every start would cost seconds and take the decode slots
+an upload needs; the functions are the same, so the set is still stored
+as an upload would be. The generated picture has no input but the
+profile id: without Pillow its bytes depend on nothing a library update
+changes, and the migration can draw it without the decoder or the
+hub's settings.
+
+**Rejected alternatives:**
+- Each motif through the decoder's child, as an upload: same result,
+  slower start, and the start competing with uploads for slots.
+- Motif rows in `avatar_image` per agent: a copy of the same bytes per
+  agent, to be rewritten whenever the set changes.
+- Drawing the generated picture on each read instead of storing it:
+  the contract stores it, and the public address finds a picture by its
+  digest in the table.

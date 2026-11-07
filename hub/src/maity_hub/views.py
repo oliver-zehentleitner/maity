@@ -942,8 +942,9 @@ def agent_view(
         ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
-        # avatar_url and avatar_source: only its owner reads this
+        # avatar_url, avatar_source and avatar_motif: only its owner reads this
         **(picture if picture is not None else avatars.state(conn, row.id)),
+        "avatar_motif": row.avatar_motif,
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "allowed_projects": row.allowed_projects,  # null: any project (§6.3)

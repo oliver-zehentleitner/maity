@@ -338,6 +338,8 @@ def _reset_profile(conn: Connection, report: Any) -> None:
     avatars.lock_owner(conn, owner)
     before = avatars.state(conn, owner)
     avatars.remove_upload(conn, owner)
+    if owner.startswith("agt-"):  # its motif goes too: the generated picture shows (§16.8)
+        avatars.clear_motif(conn, owner)
     avatars.announce(conn, owner, before, actor(report.id))
     if row.display_name != row.handle:
         conn.execute(update(table).where(table.c.id == owner).values(display_name=row.handle))
