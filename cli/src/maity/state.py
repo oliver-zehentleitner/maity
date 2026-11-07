@@ -273,6 +273,28 @@ def prepare_for_join(path: Path) -> str | None:
     return was
 
 
+def missing_dirs(path: Path) -> list[Path]:
+    """The directories `prepare_for_join` would create for `path`: itself and each missing
+    parent up to the first one that exists, deepest first. Empty when `path` exists."""
+    missing: list[Path] = []
+    for one in (path, *path.parents):
+        if one.exists():
+            break
+        missing.append(one)
+    return missing
+
+
+def remove_empty(dirs: list[Path]) -> None:
+    """Remove those of `dirs` (deepest first) that are still empty directories: what a join
+    created before an exchange that failed. Never recursive, never a directory with anything
+    in it, never one the join did not create; a removal that fails leaves the rest."""
+    for one in dirs:
+        try:
+            one.rmdir()
+        except OSError:
+            return
+
+
 def rescue_credential(value: Secret) -> Path:
     """Where a credential goes when its directory refused it after the exchange: a new
     private directory under the home, so a spent join is never lost (the code works once)."""

@@ -1127,3 +1127,34 @@ def test_a_rescue_falls_back_to_a_temp_directory_when_the_home_refuses(
     assert state.credential_path(rescued).read_bytes() == fakehub.CREDENTIAL.encode()
     assert err.count("export MAITY_STATE_DIR=") == 1
     assert fakehub.SECRET not in err
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_a_failed_join_leaves_no_state_directory_it_created(
+    nested: bool, no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """An expired code (`not_found`): the state directory the join created, and the parents it
+    created for it, are gone again; the first directory that already existed stays."""
+    fake.join_used = True  # the hub answers the exchange with not_found
+    root = no_clone / "existing"
+    root.mkdir(parents=True)
+    directory = root / "a" / "b" / "agent" if nested else root / "agent"
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
+    assert not directory.exists() and not (root / "a").exists()
+    assert root.is_dir()
+
+
+def test_a_failed_join_keeps_a_state_directory_that_existed(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    fake.join_used = True
+    directory = no_clone / "agent"
+    directory.mkdir(mode=0o700, parents=True)
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
+    assert directory.is_dir()

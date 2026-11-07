@@ -445,15 +445,23 @@ def cmd_join(args: argparse.Namespace) -> int:
             "Nothing was sent; the join code still works"
         )
         return EXIT_ERROR
-    if not sibling:
-        # Before the exchange: the code works once, so a directory that would refuse the
-        # credential afterwards must refuse it now, while the join can still be retried.
-        was = state.prepare_for_join(directory)
-        if was is not None:
-            _err(f"{was}: it will hold the credential")
-    _warn_other_hubs(url)
-    result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
-    base = hub.accept_hub(url, result.hub)  # before anything is kept
+    # What this join creates before the exchange (the state directory and the parents it
+    # needs): a join that fails before anything is kept removes them again, if still empty,
+    # so a retry starts clean. A directory that existed before is never touched.
+    created = [] if sibling else state.missing_dirs(directory)
+    try:
+        if not sibling:
+            # Before the exchange: the code works once, so a directory that would refuse the
+            # credential afterwards must refuse it now, while the join can still be retried.
+            was = state.prepare_for_join(directory)
+            if was is not None:
+                _err(f"{was}: it will hold the credential")
+        _warn_other_hubs(url)
+        result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
+        base = hub.accept_hub(url, result.hub)  # before anything is kept
+    except BaseException:
+        state.remove_empty(created)
+        raise
     try:
         if sibling:
             directory = _instance_dir(directory, result.instance)

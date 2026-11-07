@@ -459,3 +459,36 @@ unreachable URL through `safe_url` like the other hub errors.
   whole (review of #792); a wrong host in a rare message is the smaller harm.
 - `safe_url` for remotes as well: it also drops the query and an scp-like `git@host:path`
   is not a URL to it; a remote is shown as written, minus the credential.
+
+## A join that fails before anything is kept removes the directories it created
+
+**Id:** 17b71919-ddee-4909-acdd-9f4aad9aeaa3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` for an expired code left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j; the lead's go on the plan, with the definition of "created" to be stated (Maity message, 2026-11-07); `cli/src/maity/cli.py` `cmd_join`, `state.missing_dirs`, `state.remove_empty`
+**Revisit when:** a join keeps something in the state directory before the exchange, or a failed join should leave a marker behind for its retry
+
+Before `prepare_for_join` creates anything, `cmd_join` records what is missing: the state
+directory and each missing parent up to the first one that exists (`state.missing_dirs`). These,
+and only these, count as "created by this join". When anything up to and including the hub's
+answer fails (`prepare_for_join`, the exchange, `accept_hub`), they are removed again, deepest first,
+and only while they are empty (`rmdir`, never recursive); a removal that fails stops there and
+leaves the rest. A directory that existed before the join, and everything outside that chain, is
+never touched. Once the exchange has answered and the credential is being written, nothing is
+removed: the code is spent, and a credential the directory refuses then is rescued, as before.
+A second instance's directory (`<handle>#<instance>`) is created only after the exchange and is not
+part of this.
+
+**Reason:** a retry after an expired or mistyped code found a directory the failed join had made,
+which looks like a half-done setup and, on Windows, carried an access list the next attempt then
+had to check. Removing exactly what this join created makes the retry start as the first attempt
+did.
+
+**Rejected alternatives:**
+- Removing the state directory whatever it holds: a directory someone named by mistake (a home, a
+  clone) could lose its content; only an empty directory this join created goes.
+- Creating the directory only after the exchange: `prepare_for_join` checks before the single-use
+  code is spent that the directory will take the credential (credentials.md, the clone's Git
+  directory entry); moving that after the exchange would spend codes on directories that refuse.
+
