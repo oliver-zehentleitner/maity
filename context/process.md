@@ -1794,8 +1794,13 @@ they say nothing about PostgreSQL. The script drops the caller's `GIT_*` variabl
 `git status` and untracked files by the repository's `.gitignore` files alone, since a personal exclude
 (`core.excludesFile`, `.git/info/exclude`) could hide a file a step wrote. It refuses (exit 2) to start while an
 index entry is marked skip-worktree or assume-unchanged, because `git status` does not show such a file even when a
-step rewrites it. What it cannot reach is the caller's own shell: a startup file that ends the shell before the
-script runs, or a `PATH` that names other programs.
+step rewrites it, and it reads the work tree with `core.fsmonitor` off, since a filesystem monitor that answers
+"nothing changed" hides a rewrite too.
+
+The guards are a convenience before the review, not a security boundary; CI stays the gate. They trust the caller's
+shell and `PATH`, and the clone's own git configuration and hooks: an author who sets these against the check can
+get past it (a startup file that ends the shell before the script runs, a `PATH` that names other programs, a
+clean filter that reports old content).
 
 **Reason:**
 - After approval, #1447 and #1443 together needed four more CI rounds for these guards: a new column that names
@@ -1814,7 +1819,9 @@ script runs, or a `PATH` that names other programs.
   lacking a field.
 - In the second review round, a stale `web/tools/hub-shapes.json` marked skip-worktree or assume-unchanged, and a
   stray file hidden by a personal exclude, each gave "all passed": `git status` reported nothing. The start now
-  refuses the flags, and untracked files are read by the repository's ignore rules alone.
+  refuses the flags, and untracked files are read by the repository's ignore rules alone. In the third round a
+  repository-local `core.fsmonitor` hook that reports no change did the same; the work tree is now read with the
+  monitor off. The coordinator then set the boundary above, so the list of such cases ends there.
 - A field the check names goes into the fixture by hand. `web/tools/fixture-shapes-baseline.json` only shrinks
   for a request it already lists, so extending it would hide the gap the guard found.
 
