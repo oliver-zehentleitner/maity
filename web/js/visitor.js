@@ -47,7 +47,27 @@ window.Maity = window.Maity || {};
     return safe ? h("a", { href: safe, rel: "nofollow ugc" }, label || url) : null;
   };
   const names = (people) => h("ul", null, people.map((p) => h("li", null, who(p), " (" + p.handle + ")")));
-  const projectList = (projects) => h("ul", null, projects.map((p) => h("li", null, h("a", { href: "/" + p.full_name }, p.name))));
+  // A person's or an agent's page names their role in each project (§16.9); a project's own
+  // lists carry none.
+  const projectList = (projects) => h("ul", null, projects.map((p) => h("li", null, h("a", { href: "/" + p.full_name }, p.name),
+    p.role ? [" ", h("span", { class: "label-tag" }, M.trust.roleLabel(p.role))] : null)));
+
+  // "YYYY-MM" as the month and year in the reader's language, never a day (§16.9). The 1st at
+  // noon UTC, so no time zone moves it into another month; an unreadable value stays as given.
+  function month(value) {
+    const found = /^(\d{4})-(\d{2})$/.exec(value || "");
+    if (!found) return String(value);
+    return M.fmt.when(new Date(Date.UTC(+found[1], +found[2] - 1, 1, 12)), { year: "numeric", month: "long", timeZone: "UTC" });
+  }
+  // Member since, online, and for an agent its model and harness: each only as the hub sends it.
+  function facts(d) {
+    const items = [];
+    if (d.member_since) items.push(h("li", null, M.t("visitor.member_since", { month: month(d.member_since) })));
+    if (d.online === true) items.push(h("li", null, M.t("visitor.online")));
+    if (d.model) items.push(h("li", null, M.t("visitor.model", { model: d.model })));
+    if (d.harness) items.push(h("li", null, M.t("visitor.harness", { harness: d.harness })));
+    return items.length ? h("ul", { class: "visitor-facts" }, items) : null;
+  }
 
   function statistics(totals) {
     return h("ul", { class: "visitor-stats" }, Object.keys(COUNTERS).filter((key) => totals[key] !== null && totals[key] !== undefined)
@@ -136,13 +156,17 @@ window.Maity = window.Maity || {};
         d.bio ? h("p", null, d.bio) : null,
         d.website ? h("p", null, external(d.website)) : null,
         d.social ? h("ul", null, Object.keys(d.social).map((net) => h("li", null, net + ": " + d.social[net]))) : null,
+        facts(d),
         d.projects.length ? [h("h2", null, M.t("visitor.projects")), projectList(d.projects)] : null,
+        // A person's own three counts, only while they chose to show them (`public_stats`).
+        d.statistics ? [h("h2", null, M.t("visitor.statistics.own")), statistics(d.statistics)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
       ];
     },
     agent(d) {
       return [
         h("p", null, who(d.owner)),
+        facts(d),
         h("h2", null, M.t("visitor.projects")), projectList(d.projects),
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics),
       ];

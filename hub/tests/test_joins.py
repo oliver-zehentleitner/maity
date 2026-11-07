@@ -53,6 +53,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "project",
         "expires_at",
         "via",
+        "instruction",
     }
     assert body["via"] == "public"  # no join host configured
     assert body["join_url"].startswith("https://hub.example/join/")
@@ -96,6 +97,8 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "instance",
         "takes_over",
         "handover",
+        "subagents",  # the owner's instruction and its language (§3.1)
+        "subagents_language",
     }
     assert body["code"] not in str(listed) and _token(body) not in str(listed)
 

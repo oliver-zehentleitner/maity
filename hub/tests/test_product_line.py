@@ -32,10 +32,10 @@ from tests.test_join_host import create, join_client, token_of
 from tests.test_mail_links import link, mail_hub, stored
 
 LINKS = [
-    "https://github.com/oliver-zehentleitner/maity/issues",
-    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
     "https://github.com/oliver-zehentleitner",
     "https://maity.team/oliver-zehentleitner",
+    "https://github.com/oliver-zehentleitner/maity/issues",
+    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
 ]
 
 
@@ -54,8 +54,8 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
     line = product_line.html("en")
     assert text_of(line) == (
-        "Maity 2031 · Found a bug? · Found a vulnerability? · "
-        "Made with ♥ by Oliver Zehentleitner on &"
+        "Maity 2031 · Made with ♥ by Oliver Zehentleitner on & · "
+        "Found a bug? · Found a vulnerability?"
     )  # the year from the hub's clock, never a fixed one
     assert re.findall(r'<a href="([^"]+)"', line) == LINKS  # absolute, the Maity page without @
     assert line.count('target="_blank" rel="noopener noreferrer"') == 4

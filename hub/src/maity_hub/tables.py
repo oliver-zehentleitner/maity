@@ -119,6 +119,9 @@ human = Table(
     # Whether the public pages of the person's projects name them as online (§16.9); off,
     # they are neither named nor counted.
     Column("public_presence", Boolean, nullable=False, server_default=true()),
+    # Whether the person's page shows their own numbers (§16.9, `public_stats`); off for every
+    # account until they choose, separate from `public_profile`.
+    Column("public_stats", Boolean, nullable=False, server_default=false()),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
@@ -512,6 +515,20 @@ human_device = Table(
     **MYSQL_TABLE,
 )
 
+# Where a human's sign-ins completed (§2.1): a keyed fingerprint of each source address, never the
+# address, and the last time. Past the limit of wrong passwords, only such a source keeps the
+# password. A row goes 30 days after its last sign-in there, and with the account (§2.9).
+known_source = Table(
+    "known_source",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("fingerprint", String(HEX_SHA256), nullable=False),
+    Column("last_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "fingerprint"),
+    Index("ix_known_source_last_at", "last_at"),
+    **MYSQL_TABLE,
+)
+
 # A mail link and its browser-bound code share one single-use row (§2.6.3).
 email_sign_in = Table(
     "email_sign_in",
@@ -764,6 +781,11 @@ membership = Table(
     # exchange, and `{kind, id}`; null when the join named none. The hub keeps no text.
     Column("takes_over", JSON_VALUE),
     Column("handover", JSON_VALUE),
+    # The owner's instruction to work in subagents (§3.1, §5.2): on or off, the interface
+    # language it is written in and who set it (a `hum-…` id); both null while it is off.
+    Column("subagents", Boolean, nullable=False, server_default=false()),
+    Column("subagents_language", String(16)),
+    Column("subagents_by", String(ID)),
     Column("onboarded_at", UtcDateTime),
     # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
     # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
@@ -926,6 +948,10 @@ join_link = Table(
     # move to the membership at the exchange.
     Column("takes_over", String(ID)),  # no foreign key: the profile may go (§6.3)
     Column("handover", JSON_VALUE),
+    # The subagent instruction and its language (§3.1); they move to the membership at the
+    # exchange, with the join's creator as who set it.
+    Column("subagents", Boolean, nullable=False, server_default=false()),
+    Column("subagents_language", String(16)),
     # The host the link was built on: the join host or the public URL (§3.1).
     Column("via", String(16), nullable=False, server_default="public"),
     # For a member's join, which instance it adds (§6.17); `instance` is what the

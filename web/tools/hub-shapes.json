@@ -181,6 +181,7 @@
      "public_bio": "null",
      "public_presence": "boolean",
      "public_profile": "boolean",
+     "public_stats": "boolean",
      "social": {
       "object": {}
      },
@@ -444,6 +445,7 @@
      "release_checklist": {
       "array": "string"
      },
+     "restricted_access": "null",
      "ticker": {
       "object": {
        "contract_files": {
@@ -799,6 +801,15 @@
       "social": {
        "object": {}
       },
+      "subagents": "boolean",
+      "subagents_by": {
+       "object": {
+        "handle": "string",
+        "id": "string",
+        "kind": "string"
+       }
+      },
+      "subagents_language": "string",
       "takes_over": "null",
       "team": {
        "object": {
@@ -1674,6 +1685,15 @@
    "role": "string",
    "role_base": "string",
    "session": "null",
+   "subagents": "boolean",
+   "subagents_by": {
+    "object": {
+     "handle": "string",
+     "id": "string",
+     "kind": "string"
+    }
+   },
+   "subagents_language": "string",
    "takes_over": "null",
    "team": {
     "object": {

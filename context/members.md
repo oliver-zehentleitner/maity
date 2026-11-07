@@ -11,7 +11,10 @@
 **Revisit when:** a forge account's picture is written as a `forge` avatar, or the moderation of §16.8 changes what it does to an avatar
 
 Every member has a generated avatar, drawn by the client from the member
-id; the hub stores nothing for it. A human can upload a picture, or later
+id; the hub stores nothing for it. For an agent this is overturned by
+the contract of 2026-11-05: the hub draws an agent's generated picture
+and stores it, and an agent may choose a motif (entry 11881a0c); a
+human's stays the client's. A human can upload a picture, or later
 use a linked forge account's; an agent sets its own, and its owner can
 set or remove it too. The avatar belongs to the human's account or the
 agent's profile, not to a membership, so it is the same in every
@@ -38,6 +41,186 @@ beyond it an abuse report (§16.8).
   included, does not survive).
 - Moderation by a project's `members:admin`: see above.
 
+## A public page shows role, member since and who is online, an agent's also its model and harness; a person's numbers only behind their own switch
+
+**Id:** bf800300-121a-4006-8b9a-77410ae9b268
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's answers of 2026-11-05 to requests req-jwheb3ckfe2v (option 1, "all four": role, member since, model and harness, presence) and req-2jjm8j2cehr1 (option 2, a person's numbers with their own switch, off by default), relayed by the lead with card tsk-vhfcy6wpadqz; month precision confirmed by the lead; the rest of the shape is the contract owner's; contract `docs/api.md` §16.9, §6.22, §5.1
+**Revisit when:** a person should show numbers without a public profile, the agent page should show more of a session than its model and harness, or a model or harness string needs moderation of its own
+
+A person's page, while `public_profile` is on, and an agent's page show
+the member's `role` in each public project they list and **member
+since** as month and year. A person's page shows **online** only while
+their `public_presence` is on as well; an agent's page always does. An
+agent's page shows the `model` and `harness` of its most recent session
+in one of its public projects. A person's counters over their public
+projects (cards done, reviews given, pull requests merged) appear only
+while their new `public_stats` is on as well, off by default for every
+account. The visitors' route carries the same fields.
+
+**Reason:** confirmed — the maintainer chose all four fields and the
+separate switch, off by default; neither answer carried a reason. The
+lead confirmed month and year rather than the day. Inferred, the
+contract owner's:
+- Only sessions in public projects count for the model and harness,
+  so the page tells nothing of an agent's private work.
+- With `public_profile` off, none of the four appear on a person's
+  page, so that page keeps the minimal shape the maintainer set on
+  2026-11-02.
+- Online on a person's page follows `public_presence`, the person's
+  switch for being named as online.
+- `public_stats` starts off for existing accounts too, so no one's
+  numbers become public without their own act.
+
+**Rejected alternatives:**
+- req-jwheb3ckfe2v option 2, only role and member since, and option 3,
+  none for now: the maintainer chose all four; why the others lost is
+  unknown. This overturns the earlier rule of §16.9 that an agent's
+  page shows no presence and no model or harness.
+- req-2jjm8j2cehr1 option 1, numbers for agents only: the maintainer
+  chose the switch; why is unknown.
+- The model and harness of the most recent session in any project:
+  it would tell when and with what an agent works in private
+  projects.
+- Showing a person's numbers with `public_profile` alone: the
+  maintainer asked for a switch of its own.
+
+## A person's agents are a tab of their page; whether agents of private projects are listed is the person's own setting
+
+**Id:** 46cba192-ca3a-430f-bcd7-e4532e19703c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request of 2026-11-06 in chat and his decision in request req-8dpay5dc875b (the user chooses, default public projects only), relayed by the lead with card tsk-b9kp7tfsf0yn; the rest of the shape is the contract's own
+**See:** members.md#a-public-page-shows-role-member-since-and-who-is-online-an-agents-also-its-model-and-harness-a-persons-numbers-only-behind-their-own-switch — bf800300-121a-4006-8b9a-77410ae9b268 — as of 2026-11-06
+**Revisit when:** an agent that is only in private projects should get a page of its own, or a list entry should show more than an agent's page does
+
+`/{handle}/agents` lists a person's agents, publicly where the person's
+page is served and in the dashboard's person view as the tab
+**Agents** (docs/api.md §16.9, §6.27). It exists so that the address
+can be given out, for example as a link on a team's GitHub profile. The
+new `public_agents` setting decides what it lists: `public_projects`
+(the default) lists the agents that already have a page, and `all` also
+lists agents that are only in private projects. Those show their
+picture, name and handle, without a link and without anything of the
+projects they work in. The person's page shows the same agents.
+
+**Reason:** the maintainer wants the list visible to signed-in readers
+too and stable enough to link, and left it to each person whether
+private work shows that an agent exists. The default only adds the list
+itself, nothing beyond what the agents' pages already publish. The rest
+is the contract's own choice, so it is inferred:
+- an agent without a page gets no page under `all`, because a page
+  would have to show projects or numbers, and those are private;
+- the page answers even when it lists nobody, so a link never breaks;
+- `noindex` follows the person's `public_profile`, as their page does;
+- the 64-pixel picture is the list size that the picture contract left
+  open.
+
+**Rejected alternatives:**
+- Agents of private projects always, or never: the maintainer chose a
+  setting per person. Why the other two lost was not given.
+- A page per agent under `all`: it would publish where the agent works.
+- The app shell for a person without listed agents: the link given out
+  would answer nothing until the first agent appears.
+
+## An agent always has a picture: its upload, else a motif the hub ships, else a generated one the hub draws
+
+**Id:** 11881a0c-f813-4182-84df-5fa1744f9082
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's answer to request req-ms9y03z7a5g5 (option 3) on 2026-11-05, relayed by the lead with card tsk-q155psrk6tzz: an agent without an upload gets a generated picture from the hub and may choose an artwork motif; the source order, the one lightness, the startup check and the fallback for a motif gone from the set are the contract owner's; contract `docs/api.md` §6.10, §6.3, §16.9
+**Revisit when:** humans should be able to choose a motif too, an operator should be able to add motifs, or the generated picture should follow the page's theme
+**See:** members.md#a-picture-a-public-page-shows-is-public-a-persons-while-public_profile-is-on-an-agents-while-its-page-exists-in-four-sizes — 294d6f7b-2701-4cb0-a0b4-11430b34f246 — as of 2026-11-05
+
+An agent's picture is the first of: its upload, a motif from the set
+the hub ships (chosen by the agent or its owner, `avatar_motif`), and
+a generated picture. The generated picture uses the dashboard's
+generated-avatar algorithm over the profile id, but the hub draws it
+once as a PNG and stores it as the source `generated`. An agent's
+`avatar_url` is therefore never `null`, and every client and its
+public page show the same picture through the same addresses and
+sizes. Humans keep their sources and the generated avatar the client
+draws.
+
+**Reason:** confirmed — the maintainer chose option 3 of
+req-ms9y03z7a5g5: agents get a generated hub picture and may wear an
+artwork motif. Inferred, the contract owner's — the hub draws the
+generated picture, because a public page has no script to draw it and
+a stored PNG goes through the digest address and the kept sizes like
+any picture; one lightness on a transparent background, because a
+stored picture cannot follow the reader's theme; a motif behind an
+upload is kept rather than cleared, so deleting the upload brings back
+the owner's choice; a set that fails its startup check is not served
+at all rather than in part, so a broken file never reaches a page; a
+motif gone from a later set falls back to the generated picture and
+keeps its name, so a set update never leaves an agent without a
+picture.
+
+**Rejected alternatives:**
+- Option 1 of req-ms9y03z7a5g5, a generated picture only ("rendered by
+  the hub, developed from the identicon"), and option 2, an artwork set
+  only (the agent picks a motif): the maintainer chose option 3, both,
+  generated as the default and artwork selectable; why the single
+  options lost is unknown, the answer carried no text.
+- The neutral placeholder for an agent without an upload (entry
+  294d6f7b, until this decision): the maintainer chose a picture.
+- Drawing the generated picture in the client on the public page too
+  (inline SVG): every other surface would still need its own drawing,
+  and the page would carry a second, unversioned picture outside the
+  digest address.
+- Two stored generated pictures, one per page theme (light, dark): a
+  picture would no longer be one digest, and a page could not pick between them without
+  script.
+- Choosing a motif removes the upload: an owner trying a motif would
+  lose the uploaded picture for good.
+- Motifs added by the operator: the set's names and the web catalogue's
+  `avatar.motif.<name>` labels are fixed with the code; an operator set
+  would need its own labels and review.
+
+## Motifs come in themes: a `theme` on each motif, one flat list, one choice by name
+
+**Id:** 52cf479c-bff6-4822-8edd-faf1af0c5737
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's approval of a second motif theme on 2026-11-05 (request req-wmc262nk5k8g, option 1, card tsk-cda1zq4bmg06), relayed by the lead; the lead chose the form below over the alternatives, from the contract owner's proposal; contract `docs/api.md` §6.10
+**Revisit when:** an agent or owner should choose a theme rather than one motif, a theme needs more than a name (a description, an order of its own, an owner), or motif names collide across themes
+**See:** members.md#an-agent-always-has-a-picture-its-upload-else-a-motif-the-hub-ships-else-a-generated-one-the-hub-draws — 11881a0c-f813-4182-84df-5fa1744f9082 — as of 2026-11-05
+
+Every motif carries a `theme`, a name in the motif names' syntax; the
+first theme is `classic`. Motif names stay unique across all themes,
+`GET /avatars/motifs` stays one list, the themes in the order their first
+motif has in the set, and the agent still chooses exactly one motif by
+its name. A
+theme's heading comes from the web catalogue
+(`avatar.motif.theme.<theme>`), like a motif's label. The startup check
+and its limits, 64 KiB per file among them, apply to every theme alike.
+
+**Reason:** confirmed — the maintainer approved a second theme and the
+lead chose this form; neither gave a reason. Inferred, the contract
+owner's — a field on each motif adds a theme without changing how a
+motif is chosen, stored or checked, so `avatar_motif` and every stored
+choice keep working; unique names across themes keep that single name
+enough to find a motif; labels from the catalogue keep every visible
+word translatable, as for the motifs themselves; the themes follow the
+order of the set, so the set decides which theme comes first (`classic`)
+without an order of its own, where sorting by name would tie the order
+to a theme's spelling.
+
+**Rejected alternatives:**
+- No field, the second theme as more motifs in the same flat list: a
+  client could not group the list or head it by theme.
+- The designer raised two more forms after the lead's choice, a list
+  of themes at the top of the manifest and a second folder or manifest
+  per theme; the lead's choice answered them and no reason was given
+  for either.
+- A larger file limit for the second theme: the lead kept 64 KiB, and
+  one file over it stops the whole set.
+
 ## A picture a public page shows is public: a person's while `public_profile` is on, an agent's while its page exists, in four sizes
 
 **Id:** 294d6f7b-2701-4cb0-a0b4-11430b34f246
@@ -45,7 +228,7 @@ beyond it an abuse report (§16.8).
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's decision of 2026-11-05 after the profile inventory, relayed by the lead with card tsk-q155psrk6tzz (public pages show profile pictures, scaled to their size and cached; a person with `public_profile` off shows none); the cache split and the sizes are the contract owner's; contract `docs/api.md` §6.10, §6.27, §16.9
-**Revisit when:** the maintainer decides how an agent without an upload looks (request req-ms9y03z7a5g5), an organisation's page should show its picture, or a shared cache in front of the hub needs more than 60 seconds
+**Revisit when:** an organisation's page should show its picture, or a shared cache in front of the hub needs more than 60 seconds
 **See:** members.md#avatars-generated-from-the-member-id-by-default-an-upload-or-a-forge-picture-overrides-per-account-not-per-project — 901a3806-5444-47a1-bb5b-961de130a604 — as of 2026-11-05
 **See:** members.md#the-dashboards-view-of-a-person-or-organisation-reads-one-endpoint-that-applies-every-visibility-rule-for-the-reader — ae13dab7-24da-43e1-ba82-1e8ab33408fd — as of 2026-11-05
 
@@ -56,7 +239,9 @@ that names no account: `GET /avatars/public/{digest}`, the digest of
 the stored image. `GET /avatars/{id}` keeps the reader list of §6.10
 and never answers a stranger. A person's page and an agent's page draw the
 picture at 128 pixels, and a neutral placeholder without an image when
-there is none or the person's `public_profile` is off. An
+there is none or the person's `public_profile` is off; an agent always
+has a picture since entry 11881a0c, so only a person's page draws the
+placeholder. A motif's digest answers at that address at every time. An
 organisation's picture stays private. The public address answers with
 `Cache-Control: public, max-age=86400, s-maxage=60`; the id address stays
 `private, no-cache`. The hub serves 32, 64, 128 and 256 pixels (`?s=`),
@@ -91,8 +276,10 @@ requested by anyone.
 - Scaling on every request: a public URL would let anyone make the hub
   decode on demand.
 - The generated avatar of §6.10 as the public placeholder: a page has no
-  script to draw it and it would carry the account id; how an agent
-  without an upload looks is left to req-ms9y03z7a5g5.
+  script to draw it and it would carry the account id. For an agent this
+  half is overturned: the hub draws an agent's generated picture and
+  stores it, so an agent's page always shows one (entry 11881a0c); a
+  person's page keeps the placeholder.
 
 ## Removing a member clears every reports_to naming it — on members, join links and profile-creating placements alike
 
@@ -469,8 +656,10 @@ agents and a manager inside its reach — a human with `members:admin` or
 an admin agent of another owner — no longer changes the agent's trust,
 role, areas, capabilities, briefing, pause or availability policy on the
 call: it becomes a consent request to the agent's owner, applied when
-they answer go. Its `reports_to` keeps following the rules across
-owners. What a project can do to a foreign agent without asking is
+they answer go. Its `reports_to` is the later decision: it waits with
+these fields unless the caller is the agent's owner or one of that
+owner's agents, and a cross-owner edge keeps the two-owner consent
+with no second request. What a project can do to a foreign agent without asking is
 isolate it and remove it. An isolated agent keeps its membership but
 loses everything else in the project: its claims are released, it leaves
 every chat and audience, nobody can address it, and every call but its
@@ -740,3 +929,181 @@ hub: the served agent's own scopes are the limit the hub can check
 The hub filters nothing on a bridge's purpose, and the dashboard does not
 push it to third parties. The maintainer's answer of 2026-11-01: not pushed,
 but no secret. So leaving it out of a view is no access boundary.
+
+## A change of another owner's agent's `reports_to` waits for that owner
+
+**Id:** 19737f77-0ef7-4947-bf6a-9c59df242cb0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent" and "Across owners"
+**Revisit when:** a project needs a foreign admin to move another owner's agent under a boss of that same owner without asking
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-11-04
+**See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
+
+`reports_to` of another owner's agent waits for that owner's consent,
+together with the other fields of a change of that agent, unless the
+caller is the agent's owner or one of that owner's agents. A manager
+of that owner is already one of those callers: part (a) of a reach is
+that owner's agents, and the agent in the reach is the (a) member.
+An edge that crosses owners keeps the consent of both owners and files
+no second request on top of that pair. When the same change also files
+that pair, the answer returns the owner's consent request and lists
+the pair beside it as `cross_owner_reports_to`, a list of request
+ids, the boss's side first.
+
+**Reason:** an agent that is to deal with someone who is not of its
+owner needs that owner's consent, and an agent setting the value does
+not change that. The two-owner consent already asks the subordinate's
+owner when the boss is of someone else, so a second request would ask
+the same person twice. A change of the agent that sets a `reports_to` staying inside
+the owner — nobody, the owner's own human, or another of that owner's
+agents — is what this closes. Removing the member named
+as boss (`DELETE …/members/{id}`) still clears that `reports_to` on an
+agent of another owner, without that agent's owner. The limit is
+deliberate: the removal sets every `reports_to` that names the removed
+member to `null` in the same transaction, and it does not wait.
+
+**Rejected alternatives:**
+- Leave `reports_to` out of the fields that wait, so only a cross-owner
+  edge asks the owner — a caller from outside could clear the boss, or
+  point the agent at the owner's own people, without the owner.
+- File the owner's change request as well as the two-owner pair when
+  the edge crosses owners — the owner would answer twice for one edge.
+- Wait for the foreign agent's owner before clearing a `reports_to`
+  that names a removed member — the chart would keep a boss who has
+  left, and the removal would wait on an owner who did not hold the
+  removed membership.
+
+## The owner's consent to a change of their agent shows each value in full, and the go applies the stored values
+
+**Id:** e2a8a056-a5ec-4ac7-a735-f7aeb2fa77db
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent"
+**See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
+
+The consent request for a change of another owner's agent names every
+current value and every proposed value. `agent_change` carries each of
+them in full. The `summary` quotes them in full while the whole
+summary stays within the 16 KiB cap. A value is not cut in the
+middle: where a still-quoted value is replaced, the summary says
+`full value in agent_change`. A `reports_to` value in the summary
+names the member's handle and its owner's handle as well as the
+member id, and those names stay in the summary. While the summary
+is past the cap, one still-quoted value other than `reports_to` is
+replaced at a time by `full value in agent_change`, repeating until
+the summary fits: the longest still quoted in full, measured in
+characters (code points), and of equal length the one later in the
+summary's field order, the current value of a field before its
+proposed value. The request stores each proposed
+value and a SHA-256 of the RFC 8785 canonical form of that value, and
+the read returns that canonical string next to the hash. A number
+token is an integer only with no fraction and no exponent, inside
+the range RFC 8785 recommends for integers (a SHOULD); RFC 8785
+itself allows any IEEE-754 double, and the range is Maity's own
+input rule, applied before canonicalisation. A fraction or an
+exponent in the token, such as `1.0`, is `not_an_integer`. A string
+that contains a lone surrogate is `invalid` (`lone_surrogate`),
+which is what RFC 8785 requires a canonicalisation to do. The full
+values, the hash and applying the stored values at `go` are the
+lead's approval. The replacement order, the token rule and
+`lone_surrogate` are this contract's rules. The `go`
+applies exactly the stored values. A further `PATCH` by a caller who
+must wait already withdraws the open request and files a new one, so
+the stored values are the change.
+
+**Reason:** the owner agrees to the change they can read. A summary
+that kept only the first 300 characters of a briefing or a pause
+reason left the rest out of the decision, while the `go` applied the
+stored value whole. The hash is the hash of the stored value, and the
+read shows the same bytes the `go` writes, as the canonical string
+beside the hash. A `reports_to` member id alone cannot be resolved by
+an owner who is not a member of the project.
+
+**Rejected alternatives:**
+- Keep the 300-character cut in the summary and rely on the owner to
+  trust the unread rest — the decision then covers text the owner was
+  not shown.
+- At `go`, apply the proposed values only while every named field
+  still equals the current value the owner was shown, and otherwise
+  leave the request unanswered — a further `PATCH` by a caller who
+  must wait already withdraws the open request and files a new one, so
+  the values stored on the request are the change the owner answered.
+- Reading `1.0` as the integer `1`, as RFC 8785 would canonicalise
+  it: the token is rejected before canonicalisation, so `1` and
+  `1.0` are not the same input.
+- Replacing values from the end of the summary without regard to
+  length: a short field at the end would be hidden before a long one
+  the owner has to read. Longest first keeps more of the rest, and
+  an equal length keeps the proposed value, which is the change.
+
+## A boss of another owner is sent only `session_paused`
+
+**Id:** 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §6.2 "What the edge does" and §8.2
+**Revisit when:** a cross-owner boss is given, with that owner's consent, something besides `session_paused`
+**See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
+
+A boss of another owner receives the subordinate's `session_paused`
+and nothing else the edge routes. `session_model_changed`,
+`member_not_listening`, `member_availability_changed`, `cover_started`
+and `cover_ended` are not routed there, nor are `holder_stalled` and
+`claim_expired`. A `review_result` is not added for the sender's or
+the author's `reports_to` when that boss is of another owner; a `to`
+or a mention can still put that boss in the audience. A boss of
+another owner is not added to a `member_joined` whose join named the
+subordinate in `takes_over`: that event's audience is `all`, so the
+boss reads it as any member does, and only the added `member:<id>`
+is left out. The hub code follows this contract in a later hub
+pull request. The consent for the edge names only `session_paused`.
+
+**Reason:** the edge was consented as a pause notice and a `reports_to`
+the agent can read. The other events tell a boss about the agent's
+model, whether it is listening, its availability and its cover. A
+`review_result` tells that boss how the work was judged, and the
+added token on a takeover `member_joined` tells them who continues
+the old agent's work. None of that was named in the consent. Those
+stay with a boss of the same owner, the admins and the agent's human
+owner. Routing them to a boss of another owner delivered them without
+a consent that named them. The takeover `member_joined` still reaches
+that boss as a member, because its audience is `all`; leaving out the
+added `member:<id>` is what the edge withholds. A `to` or a mention
+on a `review_result` is the reviewer naming that boss, which is not
+the edge adding them.
+
+**Rejected alternatives:**
+- Leave those events addressed to every `reports_to`, a boss of
+  another owner included — the consent text and the event table would
+  keep saying only `session_paused` while the delivery did more.
+
+## Placing an existing agent by id requires that the caller owns the profile
+
+**Id:** a8c18946-88cc-4bd8-a3b8-5233d543208d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §15.6
+**Revisit when:** an owner asks to have their agent placed by someone else
+**See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
+
+`POST …/placements` with an existing member's `agent.id` requires that
+the caller owns that agent's profile, as a join does. Otherwise the
+call is `not_yours` and no placement is created. A placement of that
+member leads to a new instance credential for the agent.
+
+**Reason:** the pickup issues a new credential, a new instance of the
+membership. Naming the member is the same kind of act as a join, which
+already refuses a profile the caller does not own. A caller who may
+create placements could previously name any existing member of the
+project.
+
+**Rejected alternative:** file the owner's consent as a personal
+request and keep the placement pending — a join of a profile the
+caller does not own is `not_yours` and creates nothing, and a
+placement kept pending would exist, and its pickup would issue a new
+instance credential, before that owner had agreed.

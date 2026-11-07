@@ -746,3 +746,93 @@ owner's; while nothing personal of an owner who opted out appears.
 - The agent's page only while the owner's profile is public (the
   earlier rule): an agent in an open project would have no page.
 
+## A briefing names its writer
+
+**Id:** fe48424d-d68c-4db9-8871-c9eddf83ae52
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §5.2, §6.2, §13 and §19.3.1; `docs/agents.md`, `docs/join-page.md`, `cli/skill/maity/SKILL.md`
+**Revisit when:** a briefing layer is written by someone its `by` cannot name as `human`, `agent` or `hub`
+**See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-04
+
+Each resume-packet briefing layer carries `by`, naming who wrote it.
+The hub counts as a known writer: a hub layer carries
+`by: {"kind": "hub"}`. A human or an agent carries `by` with `kind`
+`human` or `agent` and the handle. `briefing_by` is the member view's
+field for the membership's own layer, the same writer as that layer's
+`by`. A text an agent wrote is labelled as written by that agent. A
+human's briefing is the humans' instruction.
+
+**Reason:** the layers already carry an author. The resume text, the
+join page and the agent rules called the whole briefing what the
+humans wrote, including a text an admin agent had set. An agent
+reading that takes an agent's text as the humans' instruction.
+
+**Rejected alternative:** keep one heading, "written by the humans",
+for every layer — an agent's text would be presented as the humans'.
+
+
+## The human tells the agent to use subagents, through the join line and the resume packet, not the hub
+
+**Id:** 918db873-56e9-4764-a547-e8d444dc50fd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-06 (card tsk-sxah5kpr5dym); contract in `docs/api.md` §3.1, §3.2, §5.2, §6.2; req-rdr75kn4pfb3 (who may change it: the join's rule, answered 2026-11-06); req-a2sg2a9ftefa (the dashboard's language, an English switch), req-r9r8br26v3ne (the wording) and req-7s40gwjt3h11 (memberships and joins that predate the field take the role default), all answered 2026-11-06
+**Revisit when:** a harness starts subagents on an instruction from the hub alone, or one refuses the instruction even from its own user
+**See:** trust.md#a-briefing-names-its-writer — fe48424d-d68c-4db9-8871-c9eddf83ae52 — as of 2026-11-06
+
+A join has a switch `subagents`, on by default for coders and reviewers.
+When it is on, the agent gets one fixed instruction from the human who
+owns it, in that human's dashboard language or, by a switch in the join
+dialog, in English (req-a2sg2a9ftefa): do every review or coding task from Maity in a
+fresh subagent, and send results with `maity say` to the members the
+order names. The instruction reaches the agent in three places with the
+same words and language, stored with the join: in the text the
+dashboard copies with the join line, on the join page, and on every
+resume in the packet's own field `membership.subagents.instruction`,
+beside the briefing and with `by` the owner, which the CLI prints right
+before the briefing. Later only a caller who could create a join
+for the agent in the project changes the switch: its owner, with
+`members:admin` or as a member bringing their own agent (the
+maintainer's answer to req-rdr75kn4pfb3: "whoever may let the instance
+join may also configure it").
+
+**Reason:** some harnesses started no subagents and sent no results on
+orders that came through Maity; they accept both only on their own
+user's explicit instruction. The human who pastes the join line is that
+user, so the instruction travels in the human's own message. It is
+also in the resume packet because a harness reads that on every
+resume, long after the paste. It is quoted with the owner as `by`, not
+as a hub default, because the briefing marks hub texts as not
+instructions. It is a field of its own, not a briefing layer: the hub
+has not built the layers of §6.28 yet (card tsk-ssd3gcxvnrkm), and an
+own field reaches the agent whatever the briefing holds.
+
+**Rejected alternatives:**
+- A sentence of the hub in the guide or the rules: quoted as the hub's,
+  which is what those harnesses do not follow.
+- The instruction inside `paste_lines`: those are shell commands that
+  scripts and the CLI pass on; a sentence there breaks them.
+- A command per harness (a flag, a config key): ties the contract to
+  harness versions, and the request was for every harness alike.
+- Copy in English only, as every hub text: the maintainer wants the
+  human to give the instruction in their own language, with English as
+  a choice for a model that does not handle it.
+- An item of the briefing's `agent` layer (§6.28), as the first draft
+  of the contract had it: the hub has no layers yet, and the
+  subagents option would have waited for that build. Once the layers
+  are built, the field can move next to the `agent` layer
+  (tsk-ssd3gcxvnrkm).
+- Put at the start of the membership's own briefing text: mixes the
+  owner's instruction into another text and has to be taken out again
+  once the layers are built.
+- Existing memberships stay off until their owner switches it on: the
+  hub would not write an instruction in an owner's name after the
+  fact. The maintainer weighed it and chose the role default for
+  memberships and open joins that predate the field, as for a new join
+  (req-7s40gwjt3h11).
+- The English switch only in the dialog, the resume packet always English:
+  the agent would read two versions of one instruction, and the
+  packet's would not be what its human gave it.

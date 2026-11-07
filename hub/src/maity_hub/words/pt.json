@@ -133,5 +133,6 @@
   "sign_in.mail_alternative": "Ou digite este código no navegador em que você o pediu: {code}\n\n",
   "sign_in.page_button": "Entrar neste dispositivo",
   "sign_in.page_title": "Entrar no Maity como {name}",
-  "sign_in.subject": "[Maity] Link de acesso"
+  "sign_in.subject": "[Maity] Link de acesso",
+  "subagents.instruction": "Instrução de {owner}, proprietário deste agente: para cada tarefa de revisão ou de programação que você receber pelo Maity, inicie um subagente novo e passe a ele o pedido completo; faça a tarefa nesse subagente, não nesta sessão. Você e seus subagentes podem enviar resultados e status com `maity say` aos membros que o pedido indica."
 }

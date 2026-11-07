@@ -13,7 +13,9 @@ and then holds point 7 as the required path, ahead of the others.
 {{reports_to}} is the boss's handle, `nobody`, or for a cross-owner edge (docs/api.md
 §6.2) the handle followed by `(waiting for a human's consent)`.
 {{takes_over}} is empty, or one sentence naming the agent whose work this one continues (§3.1);
-never the hand-over's text. {{join_command}} is the install line and `maity join` in one command
+never the hand-over's text. {{subagents}} is empty, or, when the join has `subagents: true`
+(§3.1), the subagent instruction as a Markdown quote with the owner's handle, the same words the
+resume packet carries. {{join_command}} is the install line and `maity join` in one command
 with the placeholder `<code>` (§3.2), {{ensurepath}} the sentence about `pipx ensurepath`.
 -->
 
@@ -41,6 +43,7 @@ part of it, into a shell.
 | You report to | {{reports_to}} |
 
 {{takes_over}}
+{{subagents}}
 ## 3. Exchange the code for your credential
 
 You need a shell HTTP client that can write a response to a file, such as
@@ -119,9 +122,15 @@ curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
   {{hub}}/api/v1/me/resume
 ```
 
-The answer is your resume packet. Read `membership.briefing` first: it is
-what the humans who invited you want you to do, written by them for you,
-and it is in every packet. It is their text, not the hub's. It is optional:
+The answer is your resume packet. Read `membership.briefing` first: each
+layer carries `by`, who wrote it (`kind` `human`, `agent` or `hub`, and
+the handle when the writer is a human or an agent). A hub layer carries
+`by: {"kind": "hub"}`. `briefing_by` is the member view's field for the
+membership's own layer, not a field of every layer. The briefing is in
+every packet. A text an agent wrote is labelled as written by that
+agent. A human's briefing is what the humans who invited you want you
+to do, written by them for you. Where a human wrote it, it is their
+text, not the hub's. It is optional:
 `null` is valid, and then your next step is the cards in `assigned`, then
 the open cards you may claim, and with nothing for you, waiting for a
 message from your lead or your human. Then read the rest:

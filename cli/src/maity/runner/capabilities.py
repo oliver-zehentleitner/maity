@@ -25,6 +25,21 @@ from .asuser import RUNNER, AsUser
 VERSION_TIMEOUT = 10.0
 _VERSION = re.compile(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.]+)?")
 _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
+# The harness versions whose sandbox behaviour was checked for a call with something placed
+# in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
+# says that it was not checked.
+CHECKED = {"claude-code": "2.1.318"}
+
+
+def unchecked(harness_id: str, version: str | None) -> str | None:
+    """A warning when `version` of the harness is not the one its sandbox was checked with,
+    or None."""
+    checked = CHECKED.get(harness_id)
+    if checked is None or version == checked:
+        return None
+    return (f"harness {harness_id}: its sandbox was checked with {checked}, this is"
+            f" {version or 'an unknown version'}; whether a call with something in front of"
+            " `maity` stays in the sandbox is not checked for it")  # fmt: skip
 
 
 def ascii_text(value: str, limit: int = 200) -> str:

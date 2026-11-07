@@ -508,3 +508,47 @@ address.
   `/api/v1/runners/{runner_id}`.
 - **Removing the public read limits now that the ingress limits every
   client:** without an ingress they are the only limit on those reads.
+
+## Reads of the API and the dashboard's files are gzipped by the hub, not by the ingress
+
+**Id:** 5cfd29b6-0446-4760-b602-8e854ab8937d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-hn2wa8a7e2eq (the board query measured at about 2.7 MB of JSON in five pages, about 0.66 MB gzipped) and the operators' choice of the hub over the ingress, 2026-11-06
+**Revisit when:** the hub serves secrets on reads, or a deployment compresses at its ingress as well
+
+A `GET` or `HEAD` under `/api/v1/` or `/assets/` of 1024 bytes and more
+is gzipped at level 6 when the request accepts it (docs/api.md §1.1).
+Writes are never compressed, nor anything under `/api/v1/auth/`, the
+join and invitation documents a token opens (`/api/v1/join/{token}`,
+`/api/v1/invitations/{token}`), an attachment's bytes, or any address
+outside the two prefixes. The types that are compressed already (images,
+archives, fonts, `text/event-stream`) are named in the hub, not taken
+from Starlette's default, which older releases kept shorter. Starlette's
+middleware compresses a body of 128 KiB and more in a worker thread.
+
+**Reason:** the board's pages of cards are the dashboard's largest reads
+and compress to about a quarter. In the hub, every deployment gets it
+without a setting of its own, a self-hosted one too. Every place the hub answers a secret (a
+new credential, a join line, a code, the session's CSRF token) is a write
+or under `/api/v1/auth/`; the join and invitation documents under
+`/api/v1/` and the pages outside the prefixes carry a token from their
+own address. The first version of this list missed `/api/v1/join/{token}`,
+which a review found. Leaving all of them out means no answer
+carries a secret compressed together with what the request sent.
+Attachments are someone's files, often compressed already, streamed with
+their length against their digest. Level 6: 24.7% of the board's bytes
+against 24.6% at level 9, for about a fifth less CPU. On the local hub
+the event loop's lag while two clients read the board query in a loop
+stayed where it was (`loop_late_max_ms` 61 to 66 with gzip, 58 to 95
+without).
+
+That the hub compresses was the operators' choice; the prefixes, the
+exclusions and the level are this implementation's, not yet confirmed
+by review.
+
+**Rejected alternative:** the ingress's compression: one setting per
+cluster, and none for a hub run without that ingress. Compressing every
+answer: the pages and writes above. Level 9, Starlette's default: the
+same size for more CPU.

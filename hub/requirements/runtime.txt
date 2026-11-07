@@ -981,7 +981,9 @@ sqlalchemy==2.1.6 \
 starlette==1.9.0 \
     --hash=sha256:3d931de246ed870e35ce605974440816ef895e592f255d1396cfdf191d4c4318 \
     --hash=sha256:fd3f159936e882d06c1108f84688f7cda2cf85fc6a592a50edbd175e882c2ddc
-    # via fastapi
+    # via
+    #   maity-hub (pyproject.toml)
+    #   fastapi
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5

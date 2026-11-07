@@ -1,8 +1,8 @@
 """The product line (docs/api.md §16.13): one small line about Maity at the end of every page
 of the platform's own interface, on the hub's own pages as on the dashboard's, always shown.
 
-    [Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? ·
-    Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+    [Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] &
+    [Maity icon] · Found a bug? · Found a vulnerability?
 
 The hub's pages load no file, so the icons are inline SVG with presentation attributes only.
 The line's look is one fixed block, `STYLE`: centred and muted. A page whose policy allows
@@ -120,9 +120,9 @@ def html(language: str, section: str | None = None) -> str:
     words = catalog.section("product", language)
     parts = (
         f"{_MAITY_MARK} Maity {clock.now().year}",
+        _sentence(language),
         _link(ISSUES, escape(words["bug"])),
         _link(SECURITY, escape(words["security"])),
-        _sentence(language),
     )
     # The separators are drawn, not read, as on the dashboard.
     dot = '<span aria-hidden="true"> · </span>'

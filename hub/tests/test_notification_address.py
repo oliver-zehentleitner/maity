@@ -14,11 +14,13 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.auth import password_limits
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import preferences, tokens
+from maity_hub.ratelimit import Attempt
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
@@ -47,7 +49,7 @@ def signed_in(
         found = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
     human_id = found or factory.human(engine, handle)
     client = make_client(**overrides)
-    client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
+    factory.login_handle(client, handle)
     return flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], human_id)
 
 
@@ -151,6 +153,7 @@ def test_changing_a_verified_address_needs_the_password(
 def test_removing_the_address_voids_unsubscribe_links(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
+    factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
     owner = verified(make_client, migrated, "me@example.org")
     with migrated.begin() as conn:
         epoch = preferences.row_of(conn, owner.id).epoch
@@ -185,8 +188,7 @@ def test_a_human_without_a_password_needs_an_old_session(
             signing_key=hub.mail.signing_key,
             public_url="https://hub.example",
             mail_ready=True,
-            wrong_password=lambda: None,
-            password_blocked=lambda: 0,
+            password_attempt=lambda: Attempt(password_limits.ADDRESS_CHANGE, owner.id),
         )
         assert status == 202
         change = preferences.view(conn, owner.id, True)["email"]["address_change"]
@@ -302,7 +304,8 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
         strong = conn.execute(select(t.human_session)).first()
         kwargs: dict[str, Any] = dict(
             signing_key=hub.mail.signing_key, public_url="https://hub.example", mail_ready=True,
-            wrong_password=lambda: None, password_blocked=lambda: 0, step_up=lambda: None,
+            password_attempt=lambda: Attempt(password_limits.ADDRESS_CHANGE, human.id),
+            step_up=lambda: None,
             keeps_factor=lambda: None,
         )  # fmt: skip
         assert preferences.patch(
@@ -353,6 +356,7 @@ def test_only_the_verified_address_in_use_counts_failures(
 
 
 def test_one_account_per_address(make_client: ClientFactory, migrated: Engine) -> None:
+    factory.earlier_admin(migrated)  # `first` removes its address below (§18.4)
     first = with_mail(make_client, migrated)
     second = with_mail(make_client, migrated, "someone")
     first.patch(S, {"email": {"address": "Shared@Example.org"}})
@@ -608,3 +612,25 @@ def test_a_claim_that_slips_past_the_lock_is_a_dead_link_not_an_error(
         event.remove(migrated, "before_cursor_execute", meanwhile)
     assert slipped["done"]
     assert answer.status_code == 404, answer.text
+
+
+def test_a_wrong_password_holds_its_place_in_the_count_while_it_compares(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§2.1: the address change counts its attempt before the password is compared."""
+    from maity_hub.auth import passwords
+
+    owner = verified(make_client, migrated, "old@example.org")
+    body = {"email": {"address": "new@example.org"}, "current_password": "not it at all"}
+    for _ in range(4):
+        owner.patch(S, body)
+    seen: list[int] = []
+    verify = passwords.verify_password
+
+    def comparing(*args: Any) -> bool:
+        seen.append(password_limits.ADDRESS_CHANGE.blocked(owner.id))
+        return verify(*args)
+
+    monkeypatch.setattr(passwords, "verify_password", comparing)
+    owner.patch(S, body)
+    assert len(seen) == 1 and seen[0] > 0

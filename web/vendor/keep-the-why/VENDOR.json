@@ -1,9 +1,9 @@
 {
   "comment": "Written by tools/vendor_ktw.py; do not edit. Checked by tools/check.py.",
   "package": "keep-the-why-dashboard",
-  "version": "0.11.43",
-  "wheel": "keep_the_why_dashboard-0.11.43-py3-none-any.whl",
-  "wheel_sha256": "389d9ba7f43f3ff457653c8aa9c7628a203095046d38cecd8cafba955ea8512a",
+  "version": "0.11.44",
+  "wheel": "keep_the_why_dashboard-0.11.44-py3-none-any.whl",
+  "wheel_sha256": "a4f20b366ff53011babc2a4a655bdd078c89b1b32f848ddc2544922cd02009d7",
   "api": 0,
   "state": 2,
   "scripts": [
@@ -22,19 +22,19 @@
     "ktw-views.css"
   ],
   "files": {
-    "ktw-core.js": "465de038874ed3dac921b4391222a3fc5d4484508c0188552605c6e1343b5252",
+    "ktw-core.js": "e42b270f3f082da0762a47d64b1f308308d00ba99e63c159c7f36c15164e10b5",
     "ktw-family.js": "f4d2ddd05c6e378a13a24881d3090726342e5da2cf050800dc4215e35754e363",
-    "ktw-graph.js": "577d64989e2e4648df568c7132e0dda5d288998a3f9d7ea8d2eaf403b3b63d66",
+    "ktw-graph.js": "79ff89debbd6533e3bad59b3b36980ad730344bc092d49192cc26e75a0dffb2c",
     "ktw-markdown.js": "f82ecada7061097d7767647c2434b48d142597a0c95626660dc1fb00ed11f7e5",
     "ktw-pages.js": "53ae677d5ff45f33d60c8f2df12c613b1e3b40fe78719a2e1ced10d1f5c7c982",
     "ktw-scene.js": "5acdb8c3968320bdc5922624461613c8573765c1d4553a037a4293f2f37fb7f0",
     "ktw-search.js": "c6224ff254a5354547d8b453b67e88eb93aa0d231c392626f1ca440b857f8225",
     "ktw-thoughts.js": "5ab77af97894dd6a98aec6e703808a9f55755e19d830a98098b393dec169da27",
-    "ktw-timeline.js": "10bcf6a0cec854619abcd98a5ee1710d30c23607a5343e2672d276f44d37e146",
+    "ktw-timeline.js": "b447f264d40aafc50541aca02b3c4a0262666ecfc21e2cf14fa81a4e186f9b0a",
     "ktw-ui.js": "f0961f146fb49a6a8d8ac5bb75287ab0dc3f98de795603cab8ef49e45224c0ec",
-    "ktw-views.css": "2246e833433e4756fb0d6a6d63f9b23488b4715b6b61d048c88ca998158f5c91",
+    "ktw-views.css": "7f196b6aadcd9c45fed42b06e32e1ec4b08e87f8104ecfdb65959106d621ccca",
     "ktw-views.json": "fce4267b7adb7f5523c3221a9f3e8da8ccf4ede511f1cdbcee9308c12cc524be"
   },
   "license_sha256": "44d2c60afe04d9c481caa77df83cc96e61649fde239d290405a2ac5abd584097",
-  "changelog": "https://github.com/oliver-zehentleitner/keep-the-why/blob/dashboard-v0.11.43/CHANGELOG.md"
+  "changelog": "https://github.com/oliver-zehentleitner/keep-the-why/blob/dashboard-v0.11.44/CHANGELOG.md"
 }

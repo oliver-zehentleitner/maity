@@ -219,8 +219,29 @@ window.Maity = window.Maity || {};
       M.trust.fillRoles(role, offered, wanted, "coder");
     };
     const roleHelp = M.trust.roleHint(role);
+    // The owner's instruction to work in subagents (docs/api.md §3.1): on by default for
+    // coder and reviewer, following the role until the box is touched. It is written in the
+    // language this dashboard shows, or in English when asked: sent as `subagents_language`, so
+    // it never falls to a language the hub would pick without the human seeing it.
+    const subagents = h("input", { type: "checkbox", id: "join-subagents", "aria-describedby": "join-subagents-hint" });
+    const english = h("input", { type: "checkbox", id: "join-subagents-english" });
+    let subagentsTouched = false;
+    const SUBAGENT_ROLES = ["coder", "reviewer"];
+    const followRole = () => {
+      if (!subagentsTouched) subagents.checked = SUBAGENT_ROLES.includes(role.value);
+      english.disabled = !subagents.checked;
+    };
+    subagents.addEventListener("change", () => { subagentsTouched = true; followRole(); });
+    role.addEventListener("change", followRole);
     trust.addEventListener("change", fillRoles);
+    trust.addEventListener("change", followRole);
     fillRoles();
+    followRole();
+    const subagentsField = h("div", { class: "field wide join-subagents" },
+      h("div", { class: "join-offer" }, subagents, " ", h("label", { for: "join-subagents" }, M.t("join.subagents.label"))),
+      h("p", { class: "hint", id: "join-subagents-hint" }, M.t("join.subagents.hint")),
+      M.i18n.language === "en" ? null
+        : h("div", { class: "join-offer" }, english, " ", h("label", { for: "join-subagents-english" }, M.t("join.subagents.english"))));
     const reportsTo = h("select", { id: "join-reports" },
       h("option", { value: "" }, M.t("join.reports.nobody")),
       // A guest is never reported to (§2.3).
@@ -316,7 +337,8 @@ window.Maity = window.Maity || {};
         type: "button",
         onclick: async () => {
           try {
-            await navigator.clipboard.writeText(j.paste_lines[platform]);
+            // The instruction first, a blank line, then the line (§3.1): one message.
+            await navigator.clipboard.writeText(j.instruction ? j.instruction + "\n\n" + j.paste_lines[platform] : j.paste_lines[platform]);
             copy.textContent = M.t("join.copy.done");
           } catch (err) {
             copy.textContent = M.t("join.copy.failed");
@@ -328,6 +350,9 @@ window.Maity = window.Maity || {};
         h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
         offers,
+        j.instruction ? h("div", { class: "join-instruction" },
+          h("p", null, M.t("join.line.instruction")),
+          h("blockquote", { class: "join-instruction-text" }, j.instruction)) : null,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, M.t("join.line.hint")),
         h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, M.t("join.line.done")))));
@@ -388,6 +413,11 @@ window.Maity = window.Maity || {};
             ttl_seconds: Number(ttl.value),
           };
         if (text) req.briefing = text;
+        if (!member) {
+          followRole();  // an untouched box takes the role chosen now
+          req.subagents = subagents.checked;
+          if (subagents.checked) req.subagents_language = english.checked ? "en" : M.i18n.language;
+        }
         if (!member && takesOver.value && !takeOverField.hidden) req.takes_over = takesOver.value;
         if (!member && handover.value.trim()) req.handover = handoverValue(handover.value.trim());
         status.busy(M.t("join.creating"));
@@ -478,6 +508,7 @@ window.Maity = window.Maity || {};
         own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
           : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
             membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas))],
+        membershipField(subagentsField),
         membershipField(takeOverField),
         handoverField,
         h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),

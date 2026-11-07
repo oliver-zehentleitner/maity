@@ -170,9 +170,7 @@ def test_every_decode_slot_taken_is_rate_limited(
 
 
 def _login(client: Any, handle: str) -> str:
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, handle)
     assert response.status_code == 200, response.text
     csrf: str = client.get("/api/v1/auth/session").json()["csrf_token"]
     return csrf
