@@ -44,9 +44,27 @@ done
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
 cd "$root" || die "cannot enter $root"
 
-dirty=$(git status --porcelain --untracked-files=all) || die "git status failed"
+# The work tree's changes, as step 5 reads them: tracked files from git status, untracked ones
+# by the repository's .gitignore files alone. A personal exclude (core.excludesFile,
+# .git/info/exclude) or status.showUntrackedFiles=no could otherwise hide a file a step wrote.
+tree_changes() {
+  git status --porcelain --untracked-files=no || return 1
+  git ls-files --others --exclude-per-directory=.gitignore | sed 's/^/?? /'
+}
+dirty=$(tree_changes) || die "git status failed"
 [ -z "$dirty" ] || die "the work tree is not clean; commit or set aside first:
 $dirty"
+# git status leaves out a file whose index entry says skip-worktree (S, also set by a sparse
+# checkout) or assume-unchanged (a lowercase tag): a step could rewrite it unseen.
+entries=$(git ls-files -v) || die "git ls-files failed"
+flagged=""
+while IFS= read -r entry; do
+  case $entry in
+    "S "* | [a-z]" "*) flagged+="${entry#? }"$'\n' ;;
+  esac
+done <<<"$entries"
+[ -z "$flagged" ] || die "git status would not show these files (skip-worktree or assume-unchanged); clear the flag first:
+$flagged"
 
 command -v make >/dev/null || die "needs make"
 command -v node >/dev/null || die "needs node (web/tools/check.py runs the fixture hub)"
@@ -63,7 +81,7 @@ clean() {
 }
 [ -x "$hub_python" ] || die "HUB_PYTHON=$hub_python is not an executable file"
 hub_src=$(clean "$hub_python" -c 'import pytest, maity_hub; print(maity_hub.__file__)') \
-  || die "HUB_PYTHON=$hub_python lacks pytest or the hub's requirements"
+  || die "HUB_PYTHON=$hub_python cannot import pytest and the hub in the steps' cleared environment: it lacks them, or needs a variable that environment drops (LD_LIBRARY_PATH, for one)"
 case $hub_src in
   "$root/hub/src/"*) ;;
   *) die "HUB_PYTHON=$hub_python imports the hub from $hub_src, not from $root/hub/src" ;;
@@ -85,7 +103,7 @@ step "web shapes" clean make -C web shapes HUB_PYTHON="$hub_python"
 step "web fixtures" clean make -C web fixtures
 step "web check" clean make -C web check
 
-changed=$(git status --porcelain --untracked-files=all) || die "git status failed"
+changed=$(tree_changes) || die "git status failed"
 if [ -n "$changed" ]; then
   echo "guards: these files changed; commit them:" >&2
   printf '%s\n' "$changed" >&2
