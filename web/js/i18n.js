@@ -7,9 +7,10 @@
 //
 // Which language (docs/api.md §6.2): the account's interface_language, which
 // M.api gives M.i18n.follow with every GET /auth/session; without one, and
-// before sign-in, the landing page's rule: ?lang= (or a choice made on this
-// page, which writes it), then the browser's, then en. Nothing is stored in
-// the browser for it: the hub's own pages cannot read that (web/context/rendering.md).
+// before sign-in, the landing page's order: ?lang= (or a choice made on this
+// page, which writes it), then the browser's, then en, where the landing page
+// falls back to its default_language instead. Nothing is stored in the browser
+// for it: the hub's own pages cannot read that (web/context/rendering.md).
 //
 // M.t(key, values): one key per sentence, never a sentence put together
 // from pieces. `{name}` in the text takes values.name, a number formatted

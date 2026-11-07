@@ -685,7 +685,7 @@ the session themselves. A catalog per language keeps nine languages off every pa
 - `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
   so what was typed into the form so far would be lost.
 
-## Before sign-in the dashboard takes the landing page's rule for the language, and keeps nothing in the browser
+## Before sign-in the dashboard takes the landing page's order for the language, and keeps nothing in the browser
 
 **Id:** 323db387-6c53-4a63-86bd-13a464b114e7
 **Type:** decision
@@ -693,10 +693,11 @@ the session themselves. A catalog per language keeps nine languages off every pa
 **Evidence:** confirmed
 **Source:** card tsk-a9n9p6952wwb (landing in English, sign-in and visitor views in German for the same visitor, 2026-11-06), reproduced on maity.team 2026-11-07; the lead's go on the plan (Maity message, 2026-11-07); `web/js/i18n.js`, `hub/src/maity_hub/render.py` `choose_language`
 **See:** rendering.md#english-is-always-loaded-the-readers-language-comes-as-its-own-script-chosen-by-one-rule-in-one-place — 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6 — as of 2026-11-07
-**Revisit when:** the maintainer wants a visitor's choice kept across visits, or the hub's public pages start reading a cookie
+**Revisit when:** the maintainer wants a visitor's choice kept across visits, the hub's public pages start reading a language cookie, or the dashboard takes the visitor's language from `GET /site/chrome` (which closes the gap below)
 
-Without an account's `interface_language` the dashboard follows the rule the hub's own pages follow:
-`?lang=`, then the browser's languages, then `en`. A choice made on a page (`M.i18n.choose`) holds
+Without an account's `interface_language` the dashboard takes the landing page's order: `?lang=`,
+then the browser's languages, then `en`. The landing page itself offers only the languages it has a
+page in and falls back to its `default_language`, not to `en` (`render.choose_language`, §16.7). A choice made on a page (`M.i18n.choose`) holds
 for the page while it lives and writes `?lang=` into the address, also one that had none; the
 frame's and the landing page's links carry `?lang=` from page to page. Nothing goes into
 `localStorage`: the key an older version wrote, `maity.language`, is removed once when the
@@ -708,12 +709,18 @@ visitor views in German, in the same visit. One rule that both sides can read is
 
 **Consequence:** a visitor who chose a language and later types a bare address gets the browser's
 language again, on every page alike. An address copied from a page after a choice carries
-`?lang=` and opens in that language, as the landing page's links already do.
+`?lang=` and opens in that language, as the landing page's links already do. A gap remains where the
+two fallbacks differ: on an instance whose landing page has `default_language: de`, a browser asking
+only for a language without a landing page (`sv`) gets the landing page in German and the dashboard
+in English. With `default_language: en`, as on maity.team, the two agree. Closing it means taking the
+visitor's language from `GET /site/chrome`, which the hub chooses exactly as the landing page's; that
+is a change of behaviour, left to a card of its own rather than to the review of this one.
 
 **Rejected alternative:** a language cookie the hub reads too: it would keep the choice across visits,
-but the public pages set and read no cookie (context/scope.md, hub/context/landing.md), and `/`
-would need `Vary: Cookie`. Keeping the choice across visits is the maintainer's call, and it is that
-cookie.
+but the public pages set no language or tracking cookie (context/scope.md, hub/context/landing.md;
+`/` reads only the session cookie, to choose between the landing page and the dashboard), and
+`GET /site/chrome` and `GET /auth/pages/{page}`, which vary on `Accept-Language` only, would need
+`Vary: Cookie`. Keeping the choice across visits is the maintainer's call, and it is that cookie.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 
