@@ -11728,13 +11728,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "owner reports_to: the project's Agents has it beside the rulebook");
   // tsk-nbadjbr9zpg7: a member of another owner is offered too, marked; saving it waits for that side's consent, said so (§6.2).
   const orForeign = { id: "agt-f8", kind: "agent", owner_id: "hum-else", display_name: "Else Lead", handle: "else-lead", trust: "member", role: "manager", reports_to: null, removed_at: null, instances: [] };
-  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then((r) => Object.assign({}, r, { items: r.items.concat([orForeign]) })) : orAll(p));
+  const orWith = (r) => Object.assign({}, r, { items: r.items.concat([orForeign]) });
+  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then(orWith) : orAll(p));
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orGet2(p).then((r) => (r && r.items ? orWith(r) : r)) : orGet2(p));
   win.Maity.api.patch = (p, b) => { orPatches.push([p, b]); return Promise.resolve({ id: "req-c901", class: "consent", status: "open", to: "human:hum-else", title: "Take agent-b as a report of else-lead" }); };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   const orB = byId("owner-reports-agt-b");
   const orBOption = orB && orB.querySelectorAll("option").find((o) => o.getAttribute("value") === "agt-f8");
   expect(orBOption && text(orBOption) === "Else Lead (@else-lead), waits for consent",
-    "owner reports_to: a member of another owner is offered, marked as waiting for consent");
+    "owner reports_to: a member of another owner is offered, marked as waiting for consent " + JSON.stringify(orB ? orB.querySelectorAll("option").map((o) => text(o)) : null));
   orB.value = "agt-f8";
   main.querySelectorAll("section.agent-here form.owner-reports").find((f) => f.querySelectorAll("select").some((x) => x.id === "owner-reports-agt-b")).dispatch("submit");
   for (let k = 0; k < 6; k++) await tick();
