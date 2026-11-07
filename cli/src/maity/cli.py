@@ -175,6 +175,8 @@ class Session:
 
     on_request: str | None = None
     for_target: str | None = None
+    # Under `task restricted` an unknown `--for` name is refused without repeating it (§13).
+    for_quiet: bool = False
 
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
@@ -202,7 +204,7 @@ class Session:
             if target.startswith("agt-"):
                 self.client.for_member = target
             else:
-                self.client.for_resolve = lambda: _member_id(self, target)
+                self.client.for_resolve = lambda: _for_member_id(self, target)
 
     @property
     def for_member(self) -> str | None:
@@ -2567,6 +2569,23 @@ def _quiet_errors(parser: argparse.ArgumentParser) -> None:
     parser.error = error  # type: ignore[method-assign]
 
 
+def _restricted_argv(argv: Sequence[str]) -> bool:
+    """`task` and, after it, `restricted`: the command line may hold a restricted text."""
+    words = list(argv)
+    return "task" in words and "restricted" in words[words.index("task") + 1 :]
+
+
+def _quiet_ancestors(parser: argparse.ArgumentParser) -> None:
+    """The root and `task` parsers fail before `restricted`'s own parser runs
+    (`--version=…`, `--help=…`): for a restricted command line they say the fixed sentence too."""
+    _quiet_errors(parser)
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            task = action.choices.get("task")
+            if task is not None:
+                _quiet_errors(task)
+
+
 def _restricted_card(card: str) -> str:
     """Text where the card id belongs is refused without repeating it."""
     if any(ch.isspace() for ch in card):
@@ -2879,6 +2898,19 @@ def _address(
                 shown = shlex.quote(onboarding.inline(to))
                 raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
+
+
+def _for_member_id(session: Session, target: str) -> str:
+    """`--for` resolved to a member id; under `task restricted` a failure names no name."""
+    if not Session.for_quiet:
+        return _member_id(session, target)
+    try:
+        return _member_id(session, target)
+    except CommandError:
+        raise CommandError(
+            "--for names no single agent of this project (the name is not repeated under "
+            "task restricted); give the agent's member id"
+        ) from None
 
 
 def _member_id(session: Session, which: str) -> str:
@@ -5253,6 +5285,8 @@ def _utf8_streams() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
+    if _restricted_argv(sys.argv[1:] if argv is None else argv):
+        _quiet_ancestors(parser)
     args, extra = parser.parse_known_args(argv)
     if extra and getattr(args, "handler", None) in _RESTRICTED_HANDLERS:
         # Never repeated: what is left over may be the restricted text itself (§13).
@@ -5262,6 +5296,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
     Session.for_target = args.for_target
+    Session.for_quiet = handler in _RESTRICTED_HANDLERS
+    if Session.for_quiet and args.for_target is not None:
+        if any(ch.isspace() or not ch.isprintable() for ch in args.for_target):
+            # Text where the agent belongs: refused before any call, not repeated (§13).
+            _err(
+                "--for: an agent's handle or member id has no white space; " + _RESTRICTED_ARGV_HINT
+            )
+            return EXIT_USAGE
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE

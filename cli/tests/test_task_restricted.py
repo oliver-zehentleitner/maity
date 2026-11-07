@@ -145,6 +145,10 @@ def test_a_text_on_the_command_line_is_refused_without_repeating_it(
         ["task", "restricted", "show", "tsk-1", SECRET],
         ["task", "restricted", "clear", "tsk-1", SECRET],
         ["task", "restricted", "show", "tsk-1", "--json=" + SECRET],
+        # The root and `task` parsers fail before `restricted`'s own parser runs.
+        ["--version=" + SECRET, "task", "restricted", "set", "tsk-1", "--file", "-"],
+        ["task", "--help=" + SECRET, "restricted", "set", "tsk-1", "--file", "-"],
+        ["--bogus=" + SECRET, "task", "restricted", "set", "tsk-1", "--file", "-"],
     ],
 )
 def test_argparse_errors_under_restricted_do_not_repeat_what_was_typed(
@@ -157,6 +161,27 @@ def test_argparse_errors_under_restricted_do_not_repeat_what_was_typed(
     assert "never an argument" in captured.err
     assert "vault" not in captured.out + captured.err
     assert not fake.signed()
+
+
+def test_text_given_as_for_is_refused_before_any_call(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Text where the agent belongs (`--for`): refused, not repeated, nothing sent.
+    argv = ["--for", SECRET, "task", "restricted", "set", "tsk-1", "--file", "-"]
+    assert cli.main(argv) == cli.EXIT_USAGE
+    captured = capsys.readouterr()
+    assert "never an argument" in captured.err and "vault" not in captured.out + captured.err
+    assert not fake.signed()
+
+
+def test_an_unknown_for_name_is_not_repeated(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # One word, no member by that name: refused by the CLI without the name.
+    assert cli.main(["--for", "vaultcode4711", "task", "restricted", "show", "tsk-1"]) != 0
+    captured = capsys.readouterr()
+    assert "--for names no single agent" in captured.err
+    assert "vault" not in captured.out + captured.err
 
 
 def test_set_without_a_file_is_refused_before_any_call(
