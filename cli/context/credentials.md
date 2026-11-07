@@ -476,9 +476,11 @@ Once it is done with them (after its `chmod` and the children's `mkdir`, also wh
 refused), it records each one's identity: device, inode and change time from `lstat`, which does
 not follow a link at that path. These, and only these, count as "created by this join". When
 anything up to and including the hub's answer fails (`prepare_for_join`, the exchange,
-`accept_hub`), every recorded identity is checked first, and those still matching are removed,
+`accept_hub`), every recorded identity is checked first, deepest first, and the first that no
+longer matches stops the check: only the directories below it that still match are removed,
 deepest first, only while empty (`rmdir`, never recursive); a removal that fails stops there and
-leaves the rest. A directory replaced meanwhile, even one that got the same inode number back,
+leaves the rest. A junction or other reparse point on Windows (`st_file_attributes`) never matches.
+An empty leftover is harmless; removing something that is not the join's is not. A directory replaced meanwhile, even one that got the same inode number back,
 or one reached through a parent swapped for a link or a junction, has another identity and stays
 (review of #1478, 399x). A directory that existed before the join, and everything outside that chain, is
 never touched. Once the exchange has answered and the credential is being written, nothing is

@@ -1238,3 +1238,45 @@ def test_a_failed_join_leaves_a_directory_another_process_created_first(
     line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
     assert cli.main(line) == cli.EXIT_ERROR, output(capsys)
     assert directory.is_dir()
+
+
+def test_a_reparse_point_is_no_directory_of_the_join(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On Windows a junction reads as a directory to `lstat`; its reparse attribute marks it,
+    and the cleanup treats it as not the join's (it is never removed nor followed)."""
+    directory = tmp_path / "agent"
+    directory.mkdir()
+    real = os.lstat
+
+    class Junction:
+        def __init__(self, found: os.stat_result) -> None:
+            self.st_mode, self.st_dev, self.st_ino = found.st_mode, found.st_dev, found.st_ino
+            self.st_ctime_ns = found.st_ctime_ns
+            self.st_file_attributes = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+
+    created: list[state.Created] = [
+        (directory, *(real(directory).st_dev, real(directory).st_ino, real(directory).st_ctime_ns))
+    ]
+    monkeypatch.setattr("maity.state.stat.FILE_ATTRIBUTE_REPARSE_POINT", 0x400, raising=False)
+    monkeypatch.setattr("maity.state.os.lstat", lambda p: Junction(real(p)))
+    state.remove_created(created)
+    assert directory.is_dir()
+
+
+def test_the_cleanup_stops_at_the_first_directory_that_is_not_the_join_s(tmp_path: Path) -> None:
+    """A created child replaced meanwhile stops the cleanup: its created parent stays too."""
+    parent = tmp_path / "a"
+    child = parent / "agent"
+    child.mkdir(parents=True)
+    created: list[state.Created] = []
+    for one in (parent, child):
+        found = os.lstat(one)
+        created.append((one, found.st_dev, found.st_ino, found.st_ctime_ns))
+    child.rmdir()
+    child.mkdir()  # someone else's now (a new change time, perhaps the same inode)
+    state.remove_created(created)
+    assert child.is_dir() and parent.is_dir()
+    child.rmdir()  # gone meanwhile: a doubt too, and the parent, empty now, still stays
+    state.remove_created(created)
+    assert parent.is_dir()

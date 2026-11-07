@@ -273,6 +273,9 @@ def _identity(path: Path) -> tuple[int, int, int] | None:
         return None
     if not stat.S_ISDIR(found.st_mode):
         return None
+    # A junction or another reparse point on Windows is no directory of this join's: refused.
+    if getattr(found, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return None
     return (found.st_dev, found.st_ino, found.st_ctime_ns)
 
 
@@ -327,10 +330,16 @@ def remove_created(created: list[Created]) -> None:
     at its path) and empty. A directory someone replaced or created meanwhile, or one reached
     through a replaced parent, has another identity and stays. Never recursive; a removal
     that fails leaves the rest."""
-    # Every identity is checked before anything is removed: removing a child changes its
-    # parent's change time, which must not make the parent look like someone else's.
-    still = [entry[0] for entry in created if _identity(entry[0]) == tuple(entry[1:])]
-    for one in reversed(still):
+    # Every identity is checked, deepest first, before anything is removed: removing a child
+    # changes its parent's change time, which must not make the parent look like someone
+    # else's. The first doubt stops it: nothing at or above a directory that is not the
+    # join's own any more is removed (an empty leftover is harmless).
+    still: list[Path] = []
+    for one, *identity in reversed(created):
+        if _identity(one) != tuple(identity):
+            break
+        still.append(one)
+    for one in still:
         try:
             one.rmdir()
         except OSError:

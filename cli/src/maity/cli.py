@@ -4581,7 +4581,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_memory_add)
     r = msub.add_parser("delete", help="delete an entry of your team's or role's memory",
                         formatter_class=fmt)  # fmt: skip
-    r.add_argument("entry", metavar="ID", help="the entry, mem-…")
+    r.add_argument("entry", metavar="ID", help="the entry's id")
     r.add_argument("--reason", help="why, kept on the tombstone")
     _json_flag(r)
     r.set_defaults(handler=cmd_memory_delete)
