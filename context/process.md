@@ -1706,6 +1706,12 @@ head `gh` listed), a merge, and each step that turns
 git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
 name only when it comes from the same repository, not from a fork.
 
+The check is a convenience before a push, not the gate: the coordinating agent's merge-base and
+merge-tree check before every merge is. Two matching reads of a list that GitHub pages by offset are
+a best effort, not a snapshot, and the caller's `GH_HOST`, `gh` login and clone configuration are
+trusted. Further findings on list churn, or on a caller pointing `GH_HOST` or the clone at another
+server, count as minor (the coordinator's scope for #1475).
+
 **Reason:**
 - The checks the authors wrote by hand grepped git's message for `CONFLICT`. On a machine with a German
   locale git writes `KONFLIKT`, and one check reported a pull request as conflict-free when it was not.

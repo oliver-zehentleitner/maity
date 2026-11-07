@@ -21,6 +21,10 @@
 # the branch changes how; read that pull request's line. Exit 1 when the branch adds a
 # conflict, 2 when the check could not run: every command whose answer it needs stops the
 # check when it fails, so a check that did not run never ends in 0.
+#
+# A convenience before a push, not the gate: the coordinator's merge-base and merge-tree check
+# before every merge is. Two matching reads of a list GitHub pages by offset are a best effort,
+# not a snapshot, and the caller's GH_HOST, gh login and clone configuration are trusted.
 # MAITY_OVERLAP_NO_FETCH=1 skips `git fetch origin main` (the tests set it).
 set -uo pipefail
 
