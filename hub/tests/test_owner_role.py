@@ -93,6 +93,35 @@ def test_a_project_role_on_a_member_base_is_taken_one_on_ops_is_not(
     assert unknown.status_code == 400, unknown.text
 
 
+def test_a_role_put_on_ops_meanwhile_is_checked_under_the_lock(
+    owner: flow.Human,
+    friend: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The base is read again under the project's lock (validate_assignment); a project role
+    an admin puts on `ops` between the two reads is refused as on `ops`, never stored."""
+    from maity_hub.events import lock_project
+
+    agent = brought(friend, make_client)
+
+    def put_meanwhile(conn: Any, project_id: str) -> Any:
+        # What a concurrent `PUT …/roles` commits before this request takes the lock.
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id)
+            .values(roles=[{"name": "deployer", "base": "ops", "description": "", "guide": ""}])
+        )
+        return lock_project(conn, project_id)
+
+    monkeypatch.setattr("maity_hub.routes.members.lock_project", put_meanwhile)
+    refused = friend.patch(f"{PROJECT}/members/{agent.id}", {"role": "deployer"})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "member_join_limit", "field": "role"}
+    assert role_of(owner, agent.id) == "coder"
+
+
 def test_areas_capabilities_and_trust_stay_members_admin(
     owner: flow.Human, friend: flow.Human, make_client: ClientFactory
 ) -> None:

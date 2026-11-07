@@ -828,6 +828,10 @@ def _owner_sets_role(
         member=target.id,
         current=(target.trust, target.role),
     )
+    # The base again as read under the project's lock: a project role created on `ops`, or
+    # moved there, since the read above is refused the same way, never stored.
+    if values["role_base"] not in MEMBER_RULE_ROLES:
+        raise joins.member_join_limit("role")
     agent_owners.check_assignment(conn, mine.project, target, values)
     apply_patch(conn, change_of(mine, caller), target, values, (False, None))
     return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
