@@ -11617,6 +11617,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.owner-reports").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { reports_to: "agt-d" }]),
     "owner reports_to: only reports_to is sent " + JSON.stringify(orPatches));
+  // The owner changes their agent's role within a member join's roles (§3.1 "The owner changes the role",
+  // tsk-0xrm35721btd); its areas are shown, set by the admins.
+  const owRole = () => byId("owner-role-agt-b");
+  const owOffered = () => owRole().querySelectorAll("option").map((o) => o.getAttribute("value"));
+  expect(owRole() && owRole().value === "coder" && !owOffered().includes("ops") && !owOffered().includes("proxy")
+    && owOffered().includes("manager") && owOffered().includes("reviewer"),
+    "owner role: one's own agent's role offered among a member join's roles, never ops or proxy " + JSON.stringify(owRole() && owOffered()));
+  expect(text(main.querySelector("form.owner-role .owner-role-areas")).includes("hub/") && !byId("member-areas-agt-b"),
+    "owner role: the areas shown as the admins set them, no field for them");
+  owRole().value = "reviewer";
+  main.querySelector("form.owner-role").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { role: "reviewer" }]),
+    "owner role: only role is sent " + JSON.stringify(orPatches[orPatches.length - 1]));
+  await orPatch("/projects/maintainer/maity/members/agt-b", { role: "coder" });
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  orManage("Agent A").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("owner-role-agt-a") && text(main.querySelector(".owner-role-fixed")).includes("The project's admins change it"),
+    "owner role: an agent an admin raised beyond the limits (trust admin) keeps its role with the admins, said so");
   // A guest is never offered; a boss of another owner stays chosen and marked, so saving does not end it unasked.
   const orAll = win.Maity.api.getAll, orGet2 = win.Maity.api.get;
   const orShape = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { reports_to: "hum-other" })
@@ -11632,6 +11650,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   expect(byId("owner-reports-agt-b") && main.querySelector("section.agent-here form.owner-reports"),
     "owner reports_to: the project's Agents has it beside the rulebook");
+  expect(byId("owner-role-agt-b") && main.querySelector("section.agent-here form.owner-role"),
+    "owner role: the project's Agents has it beside whom it reports to");
   win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
   await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
   await go("#/maintainer/maity/inbox");
