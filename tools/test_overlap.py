@@ -30,8 +30,10 @@ def installed(name: str) -> bool:
 # A stand-in for gh: `gh api` of origin's repository, answering GitHub's REST list of open pull
 # requests from prs.json next to it, 100 to a page, every page with --paginate, the first alone
 # without; `head_repo` is the pull request's head repository (default origin's, None for a deleted
-# fork). The --jq filter must be the one the script uses, which the stand-in applies itself (the
-# machine may have no jq). An entry `{"fail_page": n}` makes page n fail after the pages before it.
+# fork), and `read` (1 or 2), if set, the one read of the list that names it (calls.txt counts the
+# reads). The --jq filter must be exactly the script's; the stand-in does not run it (the machine
+# may have no jq) but prints the lines it gives for such an answer. An entry `{"fail_page": n}`
+# makes page n fail after the pages before it.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env python3
@@ -53,8 +55,11 @@ FAKE_GH = textwrap.dedent(
         r' \\(.head.ref)"'
     ):
         sys.exit(5)
+    calls = here / "calls.txt"
+    read = len(calls.read_text().splitlines()) + 1 if calls.exists() else 1
+    calls.write_text("call\\n" * read)
     fail = next((p["fail_page"] for p in prs if "fail_page" in p), None)
-    prs = [p for p in prs if "fail_page" not in p]
+    prs = [p for p in prs if "fail_page" not in p and p.get("read", read) == read]
     pages = [prs[i : i + 100] for i in range(0, len(prs), 100)] or [[]]
     for number, page in enumerate(pages if paginate else pages[:1], 1):
         if number == fail:
@@ -149,6 +154,7 @@ class OverlapTest(unittest.TestCase):
         if not installed(locale):
             self.skipTest(f"locale {LOCALES[locale]['LC_ALL']} is not installed")
         (self.bin / "prs.json").write_text(json.dumps(prs))
+        (self.bin / "calls.txt").unlink(missing_ok=True)
         return subprocess.run(
             ["bash", str(SCRIPT), branch],
             cwd=self.clone,
@@ -352,12 +358,38 @@ class OverlapTest(unittest.TestCase):
         filler = [{"number": n, "head": self.base, "name": f"pr-{n}"} for n in range(100, 350)]
         return [*filler, *prs]
 
+    def reads(self) -> int:
+        return len((self.bin / "calls.txt").read_text().splitlines())
+
     def test_every_page_of_open_pull_requests_is_read(self) -> None:
-        """#7 is on the third page of the list and still checked."""
+        """#7 is on the third page of the list and still checked; a list of more than one page is
+        read twice, one of a single page once."""
         prs = self.scenario()
         got = self.run_check(self.many([prs[0]]), "en")
         self.assertEqual(got.returncode, 1, got.stderr)
         self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
+        self.assertEqual(self.reads(), 2)
+        got = self.run_check([prs[0]], "en")
+        self.assertEqual(got.returncode, 1, got.stderr)
+        self.assertEqual(self.reads(), 1)
+
+    def test_a_pull_request_skipped_while_the_pages_are_read_stops_the_check(self) -> None:
+        """Offset paging: #9 closes after the first page was read, so #7 moves onto that page and
+        the first read misses it. The second read has #7 and not #9: exit 2, never a check
+        without #7. A pull request opened or closed between the reads stops it the same way."""
+        prs = self.scenario()
+        nine, seven = prs[2], prs[0]
+        cases = {
+            "skipped": [{**nine, "read": 1}, *self.many([{**seven, "read": 2}])],
+            "opened": self.many([{**seven, "read": 2}]),
+            "closed": [{**nine, "read": 1}, *self.many([seven])],
+        }
+        for case, listed in cases.items():
+            with self.subTest(case=case):
+                got = self.run_check(listed, "en")
+                self.assertEqual(got.returncode, 2, got.stdout)
+                self.assertIn("the list of open pull requests changed while it was read", got.stderr)
+                self.assertEqual(got.stdout, "")
 
     def test_a_page_that_fails_stops_the_check(self) -> None:
         """The list ends at a failing page: exit 2, never a check of the pages before it alone."""
@@ -371,7 +403,11 @@ class OverlapTest(unittest.TestCase):
         """A line the list should not hold (a head that is no commit id, a branch name missing):
         exit 2, never fewer pull requests."""
         prs = self.scenario()
-        for case, pr in (("head", {**prs[0], "head": "null"}), ("name", {**prs[0], "name": ""})):
+        for case, pr in (
+            ("head", {**prs[0], "head": "null"}),
+            ("short head", {**prs[0], "head": prs[0]["head"][:39]}),
+            ("name", {**prs[0], "name": ""}),
+        ):
             with self.subTest(case=case):
                 got = self.run_check([pr], "en")
                 self.assertEqual(got.returncode, 2, got.stdout)
@@ -394,10 +430,14 @@ class OverlapTest(unittest.TestCase):
                 got = self.run_check([prs[0]], "en")
                 self.assertEqual(got.returncode, 1, got.stderr)
                 self.assertEqual(got.stdout.splitlines(), ["#7 [a.txt]: CONFLICT in a.txt"])
-        self.set_origin("widgets")
-        got = self.run_check([prs[0]], "en")
-        self.assertEqual(got.returncode, 2, got.stdout)
-        self.assertIn("cannot read an owner and a repository from origin's URL widgets", got.stderr)
+        for url in ("widgets", "https://github.com//widgets", "https://github.com/ac me/widgets"):
+            with self.subTest(url=url):
+                self.set_origin(url)
+                got = self.run_check([prs[0]], "en")
+                self.assertEqual(got.returncode, 2, got.stdout)
+                self.assertIn(
+                    f"cannot read an owner and a repository from origin's URL {url}", got.stderr
+                )
 
     def test_a_file_the_pull_request_renames_is_shared(self) -> None:
         """mine edits b.txt, #16 renames it: the pull request is checked, not skipped."""

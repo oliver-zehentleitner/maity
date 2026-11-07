@@ -1700,7 +1700,8 @@ even when the branch changes how it conflicts there. That pull request's line na
 A check that did not run never ends in 0. Every command whose answer the check needs stops it with
 exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
 which would otherwise read as "changes no file"), the list of open pull requests (also when a page
-fails, when a line has another shape, or when origin's URL names no owner and repository), the fetch of their heads (also when a fetched head is not the
+fails, when a line has another shape, when a list of more than one page reads differently a second
+time, or when origin's URL names no owner and repository), the fetch of their heads (also when a fetched head is not the
 head `gh` listed), a merge, and each step that turns
 git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
 name only when it comes from the same repository, not from a fork.
@@ -1735,13 +1736,21 @@ name only when it comes from the same repository, not from a fork.
 - The list comes over REST, not from `gh pr list`: that asks GitHub's GraphQL API, which Claude Code's
   cloud sessions cannot reach (HTTP 403), so the check ended in 2 on every push there and the cloud
   coders checked by hand. The REST list needs only what `git fetch` and `gh api` already need.
-- `--paginate` reads every page and ends `gh` with an error when one fails, so the list cannot be cut
-  short unseen. `gh pr list` stopped at its `--limit` without a word, which the check guarded with a
-  count; with every page read that count has nothing left to guard.
+- `--paginate` reads every page and ends `gh` with an error when one fails. `gh pr list` stopped at its
+  `--limit` without a word, which the check guarded with a count; with every page read that count has
+  nothing left to guard.
+- GitHub pages the REST list by offset (`page=N`), where GraphQL's cursors did not shift: a pull
+  request that closes on a page already read moves the first one of the next page onto it, and no page
+  returns that one, without an error. The review of #1475 found it. A list of more than one page is
+  therefore read a second time and must name the same pull requests at the same heads. A skip leaves
+  the closed pull request in the first read and out of the second, so the two always differ; a pull
+  request opened, closed or pushed between the reads stops the check too, and running again settles
+  it. A list of one page is a single request and cannot shift.
 - The owner and name come from origin's URL as configured (`git config remote.origin.url`), not from
   `git remote get-url`, which applies `url.<base>.insteadOf` and can name a mirror or a proxy whose
-  path is not the repository's. The host stays `gh`'s; a list from another server would name heads
-  that origin does not serve, and the check stops on the first one.
+  path is not the repository's. The host stays `gh`'s; a non-empty list from another server would name
+  heads that origin does not serve, and the check stops on the first one. An empty one has nothing to
+  compare and reads as "no open pull request", as it did with `gh pr list --repo`.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -1755,6 +1764,8 @@ name only when it comes from the same repository, not from a fork.
   the gaps above, each of which ends in a silent "no overlap".
 - `gh pr list` with a fallback to REST when GraphQL fails: two ways to list, each needing its own
   guards and tests, where the REST list alone works everywhere.
+- More than one page of open pull requests as exit 2, like the old limit: the check would stop
+  working for a repository with more than 100 open pull requests, where reading twice still works.
 - `gh api`'s `{owner}/{repo}` placeholders: `gh` fills them from its own default repository, the same
   choice `--repo` was there to override.
 - `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
