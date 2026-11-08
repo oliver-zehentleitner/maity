@@ -5363,8 +5363,10 @@ def handle_hints_step(run: Run, page: Page) -> None:
                 at = f"{width} px {scheme}"
                 seen: set[str] = set()
                 page.goto(f"{run.base}/account")
+                expect(page.locator(".handle-editor p.handle-explain")).to_be_visible()
                 seen |= {x["field"] for x in measured(f"account, {at}")}
                 page.goto(f"{run.base}/account/orgs")
+                expect(page.locator("#org-new-handle")).to_be_visible()
                 seen |= {x["field"] for x in measured(f"new organisation, {at}")}
                 page.goto(f"{run.base}/account/orgs/{org}")
                 expect(page.locator("#org-invite-handle")).to_be_visible()
@@ -5377,6 +5379,7 @@ def handle_hints_step(run: Run, page: Page) -> None:
                 row = page.locator("tr.agent-row", has_text="E2E Agent").first
                 row.get_by_role("button", name=re.compile(r"^Manage ")).click()
                 page.locator("tr.agent-manage").first.locator("details.agent-settings summary").click()
+                expect(page.locator("tr.agent-manage").first.locator("p.handle-explain").first).to_be_visible()
                 seen |= {x["field"] for x in measured(f"agent settings, {at}")}
                 page.goto(f"{run.base}/agents")
                 page.get_by_role("button", name="Join an agent", exact=True).click()
