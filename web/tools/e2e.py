@@ -4312,7 +4312,10 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
     foreign = {"id": "agt-e2eforeign01", "kind": "agent", "handle": "e2e-foreign-boss", "display_name": "Foreign Boss E2E",
                "owner_id": "hum-e2eelsewhere", "trust": "member", "role": "manager", "areas": ["/"], "presence": "online",
-               "instances": [{"id": "fb1", "presence": "online", "lead": True, "claims": 4}]}
+               "instances": [{"id": "zq9x", "presence": "online", "lead": True, "claims": 4}]}
+    # Found only as a whole word ("#zq9x", "/zq9x", ">zq9x<"): an avatar's hash in the tree is random hex
+    # and may hold any hex run, so the id has letters no hash has, and is not looked for inside a word.
+    foreign_instance = re.compile(r"(?<![0-9A-Za-z])zq9x(?![0-9A-Za-z])")
 
     def with_foreign_boss(route) -> None:
         body = route.fetch().json()
@@ -4335,7 +4338,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             expect(stub.locator("a, span")).to_have_count(0)
             expect(node(foreign["id"])).to_have_count(0)
             html = tree.evaluate("(t) => t.outerHTML")
-            assert "Foreign Boss E2E" not in html and foreign["id"] not in html and "fb1" not in html, html
+            assert "Foreign Boss E2E" not in html and foreign["id"] not in html and not foreign_instance.search(html), html
             expect(node(agent_id).locator(":scope > .fleet-node a.fleet-dot.lead")).to_have_count(1)
             expect(node(reviewer["id"])).to_be_visible()
             run.shot(page, f"agents-fleet-foreign-boss-{width}-{scheme}")
