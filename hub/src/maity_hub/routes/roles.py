@@ -88,7 +88,7 @@ def put_roles(slug: str, body: RolesIn, request: Request, caller: HumanCaller) -
             conn.execute(
                 update(t.project).where(t.project.c.id == project.id).values(roles=new or None)
             )
-            # A project role's guide is part of its members' rules: a bump (§6.9).
+            # A project role's name and base are part of its members' rules: a bump (§6.9).
             rules.bump(
                 conn,
                 project,
