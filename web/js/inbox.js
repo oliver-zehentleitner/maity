@@ -530,7 +530,7 @@ window.Maity = window.Maity || {};
       // A failed read of them is said in the list's status line (load's
       // personalError), never an empty list short of the tab.
       let personalError = null;
-      const [requests, personal] = await Promise.all([M.api.getAll(ctx.base + "/requests?status=all"),
+      const [requests, personal] = await Promise.all([M.api.getAll(ctx.base + "/requests?status=open"),
         M.api.getAll("/requests").then((r) => r.items.filter((x) => x.personal && x.status === "open" && x.project && x.project.full_name === ctx.slug),
           (err) => { personalError = err; return []; })]);
       requests.items.forEach((r) => { r.slug = ctx.slug; });
@@ -551,25 +551,65 @@ window.Maity = window.Maity || {};
     return requests.items;
   }
 
+  // A project's answered and withdrawn requests (§7: a comma list of statuses), read only when
+  // Show asks for all of them: the first drawing reads the open ones alone, so its cost does not
+  // grow with the history (tsk-y8gkq1kvt63c; three pages of history were 4.6 s of 7 s on prod).
+  const closedOf = (ctx) => M.api.getAll(ctx.base + "/requests?status=answered,withdrawn")
+    .then((r) => r.items.map((x) => Object.assign(x, { slug: ctx.slug })));
+
   // args[0]: a request to show (/<owner>/<slug>/inbox/<id>, an id's link,
   // js/ids.js): opened, and listed among the answered when it is one; an id
   // the project's inbox does not hold is said.
   M.views.inbox = async function (ctx, root, args) {
+    // Left for another view: a read that answers later draws nothing and leaves the shared state
+    // (`ui`, `ownAgents`, `membersOf`) alone, which by then belongs to the view that stands
+    // (review of #1519). Checked after every read of the way in, and in the Show handler.
+    let left = false;
+    if (ctx.onDispose) ctx.onDispose(() => { left = true; });
     const items = await load(ctx);
-    ownAgents = new Set();
-    membersOf = {};
+    if (left) return;
+    // What the open list lacks is read on its own: the answered ones when Show asks for all,
+    // a linked request that is not open by its id (§7, GET …/requests/{id}).
+    let closedRead = ctx.scope !== "project";
+    let closedReading = null;
+    const addClosed = (more) => {
+      const have = new Set(items.map((r) => r.id));
+      more.forEach((r) => { if (!have.has(r.id)) items.push(r); });
+    };
+    const linked = ctx.scope === "project" && args && args[0] ? args[0] : null;
+    if (linked && !items.some((r) => r.id === linked)) {
+      try {
+        const one = await M.api.get(ctx.base + "/requests/" + encodeURIComponent(linked));
+        addClosed([Object.assign(one, { slug: ctx.slug })]);
+      } catch (err) {
+        if (err.status !== 404) throw err;
+      }
+      if (left) return;
+    }
+    if (!closedRead && ui.show === "all") {
+      addClosed(await closedOf(ctx));
+      if (left) return;
+      closedRead = true;
+    }
+    // Read into this view's own objects, and made the shared ones only once it still stands.
+    const members = {};
+    let own = new Set();
     if (ctx.scope !== "project") {
       const slugs = [...new Set(items.map((r) => r.slug))].filter((s) => s && ctx.projects.some((p) => p.full_name === s));
       await Promise.all(slugs.map((s) => M.api.getAll("/projects/" + M.api.projectPath(s) + "/members")
-        .then((r) => { membersOf[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
+        .then((r) => { members[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
+      if (left) return;
     }
     // Inside a project the member list says whose an agent is; the profiles are needed across projects
     // and for a personal request only.
     if (ctx.scope !== "project" || items.some((r) => r.personal)) {
       try {
-        ownAgents = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
+        own = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
       } catch (ignored) { /* no Talk where the reader's agents are unknown */ }
+      if (left) return;
     }
+    ownAgents = own;
+    membersOf = members;
     const wanted = ctx.scope === "project" && args && args[0] ? args[0] : null;
     const wantedReq = wanted ? items.find((r) => r.id === wanted) : null;
     let showAll = false;
@@ -732,7 +772,26 @@ window.Maity = window.Maity || {};
     sorts.map((s) => h("option", { value: s, selected: s === ui.sort }, SORT_LABELS[s])));
     const showSelect = ctx.scope === "all" ? null : h("select", {
       id: "inbox-show",
-      onchange: (e) => { ui.show = e.target.value; showAll = false; draw(); },
+      onchange: async (e) => {
+        ui.show = e.target.value;
+        showAll = false;
+        if (ui.show === "all" && !closedRead) {
+          listStatus.busy(M.t("inbox.answered_loading"));
+          // One read per view: all → open → all while it runs waits for the same one; a failed one
+          // is let go, so the next choice of all asks again.
+          closedReading = closedReading || closedOf(ctx).then((more) => { addClosed(more); closedRead = true; },
+            (err) => { closedReading = null; throw err; });
+          try {
+            await closedReading;
+            if (left) return;
+            listStatus.done();
+          } catch (err) {
+            if (left) return;
+            listStatus.fail(M.t("inbox.answered_failed"), err);
+          }
+        }
+        draw();
+      },
     },
     [["open", M.t("inbox.show.open")], ["all", M.t("inbox.show.all")]].map(([v, l]) => h("option", { value: v, selected: v === show() }, l)));
 
