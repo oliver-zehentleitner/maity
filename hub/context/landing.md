@@ -100,6 +100,11 @@ whole. A visitor gets only the keys of the chosen language; `render.best_languag
 from a match, so a page without text in `default_language` answers it with `texts: {}` and not with
 another language, which is where `choose_language` differs for the landing page.
 
+A rendered page carries its language into the sign-in and sign-up links (`render._carry_language`):
+only a relative `href="/login…"` or `href="/register…"` gets `lang`, after its query and before its
+fragment, unless it already names one. A link written as the hub's absolute address, or as
+`/login/` with a slash, is left as written: a known limit, not a choice against it.
+
 **Reason:** the landing and legal tables exist for variants and versions, which these words do not
 have; `site_values` already keeps a whole value in `instance_setting`, with no migration and with
 `updated_by` covered by the account deletion. Keys taken from another language would be marked up as
