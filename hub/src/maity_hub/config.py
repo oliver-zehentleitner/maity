@@ -580,6 +580,40 @@ def parse_cli_install(value: str) -> str:
     return value or DEFAULT_CLI_INSTALL
 
 
+# ASCII only: under IGNORECASE alone, `[a-z]` also matches İ, ı, ſ and the Kelvin sign.
+_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE | re.ASCII)
+# The whole value as it is returned: `https://`, a host name or an IPv4 address or a bracketed
+# IPv6 address (no zone), an optional port, an optional `/`. Nothing else can reach the line.
+_JOIN_URL = re.compile(
+    r"https://(?:\[(?P<v6>[0-9a-f:.]+)\]|(?P<name>[a-z0-9.-]+))(?::[0-9]{1,5})?/?",
+    re.IGNORECASE | re.ASCII,
+)
+
+
+def _dns_name_or_address(host: str) -> bool:
+    """A host name of letters, digits and hyphens per label (RFC 1123), or an IP address."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    labels = host.removesuffix(".").split(".")
+    return len(host) <= 253 and all(_LABEL.fullmatch(label) for label in labels)
+
+
+def _join_host_ok(value: str) -> bool:
+    """`value` is `_JOIN_URL` whole, and its host a host name, an IPv4 or an IPv6 address."""
+    found = _JOIN_URL.fullmatch(value)
+    if found is None:
+        return False
+    if found["v6"] is not None:
+        try:
+            return ipaddress.ip_address(found["v6"]).version == 6
+        except ValueError:
+            return False
+    return _dns_name_or_address(found["name"])
+
+
 def parse_join_url(value: str, public_url: str) -> str | None:
     """`MAITY_JOIN_URL`: https, a host and nothing else, and not the public URL's host
     (§1.1). Anything else stops the hub."""
@@ -601,6 +635,14 @@ def parse_join_url(value: str, public_url: str) -> str | None:
         or parts.fragment
     ):
         raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
+    # The value goes into a shell line unquoted (`join_line`), so the check is on the exact
+    # string returned, not on what `urlsplit` makes of it: it drops tabs and line breaks
+    # before it parses, and an IPv6 zone (`%eth0…`) is free text.
+    if not _join_host_ok(value):
+        raise ConfigError(
+            "MAITY_JOIN_URL's host must be a host name (letters, digits and hyphens per label)"
+            f" or an IP address, got {value!r}"
+        )
     if parts.hostname.lower().rstrip(".") == (urlsplit(public_url).hostname or "").lower().rstrip(
         "."
     ):

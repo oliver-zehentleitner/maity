@@ -1826,6 +1826,65 @@ The queue line holds no path, state directory or credential.
 - Filtering runs by their `pull_requests` field: GitHub does not always fill it (the runs of one pull request head
   seen on 2026-11-07 had it empty), so the branch decides.
 
+## Authors outside the shared machine queue a CI watch by a Maity message; the sender is the author
+
+**Id:** a03bb0b5-c951-41ec-9a75-e6c47711cf5a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's adoption from the jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, request req-z7gvyzt3hk17), card tsk-p10jranmd1hh with the plan the coordinator approved; `tools/ci_watch.py`
+**See:** process.md#one-shared-ci-watcher-reads-the-pull-requests-own-newest-ci-run-never-the-commits-checks — 67edbcd8-634f-42c8-9a22-107dbe246bef — as of 2026-11-08
+**Revisit when:** the watcher gets an identity of its own (then `--inbox` changes, not the rule), the hub can deliver a message to a tool without a member identity, or the queue file is no longer needed on the machine
+
+`tools/ci_watch.py run --inbox <member id>` reads, on every pass, the project's messages to that member that come
+after the last one it read. It takes those whose whole text is `ciwatch <pr> <full head sha>`. The author is the
+message's sender as the hub records it (`from#from_instance`), never an address in the text. The pull request must
+be open with that SHA as its head (a number of at most nine digits); the line is then added as with `add`. Each
+request is decided once and answered (added, or why not) with `(request <seq>)` at the end. Every other message gets
+no answer, and the watcher's own messages are never taken. The decision, the answer and the last message read are
+saved in `<queue>.intake` before the answer is said. An answer whose `say` failed is said again only after a later
+pass read the messages to the end without finding it, and given up after five failures (logged; that request then
+gets no answer). A request whose GitHub check fails five passes in a row is answered so and passed over. A pass
+reads at most five pages and answers at most 50 requests, and the next one goes on from there. A first start
+follows empty pages to the newest message, across passes from a saved continuation, and begins after it. Nothing
+in the intake stops the queue pass: an unreadable or malformed state file, or any other error there, is logged
+every pass and tried again. One way to two answers stays: if the
+hub changed the posted body and the response was lost, the read-back misses it and the answer is said again. One
+`run` per queue: the state file is not locked against a second runner. The queue file stays for members on the
+machine.
+The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts under.
+
+**Reason:**
+- Members in a cloud session cannot reach the queue file on the shared machine. Until now someone on the machine
+  added their lines by hand, and a line written without an address was skipped.
+- The sender from the hub cannot be typed wrong or given for someone else, and a result goes back to the member
+  who asked.
+- Reading messages moves no read mark: `maity messages` acknowledges nothing, and the identity's `state.json`
+  was byte for byte the same before and after a call (2026-11-08). So the watcher can read the inbox of a member
+  whose `maity wait` runs at the same time, and that wait still gets every message.
+- At most one answer per `ciwatch` message, at most 50 answers and five pages read per pass, and no answer to
+  anything else or to its own messages: the watcher cannot start a loop with itself or answer the inbox member's
+  ordinary mail.
+- Saving the decision before `say`: the first version kept only the last message read and wrote it after `say`.
+  A failed `say` then decided the request again; if the queue pass had reported and dropped the line meanwhile,
+  the head was watched and reported twice. `maity say` has no idempotency key a caller can repeat, so a `say`
+  whose response got lost posted its message anyway; the watcher reads its own answer back (the hub returns the
+  body as sent, 2026-11-08) before it says one again.
+- A message must never stop the intake: a number past Python's integer-string limit (4,300 digits) made `int()`
+  raise on every pass, and a GitHub failure for one request held up every later one.
+
+**Limit:** the intake does not check that the sender wrote the pull request. Any member who can message the
+watcher can have any open head watched; the result goes to that member. And every read is a hub call, which is
+presence (docs/api.md §2.4): each pass, every 120 s, marks the instance of the `MAITY_STATE_DIR` the watcher runs
+under online and renews the leases of the claims it holds. Until the watcher has an identity of its own, that
+instance's claims do not run out while the watcher runs, even if its own session is stuck, so the stuck-holder
+reassignment does not reach them; where that matters the watcher runs under an instance that holds no claims.
+
+**Rejected alternatives:**
+- The author named in the message text: anyone could direct results to someone else, and a typo loses them.
+- A shared file reachable from the cloud (a repository branch or a gist): a write path into the repository or an
+  outside service for a convenience, and the sender would again be whatever the line says.
+
 ## The guard tests run in one script before a review request, against the work tree's own hub
 
 **Id:** aced0267-da94-4245-9c71-bff08d2ff54e
@@ -1889,3 +1948,43 @@ clean filter that reports old content).
   and the list would miss the next one; a cleared environment names what the steps need instead.
 - The `make` targets with the Python as the author's environment finds it: the case above, where the shared
   environment tests another checkout.
+
+## A factual sentence about main, GitHub or a red old head in a pull request text or review request names the command, the head it ran on and its full output
+
+**Id:** 9c15b539-a190-4672-9219-c3ef09fb1016
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r5, adopted by the maintainer as req-08ss0z8tfnja); card tsk-4npgz5hvsx3e; `CONTRIBUTING.md` ("Evidence for tests and reports")
+**Revisit when:** a tool states these facts itself (the overlap check, the CI watcher) and the text only quotes it
+
+A factual sentence in a pull request text or a review request about main ("already done on main", "main did
+not touch these files"), about GitHub ("GitHub leaves the field empty") or "the old head is red" names the
+command that showed it, the head it ran on and its full output.
+
+**Reason:** such sentences were written from a grep cut short or from one sample, and only
+the reviewers corrected them.
+
+**Rejected alternatives:**
+- Leaving it as good practice without a rule: that was the state in which the wrong sentences were written.
+
+## A card for a tool or a security-relevant change states its boundary before the first review
+
+**Id:** 375defba-792e-4da1-a370-0b5cf4525c72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r6, adopted by the maintainer as req-02zntf4ds19a); card tsk-4npgz5hvsx3e, where the lead chose a body convention over a template file; `CONTRIBUTING.md` ("Before the first review")
+**Revisit when:** cards gain a field for it in the hub, or the project keeps a card template
+
+Before the first review order, a card for a tool or a security-relevant change carries a `Boundary:` paragraph
+in its body: what the change guarantees, what it does not, and what counts as P3. The review lead quotes it to
+all three reviewers in round one.
+
+**Reason:** #1475 and #1478 each went two extra review rounds on edge cases before that boundary was written
+down.
+
+**Rejected alternatives:**
+- Setting the boundary during the review, as before: the extra rounds above.
+- A card template file with the field: the project keeps no card template; cards are written with
+  `maity task create` and a free-text body, so the convention lives where the body is described.

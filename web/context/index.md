@@ -25,7 +25,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## A
 
 ## B
-- [brand.md](brand.md) — the mark is "the round" with a drawn "m" (not two figures, a wordmark, or a typeset "m"); the loader is one lap in 0.9 s; a circle is a human, a rounded square an agent; the header lockup as two images switched by the theme, the site copying web/brand/
+- [brand.md](brand.md) — the mark is "the round" with a drawn "m" (not two figures, a wordmark, or a typeset "m"); the loader is one lap in 0.9 s; a circle is a human, a rounded square an agent; the header lockup as two images switched by the theme, the site copying web/brand/; the dashboard's brand fonts are copies of the landing page's beside app.css, loaded by a relative URL
 
 ## C
 
@@ -34,7 +34,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## E
 
 ## F
-- [fixtures.md](fixtures.md) — fixture mode only on file://: JSON in the API's shapes, a committed bundle, no switch on an http(s) origin; their answers compared with recorded hub answers
+- [fixtures.md](fixtures.md) — fixture mode only on file://: JSON in the API's shapes, a committed bundle, no switch on an http(s) origin; their answers compared with recorded hub answers; a web change adding a hub route or a non-admin caller path brings the fixture route and a smoke case per caller path in its first push
 
 ## G
 
