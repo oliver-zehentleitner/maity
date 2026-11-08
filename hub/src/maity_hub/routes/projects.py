@@ -198,6 +198,16 @@ def _checklist_error(role: str, items: list[str]) -> str | None:
     return None
 
 
+def _effective_role_rules(stored: dict[str, Any] | None) -> dict[str, Any]:
+    """The rules `settings.role_rules` adds, without the values that add none (`false`, `[]`,
+    a role with nothing on): equal when the generated rules text is (§6.9)."""
+    effective = {
+        role: {field: value for field, value in entry.items() if value}
+        for role, entry in (stored or {}).items()
+    }
+    return {role: entry for role, entry in effective.items() if entry}
+
+
 def _announced_role_rules(stored: dict[str, Any] | None) -> dict[str, Any] | None:
     """`settings.role_rules` as `project_updated` names it: each checklist as `true`, since
     the log never keeps a project's free text (§6.1, §8)."""
@@ -1070,6 +1080,9 @@ def patch_project(
                 elif key == "role_rules":
                     if merged.get(key) != dumped[key]:
                         settings_changed["settings.role_rules"] = _announced_role_rules(dumped[key])
+                    # Only a change of what the rules say moves `rules_version`: `false` and
+                    # `[]` read as every rule off, like an absent key (§6.1).
+                    if _effective_role_rules(merged.get(key)) != _effective_role_rules(dumped[key]):
                         rules_inputs_changed = True
                 elif key != "onboarding" and merged.get(key) != dumped[key]:
                     settings_changed[f"settings.{key}"] = (

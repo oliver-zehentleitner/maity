@@ -182,6 +182,29 @@ def test_the_same_value_again_changes_nothing_and_null_removes(
     assert _version(migrated) == before + 1
 
 
+def test_a_value_without_effect_is_kept_but_moves_no_rules_version(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """`false` and `[]` read as every rule off, as an absent key does: stored as given (the hub
+    never filters silently), announced as a settings change, but the rules text is the same,
+    so `rules_version` stays (c47w at #1279: {} → false → [] went 1 → 4)."""
+    before = _version(migrated)
+    count = len(_events(migrated, "rules_changed"))
+    for value in (
+        {"coder": {"subagent_per_card": False}},
+        {"coder": {"subagent_per_card": False}, "reviewer": {"checklist": []}},
+        {"reviewer": {}},
+        None,
+    ):
+        answer = owner.patch(BASE, {"settings": {"role_rules": value}})
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["settings"].get("role_rules") == value
+    assert _version(migrated) == before
+    assert len(_events(migrated, "rules_changed")) == count
+    assert owner.patch(BASE, {"settings": {"role_rules": SET}}).status_code == 200
+    assert _version(migrated) == before + 1  # a value with effect still moves it
+
+
 def test_one_patch_with_other_rules_inputs_bumps_once_with_its_own_reason(
     owner: flow.Human, migrated: Engine
 ) -> None:
