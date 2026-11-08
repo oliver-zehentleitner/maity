@@ -384,7 +384,10 @@ def test_report_sends_the_facts(
     head = git(joined.parent.parent, "rev-parse", "HEAD")
     fake_gh(
         bin_dir,
-        json.dumps([{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12"}]),
+        json.dumps(
+            [{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12",
+              "title": "Leases (tsk-0004)"}]  # fmt: skip
+        ),
     )
     fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-0004/report")] = lambda s: (
         200,
@@ -414,7 +417,10 @@ def test_report_after_the_merge_deleted_the_branch(
     git(clone, "push", "--quiet", "origin", "--delete", "work")
     fake_gh(
         bin_dir,
-        json.dumps([{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12"}]),
+        json.dumps(
+            [{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12",
+              "title": "Fix (T)"}]  # fmt: skip
+        ),
     )
     fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/T/report")] = lambda s: (200, {})
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK

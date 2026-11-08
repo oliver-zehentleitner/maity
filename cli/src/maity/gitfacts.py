@@ -29,6 +29,10 @@ class PullRequest:
     head: str
     state: str
     url: str
+    # Shown before a report is sent, and searched for the card id (cli.py `_belongs`); the body
+    # only where gh read it, the probe's answer has none.
+    title: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,7 +92,7 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
             "--limit",
             "1",
             "--json",
-            "number,headRefOid,state,url",
+            "number,headRefOid,state,url,title,body",
         ],
         cwd,
     )
@@ -104,6 +108,8 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
             head=str(row["headRefOid"]),
             state=str(row["state"]),
             url=str(row["url"]),
+            title=str(row.get("title") or ""),
+            body=str(row.get("body") or ""),
         )
     except (ValueError, KeyError, TypeError) as exc:
         raise FactsError(f"gh returned something unexpected: {exc}") from exc
