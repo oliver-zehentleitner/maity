@@ -1936,7 +1936,7 @@ window.MAITY_I18N["it"] = {
   "join.reports.nobody": "nessuno",
   "join.reports.saved": "{name} ora risponde a {boss}.",
   "join.reports.saved_nobody": "{name} ora non risponde a nessuno.",
-  "join.reports.saving": "Salvataggio di a chi si risponde",
+  "join.reports.saving": "Salvataggio del riferimento in corso",
   "join.reports.waiting": "{name} risponderà a {boss} una volta dato il consenso ({id}).",
   "join.retry": "Riprova",
   "join.revoke": "Revoca",
