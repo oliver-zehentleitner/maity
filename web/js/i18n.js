@@ -253,6 +253,13 @@ window.Maity = window.Maity || {};
   M.t = t;
   M.tOwn = tOwn;
   M.tn = tn;
+  // A failure said as one sentence (tsk-0zbms0wwqhmm): the reason where the catalog's sentence has
+  // {reason}, so the language decides the order. "" is the reason alone. A sentence without the
+  // placeholder still shows the reason after it rather than losing it; check.py flags such a key.
+  // A sentence with other values is a function of the reason, (reason) => M.t(key, { name, reason }):
+  // its text is filled once, so a value that reads "{reason}" (a file's name) stays as it is.
+  M.reasonIn = (sentence, reason) => (typeof sentence === "function" ? sentence(reason)
+    : sentence.includes("{reason}") ? sentence.split("{reason}").join(reason) : sentence + reason);
   M.fmt = {
     number,
     // A list of names or facts as the catalog's language joins them, without
