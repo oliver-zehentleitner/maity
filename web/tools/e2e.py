@@ -4312,10 +4312,14 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
     foreign = {"id": "agt-e2eforeign01", "kind": "agent", "handle": "e2e-foreign-boss", "display_name": "Foreign Boss E2E",
                "owner_id": "hum-e2eelsewhere", "trust": "member", "role": "manager", "areas": ["/"], "presence": "online",
-               "instances": [{"id": "zq9x", "presence": "online", "lead": True, "claims": 4}]}
-    # Found only as a whole word ("#zq9x", "/zq9x", ">zq9x<"): an avatar's hash in the tree is random hex
-    # and may hold any hex run, so the id has letters no hash has, and is not looked for inside a word.
-    foreign_instance = re.compile(r"(?<![0-9A-Za-z])zq9x(?![0-9A-Za-z])")
+               "instances": [{"id": "zi0l", "presence": "online", "lead": True, "claims": 4}]}
+    # Found only as a whole word ("#zi0l", "/zi0l", ">zi0l<"). An avatar's hash in the tree is random hex
+    # and may hold any hex run, so the id has letters no hash has ("z", "i", "l"), and is not looked
+    # for inside a word. An owned instance's id is random too, so the id also has characters the hub's
+    # generator never draws ("i", "0", "l"): no instance of one's own can be "zi0l".
+    alphabet = re.search(r'^INSTANCE_ALPHABET = "([^"]+)"$', (WEB.parent / "hub/src/maity_hub/ids.py").read_text(), re.M)
+    assert alphabet and not set("zi0l") <= set(alphabet[1]), alphabet
+    foreign_instance = re.compile(r"(?<![0-9A-Za-z])zi0l(?![0-9A-Za-z])")
 
     def with_foreign_boss(route) -> None:
         body = route.fetch().json()
