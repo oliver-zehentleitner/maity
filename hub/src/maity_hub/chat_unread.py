@@ -21,14 +21,22 @@ thread (`hub_thread`), a closed chat, a direct conversation or a cross-project c
 which are not rows of `conversation` here, or a paused or isolated membership.
 
 What holds (the lead's boundary for #1490; hub/context/events.md):
-- guaranteed: no message body is read, the work per pass is bounded, every unread human
-  message without a mention eventually causes one nudge, and a redaction committed before a
-  pass starts is left out of the nudge;
+- guaranteed: no message body is read; the message rows read are bounded (SCAN_BUDGET per
+  stay and call; a pass makes one call outside the lock and, for a stay whose nudge is due,
+  one under it), while the one-row
+  aggregates (`_counts`, `_oldest_human`) go over the stay's unread range in the database each
+  minute, a cost that grows with unread history; every unread human message without a
+  mention leads to one nudge once the read has caught up. Each call moves the read's bound up
+  to the newest message and reads at most SCAN_BUDGET rows, and a read finishes only on a batch
+  that comes back short: while SCAN_BUDGET or more new human messages arrive in the chat
+  between passes it may never finish; with fewer, each pass gains on the backlog until a call
+  reaches the end. And a redaction committed before a pass starts is left out of the nudge;
 - beyond that, a redaction that commits while a pass runs is caught by the call under the
   project lock on both routes known from the review (a first read, and an earlier read whose
   bound grows; each tested on PostgreSQL). Exactness against a concurrent redaction is not
-  promised: the nudge is a wake-up hint, and the agent then reads the chat, which never shows
-  a redacted message. Another route, should one turn up, is a P3 for the hub roll-up.
+  promised: the nudge is a wake-up hint, and the agent then reads the chat, which shows a
+  redacted message only as its tombstone (§8.5), never its body. Another route, should one
+  turn up, is a P3 for the hub roll-up.
 """
 
 from __future__ import annotations
