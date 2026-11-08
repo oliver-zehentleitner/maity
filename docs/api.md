@@ -4858,6 +4858,10 @@ a control character or an invisible format character that hides or turns text
 (Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
 marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
+Only those four categories are checked: a character outside them that shows
+nothing (a Hangul filler such as U+3164, the Braille blank U+2800, the combining
+grapheme joiner U+034F) counts as text, so an item made only of such characters is
+stored, not refused as `empty_item`.
 The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change of the lines the
 rules add bumps `rules_version` with `rules_changed` (§6.9) as well as

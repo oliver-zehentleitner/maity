@@ -1920,7 +1920,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const box = text(card("build-box"));
   expect(box.includes("hosts build-1, build-2") && box.includes("host build-2: 0 of 2 agents running · unreachable since")
     && box.includes("Each agent on build-1 runs as its own user") && box.includes("in its OS sandbox")
-    && box.includes("every new agent waits for approval on that machine") && box.includes("Not allowed in any project yet"),
+    && box.includes(". Every new agent waits for approval on that machine.") && box.includes("Not allowed in any project yet"),
     "runners: an ssh runner: hosts, an unreachable one, own users, local approval");
   const cluster = text(card("cluster"));
   expect(cluster.includes("revoked") && cluster.includes("pods in maity-agents") && cluster.includes("pi 0.9.1 · without a command allowlist: its pod is the only boundary")
@@ -9811,8 +9811,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [{ id: "stub", available: false, reason: "odd" }], projects: [], repositories: [] } }))
         .includes("a test tool is not available (odd)")
       && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: ["a/b"], repositories: [], require_local_approval: true } }))
-        .includes("allows the projects a/b and the repositories none; every new agent waits for approval on that machine."),
-    "runners: presence, targets with one or more agents, an unknown reason and what the configuration allows, from the catalog");
+        .includes("Its configuration allows the projects a/b. Its configuration allows no repository. Every new agent waits for approval on that machine.")
+      && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: [], repositories: ["o/r"] } }))
+        .includes("Its configuration allows no project. Its configuration allows the repositories o/r.")
+      && !/approval|\bnone\b/.test(text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: [], repositories: ["o/r"] } }))),
+    "runners: presence, targets with one or more agents, an unknown reason and what the configuration allows, from the catalog, an empty list in a sentence of its own");
   }
   win.Maity.api.get = tkGet;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
