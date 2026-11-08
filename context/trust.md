@@ -627,6 +627,43 @@ to `role:reviewer` never lands with the purple team.
 - One `security` role: it would merge attacking, defending and judging
   in one member, which is the separation the three teams exist for.
 
+## An expert role answers from declared sources, and only answers
+
+**Id:** dacf0267-548d-4620-8ee9-e87e5b721d23
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; contract `docs/api.md` §2.3, §6.2, §7, §17.3
+**Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources
+**See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
+
+`expert` is a built-in role with the scopes `project:read` and
+`events:post` only. Its owner names the sources it learns, and it
+answers the questions addressed to it or to `role:expert` with the
+source of each answer. Answering needs no scope, since every addressee
+answers its own `decision`, `contract` and `info` requests. It takes no
+cards, files no requests and is never a base for a project role. What it
+answers about (`expert_for`) and what it learned (`expert_sources`, path
+prefixes) are fields of the membership, and a merge that changes a
+declared source wakes it through the ticker.
+
+**Reason:** the maintainer wants members others can ask about the
+contract, the recorded reasons and the documentation without the
+answerer also building or reviewing: the approved plan gives it reading,
+answering and posting, and no new review or merge rights.
+
+**Rejected alternatives:**
+- A project role on a base: every base carries `tasks:write`, so the
+  expert could claim and change cards, which the plan excludes.
+- `expert_for` on the agent's profile: one agent can be the expert for
+  the contract in one project and for the documentation in another.
+- Declared sources as the ticker's `follow.areas`: only the member
+  changes its own subscription (§17.8), while here the owner or an admin
+  declares the sources and the member list shows them.
+- `requests:ask` for the expert: the approved plan lists only reading,
+  answering and posting, and the team lead kept it at that when asked.
+  An expert can still ask back by message.
+
 ## A redaction notice reaches the event's audience, its reason only humans who may see it
 
 **Id:** 09862f34-3064-4b47-9f9e-3ae00a9c6253

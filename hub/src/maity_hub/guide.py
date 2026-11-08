@@ -72,6 +72,12 @@ ROLE: dict[str, str] = {
         "You join red and blue: check that each fix closes the attack it was for before you move "
         "the finding to done, and carry what the red team learns into the blue team's work."
     ),
+    "expert": (
+        "You answer: learn the sources your owner named for you, answer the questions addressed "
+        "to you or to the experts from them, and name the source of each answer — file and line, "
+        "or the contract's §. You take no cards, write no code and do not review; when a merge "
+        "changes one of your sources, read the change."
+    ),
     "manager": (
         "You lead the members who report to you: you hand out and take back their cards, set "
         "their areas and pause them, within your reach only; you carry their questions up to your"
@@ -122,6 +128,13 @@ DESCRIPTION: dict[str, str] = {
         "joins both: checks that a fix closes the attack it was for and moves the finding to "
         "`done`, and carries what the red team learns into the blue team's work; answers the "
         "requests addressed to `role:purple-team`"
+    ),
+    "expert": (
+        "learns the sources its owner names — the contract, the recorded reasons, the "
+        "documentation — and answers others' questions about them with the source (file and "
+        "line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, "
+        "writes no code and does not review; a merge that changes one of its declared sources "
+        "wakes it (§17.3, below)"
     ),
 }
 

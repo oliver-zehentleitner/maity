@@ -218,15 +218,20 @@ def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -
     return membership_id
 
 
-def _target_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
-    """`_member_id` for a member a card names as its assignee or arbiter: never a guest,
-    which is no target (§2.3 "Guest")."""
+def _target_id(
+    conn: Connection, mine: Membership, principal: str, field: str, *, arbiter: bool = False
+) -> int:
+    """`_member_id` for a member a card names as its assignee, holder or arbiter: never a
+    guest, which is no target (§2.3 "Guest"), and never an expert as the one who works the
+    card, since it takes no cards (§2.3 "The expert"); an expert may arbitrate."""
     try:
         row = member_row(conn, mine.project.id, principal)
     except ApiError:
         raise invalid({field: "not_a_member"}) from None
     if row.trust == "guest":
         raise invalid({field: "guest"}, "a guest is never a target")
+    if row.role == "expert" and not arbiter:
+        raise invalid({field: "expert"}, "an expert takes no cards")
     membership_id: int = row.id
     return membership_id
 
@@ -349,7 +354,7 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
     if arbiter != policy_arbiter:
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
     if arbiter != "trust:admin":
-        _target_id(conn, mine, arbiter, "contract.arbiter")
+        _target_id(conn, mine, arbiter, "contract.arbiter", arbiter=True)
     watchers = list(dict.fromkeys(body.watchers))
     for watcher in watchers:
         _member_id(conn, mine, watcher, "contract.watchers")
