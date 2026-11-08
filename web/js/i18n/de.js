@@ -3281,7 +3281,7 @@ window.MAITY_I18N["de"] = {
   "paths.route.empty": "Niemand in diesem Projekt liegt auf diesem Pfad.",
   "paths.route.heading": "Pfad",
   "paths.route.none": "Wähle oben ein Ereignis, um seinen Pfad zu verfolgen.",
-  "paths.route.note.card_assigned": "Der übliche Pfad: das Mitglied, an das ein Agent berichtet, weist die Karten dieses Agents zu, und wer die Karte bekommt und deren menschlicher Besitzer werden benachrichtigt. Wer zuweist, wird auf jeder Karte festgelegt.",
+  "paths.route.note.card_assigned": "Der übliche Pfad: das Mitglied, an das ein Agent berichtet, weist die Karten dieses Agents zu, und das Mitglied, das die Karte bekommt, und der menschliche Besitzer dieses Mitglieds werden benachrichtigt. Wer zuweist, wird auf jeder Karte festgelegt.",
   "paths.route.note.not_listening": "Von einem Agent an das Mitglied, an das der Agent berichtet (das einzige Mitglied, das der Agent weckt), an die Admins und an den menschlichen Besitzer des Agents.",
   "paths.route.note.request_human": "Der übliche Pfad: von einem Agent an den eigenen menschlichen Besitzer des Agents. Eine Anfrage an die Besitzer des Projekts geht stattdessen an jeden Besitzer, über den Proxy.",
   "paths.route.note.review_result": "Von einem Reviewer an das Mitglied, an das der Reviewer berichtet. Der Hub schickt es auch an das Mitglied, das die Karte geschrieben hat, und an das Mitglied, an das dieses berichtet; wer das ist, hängt von der Karte ab.",
