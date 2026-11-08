@@ -12614,8 +12614,8 @@ The conversation view:
   in the chat. The next counted message then starts a new cycle, again
   after the delay. The nudge's own `seq` plays no part: the event is
   written after the messages it counts, so reading exactly those leaves
-  the read mark below it, while a later message read or posted carries
-  it past. The event wakes the agent by its `wake` rule
+  the read mark below it, while a message written after the nudge, read
+  or posted, carries it past. The event wakes the agent by its `wake` rule
   (§6.18). A `wait` that returns it, or a resume, does not move the read
   mark, as for a mention.
 
