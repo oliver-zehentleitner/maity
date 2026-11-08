@@ -13271,13 +13271,9 @@
     "en": "8eaf9e2f90377c6e",
     "text": "1d9e7827d53e1a22"
   },
-  "runners.caps.allows": {
-    "en": "7d9b8d5fd3872578",
-    "text": "c7c237e7167b35f4"
-  },
-  "runners.caps.allows_approval": {
-    "en": "43770eceb02be3f1",
-    "text": "ce0a59270b75dfc9"
+  "runners.caps.approval": {
+    "en": "fb69541820a01ae7",
+    "text": "8f2df40230fa0490"
   },
   "runners.caps.isolation": {
     "en": "ed79e972d4f1f5cd",
@@ -13287,9 +13283,21 @@
     "en": "daa8849a96b30afb",
     "text": "5df547cff7744230"
   },
-  "runners.caps.none": {
-    "en": "30a0924a3360be68",
-    "text": "702860eaea8cc4de"
+  "runners.caps.projects": {
+    "en": "56cdf73bca852663",
+    "text": "33020267d441958a"
+  },
+  "runners.caps.projects_none": {
+    "en": "f92ca62406467542",
+    "text": "567fa421bcec37cc"
+  },
+  "runners.caps.repositories": {
+    "en": "55c776b7ad197e4d",
+    "text": "f185007002d485eb"
+  },
+  "runners.caps.repositories_none": {
+    "en": "d8d03cdee175c923",
+    "text": "68b9312b9849f997"
   },
   "runners.caps.tools": {
     "en": "98fb1c874b1e5746",

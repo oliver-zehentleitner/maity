@@ -977,7 +977,7 @@
   },
   "attach.delete.confirm": {
     "en": "b103bb2451da3914",
-    "text": "733e45a983a5d783"
+    "text": "a1a20950e1e614de"
   },
   "attach.delete.label": {
     "en": "18836b9b62311fa1",
@@ -2141,7 +2141,7 @@
   },
   "bridges.refused.outside_role": {
     "en": "9e710922704b99b9",
-    "text": "f3486b1ba89618fc"
+    "text": "682d0a88e66d1513"
   },
   "bridges.refused.proxy": {
     "en": "c825f572aebbfad0",
@@ -8472,7 +8472,7 @@
     "text": "a24c3c74696a9d18"
   },
   "mail.address.label": {
-    "en": "1b55f014dd7afbe6",
+    "en": "c6394f33e6b9bb97",
     "text": "ae6ae34a45f83d72"
   },
   "mail.address.not_configured": {
@@ -14187,13 +14187,9 @@
     "en": "8eaf9e2f90377c6e",
     "text": "4f53a6e074082384"
   },
-  "runners.caps.allows": {
-    "en": "7d9b8d5fd3872578",
-    "text": "17d6bbd4d8e9f3b3"
-  },
-  "runners.caps.allows_approval": {
-    "en": "43770eceb02be3f1",
-    "text": "1654efe65af30dc0"
+  "runners.caps.approval": {
+    "en": "fb69541820a01ae7",
+    "text": "6edce157f78e3ee0"
   },
   "runners.caps.isolation": {
     "en": "ed79e972d4f1f5cd",
@@ -14203,9 +14199,21 @@
     "en": "daa8849a96b30afb",
     "text": "d7d0efff6cf442f7"
   },
-  "runners.caps.none": {
-    "en": "30a0924a3360be68",
-    "text": "7b0ee0b7a9baf4b1"
+  "runners.caps.projects": {
+    "en": "56cdf73bca852663",
+    "text": "69ecd0cf6ce58465"
+  },
+  "runners.caps.projects_none": {
+    "en": "f92ca62406467542",
+    "text": "26e9fb1af11f0d51"
+  },
+  "runners.caps.repositories": {
+    "en": "55c776b7ad197e4d",
+    "text": "7af12a04650a59be"
+  },
+  "runners.caps.repositories_none": {
+    "en": "d8d03cdee175c923",
+    "text": "9263003cb8206110"
   },
   "runners.caps.tools": {
     "en": "98fb1c874b1e5746",
