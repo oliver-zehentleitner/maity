@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 from pathlib import Path
@@ -17,8 +18,15 @@ TASK = "/api/v1/projects/oliver/maity/tasks/tsk-0004"
 REPO = "https://github.com/acme/widget"
 
 
-def _gh(bin_dir: Path, head: str, number: int = 12, state: str = "OPEN") -> None:
-    row = {"number": number, "headRefOid": head, "state": state, "url": f"{REPO}/pull/{number}"}
+def _gh(
+    bin_dir: Path,
+    head: str,
+    number: int = 12,
+    state: str = "OPEN",
+    title: str = "Leases (tsk-0004)",
+) -> None:
+    row = {"number": number, "headRefOid": head, "state": state, "url": f"{REPO}/pull/{number}",
+           "title": title}  # fmt: skip
     fake_gh(bin_dir, json.dumps([row]))
 
 
@@ -60,7 +68,7 @@ def test_the_report_says_what_it_reports_before_sending(
     _card(fake)
     assert _report() == cli.EXIT_OK
     err = capsys.readouterr().err
-    assert f"maity: reporting work at {head[:12]}, PR #12 (open)\n" in err
+    assert f'maity: reporting work at {head[:12]}, PR #12 "Leases (tsk-0004)" (open)\n' in err
     assert _sent(fake)
 
 
@@ -156,7 +164,8 @@ def _gh_view(bin_dir: Path, head: str, state: str | None) -> None:
     """A gh that lists this checkout's PR #799; `pr view` answers `state`, or fails on None."""
     if sys.platform == "win32":
         pytest.skip("Windows starts only an .exe by a bare name, and this gh is a shell script")
-    row = {"number": 799, "headRefOid": head, "state": "OPEN", "url": f"{REPO}/pull/799"}
+    row = {"number": 799, "headRefOid": head, "state": "OPEN", "url": f"{REPO}/pull/799",
+           "title": "Follow-up (tsk-0004)"}  # fmt: skip
     view = f"printf '%s\\n' '{json.dumps({'state': state})}'" if state else "exit 1"
     script = bin_dir / "gh"
     script.write_text(
@@ -234,7 +243,7 @@ def _probe(fake: fakehub.FakeHub, heads: dict[int, str], state: str = "open") ->
         if number not in heads:
             return 200, {"repository": "acme/widget", "pr": {"number": number, "found": False}}
         pr = {"number": number, "found": True, "url": f"{REPO}/pull/{number}",
-              "state": state, "head_sha": heads[number]}  # fmt: skip
+              "title": "Leases (tsk-0004)", "state": state, "head_sha": heads[number]}  # fmt: skip
         return 200, {"forge": "github", "repository": "acme/widget", "fresh": True, "pr": pr}
 
     fake.routes[("GET", PROBE)] = answer
@@ -258,7 +267,7 @@ def test_without_gh_the_linked_pull_request_with_the_pushed_head_is_reported(
     assert [dict(p.split("=", 1) for p in q.split("&")) for q in asked] == [
         {"pr": "12", "max_age": "0"}  # a forced read (the hub's floor may still be 30 s)
     ]
-    assert "PR #12 (open, read by the hub's probe)" in capsys.readouterr().err
+    assert 'PR #12 "Leases (tsk-0004)" (open, read by the hub\'s probe)' in capsys.readouterr().err
 
 
 def test_without_gh_a_linked_pull_request_with_another_head_is_refused(
@@ -326,7 +335,9 @@ def test_without_gh_a_deleted_branch_reports_the_merged_head_of_the_linked_pull_
     body = _report_body(fake)
     assert body["remote_head"] == head and body["head"] == head
     assert body["pr_status"] == "found" and body["pr"]["state"] == "merged"
-    assert "PR #12 (merged, read by the hub's probe)" in capsys.readouterr().err
+    assert (
+        'PR #12 "Leases (tsk-0004)" (merged, read by the hub\'s probe)' in capsys.readouterr().err
+    )
 
 
 @pytest.mark.parametrize(
@@ -372,6 +383,113 @@ def test_links_past_the_cap_are_named_not_read(
     err = capsys.readouterr().err
     assert f"the card links {len(numbers)} pull requests" in err
     assert f"first {cli.PROBED_LINKS_MAX} only" in err
+
+
+# The pull request found does not name the card (tsk-41hjdphkcw4e): shown with its title, then
+# asked on a terminal, refused without one, or confirmed with --yes.
+class _Terminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def _terminal(monkeypatch: pytest.MonkeyPatch, answer: str) -> None:
+    monkeypatch.setattr("sys.stdin", _Terminal(answer + "\n"))
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True, raising=False)
+
+
+def _report_yes() -> int:
+    return cli.main(["report", "--task", "tsk-0004", "--summary", "Adds leases.", "--yes"])
+
+
+def test_a_pull_request_naming_the_card_in_its_branch_is_sent_without_asking(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    clone = joined.parent.parent
+    git(clone, "checkout", "--quiet", "-b", "agent-b/tsk-0004-leases")
+    git(clone, "push", "--quiet", "-u", "origin", "agent-b/tsk-0004-leases")
+    _gh(bin_dir, _head(joined), title="Leases")
+    _card(fake)
+    assert _report() == cli.EXIT_OK and _sent(fake)
+    assert "[y/N]" not in capsys.readouterr().err
+
+
+def test_a_pull_request_that_does_not_name_the_card_is_refused_without_a_terminal(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh(bin_dir, _head(joined), number=31, title="Unrelated cleanup")
+    _card(fake)
+    assert _report() == cli.EXIT_REFUSED and not _sent(fake)
+    err = capsys.readouterr().err
+    assert 'PR #31 "Unrelated cleanup" (open)' in err  # shown before anything is decided
+    assert "does not name tsk-0004" in err and "--yes" in err
+
+
+@pytest.mark.parametrize(("answer", "sent"), [("y", True), ("n", False), ("", False)])
+def test_on_a_terminal_a_pull_request_that_does_not_name_the_card_is_asked_about(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], answer: str, sent: bool,
+) -> None:  # fmt: skip
+    _gh(bin_dir, _head(joined), number=31, title="Unrelated cleanup")
+    _card(fake)
+    _terminal(monkeypatch, answer)
+    assert _report() == (cli.EXIT_OK if sent else cli.EXIT_REFUSED)
+    assert _sent(fake) is sent
+    assert "Report tsk-0004 with it? [y/N]" in capsys.readouterr().err
+
+
+def test_yes_confirms_a_pull_request_that_does_not_name_the_card(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    _gh(bin_dir, _head(joined), number=31, title="Unrelated cleanup")
+    _card(fake)
+    assert _report_yes() == cli.EXIT_OK and _sent(fake)
+
+
+def test_yes_never_overrides_a_card_that_links_another_pull_request(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh(bin_dir, _head(joined), number=799, title="Unrelated cleanup")
+    _card(fake, links=[_link(780)])
+    assert _report_yes() == cli.EXIT_REFUSED and not _sent(fake)
+    assert "tsk-0004 links pull request #780" in capsys.readouterr().err
+
+
+def test_a_pull_request_the_card_links_is_not_asked_about_whatever_its_title(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path
+) -> None:
+    _gh(bin_dir, _head(joined), number=12, title="Unrelated cleanup")
+    _card(fake, links=[_link(12)])
+    assert _report() == cli.EXIT_OK and _sent(fake)
+
+
+def test_a_branch_without_a_pull_request_is_not_asked_about(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(bin_dir, "[]")
+    _card(fake)
+    assert _report() == cli.EXIT_OK and _sent(fake)
+    err = capsys.readouterr().err
+    assert "no pull request" in err and "[y/N]" not in err
+
+
+def test_the_title_reaches_the_terminal_disarmed(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh(bin_dir, _head(joined), title="Leases tsk-0004 \x1b[2J\x07")
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    line = next(ln for ln in capsys.readouterr().err.splitlines() if "reporting" in ln)
+    assert "Leases tsk-0004" in line and "\x1b" not in line and "\x07" not in line
+
+
+def test_yes_never_overrides_an_open_pull_request_of_the_last_report(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The second case of 8c58cebb: the last report names another pull request, still open."""
+    _gh_view(bin_dir, _head(joined), "OPEN")
+    _card(fake, report=_before(780, "open", observed="open"))
+    assert _report_yes() == cli.EXIT_REFUSED and not _sent(fake)
+    assert "#780, still open; this checkout" in capsys.readouterr().err
 
 
 def test_a_link_past_the_cap_is_not_probed_even_where_it_would_match(

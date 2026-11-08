@@ -63,7 +63,12 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    hub's probe instead and reported only when its head is the head you
    pushed, or for a branch deleted after the merge, the merged head you
    have checked out. A branch deleted after its pull request was merged still
-   reports, with the merged head. When the result is not code —
+   reports, with the merged head. Before sending, `report` names the branch
+   and the pull request with its title; a pull request that does not name
+   the card id in its title, body or branch is asked about on a terminal and
+   refused without one (`--yes` confirms it is the card's). A report never
+   fixes a pull request on the card for good: a newer report from the right
+   branch, or one with `--no-code`, replaces it. When the result is not code —
    a review, an investigation, a draft — report it with
    **`maity report --task <card> --summary "<result>" --no-code`**: the
    summary carries the result and no git fact is read or sent
