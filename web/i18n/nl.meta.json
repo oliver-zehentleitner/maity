@@ -61,7 +61,7 @@
   },
   "admin.maintenance.cancel_failed": {
     "en": "db23f58e15d241e3",
-    "text": "8960f89f32b502df"
+    "text": "447dac6260d78fa7"
   },
   "admin.maintenance.cancelling": {
     "en": "017f758e38afd1df",
@@ -85,7 +85,7 @@
   },
   "admin.maintenance.changes_failed": {
     "en": "3587e8a697d22419",
-    "text": "8fafa5839dfc0b6d"
+    "text": "61216e45e25c7217"
   },
   "admin.maintenance.from": {
     "en": "702140636ff3977a",
@@ -117,11 +117,11 @@
   },
   "admin.maintenance.not_saved": {
     "en": "831641bc8e3a7e90",
-    "text": "eb02e2ade9d7843e"
+    "text": "5bdec1c96ad260a6"
   },
   "admin.maintenance.read_failed": {
     "en": "34213f626dccab56",
-    "text": "3c6e8a1f8c9cdd75"
+    "text": "1172612e92ca0c2a"
   },
   "admin.maintenance.reason.from_after_until": {
     "en": "d07f137235aa28e8",
@@ -1341,7 +1341,7 @@
   },
   "bell.skipped": {
     "en": "9e6f368b2863dd85",
-    "text": "900352a752dbe614"
+    "text": "9a50996f8806e5d0"
   },
   "bell.skipped.not_earlier": {
     "en": "e16a4fb0ade57655",
@@ -2205,7 +2205,7 @@
   },
   "broadcasts.read_failed": {
     "en": "156316979a24d9ee",
-    "text": "f79e3551d89f9e55"
+    "text": "4510f707f99d6f5c"
   },
   "broadcasts.save": {
     "en": "c1db83d165ed908a",
@@ -2213,7 +2213,7 @@
   },
   "broadcasts.save_failed": {
     "en": "831641bc8e3a7e90",
-    "text": "eb02e2ade9d7843e"
+    "text": "5bdec1c96ad260a6"
   },
   "broadcasts.saved": {
     "en": "29e85f4550e3e09e",
@@ -2477,7 +2477,7 @@
   },
   "cardpanel.notes.edit.not_saved": {
     "en": "831641bc8e3a7e90",
-    "text": "eb02e2ade9d7843e"
+    "text": "5bdec1c96ad260a6"
   },
   "cardpanel.notes.edit.now": {
     "en": "ad9fafb3a8b06ea8",
@@ -2561,7 +2561,7 @@
   },
   "cardpanel.notes.remove.failed": {
     "en": "5d15ffc78d58b477",
-    "text": "5c09b170d5bafacc"
+    "text": "93d7b815e3dfbb66"
   },
   "cardpanel.notes.remove.label_of": {
     "en": "85ee23a6985e10e2",
@@ -8477,7 +8477,7 @@
   },
   "mail.address.not_configured": {
     "en": "eaaa83f7643a9617",
-    "text": "1c58b8c695bc35ea"
+    "text": "c213ae51c6623c3a"
   },
   "mail.address.password": {
     "en": "d84fe85e83b2f1c5",
@@ -8965,7 +8965,7 @@
   },
   "maintenance.end_failed": {
     "en": "fc8800f25e75ea95",
-    "text": "dee06650b496dcf3"
+    "text": "ea87c7421df84c05"
   },
   "maintenance.ending": {
     "en": "94c6690b77a4c339",
@@ -17909,7 +17909,7 @@
   },
   "waiting.sessions.read_failed": {
     "en": "7edc85dda3a1fb2d",
-    "text": "dd317b769598aa96"
+    "text": "dd2954545eda0a73"
   },
   "waiting.sessions.signed_in": {
     "en": "2f0edbda6873da04",
