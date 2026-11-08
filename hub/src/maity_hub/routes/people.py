@@ -18,7 +18,6 @@ from sqlalchemy import Connection, and_, false, or_, select
 from maity_hub import (
     avatars,
     contacts,
-    handles,
     moderation,
     namespace,
     orgs,
@@ -28,7 +27,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.deps import AnyCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, rate_limited
+from maity_hub.errors import forbidden, humans_only, invalid, not_found, rate_limited
 from maity_hub.views import ts
 
 router = APIRouter()
@@ -250,34 +249,13 @@ def get_person(handle: str, request: Request, caller: AnyCaller) -> JSONResponse
 # --- contacts (§6.29) ---------------------------------------------------------------------------
 
 
-def _contact_target(conn: Connection, me: str, handle: str, *, active: bool) -> str:
-    """The human `handle` names (a live alias too, §6.24). `active`: an approved, active
-    account only, as `GET /people` answers (§6.27); else any account not deleted, so that a
-    contact can always be removed. An organisation is `not_a_person`, the caller `self`."""
-    human_id = handles.human_id_of(conn, handle)
-    if human_id is None:
-        if handles.org_id_of(conn, handle) is not None:
-            raise ApiError(
-                400, "invalid", "only a person can be a contact", {"reason": "not_a_person"}
-            )
-        raise not_found()
-    human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
-    if human is None or human.deleted_at is not None:
-        raise not_found()
-    if active and (human.suspended_at is not None or human.account_status != "active"):
-        raise not_found()
-    if human_id == me:
-        raise ApiError(400, "invalid", "you cannot be your own contact", {"reason": "self"})
-    return human_id
-
-
 @router.put("/people/{handle}/contact")
 def add_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
     me = _caller(caller)
     mark = None
     try:
         with engine_of(request).begin() as conn:
-            contact_id = _contact_target(conn, me, handle, active=True)
+            contact_id = contacts.target(conn, me, handle, active=True)
             if contacts.has(conn, me, contact_id):
                 return Response(status_code=204)  # not counted
             wait, mark = contacts.ADDED.place(me)
@@ -296,7 +274,7 @@ def add_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
 def remove_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
     me = _caller(caller)
     with engine_of(request).begin() as conn:
-        contacts.remove(conn, me, _contact_target(conn, me, handle, active=False))
+        contacts.remove(conn, me, contacts.target(conn, me, handle, active=False))
     return Response(status_code=204)
 
 

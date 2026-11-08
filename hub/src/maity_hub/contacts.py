@@ -13,8 +13,9 @@ from typing import Any
 from sqlalchemy import Connection, delete, insert, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, handles, write_guard
 from maity_hub import tables as t
+from maity_hub.errors import ApiError, not_found
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import ts
 
@@ -24,6 +25,39 @@ ADDED = Limiter(PER_DAY, DAY, name="contacts.ADDED")  # new contacts per human
 
 CONTACTS = "contacts"  # whom the human has added: who may contact them
 CONTACT_OF = "contact_of"  # who has the human as a contact: whom they may contact
+
+
+def target(conn: Connection, me: str, handle: str, *, active: bool) -> str:
+    """The human `handle` names (a live alias too, §6.24), for a change of `me`'s contacts in
+    this transaction. `active`: an approved, active account only, as `GET /people` answers
+    (§6.27); else any account not deleted, so that a contact can always be removed. An
+    organisation is `not_a_person`, the caller `self`.
+
+    The person's `account_lock` is taken shared before their row is read, in the order every
+    human transaction takes it (`write_guard`): a deletion of that account either waits for
+    this transaction, and its cleanup then removes the contact, or has committed, and the
+    row read here says deleted. A check without the lock would let an insert land after the
+    deletion's cleanup (#1532 review)."""
+    human_id = handles.human_id_of(conn, handle)
+    if human_id is None:
+        if handles.org_id_of(conn, handle) is not None:
+            raise ApiError(
+                400, "invalid", "only a person can be a contact", {"reason": "not_a_person"}
+            )
+        raise not_found()
+    if human_id == me:
+        raise ApiError(400, "invalid", "you cannot be your own contact", {"reason": "self"})
+    write_guard.share(conn, human_id)
+    human = conn.execute(
+        select(t.human.c.deleted_at, t.human.c.suspended_at, t.human.c.account_status).where(
+            t.human.c.id == human_id
+        )
+    ).first()
+    if human is None or human.deleted_at is not None:
+        raise not_found()
+    if active and (human.suspended_at is not None or human.account_status != "active"):
+        raise not_found()
+    return human_id
 
 
 def has(conn: Connection, human_id: str, contact_id: str) -> bool:

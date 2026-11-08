@@ -11,6 +11,7 @@ from sqlalchemy import Engine, func, select, update
 
 from maity_hub import account_deletion, clock, contacts
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import make_org
@@ -216,3 +217,51 @@ def test_deleting_an_account_ends_its_contacts_both_ways(
         account_deletion.delete_account(conn, anna.client.app.state.settings, ben.id)  # type: ignore[attr-defined]
     assert _rows(migrated) == 1  # only cleo → anna
     assert listed(anna, "contacts") == [] and listed(anna, "contact-of") == ["cleo"]
+
+
+# --- a deletion of the person added, at the same moment (#1532 review) ------------------------
+
+
+def _add(conn: Any, me: str, handle: str) -> bool:
+    """The `PUT`'s work in one transaction, as the route does it."""
+    return contacts.add(conn, me, contacts.target(conn, me, handle, active=True))
+
+
+def test_an_add_that_waits_for_the_persons_deletion_is_refused(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    from tests.concurrency import finished, race, waiting
+
+    with race(migrated) as r:
+        deletion, adding = r.first, r.second
+        account_deletion.lock_account(deletion, ben.id)
+        account_deletion.delete_account(deletion, anna.client.app.state.settings, ben.id)  # type: ignore[attr-defined]
+        step = r.run(adding, lambda: _add(adding, anna.id, "ben"))
+        assert waiting(step)  # on ben's account lock
+        deletion.commit()
+        with pytest.raises(ApiError) as refused:
+            finished(step)
+        assert refused.value.status == 404
+        adding.rollback()
+    assert _rows(migrated) == 0
+
+
+def test_a_deletion_that_waits_for_an_add_removes_the_contact(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    from tests.concurrency import finished, race, waiting
+
+    with race(migrated) as r:
+        adding, deletion = r.first, r.second
+        assert _add(adding, anna.id, "ben")
+
+        def delete() -> None:
+            account_deletion.lock_account(deletion, ben.id)
+            account_deletion.delete_account(deletion, anna.client.app.state.settings, ben.id)  # type: ignore[attr-defined]
+
+        step = r.run(deletion, delete)
+        assert waiting(step)  # behind the add's shared lock
+        adding.commit()
+        finished(step)
+        deletion.commit()
+    assert _rows(migrated) == 0
