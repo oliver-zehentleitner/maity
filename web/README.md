@@ -1492,7 +1492,9 @@ baseline; nothing raises it but an edit to the file). A failure is a whole
 sentence with `{reason}` (`Maity.reasonIn`, `status.fail`): `make check` also
 fails on an English text that ends in ": ", on a key given to `status.fail`
 without `{reason}`, and on a text shown with a placeholder unfilled (put into
-`h`/`append`, joined with `+`, written to `textContent`). A failure with other
+`h`/`append`, joined with `+`, written to `textContent`): a placeholder counts as
+filled only by a property of its name in the values' object literal; values from a
+variable or a spread are not read, nor a text kept in a variable. A failure with other
 values goes to `status.fail` as `(reason) => Maity.t(key, { name, reason })`, filled
 once. `tools/reason_sentences.py` turned the old prefixes into such sentences; it
 runs again after a catalog comes in from main and changes only what lacks the

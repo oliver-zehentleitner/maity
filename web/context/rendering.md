@@ -981,8 +981,10 @@ shown outside a status line is filled where it is shown
 (`M.t(key, { reason })`). `make check` fails on an English text that
 ends in ": ", on a key handed to `status.fail` without `{reason}`, and
 on a text put into an element, joined with `+` or written to
-`textContent` with a placeholder left unfilled; it does not follow a
-text through a variable (tsk-0zbms0wwqhmm, #1498). Rejected: the
+`textContent` with a placeholder left unfilled, a placeholder counting
+as filled only where the values' object literal has a property of that
+name. It does not read values from a variable or a spread, nor follow a
+text kept in a variable (tsk-0zbms0wwqhmm, #1498). Rejected: the
 reason glued after the sentence in code, which fixed its place for
 every language; filling `{reason}` in the finished text for every
 failure, which filled it again inside a value.

@@ -351,11 +351,16 @@ for src, what in [
     ('const s = "x" + M.t("s.not_saved");', "joined with + before"),
     ('el.textContent = M.t("s.not_saved");', "written to textContent"),
     ('h("p", null, M.t("s.what", { what: "x" }));', "one value given, {reason} not"),
+    ('h("p", null, M.t("s.what", { what: reason }));', "reason only as a value, not as a name (fmzu, #1498 delta 1)"),
+    ('h("p", null, M.t("s.what", { what: "reason:" }));', "reason only inside a string"),
 ]:
     expect(len(shown_findings(src)) == 1, "shown unfilled: " + what)
 for src, what in [
     ('h("li", null, M.t("s.not_saved", { reason: err.message }));', "filled with a value"),
     ('h("li", null, M.t("s.what", { what, reason }));', "filled by shorthand"),
+    ('h("li", null, M.t("s.what", { "what": x, "reason": y }));', "filled with quoted names"),
+    ('h("li", null, M.t("s.what", { what: f(a, b), reason: g({ c: 1 }) }));', "values with calls and objects inside"),
+    ('h("li", null, M.t("s.what", { ...rest }));', "a spread is not read"),
     ('status.fail(M.t("s.not_saved"), err);', "left for fail() to fill"),
     ('act(M.t("s.busy"), M.t("s.not_saved"), call);', "handed to a helper that fails with it"),
     ('save(body, { notSaved: M.t("s.not_saved") });', "a helper's words"),

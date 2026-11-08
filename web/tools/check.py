@@ -948,6 +948,29 @@ def callee_of(code, at):
     return None
 
 
+def literal_keys(src, code, brace):
+    """The property names of the object literal whose "{" is at brace: `name: value`, `"name": value`
+    or the shorthand `name`. None where a name cannot be read here (a spread, a computed name)."""
+    end = call_end(code, brace + 1)
+    keys, depth, start = set(), 0, brace + 1
+    for i in range(brace + 1, end + 1):
+        c = code[i] if i < end else ","
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "," and depth == 0:
+            item = src[start:i].strip()
+            start = i + 1
+            if not item:
+                continue
+            m = re.match(r"""(?:"([^"]*)"|'([^']*)'|([A-Za-z_$][\w$]*))\s*(?::|$)""", item)
+            if item.startswith(("...", "[")) or not m:
+                return None
+            keys.add(m.group(1) or m.group(2) or m.group(3))
+    return keys
+
+
 def check_unfilled_placeholders(path, src, code, english):
     """A text put on the page as M.t returns it has every placeholder filled: a failure's {reason}
     left for status.fail is filled there, but put straight into an element (h, append), joined
@@ -968,7 +991,10 @@ def check_unfilled_placeholders(path, src, code, english):
         given = values.strip().lstrip(",").strip()
         if given and not given.startswith("{"):
             continue
-        missing = sorted(n for n in names if not re.search(r"\b%s\b\s*[:,}]" % n, values))
+        keys = literal_keys(src, code, close + 1 + values.index("{")) if given else set()
+        if keys is None:
+            continue
+        missing = sorted(names - keys)
         if not missing:
             continue
         before = code[:m.start()].rstrip()
