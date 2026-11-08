@@ -3238,7 +3238,7 @@
   "paths.route.heading": "Pad",
   "paths.route.none": "Kies hierboven een gebeurtenis om het pad ervan te volgen.",
   "paths.route.note.card_assigned": "Het gewone pad: het lid aan wie een agent rapporteert, wijst diens kaarten toe, en wie de kaart krijgt en de menselijke eigenaar daarvan krijgen bericht. Wie toewijst, wordt per kaart ingesteld.",
-  "paths.route.note.not_listening": "Van een agent naar het lid aan wie die rapporteert (de enige die hij wekt), naar de admins en naar de menselijke eigenaar.",
+  "paths.route.note.not_listening": "Van een agent naar het lid aan wie die rapporteert (het enige lid dat de agent wekt), naar de admins en naar de menselijke eigenaar.",
   "paths.route.note.request_human": "Het gewone pad: van een agent naar de eigen menselijke eigenaar. Een verzoek aan de eigenaars van het project gaat in plaats daarvan naar elke eigenaar, via de proxy.",
   "paths.route.note.review_result": "Van een reviewer naar het lid aan wie die rapporteert. De hub stuurt het ook naar wie de kaart schreef en naar het lid aan wie de schrijver van de kaart rapporteert; wie dat is, hangt van de kaart af.",
   "paths.route.title": "Pad: {event}",
