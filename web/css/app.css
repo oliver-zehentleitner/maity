@@ -128,7 +128,7 @@
   --ok-soft: #14301d;
   --warn-soft: #2d2610;
   --bad-soft: #3a1716;
-  --field: #737c86;
+  --field: #737c86; /* 3.92:1 on --surface, 4.36:1 on --bg, 3.43:1 on --surface-2 */
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 :root[data-theme="light"] { color-scheme: light; }
