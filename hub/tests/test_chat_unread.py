@@ -51,6 +51,13 @@ class Room:
         response = self.owner.post(f"{PROJECT}/events/{seq}/redact", {"reason": "a test"})
         assert response.status_code == 200, response.text
 
+    def settle(self) -> None:
+        """Both agents' read marks past what came with the chat (its creation event), so a
+        test with a tiny budget counts its own messages' rows only."""
+        self.say(self.owner, "before the test")
+        for agent in self.agents:
+            self.read(agent)
+
     def read(self, who: Any) -> None:
         response = who.get(f"{CHATS}/{self.chat}/messages")
         assert response.status_code == 200, response.text
@@ -380,14 +387,16 @@ def test_a_listening_agent_reads_each_message_once_and_no_body_at_all(
     count = _RowCount(monkeypatch)
     r.at(9)
     assert chat_unread.sweep(r.engine) == []
-    assert count.rows == 40  # read once, though not due yet
+    # Read once, though not due yet: the 40 messages and the chat's creation, the event rows
+    # the read goes over (tsk-tgh0st6p2zag: the limit counts every event row of the range).
+    assert count.rows == 41
     r.at(9.5)
-    assert chat_unread.sweep(r.engine) == [] and count.rows == 40
+    assert chat_unread.sweep(r.engine) == [] and count.rows == 41
     r.at(11)
     with _Statements(r.engine) as seen:
         chat_unread.sweep(r.engine)
     assert [n.payload["unread"] for n in r.nudges(first)] == [40]
-    assert count.rows == 40  # the nudge came from what was read before
+    assert count.rows == 41  # the nudge came from what was read before
     assert not [s for s, _ in seen if _BARE_PAYLOAD.search(s)]
     # Nor any projection of the payload but the mentions, a nudge's newest_seq and a
     # redaction's target seq (review of #1490, P3): never a body.
@@ -396,7 +405,7 @@ def test_a_listening_agent_reads_each_message_once_and_no_body_at_all(
     # The open cycle reads no message on the next passes either.
     r.at(12)
     chat_unread.sweep(r.engine)
-    assert count.rows == 40
+    assert count.rows == 41
 
 
 # Each clause below has its own test (review of #1490, e5zv P3).
@@ -604,7 +613,7 @@ def test_a_backlog_that_mentions_the_agents_is_read_once_not_each_minute(
         before = count.rows
         assert chat_unread.sweep(r.engine) == []
         per_pass.append(count.rows - before)
-    assert per_pass == [10, 0, 0]  # five rows per agent, once
+    assert per_pass == [12, 0, 0]  # per agent the five messages and the chat's creation, once
     r.say(r.owner, "and one without a mention")
     r.at(24)
     before = count.rows
@@ -618,7 +627,7 @@ def test_a_long_backlog_is_read_over_several_passes_and_counted_exactly(
 ) -> None:
     r = room
     first, second = r.agents
-    r.read(second)
+    r.settle()
     seqs = [r.say(r.owner, f"line {n}") for n in range(7)]
     r.read(second)  # only the first agent's backlog is read
     monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
@@ -644,6 +653,7 @@ def test_a_redaction_inside_the_range_read_starts_the_read_over(
 ) -> None:
     r = room
     first, second = r.agents
+    r.settle()
     gone = r.say(r.owner, "taken back")
     kept = r.say(r.owner, "stays")
     r.read(second)
@@ -652,9 +662,11 @@ def test_a_redaction_inside_the_range_read_starts_the_read_over(
     r.at(11)
     assert chat_unread.sweep(r.engine) == []  # read "taken back" only, not at the end yet
     r.redact(gone)
-    for minute in (12, 13):
+    for minute in range(12, 20):  # one event row a pass: the redacted message is one of them
         r.at(minute)
         chat_unread.sweep(r.engine)
+        if r.nudges(first):
+            break
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
 
@@ -747,6 +759,7 @@ def test_a_redaction_while_a_cached_read_extends_its_bound_is_not_counted(
     if r.engine.dialect.name != "postgresql":
         pytest.skip("a concurrent commit during the read needs PostgreSQL")
     first, second = r.agents
+    r.settle()
     gone = r.say(r.owner, "taken back")
     r.read(second)
     monkeypatch.setattr(chat_unread, "SCAN_BATCH", 1)
@@ -783,6 +796,7 @@ def test_messages_arriving_faster_than_the_budget_still_lead_to_a_nudge(
     Now pass 0 reads two of the first three, pass 1 the third, and the nudge covers those."""
     r = room
     first, second = r.agents
+    r.settle()
     monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
     monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
     sent: list[int] = []
@@ -884,3 +898,92 @@ def test_the_database_work_of_a_pass_does_not_grow_with_the_unread_history(room:
     at_four_hundred = measured_pass(13)
     assert r.nudges(first) == []
     assert at_four_hundred == at_ten, (at_ten, at_four_hundred)
+
+
+def _clone(engine: Engine, template: int, n: int) -> None:
+    """n more copies of the event `template`, as the hub would store them."""
+    columns = [c.name for c in t.event.columns if c.name != "seq"]
+    listed = ", ".join(columns)
+    with engine.begin() as conn:
+        for _ in range(n):
+            conn.exec_driver_sql(
+                f"INSERT INTO event ({listed}) SELECT {listed} FROM event WHERE seq = %(s)s",
+                {"s": template},
+            )
+
+
+@pytest.mark.parametrize("workload", ["mentions", "agents", "redacted", "nudges"])
+def test_the_first_pass_over_a_backlog_touches_rows_by_the_budget_not_the_backlog(
+    room: Room, monkeypatch: pytest.MonkeyPatch, workload: str
+) -> None:
+    """tsk-tgh0st6p2zag (1), review of #1512 R1 (4hch): with a budget of 5, the first pass over
+    a backlog of 50 events that never count touches as many event rows as over 400: messages
+    that mention the agent, an agent's messages, redacted messages, and another agent's nudges
+    (which the open-cycle check read in full each minute)."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("EXPLAIN ANALYZE's row counts are PostgreSQL's")
+    first, second = r.agents
+    if workload == "mentions":
+        template = r.say(r.owner, f"@{r.handle(first)} on you")
+    elif workload == "agents":
+        template = r.say(second, "an agent's message")
+    elif workload == "redacted":
+        template = r.say(r.owner, "taken back")
+        r.redact(template)
+    else:
+        r.say(r.owner, "for the second agent")
+        r.read(first)
+        r.at(11)
+        chat_unread.sweep(r.engine)
+        [nudge] = r.nudges(second)
+        template = int(nudge.seq)
+    with r.engine.begin() as conn:  # only the first agent's stay is measured
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == second.id)
+            .values(paused_since=clock.now())
+        )
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 5)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 5)
+
+    def first_pass(minute: float) -> int:
+        chat_unread.reset()  # as after a restart: nothing read yet
+        r.at(minute)
+        with _Statements(r.engine) as seen:
+            chat_unread.sweep(r.engine)
+        return _event_rows_read(r.engine, seen)
+
+    _clone(r.engine, template, 50)
+    at_fifty = first_pass(30)
+    _clone(r.engine, template, 350)
+    at_four_hundred = first_pass(31)
+    assert r.nudges(first) == []
+    assert at_four_hundred == at_fifty, (at_fifty, at_four_hundred)
+
+
+@pytest.mark.parametrize("per_pass", [2, 3])
+def test_later_redactions_do_not_keep_the_read_from_finishing(
+    room: Room, monkeypatch: pytest.MonkeyPatch, per_pass: int
+) -> None:
+    """Review of #1512 R1 (4hch): before every pass, later messages are written and redacted,
+    a full batch of redactions (2) or more than one (3) each time, none of them in the range
+    read. The read of the first three still finishes and the nudge counts them; it used to
+    stop for good."""
+    r = room
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    originals = [r.say(r.owner, f"original {k}") for k in range(3)]
+    for n in range(8):
+        for k in range(per_pass):
+            r.redact(r.say(r.owner, f"later {n}.{k}"))
+        r.read(second)  # only the first agent's read is under test
+        r.at(11 + n)
+        chat_unread.sweep(r.engine)
+        if r.nudges(first):
+            break
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, originals[0])
+    assert nudge.payload["newest_seq"] == originals[-1]

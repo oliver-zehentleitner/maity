@@ -594,8 +594,9 @@ messages have been read and the counted ones' number, first and last (`_Scan`), 
 process's memory and nowhere else. Each call reads only rows after the last one read, at most
 `SCAN_BUDGET` (2000) per stay, in batches of `SCAN_BATCH` (500), selecting only seq, time and the
 mentions projected from the payload. The nudge goes out only once a read reached its bound, so
-its counts cover every message up to it. A moved read mark or a changed count of redacted
-messages in the range starts the read over; entries of stays that ended are dropped each pass.
+its counts cover every message up to it. A moved read mark, or a redaction of a message in the
+range already read (found through its `event_redacted`, below), starts the read over; entries of
+stays that ended are dropped each pass.
 
 **Updated 2026-11-08 (tsk-tgh0st6p2zag):** the two limits below that were left as P3s are
 closed, and the paragraph after this one describes the state before. The database work of a
@@ -612,6 +613,25 @@ finishes at any arrival rate; the messages that came meanwhile are the next boun
 tested, the first by counting the event rows a pass touches on PostgreSQL (`EXPLAIN ANALYZE`):
 as many at 400 unread messages as at 10, where the aggregates touched 20 and 800. Who gets a
 nudge, when, and its payload are unchanged, as is the boundary on concurrent redactions.
+
+**Updated 2026-11-08 (review of #1512, R1):** two gaps in the update above are closed. The
+read's limit counted human messages after filtering, so a range of agents' or redacted messages
+was scanned in full for nothing, and the open-cycle check read every `chat_unread` above the
+mark and filtered the recipient in Python. Now the limit counts every event row of the chat's
+range, whatever it is, and the caller decides what counts; the open-cycle check reads on from a
+cursor per stay (`_Cycle`) over the events whose subject is the chat, at most `SCAN_BUDGET` a
+call, so another agent's nudges are read once. And a full batch of redactions used to stop the
+message read before it moved; a stream of later redactions before each pass kept the read from
+ever finishing. The redaction look now has a bound of its own that grows only once the look has
+reached it, the read's bound grows only in a call whose look began and ended caught up, and the
+nudge waits only for the look to catch up, so neither starves the other. The price: when the
+project writes `SCAN_BUDGET` or more redactions between two calls, the look catches up over
+several calls, and a redaction committed meanwhile may stay counted, the concurrent case this
+entry already leaves open; the call under the lock after such a call confirms without looking
+further (`lagging`), or it would fall behind again. Tested on PostgreSQL: with a budget of 5,
+the first pass over 50 and over 400 events touches as many event rows for mentions, agents'
+messages, redacted messages and another agent's nudges (the PR head before: 6/9, 52/405,
+53/403, 103/803); later redactions at 2 and 3 a pass no longer keep the nudge back.
 
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database
@@ -649,3 +669,9 @@ race would have held the PR back for a count the agent does not rely on.
   the same check over redactions only.
 - Moving the bound to the newest message on every call (tsk-tgh0st6p2zag): with the budget or
   more new messages a pass, the read never finished and the nudge never came.
+- Filtering the recipient of the open cycle in SQL (review of #1512): the audience is a JSON
+  list, so a per-dialect predicate, and without an index on it still a filter over the other
+  agents' nudges each minute; the cursor reads each of them once.
+- Reading every redaction before any message progress, in a loop within the call: exact, but
+  unbounded under a stream of redactions; the bounded look with its own bound trades exactness in
+  that case, which the entry already leaves open, for a read that always finishes.
