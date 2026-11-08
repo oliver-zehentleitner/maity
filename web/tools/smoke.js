@@ -11415,8 +11415,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main.querySelector(".mail-address-state")) === "No mail address yet: Maity sends you no mail."
       && !byId("mail-address-password") && text(maBox()).includes("Address removed."),
       "mail address: removed with the password, then none and no password asked");
-    // When mail goes out (§18.4): a mode per kind, digests' time and day, zone, quiet hours, sign-in
-    // link; only what changed is sent, a kind with only its changed part.
+    // When mail goes out (§18.4): a mode per kind, digests' time and day, quiet hours, sign-in link,
+    // and a line to the account's time zone under Settings; only what changed is sent, a kind with
+    // only its changed part.
     win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
     await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
     const mmForm = () => main.querySelector("form.mail-modes-form");
@@ -11424,10 +11425,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const mmLast = () => maPatches[maPatches.length - 1][1];
     expect(mmForm() && ["inbox", "chat", "mention", "security"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate"
       && byId("mail-mode-chat").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "immediate,hourly,daily,weekly,off"
-      && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && byId("mail-timezone").value === "Europe/Vienna"
+      && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && !byId("mail-timezone")
+      && text(main.querySelector(".mail-timezone-link")).startsWith("No time zone is set, so the digests and quiet hours follow UTC.")
+      && main.querySelector(".mail-timezone-link a").getAttribute("href") === "#/account/settings"
       && !byId("mail-quiet").checked && byId("mail-quiet-from").disabled && byId("mail-sign-in-link").checked
       && !!byId("mail-content-chat") && !!byId("mail-content-mention") && !byId("mail-content-inbox") && !byId("mail-content-security"),
-      "mail modes: every kind with its mode, five modes each, the digests' time and day, the zone, quiet hours off, the text only for chat and mention");
+      "mail modes: every kind with its mode, five modes each, the digests' time and day, the line to the time zone, quiet hours off, the text only for chat and mention");
     const mmBefore = maPatches.length;
     await mmSubmit();
     expect(maPatches.length === mmBefore && text(main.querySelector("section.mail-modes")).includes("Nothing changed"),
@@ -11450,12 +11453,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("mail-quiet").checked = false; byId("mail-quiet").dispatch("change");
     await mmSubmit();
     expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: null } }), "mail modes: quiet hours turned off send null");
-    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "email.timezone": "invalid" } }));
-    byId("mail-timezone").value = "Mars/Olympus";
-    await mmSubmit();
-    expect(text(byId("mail-timezone-error")).startsWith("The hub does not know this time zone") && byId("mail-timezone").getAttribute("aria-invalid") === "true",
-      "mail modes: the hub's refusal of the zone is said at the zone");
+    // The account's time zone (§18.4, §5.1, tsk-j8s6n725a06r), under Settings: none set at first, so
+    // times follow the browser's (UTC here); a zone chosen from the list shows every time in it.
     win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await go("#/all"); await go("#/account/settings"); for (let k = 0; k < 4; k++) await tick();
+    const tzForm = () => main.querySelector("form.account-timezone");
+    const tzButton = (label) => tzForm().querySelectorAll("button").find((b) => text(b) === label);
+    const tzSubmit = async () => { tzForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+    const tzAt = "2026-11-08T20:30:00Z";
+    const tzOptions = byId("account-timezone-list").querySelectorAll("option").map((o) => o.getAttribute("value"));
+    expect(tzForm() && byId("account-timezone").value === "" && text(byId("account-timezone-state")) === "None set: times are shown in this browser's time zone, UTC."
+      && tzOptions[0] === "UTC" && tzOptions.includes("Asia/Tokyo") && tzOptions.filter((z) => z === "UTC").length === 1
+      && !tzButton("Use UTC").hidden && tzButton("Use none").hidden
+      && win.Maity.i18n.zone() === "UTC" && win.Maity.fmt.time(tzAt) === "08:30 PM",
+      "time zone: none set, the browser's zone offered first and used for times");
+    const tzBefore = maPatches.length;
+    byId("account-timezone").value = "Mars/Olympus";
+    await tzSubmit();
+    expect(maPatches.length === tzBefore && text(byId("account-timezone-error")).startsWith("The hub does not know this time zone")
+      && byId("account-timezone").getAttribute("aria-invalid") === "true",
+      "time zone: a name no browser knows is refused before sending");
+    byId("account-timezone").value = "Asia/Tokyo";
+    await tzSubmit();
+    const tzMe = await win.Maity.api.get("/me");
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { timezone: "Asia/Tokyo" } }) && tzMe.member.timezone === "Asia/Tokyo"
+      && win.Maity.i18n.zone() === "Asia/Tokyo" && win.Maity.fmt.time(tzAt) === "05:30 AM" && win.Maity.fmt.day(tzAt) === "2026-11-09"
+      && win.Maity.dom.formatTime(tzAt).includes("Nov 9") && byId("account-timezone-error").textContent === ""
+      && text(byId("account-timezone-state")) === "" && !tzButton("Use none").hidden && text(tzForm()).includes("Time zone saved."),
+      "time zone: a chosen zone is sent, /me carries it, and every time and day is shown in it, not in the browser's");
+    // A datetime-local field reads and writes the account's zone; a time a clock change skips is
+    // the moment after the gap, one it repeats the first.
+    const tzWall = win.Maity.fmt.fromWall("2026-11-09T05:30");
+    expect(win.Maity.fmt.toWall(tzAt) === "2026-11-09T05:30" && tzWall && tzWall.toISOString() === "2026-11-08T20:30:00.000Z",
+      "time zone: a datetime-local value goes both ways in the account's zone");
+    win.Maity.i18n.setZone("Europe/Vienna");
+    expect(win.Maity.fmt.fromWall("2026-03-29T02:30").toISOString() === "2026-03-29T01:30:00.000Z"
+      && win.Maity.fmt.fromWall("2026-10-25T02:30").toISOString() === "2026-10-25T00:30:00.000Z",
+      "time zone: a skipped local time is the moment after the gap, a repeated one the first");
+    win.Maity.i18n.setZone("Asia/Tokyo");
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main.querySelector(".mail-timezone-link")).startsWith("The digests and quiet hours follow your time zone, Asia/Tokyo"),
+      "time zone: the mail settings name the account's zone");
+    await go("#/all"); await go("#/account/settings"); for (let k = 0; k < 4; k++) await tick();
+    tzButton("Use none").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { timezone: null } }) && win.Maity.i18n.zone() === "UTC"
+      && win.Maity.fmt.time(tzAt) === "08:30 PM" && byId("account-timezone").value === ""
+      && text(byId("account-timezone-state")) === "None set: times are shown in this browser's time zone, UTC.",
+      "time zone: none again, the browser's zone shows again");
     await win.Maity.api.patch("/me/notification-settings", { email: { kinds: { chat: { mode: "daily" }, mention: { content: false } }, weekly_on: "mon", sign_in_link: true } });
     const maGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet(p).then((x) => ({ ...x, mail_available: false })) : maGet(p));

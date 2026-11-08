@@ -2337,8 +2337,6 @@
   "mail.sign_in_link.hint": "Uitzetten maakt een link die al verstuurd is ongeldig.",
   "mail.time.invalid": "Een tijd als UU:MM, van 00:00 tot 23:59.",
   "mail.timezone": "Tijdzone",
-  "mail.timezone.empty": "Voer een tijdzone in, zoals Europe/Vienna.",
-  "mail.timezone.hint": "De overzichten en de stille uren volgen haar.",
   "mail.timezone.unknown": "De hub kent deze tijdzone niet. Gebruik een naam zoals Europe/Vienna.",
   "mail.timezone.use": "{zone} gebruiken",
   "mail.weekly_on": "Wekelijks overzicht op",

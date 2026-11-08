@@ -1355,3 +1355,34 @@ of on `.md`: the same, for every view that shows written text.
 Wrapping code lines (`white-space: pre-wrap` in `.md-code`): a shell
 line or a path broken across lines reads as several, and the block's
 scrolling stays as it was.
+
+## Every absolute time is formatted in the account's time zone by one helper, and in the browser's while none is set
+
+**Id:** 89d0260c-1827-40a7-b67d-84c91568772a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision that a human sets their time zone in Account → Settings and sees times in it (message seq 94723), the approved plan on card tsk-j8s6n725a06r, 2026-11-08; docs/api.md §5.1; `js/i18n.js` (`when`, `M.fmt.day`, `toWall`, `fromWall`)
+**See:** https://github.com/oliver-zehentleitner/maity — c9d8b583-94c6-4599-90a6-325e1c03c984 — as of 2026-11-08
+**Revisit when:** the dashboard shows a time that is not an instant (a date without a time, a wall time of a schedule), or the hub starts rendering times itself
+
+`M.fmt` formats every absolute time with `timeZone` set to the account's zone, which `M.api`
+takes from each `GET /me` (`member.timezone`); while that is `null`, or a name the browser's
+Intl does not know, it is the browser's zone. The places that worked on the browser's local clock
+(`getDate`, `toDateString`, `toLocaleDateString`) go through the same helper: chat's day
+separators compare `M.fmt.day`, the maintenance banner's "same day" test too, and the admin's
+`datetime-local` fields read and write the account's zone with `M.fmt.toWall` / `fromWall`
+(a time a clock change skips is the moment after the gap, one it repeats the first). Relative
+times ("5 min ago") do not use the zone. Timestamps in the API stay UTC.
+
+**Reason:** the owner decided that every time shown follows the zone the human set (confirmed).
+One helper is the only way that stays true: a view that formats on its own would show the
+browser's zone beside the account's, and a datetime-local field in the browser's zone would let
+an admin enter a window in another zone than the one it is then shown in. Taking the zone from
+`/me` costs no request, since every page reads it before the first view.
+
+**Rejected alternatives:** reading `GET /me/notification-settings` at load: a second request on
+every page for one value `/me` can carry. Rendering times on the hub: the contract keeps UTC in the
+API and leaves display to the dashboard. Keeping the browser's local clock for day boundaries
+while formatting in the account's zone: a message at 23:50 in the account's zone could then sit
+under the next day's separator.

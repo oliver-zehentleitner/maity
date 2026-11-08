@@ -270,6 +270,8 @@ window.Maity = window.Maity || {};
       if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
     });
     data.server_time = nowIso();
+    // §5.1: the account's time zone is §18.4's one value, read here as well.
+    if (data.member.kind === "human") data.member.timezone = fixtures()["notifications.json"].settings.email.timezone;
     // §5.1, §16.12: the window, upcoming or running, for every caller.
     data.maintenance = maintenanceView(false);
     // A renamed project: its directory stays, its slug is the project's now (§6.25).
@@ -2318,7 +2320,7 @@ window.Maity = window.Maity || {};
         });
         if ("daily_at" in e && !hhmm.test(String(e.daily_at))) fields["email.daily_at"] = "invalid";
         if ("weekly_on" in e && !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(e.weekly_on)) fields["email.weekly_on"] = "invalid";
-        if ("timezone" in e && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
+        if ("timezone" in e && e.timezone !== null && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
         if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
         if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
         if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
@@ -5262,9 +5264,13 @@ window.Maity = window.Maity || {};
     const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
-    const p = (source === "fixtures"
+    const asked = (source === "fixtures"
       ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
       : fromApi(method, path, body, raw, signal)).catch(told);
+    // §5.1: every absolute time is shown in the account's zone, or the browser's without one.
+    const p = method === "GET" && path === "/me"
+      ? asked.then((m) => { if (m && m.member && m.member.kind === "human" && M.i18n.setZone) M.i18n.setZone(m.member.timezone); return m; })
+      : asked;
     if (path === "/auth/session") {
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);

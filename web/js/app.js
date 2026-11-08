@@ -226,9 +226,7 @@ window.Maity = window.Maity || {};
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
   function releasedDay(project) {
-    const d = new Date(project.released_at);
-    return Number.isNaN(d.getTime()) ? project.released_at
-      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return M.fmt.date(project.released_at);
   }
   // The selected project's two places one goes to often, beside its state
   // (the maintainer, tsk-n161gf6h8feb): its repository, with its forge's

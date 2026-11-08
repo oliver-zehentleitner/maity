@@ -2324,8 +2324,6 @@ window.MAITY_I18N["ja"] = {
   "mail.test.title": "テスト送信",
   "mail.time.invalid": "時刻は HH:MM の形式で、00:00 から 23:59 までです。",
   "mail.timezone": "タイムゾーン",
-  "mail.timezone.empty": "Europe/Vienna のようなタイムゾーンを入力してください。",
-  "mail.timezone.hint": "まとめと通知を控える時間は、このタイムゾーンに従います。",
   "mail.timezone.unknown": "ハブが知らないタイムゾーンです。Europe/Vienna のような名前を使ってください。",
   "mail.timezone.use": "{zone} を使う",
   "mail.title": "メール設定",

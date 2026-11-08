@@ -2423,8 +2423,8 @@ window.MAITY_I18N["en"] = {
   "mail.test.title": "Test send",
   "mail.time.invalid": "A time as HH:MM, from 00:00 to 23:59.",
   "mail.timezone": "Time zone",
-  "mail.timezone.empty": "Enter a time zone, such as Europe/Vienna.",
-  "mail.timezone.hint": "The digests and quiet hours follow it.",
+  "mail.timezone.elsewhere": "The digests and quiet hours follow your time zone, {zone}, which you set under {link}.",
+  "mail.timezone.none": "No time zone is set, so the digests and quiet hours follow UTC. Set yours under {link}.",
   "mail.timezone.unknown": "The hub does not know this time zone. Use a name such as Europe/Vienna.",
   "mail.timezone.use": "Use {zone}",
   "mail.title": "Mail settings",
@@ -5194,5 +5194,12 @@ window.MAITY_I18N["en"] = {
   "why.type.constraint": "constraint",
   "why.type.decision": "decision",
   "why.type.incident": "incident",
-  "why.type.workaround": "workaround"
+  "why.type.workaround": "workaround",
+  "zone.clear": "Use none",
+  "zone.failed": "Time zone not saved: {reason}",
+  "zone.hint": "Every time on the dashboard is shown in it; the digests and quiet hours of your mails follow it too.",
+  "zone.label": "Show times in",
+  "zone.save": "Save time zone",
+  "zone.saved": "Time zone saved.",
+  "zone.unset": "None set: times are shown in this browser's time zone, {zone}."
 };

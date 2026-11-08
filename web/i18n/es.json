@@ -2289,8 +2289,6 @@
   "mail.sign_in_link.hint": "Desactivarlo anula un enlace que ya se haya enviado.",
   "mail.time.invalid": "Una hora como HH:MM, de 00:00 a 23:59.",
   "mail.timezone": "Zona horaria",
-  "mail.timezone.empty": "Introduce una zona horaria, como Europe/Vienna.",
-  "mail.timezone.hint": "Los resúmenes y las horas de silencio la siguen.",
   "mail.timezone.unknown": "El hub no conoce esta zona horaria. Usa un nombre como Europe/Vienna.",
   "mail.timezone.use": "Usar {zone}",
   "mail.weekly_on": "Resumen semanal el",

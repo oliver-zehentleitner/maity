@@ -6516,7 +6516,7 @@ window.MAITY_FIXTURES = {
         "pending_address": null,
         "quiet_hours": null,
         "sign_in_link": true,
-        "timezone": "Europe/Vienna",
+        "timezone": null,
         "verified_at": "2026-10-01T09:12:00Z",
         "weekly_on": "mon"
       },

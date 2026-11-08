@@ -4949,7 +4949,8 @@ on every change of a confirmed address.
 
 **Id:** 444115c8-aaaf-408e-a16c-571aa48f69cf
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 44009d6f-ff99-4f8a-b51e-cb9531702422
 **Evidence:** inferred
 **Source:** docs/api.md §18.4 "Defaults and what was saved", the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02
 **Revisit when:** the hub can reset a kind to its default
@@ -4967,6 +4968,37 @@ zone decides when digests and quiet hours fall; a browser on a trip should not m
 **Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
 Setting the browser's zone when the account still has `UTC`: a person who chose UTC on purpose
 would see it changed.
+
+**Known limit:** a mode changed and later set back to the default stays set; the contract has no
+reset.
+
+## When mail goes out: the page sends only what changed; the time zone is set under Settings, the browser's only offered
+
+**Id:** 44009d6f-ff99-4f8a-b51e-cb9531702422
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4; the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02; the owner's decision on the account time zone (message seq 94723) and the approved plan on card tsk-j8s6n725a06r, 2026-11-08
+**See:** views.md#when-mail-goes-out-the-page-sends-only-what-changed-the-browsers-zone-only-offered — 444115c8-aaaf-408e-a16c-571aa48f69cf — as of 2026-11-08
+**Revisit when:** the hub can reset a kind to its default
+
+The modes and times on `/account/notifications` are compared with the hub's merged answer, and
+the `PATCH` names only what differs: in `email.kinds` only the kinds that changed, each with only
+its changed part (`mode` or `content`). The time zone is no longer a field there: it is the
+account's, chosen in Account → Settings, and the mail page names it with a link there, or says
+the mails follow UTC while none is set. In Settings the browser's zone is offered first, as a
+button and at the top of the list, but the page never sets it unasked.
+
+**Reason:** the hub stores only what the human set, and a kind it was sent counts as set even if
+the value is unchanged; sending the whole form would pin every kind at today's default (unchanged
+from the earlier entry). The zone now decides every time the dashboard shows as well as when
+digests and quiet hours fall, so it belongs with the language under Settings, not under mail
+(the owner's decision, confirmed); a browser on a trip should still not move it.
+
+**Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
+Setting the browser's zone while the account has none: the dashboard already shows times in it
+then, and storing it would turn a guess into a choice the human never made. Keeping a second zone
+field on the mail page: two places for one value.
 
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.

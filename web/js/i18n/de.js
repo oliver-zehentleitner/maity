@@ -2423,8 +2423,8 @@ window.MAITY_I18N["de"] = {
   "mail.test.title": "Testversand",
   "mail.time.invalid": "Eine Uhrzeit als HH:MM, von 00:00 bis 23:59.",
   "mail.timezone": "Zeitzone",
-  "mail.timezone.empty": "Gib eine Zeitzone ein, etwa Europe/Vienna.",
-  "mail.timezone.hint": "Sammelmails und Ruhezeiten richten sich nach ihr.",
+  "mail.timezone.elsewhere": "Sammelmails und Ruhezeiten richten sich nach deiner Zeitzone, {zone}; du stellst sie unter {link} ein.",
+  "mail.timezone.none": "Es ist keine Zeitzone eingestellt, darum richten sich Sammelmails und Ruhezeiten nach UTC. Stell deine unter {link} ein.",
   "mail.timezone.unknown": "Diese Zeitzone kennt der Hub nicht. Verwende einen Namen wie Europe/Vienna.",
   "mail.timezone.use": "{zone} verwenden",
   "mail.title": "Mail-Einstellungen",
@@ -5194,5 +5194,12 @@ window.MAITY_I18N["de"] = {
   "why.type.constraint": "Randbedingung",
   "why.type.decision": "Entscheidung",
   "why.type.incident": "Vorfall",
-  "why.type.workaround": "Workaround"
+  "why.type.workaround": "Workaround",
+  "zone.clear": "Keine verwenden",
+  "zone.failed": "Zeitzone nicht gespeichert: {reason}",
+  "zone.hint": "Alle Zeiten im Dashboard werden in ihr angezeigt; auch Sammelmails und Ruhezeiten deiner Mails richten sich nach ihr.",
+  "zone.label": "Zeiten anzeigen in",
+  "zone.save": "Zeitzone speichern",
+  "zone.saved": "Zeitzone gespeichert.",
+  "zone.unset": "Keine eingestellt: Zeiten werden in der Zeitzone dieses Browsers angezeigt, {zone}."
 };

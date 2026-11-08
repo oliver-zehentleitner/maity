@@ -2337,8 +2337,8 @@
   "mail.sign_in_link.hint": "Ausschalten macht einen bereits gesendeten Link ungültig.",
   "mail.time.invalid": "Eine Uhrzeit als HH:MM, von 00:00 bis 23:59.",
   "mail.timezone": "Zeitzone",
-  "mail.timezone.empty": "Gib eine Zeitzone ein, etwa Europe/Vienna.",
-  "mail.timezone.hint": "Sammelmails und Ruhezeiten richten sich nach ihr.",
+  "mail.timezone.elsewhere": "Sammelmails und Ruhezeiten richten sich nach deiner Zeitzone, {zone}; du stellst sie unter {link} ein.",
+  "mail.timezone.none": "Es ist keine Zeitzone eingestellt, darum richten sich Sammelmails und Ruhezeiten nach UTC. Stell deine unter {link} ein.",
   "mail.timezone.unknown": "Diese Zeitzone kennt der Hub nicht. Verwende einen Namen wie Europe/Vienna.",
   "mail.timezone.use": "{zone} verwenden",
   "mail.weekly_on": "Wöchentliche Sammelmail am",
@@ -5189,5 +5189,12 @@
   "mine.start_tab.label": "Beim Start als Tab öffnen",
   "mine.start_tab.hint": "Gilt in einem Browser, der noch keine eigenen Tabs hat, etwa bei der ersten Anmeldung auf einem neuen Gerät. Welche Tabs ein Browser offen hat, bleibt in diesem Browser.",
   "mine.start_tab.saved_on": "Gespeichert: Dieses Projekt öffnet sich beim Start als Tab.",
-  "mine.start_tab.saved_off": "Gespeichert: Dieses Projekt öffnet sich beim Start nicht mehr als Tab."
+  "mine.start_tab.saved_off": "Gespeichert: Dieses Projekt öffnet sich beim Start nicht mehr als Tab.",
+  "zone.clear": "Keine verwenden",
+  "zone.failed": "Zeitzone nicht gespeichert: {reason}",
+  "zone.hint": "Alle Zeiten im Dashboard werden in ihr angezeigt; auch Sammelmails und Ruhezeiten deiner Mails richten sich nach ihr.",
+  "zone.label": "Zeiten anzeigen in",
+  "zone.save": "Zeitzone speichern",
+  "zone.saved": "Zeitzone gespeichert.",
+  "zone.unset": "Keine eingestellt: Zeiten werden in der Zeitzone dieses Browsers angezeigt, {zone}."
 }
