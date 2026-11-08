@@ -79,7 +79,8 @@ the same file.
 `css/app.css` declares Inter (400, 600, 700), Space Grotesk 700 and
 JetBrains Mono 500 by `@font-face` with `url("fonts/…")`. The five
 woff2 files and their SIL OFL texts are in `web/css/fonts/`, byte-for-byte
-copies of `hub/src/maity_hub/landing_assets/fonts/`, about 105 KB together.
+copies of `hub/src/maity_hub/landing_assets/fonts/`: the five woff2 files 107,144 bytes
+(104.6 KiB), 120,546 bytes (117.7 KiB) with the three OFL texts.
 
 **Reason:** a relative URL loads both when the hub serves the page from
 `/assets/css/` (same origin, which the hub's `default-src 'self'`
