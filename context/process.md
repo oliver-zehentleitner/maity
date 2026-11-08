@@ -2210,8 +2210,8 @@ and tsk-g3p686ckd25v is not written there at all (the open entry below). The rea
 - The VERDICT line (tsk-h76gy9qxk0vj): a verdict had to be asked for. The card's form also names the base, so
   delta rounds cannot be mixed up; the announcement asks for the head only (the open entry below).
 - The fixed scope from round 3 (tsk-g4fn0hqctbzg): a pull request grew over nine rounds.
-- A reviewer's stop announced, and the outage's state on the status card (tsk-fgg8365e3n6z, tsk-sgt89h1dj54b):
-  nobody knew why or until when a reviewer was gone, and coders asked one by one.
+- A reviewer's stop announced, and the outage's state in a fixed place coders read (tsk-fgg8365e3n6z,
+  tsk-sgt89h1dj54b): nobody knew why or until when a reviewer was gone, and coders asked one by one.
 - One message per Grok result (tsk-73k2kkd3dkc4): each result came three times, each copy waking the readers.
 - Review orders acknowledged, results also to the review lead (tsk-8f1bfeh621tp): five orders lost unnoticed.
 - merge-tree against `main` in every delta order (tsk-pm9jryrf7nqv): a head ordered as clean was not.
@@ -2248,7 +2248,7 @@ and tsk-g3p686ckd25v is not written there at all (the open entry below). The rea
 **Source:** card tsk-cqzz7bs7kfj5, whose boundary keeps main's version and names the conflict; the cards named
 below and the lead's announcement of the VERDICT rule (2026-11-04)
 **See:** process.md#fixes-after-a-review-are-pushed-as-one-bundle-once-the-rounds-reviews-are-in-an-exception-only-on-the-leads-word — cbfbec23-8ed4-4c5b-b552-271b3ef32962 — as of 2026-11-08
-**Revisit when:** the maintainer or a jour fixe decides either conflict
+**Revisit when:** the maintainer or a jour fixe decides one of these conflicts
 
 - tsk-g3p686ckd25v (jour fixe of 2026-11-07) lets an author push bundled fixes without a go when all three
   vendors answered the head, no review lead has listened for over an hour, and every open finding is undisputed
