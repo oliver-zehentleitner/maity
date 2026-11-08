@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import APIRouter, FastAPI
+from fastapi.routing import iter_route_contexts
 from sqlalchemy import Engine
 
 from tests import flow
@@ -35,7 +37,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
             "id", "slug", "owner", "full_name", "aliases", "name", "state", "released_at",
             "state_note", "state_changed_at", "repository", "links", "logo", "banner", "memory",
             "setup", "keep_the_why_export", "policy", "absence", "settings", "attachments",
-            "rules_version", "created_at",
+            "rules_version", "created_at", "public_page", "public_about",
         },
     ),  # fmt: skip
     "/projects/{}/{}/members": PAGE,
@@ -52,6 +54,11 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
 # The test fails on an entry the hub now sends: remove it in that card's pull request.
 KNOWN_GAPS: dict[str, set[str]] = {
     "/projects/{}/{}/roles": {"builtin"},  # tsk-g83nf2q1j728
+}
+
+# GET routes under /api/v1/ that answer no contract shape, each with its reason.
+OUTSIDE = {
+    "/openapi.json",  # the machine form of the routes, not an answer the contract shapes (§12)
 }
 
 # GET routes whose shape is not checked yet (tsk-x4c4v639trrv moves them in batches), one per
@@ -182,12 +189,15 @@ def _plain(path: str) -> str:
     return re.sub(r"\{[^}]*\}", "{}", path.split("?")[0])
 
 
-def _get_routes(openapi: dict[str, Any]) -> set[str]:
-    return {
-        _plain(path.removeprefix("/api/v1"))
-        for path, operations in openapi["paths"].items()
-        if path.startswith("/api/v1/") and "get" in operations
+def _get_routes(app_routes: Any) -> set[str]:
+    """Every GET route of the API: the app's router with its included routers and their
+    prefixes walked, those left out of the OpenAPI document (`include_in_schema=False`) too."""
+    paths = {
+        route.path_format
+        for route in iter_route_contexts(list(app_routes))
+        if route.methods and "GET" in route.methods and route.path_format is not None
     }
+    return {_plain(p.removeprefix("/api/v1")) for p in paths if p.startswith("/api/v1/")}
 
 
 def _named_after(anchor: str) -> str:
@@ -205,11 +215,13 @@ def _names(text: str, key: str) -> bool:
 
 
 def test_every_get_route_is_checked_or_pending(client: Any) -> None:
-    routes = _get_routes(client.get("/api/v1/openapi.json").json())
+    routes = _get_routes(client.app.routes)
     shaped, pending = set(SHAPES), PENDING
-    assert not shaped & pending, f"in SHAPES and PENDING both: {sorted(shaped & pending)}"
-    assert routes - shaped - pending == set(), "GET routes neither in SHAPES nor in PENDING"
-    assert (shaped | pending) - routes == set(), "entries that are no GET route (any more)"
+    for a, b in ((shaped, pending), (shaped, OUTSIDE), (pending, OUTSIDE)):
+        assert not a & b, f"in two lists: {sorted(a & b)}"
+    listed = shaped | pending | OUTSIDE
+    assert routes - listed == set(), "GET routes in none of SHAPES, PENDING and OUTSIDE"
+    assert listed - routes == set(), "entries that are no GET route (any more)"
     assert set(KNOWN_GAPS) <= shaped, "a KNOWN_GAPS entry for a route SHAPES does not check"
 
 
@@ -228,16 +240,40 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     return owner
 
 
-@pytest.mark.parametrize("path", sorted(SHAPES))
-def test_the_answer_carries_the_keys_the_contract_names(path: str, owner: flow.Human) -> None:
+def _answer(owner: flow.Human, path: str) -> dict[str, Any]:
     concrete = path.replace("/projects/{}/{}", "/projects/maintainer/maity", 1)
     assert "{}" not in concrete, f"{path}: say here which ids the test calls it with"
     response = owner.get(concrete)
     assert response.status_code == 200, response.text
-    sent = set(response.json())
+    answer: dict[str, Any] = response.json()
+    return answer
+
+
+def _check(path: str, sent: set[str]) -> None:
     missing = SHAPES[path][1] - sent
     gaps = KNOWN_GAPS.get(path, set())
     assert missing == gaps, (
         f"{path}: missing {sorted(missing - gaps)}; "
         f"KNOWN_GAPS entries now sent, remove them: {sorted(gaps - missing)}"
     )
+
+
+@pytest.mark.parametrize("path", sorted(SHAPES))
+def test_the_answer_carries_the_keys_the_contract_names(path: str, owner: flow.Human) -> None:
+    _check(path, set(_answer(owner, path)))
+
+
+def test_a_route_left_out_of_the_schema_is_still_counted() -> None:
+    # #1499 review: a GET with `include_in_schema=False` answers like any other.
+    router = APIRouter()
+    router.add_api_route("/hidden", lambda: {}, methods=["GET"], include_in_schema=False)
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    assert "/hidden" in _get_routes(app.routes)
+
+
+def test_a_key_named_below_the_example_is_checked_too(owner: flow.Human) -> None:
+    # #1499 review: `public_page` and `public_about` are named after §6.1's JSON example.
+    sent = set(_answer(owner, "/projects/{}/{}")) - {"public_page", "public_about"}
+    with pytest.raises(AssertionError, match="missing \\['public_about', 'public_page'\\]"):
+        _check("/projects/{}/{}", sent)
