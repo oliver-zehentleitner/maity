@@ -56,7 +56,8 @@ SLUG = "load"
 AGENTS_PER_HUMAN = 2
 PRODUCTION = "maity.team"
 # Not a scrypt hash: `passwords.verify_password` answers False for it, so no one signs in with it,
-# and no real account has it, so it marks the seed's accounts for `purge`.
+# and no real account has it, so it marks the seed's accounts for `purge`. A deleted account has
+# its own marker (`account_deletion.NO_PASSWORD`, "deleted"), so `purge` never takes one of those.
 NO_PASSWORD = "loadtest"
 
 

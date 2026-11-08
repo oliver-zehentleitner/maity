@@ -278,7 +278,7 @@ def emit(
         )
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
-    # project's last event (§18.2, "at is monotonic per project").
+    # project's last event. The contract promises only `seq` (§8.1); this floor is the hub's own.
     last = conn.execute(
         select(t.event.c.at)
         .where(t.event.c.project_id == project_id)

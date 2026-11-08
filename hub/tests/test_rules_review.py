@@ -58,6 +58,8 @@ def test_the_review_line_sits_between_duty_and_keep_the_why() -> None:
     text = rules.generate(project, "member", "reviewer", "the owner")
     order = ["## On duty", "## Reviewing", "## Keep the Why", "## Naming members", "## From"]
     assert [text.index(h) for h in order] == sorted(text.index(h) for h in order)
+    # `index` finds the first copy only: a block doubled (a conflict resolved wrong) stays found.
+    assert all(text.count(h) == 1 for h in order)
 
 
 def test_the_digest_renders_the_reviewer_document(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -111,6 +111,11 @@ window.Maity = window.Maity || {};
       // `?as=public`, so a link there is a page load, with or without a query or a place (the
       // frame's mark and sections, the logo signed out).
       if (startPage(to)) return;
+      // So are the other pages the hub draws itself at an address the dashboard also answers:
+      // `/explore` and a landing variant `/for/<slug>` (§16.11). The hub decides per request
+      // whether they are its page or the shell; a route change would draw the dashboard's view
+      // of an unknown address instead.
+      if (hubDrawn(to)) return;
       const anchored = splitAnchor(to);
       if (anchored) {
         e.preventDefault();
@@ -145,6 +150,10 @@ window.Maity = window.Maity || {};
 
   // `/`, `/?…` or `/#…`: the instance's start page, which only the hub can answer (§16.7).
   const startPage = (value) => typeof value === "string" && /^\/(?:[?#]|$)/.test(value);
+  // `/explore` and `/for/<slug>`, with or without a query or a place: pages the hub draws itself
+  // where it serves them (the public projects, §16.9; a landing variant, §16.7.2), the shell
+  // otherwise. Unlike a hub path they stay routes, so a sign-in's next and an href keep them.
+  const hubDrawn = (value) => typeof value === "string" && /^\/(?:explore(?:[?#]|$)|for\/[^/?#]+(?:[?#]|$))/.test(value);
 
   // Leave for the start page: a page load the hub answers, with the current entry replaced, for
   // the one who just signed out (the landing page while it is on). In fixture mode, with no hub,
@@ -159,5 +168,5 @@ window.Maity = window.Maity || {};
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, listen, dropFragment, jump };
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, dropFragment, jump };
 })(window.Maity);

@@ -20,6 +20,7 @@
     {"method": "GET", "path": "/requests"},
     {"method": "GET", "path": "/projects/{project}/requests?status=all"},
     {"method": "GET", "path": "/agents"},
+    {"method": "GET", "path": "/avatars/motifs"},
     {"method": "GET", "path": "/projects/{project}/members/{agent}/credentials"},
     {"method": "GET", "path": "/projects/{project}/tasks?status=all"},
     {"method": "GET", "path": "/projects/{project}/tasks/{task}/notes?state=all"},

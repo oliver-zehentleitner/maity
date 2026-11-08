@@ -22,7 +22,7 @@ import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any, NoReturn
+from typing import IO, Any, NoReturn, TypeGuard
 
 from maity import (
     __version__,
@@ -57,6 +57,10 @@ MAX_OPTIONS = 8
 MAX_TITLE = 200
 LONG_POLL = 55
 DEFAULT_WAIT = 600
+# `wait`'s own timeout (§13): beside `--timeout`, for every call of a harness or a cloud
+# environment that sets it once; the cap catches a value given in milliseconds.
+WAIT_ENV = "MAITY_WAIT_TIMEOUT"
+WAIT_MAX = 7200
 
 OUTPUT_DISCIPLINE = """\
 output discipline:
@@ -373,9 +377,14 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
     _warn_old_cli(field(packet, "hints", "cli_version"))
+    # Each resume replaces the hint: a valid one is kept, anything else (missing, null, not a
+    # positive whole number) removes the old one, so `wait` falls back to 600 as §13 says
+    # rather than keep an earlier packet's value (review of #1491).
     wait_timeout = field(packet, "hints", "wait_timeout")
-    if isinstance(wait_timeout, int) and wait_timeout > 0:
+    if _positive_int(wait_timeout):
         session.data["wait_timeout"] = wait_timeout
+    else:
+        session.data.pop("wait_timeout", None)
     # §6.23: what `maity report` checks locally until the next resume says otherwise.
     session.data["keep_the_why_required"] = (
         field(packet, "keep_the_why", "commitment") == "required"
@@ -650,6 +659,17 @@ def _event_line(event: dict[str, Any]) -> str:
     line = f"#{onboarding.inline(event.get('seq'))} {onboarding.inline(event.get('kind'))}"
     if subject:
         line += f" {onboarding.inline(subject)}"
+    if event.get("kind") == "chat_unread":
+        # §13: what the nudge names, and the command that reads it (§9.2).
+        chat = onboarding.get(event, "payload", "conversation") or {}
+        chat_id = onboarding.inline(chat.get("id") if isinstance(chat, dict) else None)
+        title = chat.get("title") if isinstance(chat, dict) else None
+        where = f'"{onboarding.inline(title)[:120]}"' if title else chat_id
+        unread = onboarding.inline(onboarding.get(event, "payload", "unread"))
+        return (
+            f"#{onboarding.inline(event.get('seq'))} chat_unread: {unread} unread in {where}: "
+            f"maity chat {chat_id}"
+        )
     if event.get("kind") == "session_model_changed":
         before = onboarding.get(event, "payload", "from") or {}
         after = onboarding.get(event, "payload", "to") or {}
@@ -721,11 +741,40 @@ def _warn_old_cli(expected: object) -> None:
         _err(f"this CLI is {__version__}, {shown} is out; `pipx upgrade maity` brings it")
 
 
+def _positive_int(value: object) -> TypeGuard[int]:
+    """A whole number above 0, and not a JSON `true`, which Python counts as the int 1."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _wait_timeout(args: argparse.Namespace, session: Session) -> int:
+    """N for `wait` (§13): `--timeout`, else `MAITY_WAIT_TIMEOUT`, else the resume packet's
+    hint, else 600; whole seconds from 1 to WAIT_MAX, a usage error naming its source
+    otherwise. Only the agent knows how long its harness lets a command run as it was
+    started, so its own value wins over the hub's table (cli/context/commands.md cff2a54d)."""
+    raw = os.environ.get(WAIT_ENV, "").strip()
+    if args.timeout is not None:
+        timeout, source = int(args.timeout), "--timeout"
+    elif raw:
+        try:
+            timeout = int(raw, 10)
+        except ValueError:
+            shown = onboarding.inline(raw)[:40]
+            raise UsageError(
+                f"{WAIT_ENV} must be a whole number of seconds, not {shown!r}"
+            ) from None
+        source = WAIT_ENV
+    else:
+        hint = session.data.get("wait_timeout")
+        # The hint is the hub's advice; one beyond the cap is taken at the cap, not refused.
+        return min(hint, WAIT_MAX) if _positive_int(hint) else DEFAULT_WAIT
+    if not 1 <= timeout <= WAIT_MAX:
+        raise UsageError(f"{source} must be 1 to {WAIT_MAX} seconds, not {timeout}")
+    return timeout
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
-    timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
-    if not isinstance(timeout, int) or timeout <= 0:
-        raise UsageError("--timeout must be a positive number of seconds")
+    timeout = _wait_timeout(args, session)
     if args.kind and args.keep_cursor:
         # Reading past an event means asking for `after` beyond it, and the hub takes
         # `after=N` as the acknowledgement up to N (§8.3): it cannot be kept unacknowledged.
@@ -4215,8 +4264,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         metavar="N",
         help=(
-            "seconds to wait, never exceeded even when the hub stops answering "
-            "(default: the resume packet's hint for this harness, else 600)"
+            "seconds to wait, 1 to 7200, never exceeded even when the hub stops answering "
+            f"(default: ${WAIT_ENV}, else the resume packet's hint for this harness, else 600)"
         ),
     )
     p.add_argument(

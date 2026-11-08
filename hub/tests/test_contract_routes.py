@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 CONTRACT = Path(__file__).parents[2] / "docs" / "api.md"
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
@@ -47,10 +50,16 @@ def _index() -> set[tuple[str, str]]:
         cells = line.split(" | ")
         methods = [m.strip() for m in cells[0].strip("| ").split(",")]
         if len(cells) < 3 or not set(methods) <= set(METHODS):
+            # Only the table's head and its rule may go unread: a row of another form names
+            # no route the test would check, so it fails here instead of passing unseen.
+            head = line.startswith("| Method |") or re.fullmatch(r"\|[-| ]+\|", line)
+            assert not line.startswith("|") or head, f"a §12 row that does not parse: {line}"
             continue
         if cells[1].endswith("(outside the API)"):
             continue
-        for path in re.findall(r"`([^`]*)`", re.sub(r"\([^)]*\)", "", cells[1])):
+        paths = re.findall(r"`([^`]*)`", re.sub(r"\([^)]*\)", "", cells[1]))
+        assert paths, f"a §12 row that names no path: {line}"  # else it would check nothing
+        for path in paths:
             rows |= {(method, _plain(path)) for method in methods}
     return rows
 
@@ -67,6 +76,25 @@ def _routes(openapi: dict[str, Any]) -> set[tuple[str, str]]:
         for method in operations
         if method.upper() in METHODS
     }
+
+
+@pytest.mark.parametrize(
+    "row", ["| UNKNOWN | `/x` | what |", "| GET | /not-real | without its backticks |"]
+)
+def test_a_row_the_index_cannot_read_fails_it(
+    row: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row that names no route the test can read fails here, instead of checking nothing
+    (fmzu at #1482)."""
+    contract = tmp_path / "api.md"
+    contract.write_text(
+        "## 12. Endpoint index\n\n| Method | Path | What |\n|---|---|---|\n"
+        f"| GET | `/me` | the caller |\n{row}\n\n## 13. Next\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "CONTRACT", contract)
+    with pytest.raises(AssertionError, match="§12 row that"):
+        _index()
 
 
 def test_the_index_and_the_routes_name_the_same_endpoints(client: Any) -> None:

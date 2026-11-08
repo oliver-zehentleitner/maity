@@ -53,9 +53,4 @@ def get_auth_page(page: str, request: Request, lang: str | None = None) -> Respo
     with engine_of(request).begin() as conn:
         setting = auth_pages.stored(conn)
     body = auth_pages.public(setting, page, lang, request.headers.get("accept-language"))
-    tag = landing.etag(body)
-    headers = {"Cache-Control": "public, max-age=60", "ETag": tag, "Vary": "Accept-Language"}
-    wanted = request.headers.get("if-none-match", "")
-    if tag in [part.strip() for part in wanted.split(",")]:
-        return Response(status_code=304, headers=headers)
-    return JSONResponse(body, headers=headers)
+    return landing.cached_json(request, body, by_language=True)

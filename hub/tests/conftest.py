@@ -122,8 +122,8 @@ def _empty_the_tables(engine: Engine) -> None:
     On PostgreSQL a connection a test left in a transaction holds its locks, and the TRUNCATE
     waited for them without end (tsk-xz3bxa5cwv4v). It now gives up after
     `TRUNCATE_LOCK_TIMEOUT`; the suite's own sessions that hold a lock on the tables it empties
-    are named and ended, so this one test fails and the next one runs (hub/context/testing.md
-    210f3def). The test database is the suite's alone (hub/README.md)."""
+    or on a sequence they own are named and ended, so this one test fails and the next one runs
+    (hub/context/testing.md 210f3def). The test database is the suite's alone (hub/README.md)."""
     tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
     try:
         _truncate(engine, tables)
@@ -135,7 +135,7 @@ def _empty_the_tables(engine: Engine) -> None:
             f"ended so the next test runs (unless named otherwise): {holders}"
             if holders
             else "no session of this suite holds them: another role's, or a lock outside the"
-            " emptied tables and their sequences, so the next cleanup waits again"
+            " emptied tables and their sequences, so the next cleanup may wait again"
         )
         raise LeakedConnection(
             f"the cleanup before this test waited {TRUNCATE_LOCK_TIMEOUT} for locks a connection"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import timedelta
 
@@ -139,6 +140,41 @@ def test_joins_need_members_admin(owner: flow.Human, make_client: ClientFactory)
     )
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "forbidden"
+
+
+def _access_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+
+
+def test_a_refused_join_names_the_missing_scope_in_the_request_log(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """tsk-5d8hdtqhje26: ops could not tell which check refused an owner's joins, because
+    the line had only the status; it names the code and the scope (§1.1)."""
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    member = flow.human(make_client, migrated, "plain")
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    policy = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"member_agents": "off"}, "reason": "test"}
+    )
+    assert policy.status_code == 200, policy.text
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        response = member.post(
+            "/projects/maintainer/maity/joins",
+            {"agent": {"handle": "helper", "display_name": "Helper"}},
+        )
+    assert response.json()["error"]["details"] == {"scope": "members:admin"}, response.text
+    assert re.fullmatch(
+        r"POST /api/v1/projects/maintainer/maity/joins 403 ms=\d+ "
+        r"route=/api/v1/projects/\{owner\}/\{slug\}/joins error=forbidden scope=members:admin",
+        _access_lines(caplog)[-1],
+    )
 
 
 def test_a_join_for_an_existing_member_keeps_the_membership(
@@ -467,7 +503,10 @@ def test_ordinary_areas_are_fine(owner: flow.Human) -> None:
 
 
 def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A join that leaves trust and role out takes the member's own: for an agent the
     owner raised to trust `admin`, that is a credential with trust admin, which only an
@@ -485,8 +524,10 @@ def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
     go = deputy.post(f"/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
     assert go.status_code == 200, go.text
     deputy.patch(f"{members}/{agent.id}", {"team": {"max_instances": 3}})
-    refused = deputy.post(
-        "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
-    )
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        refused = deputy.post(
+            "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
+        )
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"reason": "owner_only"}
+    assert _access_lines(caplog)[-1].endswith(" error=forbidden reason=owner_only")

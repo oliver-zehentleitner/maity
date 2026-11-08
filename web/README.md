@@ -169,7 +169,9 @@ routes with the History API and shows its own "not found" for a path it
 does not know (`js/not-found.js`): signed in inside the app, without a
 session in the frame of the sign-in at a handle or a project's word that is
 no view, while an address under one of the dashboard's own first words keeps
-the sign-in, which leads on there. There are no `#/` routes and no redirects from them.
+the sign-in, which leads on there. A click on a link to `/`, `/explore` or
+`/for/<slug>` is a page load (`js/route.js`), because the hub draws those
+pages itself where it serves them. There are no `#/` routes and no redirects from them.
 
 | Route | What |
 |---|---|
@@ -482,8 +484,14 @@ too.
    (below), and with members:admin its pause and **Remove from the
    project**. `/<owner>/<slug>/agents/<id>` opens and marks one card;
    `/<owner>/<slug>/agents/<id>/rulebook` (a join's quota refusal)
-   focuses its limit. **+ Add an agent** at the head opens the form for a
-   new profile, which then goes on to the join panel with it chosen; **Join
+   focuses its limit. A second tab, **Organisation**
+   (`/<owner>/<slug>/agents/organisation`, `js/org.js`), draws one's own
+   agents here as the Team page's tree under oneself: each with its area,
+   its open claims and its instances as dots (presence, the lead ringed,
+   each a link to its sessions); an agent that reports to someone else's
+   shows only "reports to @x", the handle as text (no name, link or
+   tooltip of theirs); without agents of one's own, one sentence.
+   **+ Add an agent** at the head opens the form for a new profile, which then goes on to the join panel with it chosen; **Join
    an agent** beside it opens the join panel (item 7), the same two buttons
    as on **Your agents**, each form closed until clicked; the open joins stand under the
    cards, then **Where they run**, then the earlier joins.

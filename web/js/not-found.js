@@ -12,13 +12,8 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
 
-  // /explore is the hub's page (§16.11), not a dashboard route: a click on it is a page load, so it
-  // stops here before js/route.js would draw it as a view of the dashboard.
-  function explore() {
-    const a = h("a", { href: "/explore" }, M.t("not_found.explore"));
-    a.addEventListener("click", (e) => { e.stopPropagation(); });
-    return a;
-  }
+  // /explore is the hub's page (§16.11): js/route.js leaves a click on it to the browser.
+  const explore = () => h("a", { href: "/explore" }, M.t("not_found.explore"));
 
   // The ways on: the sign-in back to this address (a visitor), the start, the public projects.
   function ways(signedIn, path) {

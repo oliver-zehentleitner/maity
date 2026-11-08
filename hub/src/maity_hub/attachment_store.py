@@ -400,7 +400,7 @@ def copy_local_to_s3(
     target: S3Store,
     *,
     apply: bool,
-    live: Callable[[str], set[str]] | None = None,
+    live: Callable[[str], set[str] | None] | None = None,
     still: Callable[[str], bool] | None = None,
 ) -> dict[str, int]:
     """Copy every blob of the local store into the bucket, under the same key; the migration from
@@ -412,7 +412,9 @@ def copy_local_to_s3(
     whole (at most `FILE_CAP`, like an upload). A folder or file the hub cannot read counts as
     failed, the rest goes on. Without `apply` it only counts.
 
-    `live(project)` names the attachments of a project that have a row and are not deleted. A
+    `live(project)` names the attachments of a project that have a row and are not deleted, and
+    is None for a folder no project has: that folder is left alone before its keys are read,
+    as the sweep does (`lost+found` on an ext4 volume would fail every run). A
     file without one is skipped (`skipped_deleted`): under `s3` the hub deletes only in the
     bucket, so a redacted or expired attachment's file stays on the volume and must not go back
     (a file whose upload has not committed its row yet is skipped too; the next run takes it).
@@ -433,13 +435,16 @@ def copy_local_to_s3(
         done["failed"] += 1
         return done
     for project in projects:
+        alive = live(project) if live is not None else None
+        if live is not None and alive is None:
+            log.warning("a folder no project has, left alone: %r", project)
+            continue
         try:
             keys = sorted(source.keys(project))
-        except OSError as error:  # lost+found on an ext4 volume, owned by root
+        except OSError as error:  # a project's folder the hub cannot read
             log.error("%s: %s", project, error.strerror or type(error).__name__)
             done["failed"] += 1
             continue
-        alive = live(project) if live is not None else None
         for key in keys:
             if alive is not None and key.partition("/")[2] not in alive:
                 done["skipped_deleted"] += 1
