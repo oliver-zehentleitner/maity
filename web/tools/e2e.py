@@ -926,6 +926,7 @@ def scenario(run: Run, page: Page) -> None:
         "Hold it",
         "--task",
         task["id"],
+        "--wait",
     )
     request_id = re.search(r"req-[0-9a-z]+", out).group(0)
     print(f"   asked {request_id}")

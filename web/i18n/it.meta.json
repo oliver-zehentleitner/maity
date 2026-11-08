@@ -977,7 +977,7 @@
   },
   "attach.delete.confirm": {
     "en": "b103bb2451da3914",
-    "text": "29ca2d0796df0a5f"
+    "text": "7c2e79583229694c"
   },
   "attach.delete.label": {
     "en": "18836b9b62311fa1",
@@ -1493,7 +1493,7 @@
   },
   "board.contract.arbiter_role": {
     "en": "5b9fd161c4fece22",
-    "text": "f69df8807a850526"
+    "text": "c878de23f9963177"
   },
   "board.contract.line": {
     "en": "c83e4a997a03550c",
@@ -4521,7 +4521,7 @@
   },
   "group.manage.add_hint": {
     "en": "4965d95c109f3383",
-    "text": "38d28234381ea087"
+    "text": "0f5ed4e80ed370fd"
   },
   "group.manage.added": {
     "en": "b15cb0e2a563cfb2",
@@ -4625,7 +4625,7 @@
   },
   "group.new.choose": {
     "en": "3f8b643083da0eed",
-    "text": "0f4fbb8780b1fcdc"
+    "text": "e7564ed426c46a66"
   },
   "group.new.closed": {
     "en": "9c17ef6df8c9905e",
@@ -8472,7 +8472,7 @@
     "text": "d42edc20bff0b7d3"
   },
   "mail.address.label": {
-    "en": "1b55f014dd7afbe6",
+    "en": "c6394f33e6b9bb97",
     "text": "bf399553699f29b5"
   },
   "mail.address.not_configured": {
@@ -14187,13 +14187,9 @@
     "en": "8eaf9e2f90377c6e",
     "text": "883b845f49b0499b"
   },
-  "runners.caps.allows": {
-    "en": "7d9b8d5fd3872578",
-    "text": "c30698bd87a1c7b1"
-  },
-  "runners.caps.allows_approval": {
-    "en": "43770eceb02be3f1",
-    "text": "a6a7a7249ab6b68d"
+  "runners.caps.approval": {
+    "en": "fb69541820a01ae7",
+    "text": "73744bb56f5ff150"
   },
   "runners.caps.isolation": {
     "en": "ed79e972d4f1f5cd",
@@ -14203,9 +14199,21 @@
     "en": "daa8849a96b30afb",
     "text": "6eac841f22350322"
   },
-  "runners.caps.none": {
-    "en": "30a0924a3360be68",
-    "text": "e900df51d431e954"
+  "runners.caps.projects": {
+    "en": "56cdf73bca852663",
+    "text": "f5b356c9e4a138a7"
+  },
+  "runners.caps.projects_none": {
+    "en": "f92ca62406467542",
+    "text": "7cd018b785bc5125"
+  },
+  "runners.caps.repositories": {
+    "en": "55c776b7ad197e4d",
+    "text": "49f50c01d12eaec5"
+  },
+  "runners.caps.repositories_none": {
+    "en": "d8d03cdee175c923",
+    "text": "9044ce2450d8c4d7"
   },
   "runners.caps.tools": {
     "en": "98fb1c874b1e5746",

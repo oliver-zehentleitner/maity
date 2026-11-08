@@ -9,6 +9,7 @@ check:
 	$(PYTHON) tools/check.py
 	$(PYTHON) tools/test_e2e_harness.py
 	$(PYTHON) tools/test_i18n_check.py
+	$(PYTHON) tools/test_vendor_ktw.py
 
 # Before a release: no translation lacks a key or follows an older English text.
 release-check:

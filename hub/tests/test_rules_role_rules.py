@@ -286,6 +286,17 @@ def test_items_are_stored_trimmed_up_to_the_limits(owner: flow.Human) -> None:
     assert stored[0] == longest and len(stored) == 30
 
 
+@pytest.mark.parametrize("blank", ["\u3164", "\u2800", "\u115f\u1160", "\u034f"])
+def test_only_the_four_categories_are_checked_so_a_blank_looking_item_is_stored(
+    owner: flow.Human, blank: str
+) -> None:
+    """§6.1: Cc, Cf, Zl and Zp are refused; a character outside them that shows nothing counts
+    as text, as the contract says, so the item is stored, not `empty_item`."""
+    response = owner.patch(BASE, {"settings": {"role_rules": {"tester": {"checklist": [blank]}}}})
+    assert response.status_code == 200, response.text
+    assert response.json()["settings"]["role_rules"]["tester"]["checklist"] == [blank]
+
+
 @pytest.mark.parametrize(
     ("role", "rules_in", "field", "error"),
     [

@@ -201,7 +201,10 @@ message.
    what you are doing, `--tried` for what you tried, one `--option` per
    answer they can click. Use `--class consent` before anything the rules
    reserve for a human, and `--class contract` before you change an
-   interface another member depends on.
+   interface another member depends on. `--task <card>` ties the question
+   to a card you hold and leaves the card as it is; add `--wait` when you
+   stop working on it until the answer, which shows the card as `blocked`
+   until then (a consent always waits).
 10. **Write in the reader's language.** Two values decide it, both in
     your resume packet: each human's `language` (in `peers`, on
     `me.owner`, and in the member list) and the project's `project.language`. A missing value

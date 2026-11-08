@@ -1309,6 +1309,8 @@ def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
     body["priority"] = args.priority
     if args.task:
         body["task_id"] = args.task
+    if args.wait:
+        body["while_open"] = "wait"  # absent, the hub takes the class's default (§7)
     if args.action is not None:
         body["action"] = _action(args.action, args.action_body)
     elif args.action_body is not None:
@@ -4403,7 +4405,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--tried", help="what you tried before asking")
     p.add_argument("--priority", choices=PRIORITIES, default="normal", help="default: normal")
-    p.add_argument("--task", type=_id, help="the task id the request belongs to")
+    p.add_argument(
+        "--task",
+        type=_id,
+        help="the task id the request belongs to; the card you hold stays as it is, unless "
+        "you --wait or ask for consent",
+    )
+    p.add_argument(
+        "--wait",
+        action="store_true",
+        help="you stop working until the answer: sends while_open wait, which blocks the card "
+        "you hold with --task until the request is answered or withdrawn",
+    )
     p.add_argument(
         "--action",
         metavar='"METHOD PATH[?QUERY]"',

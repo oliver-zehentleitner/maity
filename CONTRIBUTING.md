@@ -20,23 +20,32 @@ agents; this file is the short form for a human contributor.
 
 ## Lint and types before a push
 
-A red CI from formatting or types costs a round of about an hour. An
-opt-in pre-push hook runs CI's own `make lint typecheck` (`black --check`,
-`ruff`, `mypy`, no tests) for each of `hub/` and `cli/` that the push
-touches. Turn it on once per clone:
+A red CI from formatting, types or the context costs a round of about an
+hour. An opt-in pre-push hook runs CI's own `make lint typecheck`
+(`black --check`, `ruff`, `mypy`, no tests) for each of `hub/` and `cli/`
+that the push touches, and `ktw-lint` for each Keep the Why project it
+touches (the root, `hub/`, `cli/`, `web/`, as CI's ktw-lint job has them;
+a change to a project's `context/` or `.keep-the-why` also lints its
+family). Turn it on once per clone:
 
 ```sh
 git config core.hooksPath tools/hooks
 python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python
+pipx install --force "keep-the-why-lint==$(sed -n 's/.* # lint-v//p' .github/workflows/ktw-lint.yml)"
 ```
 
 The second line is the hub's environment from the hashed lock, the same
 one CI installs; the hook uses it for both packages (or the Python that
 `MAITY_HOOK_PYTHON` names). It stops before checking when black, ruff or
 mypy there differ from the pins in `hub/requirements/dev.txt`: after a
-lock change, run `make -C hub install PYTHON=.venv/bin/python` again. It
-checks the working tree, so it also stops when HEAD is not the pushed
-commit or a touched package has uncommitted changes. `git push
+lock change, run `make -C hub install PYTHON=.venv/bin/python` again.
+Likewise it stops when the `ktw-lint` on PATH (or the one
+`MAITY_HOOK_KTW_LINT` names) is not the version CI pins (`# lint-vX` in
+`.github/workflows/ktw-lint.yml`), naming both versions and the install
+command; it installs nothing and needs no network. It checks the working
+tree, so it also stops when HEAD is not the pushed commit or what it
+checks (a touched package, a linted project's `context/` and
+`.keep-the-why`) has uncommitted changes. `git push
 --no-verify` skips it; `git config --unset core.hooksPath` turns it off.
 `tools/pre_push.py` has the details.
 Not in a clone a maity runner manages: the runner's clone check refuses
@@ -172,6 +181,24 @@ verified.
   in its first push, the route to the fixtures and one smoke case per
   caller path. Its review request names the caller paths the smoke covers.
 
+## Local test environment
+
+Everything runs on the machine you work on; there is no shared test system.
+
+- **Hub:** in `hub/`, `make install` into a venv of its own, then `make check`, which
+  runs the whole suite with one worker per core; on the machine the project's agents
+  share, `make lint typecheck` and the affected test files instead (below). The tests
+  run on SQLite by default, one file per test (`hub/README.md`, "Develop").
+- **Hub on PostgreSQL:** `scripts/with_postgres.sh pytest -n 2 <test files>` from
+  `hub/`; it starts a local server and gives the run a database of its own. Without a
+  system PostgreSQL, the `pgserver` package brings the server (`hub/README.md`).
+- **CLI:** in `cli/`, `make dev`, then `make check`. The tests need neither a
+  database nor a running hub: they talk to a hub on loopback in the test itself
+  (`cli/tests/fakehub.py`).
+- **A shared machine:** at most two workers per run and heavy runs in a slot
+  (`tools/run_slot.sh`); on the machine the project's agents share, only the test files
+  a change affects, never the full hub suite. The next section has the rules.
+
 ## PostgreSQL runs and a shared machine
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the
@@ -205,6 +232,11 @@ directory and the slot files are that account's own; another account gets its ow
   `tools/run_slot.sh <command>`.
 - **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
   starts two.
+- **No full hub suite on the agents' machine** (since 2026-10-29, after the
+  machine the project's agents share ran out of memory twice and crashed): there,
+  run only the test files a change affects, with at most `pytest -n 2`, and leave
+  the full suite to the pull request's CI. On a machine of your own the full suite
+  may run.
 
 A branch cut before the run slots (#1302) has no `tools/run_slot.sh`, and
 there `make smoke` and `with_postgres.sh` take no slot by themselves. Merge
@@ -224,6 +256,13 @@ status, so a failed run stays a failure.
 Imperative, plain English, one concern per commit:
 `hub: claim tasks with a lease`. A handful of meaningful commits per
 feature; `context/` entries are the exception and get one each.
+
+## During a review and in a stack
+
+- Fixes after a review are pushed as one bundle once every review of the
+  round is in, not after the first; an exception only on the lead's word.
+- After the lower pull request of a stack is squash-merged, merge
+  `origin/main` into the upper one instead of rebasing it.
 
 ## Issues
 

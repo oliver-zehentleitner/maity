@@ -1546,6 +1546,51 @@
    "version": "string"
   }
  },
+ "GET /site/chrome?lang=en": {
+  "object": {
+   "footer": {
+    "object": {
+     "columns": {
+      "array": {
+       "object": {
+        "key": "string",
+        "links": {
+         "array": {
+          "object": {
+           "href": "string",
+           "label": "string",
+           "rel": "null"
+          }
+         }
+        },
+        "title": "string"
+       }
+      }
+     },
+     "languages": {
+      "array": null
+     },
+     "operator": "null"
+    }
+   },
+   "header": {
+    "object": {
+     "cta": "null",
+     "nav": {
+      "array": null
+     },
+     "sign_in": {
+      "object": {
+       "href": "string",
+       "label": "string"
+      }
+     }
+    }
+   },
+   "landing": "boolean",
+   "language": "string"
+  }
+ },
  "PATCH /projects/{foreign_project}/members/{foreign}": {
   "object": {
    "action": "null",

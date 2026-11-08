@@ -53,6 +53,39 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
   every project listing, and a boolean says that in one word. The CHECK keeps the two
   from disagreeing.
 
+## A question blocks its card only when it says it waits; `while_open`'s default follows the class
+
+**Id:** 3d44b07f-3ab6-41be-8bd0-a799eb11c530
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08
+**Revisit when:** a request needs to block a card without the asker holding it, or `_unblock` needs to tell blocking requests from waiting ones that blocked nothing
+
+A request without `while_open` takes the class's default:
+
+- `wait` for a `consent`, which may not be anything else (§7);
+- `proceed_provisionally` for every other class.
+
+Only `wait`, given or a consent's default, blocks the card the asker holds; the remembered
+status and the restore on the last answer stay as they were. `maity ask --wait` sends
+`while_open: wait`; without it the CLI sends none.
+
+**Reason:**
+- `maity ask` never sent `while_open`, so every `ask --task` blocked the card under the old
+  default `wait`, a side question included.
+- `while_open` already says what the asker does meanwhile, and the inbox shows that to the
+  human; a default of `proceed_provisionally` makes it say what is now true.
+- A consent asks "may I", so the asker cannot go on without the answer; it keeps waiting.
+
+**Rejected alternatives:**
+- A separate `block` field: `_unblock` counts the other waiting requests on the card, so
+  it would need a stored column, a migration and a slot in the migration order.
+- No automatic block, the asker setting `blocked` by hand: no status transition leads
+  there, and the restore on answer would be lost.
+- `proceed_provisionally` for every class: a consent must wait, and its validation
+  (`consent_waits`) would refuse every bare consent.
+
 ## A request listing sorts and pages light entries and builds full views only for its page
 
 **Id:** 1a0b7116-3d75-451f-9b49-fcdad7cdeead
