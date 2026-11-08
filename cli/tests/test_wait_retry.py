@@ -373,3 +373,84 @@ def test_wait_for_a_handle_sleeps_a_window_out_while_resolving_it(
     assert cli.main(["--for", "designer", "wait", "--timeout", "600"]) == cli.EXIT_OK
     assert len(lookups) == 2 and clock.sleeps == [120]
     assert "Maintenance until 2026-11-02 13:30 UTC" in capsys.readouterr().err
+
+
+# --- where N comes from (§13) ----------------------------------------------------------------
+
+
+def _outage(fake: fakehub.FakeHub) -> None:
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (503, "unavailable")
+
+
+@pytest.mark.parametrize(
+    ("flag", "env", "hint", "ends_at"),
+    [
+        (["--timeout", "40"], "300", 200, 35),  # the flag wins
+        ([], "300", 200, 295),  # then the variable
+        ([], " 300 ", 200, 295),  # spaces around it are no error
+        ([], "", 200, 195),  # set but empty: unset
+        ([], None, 200, 195),  # then the hub's hint
+        ([], None, None, 595),  # then 600
+        ([], None, 9000, 7195),  # a hint beyond the cap is taken at the cap
+    ],
+)
+def test_wait_takes_n_from_the_flag_the_variable_the_hint_or_600(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    flag: list[str],
+    env: str | None,
+    hint: int | None,
+    ends_at: int,
+) -> None:
+    data = {k: v for k, v in state.load_state(joined).items() if k != "wait_timeout"}
+    state.save_state(joined, data if hint is None else {**data, "wait_timeout": hint})
+    if env is None:
+        monkeypatch.delenv(cli.WAIT_ENV, raising=False)
+    else:
+        monkeypatch.setenv(cli.WAIT_ENV, env)
+    _outage(fake)
+    assert cli.main(["wait", *flag]) == cli.EXIT_TIMEOUT
+    assert clock.now == ends_at  # N less the reserve for the unread-chats note
+
+
+@pytest.mark.parametrize(
+    ("flag", "env", "message"),
+    [
+        (["--timeout", "0"], None, "--timeout must be 1 to 7200 seconds, not 0"),
+        (["--timeout", "7201"], None, "--timeout must be 1 to 7200 seconds, not 7201"),
+        ([], "1800000", "MAITY_WAIT_TIMEOUT must be 1 to 7200 seconds, not 1800000"),
+        ([], "-5", "MAITY_WAIT_TIMEOUT must be 1 to 7200 seconds, not -5"),
+        ([], "30s", "MAITY_WAIT_TIMEOUT must be a whole number of seconds, not '30s'"),
+        ([], "1.5", "MAITY_WAIT_TIMEOUT must be a whole number of seconds, not '1.5'"),
+    ],
+)
+def test_wait_refuses_n_outside_its_range_naming_the_source(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flag: list[str],
+    env: str | None,
+    message: str,
+) -> None:
+    if env is None:
+        monkeypatch.delenv(cli.WAIT_ENV, raising=False)
+    else:
+        monkeypatch.setenv(cli.WAIT_ENV, env)
+    _outage(fake)
+    assert cli.main(["wait", *flag]) == cli.EXIT_USAGE
+    assert message in capsys.readouterr().err
+    assert clock.now == 0 and fake.seen == []  # refused before any call
+
+
+def test_wait_bounds_hold_at_both_ends(
+    joined: Path, fake: fakehub.FakeHub, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(cli.WAIT_ENV, "7200")
+    _outage(fake)
+    assert cli.main(["wait"]) == cli.EXIT_TIMEOUT
+    assert clock.now == 7195
+    assert cli.main(["wait", "--timeout", "1"]) == cli.EXIT_TIMEOUT
