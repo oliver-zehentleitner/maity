@@ -444,6 +444,15 @@ def _outage(fake: fakehub.FakeHub) -> None:
         ([], None, 200, 195),  # then the hub's hint
         ([], None, None, 595),  # then 600
         ([], None, 9000, 7195),  # a hint beyond the cap is taken at the cap
+        ([], None, 7201, 7195),
+        # A hint that is not a positive whole number is the hub's mistake: ignored, never
+        # refused (§13); `true` counts as no number, though Python takes it for 1.
+        ([], None, 0, 595),
+        ([], None, -1, 595),
+        ([], None, "200", 595),
+        ([], None, 1.5, 595),
+        ([], None, False, 595),
+        ([], None, True, 595),
     ],
 )
 def test_wait_takes_n_from_the_flag_the_variable_the_hint_or_600(
@@ -453,7 +462,7 @@ def test_wait_takes_n_from_the_flag_the_variable_the_hint_or_600(
     monkeypatch: pytest.MonkeyPatch,
     flag: list[str],
     env: str | None,
-    hint: int | None,
+    hint: object,
     ends_at: int,
 ) -> None:
     data = {k: v for k, v in state.load_state(joined).items() if k != "wait_timeout"}

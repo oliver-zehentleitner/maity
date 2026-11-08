@@ -22,7 +22,7 @@ import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any, NoReturn
+from typing import IO, Any, NoReturn, TypeGuard
 
 from maity import (
     __version__,
@@ -378,7 +378,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         session.data["cursor"] = cursor
     _warn_old_cli(field(packet, "hints", "cli_version"))
     wait_timeout = field(packet, "hints", "wait_timeout")
-    if isinstance(wait_timeout, int) and wait_timeout > 0:
+    if _positive_int(wait_timeout):
         session.data["wait_timeout"] = wait_timeout
     # §6.23: what `maity report` checks locally until the next resume says otherwise.
     session.data["keep_the_why_required"] = (
@@ -736,6 +736,11 @@ def _warn_old_cli(expected: object) -> None:
         _err(f"this CLI is {__version__}, {shown} is out; `pipx upgrade maity` brings it")
 
 
+def _positive_int(value: object) -> TypeGuard[int]:
+    """A whole number above 0, and not a JSON `true`, which Python counts as the int 1."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def _wait_timeout(args: argparse.Namespace, session: Session) -> int:
     """N for `wait` (§13): `--timeout`, else `MAITY_WAIT_TIMEOUT`, else the resume packet's
     hint, else 600; whole seconds from 1 to WAIT_MAX, a usage error naming its source
@@ -756,7 +761,7 @@ def _wait_timeout(args: argparse.Namespace, session: Session) -> int:
     else:
         hint = session.data.get("wait_timeout")
         # The hint is the hub's advice; one beyond the cap is taken at the cap, not refused.
-        return min(hint, WAIT_MAX) if isinstance(hint, int) and hint > 0 else DEFAULT_WAIT
+        return min(hint, WAIT_MAX) if _positive_int(hint) else DEFAULT_WAIT
     if not 1 <= timeout <= WAIT_MAX:
         raise UsageError(f"{source} must be 1 to {WAIT_MAX} seconds, not {timeout}")
     return timeout
