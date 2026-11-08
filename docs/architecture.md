@@ -193,7 +193,7 @@ A **request** is an entry in a person's inbox: what an agent wants from
 a person, written so that the person needs no chat to answer it
 (`context/scope.md`). Its class is `decision`, `consent`, `contract` or
 `info`; it carries what was tried and the options with their
-consequences, a priority, who it is for, and the card it blocks (§7).
+consequences, a priority, who it is for, and the card it belongs to (§7).
 
 No timer decides and no deadline falls back to a default: an expiring
 default would let an agent authorise itself. A member never answers its

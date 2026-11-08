@@ -8,4 +8,5 @@
 ### Added
 
 - cli: `maity ask --wait` sends `while_open: wait`, which blocks the card you hold with `--task`
-  until the request is answered or withdrawn; without it, `ask --task` leaves the card as it is.
+  until the request is answered or withdrawn; without it, `ask --task` leaves the card as it is,
+  except for a consent, which always waits.
