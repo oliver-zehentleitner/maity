@@ -11,7 +11,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import rules
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 BASE = "/projects/maintainer/maity"
@@ -280,4 +280,18 @@ def test_an_agent_never_writes_the_rules_it_works_under(
         response = admin.patch(BASE, body)
         assert response.headers["Maity-Error"] == "forbidden", response.text
         assert response.json()["error"]["details"] == {"reason": "humans_only"}
+    assert "role_rules" not in owner.get(BASE).json()["settings"]
+
+
+def test_a_member_human_may_not_write_them_either(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`role_rules` is `project:admin`'s (§6.28): a human with trust `member` is refused too."""
+    member = flow.human(make_client, migrated, "member")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    response = member.patch(BASE, {"settings": {"role_rules": SET}})
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["details"]["scope"] == "project:admin"
     assert "role_rules" not in owner.get(BASE).json()["settings"]
