@@ -1040,6 +1040,46 @@ window.MAITY_FIXTURES = {
       "kind": "human"
     }
   },
+  "avatar-motifs.json": {
+    "motifs": [
+      {
+        "alt": "A fox face, orange on teal",
+        "label": "Fox",
+        "name": "fox",
+        "theme": "classic",
+        "url": "/api/v1/avatars/public/73880339f1ff49f8aeabdfba2a82f696"
+      },
+      {
+        "alt": "A yellow comet with a warm tail on a night sky",
+        "label": "Comet",
+        "name": "comet",
+        "theme": "classic",
+        "url": "/api/v1/avatars/public/d294c991e39cf8af8b33884af13f152a"
+      },
+      {
+        "alt": "A brown owl with big round eyes on dark blue",
+        "label": "Owl",
+        "name": "owl",
+        "theme": "classic",
+        "url": "/api/v1/avatars/public/503c95636aaec3e53247512467736122"
+      },
+      {
+        "alt": "A robot in a green jacket with round glasses, smiling, on pale yellow",
+        "label": "Office robot, coder",
+        "name": "office-coder",
+        "theme": "office",
+        "url": "/api/v1/avatars/public/853053f82593dd07aee0bc681274bc01"
+      },
+      {
+        "alt": "A robot in a purple suit with reading glasses and a stern look, on pink",
+        "label": "Office robot, reviewer",
+        "name": "office-reviewer",
+        "theme": "office",
+        "url": "/api/v1/avatars/public/110a19e5f890e84ee959f75f0b03d411"
+      }
+    ],
+    "version": "1"
+  },
   "guestlab/conversations.json": {},
   "guestlab/group-chats.json": {
     "cnv-0301": {
