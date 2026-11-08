@@ -997,6 +997,7 @@ def patch_project(
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
+        role_rules_moved = False  # the role rules changed the generated rules, not only storage
         bumped = False  # one PATCH moves `rules_version` once (§6.1)
         settings_changed: dict[str, Any] = {}
         restricted_before: set[int] | None = None
@@ -1083,7 +1084,7 @@ def patch_project(
                     # Only a change of what the rules say moves `rules_version`: `false` and
                     # `[]` read as every rule off, like an absent key (§6.1).
                     if _effective_role_rules(merged.get(key)) != _effective_role_rules(dumped[key]):
-                        rules_inputs_changed = True
+                        rules_inputs_changed = role_rules_moved = True
                 elif key != "onboarding" and merged.get(key) != dumped[key]:
                     settings_changed[f"settings.{key}"] = (
                         True
@@ -1298,12 +1299,13 @@ def patch_project(
                 rules_inputs_changed = True
         # The name, a note without a state change, the owner's text, the Keep the Why line
         # and the role rules are rules inputs without an event of their own: one
-        # rules_changed, whose reason names the role rules when the PATCH gives none (§6.1).
+        # rules_changed, whose reason names the role rules when the PATCH gives none and they
+        # changed the rules (§6.1); a value without effect leaves the bump to another input.
         # A state_changed or policy_changed of the same PATCH already marks the new version.
         if rules_inputs_changed and not bumped:
             if body.reason:
                 payload = {"reason": body.reason}
-            elif "settings.role_rules" in settings_changed:
+            elif role_rules_moved:
                 payload = {"reason": "settings.role_rules"}
             else:
                 payload = {}

@@ -190,17 +190,31 @@ def test_a_value_without_effect_is_kept_but_moves_no_rules_version(
     so `rules_version` stays (c47w at #1279: {} → false → [] went 1 → 4)."""
     before = _version(migrated)
     count = len(_events(migrated, "rules_changed"))
-    for value in (
+    announced = len(_events(migrated, "project_updated"))
+    values: tuple[dict[str, Any] | None, ...] = (
         {"coder": {"subagent_per_card": False}},
         {"coder": {"subagent_per_card": False}, "reviewer": {"checklist": []}},
         {"reviewer": {}},
         None,
-    ):
+    )
+    for value in values:
         answer = owner.patch(BASE, {"settings": {"role_rules": value}})
         assert answer.status_code == 200, answer.text
         assert answer.json()["settings"].get("role_rules") == value
     assert _version(migrated) == before
     assert len(_events(migrated, "rules_changed")) == count
+    updated = _events(migrated, "project_updated")[announced:]
+    assert [u.payload["fields"] for u in updated] == [
+        {"settings.role_rules": {"coder": {"subagent_per_card": False}}},
+        {
+            "settings.role_rules": {
+                "coder": {"subagent_per_card": False},
+                "reviewer": {"checklist": True},
+            }
+        },
+        {"settings.role_rules": {"reviewer": {}}},
+        {"settings.role_rules": None},
+    ]
     assert owner.patch(BASE, {"settings": {"role_rules": SET}}).status_code == 200
     assert _version(migrated) == before + 1  # a value with effect still moves it
 
@@ -216,6 +230,19 @@ def test_one_patch_with_other_rules_inputs_bumps_once_with_its_own_reason(
     changed = _events(migrated, "rules_changed")
     assert len(changed) == count + 1
     assert changed[-1].payload == {"version": before + 1, "reason": "tighter reviews"}
+
+
+def test_a_value_without_effect_does_not_name_the_bump_another_input_made(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """The reason `settings.role_rules` is for a PATCH whose role rules changed the rules;
+    one whose role rules added nothing leaves the bump to the input that made it (e5kk at
+    #1486)."""
+    before = _version(migrated)
+    body = {"settings": {"role_rules": {"coder": {"subagent_per_card": False}}}}
+    assert owner.patch(BASE, {**body, "rules_markdown": "new"}).status_code == 200
+    assert _version(migrated) == before + 1
+    assert _events(migrated, "rules_changed")[-1].payload == {"version": before + 1}
 
 
 @pytest.mark.parametrize(
