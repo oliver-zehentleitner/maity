@@ -39,7 +39,8 @@ answers stays: if the hub changed the posted body and the response was lost, the
 misses it and the answer is said again. A pass reads at most five pages and answers at most 50
 requests; the next pass goes on from there. A first start begins after the newest message,
 following empty pages (across passes, from a saved continuation), and never takes older ones.
-An unreadable state file is logged every pass and the queue pass still runs. One `run` per
+Nothing in the intake stops the queue pass: an unreadable or malformed state file, or any
+other error there, is logged every pass and tried again, and the results still go out. One `run` per
 queue: the state file is not locked against a second runner. Reading
 messages moves no read mark of the identity (`maity messages` acknowledges nothing), so a
 `maity wait` of the same identity still gets every message. But every read is a hub call, and
@@ -325,8 +326,11 @@ def _load(queue: Path) -> dict[str, Any] | None:
         raise Transient(f"{_intake_file(queue)}: not JSON; fix or remove it") from bad
     if not isinstance(state, dict):
         raise Transient(f"{_intake_file(queue)}: not an object; fix or remove it")
-    starting = state.get("after") is None and isinstance(state.get("starting"), str)
-    if not starting and not isinstance(state.get("after"), int):
+    # A first start in progress has `after` present and null, and a continuation; else `after`
+    # is an int. A missing `after` is never taken for either.
+    after = state.get("after", False)
+    starting = after is None and isinstance(state.get("starting"), str)
+    if not starting and (isinstance(after, bool) or not isinstance(after, int)):
         raise Transient(f"{_intake_file(queue)}: no `after`; fix or remove it")
     state.setdefault("pass", 0)
     state.setdefault("resume", None)
@@ -629,9 +633,15 @@ def main(argv: list[str] | None = None) -> int:
                     intake_pass(
                         args.queue, args.inbox, maity_messages, gh_get, maity_say, args.repo
                     )
-                except (Transient, OSError) as trouble:
-                    # Never stops the queue pass below: results still go out.
-                    print(f"ci_watch: intake: {trouble}; tried again next pass", file=sys.stderr)
+                except Exception as trouble:  # noqa: BLE001 - nothing in the intake stops the queue
+                    # Whatever went wrong, from the hub, GitHub or the local state file: the line
+                    # names the state file and the kind, and the queue pass below still runs.
+                    kind = "" if isinstance(trouble, Transient) else f"{type(trouble).__name__}: "
+                    print(
+                        f"ci_watch: intake ({_intake_file(args.queue)}): {kind}{trouble}; "
+                        "tried again next pass",
+                        file=sys.stderr,
+                    )
             run_pass(args.queue, gh_get, maity_say, args.repo)
             if args.once:
                 return 0

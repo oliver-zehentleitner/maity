@@ -698,6 +698,69 @@ class IntakeTest(unittest.TestCase):
                 self.assertIn("wrong shape", str(caught.exception))
                 self.assertEqual(self.said, [])
 
+    def test_no_state_file_content_stops_the_queue_pass(self) -> None:
+        # Boundary: whatever the local state file holds, `main` logs the intake's failure with
+        # the file's name and still runs the queue pass. Route: `{"starting": …}` without
+        # `after` passed `_load`, then a KeyError ended `main` before its queue pass.
+        contents = (
+            '{"starting": "c"}',
+            "{}",
+            "[]",
+            '"text"',
+            "7",
+            "{not json",
+            '{"after": true}',
+            '{"after": null}',
+            '{"after": "5"}',
+            '{"after": 5, "pass": "1"}',
+            '{"after": 5, "resume": [1]}',
+            '{"after": 5, "resume": ["x", "c"]}',
+            '{"after": 5, "tries": []}',
+            '{"after": 5, "tries": {"101": "x"}}',
+            '{"after": 5, "outbox": 3}',
+            '{"after": 5, "outbox": [7]}',
+            '{"after": 5, "outbox": [{"to": 1, "text": "t"}]}',
+            '{"after": 5, "outbox": [{"to": "a#b", "text": "t", "failed": "x"}]}',
+        )
+        for text in contents:
+            with self.subTest(text):
+                (self.tmp / "ciwatch.txt.intake").write_text(text)
+                err = io.StringIO()
+                with (
+                    mock.patch.dict(os.environ, {"MAITY_STATE_DIR": "x"}),
+                    mock.patch.object(ci_watch, "maity_messages", return_value=([], None)),
+                    mock.patch.object(ci_watch, "run_pass") as queue_pass,
+                    contextlib.redirect_stderr(err),
+                ):
+                    code = ci_watch.main(["run", str(self.queue), "--once", "--inbox", INBOX])
+                self.assertEqual(code, 0)
+                queue_pass.assert_called_once()
+                self.assertIn("ciwatch.txt.intake", err.getvalue())
+
+    def test_a_first_start_in_progress_needs_after_present_and_null(self) -> None:
+        intake = self.tmp / "ciwatch.txt.intake"
+        intake.write_text('{"after": null, "starting": "c"}')
+        self.assertEqual(self.saved()["starting"], "c")
+        for text in ('{"starting": "c"}', '{"after": false, "starting": "c"}'):
+            with self.subTest(text):
+                intake.write_text(text)
+                with self.assertRaises(ci_watch.Transient) as caught:
+                    ci_watch._load(self.queue)
+                self.assertIn("ciwatch.txt.intake: no `after`", str(caught.exception))
+
+    def test_a_bug_in_the_intake_never_stops_the_queue_pass(self) -> None:
+        err = io.StringIO()
+        with (
+            mock.patch.dict(os.environ, {"MAITY_STATE_DIR": "x"}),
+            mock.patch.object(ci_watch, "intake_pass", side_effect=KeyError("after")),
+            mock.patch.object(ci_watch, "run_pass") as queue_pass,
+            contextlib.redirect_stderr(err),
+        ):
+            code = ci_watch.main(["run", str(self.queue), "--once", "--inbox", INBOX])
+        self.assertEqual(code, 0)
+        queue_pass.assert_called_once()
+        self.assertIn("ciwatch.txt.intake): KeyError: 'after'", err.getvalue())
+
     def test_a_state_file_that_cannot_be_read_is_passing_trouble(self) -> None:
         # Route: an OSError on reading the state ended the runner before its queue pass.
         ci_watch._save(self.queue, state(100))
@@ -719,7 +782,8 @@ class IntakeTest(unittest.TestCase):
                     code = ci_watch.main(["run", str(self.queue), "--once", "--inbox", INBOX])
                 self.assertEqual(code, 0)
                 queue_pass.assert_called_once()
-                self.assertIn("ci_watch: intake:", err.getvalue())
+                self.assertIn("ci_watch: intake (", err.getvalue())
+                self.assertIn("ciwatch.txt.intake): ", err.getvalue())
 
     @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
     def test_main_runs_the_queue_pass_with_a_real_unreadable_state_file(self) -> None:
