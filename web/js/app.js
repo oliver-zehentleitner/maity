@@ -2167,15 +2167,17 @@ window.Maity = window.Maity || {};
           }
           // A public page of this address, read-only (§16.9); otherwise the login.
           // A frame of the sign-in drawn before stays until the page is known, then goes.
-          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) {
+          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+          if (shown) {
             if (seq === renderSeq) M.siteChrome.leave();
             return;
           }
           // The hub's own page in <main> stands when its data could not be read. A dashboard
           // route asks for the sign-in; an address that shows a visitor nothing says so
-          // (js/not-found.js), with the sign-in one link away.
+          // (js/not-found.js), with the sign-in one link away, but only where the hub said it
+          // has no page: a read that failed otherwise (null) keeps the sign-in.
           if (seq === renderSeq && !hubPage) {
-            if (M.notFound && showsVisitorNothing(where)) {
+            if (M.notFound && shown === false && showsVisitorNothing(where)) {
               M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
             } else renderLogin(main);
           }
