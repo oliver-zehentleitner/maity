@@ -20,14 +20,15 @@ never addressed, every message of the others wakes them already. Not for a jour 
 thread (`hub_thread`), a closed chat, a direct conversation or a cross-project chat (§9.5),
 which are not rows of `conversation` here, or a paused or isolated membership.
 
-What holds, and what does not (the lead's boundary for #1490; hub/context/events.md):
+What holds (the lead's boundary for #1490; hub/context/events.md):
 - guaranteed: no message body is read, the work per pass is bounded, every unread human
   message without a mention eventually causes one nudge, and a redaction committed before a
   pass starts is left out of the nudge;
-- not guaranteed: a redaction that commits while a pass runs may leave that one nudge's
-  `unread` and `oldest_seq` counting the redacted message. The nudge is a wake-up hint: the
-  agent then reads the chat, where the redacted message is not shown. Closing that window
-  completely is left for later.
+- beyond that, a redaction that commits while a pass runs is caught by the call under the
+  project lock on both routes known from the review (a first read, and an earlier read whose
+  bound grows; each tested on PostgreSQL). Exactness against a concurrent redaction is not
+  promised: the nudge is a wake-up hint, and the agent then reads the chat, which never shows
+  a redacted message. Another route, should one turn up, is a P3 for the hub roll-up.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, and_, func, select
+from sqlalchemy import Connection, Engine, and_, case, func, select
 
 from maity_hub import clock, listening
 from maity_hub import tables as t
@@ -53,7 +54,7 @@ KIND = "chat_unread"
 DELAY = timedelta(minutes=10)
 # Rows read per query, and per stay and pass: a long unread range is read over several passes
 # rather than at once; the nudge waits until the read reached its end, so its counts cover every
-# message up to it (but for the one window the module docstring names).
+# message up to it (concurrent redactions: the module docstring).
 SCAN_BATCH = 500
 SCAN_BUDGET = 2000
 
@@ -62,11 +63,10 @@ SCAN_BUDGET = 2000
 class _Scan:
     """What one stay's unread messages have shown so far: read up to `scanned_to`, from
     `mark`, and the counted ones' number, first and last. `upto` is the high-water mark the
-    read is bounded by, and `redacted` how many human messages in (mark, upto] were redacted
-    when that bound was last set. A changed count over that range starts the read over.
-    When the bound grows, the count is taken again over the whole range after the check of
-    the old one, so a redaction committing in between can enter it while its message stays
-    counted: that one nudge may then count it (the limit in the module docstring)."""
+    read is bounded by, and `redacted` how many human messages in (mark, upto] were redacted.
+    That count is always taken in one statement with the check of the range already read
+    (`_counts`), never after it: a redaction committed later moves it and starts the read
+    over, one committed earlier is left out of the rows read (review of #1490, deltas 2, 3)."""
 
     mark: int
     scanned_to: int
@@ -173,16 +173,6 @@ def _humans_from() -> Any:
     return t.event.join(t.membership, t.membership.c.id == t.event.c.actor_membership)
 
 
-def _redacted_in(conn: Connection, stay: Any, after: int, upto: int) -> int:
-    """How many human messages in (after, upto] are redacted: an aggregate, no row read."""
-    found = conn.execute(
-        select(func.count())
-        .select_from(_humans_from())
-        .where(_humans_after(stay, after, redacted=True), t.event.c.seq <= upto)
-    ).scalar()
-    return int(found or 0)
-
-
 def _oldest_human(conn: Connection, stay: Any, after: int) -> Any:
     """The oldest human message's time after `after`, or None: an aggregate, no row read.
     Mentions only take messages out, so the delay cannot be due when this is younger."""
@@ -206,21 +196,30 @@ def _rows_after(conn: Connection, stay: Any, after: int, upto: int, limit: int) 
     )
 
 
-def _newest_human(conn: Connection, stay: Any, after: int) -> int | None:
-    """The newest human message's seq after `after`, redacted or not: an aggregate."""
+def _counts(conn: Connection, stay: Any, mark: int, upto: int) -> tuple[int | None, int, int]:
+    """In one statement, so one snapshot even under READ COMMITTED: the newest human message's
+    seq after `mark` (redacted or not), and how many human messages are redacted in
+    (mark, upto] and above `upto`. The check of a range already read and the count for its
+    extension then cannot fall apart around a redaction committed between two statements."""
     e, m = t.event.c, t.membership.c
-    found = conn.execute(
-        select(func.max(e.seq))
+    redacted = e.redacted.is_(True)
+    row = conn.execute(
+        select(
+            func.max(e.seq),
+            func.coalesce(func.sum(case((and_(redacted, e.seq <= upto), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((and_(redacted, e.seq > upto), 1), else_=0)), 0),
+        )
         .select_from(_humans_from())
         .where(
             e.project_id == stay.project_id,
             e.conversation_id == stay.conversation_id,
             e.kind == "message",
-            e.seq > after,
+            e.seq > mark,
             m.human_id.is_not(None),
         )
-    ).scalar()
-    return None if found is None else int(found)
+    ).one()
+    newest = None if row[0] is None else int(row[0])
+    return newest, int(row[1]), int(row[2])
 
 
 def _mentions(row: Any, agent_id: str) -> bool:
@@ -236,30 +235,30 @@ def _scanned(conn: Connection, stay: Any, mark: int) -> _Scan | None:
     their number, first and last, or None while the read has not reached its bound (it goes
     on next pass). Each call reads at most SCAN_BUDGET rows of this stay, and only those after
     the last one read, so a backlog that never leads to a nudge (all of it mentions the agent)
-    is not read again each minute (review of #1490). A pass calls it once outside the lock
-    and, for a stay whose nudge is due, once more under it, so a restart in between can make
-    one pass read up to twice the budget. A moved mark, or a redaction inside the bounded
-    range, starts the read over.
+    is not read again each minute (review of #1490). A pass calls it once outside the lock and,
+    for a stay whose nudge is due, once more under it, so a redaction that restarts the read
+    in between can make one pass read up to twice the budget. A moved mark, or a redaction
+    inside the bounded range, starts the read over.
 
-    Redactions: one committed before a pass starts changes the count over the range read, so
-    the read starts over and leaves it out. On a first read the bound and its count are taken
-    before the rows, so a redaction committing during that read is caught by the call under
-    the lock. A redaction takes the project lock, so none commits between that call and the
-    write. A redaction committing while a pass extends an earlier read's bound may still stay
-    counted in that pass's nudge (the limit in the module docstring)."""
+    Redactions under concurrent writes: the check of the range already read and the bound and
+    redaction count for its extension come from one statement (`_counts`), and only then are
+    rows under the bound read. A redaction committed after that statement moves the count
+    and restarts the read at the next call; the call under the project lock (`check`) is the
+    last, and a redaction takes the same lock, so none falls between it and the write."""
     key = (stay.membership_id, stay.conversation_id)
     with _SCANS_LOCK:
         scan = _SCANS.get(key)
-    if (
-        scan is None
-        or scan.mark != mark
-        or (scan.upto > mark and _redacted_in(conn, stay, mark, scan.upto) != scan.redacted)
-    ):
+    if scan is None or scan.mark != mark:
         scan = _Scan(mark=mark, scanned_to=mark, upto=mark)
-    newest = _newest_human(conn, stay, mark)
+    newest, in_range, above = _counts(conn, stay, mark, scan.upto)
+    if scan.upto > mark and in_range != scan.redacted:
+        # A message already counted may have been redacted: start over. A fresh scan has no
+        # counted row, so the count taken for it now can hide nothing.
+        scan = _Scan(mark=mark, scanned_to=mark, upto=mark)
+        newest, in_range, above = _counts(conn, stay, mark, mark)
     if newest is not None and newest > scan.upto:
-        # The new bound and its redaction count, before any row under it is read.
-        scan.redacted = _redacted_in(conn, stay, mark, newest)
+        # The extension's count from the same statement as the check above.
+        scan.redacted = in_range + above
         scan.upto = newest
     budget, complete = SCAN_BUDGET, False
     while budget > 0:

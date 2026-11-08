@@ -727,3 +727,42 @@ def test_a_redaction_between_the_read_and_the_write_is_not_counted(
     chat_unread.sweep(r.engine)
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
+
+
+def test_a_redaction_while_a_cached_read_extends_its_bound_is_not_counted(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1490, delta 3: a scan that read the first message in an earlier pass extends
+    its bound to a new message; a redaction of the first, committed right after the check of
+    the range already read, must not be adopted into the new count."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("a concurrent commit during the read needs PostgreSQL")
+    first, second = r.agents
+    gone = r.say(r.owner, "taken back")
+    r.read(second)
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 1)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 1)
+    r.at(11)
+    assert chat_unread.sweep(r.engine) == []  # read "taken back", the end not seen yet
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 500)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2000)
+    r.at(12)
+    kept = r.say(r.owner, "stays")
+    r.read(second)
+    real = chat_unread._counts
+    armed: list[bool] = [True]
+
+    def counts_then_redact(conn: Any, stay: Any, mark: int, upto: int) -> Any:
+        found = real(conn, stay, mark, upto)
+        if armed and stay.agent_id == first.id:  # once, right after the check
+            armed.clear()
+            with r.engine.begin() as other:  # committed by another writer meanwhile
+                other.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+        return found
+
+    monkeypatch.setattr(chat_unread, "_counts", counts_then_redact)
+    r.at(23)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)

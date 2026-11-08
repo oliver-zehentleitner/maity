@@ -12631,10 +12631,9 @@ The conversation view:
   mark, as for a mention.
 
   Exactness: the counts leave out every message redacted before the hub's
-  pass starts. A redaction that commits while a pass runs may leave that
-  one nudge's `unread` and `oldest_seq` counting the redacted message; the
-  nudge is a wake-up hint, and reading the chat never shows the redacted
-  message.
+  pass starts. Exactness against a redaction that commits while a pass
+  runs is not promised: the nudge is a wake-up hint, and reading the chat
+  never shows a redacted message.
 
   Bounded on purpose:
   - one wake per agent and chat per read cycle, never sooner than the delay
