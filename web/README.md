@@ -1719,7 +1719,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     here.";
 16. **Why**: the e2e project has no repository, so the view says it
     needs one (the hub's `ktw_not_configured`);
-17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
+17. at phone width (390 px, and again at 360 px) the inbox, overview, board, members, agents and (where offered) Why
     views, each reached through its tab (there is no Runners tab: the project's Runners are linked from its Settings),
     and the instance's Runners view from the gear menu load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
