@@ -39,13 +39,28 @@ def installed(name: str) -> bool:
 # A stand-in for gh: `gh api --hostname github.com` of origin's repository, answering from
 # github.json next to it the four GETs the script makes. It does not run the --jq filters (the
 # machine may have no jq) but checks they are exactly the script's and prints the lines they give.
-# `"fail": "<path prefix>"` makes that call fail as gh does on an HTTP error.
+# `"fail": "<path prefix>"` makes that call fail as gh does on an HTTP error. `"escape_guard"`
+# makes it gh 2.97.0 or later, which lists --allow-escape-sequences in `gh api --help` and refuses
+# a non-JSON body with an escape sequence without it; otherwise it is an older gh, which rejects
+# the flag as unknown.
 FAKE_GH = textwrap.dedent("""\
     #!/usr/bin/env python3
     import json, pathlib, sys
     here = pathlib.Path(__file__).parent
     data = json.loads((here / "github.json").read_text())
     args = sys.argv[1:]
+    guard = data.get("escape_guard", False)
+    if args == ["api", "--help"]:
+        print("Flags:")
+        if guard:
+            print("      --allow-escape-sequences   Allow printing terminal escape sequences")
+        print("      --hostname string          The GitHub hostname for the request")
+        sys.exit(0)
+    allow = "--allow-escape-sequences" in args
+    if allow and not guard:
+        print("unknown flag: --allow-escape-sequences", file=sys.stderr)
+        sys.exit(1)
+    args = [a for a in args if a != "--allow-escape-sequences"]
     if args[:3] != ["api", "--hostname", "github.com"]:
         sys.exit(3)
     if args[3:5] != ["-H", "Accept: application/vnd.github+json"]:
@@ -90,6 +105,13 @@ FAKE_GH = textwrap.dedent("""\
         if log is None:
             print("gh: Not Found (HTTP 404)", file=sys.stderr)
             sys.exit(1)
+        if guard and not allow and "\x1b" in log:
+            print(
+                "the response contains terminal escape sequences; "
+                "pass --allow-escape-sequences to output it anyway",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         sys.stdout.write(log)
     else:
         print("unexpected path", path, file=sys.stderr)
@@ -105,6 +127,7 @@ def checkout_log(head: str, base: str) -> str:
     """A job log as GitHub serves it: actions/checkout of refs/pull/N/merge, timestamped."""
     return lines(
         "2026-11-08T10:00:00.0000000Z ##[group]Run actions/checkout@v4",
+        "2026-11-08T10:00:00.5000000Z \x1b[36;1mwith:\x1b[0m",
         f"2026-11-08T10:00:01.0000000Z [command]/usr/bin/git -c protocol.version=2 fetch "
         f"--no-tags --prune origin +7781bd49:refs/remotes/pull/{PR}/merge",
         f"2026-11-08T10:00:02.0000000Z HEAD is now at 7781bd4 Merge {head} into {base}",
@@ -427,6 +450,39 @@ class CoverageTest(unittest.TestCase):
         got = self.run_check(self.github(head, tested))
         self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
 
+    def test_logs_with_escape_sequences_are_read_with_old_and_new_gh(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.git("rev-parse", "main")
+        late = self.on_main({"a.txt": lines("main late")}, "main late on a")
+        for guard in (False, True):
+            with self.subTest(gh="2.97.0 or later" if guard else "before 2.97.0"):
+                got = self.run_check({**self.github(head, tested), "escape_guard": guard})
+                self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+                self.assertIn(f"  {late} main late on a [a.txt]", got.stdout.splitlines())
+
+    def test_a_refused_log_names_gh_s_error(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        data = self.github(head, self.base)
+        data["logs"].pop("2")
+        self.assert_stops(self.run_check(data), "failed: gh: Not Found (HTTP 404)")
+
+    def test_a_subject_s_control_characters_do_not_reach_the_terminal(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.git("rev-parse", "main")
+        late = self.on_main({"a.txt": lines("main late")}, "main \x1b[2Jlate")
+        got = self.run_check(self.github(head, tested))
+        self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+        self.assertNotIn("\x1b", got.stdout)
+        self.assertIn(f"  {late} main ?[2Jlate [a.txt]", got.stdout.splitlines())
+
+    def test_a_main_edit_of_a_file_the_pr_deletes_is_named(self) -> None:
+        head = self.pull_request({"b.txt": None})
+        tested = self.git("rev-parse", "main")
+        late = self.on_main({"b.txt": lines("main b")}, "main on b")
+        got = self.run_check(self.github(head, tested))
+        self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+        self.assertIn(f"  {late} main on b [b.txt]", got.stdout.splitlines())
+
     def test_no_changed_file_is_exit_0(self) -> None:
         head = self.pull_request({})
         got = self.run_check(self.github(head, self.base))
@@ -467,7 +523,10 @@ class CoverageTest(unittest.TestCase):
                 {"logs": {"2": "x\n", "3": "y\n", "4": "z\n"}},
                 "names the merge it tested",
             ),
-            "log gone": ({"logs": {"3": checkout_log(head, tested)}}, "log of job 2 failed"),
+            "log gone": (
+                {"logs": {"3": checkout_log(head, tested)}},
+                "log of job 2 failed: gh: Not Found",
+            ),
             "other head": (
                 {"logs": {**good["logs"], "3": checkout_log(other, tested)}},
                 f"tested a merge of {other}, not of #12's head {head}",

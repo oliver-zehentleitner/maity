@@ -1836,7 +1836,7 @@ without a parent, and every failed `gh` or `git` call it needs. It only reads.
   "merge `main` and push", which would not help a red run.
 - `--no-renames` counts a rename under both names, as in the overlap check, so a `main` edit of a file
   the pull request renames is found.
-- The review of #1502 (ChatGPT, round 1) found three routes to a wrong exit 0 in the first version,
+- The review of #1502 (round 1: ChatGPT all three, Grok the second and third) found three routes to a wrong exit 0 in the first version,
   each reproduced by a test that is red on that version:
   - `git rev-list --no-merges` dropped a merge that changes a file itself, by a conflict resolution
     or an edit during the merge. Now every candidate counts, merges too, against each parent. "Any
@@ -1856,7 +1856,16 @@ without a parent, and every failed `gh` or `git` call it needs. It only reads.
   the merge base and the candidates come from, and a list that fills its page may continue on a
   page not read; both stop the check rather than answer from part of the history.
 - Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
-  (`LC_ALL=C`), so the locale changes nothing; a test runs it under German and English.
+  (`LC_ALL=C`), so the locale changes nothing. A test runs it under German and English; the German
+  part runs only where `de_DE.UTF-8` is installed and is skipped elsewhere, CI included.
+- A job log is plain text with the runner's colour codes (a log of run 42478321216 has 27 lines
+  with an escape character). gh 2.97.0 and later refuse to print a non-JSON body with escape
+  sequences unless given `--allow-escape-sequences` (cli/cli `pkg/cmd/api/api.go` at v2.97.0;
+  GHSA-3m3g-3wcr-px46), and older gh rejects that flag as unknown, so the check passes it exactly
+  when `gh api --help` lists it. Without that every real run with a current gh ended in 2, and the
+  message blamed log expiry (the review of #1502, Grok, round 1); a failed log read now quotes gh's
+  own error. The log is only searched for the merge line and never printed. Commit subjects are
+  printed with their control characters replaced by `?`.
 
 **Rejected alternatives:**
 - Compare the run's start time with the commits' dates: commit dates are the author's, not when
@@ -1868,6 +1877,8 @@ without a parent, and every failed `gh` or `git` call it needs. It only reads.
 - A merge counts only when a file differs from all its parents (git's combined diff): it misses a
   merge that takes an old version of a file from a side the run had seen, so the tested `main`
   had the newer one and today's `main` has the old one.
+- Always passing `--allow-escape-sequences`: every gh before 2.97.0 stops with "unknown flag", and
+  the development machine runs gh 2.45.0.
 - `git rev-list -- <files>` with its history simplification to find the candidates: which merges it
   keeps depends on the simplification mode, while a diff against each parent says it directly.
 - Handle stacked pull requests: their run tests a merge into the lower branch, whose own coverage is

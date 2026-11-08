@@ -95,6 +95,13 @@ api() {
   gh api --hostname "$repo_host" -H "Accept: application/vnd.github+json" "$@"
 }
 
+# A job log is plain text with the runner's colour codes. gh 2.97.0 and later refuse to print a
+# non-JSON body with terminal escape sequences unless told --allow-escape-sequences, which older gh
+# rejects as an unknown flag; so the flag is passed when `gh api --help` lists it.
+gh_help=$(gh api --help 2>&1) || die "gh api --help failed: ${gh_help//$'\n'/ }"
+log_flags=()
+grep -q -e '--allow-escape-sequences' <<<"$gh_help" && log_flags=(--allow-escape-sequences)
+
 # 1. The pull request.
 info=$(api "$repo/pulls/$pr" --jq '"\(.state) \(.merged) \(.head.sha) \(.base.ref) \(.head.ref)"') \
   || die "reading pull request #$pr of $repo_owner/$repo_name on $repo_host failed (gh api)"
@@ -119,10 +126,12 @@ shallow=$(git rev-parse --is-shallow-repository) || die "git rev-parse --is-shal
 [ "$shallow" = false ] || die "this is a shallow clone; run it in a full clone (git fetch --unshallow)"
 tmp="refs/maity-coverage/$$"
 listing=""
+errors=""
 cleanup() {
   git update-ref -d "$tmp/main" 2>/dev/null
   git update-ref -d "$tmp/head" 2>/dev/null
   [ -z "$listing" ] || rm -f "$listing"
+  [ -z "$errors" ] || rm -f "$errors"
 }
 trap cleanup EXIT
 git fetch --quiet --no-tags origin "+refs/heads/main:$tmp/main" "+refs/pull/$pr/head:$tmp/head" \
@@ -175,8 +184,10 @@ done <<<"$jobs"
 # that name a merge must name the same one.
 merge=""
 merge_job=""
+errors=$(mktemp) || die "mktemp failed"
 for job in ${job_ids[@]+"${job_ids[@]}"}; do
-  log=$(api "$repo/actions/jobs/$job/logs") || die "reading the log of job $job failed (gh api); GitHub may have expired it"
+  log=$(api ${log_flags[@]+"${log_flags[@]}"} "$repo/actions/jobs/$job/logs" 2>"$errors") \
+    || die "reading the log of job $job failed: $(tr '\n' ' ' <"$errors")(GitHub expires logs after its retention)"
   merges=$(grep -oE 'HEAD is now at [0-9a-f]+ Merge [0-9a-f]{40} into [0-9a-f]{40}' <<<"$log" | cut -d' ' -f6- | LC_ALL=C sort -u)
   [ -n "$merges" ] || continue
   [ "$(wc -l <<<"$merges")" -eq 1 ] || die "job $job's log names more than one merge: ${merges//$'\n'/; }"
@@ -236,6 +247,8 @@ while IFS= read -r commit; do
   [ -n "$touched" ] || continue
   missing=$((missing + 1))
   subject=$(git log -1 --format=%s "$commit") || die "git log $commit failed"
+  # A subject is text from the commit; no control character of it reaches the terminal.
+  subject=$(printf '%s' "$subject" | LC_ALL=C tr '\000-\037\177' '?') || die "tr failed"
   touched=$(LC_ALL=C sort -u <<<"$touched" | sed '/^$/d' | paste -sd, -) || die "listing the files of $commit failed"
   echo "  $commit $subject [$touched]"
 done <<<"$commits"
