@@ -309,4 +309,3 @@ links to `/explore` never reached the hub's page.
   they are off.
 - A click stop on each link to them, as the not-found page had: every
   link would have to carry it, and the frame's header links did not.
-

@@ -1687,6 +1687,63 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.shot(page, "chat-composer-3x")
     compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
     assert abs(field.bounding_box()["height"] - one) < 2
+
+    # The list's heading and its two actions as icons in one row (tsk-qgy2tb3w3x93): light and
+    # dark, 390 and 1280 px, with and without the unread count on the Chat tab; the text is the
+    # name and the tooltip; the focus ring shows on the keyboard's focus.
+    def heading_row(where: str) -> None:
+        row = page.evaluate(
+            "(() => { const t = document.querySelector('.chat-list-pane .toolbar'), h = t.querySelector('h2');"
+            " const box = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };"
+            " return { bar: box(t), h: box(h), icons: Array.from(t.querySelectorAll('a.icon-button')).map(box) }; })()"
+        )
+        h, icons = row["h"], row["icons"]
+        assert len(icons) == 2, f"{where}: {len(icons)} icon actions in the heading's row"
+        for left, top, right, bottom in icons:
+            middle = (top + bottom) / 2
+            assert h[1] <= middle <= h[3], f"{where}: an icon at {top}-{bottom} px is not in the heading's row {h[1]}-{h[3]}"
+            assert left >= h[2] - 0.5 and right <= row["bar"][2] + 0.5, f"{where}: an icon at {left}-{right} px, heading ends {h[2]}"
+            assert right - left >= 32 and bottom - top >= 32, f"{where}: an icon target of {right - left}×{bottom - top} px"
+        fits(where)
+
+    run.step("chat list: its two actions are icons beside the heading at every width")
+    tab = view_tab(page, "Chat")
+    try:
+        for unread in (False, True):
+            if unread:
+                run.maity(alpha, "say", "human", "An unread line for the Chat tab's count.")
+            for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
+                page.set_viewport_size({"width": width, "height": height})
+                page.emulate_media(color_scheme=scheme)
+                page.goto(f"{run.base}/owner/e2e-alpha/chat")
+                listing = page.locator(".chat-list-pane")
+                expect(listing.locator(".toolbar h2")).to_have_text("Chat")
+                expect(tab).to_have_accessible_name(re.compile(r"^Chat 1 unread$") if unread else "Chat")
+                for name in ("New group chat", "Message the project"):
+                    action = listing.get_by_role("link", name=name, exact=True)
+                    expect(action).to_have_attribute("title", name)
+                    expect(action).to_have_text("")
+                where = f"the chat list at {width} px {scheme}{', unread' if unread else ''}"
+                heading_row(where)
+                run.shot(page, f"chat-list-icons-{width}-{scheme}{'-unread' if unread else ''}")
+        # The keyboard reaches both, with the ring every focusable element has.
+        listing.locator("a.new-group").focus()
+        page.keyboard.press("Tab")
+        ring = page.evaluate(
+            "(() => { const a = document.activeElement, s = getComputedStyle(a);"
+            " return [a.classList.contains('message-project'), a.matches(':focus-visible'), s.outlineStyle, parseFloat(s.outlineWidth)]; })()"
+        )
+        assert ring[0] and ring[1] and ring[2] == "solid" and ring[3] >= 2, f"the focus after New group chat: {ring}"
+        run.shot(page, "chat-list-icons-focus")
+        run.a11y(page, "chat list, its actions as icons")
+    finally:
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    # Back to the conversation: reading it takes the count off the tab again.
+    page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
+    expect(page.locator("ol.messages li.msg.in").last).to_contain_text("An unread line for the Chat tab's count.")
+
     # The meat-proxy switch of this chat (§9.3, tsk-n872zkxmwbec): switched here, kept by the hub, given back to the profile.
     meat = compose.locator("button.meat-chat-toggle")
     follow = compose.get_by_role("button", name="Follow my profile", exact=True)

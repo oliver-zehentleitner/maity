@@ -951,7 +951,9 @@ def _probed_pr(
     stands in, and nothing refuses on its account.
 
     Only a pull request the card already links is asked about, never one the agent names
-    (8c58cebb), and the probe reads fresh (`max_age=0`) from the project's repository only.
+    (8c58cebb), and the probe is asked with `max_age=0` and reads the project's repository
+    only; the hub may still answer from a read up to 30 s old (`FORCED_FLOOR`, §11.4), so a
+    head pushed since then refuses rather than files another commit.
     The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
     links = card.get("links") if isinstance(card, dict) else None
     linked = sorted(
@@ -2263,8 +2265,10 @@ def cmd_memory_delete(args: argparse.Namespace) -> int:
     """`DELETE …/memory/{id}` (§19.2): the hub decides who may; the answer is the tombstone."""
     _memory_flags_after_action(args)
     entry = _text(args.entry, "the entry")
-    if not re.fullmatch(r"mem-[a-z0-9]+", entry):
-        raise UsageError(f"{entry!r} is not an entry id (mem-…)")
+    # Ids are opaque (docs/api.md §1.1): only what would leave its path segment is refused
+    # here, as `_id` does; an id the hub does not have is its `not_found`.
+    if not entry.strip() or entry in (".", ".."):
+        raise UsageError(f"{entry!r} is not an entry id")
     session = Session()
     body = {"reason": _text(args.reason, "--reason")} if args.reason is not None else None
     answer = session.client.call("DELETE", session.project_path("memory", entry), body=body)
@@ -4455,7 +4459,7 @@ def build_parser() -> argparse.ArgumentParser:
         "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
         "in this clone and every file:line, name in backticks and hash in the message is there "
         "(commands and their output go under a heading `## Ran`, which is not checked); each "
-        "cite quote is limited to 300 characters by the hub",
+        "cite quote stays on one line, at most 300 characters (the hub's limit)",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
@@ -4569,7 +4573,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_memory_add)
     r = msub.add_parser("delete", help="delete an entry of your team's or role's memory",
                         formatter_class=fmt)  # fmt: skip
-    r.add_argument("entry", metavar="ID", help="the entry, mem-…")
+    r.add_argument("entry", metavar="ID", help="the entry's id")
     r.add_argument("--reason", help="why, kept on the tombstone")
     _json_flag(r)
     r.set_defaults(handler=cmd_memory_delete)
@@ -5252,15 +5256,16 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
     return True
 
 
-# Where each command's free text lives: (attribute, its --…-file attribute, the flag named in
-# errors, required). A value of `-` reads standard input, once per command.
-TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
+# Where each command's free text lives: (attribute, its --…-file attribute or None for a
+# command without a file flag, the flag named in errors, required). A value of `-` reads
+# standard input, once per command.
+TEXT_ARGS: dict[Handler, tuple[tuple[str, str | None, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
     cmd_note_add: (("body", "body_file", "the note", True),),
-    cmd_task_create: (("body", "body_file", "--body", False),),
+    cmd_task_create: (("body", None, "--body", False),),  # stdin only, no file flag
     cmd_report: (("summary", "summary_file", "--summary", True),),
-    cmd_jourfixe_post: (("body", "body_file", "the post", True),),
-    cmd_memory_add: (("text", "text_file", "the entry", False),),
+    cmd_jourfixe_post: (("body", None, "the post", True),),  # stdin only, no file flag
+    cmd_memory_add: (("text", None, "the entry", False),),  # stdin only, no file flag
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
         ("next", "next_file", "--next", True),
@@ -5268,7 +5273,7 @@ TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
 }
 
 
-def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
+def _texts(args: argparse.Namespace) -> tuple[tuple[str, str | None, str, bool], ...]:
     handler = getattr(args, "handler", None)
     if handler is cmd_say:  # with --chat the text is the first positional
         return (("to" if args.chat is not None else "body", "body_file", "the message", False),)
@@ -5319,7 +5324,8 @@ def _load_texts(args: argparse.Namespace) -> None:
     _say_update_text(args)
     stdin_used = False
     for attr, file_attr, flag, required in _texts(args):
-        value, path = getattr(args, attr, None), getattr(args, file_attr, None)
+        value = getattr(args, attr, None)
+        path = getattr(args, file_attr, None) if file_attr is not None else None
         if path is not None:
             if value is not None:
                 raise UsageError(f"{flag}: give the text or a file, not both")
