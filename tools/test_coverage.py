@@ -119,6 +119,23 @@ FAKE_GH = textwrap.dedent("""\
     """)
 
 
+# A stand-in for a tool the script pipes through (`sort`, `grep`): it fails, as on a read error,
+# without output when its input holds the text in <name>.fail next to it, and runs the real tool
+# otherwise.
+FAULTY = textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import os, pathlib, subprocess, sys
+    here = pathlib.Path(__file__)
+    marker = (here.parent / (here.name + ".fail")).read_text()
+    data = sys.stdin.buffer.read()
+    if marker.encode() in data:
+        print(here.name + ": read error", file=sys.stderr)
+        sys.exit(2)
+    real = (here.parent / (here.name + ".real")).read_text()
+    sys.exit(subprocess.run([real, *sys.argv[1:]], input=data).returncode)
+    """)
+
+
 def lines(*rows: str) -> str:
     return "".join(f"{row}\n" for row in rows)
 
@@ -482,6 +499,45 @@ class CoverageTest(unittest.TestCase):
         got = self.run_check(self.github(head, tested))
         self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
         self.assertIn(f"  {late} main on b [b.txt]", got.stdout.splitlines())
+
+    def faulty(self, tool: str, marker: str) -> None:
+        real = shutil.which(tool)
+        assert real is not None
+        (self.bin / f"{tool}.real").write_text(real)
+        (self.bin / f"{tool}.fail").write_text(marker)
+        stand_in = self.bin / tool
+        stand_in.write_text(FAULTY)
+        stand_in.chmod(0o755)
+
+    def test_a_failure_while_reading_a_job_s_merge_line_stops_the_check(self) -> None:
+        """Review delta 1 of #1502: job 3 names today's main, job 4 an older one without the late
+        commit on a.txt; reading job 4's line fails. That job must not count as one without a
+        checkout, which would leave job 3 alone to decide (exit 0)."""
+        head = self.pull_request({"a.txt": lines("pr a")})
+        older = self.git("rev-parse", "main")
+        self.on_main({"a.txt": lines("main late")}, "main late on a")
+        newer = self.git("rev-parse", "main")
+        for tool in ("sort", "grep"):
+            with self.subTest(tool=tool):
+                data = self.github(head, newer)
+                data["logs"]["4"] = checkout_log(head, older)
+                self.assert_stops(self.run_check(data), "different merges")
+                self.faulty(tool, older)
+                self.assert_stops(self.run_check(data), "of job 4 failed")
+                (self.bin / tool).unlink()
+
+    def test_the_bash_gate_is_the_version_that_has_mapfile_d(self) -> None:
+        """`mapfile -d` came with bash 4.4; the gate and CONTRIBUTING must say so. Static: no bash
+        older than 4.4 is at hand to run."""
+        script = SCRIPT.read_text()
+        self.assertIn("mapfile -d ''", script)
+        self.assertIn(
+            "((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4)))", script
+        )
+        contributing = (SCRIPT.parent.parent / "CONTRIBUTING.md").read_text()
+        section = contributing.split("## The coverage check before a MERGE-READY")[1]
+        section = section.split("\n## ")[0]
+        self.assertIn("bash 4.4 or newer", " ".join(section.split()))
 
     def test_no_changed_file_is_exit_0(self) -> None:
         head = self.pull_request({})

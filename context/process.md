@@ -1855,6 +1855,13 @@ without a parent, and every failed `gh` or `git` call it needs. It only reads.
   merges stop the check instead of the first one deciding. A shallow clone may lack the history
   the merge base and the candidates come from, and a list that fills its page may continue on a
   page not read; both stop the check rather than answer from part of the history.
+- Reading a job's merge line tells grep's "no such line" (1) from a failure (anything else), and
+  the steps after grep are checked too. Before, a failed `grep | cut | sort` gave empty output,
+  which read as a job without a checkout: a job naming an older `main` was skipped and another job
+  decided, exit 0 (the review of #1502, ChatGPT, delta 1, by a `sort` made to fail; a test does the
+  same with `sort` and with `grep`).
+- It needs bash 4.4, the first with `mapfile -d` for the NUL-separated file list, and checks for it
+  (delta 1 of #1502: the first text said bash 4).
 - Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
   (`LC_ALL=C`), so the locale changes nothing. A test runs it under German and English; the German
   part runs only where `de_DE.UTF-8` is installed and is skipped elsewhere, CI included.

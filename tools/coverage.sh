@@ -51,7 +51,9 @@ git() {
   GIT_LITERAL_PATHSPECS=1 command git -c core.quotePath=false "$@"
 }
 
-[ "${BASH_VERSINFO[0]}" -ge 4 ] || die "needs bash 4 or newer"
+# `mapfile -d` (the NUL-separated file list) came with bash 4.4.
+((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))) \
+  || die "needs bash 4.4 or newer, not $BASH_VERSION"
 command -v gh >/dev/null || die "needs the gh CLI"
 [ $# -eq 1 ] && [[ $1 =~ ^[1-9][0-9]{0,8}$ ]] || die "usage: tools/coverage.sh <pull request number>"
 pr=$1
@@ -158,7 +160,8 @@ done <<<"$runs"
 # locale's collation may skip the punctuation of a timestamp.
 newest=""
 [ "${#matching[@]}" -eq 0 ] \
-  || newest=$(printf '%s\n' "${matching[@]}" | LC_ALL=C sort -k1,1 -k2,2n | tail -n 1)
+  || newest=$(printf '%s\n' "${matching[@]}" | LC_ALL=C sort -k1,1 -k2,2n | tail -n 1) \
+  || die "sorting the ci runs of $head failed"
 [ -n "$newest" ] || die "no ci run for #$pr at $head yet"
 read -r _ run_id attempt status _ _ _ <<<"$newest"
 run_url="https://$repo_host/$repo_owner/$repo_name/actions/runs/$run_id"
@@ -188,8 +191,16 @@ errors=$(mktemp) || die "mktemp failed"
 for job in ${job_ids[@]+"${job_ids[@]}"}; do
   log=$(api ${log_flags[@]+"${log_flags[@]}"} "$repo/actions/jobs/$job/logs" 2>"$errors") \
     || die "reading the log of job $job failed: $(tr '\n' ' ' <"$errors")(GitHub expires logs after its retention)"
-  merges=$(grep -oE 'HEAD is now at [0-9a-f]+ Merge [0-9a-f]{40} into [0-9a-f]{40}' <<<"$log" | cut -d' ' -f6- | LC_ALL=C sort -u)
-  [ -n "$merges" ] || continue
+  # grep's 1 is "no such line"; anything else, and any failure after it, stops the check, so a job
+  # whose log could not be searched is never taken for a job without a checkout.
+  found=$(grep -oE 'HEAD is now at [0-9a-f]+ Merge [0-9a-f]{40} into [0-9a-f]{40}' <<<"$log")
+  case $? in
+    0) ;;
+    1) continue ;;
+    *) die "searching the log of job $job failed" ;;
+  esac
+  merges=$(cut -d' ' -f6- <<<"$found" | LC_ALL=C sort -u) || die "reading the merge line of job $job failed"
+  [ -n "$merges" ] || die "reading the merge line of job $job gave nothing"
   [ "$(wc -l <<<"$merges")" -eq 1 ] || die "job $job's log names more than one merge: ${merges//$'\n'/; }"
   if [ -z "$merge" ]; then
     merge=$merges
@@ -199,8 +210,8 @@ for job in ${job_ids[@]+"${job_ids[@]}"}; do
   fi
 done
 [ -n "$merge" ] || die "no job log of run $run_id names the merge it tested: $run_url"
-merged_head=$(cut -d' ' -f2 <<<"$merge")
-tested=$(cut -d' ' -f4 <<<"$merge")
+merged_head=$(cut -d' ' -f2 <<<"$merge") || die "cut failed"
+tested=$(cut -d' ' -f4 <<<"$merge") || die "cut failed"
 [ "$merged_head" = "$head" ] \
   || die "run $run_id tested a merge of $merged_head, not of #$pr's head $head: $run_url"
 git cat-file -e "$tested^{commit}" 2>/dev/null || die "the tested main $tested is not in this clone"

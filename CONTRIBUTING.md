@@ -80,7 +80,7 @@ are none. Exit 1
 names them: merge `origin/main` into the branch and push for a new run (a
 re-run tests the old merge again). Exit 2 means the check could not run,
 including when `ci-ok` is not green yet or the pull request is stacked on
-another branch; it never ends in 0 then. It needs bash 4 or newer, `gh` and
+another branch; it never ends in 0 then. It needs bash 4.4 or newer, `gh` and
 a full (not shallow) clone, and it only reads: GitHub over REST and a
 `git fetch` of `origin main` and the pull request's head into refs of its own.
 
