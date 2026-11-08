@@ -5367,7 +5367,7 @@ the rejected alternatives below are inferred, nobody stated them.
 "seq", which the dashboard's other texts do not use for it; a link, as the join panel's
 "message #seq", since a chat message has no address of its own to link to.
 
-**Known gap:** a screen reader hears "· #4202" (the stylesheet's `#` is read out too) with no
+**Known gap:** a screen reader can hear "· #4202" (the stylesheet's `#` is read out too) with no
 word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
