@@ -56,7 +56,7 @@ probe shares on the same API host.
 The middleware writes `Cache-Control: no-store` on every answer, except that it keeps a
 route's own value when that value is on its list (`ROUTE_CACHE`: the images'
 `private, max-age=21600` on the image and on its `304`, the avatars' and attachments'
-`private, no-cache`, and a few more), or the request is a `GET` or `HEAD` on the public host (never
+`private, no-cache`, the dashboard's files' `no-cache` (serving.md c6768529), and a few more), or the request is a `GET` or `HEAD` on the public host (never
 the join host) of a path a visitor may cache: `PUBLIC_PATHS` (`public, max-age=60`), a public
 avatar, `robots.txt` and the sitemaps, the landing page's files, and a stored public page (§16.9),
 each list with its own value. A route with a new value must add it there, or it is served `no-store`.
