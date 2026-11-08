@@ -10711,9 +10711,14 @@ contacts and are contacts.
 - `DELETE` also takes a suspended or pending account, so that a contact
   can always be removed; a name that is no account's is `not_found`.
 
-**Limit.** At most 100 new contacts per human per day. A `PUT` beyond
-that is `rate_limited` with `Retry-After`; a `PUT` for a contact the
-caller has already is not counted.
+**Limit.** 100 new contacts per human per day. A `PUT` beyond that is
+`rate_limited` with `Retry-After`; a `PUT` for a contact the caller has
+already is not counted. The day is counted as the hub counts its other
+limits above 20 attempts: exactly in one process, and on PostgreSQL,
+where the replicas share the count, as a sliding window estimated from
+two fixed ones. Near the edge of a window that estimate can admit
+somewhat more or fewer than an exact rolling 24 hours would, and the
+`Retry-After` follows the estimate.
 
 **The lists** are paged (§1.4), newest first. Each item is
 `{handle, display_name, avatar_url, since}`, where `avatar_url` follows
