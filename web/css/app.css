@@ -653,6 +653,8 @@ a.icon-button:hover { border-color: var(--accent); }
 .release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .checklist.editable label { color: inherit; }
+/* A checkbox the pointer finds: 16 px with 4 px around it, a 24 px target (WCAG 2.5.8). */
+.checklist.editable input[type="checkbox"] { inline-size: 16px; block-size: 16px; margin: 4px; flex: none; }
 .rows-form h4 { margin: 6px 0 4px; }
 .edit-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .edit-rows li { display: flex; align-items: center; gap: 6px; min-width: 0; }
