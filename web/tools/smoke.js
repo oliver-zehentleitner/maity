@@ -7381,6 +7381,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const orgMembers = () => main.querySelector("section.org-members");
   expect(orgMembers() && byId("org-role-hum-maintainer") && byId("org-role-hum-anna") && text(orgMembers()).includes("@maintainer (you)")
     && btn(orgMembers(), "Leave") && btn(orgMembers(), "Remove"), "orgs: an owner may change every role, remove others and leave");
+  expect(main.querySelector("section.org-picture") && !main.querySelector("section.org-picture .picture-motif"),
+    "motif: an organisation's picture has no motif to choose");
   byId("org-role-hum-maintainer").value = "admin"; byId("org-role-hum-maintainer").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(text(orgMembers()).includes("Not changed: the organisation would have no owner left") && byId("org-role-hum-maintainer").value === "owner",
     "orgs: the last owner's demotion is refused in words and the role shown again");
@@ -7443,6 +7445,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const avHeading = main.querySelector(".picture-heading");
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
+  expect(!main.querySelector(".picture-motif"), "motif: the account's own picture has no motif to choose");
   // The agents' pictures are on /agents now (tsk-hn82893h9sdh): the account only points there.
   expect(!main.querySelector(".picture-list") && !byId("avatar-file-agt-x") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/agents" && text(a) === "Your agents"),
     "picture: the account has no agents of its own any more, a link to Your agents instead");
@@ -7497,6 +7500,73 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
     && text(agCard("agt-x")).includes("guest/guestlab") && byId("avatar-file-agt-x") && byId("avatar-file-agt-b"),
     "agents page: every profile of one's own, by global name, its memberships, each with its picture");
+  // An agent's motif (§6.10): chosen by its owner beside the upload, grouped by theme, with a preview;
+  // it shows while there is no upload, and the hub's refusals are said in words.
+  {
+    const mpSel = () => byId("avatar-motif-agt-b");
+    const mpCard = () => agCard("agt-b");
+    let mpStored = {};
+    const mpRead = async () => { mpStored = (await win.Maity.api.get("/agents")).items.find((a) => a.id === "agt-b") || {}; };
+    const mpProfile = () => mpStored;
+    const mpOpen = async () => {
+      await go("#/agents"); for (let k = 0; k < 8; k++) await tick();
+      const head = main.querySelectorAll("tr.agent-row").find((tr) => tr.getAttribute("data-agent") === "agt-b");
+      const row = head && head.querySelector("button.agent-manage");
+      if (row && row.getAttribute("aria-expanded") !== "true") { row.click(); for (let k = 0; k < 6; k++) await tick(); }
+    };
+    await mpOpen();
+    for (let k = 0; k < 4; k++) await tick();
+    const groups = mpSel() ? mpSel().querySelectorAll("optgroup") : [];
+    expect(mpSel() && mpSel().value === "" && groups.length === 2 && groups[0].getAttribute("label") === "Classic"
+      && groups[1].getAttribute("label") === "Office robots" && groups[0].querySelectorAll("option").length === 3
+      && !mpCard().querySelector(".picture-motif-preview img"),
+      "motif: the picker on an agent's card, themes as groups in the catalog's words, none chosen, no preview");
+    // The gate (account.js): one's own picture never, whatever the id, and only an agent's id.
+    const mpOwn = win.Maity.pictureEditor({ id: "agt-b", display_name: "Agent B", avatar_source: "generated", avatar_motif: null }, "/me/avatar", true, () => {});
+    const mpOrg = win.Maity.pictureEditor({ id: "org-oz00team0001", display_name: "OZ Team", avatar_source: null }, "/orgs/oz-team/avatar", false, () => {});
+    expect(!mpOwn.querySelector(".picture-motif") && !mpOrg.querySelector(".picture-motif") && mpCard().querySelector(".picture-motif"),
+      "motif: no picker for one's own picture, even an agent's, nor for an organisation's; an owner's agent has one");
+    mpSel().value = "fox"; mpSel().dispatch("change"); await tick();
+    const mpImg = mpCard().querySelector(".picture-motif-preview img");
+    expect(mpImg && mpImg.getAttribute("src") === "/api/v1/avatars/public/73880339f1ff49f8aeabdfba2a82f696"
+      && mpImg.getAttribute("alt") === "A fox face, orange on teal", "motif: the chosen one previewed from its public address, with its alt text");
+    const mpPatches = [], mpPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 6; k++) await tick();
+    await mpRead();
+    expect(JSON.stringify(mpPatches) === JSON.stringify([["/agents/agt-b", { avatar_motif: "fox" }]])
+      && mpProfile().avatar_motif === "fox" && mpProfile().avatar_source === "motif"
+      && /^\/api\/v1\/avatars\/agt-b\?v=/.test(mpProfile().avatar_url || ""),
+      "motif: Save sends PATCH /agents/{id} with the name, and the motif shows: " + JSON.stringify(mpPatches));
+    expect(text(main).includes("Motif saved; it shows now."), "motif: saved, said");
+    await mpOpen();
+    expect(mpSel() && mpSel().value === "fox" && text(mpCard()).includes("A motif from the hub's set."),
+      "motif: drawn again, the chosen motif selected and the source named");
+    mpPatches.length = 0;
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!mpPatches.length && text(mpCard()).includes("Nothing changed."), "motif: the same choice again sends nothing");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("held", 403, "/agents/agt-b", "forbidden", { reason: "moderation_hold" }));
+    mpSel().value = "comet"; mpSel().dispatch("change");
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: a moderation decision reset this picture; no motif while it stands"),
+      "motif: a moderation hold is said in words");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("unknown", 400, "/agents/agt-b", "invalid", { fields: { avatar_motif: "unknown" } }));
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: the hub has no motif of that name"), "motif: a name the set no longer holds is said in words");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("limited", 429, "/agents/agt-b", "rate_limited", {}));
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: too many changes of this picture in the last hour"), "motif: the per-avatar limit is said in words");
+    win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
+    mpPatches.length = 0;
+    mpSel().value = ""; mpSel().dispatch("change");
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 6; k++) await tick();
+    await mpRead();
+    expect(JSON.stringify(mpPatches) === JSON.stringify([["/agents/agt-b", { avatar_motif: null }]])
+      && mpProfile().avatar_motif === null && mpProfile().avatar_source === "generated" && text(main).includes("Motif cleared."),
+      "motif: No motif clears it with null, and the generated picture shows again");
+    win.Maity.api.patch = mpPatch;
+    await mpOpen();
+  }
   expect(text(agCard("agt-b")).includes("maintainer/maity · member · coder") && text(agCard("agt-b")).includes("1 of 1 instance active")
     && agCard("agt-b").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/agents/agt-b/rulebook"),
     "agents page: a membership with trust and role, the instances against the team's limit, the rulebook linked: " + text(agCard("agt-b")).slice(0, 200));
@@ -7655,6 +7725,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "picture: an owner sets an agent's picture, which its member view carries");
   expect(avRow() && text(main).includes("Picture uploaded.") && btn(avRow(), "Remove the upload"),
     "picture: the row stays open, says so and offers Remove");
+  // The motif in the Manage row on Members (§6.10): the chosen one selected, and clearing it sent.
+  {
+    const mmPatches = [], mmPatch = win.Maity.api.patch;
+    await win.Maity.api.patch("/agents/agt-c", { avatar_motif: "owl" });
+    win.Maity.api.patch = (p, b) => { mmPatches.push([p, b]); return mmPatch(p, b); };
+    await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick(); await agOpen("agt-c");
+    for (let k = 0; k < 4; k++) await tick();
+    const mmSel = byId("avatar-motif-agt-c");
+    expect(mmSel && mmSel.value === "owl", "motif: the Manage row on Members selects the agent's chosen motif");
+    if (mmSel) { mmSel.value = ""; mmSel.dispatch("change"); }
+    const mmRow = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-c");
+    if (mmRow && btn(mmRow, "Save the motif")) btn(mmRow, "Save the motif").click();
+    for (let k = 0; k < 6; k++) await tick();
+    const mmAfter = (await win.Maity.api.get("/agents")).items.find((a) => a.id === "agt-c") || {};
+    expect(JSON.stringify(mmPatches) === JSON.stringify([["/agents/agt-c", { avatar_motif: null }]]) && mmAfter.avatar_motif === null,
+      "motif: No motif in the Manage row clears the chosen one: " + JSON.stringify(mmPatches));
+    win.Maity.api.patch = mmPatch;
+  }
   await go("#/account/picture");
   // The hub's refusals in words.
   const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));
