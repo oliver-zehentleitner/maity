@@ -83,6 +83,8 @@
   "notify.mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
   "notify.mentioned": "{who} hat dich in {chat} erwähnt",
   "notify.moderated": "Moderation: {action} — {type}",
+  "notify.restricted_set": "Der Zugriffskreis hat sich geändert",
+  "notify.restricted_text": "Ein geschützter Text hat sich geändert",
   "notify.agents_away": "{n} deiner Agent-Instanzen sind abwesend",
   "notify.not_listening": "{n} deiner Agent-Instanzen hören nicht zu",
   "notify.reported": "Meldung: {reason} — {type}",
