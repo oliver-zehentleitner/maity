@@ -149,6 +149,26 @@ def test_quiet_hours_hold_everything_but_security(
     assert len(notifications(migrated)) == 1  # sent when they end
 
 
+def test_quiet_hours_do_not_hold_a_second_factor_mail(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """A second-factor change is a takeover under way: mailed at once, inside quiet hours too
+    (§18.4 "At once, whatever the mode")."""
+    from maity_hub.notifications import records
+
+    owner, _ = setup(make_client, migrated)
+    now = clock.now()
+    window = {"from": (now - timedelta(hours=1)).strftime("%H:%M"),
+              "to": (now + timedelta(hours=2)).strftime("%H:%M")}  # fmt: skip
+    owner.patch(S, {"email": {"quiet_hours": window}})
+    with migrated.begin() as conn:
+        records.write(conn, owner.id, "second_factor_changed", {"change": "enabled"})
+    at(minutes=1)
+    run(migrated)
+    sent = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    assert "[Maity] Two-factor sign-in changed" in [r.subject for r in sent]
+
+
 def test_sign_in_alerts_follow_the_security_switch(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
@@ -686,6 +706,6 @@ def test_a_sign_in_alert_in_a_digest_travels_with_it(
     at(minutes=55)
     run(migrated)
     [digest] = notifications(migrated)
-    assert "/account/" in digest.body or "session" in digest.body.lower()
+    assert "New sign-in:" in digest.body  # the sign-in itself, not a link every digest has
     waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
     assert waiting == []  # no mail of its own: it went in the digest

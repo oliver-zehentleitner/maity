@@ -57,12 +57,7 @@ def get_landing(request: Request) -> Response:
         body = landing.public(setting)
         if body["enabled"]:  # the counters an enabled `stats` section names, shared (§16.7)
             body["stats"] = landing_stats.published(conn, setting)
-    tag = landing.etag(body)
-    headers = {"Cache-Control": "public, max-age=60", "ETag": tag}
-    wanted = request.headers.get("if-none-match", "")
-    if tag in [part.strip() for part in wanted.split(",")]:
-        return Response(status_code=304, headers=headers)
-    return JSONResponse(body, headers=headers)
+    return landing.cached_json(request, body)
 
 
 @router.post("/admin/settings/landing/preview", status_code=201)
@@ -176,9 +171,4 @@ def get_site_chrome(request: Request, lang: str | None = None) -> Response:
             accept_language=request.headers.get("accept-language"),
             stats=stats,
         )
-    tag = landing.etag(body)
-    headers = {"Cache-Control": "public, max-age=60", "ETag": tag, "Vary": "Accept-Language"}
-    wanted = request.headers.get("if-none-match", "")
-    if tag in [part.strip() for part in wanted.split(",")]:
-        return Response(status_code=304, headers=headers)
-    return JSONResponse(body, headers=headers)
+    return landing.cached_json(request, body, by_language=True)

@@ -14,7 +14,6 @@ from maity_hub.admin import instance_admin_id
 from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, invalid
-from maity_hub.landing import etag
 from maity_hub.routes.pages import LEGAL_CSP
 
 router = APIRouter()
@@ -51,12 +50,7 @@ def get_legal(request: Request) -> Response:
     pages are set and in which languages, without the text, for the dashboard's links."""
     with engine_of(request).begin() as conn:
         body = legal.public(legal.stored(conn))
-    tag = etag(body)
-    headers = {"Cache-Control": "public, max-age=60", "ETag": tag}
-    wanted = request.headers.get("if-none-match", "")
-    if tag in [part.strip() for part in wanted.split(",")]:
-        return Response(status_code=304, headers=headers)
-    return JSONResponse(body, headers=headers)
+    return landing.cached_json(request, body)
 
 
 @router.post("/admin/settings/legal/preview", status_code=201)

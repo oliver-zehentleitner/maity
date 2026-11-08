@@ -371,7 +371,11 @@ def test_earlier_versions_stay_readable_also_after_the_page_is_unset(
     assert f'href="/terms/{new}"' not in earlier and "Earlier versions" not in earlier
     owner.patch(LEGAL, {"terms": None})
     assert visitor.get("/terms").status_code == 404
-    assert "<h1>Terms 2</h1>" in visitor.get(f"/terms/{new}").text  # unset, still readable
+    unset = visitor.get(f"/terms/{new}").text
+    assert "<h1>Terms 2</h1>" in unset  # unset, still readable
+    # With no current version there is none to point to: no version is "earlier" now.
+    assert "This is an earlier version" not in unset
+    assert "This is an earlier version" not in visitor.get(f"/terms/{old}").text
     assert visitor.get("/terms/2020-01-01T00:00:00Z").status_code == 404
 
 

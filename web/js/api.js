@@ -663,10 +663,22 @@ window.Maity = window.Maity || {};
       const key = "avatar/" + id;
       if (uploaded[key] && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(uploaded[key]);
       delete uploaded[key];
-      if (!body || !body.blob) return setAvatar(id, null, null);
+      if (!body || !body.blob) return shownWithoutUpload(id);
       uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body.blob) : "uploaded-" + key;
       return setAvatar(id, uploaded[key], "uploaded");
     };
+  }
+  // §6.10, "An agent's motif": the motifs of fixtures/avatar-motifs.json, and
+  // the picture an agent shows without an upload: its motif, else the generated
+  // one (here without an address, so the client draws it, as for a human). A
+  // PUT or DELETE of the picture answers its url and source alone, as the hub's.
+  const motifSet = () => (fixtures()["avatar-motifs.json"] || { version: "", motifs: [] });
+  const profileOf = (id) => ((fixtures()["agents.json"] || { items: [] }).items).find((a) => a.id === id);
+  function shownWithoutUpload(id) {
+    const agent = /^agt-/.test(id) ? profileOf(id) : null;
+    if (!agent) return setAvatar(id, null, null);
+    const motif = motifSet().motifs.find((x) => x.name === agent.avatar_motif);
+    return motif ? setAvatar(id, "/api/v1/avatars/" + id + "?v=" + motif.url.split("/").pop(), "motif") : setAvatar(id, null, "generated");
   }
   // §16.7's checks of a landing page and its footer, each at its path.
   // §8.4 "A review result cites what it judged": a copy by hand of
@@ -2370,6 +2382,17 @@ window.Maity = window.Maity || {};
       }
       if ("display_name" in body) agent.display_name = String(body.display_name).trim();
       if ("git_identity" in body) agent.git_identity = body.git_identity;
+      if ("avatar_motif" in body) {
+        const name = body.avatar_motif;
+        if (name !== null && !motifSet().motifs.some((x) => x.name === name)) fail(400, "invalid", "the hub ships no motif of that name", path, { fields: { avatar_motif: "unknown" } });
+        // A choice counts as a change of the picture (§6.10), a repeat of the current one too.
+        const now = Date.now();
+        const recent = (avatarChanges[agent.id] || []).filter((t) => now - t < 3600000);
+        if (recent.length >= 10) fail(429, "rate_limited", "at most 10 changes of one avatar per hour", path);
+        avatarChanges[agent.id] = recent.concat(now);
+        agent.avatar_motif = name;
+        if (agent.avatar_source !== "uploaded") shownWithoutUpload(agent.id);
+      }
       if ("allowed_projects" in body) {
         const names = body.allowed_projects;
         if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
@@ -2405,7 +2428,7 @@ window.Maity = window.Maity || {};
         list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
         list.removed = (list.removed || []).concat(Object.assign({}, target, { removed_at: at }));
       });
-      Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
+      Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null, avatar_motif: null });
       return agent;
     }],
     // §16.8 Abuse reports for the instance admin: open ones first, each newest
@@ -2965,6 +2988,7 @@ window.Maity = window.Maity || {};
     }],
     ["PUT", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
     ["DELETE", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
+    ["GET", /^\/avatars\/motifs$/, () => motifSet()],
     ["PUT", /^\/agents\/([^/]+)\/avatar$/, avatarRoute(ownAgent)],
     ["DELETE", /^\/agents\/([^/]+)\/avatar$/, avatarRoute(ownAgent)],
     ["DELETE", /^\/projects\/([^/]+)\/(logo|banner)$/, (m, body, path) => {

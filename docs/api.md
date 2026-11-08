@@ -123,8 +123,15 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, then `ms=`
   (how long the hub took) and `route=` (the pattern the answering route was
   declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
-  for a request no route answered), never a
-  query string or a header value, and the token segment of `/join/{token}`,
+  for a request no route answered). A 403, and any other 4xx whose
+  `details` carry a `reason` or a `scope` (§1.3), adds `error=` (the code)
+  and `reason=` and `scope=` where the details have them, so a refused call
+  can be told apart in the log: `POST /api/v1/projects/acme/site/joins
+  403 ms=12 route=… error=forbidden scope=members:admin`. Only a code token
+  (lowercase letters, digits, `_ . : -`, at most 64 characters) is written;
+  any other value is `?`, and nothing else of the answer's details reaches
+  the line. The log never holds a
+  query string or a header value, and writes the token segment of `/join/{token}`,
   `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
   `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
   `/mail/second-factor-reset/{token}` (§18.6), and the single
@@ -21299,8 +21306,8 @@ moderator with nothing that names its author:
   the answer, and no time of arrival: only that it arrived inside the
   window.
 - No event names the author, and no audit or log line links author and
-  answer. The hub's request log records method, path and status only
-  (§1.1). The idempotency store (§1.5) keeps no record for an anonymous
+  answer. The hub's request log names no caller: method, path, status
+  and the other fields of §1.1. The idempotency store (§1.5) keeps no record for an anonymous
   answer: the key is accepted and not stored, and a repeat is refused by
   the dedupe below.
 - **Dedupe.** One answer per member per round is enforced by a tag:
