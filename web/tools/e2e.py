@@ -3173,7 +3173,8 @@ SWITCH_HOLD = """() => {
 
 def switch_busy_layout(run: Run, browser) -> None:
     """A page switch while the next view loads (tsk-hn2wa8a7e2eq) in fixture mode: at 1280x900,
-    390x844 and 360x780, light and dark, the sign-in banner on and off, and with reduced motion. The bar stands
+    390x844 and 360x780, light and dark, the sign-in banner on and off; with reduced motion at 1280 (light, banner)
+    and 390 (dark, no banner) only. The bar stands
     in main's top padding, 3 px, under the header and above the banner or the view, and moves
     nothing; the view being left is dimmed and busy; nothing overflows sideways; all of it is gone
     once the next view stands."""
