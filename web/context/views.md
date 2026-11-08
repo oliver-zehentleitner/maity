@@ -767,10 +767,7 @@ Conversations, Mentions, Account) is gone. Its history is the Show filter
 (answered, closed). Unread notifications are on the bell, conversations
 on the Chat button, and every notification on `/notifications`, where an
 unread one is in bold with a dot as on the bell and **Mark all read**
-marks up to the head of the first page (§18.3). It leaves unread what
-this session may not mark there: a security alert, and the open matters
-of §18.3 (`keepsUnread`); and an id the hub left unread (`skipped`) is
-said, its row staying unread, not silently passed over.
+marks up to the head of the first page (§18.3).
 
 **Reason:** the block mostly repeated the hub's notices about agents not
 listening, held the page while it read up to four pages of 50, and made
@@ -785,16 +782,21 @@ Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
 with its id, without opening it, the row marked read in place (its
 button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
-off while nothing it marks is unread, with a line that sign-in and
-address alerts stay unread. **Mark read** is not offered on one of the
+off while nothing it marks is unread. It leaves every security alert
+unread, whatever the session, with the line "Mark all read leaves
+security alerts unread: mark each one read on its own."
+(`waiting.mark_all.hint`). **Mark read** is not offered on one of the
 open matters of §18.3 — `registration_pending`, `mail_disabled`,
 `agents_not_listening`, told by their targets
 (`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
-— which read as read once the matter is closed, nor on a sign-in or
-address alert unless this session may confirm it (`M.sessions.mayConfirm`,
-§2.6.5): the hub skips such an id without saying so, and a button that
-does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item. Until 2026-11-04 a fourth
+— which read as read once the matter is closed, nor on a security
+alert this session may not mark (`M.sessions.mayMark`, as the bell
+does): an address change only from a confirmed session older than it,
+every other security alert from any session (§18.3). A sign-in is no
+item; the box above the list shows the sessions (§2.6.5). An id the hub
+leaves unread anyway is answered as `skipped` (§18.3), which the page
+says, its row staying unread. The sessions are read for that only when
+the page shows an unread security item. Until 2026-11-04 a fourth
 matter, `report_open` (target `report`), stood among them; a new report
 is now the instance admin's personal request instead (entry
 f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
@@ -4989,7 +4991,8 @@ reset.
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
-`GET /site/chrome` in the page's language. While the page stands, the hub's
+`GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
+and take the frame's language from its answer. While the page stands, the hub's
 `/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
@@ -5048,9 +5051,9 @@ than clearing the session on that 401 here was lotse#wtwy's decision (message se
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
 
-The frame's mark (`home()` in `js/site-chrome.js`) is the hub's SVG without its style attributes
-and without a class: its colours come from `public-pages.css` (`.site-header .mark rect`, …),
-because the dashboard's policy is `default-src 'self'` with no inline style. **Rejected:** the
+The frame's mark (`home()` in `js/site-chrome.js`) is the hub's SVG without its style attributes;
+it keeps the class `mark`, and its colours come from `public-pages.css` (`.site-header .mark
+rect`, …), because the dashboard's policy is `default-src 'self'` with no inline style. **Rejected:** the
 style attributes as the hub inlines them (web-e2e failed on them at `cc402ec1`), classes in
 `app.css` (a second copy of the hub's design, reverted in `7b63d015`), and an `<img>` (it cannot
 take the header's theme tokens). Source: the author's notes on #1287, round 2 (card
@@ -5364,6 +5367,7 @@ the rejected alternatives below are inferred, nobody stated them.
 "seq", which the dashboard's other texts do not use for it; a link, as the join panel's
 "message #seq", since a chat message has no address of its own to link to.
 
-**Known gap:** a screen reader hears "· 4202" with no word for what the number is, and the list
+**Known gap:** a screen reader hears "· #4202" (the stylesheet's `#` is read out too) with no
+word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
