@@ -187,6 +187,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const inlineFields = new Map();
   function checkFields(at) {
     if (typeof main === "undefined" || !main) return;
+    checkHandleHints(at);
     main.querySelectorAll("label").forEach((label) => {
       const target = label.getAttribute("for");
       const cls = (label.className || "").split(/\s+/);
@@ -197,6 +198,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       if (!control || ["checkbox", "radio"].includes(control.attrs.type)) return;
       if (laidOut(parent)) return;
       if (!inlineFields.has(target)) inlineFields.set(target, at + " in <" + (parent.tagName || "?").toLowerCase() + " class=\"" + (parent.className || "") + "\">");
+    });
+  }
+  // Every field that asks for a handle explains the word (tsk-srzrkf2parzt): a hint the input names
+  // in its aria-describedby. Which kinds of field smoke saw, and any without the hint.
+  const HANDLE_FIELDS = [["own", /^handle-[a-z0-9]{1,8}$/], ["agent-new", /^agent-new-handle$/], ["agent-edit", /^agent-handle-/],
+    ["join", /^join-handle$/], ["org-new", /^org-new-handle$/], ["org-invite", /^org-invite-handle$/], ["org-rename", /^org-handle$/]];
+  const handleSeen = new Set(), handleBare = new Map();
+  function checkHandleHints(at) {
+    main.querySelectorAll("input").forEach((input) => {
+      const id = (input.attrs && input.attrs.id) || "";
+      const kind = HANDLE_FIELDS.find(([, re]) => re.test(id));
+      if (!kind) return;
+      handleSeen.add(kind[0]);
+      const named = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter((x) => /^handle-explain-/.test(x));
+      const hint = named.length && main.querySelectorAll("p.handle-explain").find((p) => p.attrs.id === named[0] && text(p).length);
+      if (!hint && !handleBare.has(kind[0])) handleBare.set(kind[0], at);
     });
   }
   // A project's Agents lists one's agents as rows (tsk-05meme59sq1x): open every row's card, as the tests read them.
@@ -2533,6 +2550,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members").getAttribute("aria-current") === "page"
     && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Organisation"),
     "org tree by areas, policy preset, on the Team page's Organisation tab; the Members tab marked in the header, no tab of its own there");
+  // One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): the tree of one's own agents alone under
+  // oneself; someone else's boss a stub and nothing more; instances as dots with presence, the lead ringed.
+  {
+    const fleetMembers = [
+      { id: "me", kind: "human", display_name: "Me Myself", trust: "owner", role: "manager", areas: [] },
+      { id: "o2", kind: "human", handle: "o2h", display_name: "Other Owner", trust: "member", role: "coder", areas: [] },
+      { id: "a1", kind: "agent", handle: "a1h", display_name: "Lead Agent", owner_id: "me", reports_to: "me", areas: ["web/"], presence: "online",
+        instances: [{ id: "x", presence: "online", lead: true, claims: 2 }, { id: "y", presence: "away", claims: 1 },
+          { id: "z", presence: "offline", dormant: { since: "2026-11-01T10:00:00Z" } }, { id: "r", presence: "offline", revoked_at: "2026-11-01T09:00:00Z", claims: 5 }] },
+      { id: "a2", kind: "agent", handle: "a2h", display_name: "Coder Agent", owner_id: "me", reports_to: "a1", areas: [], presence: "offline", instances: [{ id: "p", presence: "offline" }] },
+      { id: "a3", kind: "agent", handle: "a3h", display_name: "Area Agent", owner_id: "me", areas: ["web/js/"], presence: "offline", instances: [{ id: "q", presence: "online" }] },
+      { id: "a4", kind: "agent", handle: "a4h", display_name: "Lent Agent", owner_id: "me", reports_to: "f1", areas: ["hub/"], presence: "offline", instances: [] },
+      { id: "a5", kind: "agent", handle: "a5h", display_name: "Human-led Agent", owner_id: "me", reports_to: "o2", areas: [], presence: "offline", instances: [] },
+      { id: "a6", kind: "agent", handle: "a6h", display_name: "Orphan Agent", owner_id: "me", reports_to: "ghost-boss", areas: [], presence: "offline", instances: [] },
+      { id: "f1", kind: "agent", handle: "f1h", display_name: "Foreign Boss", owner_id: "o2", areas: ["/"], presence: "online", instances: [{ id: "fb", presence: "online", lead: true, claims: 9 }] },
+      { id: "f2", kind: "agent", handle: "f2h", display_name: "Foreign Coder", owner_id: "o2", reports_to: "a1", areas: [], presence: "online", instances: [{ id: "fc", presence: "online" }] }];
+    const fleetCtx = (members) => {
+      const c = { me: { id: "me", kind: "human", display_name: "Me Myself" }, members, memberById: {}, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id };
+      members.forEach((m) => { c.memberById[m.id] = m; });
+      return c;
+    };
+    const F = win.Maity.org && win.Maity.org.drawFleet ? win.Maity.org.drawFleet(fleetCtx(fleetMembers)) : null;
+    const fNodes = F ? F.querySelectorAll("li.fleet-member") : [];
+    const fDepth = (id) => { let d = 0; let n = fNodes.find((x) => x.getAttribute("data-member") === id); while (n && n !== F) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return n ? d : -1; };
+    expect(F && JSON.stringify(fNodes.map((n) => n.getAttribute("data-member")).sort()) === JSON.stringify(["a1", "a2", "a3", "a4", "a5", "a6", "me"])
+      && fDepth("me") === 0 && fDepth("a1") === 1 && fDepth("a4") === 1 && fDepth("a5") === 1 && fDepth("a6") === 1 && fDepth("a2") === 2 && fDepth("a3") === 2,
+      "fleet: one's own agents alone under oneself, by reports_to and by area among them; someone else's area or report places nobody "
+        + fNodes.map((n) => n.getAttribute("data-member") + ":" + fDepth(n.getAttribute("data-member"))).join(" "));
+    const fNode = (id) => fNodes.find((x) => x.getAttribute("data-member") === id).querySelector(".fleet-node");
+    const dots = F ? fNode("a1").querySelectorAll("a.fleet-dot") : [];
+    expect(dots.length === 3 && dots.map((a) => a.className).join("|") === "fleet-dot online lead|fleet-dot away|fleet-dot dormant"
+      && dots[0].getAttribute("href").endsWith("/owner/project/members/a1/sessions/x") && dots[0].getAttribute("aria-label") === "@a1h#x: online, lead instance"
+      && dots[2].getAttribute("aria-label") === "@a1h#z: dormant",
+      "fleet: the live instances as dots with their presence, the lead marked, dormant its own, each a link to its sessions " + dots.map((a) => a.className + " " + a.getAttribute("aria-label") + " " + a.getAttribute("href")).join(" | "));
+    expect(F && text(fNode("a1")).includes("web/") && text(fNode("a1")).includes("3 open claims") && text(fNode("a2")).includes("0 open claims")
+      && text(fNode("a4")).includes("no active instance"),
+      "fleet: an agent's area and its open claims, the revoked instance's not counted; none active said");
+    const stubs = F ? F.querySelectorAll(".fleet-stub") : [];
+    // Nothing of the other side but the handle: not its name, in text or in any attribute, and no link to it.
+    const attrsOf = (root) => [root].concat(root.all ? root.all() : []).map((e) => JSON.stringify(e.attrs || {}) + " " + (e.className || "")).join(" ");
+    const stubOf = (id) => stubs.filter((p) => p.parentNode.getAttribute("data-member") === id).map(text).join("|");
+    expect(stubs.length === 3 && stubOf("a4") === "reports to @f1h" && stubOf("a5") === "reports to @o2h"
+      && stubOf("a6") === "reports to someone who is not yours" && stubs.every((p) => !p.querySelector("a") && !p.querySelector("span"))
+      && ["Foreign Boss", "Other Owner", "Foreign Coder", "#fb", "ghost-boss"].every((w) => !text(F).includes(w) && !attrsOf(F).includes(w))
+      && !attrsOf(F).includes("f1\"") && !attrsOf(F).includes("o2\""),
+      "fleet: a boss of someone else's, agent or human, is its handle as text and nothing else of theirs, in text or attributes; one the list lacks is said neutrally "
+        + stubs.map(text).join(" | "));
+    const E = win.Maity.org && win.Maity.org.drawFleet ? win.Maity.org.drawFleet(fleetCtx(fleetMembers.filter((m) => m.owner_id !== "me"))) : null;
+    expect(E && E.classList.contains("fleet-empty") && text(E) === "You have no agents in this project." && !E.querySelector("ul"),
+      "fleet: without agents of one's own here one sentence, no tree");
+  }
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/organisation"); for (let k = 0; k < 6; k++) await tick();
+  const agentsTabs = () => main.querySelectorAll("nav.agents-tabs a").map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("aria-current")]);
+  expect(JSON.stringify(agentsTabs()) === JSON.stringify([["Agents", "#/maintainer/maity/agents", null], ["Organisation", "#/maintainer/maity/agents/organisation", "page"]])
+    && (main.querySelector(".fleet-tree") || main.querySelector(".fleet-empty")) && !main.querySelector("table.agents-list")
+    && header.querySelectorAll("nav.views a").find((a) => /^Agents/.test(a.textContent)).getAttribute("aria-current") === "page",
+    "fleet: the Agents page's Organisation tab draws the fleet, the Agents tab in the header marked " + JSON.stringify(agentsTabs()));
+  await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(agentsTabs()) === JSON.stringify([["Agents", "#/maintainer/maity/agents", "page"], ["Organisation", "#/maintainer/maity/agents/organisation", null]]),
+    "fleet: the list is the Agents tab " + JSON.stringify(agentsTabs()));
   // Paths (js/paths.js, tsk-j9ktmj7e4fxq): each chip's route from the member view alone, as
   // docs/api.md §8.2 and §8.4 address the event; `usual` only where the rule hangs on the card.
   {
@@ -14021,8 +14098,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !rtLink("/api/v1/help") && !rtLink("https://github.com/x/y") && !rtLink("/all", { target: "_blank" }) && !rtLink("/all", { event: { ctrlKey: true } })
     && !rtLink("/all", { download: "x" }) && rtPushed.length === rtBefore + 1,
     "route: a click on a dashboard link stays in the page; a hub path, another site, a new tab, a modified click or a download is the browser's");
+  // The pages the hub draws itself at an address the dashboard also answers (tsk-mg681fdn8p6m): the
+  // frame's /explore and a landing variant load as pages, never a route change to the unknown-address view.
+  const rtHubBefore = rtPushed.length;
+  const rtHub = ["/explore", "/explore?lang=de", "/for/teams", "/for/teams?c=x"].map((x) => rtLink(x));
+  const rtNotHub = ["/explorer", "/for", "/for/teams/x"].map((x) => [!!(R.hubDrawn && R.hubDrawn(x)), R.isRoute(x)]);
+  expect(rtHub.every((x) => x === false) && rtPushed.length === rtHubBefore && R.isRoute("/explore") && R.isRoute("/for/teams")
+    && rtNotHub.every(([drawn, route]) => !drawn && route),
+    "route: a click on /explore or /for/<slug> is a page load, the address still a route; /explorer, /for and deeper paths are not those pages "
+    + JSON.stringify(rtHub) + JSON.stringify(rtNotHub));
 
   checkFields("at the end");
+  expect(HANDLE_FIELDS.every(([k]) => handleSeen.has(k)) && !handleBare.size,
+    "handles: every field that asks for a handle has its hint, named in aria-describedby; seen " + JSON.stringify([...handleSeen])
+    + ", without " + JSON.stringify([...handleBare]));
   expect(!inlineFields.size, "forms: no label runs inline beside its field on any page smoke shows " + JSON.stringify([...inlineFields]));
   console.log(failures ? failures + " failure(s)" : "all ok");
   process.exit(failures ? 1 : 0);

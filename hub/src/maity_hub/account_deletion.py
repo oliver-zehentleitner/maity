@@ -53,7 +53,8 @@ from maity_hub.notifications import tokens
 PURPOSE = "account_deletion"
 VALID_FOR = timedelta(hours=24)
 DELETED_NAME = "Deleted account"
-# Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given.
+# Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given. Distinct
+# from the load test's seed marker (`loadtest.NO_PASSWORD`), which `purge` deletes by.
 NO_PASSWORD = "deleted"
 ENDED_BY = "account_deleted"  # the sessions' `ended_by` (§2.6.5)
 HUB = Actor(None)  # the events the deletion writes name no actor: the hub's own change

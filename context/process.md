@@ -1947,3 +1947,43 @@ clean filter that reports old content).
   and the list would miss the next one; a cleared environment names what the steps need instead.
 - The `make` targets with the Python as the author's environment finds it: the case above, where the shared
   environment tests another checkout.
+
+## A factual sentence about main, GitHub or a red old head in a pull request text or review request names the command, the head it ran on and its full output
+
+**Id:** 9c15b539-a190-4672-9219-c3ef09fb1016
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r5, adopted by the maintainer as req-08ss0z8tfnja); card tsk-4npgz5hvsx3e; `CONTRIBUTING.md` ("Evidence for tests and reports")
+**Revisit when:** a tool states these facts itself (the overlap check, the CI watcher) and the text only quotes it
+
+A factual sentence in a pull request text or a review request about main ("already done on main", "main did
+not touch these files"), about GitHub ("GitHub leaves the field empty") or "the old head is red" names the
+command that showed it, the head it ran on and its full output.
+
+**Reason:** such sentences were written from a grep cut short or from one sample, and only
+the reviewers corrected them.
+
+**Rejected alternatives:**
+- Leaving it as good practice without a rule: that was the state in which the wrong sentences were written.
+
+## A card for a tool or a security-relevant change states its boundary before the first review
+
+**Id:** 375defba-792e-4da1-a370-0b5cf4525c72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r6, adopted by the maintainer as req-02zntf4ds19a); card tsk-4npgz5hvsx3e, where the lead chose a body convention over a template file; `CONTRIBUTING.md` ("Before the first review")
+**Revisit when:** cards gain a field for it in the hub, or the project keeps a card template
+
+Before the first review order, a card for a tool or a security-relevant change carries a `Boundary:` paragraph
+in its body: what the change guarantees, what it does not, and what counts as P3. The review lead quotes it to
+all three reviewers in round one.
+
+**Reason:** #1475 and #1478 each went two extra review rounds on edge cases before that boundary was written
+down.
+
+**Rejected alternatives:**
+- Setting the boundary during the review, as before: the extra rounds above.
+- A card template file with the field: the project keeps no card template; cards are written with
+  `maity task create` and a free-text body, so the convention lives where the body is described.

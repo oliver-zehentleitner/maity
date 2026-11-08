@@ -418,3 +418,21 @@ def test_an_unheld_cards_reporter_who_left_or_never_had_the_instance(
             update(t.membership).where(t.membership.c.id == row).values(removed_at=clock.now())
         )
     assert post(reviewer, "#7").status_code == 400
+
+
+def test_an_isolated_holder_of_a_held_card_is_left_out(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The holder's isolation (§6.2) drops it from a review result on its held card."""
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    reports_to(migrated, author, lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    isolate(migrated, author)
+    # Its lead is reached through the holder, so without the holder nobody is left.
+    answer = post(reviewer, task_id=card["id"])
+    assert answer.status_code == 400, answer.text
+    assert answer.json()["error"]["details"]["fields"] == {"to": "required"}
