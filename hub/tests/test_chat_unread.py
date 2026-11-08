@@ -4,6 +4,7 @@ oldest such message, while one of its instances listens."""
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterator
 from datetime import timedelta
@@ -11,6 +12,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
+from sqlalchemy import event as sqlalchemy_event
 
 from maity_hub import chat_unread, clock, listening, not_listening
 from maity_hub import tables as t
@@ -288,3 +290,71 @@ def test_the_worker_runs_it_with_its_minute_pass(room: Room) -> None:
     finally:
         worker.stop()
     assert len(r.nudges(first)) == 1
+
+
+class _Statements:
+    """The SQL a block runs on the engine, with its parameters."""
+
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
+        self.seen: list[tuple[str, Any]] = []
+
+    def __enter__(self) -> list[tuple[str, Any]]:
+        sqlalchemy_event.listen(self.engine, "before_cursor_execute", self._record)
+        return self.seen
+
+    def __exit__(self, *_: object) -> None:
+        sqlalchemy_event.remove(self.engine, "before_cursor_execute", self._record)
+
+    def _record(self, _conn: Any, _cursor: Any, statement: str, params: Any, *_: Any) -> None:
+        self.seen.append((statement, params))
+
+
+def _reads_messages(statement: str, params: Any) -> bool:
+    values = params.values() if isinstance(params, dict) else params or ()
+    return "event" in statement and "message" in [v for v in values if isinstance(v, str)]
+
+
+# A bare `event.payload` in a select list; `json_extract(event.payload, ?)` or
+# `event.payload -> %(x)s`, which read one key, do not count.
+_BARE_PAYLOAD = re.compile(r"event\.payload\s*(?:,(?!\s*[?%])|FROM\b|$)")
+
+
+def test_offline_agents_read_no_message_however_much_is_unread(room: Room) -> None:
+    """Review of #1490 (load): an agent nobody listens for has no nudge to close a cycle, so
+    its unread range only grows; the minute pass must not read it, for any agent."""
+    r = room
+    for session_id, wait in r.waits:
+        listening.closed(session_id, wait)
+    r.waits.clear()
+    for n in range(40):
+        r.say(r.owner, f"long message {n} " + "x" * 2000)
+    for minute in (11, 12, 13):
+        r.at(minute)
+        with _Statements(r.engine) as seen:
+            assert chat_unread.sweep(r.engine) == []
+        assert not [s for s, p in seen if _reads_messages(s, p)]
+
+
+def test_a_listening_agent_reads_no_message_before_the_delay_and_no_body_at_all(
+    room: Room,
+) -> None:
+    r = room
+    first, _ = r.agents
+    for n in range(40):
+        r.say(r.owner, f"long message {n} " + "x" * 2000)
+    r.at(9)
+    with _Statements(r.engine) as seen:
+        assert chat_unread.sweep(r.engine) == []
+    # Before the delay only the aggregate runs: no message row is selected.
+    assert not [s for s, p in seen if _reads_messages(s, p) and "min(" not in s.lower()]
+    r.at(11)
+    with _Statements(r.engine) as seen:
+        chat_unread.sweep(r.engine)
+    assert [n.payload["unread"] for n in r.nudges(first)] == [40]
+    assert not [s for s, _ in seen if _BARE_PAYLOAD.search(s)]
+    # The open cycle reads no message on the next passes either.
+    r.at(12)
+    with _Statements(r.engine) as seen:
+        assert chat_unread.sweep(r.engine) == []
+    assert not [s for s, p in seen if _reads_messages(s, p)]

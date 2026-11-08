@@ -24,7 +24,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, select
+from sqlalchemy import Connection, Engine, and_, func, select
 
 from maity_hub import clock, listening
 from maity_hub import tables as t
@@ -105,29 +105,47 @@ def _mark(conn: Connection, stay: Any) -> int:
     return max(int(stay.window_after), int(read or 0))
 
 
+def _humans_after(stay: Any, after: int) -> Any:
+    """The human participants' unredacted messages of the chat after `after` (a WHERE)."""
+    e, m = t.event.c, t.membership.c
+    return and_(
+        m.id == e.actor_membership,
+        e.project_id == stay.project_id,
+        e.conversation_id == stay.conversation_id,
+        e.kind == "message",
+        e.seq > after,
+        e.redacted.is_(False),
+        m.human_id.is_not(None),
+    )
+
+
+def _oldest_human(conn: Connection, stay: Any, after: int) -> Any:
+    """The oldest human message's time after `after`, or None: an aggregate, no row read.
+    Mentions only take messages out, so the delay cannot be due when this is younger."""
+    return conn.execute(
+        select(func.min(t.event.c.at))
+        .select_from(t.event.join(t.membership, t.membership.c.id == t.event.c.actor_membership))
+        .where(_humans_after(stay, after))
+    ).scalar()
+
+
 def _counted(conn: Connection, stay: Any, after: int) -> list[Any]:
     """The human participants' messages after `after` that mention neither the agent nor
-    one of its instances, oldest first."""
-    e, m = t.event.c, t.membership.c
+    one of its instances, oldest first: seq, time and the mentions alone, never the body
+    (a JSON projection), so the read stays small however long the messages are."""
+    e = t.event.c
     rows = conn.execute(
-        select(e.seq, e.at, e.payload)
-        .join(t.membership, m.id == e.actor_membership)
-        .where(
-            e.project_id == stay.project_id,
-            e.conversation_id == stay.conversation_id,
-            e.kind == "message",
-            e.seq > after,
-            e.redacted.is_(False),
-            m.human_id.is_not(None),
-        )
+        select(e.seq, e.at, e.payload["mentions"].label("mentions"))
+        .select_from(t.event.join(t.membership, t.membership.c.id == e.actor_membership))
+        .where(_humans_after(stay, after))
         .order_by(e.seq)
     )
     return [
         row
         for row in rows
         if not any(
-            mention.get("member_id") == stay.agent_id
-            for mention in (row.payload or {}).get("mentions") or []
+            isinstance(mention, dict) and mention.get("member_id") == stay.agent_id
+            for mention in row.mentions or []
         )
     ]
 
@@ -140,7 +158,7 @@ def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
     read."""
     e = t.event.c
     rows = conn.execute(
-        select(e.audience, e.payload).where(
+        select(e.audience, e.payload["newest_seq"].label("newest_seq")).where(
             e.project_id == stay.project_id,
             e.subject_type == "conversation",
             e.subject_id == stay.conversation_id,
@@ -149,21 +167,33 @@ def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
         )
     )
     token = f"member:{stay.agent_id}"
-    return any(
-        token in (row.audience or []) and int((row.payload or {}).get("newest_seq") or 0) > mark
-        for row in rows
-    )
+    return any(token in (row.audience or []) and int(row.newest_seq or 0) > mark for row in rows)
 
 
-def due(conn: Connection, stay: Any) -> dict[str, Any] | None:
-    """The nudge's payload when one is due for this stay now, else None."""
+def due(
+    conn: Connection, stay: Any, listens: dict[str, bool] | None = None
+) -> dict[str, Any] | None:
+    """The nudge's payload when one is due for this stay now, else None. The cheap checks
+    come first, so that what needs no nudge reads no message: whether the agent listens
+    (`listens` keeps the answer per membership for one pass), the open cycle, and the oldest
+    human message's age by an aggregate. Only a stay that passes all three reads its
+    messages' mentions, and an emitted nudge opens a cycle, so that read happens at most once
+    per cycle (review of #1490: an offline agent's growing unread range was read each minute)."""
+    listening_now = None if listens is None else listens.get(stay.membership_id)
+    if listening_now is None:
+        listening_now = _listening(conn, stay.membership_id)
+        if listens is not None:
+            listens[stay.membership_id] = listening_now
+    if not listening_now:
+        return None
     mark = _mark(conn, stay)
     if _cycle_open(conn, stay, mark):
         return None
+    oldest = _oldest_human(conn, stay, mark)
+    if oldest is None or oldest > clock.now() - DELAY:
+        return None
     counted = _counted(conn, stay, mark)
     if not counted or counted[0].at > clock.now() - DELAY:
-        return None
-    if not _listening(conn, stay.membership_id):
         return None
     return {
         "conversation": {"id": stay.conversation_id, "kind": "group", "title": stay.title},
@@ -208,10 +238,11 @@ def sweep(engine: Engine) -> list[int]:
     """Every agent's open stay in an open group chat: read first, outside the lock, and only
     a stay whose nudge is due is checked again and written under it. The seqs written."""
     with engine.connect() as conn:
+        listens: dict[str, bool] = {}
         pending = [
             (stay.conversation_id, stay.membership_id)
             for stay in _candidates(conn)
-            if due(conn, stay) is not None
+            if due(conn, stay, listens) is not None
         ]
     written = []
     for conversation_id, membership_id in pending:
