@@ -1,5 +1,6 @@
 """`GET /people/{handle}` (docs/api.md §6.27): a person or an organisation as the dashboard shows
-them to a signed-in human.
+them to a signed-in human. And a human's contacts (§6.29): `PUT` and `DELETE
+/people/{handle}/contact`, `GET /me/contacts` and `GET /me/contact-of`.
 
 One answer for every case the caller may not see: an unknown name, an agent's handle, a deleted,
 suspended or pending account, a deleted organisation, and a person or an organisation that shows
@@ -10,14 +11,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, and_, false, or_, select
 
-from maity_hub import avatars, moderation, namespace, orgs, person_links, public_people
+from maity_hub import (
+    avatars,
+    contacts,
+    handles,
+    moderation,
+    namespace,
+    orgs,
+    paging,
+    person_links,
+    public_people,
+)
 from maity_hub import tables as t
 from maity_hub.deps import AnyCaller, engine_of, settings_of
-from maity_hub.errors import forbidden, humans_only, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, rate_limited
+from maity_hub.views import ts
 
 router = APIRouter()
 
@@ -128,6 +140,8 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
     }
     if own or (page_served and (chosen or shared)):
         answer["public_bio"] = human.public_bio
+    if not own:
+        answer["contact"] = contacts.has(conn, me, human.id)  # §6.29
     agents = _agents(conn, caller, human) if page_served else []
     return {**answer, **links, **listed, "agents": agents}
 
@@ -231,3 +245,97 @@ def get_person(handle: str, request: Request, caller: AnyCaller) -> JSONResponse
                 raise not_found()
             answer = _organisation(conn, request, caller, org)
     return JSONResponse(answer, headers={"Cache-Control": CACHE})
+
+
+# --- contacts (§6.29) ---------------------------------------------------------------------------
+
+
+def _contact_target(conn: Connection, me: str, handle: str, *, active: bool) -> str:
+    """The human `handle` names (a live alias too, §6.24). `active`: an approved, active
+    account only, as `GET /people` answers (§6.27); else any account not deleted, so that a
+    contact can always be removed. An organisation is `not_a_person`, the caller `self`."""
+    human_id = handles.human_id_of(conn, handle)
+    if human_id is None:
+        if handles.org_id_of(conn, handle) is not None:
+            raise ApiError(
+                400, "invalid", "only a person can be a contact", {"reason": "not_a_person"}
+            )
+        raise not_found()
+    human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
+    if human is None or human.deleted_at is not None:
+        raise not_found()
+    if active and (human.suspended_at is not None or human.account_status != "active"):
+        raise not_found()
+    if human_id == me:
+        raise ApiError(400, "invalid", "you cannot be your own contact", {"reason": "self"})
+    return human_id
+
+
+@router.put("/people/{handle}/contact")
+def add_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
+    me = _caller(caller)
+    mark = None
+    try:
+        with engine_of(request).begin() as conn:
+            contact_id = _contact_target(conn, me, handle, active=True)
+            if contacts.has(conn, me, contact_id):
+                return Response(status_code=204)  # not counted
+            wait, mark = contacts.ADDED.place(me)
+            if wait:
+                raise rate_limited(wait)
+            if not contacts.add(conn, me, contact_id):
+                contacts.ADDED.release(me, mark)  # a concurrent call added it
+                mark = None
+    except BaseException:
+        contacts.ADDED.release(me, mark)  # nothing added, no attempt spent
+        raise
+    return Response(status_code=204)
+
+
+@router.delete("/people/{handle}/contact")
+def remove_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
+    me = _caller(caller)
+    with engine_of(request).begin() as conn:
+        contacts.remove(conn, me, _contact_target(conn, me, handle, active=False))
+    return Response(status_code=204)
+
+
+def _contact_list(request: Request, caller: AnyCaller, side: str) -> JSONResponse:
+    me = _caller(caller)
+    limit_raw = request.query_params.get("limit", "50")
+    if not limit_raw.isdigit() or not 1 <= int(limit_raw) <= 200:
+        raise invalid({"limit": "out_of_range"})
+    limit = int(limit_raw)
+    bound = paging.scope(list=side)
+    cursor = request.query_params.get("cursor")
+    with engine_of(request).connect() as conn:
+        after = paging.uncursor(cursor, bound) if cursor is not None else None
+        rows = contacts.page(conn, me, side, limit, after)
+        page = rows[:limit]
+        items = [
+            {
+                "handle": row.handle,
+                "display_name": row.display_name,
+                "avatar_url": _avatar(conn, request, caller, row.other_id),
+                "since": ts(row.since),
+            }
+            for row in page
+        ]
+    next_cursor = (
+        paging.cursor(page[-1].since, page[-1].other_id, bound) if len(rows) > limit else None
+    )
+    return JSONResponse(
+        {"items": items, "next_cursor": next_cursor}, headers={"Cache-Control": CACHE}
+    )
+
+
+@router.get("/me/contacts")
+def my_contacts(request: Request, caller: AnyCaller) -> JSONResponse:
+    """The caller's contacts: the people who may contact the caller."""
+    return _contact_list(request, caller, contacts.CONTACTS)
+
+
+@router.get("/me/contact-of")
+def contact_of(request: Request, caller: AnyCaller) -> JSONResponse:
+    """The people who have the caller as a contact: whom the caller may contact."""
+    return _contact_list(request, caller, contacts.CONTACT_OF)
