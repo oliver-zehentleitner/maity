@@ -1163,6 +1163,7 @@ def scenario(run: Run, page: Page) -> None:
         run.shot(page, f"phone-new{suffix}")
         if phone == 390:
             run.a11y(page, "create a project")
+            page.set_viewport_size({"width": phone, "height": tall})  # a11y ends at 1280x900; Runners is measured at phone width
         # The Runners view: the pairing form and its long install line; reached from the gear menu.
         page.locator("header").get_by_role("button", name="Settings", exact=True).click()
         page.get_by_role("menuitem", name="Runners", exact=True).click()
@@ -1170,7 +1171,7 @@ def scenario(run: Run, page: Page) -> None:
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"/runners is {width[0]} px wide at {width[1]} px"
         run.shot(page, f"phone-runners{suffix}")
-    page.set_viewport_size({"width": 390, "height": 844})  # where the steps below have always started
+    page.set_viewport_size({"width": 1280, "height": 900})  # where the a11y pass above left the steps below before 360 px was added
     no_problems(run, "phone width")
 
     users_step(run, page)
