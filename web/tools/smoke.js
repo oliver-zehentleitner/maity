@@ -397,13 +397,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
     tabChip(SA).dispatch("keydown", { key: "ArrowRight", altKey: false, shiftKey: true });
     expect(tabIds() === SA + "," + MA, "tabs: no move past the first place, and none without Alt");
-    // A drag: dropped on another tab, it goes before it.
+    // A drag: dropped on another tab, it goes before it. While it is dragged, a line shows the place by the
+    // drop's own half: before the tab on its first half, after it on its second (tsk-hp9gq9rmrdq2).
+    const dropSide = (el) => (el.classList.contains("drop-before") ? "before" : "") + (el.classList.contains("drop-after") ? "after" : "");
+    const anyDropLine = () => header.querySelectorAll("nav.switcher a").some((a) => dropSide(a));
+    const halfBox = { left: 100, width: 80, top: 0, height: 24, right: 180, bottom: 24 };
     tabChip(MA).dispatch("dragstart", { dataTransfer: null });
     let overPrevented = false;
-    tabChip(SA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = true; } });
-    tabChip(SA).dispatch("drop", { dataTransfer: null });
+    tabChip(MA).dispatch("dragover", { dataTransfer: null, currentTarget: tabChip(MA) });
+    const noLineOnSelf = !anyDropLine();
+    const saChip = tabChip(SA);
+    saChip.getBoundingClientRect = () => halfBox;
+    saChip.dispatch("dragover", { dataTransfer: null, currentTarget: saChip, clientX: 170 });
+    const lineAfter = dropSide(saChip);
+    saChip.dispatch("dragover", { dataTransfer: null, currentTarget: saChip, clientX: 110, preventDefault() { overPrevented = true; } });
+    const lineBefore = dropSide(saChip);
+    saChip.dispatch("dragleave", { dataTransfer: null, currentTarget: saChip });
+    const lineLeft = dropSide(saChip);
+    saChip.dispatch("dragover", { dataTransfer: null, currentTarget: saChip, clientX: 110 });
+    expect(noLineOnSelf && lineAfter === "after" && lineBefore === "before" && lineLeft === "" && dropSide(saChip) === "before",
+      "tabs: while dragging, a line shows the place by the drop's half, none on the tab itself, gone on leaving " + JSON.stringify([noLineOnSelf, lineAfter, lineBefore, lineLeft]));
+    saChip.dispatch("drop", { dataTransfer: null, currentTarget: saChip, clientX: 110 });
     tabChip(MA).dispatch("dragend");
-    expect(overPrevented && tabIds() === MA + "," + SA && kept().open.join() === MA + "," + SA, "tabs: a tab dragged onto another goes before it");
+    expect(overPrevented && tabIds() === MA + "," + SA && kept().open.join() === MA + "," + SA && !anyDropLine(),
+      "tabs: a tab dragged onto another goes before it, and the line is gone");
+    // A drag that ends anywhere else takes its line along.
+    tabChip(SA).dispatch("dragstart", { dataTransfer: null });
+    tabChip(MA).dispatch("dragover", { dataTransfer: null, currentTarget: tabChip(MA) });
+    const lineDuring = anyDropLine();
+    tabChip(SA).dispatch("dragend");
+    expect(lineDuring && !anyDropLine() && tabIds() === MA + "," + SA, "tabs: a drag ended outside a tab leaves no line and no move");
     tabChip(MA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = false; } });
     expect(overPrevented, "tabs: no drop target without a tab being dragged");
     // The tabs menu: one switch per project, the start set, nothing sent for a switch.
@@ -4023,6 +4046,98 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   // From a chat: an @name there tells nobody; the hint offers a project message with it.
   await go("#/maintainer/maity/chat/agt-d");
+  {
+    // Full screen (tsk-fnch2yxp2kk1): a button in the chat's heading row covers the window with the chat;
+    // the button again, Escape or the browser's back ends it, and back leaves the view as drawn.
+    const fsHtml = document.documentElement;
+    const fsPane = main.querySelector("section.chat-pane");
+    const fsBtn = () => main.querySelector("section.chat-pane .toolbar button.chat-full-toggle");
+    const fsWas = { push: win.history.pushState, back: win.history.back };
+    const fsLog = [];
+    win.history.pushState = () => { fsLog.push("push"); };
+    win.history.back = () => { fsLog.push("back"); if (win.onpopstate) win.onpopstate({ type: "popstate" }); };
+    const fsState = () => [fsHtml.classList.contains("chat-full"), fsPane.classList.contains("chat-full-pane"), fsBtn().getAttribute("aria-pressed"), fsBtn().getAttribute("aria-label")];
+    expect(fsBtn() && fsBtn().getAttribute("type") === "button" && fsBtn().getAttribute("title") === "Read in full screen"
+      && JSON.stringify(fsState()) === JSON.stringify([false, false, "false", "Read in full screen"]) && fsBtn().querySelector("svg"),
+      "chat full screen: an icon button in a direct chat's heading row, named and with its tooltip, not pressed");
+    fsBtn().click(); await tick();
+    expect(JSON.stringify(fsState()) === JSON.stringify([true, true, "true", "Leave full screen"]) && fsLog.join() === "push",
+      "chat full screen: a press covers the window with the chat and takes one history entry " + JSON.stringify([fsState(), fsLog]));
+    let fsPrevented = false;
+    docListeners.keydown({ key: "Escape", defaultPrevented: false, preventDefault: () => { fsPrevented = true; } }); await tick();
+    expect(JSON.stringify(fsState()) === JSON.stringify([false, false, "false", "Read in full screen"]) && fsPrevented && fsLog.join() === "push,back",
+      "chat full screen: Escape ends it and leaves its history entry " + JSON.stringify([fsState(), fsLog]));
+    fsBtn().click(); await tick();
+    win.onpopstate({ type: "popstate" }); await tick(); // the browser's back
+    expect(JSON.stringify(fsState()) === JSON.stringify([false, false, "false", "Read in full screen"]) && fsLog.join() === "push,back,push"
+      && main.querySelector("section.chat-pane") === fsPane, "chat full screen: the browser's back ends it, the chat stays as drawn " + JSON.stringify([fsState(), fsLog]));
+    fsBtn().click(); await tick();
+    fsBtn().click(); await tick();
+    expect(!fsHtml.classList.contains("chat-full") && fsLog.join() === "push,back,push,push,back", "chat full screen: the button again ends it " + JSON.stringify(fsLog));
+    // While full, the page outside the chat is inert, and only what the full screen marked is set back (fmzu at #1525).
+    const fsPre = new El("div");
+    fsPre.setAttribute("inert", "");
+    body.appendChild(fsPre);
+    const fsInert = (el) => el.getAttribute("inert") != null;
+    const fsUp = [];
+    for (let el = fsPane; el && el !== body; el = el.parentNode) fsUp.push(el);
+    fsBtn().click(); await tick();
+    const fsCovered = [fsInert(header), fsInert(productLine), fsUp.some(fsInert), fsInert(fsPre)];
+    fsBtn().click(); await tick();
+    expect(JSON.stringify(fsCovered) === JSON.stringify([true, true, false, true]) && !fsInert(header) && !fsInert(productLine) && fsInert(fsPre),
+      "chat full screen: the page outside the chat is inert while full and set back after, what was inert before stays " + JSON.stringify(fsCovered));
+    fsPre.remove();
+    // A route change while full takes the layer's entry for the new address: no second stop at the chat (fmzu, e5kk at #1525).
+    const fsLoc = win.location.replace;
+    const fsRepl = [];
+    win.location.replace = function (h) { fsRepl.push(h); return fsLoc.call(this, h); };
+    fsBtn().click(); await tick();
+    const fsBefore = fsLog.length;
+    expect(typeof docListeners.click === "function", "chat full screen: in fixture mode a link watch while full");
+    let fsLinkPrevented = false;
+    const fsLink = { getAttribute: (k) => (k === "href" ? "#/maintainer/maity/chat" : null), hasAttribute: () => false };
+    docListeners.click({ defaultPrevented: false, button: 0, target: { closest: () => fsLink }, preventDefault() { fsLinkPrevented = true; } });
+    for (let k = 0; k < 4; k++) await tick();
+    expect(fsLinkPrevented && JSON.stringify(fsRepl) === JSON.stringify(["#/maintainer/maity/chat"]) && fsLog.length === fsBefore
+      && !fsHtml.classList.contains("chat-full") && !fsInert(header) && !docListeners.click,
+      "chat full screen: a link while full replaces the layer's entry, no push, no back, the full screen over " + JSON.stringify([fsRepl, fsLog.slice(fsBefore)]));
+    await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    fsBtn().click(); await tick();
+    const fsBefore2 = fsLog.length;
+    win.Maity.route.go("/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(fsRepl) === JSON.stringify(["#/maintainer/maity/chat", "#/maintainer/maity/inbox"]) && fsLog.length === fsBefore2
+      && !fsHtml.classList.contains("chat-full"), "chat full screen: go() while full replaces the layer's entry " + JSON.stringify([fsRepl, fsLog.slice(fsBefore2)]));
+    win.location.replace = fsLoc;
+    // Panes drawn are not held by the view's disposers: one hook, taken only on entering, whatever the panes (fmzu at #1525).
+    const fsHooks = [];
+    const fsCtx = { onDispose: (f) => fsHooks.push(f) };
+    const fsButtons = [];
+    for (let k = 0; k < 12; k++) fsButtons.push(win.Maity.chatParts.fullScreen(fsCtx, new El("section")));
+    const fsHooksDrawn = fsHooks.length;
+    fsButtons[0].click(); fsButtons[0].click(); fsButtons[5].click();
+    const fsHooksUsed = fsHooks.length;
+    fsHooks.forEach((f) => f());
+    expect(fsHooksDrawn === 0 && fsHooksUsed === 1 && !fsHtml.classList.contains("chat-full") && fsButtons[5].getAttribute("aria-pressed") === "false",
+      "chat full screen: twelve panes drawn add no disposer, entering adds one, and it ends the chat that is full " + JSON.stringify([fsHooksDrawn, fsHooksUsed]));
+    await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    fsBtn().click(); await tick();
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    expect(!fsHtml.classList.contains("chat-full") && !fsInert(header), "chat full screen: another view ends it");
+    win.history.pushState = fsWas.push; win.history.back = fsWas.back;
+    await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    // At phone width (the same request; §16.13): the product line is only "Maity 2026", a group chat
+    // shows no "In it:" line, and its composer's label is read out but not shown. The full screen
+    // is fixed over the window at its height.
+    const fsCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8").replace(/\s+/g, " ");
+    const fsPhone = fsCss.split("@media (max-width: 600px) {").slice(1).map((b) => b.split("} }")[0] + "}").join(" ");
+    expect(fsPhone.includes(".product-line > .product-sep, .product-line > .product-part ~ .product-part { display: none; }")
+      && fsPhone.includes(".group-people-line { display: none; }")
+      && fsPhone.includes('.group-chat .compose-head > label[for="chat-text"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }')
+      && !/label\[for="chat-text"\] \{[^}]*display: none/.test(fsCss),
+      "phone width: the product line is its first part, no In it: line, the composer's label hidden from sight, not from a reader");
+    expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0;") && fsCss.includes("height: 100dvh;")
+      && fsCss.includes("html.chat-full body { overflow: hidden; }"), "chat full screen: the chat fixed over the whole window, the page under it still");
+  }
   {
     // A direct chat offers the members too; a pick keeps the draft and the hint that a mention tells nobody here.
     const dmText = byId("chat-text");
@@ -8610,7 +8725,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = npGetAll;
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
   expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
-  expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
+  // The row of tabs has no new-project tab; the "+" menu leads there (tsk-hp9gq9rmrdq2).
+  expect(!header.querySelectorAll(".switcher a").some((a) => a.getAttribute("href") === "#/new"), "switcher: no new-project tab");
   await go("#/new"); await tick();
   const fieldError0 = (id) => text(byId(id + "-error"));
   expect(plainTitle() === "New project · Maity" && byId("project-slug"), "create-project view");
@@ -8911,6 +9027,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const pane = main.querySelector("section.chat-pane.group-chat");
     expect(at >= 0 && send > at && pane && !Array.from(pane.childNodes).some((n) => (n.className || "").split(" ").includes("send-status") && n.getAttribute("role") === "status" && n !== kids[at] && n.getAttribute("tabindex") === "-1"),
       "group chat: the send status stands in the action row, before Send, not below the composer");
+    const gfs = pane && pane.querySelector(".toolbar button.chat-full-toggle");
+    expect(gfs && gfs.getAttribute("aria-label") === "Read in full screen" && gfs.getAttribute("aria-pressed") === "false",
+      "chat full screen: a group chat has the button in its heading row too");
   }
   {
     // A group chat offers its participants alone: the hub resolves a mention against them only (§8.6).
@@ -10834,8 +10953,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const addBtn = header.querySelector(".add-menu");
   addBtn.click(); await tick();
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
-  expect(addBtn.getAttribute("aria-label") === "Add an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite"]),
-    "header: the + menu leads to the agents page and the invitations page " + JSON.stringify(addItems));
+  expect(addBtn.getAttribute("aria-label") === "Add a project, an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Project=#/new", "Agent=#/agents", "User=#/invite"]),
+    "header: the + menu leads to the create form, the agents page and the invitations page " + JSON.stringify(addItems));
   // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
   expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
     "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));
@@ -14350,6 +14469,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && rtNotHub.every(([drawn, route]) => !drawn && route),
     "route: a click on /explore or /for/<slug> is a page load, the address still a route; /explorer, /for and deeper paths are not those pages "
     + JSON.stringify(rtHub) + JSON.stringify(rtNotHub));
+  // A layer over the view (the full-screen chat) over http(s): its entry is taken by a route change,
+  // go() or a link, never left as a second stop at the same address (fmzu, e5kk at #1525).
+  rtWin.location.href = rtWin.location.pathname + rtWin.location.search;
+  rtWin.history.state = null;
+  const rtLayerClosed = [];
+  const rtLayer0 = rtPushed.length;
+  R.layer(() => rtLayerClosed.push("go"));
+  R.go("/maintainer/maity/board");
+  const rtGoEntries = rtPushed.slice(rtLayer0).map((x) => x[0]);
+  rtWin.location.href = rtWin.location.pathname + rtWin.location.search;
+  const rtLayer1 = rtPushed.length;
+  R.layer(() => rtLayerClosed.push("link"));
+  const rtLinkStayed = rtLink("/maintainer/maity/contract#s-6.8");
+  const rtLinkEntries = rtPushed.slice(rtLayer1).map((x) => x[0]);
+  const rtLayer2 = rtPushed.length;
+  R.go("/all");
+  expect(JSON.stringify(rtGoEntries) === JSON.stringify(["push", "replace"]) && JSON.stringify(rtLinkEntries) === JSON.stringify(["push", "replace"]) && rtLinkStayed
+    && JSON.stringify(rtLayerClosed) === JSON.stringify(["go", "link"]) && JSON.stringify(rtPushed.slice(rtLayer2).map((x) => x[0])) === JSON.stringify(["push"]),
+    "route: a route change with a layer open closes it and replaces its entry, by go() or a link to a place; without a layer go() pushes again "
+    + JSON.stringify([rtGoEntries, rtLinkEntries, rtLayerClosed]));
 
   checkFields("at the end");
   expect(HANDLE_FIELDS.every(([k]) => handleSeen.has(k)) && !handleBare.size,
