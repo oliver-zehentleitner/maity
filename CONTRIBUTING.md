@@ -198,8 +198,7 @@ feature; `context/` entries are the exception and get one each.
 - Fixes after a review are pushed as one bundle once every review of the
   round is in, not after the first; an exception only on the lead's word.
 - After the lower pull request of a stack is squash-merged, merge
-  `origin/main` into the upper one instead of rebasing it, then retarget it
-  to `main`.
+  `origin/main` into the upper one instead of rebasing it.
 
 ## Issues
 

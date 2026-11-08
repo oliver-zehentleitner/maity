@@ -1156,7 +1156,7 @@ interim of one morning, while one vendor was out of quota.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r8, adopted by the maintainer as req-tz2hgtmfkd42); card tsk-2ehaantapkj2; the three-vendor rule in this file (c73e26c4); `CONTRIBUTING.md` ("During a review and in a stack")
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r8, adopted by the maintainer as req-tz2hgtmfkd42); card tsk-2ehaantapkj2; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; the three-vendor rule in this file (c73e26c4); `CONTRIBUTING.md` ("During a review and in a stack")
 **Revisit when:** the number of reviews per round changes, or the lead's exceptions become the rule
 
 The jour fixe adopted "Nachbesserungen gebündelt pushen, nachdem beide Reviews da sind" (push the fixes as
@@ -1174,17 +1174,22 @@ three-vendor rule of the same jour fixe (c73e26c4, above), it means all reviews 
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, adopted by the maintainer as req-8m0ja218geax); the lead's note nte-fw6853w6t7bw on card tsk-kr6f8w50r0cb; `CONTRIBUTING.md` ("During a review and in a stack")
+**Source:** owner request req-8m0ja218geax, adopted by the maintainer on 2026-11-03 (not a jour fixe proposal), its text verbatim in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; the lead's note nte-fw6853w6t7bw on that card; `CONTRIBUTING.md` ("During a review and in a stack")
 **Revisit when:** pull requests are merged other than by squash
 
-The jour fixe adopted "Nach Squash des unteren PRs main per Merge in den gestapelten PR, nicht rebasen; in
-context/process.md" (after the lower pull request is squash-merged, main goes into the stacked one by a merge,
-not a rebase; recorded in context/process.md). The upper pull request then retargets to main.
+The maintainer adopted "Gestapelte PRs nach dem Squash des unteren: main hineinmergen statt rebasen?" (stacked
+pull requests after the lower one's squash: merge main in instead of rebasing?), with its proposal "immer der
+Merge-Weg, festgehalten in `context/process.md`" (always the merge way, recorded in `context/process.md`).
 
-**Reason:** "Rebase hat einen zweiten Anlauf gekostet" (a rebase cost a second attempt).
+**Reason:** "Rebase (eigene Commits neu auf main setzen) ging heute einmal schief und brauchte einen zweiten
+Anlauf. Ein Merge von main in den oberen PR funktioniert ohne das; beim Merge auf main wird ohnehin gesquasht,
+die Historie bleibt sauber." (A rebase, putting one's own commits anew on main, went wrong once that day and
+needed a second attempt. A merge of main into the upper pull request works without that; the merge to main is
+squashed anyway, so the history stays clean.)
 
 **Rejected alternatives:**
-- A rebase: it replays the old commits as conflicts.
+- "jeder Coder wählt selbst" (each coder chooses), the request's reject option.
+- A rebase: the reason above.
 
 ## The review lead's team hands out every review
 
@@ -1192,7 +1197,7 @@ not a rebase; recorded in context/process.md). The upper pull request then retar
 **Type:** decision
 **Status:** active
 **Evidence:** unknown
-**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04; the review order's form, member and instance, from the jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r7, adopted by the maintainer as req-3hp7vjqa4yvz), card tsk-wer0fdvfmdss
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04; the review order's form, member and instance, from the jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r7, adopted by the maintainer as req-3hp7vjqa4yvz), card tsk-wer0fdvfmdss; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb
 **Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
 
 A coder sends a review request, with the base and head SHAs in full, to
@@ -1298,7 +1303,7 @@ hung MariaDB run ended without a word.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, adopted by the maintainer as req-gec2x1vgxrpx); card tsk-kr6f8w50r0cb
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r3, adopted by the maintainer as req-gec2x1vgxrpx); card tsk-kr6f8w50r0cb; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on that card
 **Revisit when:** a limit is set, or the job timeouts above end hangs early enough on their own
 
 The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit fester Frist" (the right to
