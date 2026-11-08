@@ -1174,15 +1174,18 @@ three-vendor rule of the same jour fixe (c73e26c4, above), it means all reviews 
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** owner request req-8m0ja218geax, adopted by the maintainer on 2026-11-03 (not a jour fixe proposal), its text verbatim in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; the lead's note nte-fw6853w6t7bw on that card; `CONTRIBUTING.md` ("During a review and in a stack")
+**Source:** owner request req-8m0ja218geax, adopted by the maintainer on 2026-11-03 (not a jour fixe proposal), its text verbatim in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; `CONTRIBUTING.md` ("During a review and in a stack")
 **Revisit when:** pull requests are merged other than by squash
 
 The maintainer adopted "Gestapelte PRs nach dem Squash des unteren: main hineinmergen statt rebasen?" (stacked
 pull requests after the lower one's squash: merge main in instead of rebasing?), with its proposal "immer der
 Merge-Weg, festgehalten in `context/process.md`" (always the merge way, recorded in `context/process.md`).
 
-**Reason:** "Rebase (eigene Commits neu auf main setzen) ging heute einmal schief und brauchte einen zweiten
-Anlauf. Ein Merge von main in den oberen PR funktioniert ohne das; beim Merge auf main wird ohnehin gesquasht,
+**Reason:** "Manchmal baut ein PR auf einem anderen auf (etwa #1278 auf #1276). Wir mergen per Squash, der
+untere PR landet als ein neuer Commit auf main. Der obere enthält aber noch dessen alte Einzelcommits." (Sometimes
+one pull request builds on another, for instance #1278 on #1276. We merge by squash, so the lower one lands on
+main as one new commit, but the upper one still holds its old single commits.) "Rebase (eigene Commits neu auf
+main setzen) ging heute einmal schief und brauchte einen zweiten Anlauf. Ein Merge von main in den oberen PR funktioniert ohne das; beim Merge auf main wird ohnehin gesquasht,
 die Historie bleibt sauber." (A rebase, putting one's own commits anew on main, went wrong once that day and
 needed a second attempt. A merge of main into the upper pull request works without that; the merge to main is
 squashed anyway, so the history stays clean.)
@@ -1211,8 +1214,8 @@ reviewer of each vendor, orders the reviews and delta reviews, checks
 the results, and collects the minor findings (P3) for the area's
 collection card. Merges, deploys and cards stay with the lead.
 
-The rule itself is confirmed by these sources; its reason is only for
-the order's form, so the entry's Evidence is the weaker grade.
+The rule itself is confirmed by these sources; a reason is recorded only
+for the order's form, so the entry's Evidence is the weaker grade.
 
 **Reason:** for the form of a review order, the jour fixe's (above); for the rest of the rule, unknown — not recorded with it.
 
@@ -1308,7 +1311,7 @@ hung MariaDB run ended without a word.
 
 The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit fester Frist" (the right to
 cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
-open. The job timeouts above (97f338fd) stay; this is a cancel before them.
+open. The job timeouts above (97f338fd) stay.
 
 **Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
 depends on a human; the approval has to come from Oliver).
