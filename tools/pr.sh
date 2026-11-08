@@ -14,9 +14,11 @@
 # repository: every agent pushes as the same GitHub account, so the head ref, not the author, is
 # what keeps an agent to its own pull request. A guard against mistakes, not an access control.
 #
-# The body always comes from a file, sent as its bytes: no shell quoting of Markdown. Both refuse
-# a body with an attribution line (Co-Authored-By:, Claude-Session:, "Generated with ... Claude
-# Code"): pull requests here carry none. Nothing else is sent, and nothing is added.
+# The body always comes from a file, sent as its UTF-8 text: no shell quoting of Markdown. Both
+# refuse a body with an attribution line, one that starts (after spaces or symbols such as an
+# emoji) with Co-Authored-By:, Claude-Session: or "Generated with ... Claude Code": pull requests
+# here carry none. A sentence that only names them is no such line. Nothing else is sent, and
+# nothing is added.
 #
 # Owner, repository and host are origin's, read from `remote.origin.url` as tools/overlap.sh
 # reads them, never gh's own choice (GH_REPO, `gh repo set-default`, another logged-in host).
@@ -144,9 +146,10 @@ repo="$repo_owner/$repo_name"
 # --- the body ---------------------------------------------------------------------------------
 if [ -n "$body_file" ]; then
   [ -f "$body_file" ] && [ -r "$body_file" ] || die "cannot read the body file $body_file"
-  # An attribution line, in any case: Co-Authored-By: or Claude-Session: at a line's start (after
-  # spaces), or "Generated with" followed by Claude Code on the line.
-  if grep -Eiq '^[[:space:]]*(co-authored-by|claude-session):|generated with.*claude code' "$body_file"; then
+  # An attribution line, in any case, at a line's start: Co-Authored-By: or Claude-Session: after
+  # spaces, or "Generated with" ... Claude Code after anything but letters and digits (the footer
+  # starts with an emoji). Mid-line, as in a sentence describing this rule, they are text.
+  if grep -Eiq '^[[:space:]]*(co-authored-by|claude-session):|^[^[:alnum:]]*generated with.*claude code' "$body_file"; then
     refuse "the body has an attribution line (Co-Authored-By, Claude-Session or Generated with ... Claude Code); pull requests here carry none"
   fi
 fi

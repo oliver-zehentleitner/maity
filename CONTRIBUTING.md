@@ -79,8 +79,8 @@ push first. `edit` changes only the pull request whose head is your
 checked-out branch (`--branch B` names another of yours): every agent
 pushes as the same GitHub account, so the head is what tells the pull
 requests apart. The body always comes from a file, sent as it is, and a
-body with an attribution line (`Co-Authored-By:`, `Claude-Session:`,
-"Generated with … Claude Code") is refused. It prints GitHub's answer
+body with a line that starts with an attribution (`Co-Authored-By:`,
+`Claude-Session:`, "Generated with … Claude Code") is refused. It prints GitHub's answer
 (number, URL, head, title). Exit 1 means it refused, with the reason;
 exit 2 means it could not run, and it never ends in 0 then. Owner,
 repository and host are origin's, as for the overlap check. Opening a

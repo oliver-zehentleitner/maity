@@ -198,7 +198,11 @@ class PrTool(unittest.TestCase):
         self.assertEqual(self.calls(), [])
 
     def test_ordinary_words_are_not_an_attribution_line(self) -> None:
-        self.body.write_text("Generated with the hub's table; co-authored by two humans.\n")
+        self.body.write_text(
+            "Generated with the hub's table; co-authored by two humans.\n"
+            "- A body with an attribution line (`Co-Authored-By:`, `Claude-Session:`, "
+            '"Generated with … Claude Code") is refused.\n'
+        )
         self.answers["POST repos/acme/widget/pulls"] = self.answer(7, self.head)
         done = self.run_pr("open", "--title", "T", "--body-file", str(self.body))
         self.assertEqual(done.returncode, 0, done.stderr)
