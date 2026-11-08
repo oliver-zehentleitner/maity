@@ -99,6 +99,9 @@ window.Maity = window.Maity || {};
   }
   const plus = (size) => bars(size, "M10.5 4h3v6.5H20v3h-6.5V20h-3v-6.5H4v-3h6.5z");
   const close = (size) => bars(size, "M6.1 4L12 9.9 17.9 4 20 6.1 14.1 12 20 17.9 17.9 20 12 14.1 6.1 20 4 17.9 9.9 12 4 6.1z");
+  // Full screen: four corners pointing out; leaving it, the same corners pointing in.
+  const expand = (size) => bars(size, "M3 3h7v2.5H5.5V10H3zM14 3h7v7h-2.5V5.5H14zM3 14h2.5v4.5H10V21H3zM18.5 14H21v7h-7v-2.5h4.5z");
+  const collapse = (size) => bars(size, "M7.5 3H10v7H3V7.5h4.5zM14 3h2.5v4.5H21V10h-7zM3 14h7v7H7.5v-4.5H3zM14 14h7v2.5h-4.5V21H14z");
   // The theme: a circle half filled (the system's), a sun, a moon.
   function themeIcon(theme, size) {
     const svg = document.createElementNS(SVG, "svg");
@@ -116,7 +119,7 @@ window.Maity = window.Maity || {};
     svg.appendChild(path);
     return svg;
   }
-  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, theme: themeIcon };
+  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }

@@ -2927,6 +2927,14 @@
     "en": "57c7229952991827",
     "text": "d3cd06d74987e53b"
   },
+  "chat.full.enter": {
+    "en": "6fc660678b5da3c0",
+    "text": "ccd2c41fe1c31022"
+  },
+  "chat.full.leave": {
+    "en": "1e99656337693788",
+    "text": "a089c048b4b5eb55"
+  },
   "chat.group.untitled": {
     "en": "1643b07ab5409364",
     "text": "81e0aba8ffb29219"
@@ -4926,10 +4934,6 @@
   "header.new": {
     "en": "008df04307a93de8",
     "text": "bd2d8eb543499768"
-  },
-  "header.new_project": {
-    "en": "12b032afb3e80b4a",
-    "text": "2867a864d247ceca"
   },
   "header.observe": {
     "en": "d07888db631e55d7",
@@ -10232,8 +10236,12 @@
     "text": "8002d3a81a87c86e"
   },
   "menu.add.label": {
-    "en": "46a58c01cabfa80e",
-    "text": "b7a28c4ab7f73597"
+    "en": "f6a991eb7a84e22b",
+    "text": "c5505149941ab1dc"
+  },
+  "menu.add.project": {
+    "en": "6c6b7df3070f112f",
+    "text": "5604ba62e18841c1"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
