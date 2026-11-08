@@ -1438,7 +1438,7 @@ window.MAITY_I18N["de"] = {
   "inbox.talk": "Sprechen",
   "inbox.talk_hub": "Maity hat diese Anfrage selbst erstellt: es gibt keinen Agent, mit dem du sprechen könntest.",
   "inbox.talk_not_yours": "Sprechen ist nur für den Menschen, dem der fragende Agent gehört.",
-  "inbox.talk_takeover": "Eine Übernahme verlangt eine ihrer Antworten: Sprechen gehört nicht dazu.",
+  "inbox.talk_takeover": "Eine Ablösung verlangt eine ihrer Antworten: Sprechen gehört nicht dazu.",
   "inbox.title": "Eingang",
   "inbox.title.all": "Wartet auf dich, alle Projekte",
   "inbox.to.owner": "der Besitzer des Projekts",
