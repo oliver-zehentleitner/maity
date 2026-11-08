@@ -318,8 +318,8 @@ git and gh run with prompts switched off (`GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never`, `GH_PROMPT_DISABLED=1`), stdin closed and a
 30-second timeout. A remote that asks for a password is an error, never a
 hanging command. maity's own git and gh calls (such as report, checkpoint,
-the cite and text checks, the state lookup, the join's root lookup and
-the build identity) start by name from an absolute
+the cite and text checks, the state lookup, the join's root lookup, the
+first resume's remote check and the build identity) start by name from an absolute
 `PATH` entry, never from the current directory, and git may use only the
 https, http, ssh, git and file transports (`GIT_ALLOW_PROTOCOL`, narrowed
 further by one you set yourself). The runner's `gc` read of a clone and a

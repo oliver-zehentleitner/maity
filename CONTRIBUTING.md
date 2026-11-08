@@ -59,7 +59,22 @@ branch adds no conflict, not that it merges cleanly with everything: read
 the lines. Exit 1 means your branch adds a conflict: settle the order with
 the other author or the lead before you push. Exit 2 means the check could
 not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetches
-`origin main` and the head of every pull request open in origin's repository.
+`origin main` and the head of every pull request open in origin's repository. It lists
+them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
+blocked, as in Claude Code's cloud sessions.
+
+## The guard tests before a review request
+
+Run `tools/guards.sh` before you ask for a review (`HUB_PYTHON=` a Python
+with the hub's test requirements). In about half a minute it runs what
+otherwise fails in CI one round at a time: the hub's per-human tables test,
+`make -C web shapes`, `make -C web fixtures` and `make -C web check`. It
+fails while any of them fails or leaves the work tree changed. Commit what
+it rewrote. Add a field the check names to the fixture under
+`web/fixtures/` by hand; `web/tools/fixture-shapes-baseline.json` is never
+extended for it. It needs a clean work tree to start, so after a red run commit
+what it rewrote (or `git checkout -- .`) before the next one. Exit 2 means
+the guards could not run, and it never ends in 0 then.
 
 ## Before merging a change to the web catalogs
 

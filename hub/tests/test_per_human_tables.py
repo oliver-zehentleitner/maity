@@ -41,6 +41,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("account_registration", "human_id"): True,  # no foreign key on purpose (tables.py)
     ("attachment", "deleted_by"): True,
     ("avatar_image", "owner_id"): True,
+    ("avatar_size", "owner_id"): True,  # the sizes of the same picture
     ("bridge", "created_by"): True,  # the human who asked for the connection
     ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
     ("conversation_participant", "added_by"): True,
@@ -168,6 +169,7 @@ EXPORT_LEAVES_OUT = {
     "account_record": _UNLISTED,
     "account_registration": _UNLISTED,
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
+    "avatar_size": "smaller copies of the picture, which the export names by its URL only",
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,

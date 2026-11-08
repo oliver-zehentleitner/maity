@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "attribution": "Agent avatar motifs by maity-artwork-claude-001 for the Maity project, MIT licence (see LICENSE in the repository).",
+  "license": "MIT",
+  "motifs": [
+    {
+      "name": "fox",
+      "theme": "classic",
+      "label": "Fox",
+      "alt": "A fox face, orange on teal",
+      "file": "fox.png"
+    },
+    {
+      "name": "comet",
+      "theme": "classic",
+      "label": "Comet",
+      "alt": "A yellow comet with a warm tail on a night sky",
+      "file": "comet.png"
+    },
+    {
+      "name": "lighthouse",
+      "theme": "classic",
+      "label": "Lighthouse",
+      "alt": "A red and white lighthouse shining over the sea",
+      "file": "lighthouse.png"
+    },
+    {
+      "name": "octopus",
+      "theme": "classic",
+      "label": "Octopus",
+      "alt": "A purple octopus with big eyes on pink",
+      "file": "octopus.png"
+    },
+    {
+      "name": "owl",
+      "theme": "classic",
+      "label": "Owl",
+      "alt": "A brown owl with big round eyes on dark blue",
+      "file": "owl.png"
+    },
+    {
+      "name": "whale",
+      "theme": "classic",
+      "label": "Whale",
+      "alt": "A blue whale blowing a spout on yellow",
+      "file": "whale.png"
+    },
+    {
+      "name": "cactus",
+      "theme": "classic",
+      "label": "Cactus",
+      "alt": "A green cactus with a pink flower in a clay pot",
+      "file": "cactus.png"
+    },
+    {
+      "name": "mountain",
+      "theme": "classic",
+      "label": "Mountains",
+      "alt": "Two snowy mountains under a sun",
+      "file": "mountain.png"
+    },
+    {
+      "name": "rocket",
+      "theme": "classic",
+      "label": "Rocket",
+      "alt": "A white and red rocket lifting off",
+      "file": "rocket.png"
+    },
+    {
+      "name": "planet",
+      "theme": "classic",
+      "label": "Planet",
+      "alt": "An orange planet with a ring in space",
+      "file": "planet.png"
+    },
+    {
+      "name": "cat",
+      "theme": "classic",
+      "label": "Cat",
+      "alt": "A grey cat face with green eyes on peach",
+      "file": "cat.png"
+    },
+    {
+      "name": "turtle",
+      "theme": "classic",
+      "label": "Turtle",
+      "alt": "A green turtle walking",
+      "file": "turtle.png"
+    },
+    {
+      "name": "mushroom",
+      "theme": "classic",
+      "label": "Mushroom",
+      "alt": "A red mushroom with white spots",
+      "file": "mushroom.png"
+    },
+    {
+      "name": "bolt",
+      "theme": "classic",
+      "label": "Lightning",
+      "alt": "A cloud with a yellow lightning bolt on violet",
+      "file": "bolt.png"
+    },
+    {
+      "name": "penguin",
+      "theme": "classic",
+      "label": "Penguin",
+      "alt": "A penguin on light blue",
+      "file": "penguin.png"
+    },
+    {
+      "name": "bee",
+      "theme": "classic",
+      "label": "Bee",
+      "alt": "A round bee with wings on pale yellow",
+      "file": "bee.png"
+    },
+    {
+      "name": "tree",
+      "theme": "classic",
+      "label": "Tree",
+      "alt": "A round green tree with red fruit",
+      "file": "tree.png"
+    },
+    {
+      "name": "balloon",
+      "theme": "classic",
+      "label": "Balloon",
+      "alt": "A striped hot-air balloon in the sky",
+      "file": "balloon.png"
+    },
+    {
+      "name": "moon",
+      "theme": "classic",
+      "label": "Moon",
+      "alt": "A crescent moon and stars at night",
+      "file": "moon.png"
+    },
+    {
+      "name": "wave",
+      "theme": "classic",
+      "label": "Wave",
+      "alt": "A curling blue sea wave",
+      "file": "wave.png"
+    },
+    {
+      "name": "gem",
+      "theme": "classic",
+      "label": "Gem",
+      "alt": "A cyan gemstone on deep purple",
+      "file": "gem.png"
+    },
+    {
+      "name": "snail",
+      "theme": "classic",
+      "label": "Snail",
+      "alt": "A snail with an orange spiral shell",
+      "file": "snail.png"
+    },
+    {
+      "name": "robot",
+      "theme": "classic",
+      "label": "Robot",
+      "alt": "A friendly robot head on light orange",
+      "file": "robot.png"
+    },
+    {
+      "name": "paper-plane",
+      "theme": "classic",
+      "label": "Paper plane",
+      "alt": "A white paper plane on pink",
+      "file": "paper-plane.png"
+    },
+    {
+      "name": "office-coder",
+      "theme": "office",
+      "label": "Office robot, coder",
+      "alt": "A robot in a green jacket with round glasses, smiling, on pale yellow",
+      "file": "office-coder.png"
+    },
+    {
+      "name": "office-reviewer",
+      "theme": "office",
+      "label": "Office robot, reviewer",
+      "alt": "A robot in a purple suit with reading glasses and a stern look, on pink",
+      "file": "office-reviewer.png"
+    },
+    {
+      "name": "office-ops",
+      "theme": "office",
+      "label": "Office robot, on call",
+      "alt": "A robot in a rust jacket wearing a headset, cheerful, on mint",
+      "file": "office-ops.png"
+    },
+    {
+      "name": "office-tester",
+      "theme": "office",
+      "label": "Office robot, tester",
+      "alt": "A robot in a teal jacket with safety goggles pushed up, on light blue",
+      "file": "office-tester.png"
+    },
+    {
+      "name": "office-designer",
+      "theme": "office",
+      "label": "Office robot, designer",
+      "alt": "A robot in a grey jacket and a red beret, smiling, on cream",
+      "file": "office-designer.png"
+    },
+    {
+      "name": "office-writer",
+      "theme": "office",
+      "label": "Office robot, writer",
+      "alt": "A robot in a brown jacket and bow tie with a pencil at its head, on beige",
+      "file": "office-writer.png"
+    },
+    {
+      "name": "office-security",
+      "theme": "office",
+      "label": "Office robot, security",
+      "alt": "A robot in a black suit with sunglasses and an earpiece, on grey",
+      "file": "office-security.png"
+    },
+    {
+      "name": "office-newbie",
+      "theme": "office",
+      "label": "Office robot, new member",
+      "alt": "A robot with a sprout on its antenna and a star pin, on light green",
+      "file": "office-newbie.png"
+    },
+    {
+      "name": "office-sleeper",
+      "theme": "office",
+      "label": "Office robot, asleep",
+      "alt": "A robot with closed eyes and a yellow nightcap under stars",
+      "file": "office-sleeper.png"
+    },
+    {
+      "name": "office-party",
+      "theme": "office",
+      "label": "Office robot, merged",
+      "alt": "A robot in a party hat among confetti, on yellow",
+      "file": "office-party.png"
+    },
+    {
+      "name": "office-bridge",
+      "theme": "office",
+      "label": "Office robot, bridge",
+      "alt": "A robot with two extra antennas, one yellow and one orange, on light green",
+      "file": "office-bridge.png"
+    },
+    {
+      "name": "office-plain",
+      "theme": "office",
+      "label": "Office robot",
+      "alt": "A plain robot in a grey jacket and tie, on light grey",
+      "file": "office-plain.png"
+    }
+  ]
+}

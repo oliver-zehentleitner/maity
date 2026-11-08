@@ -46,6 +46,7 @@ from maity_hub import (
     restricted,
     rules,
     setup_cards,
+    start_tabs,
     ticker,
     wakeups,
 )
@@ -884,6 +885,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         key = result.inserted_primary_key
         assert key is not None
         owner = int(key[0])
+        assert caller.human_id is not None  # a human's call: `HumanCaller`
+        start_tabs.append(conn, caller.human_id, project_id)  # a new project opens last (§5.1)
         if body.policy is not None:
             proposed = _apply_policy(
                 conn,

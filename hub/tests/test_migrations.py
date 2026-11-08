@@ -963,8 +963,12 @@ def test_the_single_schedule_becomes_one_series_with_its_rounds_and_grants(
     other = factory.human(engine, "otter")
     factory.membership(engine, scheduled, "owner", human_id=setter)
     factory.membership(engine, scheduled, "owner", human_id=other)
-    own = factory.agent(engine, scheduled, setter, "admin", trust="admin", with_session=False)
-    foreign = factory.agent(engine, scheduled, other, "admin", trust="admin", with_session=False)
+    own = factory.agent(
+        engine, scheduled, setter, "admin", trust="admin", with_session=False, picture=False
+    )
+    foreign = factory.agent(
+        engine, scheduled, other, "admin", trust="admin", with_session=False, picture=False
+    )
     policy = {
         "enabled": True,
         "recurrence": {"freq": "daily"},
@@ -1189,13 +1193,13 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
                     updated_at=now,
                 )
             )
-    coder = factory.agent(engine, project_id, chosen, "coder")
-    reviewer = factory.agent(engine, project_id, written, "reviewer")
-    tester = factory.agent(engine, project_id, plain, "tester")
-    english = factory.agent(engine, project_id, plain, "coder")
-    odd_reviewer = factory.agent(engine, project_id, odd, "reviewer")
-    both_coder = factory.agent(engine, project_id, both, "coder")
-    both_writer = factory.agent(engine, project_id, both, "writer")
+    coder = factory.agent(engine, project_id, chosen, "coder", picture=False)
+    reviewer = factory.agent(engine, project_id, written, "reviewer", picture=False)
+    tester = factory.agent(engine, project_id, plain, "tester", picture=False)
+    english = factory.agent(engine, project_id, plain, "coder", picture=False)
+    odd_reviewer = factory.agent(engine, project_id, odd, "reviewer", picture=False)
+    both_coder = factory.agent(engine, project_id, both, "coder", picture=False)
+    both_writer = factory.agent(engine, project_id, both, "writer", picture=False)
 
     def join(n: int, role: str, creator: str, **values: Any) -> str:
         trust, role = factory.trust_and_role(role)
@@ -1232,7 +1236,7 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
     many = [factory.human(engine, f"many-{n}") for n in range(10)]
     with engine.begin() as conn:
         conn.execute(update(t.human).where(t.human.c.id.in_(many)).values(interface_language="ko"))
-    crowd = [factory.agent(engine, project_id, h, "coder").agent_id for h in many]
+    crowd = [factory.agent(engine, project_id, h, "coder", picture=False).agent_id for h in many]
     for n, h in enumerate(many):
         join(10 + n, "reviewer", h)
     # 1200 owners without an interface language, one open join each: the first 600 with
@@ -1340,3 +1344,58 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         open_tester: (False, None),
     }
     downgrade(engine, _before(engine, revision))
+
+
+def test_avatar_size_draws_every_agents_generated_picture(engine: Engine) -> None:
+    """20261107160000_avatar_size (§6.10): every agent profile there is, a deleted one too,
+    gets its generated picture as the hub draws it for a new one; an upload stays and keeps
+    showing. The downgrade takes the generated pictures and the new table and column again."""
+    from sqlalchemy import insert, inspect, select, update
+
+    from maity_hub import avatar_generated, avatars, clock, images
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261107160000_avatar_size"
+    migrate(engine, _before(engine, revision))
+    project_id = factory.project(engine, "pictures")
+    owner = factory.human(engine, "pictures-owner")
+    agents = [factory.agent(engine, project_id, owner, "coder", picture=False) for _ in range(3)]
+    ids = [a.agent_id for a in agents]
+    uploaded = b"an uploaded picture"
+    with engine.begin() as conn:  # a deleted profile gets one too
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == ids[2])
+            .values(deleted_at=clock.now(), live=None)
+        )
+        conn.execute(
+            insert(t.avatar_image).values(
+                owner_id=ids[0],
+                source="uploaded",
+                data=uploaded,
+                etag=images.etag(uploaded),
+                updated_at=clock.now(),
+            )
+        )
+    migrate(engine, revision)
+    with engine.connect() as conn:
+        rows = {
+            (row.owner_id, row.source): bytes(row.data)
+            for row in conn.execute(select(t.avatar_image))
+        }
+        chosen = conn.execute(select(t.agent_profile.c.avatar_motif)).scalars().all()
+        shown = avatars.states(conn, ids)
+    assert {key: rows[key] for key in rows if key[1] == "generated"} == {
+        (agent_id, "generated"): avatar_generated.draw(agent_id) for agent_id in ids
+    }
+    assert rows[(ids[0], "uploaded")] == uploaded
+    assert chosen == [None] * 3
+    assert [shown[i]["avatar_source"] for i in ids] == ["uploaded", "generated", "generated"]
+    downgrade(engine, _before(engine, revision))
+    with engine.connect() as conn:
+        sources = conn.execute(select(t.avatar_image.c.source)).scalars().all()
+    assert sources == ["uploaded"]
+    tables = inspect(engine)
+    assert "avatar_size" not in tables.get_table_names()
+    assert "avatar_motif" not in {c["name"] for c in tables.get_columns("agent_profile")}

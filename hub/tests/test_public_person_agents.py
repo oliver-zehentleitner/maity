@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import public_pages, public_snapshot
+from maity_hub import avatar_generated, avatars, images, public_pages, public_snapshot
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -62,11 +62,23 @@ def private_agent(world: World, make_client: ClientFactory) -> tuple[flow.Agent,
     return agent, "hidden-bot"
 
 
-def entry(handle: str, name: str, page: str | None, roles: list[str]) -> dict[str, Any]:
+def generated(agent_id: str) -> str:
+    """The public address of an agent's generated picture (§6.10)."""
+    return avatars.public_url(images.etag(avatar_generated.draw(agent_id)))
+
+
+def bot_id(world: World) -> str:
+    member_id: str = world.bot.get("/me").json()["member"]["id"]
+    return member_id
+
+
+def entry(
+    handle: str, name: str, page: str | None, roles: list[str], picture: str
+) -> dict[str, Any]:
     return {
         "name": name,
         "handle": handle,
-        "picture": None,
+        "picture": picture,
         "page": page,
         "roles": roles,
         "model": None,
@@ -86,7 +98,8 @@ def test_the_tab_lists_the_agents_that_have_a_page_by_default(
         "handle": "maintainer",
         "page": "/maintainer",
     }
-    shown = [entry(bot, "An agent", f"/maintainer/agents/{bot}", ["coder"])]
+    picture = generated(bot_id(world))
+    shown = [entry(bot, "An agent", f"/maintainer/agents/{bot}", ["coder"], picture)]
     assert answer["data"]["agents"] == shown
     page = main(world, "maintainer/agents")
     assert f'href="/maintainer/agents/{bot}"' in page and '<span class="tag">coder</span>' in page
@@ -104,26 +117,28 @@ def test_the_tab_lists_the_agents_that_have_a_page_by_default(
         {
             "handle": bot,
             "display_name": "An agent",
-            "avatar_url": None,
+            # its owner reads the picture at its id address (§6.10)
+            "avatar_url": avatars.url_of(bot_id(world), picture.rsplit("/", 1)[1]),
             "page": f"/maintainer/agents/{bot}",
             "roles": ["coder"],
             "model": None,
             "harness": None,
         }
     ]
+    # A member of a shared project reads the same address (§6.10).
     assert world.anna.get("/people/maintainer").json()["agents"] == people
 
 
 def test_all_lists_an_agent_without_a_page_with_nothing_of_its_private_project(
     world: World, make_client: ClientFactory
 ) -> None:
-    _, hidden = private_agent(world, make_client)
+    agent, hidden = private_agent(world, make_client)
     switched = world.owner.patch("/me", {"public_agents": "all"})
     assert switched.status_code == 200, switched.text
     assert switched.json()["member"]["public_agents"] == "all"
     listed = data(world, "maintainer/agents")["data"]["agents"]
     assert [a["handle"] for a in listed] == sorted([bot_handle(world), hidden])  # by handle
-    assert entry(hidden, "Hidden Bot", None, []) in listed
+    assert entry(hidden, "Hidden Bot", None, [], generated(agent.id)) in listed
     page = main(world, "maintainer/agents")
     assert "Hidden Bot" in page and f"/maintainer/agents/{hidden}" not in page
     assert "secret" not in page.lower() and "reviewer" not in page  # nothing of where it works

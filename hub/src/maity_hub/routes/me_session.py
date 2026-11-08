@@ -47,6 +47,7 @@ from maity_hub import (
     restricted,
     rules,
     setup_cards,
+    start_tabs,
     subagents,
     ticker,
 )
@@ -194,6 +195,8 @@ class MePatch(Strict):
     social: Any = None  # an object, checked with the other fields: `social: "format"`
     links_visible: str | None = None
     interface_language: str | None = None  # §6.2; null clears it
+    start_tabs: list[str] | None = None  # §5.1 "Start tabs": the whole list; null resets it
+    avatar_motif: Any = None  # an agent's own motif or null (§6.10)
 
 
 LINKS = ("website", "social", "links_visible")
@@ -210,6 +213,7 @@ HUMAN_FIELDS = (
     "social",
     "links_visible",
     "interface_language",
+    "start_tabs",
 )
 
 
@@ -865,8 +869,9 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     given = body.model_fields_set
 
     def human_action(conn: Connection) -> idempotency.Outcome:
-        if "paused" in given or "dormant" in given:
-            raise invalid({"paused" if "paused" in given else "dormant": "agents_only"})
+        for field in ("paused", "dormant", "avatar_motif"):
+            if field in given:
+                raise invalid({field: "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
         public = {
             "public_profile",
@@ -882,6 +887,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             and not (public or links)
             and body.handle is None
             and "interface_language" not in given
+            and "start_tabs" not in given
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
@@ -936,6 +942,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if chosen is not None and chosen not in languages.INTERFACE:
                 raise invalid({"interface_language": "unknown_language"})
             values["interface_language"] = chosen
+        if "start_tabs" in given:
+            values["start_tabs"] = start_tabs.checked(conn, caller.human_id, body.start_tabs)
         links_given = {"website", "social", "links_visible"} & given
         changed = False
         if links_given:
@@ -1006,6 +1014,13 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 own=True,
             )
             return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
+        if "avatar_motif" in given:  # the profile's picture, whichever project the call is in
+            avatars.choose_motif(conn, caller.principal_id, body.avatar_motif, caller)
+            if "paused" not in given:
+                mine = _own_membership(conn, caller)
+                return idempotency.Outcome(
+                    200, "member", str(mine.id), load_member(conn, str(mine.id))
+                )
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)

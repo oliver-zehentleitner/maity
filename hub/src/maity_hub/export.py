@@ -255,6 +255,7 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         "website": human.website,
         "social": human.social or {},
         "links_visible": human.links_visible,
+        "start_tabs": _start_tabs(conn, human.start_tabs),  # §5.1
         "preferences": (
             {
                 "markdown": prefs.markdown,
@@ -270,6 +271,16 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
             "not_listening": settings["not_listening"],
         },
     }
+
+
+def _start_tabs(conn: Connection, stored: list[str] | None) -> list[dict[str, str]] | None:
+    """The start tabs as stored, in order, each with the project's current full name. Only a
+    project that no longer exists is left out; one the human has left stays, as it is what the
+    hub keeps, while `GET /me` shows current memberships only (§5.1)."""
+    if stored is None:
+        return None
+    names = namespace.full_names(conn, list(stored))
+    return [{"id": pid, "full_name": names[pid]} for pid in stored if pid in names]
 
 
 def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:

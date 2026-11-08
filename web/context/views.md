@@ -61,15 +61,18 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
-**Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
+**Revisit when:** a human asks to land on one project
 **See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
-project switcher: each project with its state and the number of open
-requests waiting for this human, plus "All projects" with the total. The
+project switcher: each project this browser has open as a tab, with its
+state and the number of open requests waiting for this human, plus "All
+projects" with the total. A switcher row too long is answered by closing
+tabs (cd4fe2ba). The
 cross-project view (`/all`) is the inbox across every project, each
 entry labelled with its project and that project's state, answered in
 place. Opening the dashboard without a route lands there when the human
@@ -86,6 +89,38 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## The project tabs are the browser's own, moved by dragging, by Alt+Shift+Arrow or from the tabs menu
+
+**Id:** cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
+
+Which projects the header shows as tabs, and in which order, is kept in
+this browser per viewer (`js/tabs.js`); without storage it holds for the
+visit. A browser with nothing kept starts from the account's
+`start_tabs`, or with every project when that is `null`. A project the
+browser has not seen yet opens as the last tab; one opened by its
+address gets its tab back. A tab moves by dragging, by Alt+Shift+Arrow
+on the focused tab, or by Move this tab left/right in the tabs menu
+beside the row, which also opens and closes each project (switches that
+keep the menu open) and keeps the current row as the start set. Each
+move is announced with the new place. A project's start-set switch also
+sits in its own settings (Mine). The cross-project inbox can be filtered
+to projects with an open tab; personal requests always stay.
+
+**Reason:** the split between browser and account is the maintainer's
+(the contract entry above). The rest is inferred from the dashboard's
+existing rules: nothing is drag-only (the board's Move and Place menus),
+so a single pointer or a keyboard reaches every move a drag makes; and
+a filter that hides personal requests would hide requests with no tab
+to open them from.
+
+**Rejected alternatives:** unknown beyond the contract entry's.
 
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
@@ -1111,7 +1146,8 @@ six places to keep in step instead of one.
 **Revisit when:** the hub lets a member's join change the membership, or the designer reworks the join panel
 
 When the chosen agent is a member of the project, the join panel shows a
-choice instead of role, reports to, areas and briefing: **Replace
+choice instead of role, areas and briefing (whom it reports to has a field
+of its own, e69c571c): **Replace
 instance** with the member's active instances (presence, cards held) or
 **Start another instance** with the team's count against its limit.
 Replace is preselected when there is an active instance. The join then
@@ -2256,7 +2292,8 @@ not hold a token that names nobody yet, which the hub accepts.
 
 **Id:** c848b045-9411-43b3-8763-2fd998270a1d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e69c571c-3365-433a-b26d-245efff28a7d
 **Evidence:** confirmed
 **Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
 **Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
@@ -2293,6 +2330,27 @@ settled, so it is not offered until it has.
 would offer trust, role and areas the hub refuses them. Finding the
 pending request by its title: fragile and invisible to the reader when
 it breaks.
+
+## Whom an agent reports to is chosen where it joins, a boss of another owner offered and marked
+
+**Id:** e69c571c-3365-433a-b26d-245efff28a7d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (req-a5xxyvq74ft7, seq 86060): on Agents, letting agents join, Reports to should be settable there, not only under Management afterwards; card tsk-nbadjbr9zpg7 and the lead's go with its two points (seq 86087), 2026-11-07; docs/api.md §3.1, §2.3 ("to any other member, which is a cross-owner edge and takes effect only with the boss's side's consent"), §6.2 ("Own consent")
+**Revisit when:** the contract gives the member view the pending edge (`reports_to_pending`), or a join that names `reports_to` for an agent already a member
+
+The join panel offers **Reports to** in every case:
+
+- **A first join, by an admin:** every member who is not a guest. One's own agents and oneself are plain; anyone else is marked "waits for consent", and the hub files that consent at the exchange (§3.1).
+- **A member's own agent:** oneself (the default) and one's own managers in the project, the only bosses §3.1 lets a member's join name.
+- **An agent already here:** a field of its own with the current boss. A change is the owner's own `PATCH …/members/{id}` (§2.3), sent before the join, so where it applies at once (200) the join page and the first resume show the new boss. Where it waits for the boss's side's consent (202, §6.2), the join page keeps the boss it was issued with, since the hub copies the boss into the join when it is created; the resume after the consent shows the new one.
+
+If that `PATCH` is refused, no join is sent. If it is taken and the join then fails, the panel says both: the join's refusal, and the new boss, or the consent it waits for. A boss already asked for is not asked again in the same panel. The owner's **Reports to** on Members and Agents offers a boss of another owner too, marked the same way, its 202 said as the consent it waits for.
+
+**Reason:** the maintainer wants to place agents, other owners' among them, at the moment they join, and §2.3 lets the owner start a cross-owner edge whatever their trust. The earlier rule (c848b045) held them back only until the contract settled that, which it now has.
+
+**Rejected alternative:** a default boss on the agent profile, carried into every project: a boss is always a member of one project, and it would need a contract change (the lead, seq 86087). Sending `reports_to` in an instance's join: the hub refuses a membership field there (`differs_from_membership`). Undoing the `PATCH` when the join fails: the change was asked for on its own terms, and an undo could itself fail.
 
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 
