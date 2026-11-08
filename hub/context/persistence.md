@@ -963,3 +963,40 @@ grows with the instance's history, where nobody measures it before the deploy.
 - A temporary table of humans and languages joined once per table: the same bound, but more statements and a table to clean up.
 - An index on `created_by` / `subagents_by` for the loop: it makes the loop cheaper, not bounded, and keeps an index only
   this migration needs.
+
+## On PostgreSQL a migration run stays one transaction and is run again after a deadlock or a lock timeout
+
+**Id:** 3320d30f-9516-495a-8abb-11da2a93c0b0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** two of three migrate attempts of the 2026-11-08 deploy failed with `deadlock detected`;
+local reproduction on PostgreSQL (`tests/test_migrate_concurrency.py`)
+**Revisit when:** the hub stops serving during `maity-hub migrate`, or `/health` accepts a schema
+other than the code's head
+
+`maity-hub migrate` runs while the hub serves. On PostgreSQL the chain is one transaction, so every
+lock an earlier migration took (`human` for a new foreign key, then for a new column) is held until
+the last one ends. A hub transaction that holds a table the chain wants next and then reads one it
+already holds closes a cycle; inside one migration that alters two tables, the same happens with
+the opposite order. `migrations/env.py` sets `lock_timeout` on the migrate session (5 s), and
+`db.migrate` runs the whole chain again on a deadlock (40P01) or a lock it did not get in time
+(55P03): five attempts, with growing pauses, then the error, and `maity-hub migrate` says the
+revision the schema stayed at.
+
+**Reason:** a failed attempt rolls the whole chain back, so the schema is always the one the
+running hub expects and the next attempt starts clean. The lock timeout keeps a waiting
+`ACCESS EXCLUSIVE` request from queueing every request for that table behind it.
+
+**Rejected alternatives:**
+- One transaction per migration (`transaction_per_migration`): it shortens how long a lock is held,
+  but a run that dies halfway leaves the database at an intermediate revision. `/health` answers
+  503 `schema_outdated` for any revision other than the code's head, so the old pods leave service
+  and the failed deploy brings no new ones: a failure that costs nothing today would become an
+  outage. It also leaves the deadlock inside one migration in place.
+- Taking every lock up front in a fixed order: the tables a migration needs are known only while it
+  runs, and the list would have to follow every new migration.
+
+**Known limit:** MariaDB commits per step and gets no retry here, since an attempt from the start
+would redo committed DDL (see "On MariaDB a migration run commits per step").

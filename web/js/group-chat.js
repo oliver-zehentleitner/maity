@@ -474,7 +474,7 @@ window.Maity = window.Maity || {};
     drawHead();
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, M.t("group.back")),
-      h("div", { class: "toolbar" }, heading, closed ? h("span", { class: "flag" }, M.t("group.closed_flag")) : null),
+      h("div", { class: "toolbar" }, heading, parts.fullScreen(ctx, pane), closed ? h("span", { class: "flag" }, M.t("group.closed_flag")) : null),
       head,
       earlierBox,
       messages,
