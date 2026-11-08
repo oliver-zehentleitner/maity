@@ -11,7 +11,10 @@ nudge moves nothing.
 
 Nothing is stored for it: the read mark (`conversation_read`, else the stay's `window_after`)
 and the event table (an earlier `chat_unread`, found by its subject, and its `newest_seq`) say
-all the cycle needs.
+all the cycle needs. The only thing kept between passes is in this process's memory: per stay,
+how far its unread messages have been read and their running counts (`_Scan`), so a pass reads
+only what came since, in bounded batches. Restarted, moved to another replica or reset, it reads
+the stay once more from its read mark.
 Agents' messages never count, so two agents cannot wake each other through it; humans are
 never addressed, every message of the others wakes them already. Not for a jour fixe round's
 thread (`hub_thread`), a closed chat, a direct conversation or a cross-project chat (§9.5),
@@ -21,7 +24,9 @@ which are not rows of `conversation` here, or a paused or isolated membership.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+import threading
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, Engine, and_, func, select
@@ -37,6 +42,36 @@ KIND = "chat_unread"
 # its meaning stay. Long enough that a burst of messages is one nudge and a human who wants
 # an answer at once has time to mention; short against the hours a chat lay unseen.
 DELAY = timedelta(minutes=10)
+# Rows read per query, and per stay and pass: a long unread range is read over several passes
+# rather than at once; the nudge waits until the read reached its end, so its counts are exact.
+SCAN_BATCH = 500
+SCAN_BUDGET = 2000
+
+
+@dataclass
+class _Scan:
+    """What one stay's unread messages have shown so far: read up to `scanned_to`, from
+    `mark`, and the counted ones' number, first and last. `redacted` is how many human
+    messages in (mark, scanned_to] were redacted when it was read last, so a later redaction
+    there is seen and the range read again."""
+
+    mark: int
+    scanned_to: int
+    redacted: int = 0
+    count: int = 0
+    oldest_seq: int | None = None
+    oldest_at: datetime | None = None
+    newest_seq: int | None = None
+
+
+_SCANS: dict[tuple[int, str], _Scan] = {}
+_SCANS_LOCK = threading.Lock()
+
+
+def reset() -> None:
+    """Forget every stay's scan: the next pass reads each one from its read mark again."""
+    with _SCANS_LOCK:
+        _SCANS.clear()
 
 
 def _candidates(conn: Connection, conversation_id: str | None = None) -> list[Any]:
@@ -105,8 +140,9 @@ def _mark(conn: Connection, stay: Any) -> int:
     return max(int(stay.window_after), int(read or 0))
 
 
-def _humans_after(stay: Any, after: int) -> Any:
-    """The human participants' unredacted messages of the chat after `after` (a WHERE)."""
+def _humans_after(stay: Any, after: int, *, redacted: bool = False) -> Any:
+    """The human participants' messages of the chat after `after` (a WHERE): the unredacted
+    ones, or with `redacted` the redacted ones."""
     e, m = t.event.c, t.membership.c
     return and_(
         m.id == e.actor_membership,
@@ -114,40 +150,95 @@ def _humans_after(stay: Any, after: int) -> Any:
         e.conversation_id == stay.conversation_id,
         e.kind == "message",
         e.seq > after,
-        e.redacted.is_(False),
+        e.redacted.is_(redacted),
         m.human_id.is_not(None),
     )
+
+
+def _humans_from() -> Any:
+    return t.event.join(t.membership, t.membership.c.id == t.event.c.actor_membership)
+
+
+def _redacted_in(conn: Connection, stay: Any, after: int, upto: int) -> int:
+    """How many human messages in (after, upto] are redacted: an aggregate, no row read."""
+    found = conn.execute(
+        select(func.count())
+        .select_from(_humans_from())
+        .where(_humans_after(stay, after, redacted=True), t.event.c.seq <= upto)
+    ).scalar()
+    return int(found or 0)
 
 
 def _oldest_human(conn: Connection, stay: Any, after: int) -> Any:
     """The oldest human message's time after `after`, or None: an aggregate, no row read.
     Mentions only take messages out, so the delay cannot be due when this is younger."""
     return conn.execute(
-        select(func.min(t.event.c.at))
-        .select_from(t.event.join(t.membership, t.membership.c.id == t.event.c.actor_membership))
-        .where(_humans_after(stay, after))
+        select(func.min(t.event.c.at)).select_from(_humans_from()).where(_humans_after(stay, after))
     ).scalar()
 
 
-def _counted(conn: Connection, stay: Any, after: int) -> list[Any]:
-    """The human participants' messages after `after` that mention neither the agent nor
-    one of its instances, oldest first: seq, time and the mentions alone, never the body
-    (a JSON projection), so the read stays small however long the messages are."""
+def _rows_after(conn: Connection, stay: Any, after: int, limit: int) -> list[Any]:
+    """Up to `limit` human messages after `after`, oldest first: seq, time and the mentions
+    alone, never the body (a JSON projection)."""
     e = t.event.c
-    rows = conn.execute(
-        select(e.seq, e.at, e.payload["mentions"].label("mentions"))
-        .select_from(t.event.join(t.membership, t.membership.c.id == e.actor_membership))
-        .where(_humans_after(stay, after))
-        .order_by(e.seq)
-    )
-    return [
-        row
-        for row in rows
-        if not any(
-            isinstance(mention, dict) and mention.get("member_id") == stay.agent_id
-            for mention in row.mentions or []
+    return list(
+        conn.execute(
+            select(e.seq, e.at, e.payload["mentions"].label("mentions"))
+            .select_from(_humans_from())
+            .where(_humans_after(stay, after))
+            .order_by(e.seq)
+            .limit(limit)
         )
-    ]
+    )
+
+
+def _mentions(row: Any, agent_id: str) -> bool:
+    """Whether the message mentions the agent or one of its instances (§8.6)."""
+    return any(
+        isinstance(mention, dict) and mention.get("member_id") == agent_id
+        for mention in row.mentions or []
+    )
+
+
+def _scanned(conn: Connection, stay: Any, mark: int) -> _Scan | None:
+    """The stay's counted messages after `mark`, read on from where the last pass stopped:
+    their number, first and last, or None while the read has not reached the end (it goes on
+    next pass). Each pass reads at most SCAN_BUDGET rows of this stay, and only those after
+    the last one read, so a backlog that never leads to a nudge (all of it mentions the agent)
+    is not read again each minute (review of #1490). A moved mark, or a redaction inside the
+    range read, starts the read over."""
+    key = (stay.membership_id, stay.conversation_id)
+    with _SCANS_LOCK:
+        scan = _SCANS.get(key)
+    if (
+        scan is None
+        or scan.mark != mark
+        or (
+            scan.scanned_to > mark
+            and _redacted_in(conn, stay, mark, scan.scanned_to) != scan.redacted
+        )
+    ):
+        scan = _Scan(mark=mark, scanned_to=mark)
+    budget, complete = SCAN_BUDGET, False
+    while budget > 0:
+        limit = min(SCAN_BATCH, budget)
+        rows = _rows_after(conn, stay, scan.scanned_to, limit)
+        for row in rows:
+            if not _mentions(row, stay.agent_id):
+                scan.count += 1
+                if scan.oldest_seq is None:
+                    scan.oldest_seq, scan.oldest_at = row.seq, row.at
+                scan.newest_seq = row.seq
+            scan.scanned_to = row.seq
+        budget -= len(rows)
+        if len(rows) < limit:
+            complete = True
+            break
+    if scan.scanned_to > mark:
+        scan.redacted = _redacted_in(conn, stay, mark, scan.scanned_to)
+    with _SCANS_LOCK:
+        _SCANS[key] = scan
+    return scan if complete else None
 
 
 def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
@@ -177,8 +268,8 @@ def due(
     come first, so that what needs no nudge reads no message: whether the agent listens
     (`listens` keeps the answer per membership for one pass), the open cycle, and the oldest
     human message's age by an aggregate. Only a stay that passes all three reads its
-    messages' mentions, and an emitted nudge opens a cycle, so that read happens at most once
-    per cycle (review of #1490: an offline agent's growing unread range was read each minute)."""
+    messages' mentions, and then only those it has not read before (`_scanned`), so no row is
+    read twice while the mark stands (review of #1490)."""
     listening_now = None if listens is None else listens.get(stay.membership_id)
     if listening_now is None:
         listening_now = _listening(conn, stay.membership_id)
@@ -192,14 +283,16 @@ def due(
     oldest = _oldest_human(conn, stay, mark)
     if oldest is None or oldest > clock.now() - DELAY:
         return None
-    counted = _counted(conn, stay, mark)
-    if not counted or counted[0].at > clock.now() - DELAY:
+    scan = _scanned(conn, stay, mark)
+    if scan is None or not scan.count or scan.oldest_at is None:
+        return None
+    if scan.oldest_at > clock.now() - DELAY:
         return None
     return {
         "conversation": {"id": stay.conversation_id, "kind": "group", "title": stay.title},
-        "unread": len(counted),
-        "oldest_seq": counted[0].seq,
-        "newest_seq": counted[-1].seq,
+        "unread": scan.count,
+        "oldest_seq": scan.oldest_seq,
+        "newest_seq": scan.newest_seq,
     }
 
 
@@ -240,7 +333,12 @@ def sweep(engine: Engine) -> list[int]:
     pending = []
     with engine.connect() as conn:
         listens: dict[int, bool] = {}
-        for stay in _candidates(conn):
+        stays = _candidates(conn)
+        keep = {(stay.membership_id, stay.conversation_id) for stay in stays}
+        with _SCANS_LOCK:  # a stay that ended, or a chat that closed, needs no scan kept
+            for key in [key for key in _SCANS if key not in keep]:
+                del _SCANS[key]
+        for stay in stays:
             try:
                 if due(conn, stay, listens) is not None:
                     pending.append((stay.conversation_id, stay.membership_id))

@@ -77,6 +77,7 @@ def room(make_client: ClientFactory, migrated: Engine) -> Iterator[Room]:
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "member", human_id=guest.id)
+    chat_unread.reset()  # the scans kept in memory belong to the last test's database
     r = Room(migrated, owner, guest)
     clock.set_source(lambda: r.now)
     r.agents = [flow.agent(make_client, owner), flow.agent(make_client, owner)]
@@ -315,6 +316,11 @@ def _reads_messages(statement: str, params: Any) -> bool:
     return "event" in statement and "message" in [v for v in values if isinstance(v, str)]
 
 
+def _names_body(statement: str, params: Any) -> bool:
+    values = params.values() if isinstance(params, dict) else params or ()
+    return "body" in statement or any(isinstance(v, str) and "body" in v for v in values)
+
+
 # A bare `event.payload` in a select list; `json_extract(event.payload, ?)` or
 # `event.payload -> %(x)s`, which read one key, do not count.
 _BARE_PAYLOAD = re.compile(r"event\.payload\s*(?:,(?!\s*[?%])|FROM\b|$)")
@@ -353,6 +359,8 @@ def test_a_listening_agent_reads_no_message_before_the_delay_and_no_body_at_all(
         chat_unread.sweep(r.engine)
     assert [n.payload["unread"] for n in r.nudges(first)] == [40]
     assert not [s for s, _ in seen if _BARE_PAYLOAD.search(s)]
+    # Nor a projection of the body (review of #1490, P3): no statement names it.
+    assert not [s for s, p in seen if _names_body(s, p)]
     # The open cycle reads no message on the next passes either.
     r.at(12)
     with _Statements(r.engine) as seen:
@@ -530,3 +538,92 @@ def test_the_worker_runs_the_nudge_when_the_lease_expiry_fails(
     finally:
         worker.stop()
     assert len(r.nudges(first)) == 1
+
+
+# The read is incremental and bounded (review of #1490 delta, P2): what a stay's scan has
+# read is not read again while its mark stands.
+
+
+class _RowCount:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.rows = 0
+        real = chat_unread._rows_after
+
+        def counted(conn: Any, stay: Any, after: int, limit: int) -> list[Any]:
+            found = real(conn, stay, after, limit)
+            self.rows += len(found)
+            return found
+
+        monkeypatch.setattr(chat_unread, "_rows_after", counted)
+
+
+def test_a_backlog_that_mentions_the_agents_is_read_once_not_each_minute(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every unread message mentions both agents: none counts, no nudge opens a cycle, and
+    still the rows are read on the first pass only."""
+    r = room
+    first, second = r.agents
+    for n in range(5):
+        r.say(r.owner, f"@{r.handle(first)} @{r.handle(second)} point {n}")
+    count = _RowCount(monkeypatch)
+    per_pass = []
+    for minute in (11, 12, 13):
+        r.at(minute)
+        before = count.rows
+        assert chat_unread.sweep(r.engine) == []
+        per_pass.append(count.rows - before)
+    assert per_pass == [10, 0, 0]  # five rows per agent, once
+    r.say(r.owner, "and one without a mention")
+    r.at(24)
+    before = count.rows
+    chat_unread.sweep(r.engine)
+    assert count.rows - before == 2  # only the new row, per agent
+    assert [n.payload["unread"] for n in r.nudges()] == [1, 1]
+
+
+def test_a_long_backlog_is_read_over_several_passes_and_counted_exactly(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = room
+    first, second = r.agents
+    r.read(second)
+    seqs = [r.say(r.owner, f"line {n}") for n in range(7)]
+    r.read(second)  # only the first agent's backlog is read
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 3)
+    count = _RowCount(monkeypatch)
+    passes = 0
+    for minute in range(11, 20):
+        r.at(minute)
+        before = count.rows
+        chat_unread.sweep(r.engine)
+        assert count.rows - before <= 3  # the budget per stay and pass
+        passes += 1
+        if r.nudges(first):
+            break
+    [nudge] = r.nudges(first)
+    assert passes == 3  # 3 + 3 + 1 rows, the last pass finds the end
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (7, seqs[0])
+    assert nudge.payload["newest_seq"] == seqs[-1]
+
+
+def test_a_redaction_inside_the_range_read_starts_the_read_over(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = room
+    first, second = r.agents
+    gone = r.say(r.owner, "taken back")
+    kept = r.say(r.owner, "stays")
+    r.read(second)
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 1)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 1)
+    r.at(11)
+    assert chat_unread.sweep(r.engine) == []  # read "taken back" only, not at the end yet
+    with r.engine.begin() as conn:
+        conn.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+    for minute in (12, 13):
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
