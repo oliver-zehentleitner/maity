@@ -5437,8 +5437,10 @@ English otherwise, and the dashboard the browser's choice (`?lang=`, then
 for everyone who never set it, so it says nothing about what a person wants
 to read. Before sign-in
 it takes the landing page's own language: the `language` of `GET /site/chrome`
-(§16.7.5), read once per page with the address's `?lang=` as written (or none),
-which the hub chooses exactly as the landing page does. A choice made on the
+(§16.7.5), read once per page with the address's `?lang=` as written, or,
+where the address has none, the last `?lang=` (or pick) this page saw across
+its routes (a link to `/login` from `/register?lang=de`), or none, which the
+hub chooses exactly as the landing page does. A choice made on the
 page comes first and holds for the page; a reload with a `?lang=` the landing
 page has no page in follows the landing page, though the address still shows
 it, and the registration does not store that tag as `interface_language`. Without that read (a failed or late answer, the join host) the dashboard
