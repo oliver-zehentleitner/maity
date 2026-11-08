@@ -12626,9 +12626,11 @@ The conversation view:
     `conversations` (§5.2) already counts the unread messages.
 
   Not emitted for a direct conversation (every message there wakes
-  the agent), for a cross-project group chat (§9.5: a mention wakes it
-  once and nothing else does), or for a participation whose `wake` is
-  `all` (not built, above), whose human messages wake it already. The
+  the agent), for a jour fixe round's thread (§20.5: each step wakes its
+  eligible members once), for a closed chat, for a cross-project group
+  chat (§9.5: a mention wakes it once and nothing else does), or for a
+  participation whose `wake` is `all` (not built, above), whose human
+  messages wake it already. The
   maintainer adopted it at the jour fixe of 2026-11-02, when agents
   missed group chats between mentions. The cost that keeps mentions the
   only *immediate* wake, a model run per message under a supervised
