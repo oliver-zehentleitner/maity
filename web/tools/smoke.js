@@ -1513,6 +1513,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(thCss.includes('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {') && thDark(':root[data-theme="dark"]').includes("--bg: #111418;")
     && thDark(':root:not([data-theme="light"])') === thDark(':root[data-theme="dark"]'),
     "theme: the dark tokens apply by the system unless Light is picked, and when Dark is picked, the same in both");
+  // The card panel's warning text (tsk-sg1tdmwdy09z): light --warn is 4.26:1 on the panel's --surface-2, so the
+  // panel has its own, at least 4.5:1 there (WCAG AA); both ways to dark give back :root's dark --warn.
+  const cpHex = (block, name) => (block.match(new RegExp("--" + name + ": (#[0-9a-f]{6})")) || [])[1];
+  const cpLum = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((s, c, i) => s + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const cpRatio = (a, b) => { const [x, y] = [cpLum(a), cpLum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const cpWarn = (thCss.match(/\n\.card-panel \{ --warn: (#[0-9a-f]{6}); \}/) || [])[1], cpGround = cpHex(thDark(":root"), "surface-2");
+  expect(cpWarn && cpGround && cpRatio(cpWarn, cpGround) >= 4.5
+    && thCss.includes('@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card-panel { --warn: inherit; } }')
+    && thCss.includes(':root[data-theme="dark"] .card-panel { --warn: inherit; }'),
+    `theme: warning text in the card panel is 4.5:1 at least on its light ground, dark unchanged (${cpWarn} on ${cpGround})`);
   expect(/@media \(max-width: 600px\) \{\s+\.bar > \.project \{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset\(50%\);/.test(thCss),
     "header: at phone width the text beside the logo is hidden from sight, still read out");
   // The brand (web/brand/BRAND.md): the 28 px header lockup in the page's theme, the favicons, the loader.
