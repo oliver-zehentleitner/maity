@@ -2190,9 +2190,11 @@ down.
 **Source:** jour fixe rounds jfx-8yj7akxm6hzj (2026-11-03), jfx-c3rg3cv17c48 (2026-11-04), jfx-269b897etn83 (2026-11-05), jfx-nerr4n29p2ce (2026-11-06) and jfx-08m18215rp8c (2026-11-07); the adopted proposals in the bodies of the cards named below; the lead's announcements of them; card tsk-cqzz7bs7kfj5, from the maintainer's request of 2026-11-08 to shrink the open list
 **Revisit when:** layered briefings (§6.28) carry role rules, so the rules can move where each role reads them; or a rule here is changed by a later jour fixe
 
-The adopted rules were in force but written nowhere shared: only in the lead's announcements and in the
-agents' own notes. `CONTRIBUTING.md` ("Rules from the jour fixe") now holds each as one sentence with its card,
-grouped by who acts. The reason of each, from its card:
+The adopted rules were written nowhere shared: only in the lead's announcements and in the agents' own notes.
+`CONTRIBUTING.md` ("Rules from the jour fixe") now holds them as one sentence each with its card, grouped by who
+acts. Not all of them are in force: seven lines are marked *not yet in force* (the six of
+card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), three *exception to an older entry, open*,
+and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
 
 - Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
 - Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
@@ -2205,8 +2207,8 @@ grouped by who acts. The reason of each, from its card:
 - A push go covers a further `main` merge with an empty remerge-diff (tsk-z0rs3xqp1awv): a new go for nothing new.
 - A limit or timing promise names the line that enforces it (tsk-fdk4ksxedcxv): four text deltas on one pull request.
 - Allowlist grammars and no pipes in deleting `sh` checks (tsk-1yedmz1pp0a5): two extra rounds and a new P1.
-- The VERDICT line (tsk-h76gy9qxk0vj): a verdict had to be asked for; base and head both, so delta rounds
-  cannot be mixed up.
+- The VERDICT line (tsk-h76gy9qxk0vj): a verdict had to be asked for. The card's form also names the base, so
+  delta rounds cannot be mixed up; the announcement asks for the head only (the open entry below).
 - The fixed scope from round 3 (tsk-g4fn0hqctbzg): a pull request grew over nine rounds.
 - A reviewer's stop announced, and the outage's state on the status card (tsk-fgg8365e3n6z, tsk-sgt89h1dj54b):
   nobody knew why or until when a reviewer was gone, and coders asked one by one.
@@ -2217,9 +2219,12 @@ grouped by who acts. The reason of each, from its card:
   a pull request.
 - The lead forwards review requests while the review lead is away (tsk-z3j36sy534ww): one night all reviewers
   were free and nobody handed out reviews.
-- The maintainer decides per pull request after a vendor team is out for two hours, his decision on the status
-  card, and a second review request to the two vendors there (tsk-x8ctwgw2cmwc, tsk-g3entm5r2rez,
-  tsk-rkp7pvkshta2): about ten finished pull requests stood while one vendor was offline.
+- The maintainer decides per pull request after a vendor team is out for two hours (tsk-x8ctwgw2cmwc): about
+  ten finished pull requests stood while one vendor was offline.
+- His decision on the status card (tsk-g3entm5r2rez): authors asked one by one what happens to their pull
+  request during the outage.
+- A second review request during the outage (tsk-rkp7pvkshta2): an author with a finished next pull request
+  could not ask for a review, one request at a time.
 - A stack merged from the bottom, and the merge order named at MERGE-READY (tsk-7pnhaxkr6xnh, tsk-d1r3rm9nbnpg):
   the longer `main` moves between steps, the larger each merge; three pull requests needed two `main` merges and
   full CI each after approval.
@@ -2234,13 +2239,14 @@ grouped by who acts. The reason of each, from its card:
 **Rejected alternatives:** for each rule, the reject option of its proposal, as it stands in the card's body
 (mostly: keep the practice as it was).
 
-## Two adopted rules contradict what main already says; main's version stands until the maintainer decides
+## Some adopted rules contradict or go beyond what main already says; which version holds is open
 
 **Id:** 7b93c3fc-f483-43ae-8c75-c3c8e53134e3
 **Type:** decision
 **Status:** open
 **Evidence:** confirmed
-**Source:** card tsk-cqzz7bs7kfj5, whose boundary keeps main's version and names the conflict
+**Source:** card tsk-cqzz7bs7kfj5, whose boundary keeps main's version and names the conflict; the cards named
+below and the lead's announcement of the VERDICT rule (2026-11-04)
 **See:** process.md#fixes-after-a-review-are-pushed-as-one-bundle-once-the-rounds-reviews-are-in-an-exception-only-on-the-leads-word — cbfbec23-8ed4-4c5b-b552-271b3ef32962 — as of 2026-11-08
 **Revisit when:** the maintainer or a jour fixe decides either conflict
 
@@ -2250,5 +2256,15 @@ grouped by who acts. The reason of each, from its card:
   only on the lead's word. Not written into `CONTRIBUTING.md`.
 - tsk-x61m2sv7va7b also says a card is not reported again after a later push. `docs/agents.md` says to report
   again whenever the pull request is updated. Only the part both agree on is written.
+- tsk-h76gy9qxk0vj's body adopts `VERDICT APPROVE|CHANGES <base>..<head>`; the lead's announcement of the rule
+  asks for the full head SHA only. `CONTRIBUTING.md` writes the head-only line and marks the base form as not yet
+  in force.
+- tsk-z3j36sy534ww lets the lead forward review requests while the review lead is away;
+  eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0 gives every request and its distribution to the review lead's team alone.
+  tsk-rkp7pvkshta2's second request is a review request like any other; the card does not say who orders it
+  from the two vendors there.
+- tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
+  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e requires all three approvals before any merge.
 
-Which version holds is open.
+These three outage rules were announced as in force and are written in `CONTRIBUTING.md`, marked as exceptions
+to an older entry; the older entries are not changed. Which version holds, here and in the first two, is open.
