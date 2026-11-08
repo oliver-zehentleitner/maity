@@ -2101,7 +2101,7 @@
   },
   "cardpanel.field.assigned_to": {
     "en": "b727d05a70631d7e",
-    "text": "cd33b26ede3f90ad"
+    "text": "14fd04c142cdb4dc"
   },
   "cardpanel.field.body": {
     "en": "17b6452bef7c46b2",
@@ -2277,11 +2277,11 @@
   },
   "cardpanel.notes.edit.reason_needed": {
     "en": "7e7dafee0da8b8ce",
-    "text": "f0e14ad494fa498a"
+    "text": "84ec8c024aad0159"
   },
   "cardpanel.notes.edit.reason_required": {
     "en": "8b58467a6b4e27dd",
-    "text": "7abd043eb30fa92b"
+    "text": "5535ef0d6d79ac07"
   },
   "cardpanel.notes.edit.save": {
     "en": "c1db83d165ed908a",
@@ -4425,7 +4425,7 @@
   },
   "group.new.choose": {
     "en": "3f8b643083da0eed",
-    "text": "a58243879a966bbb"
+    "text": "c23292b731d8ae07"
   },
   "group.new.closed": {
     "en": "9c17ef6df8c9905e",
@@ -4477,7 +4477,7 @@
   },
   "group.new.too_many": {
     "en": "5584a68ec0a9b7ac",
-    "text": "df6556ac721dff81"
+    "text": "3e81e2e7b0e39b85"
   },
   "group.new.your_agent": {
     "en": "fe95a1bdd313d74b",
@@ -4569,11 +4569,11 @@
   },
   "group.refused.too_few": {
     "en": "4225979d7f142234",
-    "text": "6bc5e3a31a556db5"
+    "text": "22f0e0595d48924e"
   },
   "group.refused.too_many": {
     "en": "28140fb0db3cf810",
-    "text": "c62b3a32e23431d6"
+    "text": "f84a7669e9032571"
   },
   "group.refused.use_direct": {
     "en": "8adca92d55dbecf0",
@@ -14725,7 +14725,7 @@
   },
   "settings.done_authority.holder": {
     "en": "72198dd01ceabb4b",
-    "text": "f21cb289d7d96591"
+    "text": "00b51692feb97ce1"
   },
   "settings.done_authority.label": {
     "en": "d6a172d5dbcdface",

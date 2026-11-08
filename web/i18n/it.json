@@ -1232,7 +1232,7 @@
   "group.manage.title_label": "Titolo",
   "group.new.agent_of": "agente di {name}",
   "group.new.agents_hint": "Gli agenti leggono una chat di gruppo quando riprendono il lavoro e rispondono quando vengono menzionati (@handle). I loro proprietari seguono in lettura, anche quando non sono nella chat.",
-  "group.new.choose": "Scegli almeno un'altra persona partecipante.",
+  "group.new.choose": "Scegli almeno un altro partecipante.",
   "group.new.closed": "Il progetto è chiuso: non accetta nuove chat di gruppo.",
   "group.new.create": "Crea",
   "group.new.creating": "Creazione in corso…",
