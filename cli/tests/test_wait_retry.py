@@ -373,3 +373,55 @@ def test_wait_for_a_handle_sleeps_a_window_out_while_resolving_it(
     assert cli.main(["--for", "designer", "wait", "--timeout", "600"]) == cli.EXIT_OK
     assert len(lookups) == 2 and clock.sleeps == [120]
     assert "Maintenance until 2026-11-02 13:30 UTC" in capsys.readouterr().err
+
+
+def test_a_window_text_with_terminal_escapes_reaches_the_terminal_disarmed(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The window's `text` is the hub's (§16.12): it goes through `onboarding.inline`, so a
+    control character or an escape sequence in it never reaches the terminal as one."""
+    monkeypatch.setattr("random.random", lambda: 0.0)
+    window = json.loads(json.dumps(WINDOW))
+    window["error"]["details"]["text"] = "DB\x1b[2J\x07\nnext line\x9b31m"
+    calls: list[str] = []
+
+    def response(seen: fakehub.Seen) -> tuple[Any, ...]:
+        calls.append(seen.query)
+        if len(calls) == 1:
+            return 503, window, {"Retry-After": "1"}
+        return 200, {"items": [{"seq": 18, "kind": "message"}], "cursor": 18}
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    line = next(ln for ln in capsys.readouterr().err.splitlines() if "Maintenance until" in ln)
+    assert "DB" in line and "next line" in line
+    assert not any(c in line for c in ("\x1b", "\x07", "\x9b", "\r"))
+
+
+def test_a_window_without_retry_after_sleeps_60_seconds_plus_jitter(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `503 maintenance` without `Retry-After` (hub.py `maintenance_sleep`): 60 s, plus a
+    random 0–60 s."""
+    monkeypatch.setattr("random.random", lambda: 0.25)
+    calls: list[str] = []
+
+    def response(seen: fakehub.Seen) -> tuple[Any, ...]:
+        calls.append(seen.query)
+        if len(calls) == 1:
+            return 503, WINDOW
+        return 200, {"items": [{"seq": 18, "kind": "message"}], "cursor": 18}
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
+    assert cli.main(["wait", "--timeout", "600"]) == cli.EXIT_OK
+    assert clock.sleeps == [60 + 15]
+    assert (
+        hub.maintenance_sleep(hub.HubError("x", code="maintenance", status=503), lambda: 0.5) == 90
+    )
