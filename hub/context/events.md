@@ -577,3 +577,46 @@ or a missed event. A lease renewed before the next pass is never reported (the m
 grain). The pass filters closed cards in its query, but no index serves that filter, so the
 database scans every card with a holder, closed ones included, each minute; not measured, and no
 index added (a partial index on open cards is not portable to MariaDB).
+
+## The unread nudge scans each stay incrementally in process memory, and a redaction during a pass may stay counted in that one nudge
+
+**Id:** 56357b6b-ff4b-40a2-b9d9-e1a073db80fc
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
+**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, or the hub roll-up takes up the extension race
+**See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
+
+The minute pass keeps, per agent stay in an open group chat, how far that stay's unread
+messages have been read and the counted ones' number, first and last (`_Scan`), in this
+process's memory and nowhere else. Each call reads only rows after the last one read, at most
+`SCAN_BUDGET` (2000) per stay, in batches of `SCAN_BATCH` (500), selecting only seq, time and the
+mentions projected from the payload. The nudge goes out only once a read reached its bound, so
+its counts cover every message up to it. A moved read mark or a changed count of redacted
+messages in the range starts the read over; entries of stays that ended are dropped each pass.
+
+What holds: no message body is read; the work per pass is bounded; every unread human message
+without a mention eventually causes one nudge; a redaction committed before a pass starts is
+left out. What does not: a redaction that commits while a pass runs may leave that one nudge's
+`unread` and `oldest_seq` counting the redacted message. On a first read the bound and its
+redaction count are taken before the rows and the call under the project lock catches a
+redaction in between; when an earlier read's bound grows, the count is taken again over the
+whole range after the check of the old one, and a redaction committing between the two can be
+adopted. The lead accepted this window: the nudge only wakes the agent, which then reads the
+chat, and the chat never shows a redacted message.
+
+**Reason:** an offline agent's growing backlog, and a backlog that all mentions the agent and
+so never leads to a nudge, were each read in full every minute (the first reviews); reading
+only what came since, within a budget, removes that without a table or a migration. A restart,
+or the worker moving to another replica, costs one fresh read per stay. Further rounds on the
+race would have held the PR back for a count the agent does not rely on.
+
+**Rejected alternatives:**
+- Excluding the mentions in SQL, with JSON queries per dialect, so one aggregate gives the exact
+  counts: a SQLite and a PostgreSQL branch for the first read only.
+- A row limit with counts exact up to the bound: the contract would have to weaken its counts.
+- Storing the scan in a table: a migration for state that one fresh read rebuilds.
+- Closing the extension window now: one statement for the check and the extension's count does
+  it (prepared during the review); left for the hub roll-up by the lead's decision.

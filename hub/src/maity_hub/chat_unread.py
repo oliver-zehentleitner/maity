@@ -19,6 +19,15 @@ Agents' messages never count, so two agents cannot wake each other through it; h
 never addressed, every message of the others wakes them already. Not for a jour fixe round's
 thread (`hub_thread`), a closed chat, a direct conversation or a cross-project chat (§9.5),
 which are not rows of `conversation` here, or a paused or isolated membership.
+
+What holds, and what does not (the lead's boundary for #1490; hub/context/events.md):
+- guaranteed: no message body is read, the work per pass is bounded, every unread human
+  message without a mention eventually causes one nudge, and a redaction committed before a
+  pass starts is left out of the nudge;
+- not guaranteed: a redaction that commits while a pass runs may leave that one nudge's
+  `unread` and `oldest_seq` counting the redacted message. The nudge is a wake-up hint: the
+  agent then reads the chat, where the redacted message is not shown. Closing that window
+  completely is left for later.
 """
 
 from __future__ import annotations
@@ -43,7 +52,8 @@ KIND = "chat_unread"
 # an answer at once has time to mention; short against the hours a chat lay unseen.
 DELAY = timedelta(minutes=10)
 # Rows read per query, and per stay and pass: a long unread range is read over several passes
-# rather than at once; the nudge waits until the read reached its end, so its counts are exact.
+# rather than at once; the nudge waits until the read reached its end, so its counts cover every
+# message up to it (but for the one window the module docstring names).
 SCAN_BATCH = 500
 SCAN_BUDGET = 2000
 
@@ -53,9 +63,10 @@ class _Scan:
     """What one stay's unread messages have shown so far: read up to `scanned_to`, from
     `mark`, and the counted ones' number, first and last. `upto` is the high-water mark the
     read is bounded by, and `redacted` how many human messages in (mark, upto] were redacted
-    when that bound was set, before any row under it was read. A redaction committed after
-    that moment changes the count over the same range, which starts the read over; one
-    committed before it is already left out of the rows read (review of #1490, delta 2)."""
+    when that bound was last set. A changed count over that range starts the read over.
+    When the bound grows, the count is taken again over the whole range after the check of
+    the old one, so a redaction committing in between can enter it while its message stays
+    counted: that one nudge may then count it (the limit in the module docstring)."""
 
     mark: int
     scanned_to: int
@@ -223,15 +234,19 @@ def _mentions(row: Any, agent_id: str) -> bool:
 def _scanned(conn: Connection, stay: Any, mark: int) -> _Scan | None:
     """The stay's counted messages after `mark`, read on from where the last pass stopped:
     their number, first and last, or None while the read has not reached its bound (it goes
-    on next pass). Each pass reads at most SCAN_BUDGET rows of this stay, and only those after
+    on next pass). Each call reads at most SCAN_BUDGET rows of this stay, and only those after
     the last one read, so a backlog that never leads to a nudge (all of it mentions the agent)
-    is not read again each minute (review of #1490). A moved mark, or a redaction inside the
-    bounded range, starts the read over.
+    is not read again each minute (review of #1490). A pass calls it once outside the lock
+    and, for a stay whose nudge is due, once more under it, so a restart in between can make
+    one pass read up to twice the budget. A moved mark, or a redaction inside the bounded
+    range, starts the read over.
 
-    The order makes the redaction check sound under concurrent writes: the bound and its
-    redaction count are taken first, the rows under the bound after. The check under the
-    project lock (`check`) compares that count again, and a redaction takes the same lock,
-    so none can fall between that comparison and the write."""
+    Redactions: one committed before a pass starts changes the count over the range read, so
+    the read starts over and leaves it out. On a first read the bound and its count are taken
+    before the rows, so a redaction committing during that read is caught by the call under
+    the lock. A redaction takes the project lock, so none commits between that call and the
+    write. A redaction committing while a pass extends an earlier read's bound may still stay
+    counted in that pass's nudge (the limit in the module docstring)."""
     key = (stay.membership_id, stay.conversation_id)
     with _SCANS_LOCK:
         scan = _SCANS.get(key)
