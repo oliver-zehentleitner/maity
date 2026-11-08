@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from maity_hub import project_roles, rules
+from maity_hub import project_roles, rules, scopes
 
 TRUST: dict[str, str] = {
     "admin": (
@@ -80,6 +80,52 @@ ROLE: dict[str, str] = {
 }
 
 
+# What each built-in role does: the "What the member does" column of the role table of §2.3,
+# word for word and in its order, markup included (a test holds the two equal). `GET …/roles`
+# shows it as each built-in role's `description`.
+DESCRIPTION: dict[str, str] = {
+    "coder": "claims cards, builds, checkpoints and reports, posts, asks",
+    "reviewer": "reviews: moves cards from `review` to `done`, prepares releases",
+    "tester": (
+        "tests, files bug cards, moves `review` to `done` where the policy requires a test (§6.1 "
+        "`done_authority`)"
+    ),
+    "designer": "design passes; answers the requests addressed to `role:designer` (§7)",
+    "writer": (
+        "content: the README, documentation, the website's words, release notes and announcements; "
+        "answers the requests addressed to `role:writer` (§7)"
+    ),
+    "ops": (
+        "merges and deploys: proposes placements and runner changes, prepares releases, posts "
+        "deploys to the ticker"
+    ),
+    "proxy": (
+        "the owner's interface: relays the owner's decisions and carries them out, decides nothing "
+        "itself (below)"
+    ),
+    "manager": (
+        "leads a line of members and is their interface to a human: hands out their cards, keeps "
+        "them moving, carries their questions up (below)"
+    ),
+    "red-team": (
+        "attacks the project to find its weaknesses and files each as a bug card with its "
+        "severity; answers the requests addressed to `role:red-team` (§7). It attacks only the "
+        "targets the project names for it — its own test or staging instance — never production or "
+        "anyone else's systems, and its details stay with the security teams until it is fixed "
+        "(below)"
+    ),
+    "blue-team": (
+        "defends: hardens the project, fixes the red team's findings, watches for the next attack; "
+        "answers the requests addressed to `role:blue-team`"
+    ),
+    "purple-team": (
+        "joins both: checks that a fix closes the attack it was for and moves the finding to "
+        "`done`, and carries what the red team learns into the blue team's work; answers the "
+        "requests addressed to `role:purple-team`"
+    ),
+}
+
+
 def of(
     project: Any, trust: str, role: str, *, bridging: bool = False, restricted: bool = False
 ) -> dict[str, str | None]:
@@ -89,10 +135,33 @@ def of(
     not do with that text (§6.4), after the bridge sentence."""
     found = next((r for r in project_roles.of(project) if r["name"] == role), None)
     trust_text = None if role == "proxy" else TRUST.get(trust)
-    role_text = None if trust == "guest" else ((found or {}).get("guide") or ROLE.get(role))
+    role_text = None if trust == "guest" else role_guide(project, role)
     if bridging:  # §2.3: the sentence ends the role's guide
         role_text = f"{role_text} {rules.BRIDGING}" if role_text else rules.BRIDGING
     if restricted:  # §6.4: the sentence ends the role's guide, whatever its source
         role_text = f"{role_text} {rules.RESTRICTED}" if role_text else rules.RESTRICTED
     guide_by = found.get("guide_by") if found and trust != "guest" else None
     return {"trust": trust_text, "role": role_text, "guide_by": guide_by}
+
+
+def role_guide(project: Any, role: str) -> str | None:
+    """What `role` means in `project` (the `guide_role` text of §6.28): a project role's own
+    text, else the hub's default. The project's and the account's texts for a built-in role
+    come with the briefings (tsk-k0k3jzrkpza2) and belong here, so that the resume and
+    `GET …/roles` say the same."""
+    found = next((r for r in project_roles.of(project) if r["name"] == role), None)
+    return (found or {}).get("guide") or ROLE.get(role)
+
+
+def builtin(project: Any) -> list[dict[str, Any]]:
+    """`GET …/roles` `builtin` (§2.3): each built-in role with its description, its guide as
+    it applies in `project` and its own scopes, which no trust widens."""
+    return [
+        {
+            "name": role,
+            "description": text,
+            "guide": role_guide(project, role),
+            "scopes": scopes.role_scopes(role),
+        }
+        for role, text in DESCRIPTION.items()
+    ]
