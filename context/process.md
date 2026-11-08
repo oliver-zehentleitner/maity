@@ -2180,3 +2180,75 @@ down.
 - Setting the boundary during the review, as before: the extra rounds above.
 - A card template file with the field: the project keeps no card template; cards are written with
   `maity task create` and a free-text body, so the convention lives where the body is described.
+
+## The rules adopted at the jour fixes of 2026-11-03 to 2026-11-07 are written in CONTRIBUTING.md, one line each
+
+**Id:** 06438e59-d797-452c-969d-cbc3e1771f61
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe rounds jfx-8yj7akxm6hzj (2026-11-03), jfx-c3rg3cv17c48 (2026-11-04), jfx-269b897etn83 (2026-11-05), jfx-nerr4n29p2ce (2026-11-06) and jfx-08m18215rp8c (2026-11-07); the adopted proposals in the bodies of the cards named below; the lead's announcements of them; card tsk-cqzz7bs7kfj5, from the maintainer's request of 2026-11-08 to shrink the open list
+**Revisit when:** layered briefings (§6.28) carry role rules, so the rules can move where each role reads them; or a rule here is changed by a later jour fixe
+
+The adopted rules were in force but written nowhere shared: only in the lead's announcements and in the
+agents' own notes. `CONTRIBUTING.md` ("Rules from the jour fixe") now holds each as one sentence with its card,
+grouped by who acts. The reason of each, from its card:
+
+- Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
+- Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
+  be closed (`invalid_transition`), two messages each.
+- One open pull request with a new migration (tsk-xqcney05e5fz): three in parallel, one re-chained twice with a
+  full round each time.
+- A UI layout pull request's e2e variants (tsk-e4dk3hs41vfz): a review round for missing variants.
+- The merge order agreed before stacking in shared web files (tsk-qymtmpkp43jq): a stack merged `main` several times.
+- Every path listed for a "never" finding (tsk-cnbwt37d4sdb): three rounds for one rule, one parser fixed at a time.
+- A push go covers a further `main` merge with an empty remerge-diff (tsk-z0rs3xqp1awv): a new go for nothing new.
+- A limit or timing promise names the line that enforces it (tsk-fdk4ksxedcxv): four text deltas on one pull request.
+- Allowlist grammars and no pipes in deleting `sh` checks (tsk-1yedmz1pp0a5): two extra rounds and a new P1.
+- The VERDICT line (tsk-h76gy9qxk0vj): a verdict had to be asked for; base and head both, so delta rounds
+  cannot be mixed up.
+- The fixed scope from round 3 (tsk-g4fn0hqctbzg): a pull request grew over nine rounds.
+- A reviewer's stop announced, and the outage's state on the status card (tsk-fgg8365e3n6z, tsk-sgt89h1dj54b):
+  nobody knew why or until when a reviewer was gone, and coders asked one by one.
+- One message per Grok result (tsk-73k2kkd3dkc4): each result came three times, each copy waking the readers.
+- Review orders acknowledged, results also to the review lead (tsk-8f1bfeh621tp): five orders lost unnoticed.
+- merge-tree against `main` in every delta order (tsk-pm9jryrf7nqv): a head ordered as clean was not.
+- The forge account's push access checked at a join (tsk-ecqtqj7dyg35): a coder got a card and could not open
+  a pull request.
+- The lead forwards review requests while the review lead is away (tsk-z3j36sy534ww): one night all reviewers
+  were free and nobody handed out reviews.
+- The maintainer decides per pull request after a vendor team is out for two hours, his decision on the status
+  card, and a second review request to the two vendors there (tsk-x8ctwgw2cmwc, tsk-g3entm5r2rez,
+  tsk-rkp7pvkshta2): about ten finished pull requests stood while one vendor was offline.
+- A stack merged from the bottom, and the merge order named at MERGE-READY (tsk-7pnhaxkr6xnh, tsk-d1r3rm9nbnpg):
+  the longer `main` moves between steps, the larger each merge; three pull requests needed two `main` merges and
+  full CI each after approval.
+- The tester note's form and its `Live:` line (tsk-r554j0njyj2t, tsk-vw1837722z82): imprecise notes checked
+  again, and notes saying "undeployed".
+- A tester's stop announced, claims to the stand-in, and the other instance taking the queue
+  (tsk-mw1hdjyvv2tb, tsk-tx7vd6jtvrp8): a tester went offline holding claims, and notes waited while the other
+  instance was idle.
+- SQL for production tried on the shared local PostgreSQL first (tsk-79zsgnfv07pv): a script's first run was
+  on production.
+
+**Rejected alternatives:** for each rule, the reject option of its proposal, as it stands in the card's body
+(mostly: keep the practice as it was).
+
+## Two adopted rules contradict what main already says; main's version stands until the maintainer decides
+
+**Id:** 7b93c3fc-f483-43ae-8c75-c3c8e53134e3
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** card tsk-cqzz7bs7kfj5, whose boundary keeps main's version and names the conflict
+**See:** process.md#fixes-after-a-review-are-pushed-as-one-bundle-once-the-rounds-reviews-are-in-an-exception-only-on-the-leads-word — cbfbec23-8ed4-4c5b-b552-271b3ef32962 — as of 2026-11-08
+**Revisit when:** the maintainer or a jour fixe decides either conflict
+
+- tsk-g3p686ckd25v (jour fixe of 2026-11-07) lets an author push bundled fixes without a go when all three
+  vendors answered the head, no review lead has listened for over an hour, and every open finding is undisputed
+  and opens no new code path. `CONTRIBUTING.md` and cbfbec23-8ed4-4c5b-b552-271b3ef32962 allow an exception
+  only on the lead's word. Not written into `CONTRIBUTING.md`.
+- tsk-x61m2sv7va7b also says a card is not reported again after a later push. `docs/agents.md` says to report
+  again whenever the pull request is updated. Only the part both agree on is written.
+
+Which version holds is open.

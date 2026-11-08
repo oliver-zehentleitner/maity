@@ -232,6 +232,119 @@ feature; `context/` entries are the exception and get one each.
 - After the lower pull request of a stack is squash-merged, merge
   `origin/main` into the upper one instead of rebasing it.
 
+## Rules from the jour fixe
+
+Adopted at the jour fixes of 2026-11-03 to 2026-11-07; each line names its
+card, whose body holds the adopted proposal. Why each one exists is in
+`context/process.md`. A line marked *not yet in force* is adopted, but
+nothing does it yet.
+
+### Authors
+
+- Push with `git -C <worktree> push origin <branch>`, never from the
+  current directory (tsk-a8wy190emg2q).
+- Report the card as soon as the pull request is open, after
+  `maity claim`, not after the merge (tsk-x61m2sv7va7b).
+- At most one open pull request carries a new migration; the next one is
+  cut after it merges (tsk-xqcney05e5fz).
+- A UI layout pull request has, before its first review request, an e2e
+  case with its variants (banner on and off, phone and desktop, open and
+  closed) that also changes the state once after loading and compares it
+  with a fresh fit, as `chat_height_views` in `web/tools/e2e.py` does
+  (tsk-e4dk3hs41vfz).
+- Before stacking in shared web files (`inbox.js`, `views.md`, `e2e.py`),
+  agree the merge order with the other open pull requests and write it on
+  the card before the stack's first push (tsk-qymtmpkp43jq).
+- For a finding that something must never happen, list every path by
+  which it can happen before the first fix, and put the list in the delta
+  request (tsk-cnbwt37d4sdb).
+- A push go also covers one more merge of `main` when
+  `git show --remerge-diff` on it is empty; a merge that resolves a
+  conflict is new code, reported for a delta review (tsk-z0rs3xqp1awv).
+- *Not yet in force:* a limit or timing promise in docs or `context/`
+  ("at most", "never", "before") names, in the review request, the line
+  that enforces it; without one, the sentence describes the behaviour
+  instead of promising it (tsk-fdk4ksxedcxv).
+- *Not yet in force:* a check on input that ends up in a permission or
+  command rule is written as an allowlist grammar first, tested with
+  equivalent spellings, and a deleting shell script uses no pipes in its
+  checks under `sh` (tsk-1yedmz1pp0a5).
+
+### Reviewers and the review lead
+
+- Every review result ends with one line,
+  `VERDICT APPROVE|CHANGES <base>..<head>`, both SHAs in full
+  (tsk-h76gy9qxk0vj).
+- From round 3 the scope is fixed: new P3s and nits go to the collection
+  card unless they name a false sentence in the pull request's own text;
+  the lead may allow a small P3 without a new code path in the same push
+  (tsk-g4fn0hqctbzg).
+- A reviewer who is about to stop (quota, machine) first sends the review
+  lead one line with the reason and a rough return, which goes on the
+  status card tsk-4fqv2sncz8sk (tsk-fgg8365e3n6z).
+- While a vendor team is out, the status card says since when and whether
+  a return time is known (tsk-sgt89h1dj54b).
+- A Grok reviewer sends each result once, to the author with the review
+  lead and the lead, and reports "free" only when its state changes
+  (tsk-73k2kkd3dkc4).
+- *Not yet in force:* a reviewer acknowledges each review order, or the
+  hub shows its delivery, and every `review_result` also goes to the
+  review lead (tsk-8f1bfeh621tp).
+- *Not yet in force:* before each delta order,
+  `git merge-tree origin/main <head>` runs and the order says "clean" or
+  "conflict in …" (tsk-pm9jryrf7nqv).
+
+### The lead: joins, outages and merges
+
+- Before a coder's first card, the lead checks that the coder's forge
+  account may push to the repository, or asks the maintainer to grant it
+  (tsk-ecqtqj7dyg35).
+- When the review lead is away for over an hour, the lead may forward a
+  finished review request unchanged, in the review lead's template, to
+  the same three vendor instances: routing only, with the MERGE-READY
+  check, P3s included, done by the lead meanwhile (tsk-z3j36sy534ww).
+- When a whole vendor team is out for over two hours, the lead sends the
+  maintainer one inbox entry listing the pull requests that wait only on
+  it; he decides per pull request or for all, to wait or to merge with two
+  and catch up the third review, and without his answer everything waits
+  (tsk-x8ctwgw2cmwc).
+- His decision stands per pull request on the status card
+  tsk-4fqv2sncz8sk, with when the third review is caught up
+  (tsk-g3entm5r2rez).
+- During such an outage an author may send a second review request to the
+  two vendors that are there, with the same template, Ran line and VERDICT
+  line; when the team is back, the third review is ordered at once on the
+  same head (on a moved head, the third reviews the current one and the
+  other two a delta), and nothing merges without three of three or the
+  maintainer's answer for that pull request (tsk-rkp7pvkshta2).
+- A stack is merged from the bottom within minutes: the review lead
+  reports MERGE-READY for it in one message, bottom to top, and a conflict
+  is resolved three-way with the merged step's last head as the base
+  (tsk-7pnhaxkr6xnh).
+- When two or more approved pull requests change the same files, the lead
+  names the merge order and those files at MERGE-READY, and an author
+  merges `main` only after the one before has merged (tsk-d1r3rm9nbnpg).
+
+### Testers
+
+- A tester queue note gives the pull request, the SHA, the claim
+  verbatim from the pull request's description and what the pull request
+  does not contain; a UI point adds "Evidence: CI job web-e2e on the pull
+  request" (tsk-r554j0njyj2t).
+- Every tester note after a merge has a `Live:` line (live already, or the
+  next deploy), filled in after the deploy (tsk-vw1837722z82).
+- A tester announces a planned stop; after an hour without listening, the
+  stand-in takes over its claims (tsk-mw1hdjyvv2tb).
+- *Not yet in force:* when the tester instance that holds the queue has
+  run no wait for over an hour, the other instance checks the oldest open
+  note, under the same rules (tsk-tx7vd6jtvrp8).
+
+### Ops
+
+- *Not yet in force:* ops runs every SQL first on the shared local
+  PostgreSQL through `hub/scripts/with_postgres.sh`, before it goes to the
+  maintainer (tsk-79zsgnfv07pv).
+
 ## Issues
 
 A bug is a GitHub issue; the form asks for the component, the version and
