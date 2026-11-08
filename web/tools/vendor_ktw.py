@@ -70,8 +70,32 @@ def remaining():
         _deadline = time.monotonic() + DEADLINE_SECONDS
     left = _deadline - time.monotonic()
     if left <= 0:
-        raise Refused("network: no answer within %d s in all" % DEADLINE_SECONDS)
+        raise Refused("network: no answer within %g s in all" % DEADLINE_SECONDS)
     return left
+
+
+def read_within(r):
+    """The body, read one receive at a time (read1): before each receive the run's deadline is
+    checked and the socket's timeout lowered to the time that is left, so a peer that trickles
+    bytes just inside the per-attempt timeout cannot carry the run past the deadline (#1497
+    review). What the deadline does not bound: the DNS lookup, and the connect, TLS handshake,
+    headers and redirects inside urlopen, which each wait at most ATTEMPT_SECONDS per gap."""
+    sock = getattr(getattr(getattr(r, "fp", None), "raw", None), "_sock", None)
+    chunks, size = [], 0
+    while size <= MAX_BYTES:
+        left = remaining()
+        if sock is not None:
+            sock.settimeout(min(ATTEMPT_SECONDS, left))
+        try:
+            chunk = r.read1(min(65536, MAX_BYTES + 1 - size))
+        except TimeoutError:
+            remaining()
+            raise
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    return b"".join(chunks)
 
 
 def fetch(url):
@@ -79,12 +103,11 @@ def fetch(url):
         raise Refused("not an https address: %s" % url)
     try:
         with urllib.request.urlopen(url, timeout=min(ATTEMPT_SECONDS, remaining())) as r:
-            data = r.read(MAX_BYTES + 1)
+            data = read_within(r)
     except (urllib.error.URLError, OSError) as e:
         # A refused or timed-out connection, a TLS failure, an HTTP error status: one line, no
         # traceback (HTTPError and URLError are OSErrors; reason is the cause where there is one).
         raise Refused("network: %s: %s" % (url, getattr(e, "reason", None) or e))
-    remaining()
     if len(data) > MAX_BYTES:
         raise Refused("larger than %d bytes: %s" % (MAX_BYTES, url))
     return data

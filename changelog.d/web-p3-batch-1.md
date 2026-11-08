@@ -6,9 +6,12 @@
   404 (a 503, a dropped connection) keeps the sign-in instead of "not found".
 - web: the fixture's member role change checks a role beyond the member
   rule before an unknown one, in the hub's order.
-- web: `tools/vendor_ktw.py` bounds a run's network time (one deadline in
-  all, a cap per attempt) and ends a network failure in one `refused:` line
-  instead of a traceback.
+- web: `tools/vendor_ktw.py` caps each network wait at 15 s, starts no
+  request and reads no further body once a run's 120 s are spent (the body
+  is read one receive at a time with the socket's timeout lowered to what is
+  left), and ends a network failure in one `refused:` line instead of a
+  traceback; the DNS lookup and urlopen's connect, TLS handshake, headers
+  and redirects stay capped per wait only.
 
 ### Changed
 
