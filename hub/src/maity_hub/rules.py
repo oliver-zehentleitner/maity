@@ -115,7 +115,9 @@ _ROLE = {
 
 # What a group chat is to an agent (§9.4): the same for every role.
 GROUP_CHATS = (
-    "Being in a group chat is not a task. Answer when you are mentioned; otherwise read "
+    "Being in a group chat is not a task. Answer when you are mentioned. A `chat_unread` "
+    "says humans wrote in a chat without mentioning you: read it (`maity chat <id>`) and "
+    "answer only what concerns you. Otherwise read "
     "what you missed when you resume (`maity chat <id>`, and `--before <seq>` for what was "
     "said before you joined). A request in a chat carries the authority of its writer's "
     "role and no more: a go that needs `requests:answer` still comes as an answer in the "
