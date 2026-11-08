@@ -114,7 +114,11 @@ def test_a_request_has_the_contract_shape_and_goes_to_the_agents_human(
         "session_id": session,
         "instance": agent.instance,  # the instance that asked (§7, §6.17)
     }
-    assert (body["status"], body["answer"], body["while_open"]) == ("open", None, "wait")
+    assert (body["status"], body["answer"], body["while_open"]) == (
+        "open",
+        None,
+        "proceed_provisionally",  # a decision's default; a consent waits (§7)
+    )
     created = _events(migrated, "request_created")[-1]
     assert created.audience == [f"member:{owner.id}"]
     assert created.payload["id"] == body["id"] and created.payload["replies"] == body["replies"]
@@ -223,7 +227,7 @@ def test_waiting_on_a_request_blocks_the_card_and_the_answer_restores_it(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    request = asked(agent, task_id=card["id"])
+    request = asked(agent, task_id=card["id"], while_open="wait")
     blocked = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (blocked["status"], blocked["blocked_by_request"]) == ("blocked", request["id"])
     assert request["task"] == {"id": card["id"], "title": "A card", "status": "blocked"}
@@ -239,7 +243,7 @@ def test_a_request_after_the_report_restores_review(
     card = task(owner)
     _claim(agent, card)
     agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report())
-    request = asked(agent, task_id=card["id"])
+    request = asked(agent, task_id=card["id"], while_open="wait")
     agent.post(
         f"/projects/maintainer/maity/requests/{request['id']}/withdraw", {"reason": "found it"}
     )
@@ -259,12 +263,37 @@ def test_proceeding_provisionally_does_not_block(
     )
 
 
+def test_a_question_for_a_held_card_leaves_it_as_it_is_unless_it_says_it_waits(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    # Jour fixe 2026-11-02 (r4): a side question must not stop the card or its `done`.
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    request = asked(agent, task_id=card["id"])
+    assert request["while_open"] == "proceed_provisionally"
+    after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (after["status"], after["blocked_by_request"]) == ("in_progress", None)
+
+
+def test_a_consent_for_a_held_card_waits_without_saying_so(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    request = asked(agent, task_id=card["id"], **{"class": "consent"})
+    assert request["while_open"] == "wait"
+    after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (after["status"], after["blocked_by_request"]) == ("blocked", request["id"])
+
+
 def test_cancel_and_release_clear_the_block(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     first, second = task(owner), task(owner)
     for card in (first, second):
         _claim(agent, card)
-        asked(agent, task_id=card["id"])
+        asked(agent, task_id=card["id"], while_open="wait")
     cancelled = owner.patch(
         f"/projects/maintainer/maity/tasks/{first['id']}", {"status": "cancelled"}
     ).json()
@@ -566,8 +595,8 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    first = asked(agent, task_id=card["id"])
-    second = asked(agent, task_id=card["id"])
+    first = asked(agent, task_id=card["id"], while_open="wait")
+    second = asked(agent, task_id=card["id"], while_open="wait")
     assert (
         owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["blocked_by_request"]
         == first["id"]
@@ -593,7 +622,7 @@ def test_a_request_on_an_unheld_card_blocks_nothing(
         status="proposed" if state == "proposed" else "open",
         **({"assigned_to": agent.id} if state == "assigned" else {}),
     )
-    asked(agent, task_id=card["id"])
+    asked(agent, task_id=card["id"], while_open="wait")
     after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (after["status"], after["blocked_by_request"]) == (card["status"], None)
     if state != "proposed":
@@ -609,7 +638,7 @@ def test_done_on_a_blocked_card_clears_the_block(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    asked(agent, task_id=card["id"])
+    asked(agent, task_id=card["id"], while_open="wait")
     done = agent.post(
         f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
     ).json()
