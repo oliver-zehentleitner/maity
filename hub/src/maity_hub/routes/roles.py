@@ -47,7 +47,8 @@ def read_roles(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
 @router.put("/projects/{owner}/{slug}/roles")
 def put_roles(slug: str, body: RolesIn, request: Request, caller: HumanCaller) -> JSONResponse:
     """The whole list (§2.3). A role still in use cannot be removed; a role moved to
-    another base takes its members along; `guide_by` names who last set a role's guide."""
+    another base takes its members along; a role's stored guide and `guide_by` stay as
+    they are."""
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -73,23 +74,21 @@ def put_roles(slug: str, body: RolesIn, request: Request, caller: HumanCaller) -
                     f"the role {name} is still in use",
                     {"reason": "role_in_use", "role": name, "uses": found},
                 )
-        handle = conn.execute(
-            select(t.human.c.handle).where(t.human.c.id == caller.human_id)
-        ).scalar_one()
+        # A guide is no longer put here (§2.3, `moved`): a role that stays keeps the guide it
+        # has and who set it, until the briefings take the guides over (§6.28); a new role
+        # has none.
         new = []
         for role in parsed:
-            before = old.get(role["name"])
-            if before is not None and before["guide"] == role["guide"]:
-                guide_by = before["guide_by"]
-            else:
-                guide_by = handle if role["guide"] else None
-            new.append({**role, "guide_by": guide_by})
+            before = old.get(role["name"]) or {}
+            new.append(
+                {**role, "guide": before.get("guide", ""), "guide_by": before.get("guide_by")}
+            )
         if new != list(old.values()):
             project_roles.rebase(conn, project, new)
             conn.execute(
                 update(t.project).where(t.project.c.id == project.id).values(roles=new or None)
             )
-            # A project role's guide is part of its members' rules: a bump (§6.9).
+            # A project role's name and base are part of its members' rules: a bump (§6.9).
             rules.bump(
                 conn,
                 project,

@@ -97,7 +97,7 @@ class RequestCreate(Written):
     priority: str = "normal"
     to: str | None = None
     task_id: str | None = None
-    while_open: str = "wait"
+    while_open: str | None = None  # absent: what the class says (`_while_open`)
     needs_in_session: NeedsInSessionIn | None = None
     on_behalf_of: str | None = None
     ktw_ref: str | None = Field(default=None, max_length=255)
@@ -458,6 +458,14 @@ def _needs_in_session(
     }
 
 
+def _while_open(body: RequestCreate) -> str:
+    """What the asker does meanwhile: as given, else `wait` for a consent and
+    `proceed_provisionally` for any other class (§7)."""
+    if body.while_open is not None:
+        return body.while_open
+    return "wait" if body.class_ == "consent" else "proceed_provisionally"
+
+
 def _validate(body: RequestCreate, mine: Membership) -> None:
     errors: dict[str, str] = {}
     if body.class_ not in inbox.CLASSES:
@@ -466,9 +474,9 @@ def _validate(body: RequestCreate, mine: Membership) -> None:
         errors["priority"] = "unknown"
     elif body.priority == "urgent" and not mine.may("requests:answer"):
         errors["priority"] = "urgent_needs_requests_answer"
-    if body.while_open not in inbox.WHILE_OPEN:
+    if _while_open(body) not in inbox.WHILE_OPEN:
         errors["while_open"] = "unknown"
-    elif body.class_ == "consent" and body.while_open != "wait":
+    elif body.class_ == "consent" and _while_open(body) != "wait":
         errors["while_open"] = "consent_waits"
     if body.class_ in ("decision", "consent") and len(body.options) == 1:
         errors["options"] = "none_or_two_or_more"
@@ -583,7 +591,7 @@ def create_request(
                     "asked_session_id": caller.session_id,
                     "on_behalf_of": on_behalf,
                     "task_id": body.task_id,
-                    "while_open": body.while_open,
+                    "while_open": _while_open(body),
                     "needs_in_session": _needs_in_session(conn, mine, body.needs_in_session),
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
@@ -599,7 +607,7 @@ def create_request(
         blocked: str | None = None
         if (
             card is not None
-            and body.while_open == "wait"
+            and _while_open(body) == "wait"
             and holder is not None  # an unheld card is nobody's to block
             and holder in (mine.id, on_behalf)
             and card.status not in ("blocked", *CLOSED)

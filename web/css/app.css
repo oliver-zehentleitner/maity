@@ -522,8 +522,20 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
   align-items: start;
 }
 
-.column { display: grid; gap: 8px; }
-.column-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
+.column { display: grid; gap: var(--s2); align-content: start; min-width: 0;
+  background: var(--surface-2); border-radius: var(--r-card); padding: var(--s3); }
+/* The column's name in the display face, a dot in its state's colour, the count as a pill. */
+.column-head { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s1); color: var(--text);
+  font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; }
+.column-head::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.column[data-status="open"] .column-head::before { background: var(--accent); }
+.column[data-status="in_progress"] .column-head::before { background: var(--plan); }
+.column[data-status="blocked"] .column-head::before { background: var(--bad); }
+.column[data-status="review"] .column-head::before { background: var(--warn); }
+.column[data-status="done"] .column-head::before { background: var(--ok); }
+.column[data-status="cancelled"] .column-head::before { background: var(--seat); }
+.column-head .count { margin-inline-start: auto; border: 0; background: var(--surface); color: var(--muted);
+  font-family: var(--font); letter-spacing: 0; }
 
 .card, .profile {
   background: var(--surface);
@@ -575,7 +587,11 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .card-assignee { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--muted); }
 .card-assignee.kind-human .avatar-svg, .card-assignee.kind-human .avatar-img { clip-path: circle(50%); }
 .card-assignee.kind-agent .avatar-svg, .card-assignee.kind-agent .avatar-img { clip-path: inset(0 round 4px); }
-.card h3 { font-size: 1rem; line-height: 1.3; margin: 6px 0 2px; }
+.card h3 { font-size: 0.94rem; font-weight: 600; line-height: 1.35; margin: var(--s2) 0 var(--s1); }
+.columns .card { padding: var(--s3) var(--s4); }
+/* "Waits for an answer" on a card: a quiet notice, no bar; its link in the text colour, underlined. */
+.card .flag { border-left: 0; color: var(--text); font-size: 0.88rem; }
+.card .flag a { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
 /* A checkpoint is two lines on the card; its title holds the rest. */
 .checkpoint .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .lease { color: var(--muted); }
@@ -618,18 +634,27 @@ a.icon-button:hover { border-color: var(--accent); }
 }
 .card.movable { cursor: grab; }
 .column.drop-ok { outline: 2px dashed var(--accent); outline-offset: 2px; }
-.column.drop-over { background: var(--surface-2); }
+.column.drop-over { background: var(--accent-soft); }
 /* Where a card dragged within its column lands: above or below this one. */
 .card.drop-before { box-shadow: 0 -3px 0 var(--accent); }
 .card.drop-after { box-shadow: 0 3px 0 var(--accent); }
 .column.drop-refused { opacity: 0.45; }
-.board-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+/* The filter: one panel; the search grows, the menus are pills, a menu that filters shows it. */
+.board-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin-bottom: var(--s4);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--s3); }
 .board-filter label { font-size: 0.85rem; color: var(--muted); }
+.board-filter #board-search { flex: 1 1 260px; min-width: 0; }
+.board-filter select { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
+.board-filter select:has(option:checked:not([value=""])) { background: var(--accent-soft); border-color: var(--accent); }
+.board-filter label.check { color: var(--text); }
+.board-filter select { width: auto; max-width: 16rem; }
 .new-card { margin-bottom: 16px; }
 .new-card select[multiple] { min-height: 5rem; }
 .release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .checklist.editable label { color: inherit; }
+/* A checkbox the pointer finds: 16 px with 4 px around it, a 24 px target (WCAG 2.5.8). */
+.checklist.editable input[type="checkbox"] { inline-size: 16px; block-size: 16px; margin: 4px; flex: none; }
 .rows-form h4 { margin: 6px 0 4px; }
 .edit-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .edit-rows li { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1713,6 +1738,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A phone: the open card is a page of its own; Close goes back to the board at the card. */
 @media (max-width: 600px) {
   .board-body.has-panel > .columns { display: none; }
+  /* A phone: the columns side by side, one at a time, swiped. */
+  .columns { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 84%;
+    overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding-bottom: var(--s2); }
+  .columns > .column { scroll-snap-align: start; }
+  /* Each label beside its menu; the two search buttons share a row. */
+  .board-filter { display: grid; grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr); align-items: center; }
+  .board-filter select { width: 100%; max-width: none; }
+  .board-filter label.check { grid-column: 1 / -1; }
 }
 
 /* Subtasks on a card (js/board.js): folded under the parent, a toggle with the counts. */

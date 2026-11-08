@@ -278,7 +278,8 @@ def sweep(engine: Engine) -> None:
 
 
 class Worker:
-    """Runs `sweep` every minute (§5.3), then the lease expiry's `claim_expired` (§6.5)."""
+    """Runs `sweep` every minute (§5.3), then the lease expiry's `claim_expired` (§6.5) and
+    the group chats' unread nudge (§9.2)."""
 
     def __init__(self, engine: Engine, interval: float | None = None) -> None:
         self.engine = engine
@@ -302,9 +303,21 @@ class Worker:
                     continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
-                        sweep(self.engine)
-                        from maity_hub import holder_stalled
+                        from maity_hub import chat_unread, holder_stalled
 
-                        holder_stalled.expire(self.engine)  # `claim_expired`, every minute (§6.5)
+                        # Each step its own try: a failure in one does not skip the others.
+                        try:
+                            sweep(self.engine)
+                        except Exception:
+                            log.exception("the not-listening sweep failed")
+
+                        try:
+                            holder_stalled.expire(self.engine)  # `claim_expired` (§6.5)
+                        except Exception:
+                            log.exception("the lease expiry failed")
+                        try:
+                            chat_unread.sweep(self.engine)  # the unread nudge (§9.2)
+                        except Exception:
+                            log.exception("the unread nudge's sweep failed")
             except Exception:
                 log.exception("the not-listening sweep failed")

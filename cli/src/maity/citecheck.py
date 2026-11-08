@@ -3,7 +3,8 @@
 The hub stores cites as given and does not read the repository, so an invented quote
 reaches the lead. The clone that wrote the review can read them. This checks the quotes,
 not whether the review is right. A malformed review is left alone: the hub names its bad
-fields (§8.4).
+fields (§8.4). A quote longer than the hub takes is named here too, with or without a clone,
+so that the limit is not first learnt from the hub's refusal.
 """
 
 from __future__ import annotations
@@ -19,6 +20,9 @@ from maity import proc
 
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 _LINE_BREAK = re.compile("[\r\n\u0085\u2028\u2029]")
+# The hub's limit on a cite's quote, in characters (hub `reviews.py`, docs/api.md §8.4); a test
+# reads both and holds this to them.
+QUOTE_MAX = 300
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,6 +49,22 @@ def _well_formed(cite: Any) -> bool:
     if _LINE_BREAK.search(quote):
         return False
     return line is None or (type(line) is int and line > 0)
+
+
+def _too_long(cites: list[Any]) -> list[str]:
+    """One line per well-formed cite whose quote the hub would refuse for its length; len()
+    counts characters, as the hub does, not bytes."""
+    lines = []
+    for index, cite in enumerate(cites):
+        if _well_formed(cite) and len(cite["quote"]) > QUOTE_MAX:
+            place = (
+                f"{cite['path']}:{cite['line']}" if cite.get("line") is not None else cite["path"]
+            )
+            lines.append(
+                f"review.cites.{index} {place}: the quote has {len(cite['quote'])} characters, "
+                f"the hub takes at most {QUOTE_MAX}"
+            )
+    return lines
 
 
 def _removed(cwd: Path, head: str, path: str, quote: str) -> bool:
@@ -82,16 +102,17 @@ def check(cwd: Path, review: Any) -> Result:
     head, cites = review.get("head"), review.get("cites")
     if not (isinstance(head, str) and _FULL_SHA.fullmatch(head) and isinstance(cites, list)):
         return Result([])
+    long = _too_long(cites)
     try:
         up = _git(cwd, "rev-parse", "--show-cdup")
         if up.returncode != 0:
-            return Result([], "this directory is not a clone")
+            return Result(long, "this directory is not a clone")
         # A cite's path starts at the top of the clone: `<head>:<path>` reads it from there
         # anyway, but a pathspec would start at the working directory.
         cwd = cwd / up.stdout.strip()
         if _git(cwd, "cat-file", "-e", f"{head}^{{commit}}").returncode != 0:
-            return Result([], f"commit {head} is not in this clone; `git fetch` brings it")
-        bad, unsure = [], []
+            return Result(long, f"commit {head} is not in this clone; `git fetch` brings it")
+        bad, unsure = list(long), []
         for index, cite in enumerate(cites):
             if not _well_formed(cite):
                 continue
@@ -103,7 +124,7 @@ def check(cwd: Path, review: Any) -> Result:
                 place = f"{path}:{line}" if line is not None else path
                 bad.append(f"review.cites.{index} {place}: {problem}: {json.dumps(quote)}")
     except proc.ToolError as exc:
-        return Result([], str(exc))
+        return Result(long, str(exc))
     if unsure:
         # The history stops at the clone's depth, so "not removed" can't be said.
         named = ", ".join(unsure)
