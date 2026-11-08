@@ -580,11 +580,13 @@ def parse_cli_install(value: str) -> str:
     return value or DEFAULT_CLI_INSTALL
 
 
-_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE)
+# ASCII only: under IGNORECASE alone, `[a-z]` also matches İ, ı, ſ and the Kelvin sign.
+_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE | re.ASCII)
 # The whole value as it is returned: `https://`, a host name or an IPv4 address or a bracketed
 # IPv6 address (no zone), an optional port, an optional `/`. Nothing else can reach the line.
 _JOIN_URL = re.compile(
-    r"https://(?:\[(?P<v6>[0-9a-f:.]+)\]|(?P<name>[a-z0-9.-]+))(?::[0-9]{1,5})?/?", re.IGNORECASE
+    r"https://(?:\[(?P<v6>[0-9a-f:.]+)\]|(?P<name>[a-z0-9.-]+))(?::[0-9]{1,5})?/?",
+    re.IGNORECASE | re.ASCII,
 )
 
 

@@ -4861,7 +4861,9 @@ named in `project_updated`, but moves no `rules_version` and writes no
 it changes: a `PATCH` that changes `role_rules` together with
 `rules_markdown` or another input writes one `rules_changed`, whose
 `reason` is the `PATCH`'s own when it gives one, else
-`"settings.role_rules"` when `role_rules` is among the changes. When the
+`"settings.role_rules"` when `role_rules` changed the lines the rules
+add (a value without effect alongside another input leaves the reason
+out). When the
 same `PATCH` changes the state or the policy, its `state_changed` or
 `policy_changed` marks the new version and no `rules_changed` is written;
 one that changes both writes both events, carrying the same

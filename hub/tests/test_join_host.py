@@ -93,17 +93,31 @@ def test_a_join_url_is_normalised() -> None:
         "https://[fe80::1%eth0$(printf PROBE)]",
         "https://[fe80::1%25eth0]",
         "https://join.example\tprintf",
-        "https://join.example/\nprintf PROBE",
+        "https://join.exa\nmple",
+        "https://join.example\n/",
         "https://join.exa\rmple",
         "https://bücher.example",
-        "https://[192.0.2.7]",
-        "https://join.example//",
+        "https://j\u0130.example",  # İ, \u0131 ı, \u017f ſ, \u212a K: each folds to an ASCII letter
+        "https://j\u0131.example",
+        "https://j\u017f.example",
+        "https://j\u212a.example",
     ],
 )
 def test_a_join_host_that_is_no_dns_name_or_address_stops_the_hub(value: str) -> None:
     """The host goes into a shell line unquoted (`join_line`): letters, digits and hyphens per
     label, or an IP address, so no shell punctuation can reach it (nyh5 at #1236)."""
-    with pytest.raises(ConfigError, match="MAITY_JOIN_URL"):
+    with pytest.raises(ConfigError, match="MAITY_JOIN_URL's host must be a host name"):
+        parse_join_url(value, PUBLIC)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["https://join.example/\nprintf PROBE", "https://[192.0.2.7]", "https://join.example//"],
+)
+def test_a_join_url_the_earlier_checks_refuse_stops_the_hub_too(value: str) -> None:
+    """These never reach the host check (a path, a bracket `urlsplit` cannot read): the routes
+    are covered all the same (e5kk at #1486)."""
+    with pytest.raises(ConfigError, match="MAITY_JOIN_URL (must be|is not a URL)"):
         parse_join_url(value, PUBLIC)
 
 
