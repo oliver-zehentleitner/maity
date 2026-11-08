@@ -1523,8 +1523,8 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405
-**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
+**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405; ktw-lint from card tsk-nb0f9gq7qyrb (same round), its boundary and the refusal on another linter version set by the coordinating agent on the plan, 2026-11-08
+**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, CI's ktw-lint job changes its paths, flags or how its version is pinned, or most contributors no longer push from a shared machine
 
 `tools/hooks/pre-push` runs `tools/pre_push.py` once a clone sets `git config core.hooksPath tools/hooks`
 (CONTRIBUTING.md). For each of `hub/` and `cli/` that the pushed commits touch, it runs CI's own `make lint
@@ -1533,6 +1533,17 @@ the hashed lock. Before that it compares black, ruff and mypy there with the pin
 stops on a difference: the point is the same result as CI, and a local environment drifts (on the machine where the
 hook was written, ruff was 0.17.3 against the lock's 0.17.1). It checks the working tree, so it also stops when
 HEAD is not the pushed commit or a touched package has uncommitted changes.
+
+It also runs `ktw-lint <path>` for every Keep the Why project the push touches, the paths of CI's ktw-lint
+matrix (`.`, `hub`, `cli`, `web`; a file outside the three packages belongs to the root), without `--strict`, as
+that job does (card tsk-nb0f9gq7qyrb, the same jour fixe, which asked for ktw-lint too). A change to a project's
+`context/` or `.keep-the-why` also lints its family: a child's the root, the root's every child, since CI checks a
+family link on both ends. The `ktw-lint` it runs (PATH, or `MAITY_HOOK_KTW_LINT`) must answer `--version` with
+the version of the `# lint-vX` comment on the action's pin in `.github/workflows/ktw-lint.yml`, which
+`tools/ktw_pin.py` already holds to the context schema; otherwise the hook refuses before any check, naming
+both versions and `pipx install --force keep-the-why-lint==X`. It installs nothing and asks no network: the
+version comes from the file. A push that touches only `web/` or the root's files needs no hub environment. Its
+working-tree check covers each linted project's `context/` and `.keep-the-why`.
 
 **Rejected alternatives:**
 - A hook that is on for everyone (installed by a setup step, or a check in CI that it is set): the card asked for
@@ -1547,6 +1558,12 @@ HEAD is not the pushed commit or a touched package has uncommitted changes.
 - The pushed commit checked out into a temporary tree instead of the working tree: mypy needs the environment the
   hub's editable install points at, which is the working tree; checking there and stopping when it differs from
   the push is simpler and says so.
+- keep-the-why-lint in the hub's dev lock: a second pin of the linter beside the workflow's, and the hub's
+  environment would be needed to lint `web/` or the root alone.
+- `ktw-lint` for all four projects on every push: a push would be refused for a break in a project it did not
+  change.
+- Installing the pinned ktw-lint when the version differs: the hook would change the machine and need the
+  network; it says what to install instead.
 - The CLI's tools from the CLI's own environment: `cli/requirements/dev.txt` is compiled with the hub's dev lock as
   constraints, so its black, ruff and mypy are the versions the hook already compares with; a second environment
   per contributor would check the same versions. (When the hook was written the `cli` CI job installed its dev
