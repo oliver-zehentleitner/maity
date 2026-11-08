@@ -140,6 +140,14 @@ verified.
   in its first push, the route to the fixtures and one smoke case per
   caller path. Its review request names the caller paths the smoke covers.
 
+## During a review and in a stack
+
+- Fixes after a review are pushed as one bundle once every review of the
+  round is in, not after the first; an exception only on the lead's word.
+- After the lower pull request of a stack is squash-merged, merge
+  `origin/main` into the upper one instead of rebasing it, then retarget it
+  to `main`.
+
 ## PostgreSQL runs and a shared machine
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the
