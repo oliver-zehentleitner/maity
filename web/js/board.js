@@ -572,6 +572,9 @@ window.Maity = window.Maity || {};
     // focusId names the control to focus in the new card (the box just
     // ticked, the button that opened an editor), so the focus is not lost.
     const redraw = (updated, focusId) => {
+      // Into every copy the board holds too: a card opened or closed on the board draws from them
+      // without reading the list again (review of #1527).
+      if (manage && manage.keep) manage.keep(updated);
       byId[updated.id] = updated;
       const fresh = card(ctx, updated, byId, manage, inPanel);
       el.parentNode.insertBefore(fresh, el);
@@ -845,7 +848,14 @@ window.Maity = window.Maity || {};
     const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, needs: filter.needs, silent: filter.silent,
       search: searchInput.value, hub: hubResults, scroll: window.scrollY || 0 });
     const remember = (id) => { lastBoard = { slug: ctx.slug, id, fromTitle: true, snapshot }; };
-    const manage = { move, assign, place, columnOf, drag, remember, reload: (key) => reload(key, true) };
+    // The hub's answer to an edit, written into every copy of that card the board holds: the list,
+    // the list a search replaced, the opened card. Matched by id, so an answer that comes after
+    // another card was opened changes its own card only (review of #1527).
+    const keep = (updated) => {
+      [panelCard, byId[updated.id], items.find((t) => t.id === updated.id), boardItems.find((t) => t.id === updated.id)]
+        .forEach((t) => { if (t && t !== updated && t.id === updated.id) Object.assign(t, updated); });
+    };
+    const manage = { move, assign, place, columnOf, drag, remember, keep, reload: (key) => reload(key, true) };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
@@ -894,13 +904,17 @@ window.Maity = window.Maity || {};
       panelCard = c;
       panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }),
         (updated) => {
-          // The list a search replaced comes back when it ends, so it learns this too.
-          [panelCard, byId[updated.id], boardItems.find((t) => t.id === updated.id)].forEach((t) => { if (t) Object.assign(t, updated); });
+          // Every copy, the list a search replaced included, which comes back when it ends; and the card
+          // this panel was opened for, whichever panel is open by now.
+          keep(updated);
+          if (c.id === updated.id && c !== updated) Object.assign(c, updated);
           draw();
         });
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
-      window.setTimeout(() => panel.focus(), 0);
+      // Closed, or another card opened, before the timer: the focus stays where that left it.
+      const opened = panel;
+      window.setTimeout(() => { if (panel === opened) opened.focus(); }, 0);
     }
 
     // Closed on the board itself (the route follows, below): the panel goes, the card keeps its mark.
@@ -1119,10 +1133,14 @@ window.Maity = window.Maity || {};
     // address, another project's included, renders as before.
     ctx.followRoute((where) => {
       if (where.scope !== "project" || where.slug !== ctx.slug || (where.route !== "tasks" && where.route !== "board")) return false;
+      // A card the filters hide, or one outside the board's window, is a link from elsewhere: drawn
+      // afresh as before (the check just below), which shows it whatever the filters say.
       const id = where.args[0] || null;
+      if (id && !(panel && panel.id === id) && (!byId[id] || !shown(byId[id]))) return false;
+      // A missing card's note stood for the address before this one.
+      wantedNote.textContent = "";
       if (!id) {
         const left = panel ? panel.id : null;
-        wantedNote.textContent = "";
         closePanel();
         lastBoard = null;
         marked = left;
@@ -1132,9 +1150,6 @@ window.Maity = window.Maity || {};
         return true;
       }
       if (panel && panel.id === id) return true;
-      // A card the filters hide, or one outside the board's window, is a link from elsewhere:
-      // drawn afresh as before, which shows it whatever the filters say.
-      if (!byId[id] || !shown(byId[id])) return false;
       closePanel();
       marked = id;
       draw();

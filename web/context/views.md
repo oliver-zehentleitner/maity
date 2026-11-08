@@ -1713,8 +1713,12 @@ a project of 1,135 cards), the roles, the event head, the counts, and
 behind it the session, `/me`, the project and its members. Clicking
 through cards read the members once a card. Now the board follows a card
 opened or closed on itself (`ctx.followRoute`, as `/chats` does): it swaps
-the panel, which reads the card's notes and history, and reads nothing
-else. A card the filters hide, or one outside the board's window, is still
+the panel, and only the panel reads (the roles, the card's notes and
+history, and where they apply its watched updates and restricted text);
+closing it reads nothing. A hub answer to an edit made there is written
+into every copy of the card the board holds, matched by its id, so the
+next card opened or closed draws it as it is now, and an answer that comes
+after another card was opened changes its own card only. A card the filters hide, or one outside the board's window, is still
 drawn afresh: that drawing shows it whatever the filters say, as a link
 from elsewhere always did.
 

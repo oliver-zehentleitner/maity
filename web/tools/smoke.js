@@ -4252,6 +4252,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !rrReads.length, "board: closing the card reads nothing, marks it and focuses its title " + JSON.stringify(rrReads));
   rrProto.focus = rrFocus; document.activeElement = undefined;
   win.Maity.api.get = rrGet; win.Maity.api.getAll = rrGetAll;
+  // A write that answers after another card was opened belongs to its own card (review of #1527): Watch
+  // on tsk-0001, held, tsk-0004 opened, the answer released; each card stays itself on the board and in the panel.
+  await go("#/maintainer/maity/tasks/tsk-0001"); await rrSettle();
+  const rrPut = win.Maity.api.put;
+  let rrFree = null;
+  win.Maity.api.put = (p, b) => (p.includes("/watch") ? new Promise((res, rej) => { rrFree = () => rrPut(p, b).then(res, rej); }) : rrPut(p, b));
+  rrPanel().querySelector("button.card-watch").click(); await rrSettle();
+  await go("#/maintainer/maity/tasks/tsk-0004"); await rrSettle();
+  const rrHeld = !!rrFree;
+  if (rrFree) rrFree(); await rrSettle();
+  win.Maity.api.put = rrPut;
+  const rrIds = main.querySelector(".columns").querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+  const rrInPanel = rrPanel() && rrPanel().querySelector(".card-panel-card article.card");
+  expect(rrHeld && rrIds.filter((id) => id === "tsk-0001").length === 1 && rrIds.filter((id) => id === "tsk-0004").length === 1
+    && text(rrPanel().querySelector(".card-panel-head .card-id")) === "tsk-0004" && rrInPanel && rrInPanel.attrs["data-card"] === "tsk-0004",
+    "board: a Watch answering after the next card was opened changes its own card, not the open one " + JSON.stringify([rrHeld, rrIds, rrInPanel && rrInPanel.attrs["data-card"]]));
+  await go("#/maintainer/maity/tasks/tsk-0001"); await rrSettle();
+  if (rrPanel().querySelector("button.card-watch").getAttribute("aria-pressed") === "true") { rrPanel().querySelector("button.card-watch").click(); await rrSettle(); }
+  // An edit made in the panel stays across a card closed and opened again on the board, which read no list
+  // (review of #1527): a release's checklist item ticked, the card closed and reopened.
+  await go("#/maintainer/maity/tasks/rel-0001"); await rrSettle();
+  const rrBox = () => rrPanel().querySelectorAll("input").find((b) => (b.getAttribute("id") || "").startsWith("panel-chk-rel-0001-"));
+  const rrBoxId = rrBox().getAttribute("id"), rrWas = !!rrBox().checked;
+  rrBox().checked = !rrWas; rrBox().dispatch("change"); await rrSettle();
+  const rrTicked = !!rrBox().checked;
+  await go("#/maintainer/maity/board"); await rrSettle();
+  await go("#/maintainer/maity/tasks/rel-0001"); await rrSettle();
+  const rrKept = rrPanel().querySelectorAll("input").find((b) => b.getAttribute("id") === rrBoxId);
+  expect(rrTicked === !rrWas && rrKept && !!rrKept.checked === !rrWas,
+    "board: a checklist item ticked in the panel is still ticked when the card is closed and opened again " + JSON.stringify([rrWas, rrTicked, rrKept && !!rrKept.checked]));
+  rrKept.checked = rrWas; rrKept.dispatch("change"); await rrSettle();
+  // The note for a card the board does not hold goes when a card it holds is opened (review of #1527).
+  await go("#/maintainer/maity/tasks/tsk-9999"); await rrSettle();
+  const rrMissing = text(main.querySelector(".wanted-note"));
+  await go("#/maintainer/maity/tasks/tsk-0001"); await rrSettle();
+  expect(rrMissing.includes("tsk-9999") && !text(main.querySelector(".wanted-note")) && text(rrPanel().querySelector(".card-panel-head .card-id")) === "tsk-0001",
+    "board: a missing card's note goes when a card on the board is opened " + JSON.stringify(rrMissing));
+  // Closed before the panel's focus timer runs: nothing throws, the panel is gone.
+  // Microtasks only between the two: the panel is open, its timer has not run.
+  win.location.hash = "#/maintainer/maity/tasks/tsk-0004"; win.onhashchange();
+  for (let k = 0; k < 20; k++) await Promise.resolve();
+  const rrOpenedFirst = !!rrPanel();
+  win.location.hash = "#/maintainer/maity/board"; win.onhashchange();
+  await rrSettle();
+  expect(rrOpenedFirst && !rrPanel() && main.querySelectorAll("article.card.wanted").length === 1,
+    "board: a card closed before its panel took the focus leaves no panel and no error " + JSON.stringify(rrOpenedFirst));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
 
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
@@ -10925,13 +10972,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gxLists.length <= 4 && ["maity", "sample"].every((sl) => gxLists.filter((p) => p.includes("/projects/maintainer/" + sl + "/")).length <= 2)
     && gxAfter.filter((p) => /\/conversations\/agt-a\/messages\?after=\d+$/.test(p)).length === 1
     && !gxAfter.some((p) => p.includes("/events")), "chats: a burst of stream events is one round of list reads and one fetch of the open chat " + JSON.stringify(gxAfter));
-  // What the stream cannot say is read again on its nudge: a removal shows as removed in the open chat.
+  // What the stream cannot say is read again on the 30-second round: a removal brings no chat item and moves
+  // no count, so an answer about something else changes nothing (tsk-d61rvjm6gteh); the round shows it removed.
   const gxLastSeq = Number(main.querySelectorAll("ol.messages li.msg").map((li) => li.getAttribute("data-seq")).filter(Boolean).sort((a, b) => a - b)[0]);
   await gxPost("/projects/maintainer/maity/events/" + gxLastSeq + "/redact", { reason: "wrong chat" });
-  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick();
-  const gxRemoved = main.querySelectorAll("ol.messages li.msg").find((li) => li.getAttribute("data-seq") === String(gxLastSeq));
-  expect(gxRemoved && gxRemoved.querySelector(".msg-redacted") && !gxRemoved.querySelector(".md"),
-    "chats: a message removed elsewhere shows as removed in the open chat after the stream's nudge");
+  const gxRemoved = () => main.querySelectorAll("ol.messages li.msg").find((li) => li.getAttribute("data-seq") === String(gxLastSeq));
+  win.Maity.notify.changed([]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick();
+  const gxRemovedEarly = !!gxRemoved().querySelector(".msg-redacted");
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(!gxRemovedEarly && gxRemoved() && gxRemoved().querySelector(".msg-redacted") && !gxRemoved().querySelector(".md"),
+    "chats: a message removed elsewhere shows as removed in the open chat on the 30-second round, not on a stream answer without a chat");
   // Bounded: each nudge reads one page of what is shown, walking back page by page, one delivery page at most,
   // and never a second update alongside a slow one.
   const gxCalls = [];
@@ -10985,10 +11035,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/chats/maintainer/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
   expect(main.querySelector(".chat-layout.open") && main.querySelectorAll(".chat-list a.conv").length === 7 && text(main).includes("Release 0.2 go/no-go")
     && main.querySelector(".chat-back") && main.querySelector(".chat-back").getAttribute("href") === "#/chats", "chats: a group chat opens in the global view too");
-  // A rename elsewhere reaches its open pane on the stream's nudge.
+  // A rename elsewhere brings no chat item either: it reaches the open pane on the 30-second round.
   await gxPatch("/projects/maintainer/maity/conversations/cnv-0007", { title: "Release 0.2: go" });
-  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 8; k++) await tick();
-  expect(text(main.querySelector("section.group-chat")).includes("Release 0.2: go"), "chats: a group chat renamed elsewhere shows its new title after the stream's nudge");
+  win.Maity.notify.changed([]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 8; k++) await tick();
+  const gxRenamedEarly = text(main.querySelector("section.group-chat")).includes("Release 0.2: go");
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(!gxRenamedEarly && text(main.querySelector("section.group-chat")).includes("Release 0.2: go"),
+    "chats: a group chat renamed elsewhere shows its new title on the 30-second round, not on a stream answer without a chat");
   await go("#/chats/someone/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No project of yours named someone/nowhere."), "chats: an unknown project is said");
   // In the global chat an agent's message names the projects it is in, by logo with the name on
