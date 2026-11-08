@@ -122,7 +122,8 @@ def _read(folder: Path) -> MotifSet:
             raise Refused(f"{where}: theme {theme!r} is not in the syntax {NAME.pattern}")
         label = _text(entry, "label", LABEL_MAX, where)
         alt = _text(entry, "alt", ALT_MAX, where)
-        if not isinstance(file, str) or "/" in file or "\\" in file or file.startswith("."):
+        # A NUL is refused with the separators: the path would raise ValueError, not OSError.
+        if not isinstance(file, str) or any(c in file for c in "/\\\0") or file.startswith("."):
             raise Refused(f"{where}: file {file!r} is not a file name in the folder")
         try:
             source = (folder / file).read_bytes()

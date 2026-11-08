@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select, update
 
-from maity_hub import events, idempotency, policy, project_roles, rules
+from maity_hub import events, guide, idempotency, policy, project_roles, rules
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of
@@ -41,7 +41,9 @@ def read_roles(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).connect() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(project_roles.view(mine.project))
+        return JSONResponse(
+            {"builtin": guide.builtin(mine.project), **project_roles.view(mine.project)}
+        )
 
 
 @router.put("/projects/{owner}/{slug}/roles")
@@ -88,7 +90,7 @@ def put_roles(slug: str, body: RolesIn, request: Request, caller: HumanCaller) -
             conn.execute(
                 update(t.project).where(t.project.c.id == project.id).values(roles=new or None)
             )
-            # A project role's guide is part of its members' rules: a bump (§6.9).
+            # A project role's name and base are part of its members' rules: a bump (§6.9).
             rules.bump(
                 conn,
                 project,
