@@ -41,6 +41,13 @@ def with_placeholder(entry, name):
     return {form: text + mark for form, text in entry.items()}
 
 
+def needs(english_entry, entry, name):
+    """The English ends in the placeholder (or still in ": "), the catalog's entry lacks it."""
+    mark = "{" + name + "}"
+    ends = all(text.endswith(mark) or text.endswith(": ") for text in forms(english_entry))
+    return ends and mark not in "".join(forms(entry))
+
+
 def main(argv):
     check = "--check" in argv
     path = lambda lang: os.path.join(I18N, lang + ".json")
@@ -51,10 +58,9 @@ def main(argv):
                             if n.endswith(".json") and not n.endswith(".meta.json") and n != "en.json")
     for lang in langs:
         data = json.load(open(path(lang), encoding="utf-8"))
-        hit = [k for k in keys if k in data]
-        odd = [k for k in hit if "{" + name(k) + "}" in "".join(forms(data[k]))]
-        if odd:
-            sys.exit("%s: already has the placeholder: %s" % (lang, ", ".join(odd)))
+        # A text that has its placeholder already (rewritten before, or translated so) is left as it
+        # is: the script runs again after a catalog comes in from main (#1489's ja, #1498).
+        hit = [k for k in sorted(english) if k in data and needs(english[k], data[k], name(k))]
         if not check:
             for k in hit:
                 data[k] = with_placeholder(data[k], name(k))
