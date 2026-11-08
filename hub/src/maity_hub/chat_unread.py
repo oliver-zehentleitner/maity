@@ -135,8 +135,9 @@ def _counted(conn: Connection, stay: Any, after: int) -> list[Any]:
 def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
     """Whether a `chat_unread` for this agent and chat counted a message above its read mark:
     the read cycle it opened is still open (§9.2). Its own seq is no measure: the nudge is
-    written after the messages it counts, and the mark is a message's seq, so it never
-    reaches the nudge. Every such nudge has a seq above the mark, which narrows the read."""
+    written after the messages it counts, so reading exactly those leaves the mark below it.
+    A nudge whose `newest_seq` is above the mark has a seq above it too, which narrows the
+    read."""
     e = t.event.c
     rows = conn.execute(
         select(e.audience, e.payload).where(
