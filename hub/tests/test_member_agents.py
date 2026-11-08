@@ -341,3 +341,48 @@ def test_two_open_joins_for_one_profile_do_not_lift_a_lowered_maximum(
     friend.post(JOINS, {"agent": {"id": first["agent_id"]}})  # the same profile again
     _policy(owner, member_agents_max=lowered)
     assert flow.exchange(make_client(), first).status_code == 404
+
+
+def _put_roles(engine: Engine, conn: Connection | None, roles: list[dict[str, str]]) -> None:
+    """The project's own roles as an admin's `PUT …/roles` leaves them (§2.3)."""
+    full = [{"description": "", "guide": "", **r} for r in roles]
+    statement = t.project.update().values(roles=full)
+    if conn is not None:
+        conn.execute(statement)
+        return
+    with engine.begin() as own:
+        own.execute(statement)
+
+
+def test_a_role_put_on_ops_meanwhile_is_refused_under_the_lock(
+    friend: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§3.1: the base is read again under the project's lock (validate_assignment); a project
+    role an admin creates on `ops` between the two reads is refused as on `ops`."""
+
+    def put_meanwhile(conn: Connection, project_id: str) -> Any:
+        # What a concurrent `PUT …/roles` commits before this join takes the lock.
+        _put_roles(migrated, conn, [{"name": "deployer", "base": "ops"}])
+        return lock_project(conn, project_id)
+
+    monkeypatch.setattr("maity_hub.routes.members.lock_project", put_meanwhile)
+    _refused(_bring(friend, role="deployer"), "role")
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.join_link)).first() is None
+
+
+def test_a_role_moved_to_ops_before_the_exchange_voids_the_join(
+    friend: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.1: a first join's role is checked again at the exchange; one an admin moved to
+    `ops` while the join was open voids it, never a membership on `ops`."""
+    _put_roles(migrated, None, [{"name": "docs", "base": "writer"}])
+    pending = _bring(friend, role="docs")
+    assert pending.status_code == 201, pending.text
+    _put_roles(migrated, None, [{"name": "docs", "base": "ops"}])
+    assert flow.exchange(make_client(), pending.json()).status_code == 404
+    with migrated.connect() as conn:
+        bases = conn.execute(
+            select(t.membership.c.role_base).where(t.membership.c.agent_id.is_not(None))
+        ).scalars()
+        assert "ops" not in list(bases)

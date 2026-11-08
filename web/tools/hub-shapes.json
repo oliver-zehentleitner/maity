@@ -104,8 +104,9 @@
        "array": null
       },
       "allowed_projects": "null",
-      "avatar_source": "null",
-      "avatar_url": "null",
+      "avatar_motif": "null",
+      "avatar_source": "string",
+      "avatar_url": "string",
       "created_at": "string",
       "deleted_at": "null",
       "display_name": "string",
@@ -178,12 +179,15 @@
      "meat_proxy_hands": "boolean",
      "meat_proxy_lead": "boolean",
      "meat_proxy_note": "string",
+     "public_agents": "string",
      "public_bio": "null",
      "public_presence": "boolean",
      "public_profile": "boolean",
+     "public_stats": "boolean",
      "social": {
       "object": {}
      },
+     "start_tabs": "null",
      "terms": "null",
      "website": "null"
     }
@@ -192,6 +196,7 @@
     "array": {
      "object": {
       "full_name": "string",
+      "id": "string",
       "logo": {
        "object": {
         "available": "boolean",
@@ -299,7 +304,7 @@
      "object": {
       "actor": {
        "object": {
-        "avatar_url": "null",
+        "avatar_url": "string",
         "display_name": "string",
         "member_id": "string"
        }
@@ -444,6 +449,7 @@
      "release_checklist": {
       "array": "string"
      },
+     "restricted_access": "null",
      "ticker": {
       "object": {
        "contract_files": {
@@ -653,7 +659,7 @@
         }
        }
       },
-      "avatar_url": "null",
+      "avatar_url": "string",
       "bridges": {
        "array": null
       },
@@ -799,6 +805,15 @@
       "social": {
        "object": {}
       },
+      "subagents": "boolean",
+      "subagents_by": {
+       "object": {
+        "handle": "string",
+        "id": "string",
+        "kind": "string"
+       }
+      },
+      "subagents_language": "string",
       "takes_over": "null",
       "team": {
        "object": {
@@ -853,7 +868,7 @@
       "answered_at": "null",
       "asked_by": {
        "object": {
-        "avatar_url": "null",
+        "avatar_url": "string",
         "display_name": "string",
         "instance": "null",
         "member_id": "string",
@@ -1273,7 +1288,7 @@
       "answered_at": "null",
       "asked_by": {
        "object": {
-        "avatar_url": "null",
+        "avatar_url": "string",
         "display_name": "string",
         "instance": "null",
         "member_id": "string",
@@ -1601,7 +1616,7 @@
      }
     }
    },
-   "avatar_url": "null",
+   "avatar_url": "string",
    "bridges": {
     "array": null
    },
@@ -1674,6 +1689,15 @@
    "role": "string",
    "role_base": "string",
    "session": "null",
+   "subagents": "boolean",
+   "subagents_by": {
+    "object": {
+     "handle": "string",
+     "id": "string",
+     "kind": "string"
+    }
+   },
+   "subagents_language": "string",
    "takes_over": "null",
    "team": {
     "object": {

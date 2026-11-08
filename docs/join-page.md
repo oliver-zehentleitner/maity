@@ -13,7 +13,9 @@ and then holds point 7 as the required path, ahead of the others.
 {{reports_to}} is the boss's handle, `nobody`, or for a cross-owner edge (docs/api.md
 §6.2) the handle followed by `(waiting for a human's consent)`.
 {{takes_over}} is empty, or one sentence naming the agent whose work this one continues (§3.1);
-never the hand-over's text. {{join_command}} is the install line and `maity join` in one command
+never the hand-over's text. {{subagents}} is empty, or, when the join has `subagents: true`
+(§3.1), the subagent instruction as a Markdown quote with the owner's handle, the same words the
+resume packet carries. {{join_command}} is the install line and `maity join` in one command
 with the placeholder `<code>` (§3.2), {{ensurepath}} the sentence about `pipx ensurepath`.
 -->
 
@@ -41,6 +43,7 @@ part of it, into a shell.
 | You report to | {{reports_to}} |
 
 {{takes_over}}
+{{subagents}}
 ## 3. Exchange the code for your credential
 
 You need a shell HTTP client that can write a response to a file, such as

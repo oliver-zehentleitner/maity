@@ -147,14 +147,19 @@ def test_every_hidden_case_is_the_same_not_found(
 # --- a person -------------------------------------------------------------------------------
 
 
-def test_a_public_page_shows_a_stranger_the_bio_but_no_picture(
+def test_a_public_page_shows_a_stranger_the_bio_and_the_public_picture(
     owner: flow.Human, stranger: flow.Human
 ) -> None:
     _with_picture(owner)
     owner.patch("/me", {"public_profile": True, "public_bio": "I build agents."})
     body = stranger.get(f"{P}/maintainer").json()
     assert (body["page_served"], body["public_bio"]) == (True, "I build agents.")
-    assert body["avatar_url"] is None  # a public page grants no image (§6.10)
+    # A public picture, at the address that names no account (§6.10, §6.27).
+    assert body["avatar_url"].startswith("/api/v1/avatars/public/")
+    assert owner.id not in body["avatar_url"]
+    assert stranger.client.get(body["avatar_url"]).status_code == 200
+    owner.patch("/me", {"public_profile": False})
+    assert stranger.get(f"{P}/maintainer").json()["avatar_url"] is None
     assert (body["projects"], body["projects_total"]) == ([], 0)
 
 
@@ -300,8 +305,9 @@ def test_a_member_of_the_organisation_sees_its_members_and_projects(
     assert roles == {"maintainer": "owner", "stranger": "member"}
     assert "public_bio" not in body and "website" not in body
     pictures = {m["handle"]: m["avatar_url"] for m in body["members"]}
-    # A fellow member of the organisation reads its picture, not each other's (§6.10).
-    assert pictures["maintainer"] is None
+    # A fellow member of the organisation reads its picture, not each other's (§6.10): the
+    # owner's shows only as the public picture of a person with a page.
+    assert pictures["maintainer"].startswith("/api/v1/avatars/public/")
     factory.membership(migrated, _project_id(migrated, "maity"), "coder", human_id=stranger.id)
     pictures = {
         m["handle"]: m["avatar_url"] for m in stranger.get(f"{P}/oz-team").json()["members"]

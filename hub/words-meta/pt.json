@@ -526,5 +526,9 @@
   "sign_in.subject": {
     "en": "c08c2ebbb2993e1d",
     "text": "a9d173c5e2412766"
+  },
+  "subagents.instruction": {
+    "en": "4d2045bab88c0a61",
+    "text": "d37721d7e11e67ab"
   }
 }

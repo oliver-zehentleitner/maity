@@ -553,6 +553,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.second_factor_reset).where(t.second_factor_reset.c.human_id == human_id))
     conn.execute(delete(t.second_factor).where(t.second_factor.c.human_id == human_id))
     conn.execute(delete(t.human_device).where(t.human_device.c.human_id == human_id))
+    conn.execute(delete(t.known_source).where(t.known_source.c.human_id == human_id))
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
     conn.execute(
@@ -605,6 +606,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))
+    conn.execute(delete(t.avatar_size).where(t.avatar_size.c.owner_id == human_id))
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == human_id)
@@ -622,7 +624,10 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            public_stats=False,
+            public_agents="public_projects",
             interface_language=None,
+            start_tabs=None,  # project ids only, but the person's choice (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )

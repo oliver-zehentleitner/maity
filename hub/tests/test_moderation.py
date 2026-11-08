@@ -116,6 +116,113 @@ def test_remove_resets_an_agent_profile_and_holds_it(
     held(owner.patch(f"/agents/{agent.id}", {"display_name": "Totally Legit Bank"}))
 
 
+def test_remove_resets_an_uploaded_picture_as_the_moderation(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A reset that changes the picture emits `avatar_changed` with the moderation as actor;
+    it answered 500 before (`announce` read the actor as a caller)."""
+    from tests.test_avatars import image, put_agent
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    assert put_agent(agent, image()).status_code == 200
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    assert resolve(team, made["id"], "remove").status_code == 200
+    assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "generated"
+    [changed] = [e for e in events(owner) if e["kind"] == "avatar_changed"][-1:]
+    assert changed["actor"] == {"kind": "moderation", "report_id": made["id"]}
+
+
+def test_remove_drops_an_agents_motif_and_the_hold_refuses_a_new_one(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8: a reset drops an agent's upload and motif, so its generated picture shows, and
+    while the hold stands neither its owner nor the agent chooses a motif again; clearing
+    one stays allowed."""
+    from maity_hub import avatars, motifs
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    name = motifs.current().motifs[0].name
+    chose = owner.patch(f"/agents/{agent.id}", {"avatar_motif": name})
+    assert chose.status_code == 200 and chose.json()["avatar_source"] == "motif", chose.text
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    assert resolve(team, made["id"], "remove").status_code == 200
+    profile = owner.get(f"/agents/{agent.id}").json()
+    assert (profile["avatar_source"], profile["avatar_motif"]) == ("generated", None)
+    [changed] = [e for e in events(owner) if e["kind"] == "avatar_changed"][-1:]
+    assert changed["actor"] == {"kind": "moderation", "report_id": made["id"]}
+    held(owner.patch(f"/agents/{agent.id}", {"avatar_motif": name}))
+    held(agent.patch("/me", {"avatar_motif": name}))
+    avatars.CHANGES.reset()
+    assert owner.patch(f"/agents/{agent.id}", {"avatar_motif": None}).status_code == 200
+    assert resolve(team, made["id"], "dismiss").status_code == 200
+    again = owner.patch(f"/agents/{agent.id}", {"avatar_motif": name})
+    assert again.status_code == 200, again.text  # the hold lifted, the choice is the owner's
+
+
+@contextmanager
+def reset_waiting(migrated: Engine, agent_id: str, report_id: str) -> Iterator[Any]:
+    """A `remove` of the agent's profile in progress, as `_reset_profile` and the hold it
+    writes leave it: the picture's lock held, the hold written, nothing committed yet.
+    Yields a function that runs a change in the other transaction and then commits the
+    reset (PostgreSQL, MariaDB)."""
+    from maity_hub import avatars, clock
+    from tests.concurrency import finished, race, waiting
+
+    with race(migrated) as r:
+        reset = r.first
+        avatars.lock_owner(reset, agent_id)
+        reset.execute(
+            t.moderation_hold.insert().values(
+                report_id=report_id,
+                target_type="profile",
+                target_id=agent_id,
+                action="remove",
+                at=clock.now(),
+            )
+        )
+
+        def change(send: Callable[[], Any]) -> Any:
+            step = r.run(r.second, send)
+            assert waiting(step)  # on the picture's lock, which the reset holds
+            reset.commit()
+            return finished(step)
+
+        yield change
+
+
+def test_a_motif_chosen_while_a_reset_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8: the choice reads the hold after the picture's lock, so a choice that waited for
+    a reset sees the hold it wrote; read before the lock, it found none and set the motif."""
+    from maity_hub import motifs
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    name = motifs.current().motifs[0].name
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    with reset_waiting(migrated, agent.id, made["id"]) as change:
+        held(change(lambda: owner.patch(f"/agents/{agent.id}", {"avatar_motif": name})))
+    profile = owner.get(f"/agents/{agent.id}").json()
+    assert (profile["avatar_source"], profile["avatar_motif"]) == ("generated", None)
+
+
+def test_an_upload_while_a_reset_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8, the upload's path: the same order, the lock before the hold is read."""
+    from tests.test_avatars import image, put_agent
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    with reset_waiting(migrated, agent.id, made["id"]) as change:
+        held(change(lambda: put_agent(agent, image())))
+    assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "generated"
+
+
 def test_the_affected_account_is_told_never_who_reported(
     team: dict[str, Any], migrated: Engine
 ) -> None:
@@ -151,12 +258,8 @@ def test_suspend_ends_every_way_in_until_the_operator_lifts_it(
             .where(t.membership.c.agent_id == agent.id)
         ).scalars()
         assert set(reasons) == {"suspended"}
-    login = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD}
-    )
-    wrong = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": "not the password"}
-    )
+    login = factory.login_handle(make_client(), "pat")
+    wrong = factory.login_handle(make_client(), "pat", "not the password")
     assert (login.status_code, login.json()) == (wrong.status_code, wrong.json())
 
     # Its memberships act as paused (§5.3).
@@ -167,17 +270,10 @@ def test_suspend_ends_every_way_in_until_the_operator_lifts_it(
 
     # A dismiss lifts holds, never a suspension: that is the operator's.
     assert resolve(team, made["id"], "dismiss").status_code == 200
-    assert (
-        make_client()
-        .post("/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD})
-        .status_code
-        == 401
-    )
+    assert factory.login_handle(make_client(), "pat").status_code == 401
     with migrated.begin() as conn:
         assert moderation.unsuspend(conn, pat.id)
-    back = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD}
-    )
+    back = factory.login_handle(make_client(), "pat")
     assert back.status_code == 200, back.text
 
 

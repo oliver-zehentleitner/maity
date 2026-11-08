@@ -128,6 +128,66 @@ expect(pt_words(("release (a version)", "x"), ("release (a claim)", "x")) == ["x
 expect(pt_words(("claim", "assumir, tomar"), ("take", "tomar")) == ["tomar"], "glossary: a form in a list of forms")
 expect(pt_words(("join (noun)", "ingresso"), ("join (a project)", "ingresso")) == [], "glossary: join as noun and verb")
 
+# The glossary's mechanical rules: terms no language translates, and each language's address.
+GLOSSARY = (
+    "## How the reader is addressed\n\n| Language | Address |\n|---|---|\n"
+    "| `de` | `du`, lower case |\n| `pt` | `você` (Brazilian Portuguese) |\n| `nl` | `je` |\n"
+    "| `ja` | です・ます |\n| `ko` | 해요체 for labels and messages |\n| `zh-Hans` | `你` |\n\n## Words\n\n"
+    + table(("sign in", "entrar")).replace("| sign in | a | b | c | d | entrar | f | g | h | i |",
+                                          "| sign in | a | b | c | d | entrar | f | g | h | i |\n"
+                                          "| Keep the Why, harness, resume | unchanged | unchanged | unchanged | unchanged | unchanged"
+                                          " | unchanged | unchanged | unchanged | unchanged |")
+)
+fixed, address = check.glossary_rules(GLOSSARY)
+expect(fixed == ["Keep the Why", "harness"], "glossary: the terms every language keeps, resume left out")
+expect(address == {"de": "du", "pt": "você", "nl": "je", "ja": "です・ます", "ko": "해요체", "zh-Hans": "你"},
+       "glossary: each language's address from its table")
+expect(all((lang, said) in check.GLOSSARY_OTHER_ADDRESS for lang, said in address.items()),
+       "glossary: check.py knows every address the glossary names")
+import tempfile as _tempfile  # noqa: E402
+
+with _tempfile.TemporaryDirectory() as tree:
+    saved_i18n, saved_root = check.I18N, check.ROOT
+    check.I18N, check.ROOT = tree, str(Path(tree, "web"))
+    Path(tree, "glossary.md").write_text(GLOSSARY.replace("`você` (Brazilian Portuguese)", "`tu`"), encoding="utf-8")
+    check.findings.clear()
+    check.check_glossary()
+    expect(any("pt: address 'tu' is not in GLOSSARY_OTHER_ADDRESS" in f for f in check.findings),
+           "glossary: an address check.py does not know is a finding")
+    check.findings.clear()
+    check.I18N, check.ROOT = saved_i18n, saved_root
+
+
+def glossary(lang, text, english):
+    return check.glossary_problems(lang, {"k.t": text}, {"k.t": english}, fixed, address)
+
+
+for lang, said in (("ja", "ハーネス: {harness}"), ("ko", "하네스: {harness}"), ("zh-Hans", "运行环境：{harness}")):
+    expect(any("'harness' is translated" in p for p in glossary(lang, said, "Harness: {harness}")),
+           "glossary: harness translated in %s, as #1451 had it" % lang)
+expect(glossary("ja", "harness: {harness}", "Harness: {harness}") == [], "glossary: harness kept")
+expect(glossary("ja", "{harness}", "Runs on {harness}") == [], "glossary: a placeholder named harness is no term")
+expect(glossary("de", "Dieses Projekt veröffentlicht keinen Keep-the-Why-Export.", "No Keep the Why export.") == [],
+       "glossary: a German compound with hyphens keeps the term")
+expect(glossary("de", "Kein Export.", "No Keep the Why export.") != [], "glossary: a term left out")
+PT_1451 = ("Cartões concluídos, revisões feitas e pull requests integrados nos teus projetos públicos nos últimos 30 dias, "
+           "enquanto o teu perfil público também estiver ativo. Desativado até o ativares; ativar o perfil nunca os mostra.")
+expect(any("'teus' is not the address" in p for p in glossary("pt", PT_1451, "Cards done")),
+       "glossary: the tu forms of #1451 in Portuguese")
+expect(glossary("pt", "Pull requests com merge nos seus projetos, até você ativar.", "Cards done") == [],
+       "glossary: Portuguese with você")
+expect(glossary("de", "Sie hat eigene Teilaufgaben.", "It has subtasks.") == [],
+       "glossary: German sentence-initial Sie is she or they")
+expect(glossary("de", "Die Notiz wurde geändert. Sie lautet jetzt so.", "The note changed.") == [],
+       "glossary: German Sie after a full stop")
+expect(glossary("de", "Speichern Sie die Datei.", "Save the file.") != [], "glossary: German Sie inside a sentence")
+expect(glossary("de", "Wir schicken Ihnen eine Mail.", "We send you a mail.") != [], "glossary: German Ihnen")
+expect(glossary("nl", "{count} u geleden", "{count} h ago") == [], "glossary: Dutch u after a number is hours")
+expect(glossary("nl", "Tekens als [U+XXXX]", "Characters as [U+XXXX]") == [], "glossary: U+ is no address")
+expect(glossary("nl", "Wijzig uw wachtwoord.", "Change your password.") != [], "glossary: Dutch uw")
+expect(glossary("ko", "저장합니다", "Saved") == [], "glossary: Korean has no word check")
+expect(glossary("pt", "`tu`", "`tu`") == [], "glossary: code spans are not words")
+
 # The hub's words: a translation and what it follows, in a stand-in of the repository.
 import json  # noqa: E402
 import os  # noqa: E402

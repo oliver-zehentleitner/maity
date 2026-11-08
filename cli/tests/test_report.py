@@ -109,9 +109,12 @@ def test_no_pr_for_branch(clone: Path, bin_dir: Path) -> None:
 
 
 def test_failing_gh_is_an_error_not_a_silent_none(clone: Path, bin_dir: Path) -> None:
+    """The failure is kept, never read as "no pull request"; `report` raises it unless the
+    card's linked pull request, read by the hub's probe, stands in (test_report_card.py)."""
     fake_gh(bin_dir, "", exit_code=1, stderr="authentication required")
-    with pytest.raises(gitfacts.FactsError, match="authentication required"):
-        gitfacts.collect(clone)
+    facts = gitfacts.collect(clone)
+    assert facts.pr is None and facts.forge_error is not None
+    assert "authentication required" in facts.forge_error
 
 
 def test_report_command_refuses_with_exit_4(

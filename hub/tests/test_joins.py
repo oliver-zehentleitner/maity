@@ -53,6 +53,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "project",
         "expires_at",
         "via",
+        "instruction",
     }
     assert body["via"] == "public"  # no join host configured
     assert body["join_url"].startswith("https://hub.example/join/")
@@ -96,6 +97,8 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "instance",
         "takes_over",
         "handover",
+        "subagents",  # the owner's instruction and its language (§3.1)
+        "subagents_language",
     }
     assert body["code"] not in str(listed) and _token(body) not in str(listed)
 
@@ -277,6 +280,52 @@ def test_a_spent_or_unknown_token_has_no_page(
         response = client.get(path)
         assert response.status_code == 404, path
         assert response.headers["Maity-Error"] == "not_found"
+
+
+def test_a_dead_link_on_the_public_host_is_the_dead_link_page(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """§3.2: every dead token is the same page at `/join/{token}` on the public host, as on the
+    join host, HTML or Markdown by `Accept`; the API path keeps the envelope unless HTML is
+    asked for."""
+    client = make_client()
+    used = flow.join(owner, "maity")
+    flow.exchange(client, used)
+    revoked = flow.join(owner, "maity")
+    owner.delete(f"/projects/maintainer/maity/joins/{revoked['id']}")
+    burned = flow.join(owner, "maity")
+    for _ in range(3):
+        flow.exchange(client, {**burned, "code": "ZZZZ-ZZZZ-ZZZZ"})
+    expired = flow.join(owner, "maity", ttl_seconds=60)
+    start = clock.now()
+    clock.set_source(lambda: start + timedelta(seconds=61))
+    tokens = [_token(x) for x in (used, revoked, burned, expired)] + ["A" * 22, "nope"]
+    pages: dict[str, set[str]] = {"html": set(), "markdown": set()}
+    for token in tokens:
+        for accept, kind, media in (
+            ("text/html", "html", "text/html"),
+            ("text/markdown", "markdown", "text/markdown"),
+            ("*/*", "markdown", "text/markdown"),
+            (None, "markdown", "text/markdown"),
+        ):
+            headers = {"Accept": accept} if accept else {}
+            page = client.get(f"/join/{token}", headers=headers)
+            assert page.status_code == 404, (token, accept)
+            assert page.headers["Maity-Error"] == "not_found"
+            assert page.headers["content-type"].startswith(media), (token, accept)
+            assert "no longer works" in page.text and "new join line" in page.text
+            pages[kind].add(page.text)
+        api = client.get(f"/api/v1/join/{token}", headers={"Accept": "application/json"})
+        assert api.status_code == 404 and api.headers["Maity-Error"] == "not_found"
+        assert api.json()["error"]["code"] == "not_found"
+        bare = client.get(f"/api/v1/join/{token}")
+        assert bare.status_code == 404 and bare.json()["error"]["code"] == "not_found"
+        html = client.get(f"/api/v1/join/{token}", headers={"Accept": "text/html"})
+        assert html.status_code == 404 and html.headers["Maity-Error"] == "not_found"
+        assert html.headers["content-type"].startswith("text/html")
+        pages["html"].add(html.text)
+    assert len(pages["html"]) == 1 and len(pages["markdown"]) == 1  # never says which reason
+    assert "<h1>This join link no longer works</h1>" in pages["html"].pop()
 
 
 # --- §3.3 the exchange -------------------------------------------------------------------

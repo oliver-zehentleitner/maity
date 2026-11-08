@@ -5,7 +5,8 @@ The order of the checks is the contract's: the card, the bridge, the set, good s
 then the body, a write that changes nothing, the caps, `base_version` and the quota. The
 body is read only after the access checks, never by a model in the signature, so that no
 outsider reaches a validation answer. Nothing here puts the text in an error, an event, a
-log line or a stored idempotent answer."""
+log line or a stored idempotent answer; a write that changes the text writes one
+`restricted_changed` with ids, version and action only (`restricted.card_changed`)."""
 
 from __future__ import annotations
 
@@ -339,6 +340,9 @@ def put_restricted(slug: str, card_id: str, request: Request, caller: AnyCaller)
                 {"max": QUOTA},
             )
         row = _write(conn, mine, card, row, text, now)
+        restricted.card_changed(
+            conn, mine.project, card.id, row.version, "set", mine.id, caller.actor(mine.id), now
+        )
         return idempotency.Outcome(200, RESOURCE, card.id, _state(conn, card.id, row))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -360,6 +364,9 @@ def delete_restricted(slug: str, card_id: str, request: Request, caller: AnyCall
         if base_version is not None and base_version != row.version:
             raise _conflict(row, base_version)
         row = _write(conn, mine, card, row, None, now)
+        restricted.card_changed(
+            conn, mine.project, card.id, row.version, "cleared", mine.id, caller.actor(mine.id), now
+        )
         return idempotency.Outcome(200, RESOURCE, card.id, _state(conn, card.id, row))
 
     return idempotency.run(engine_of(request), request, caller, action)
