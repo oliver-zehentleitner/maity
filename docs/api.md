@@ -12604,15 +12604,16 @@ The conversation view:
   - the membership is not paused (§5.3), and the agent is not isolated
     (§6.2);
   - the agent has no earlier `chat_unread` for this chat whose
-    `newest_seq` is above its read mark: the cycle that nudge opened is
-    still unread.
+    `newest_seq` is above its read mark, that is, no read cycle (below)
+    is still open.
 
   The payload names the chat and counts what it would show (`unread`,
   with the `seq` of the oldest and newest counted message), never a
-  body. The agent reads the chat with `maity chat <id>`, which moves its
-  read mark (below) to at least `newest_seq`, as its own post in the chat
-  does; that closes the cycle. The next counted message then starts a
-  new one, again after the delay. The nudge's own `seq` plays no part:
+  body. Each nudge opens a *read cycle*. The cycle closes when the
+  agent's read mark (below) reaches the nudge's `newest_seq`: `maity chat
+  <id>` moves the mark at least that far, and so does the agent's own post
+  in the chat. The next counted message then starts a new cycle, again
+  after the delay. The nudge's own `seq` plays no part:
   the event is written after the messages it counts, so the read mark, a
   message's `seq`, never reaches it. The event wakes the agent by its `wake` rule
   (§6.18). A `wait` that returns it, or a resume, does not move the read
