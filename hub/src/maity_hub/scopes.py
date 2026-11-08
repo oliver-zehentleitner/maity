@@ -118,6 +118,12 @@ def _granted(trust: str, role: str) -> set[str]:
     return granted
 
 
+def role_scopes(role: str) -> list[str]:
+    """A built-in role's own scopes in the contract's order, as the role table of §2.3 gives
+    them: no trust's and none a proxy is opened for (`_granted`)."""
+    return [scope for scope in SCOPES if scope in _ROLE_SCOPES[role]]
+
+
 def scopes_for(trust: str, role: str, kind: str) -> list[str]:
     """The scopes of a membership, in the contract's order."""
     granted = _granted(trust, role)

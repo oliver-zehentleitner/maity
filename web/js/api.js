@@ -3858,6 +3858,14 @@ window.Maity = window.Maity || {};
       const keep = statusFilter(query, "open");
       return { items: file(m[1], "requests.json", path).items.filter(keep), next_cursor: null };
     }],
+    // §7: one request of the project by its id, whatever its status (the inbox's link to an
+    // answered one). The fixture caller reads every request of its projects, as one with
+    // requests:answer does on the hub; an id the project does not hold is not_found.
+    ["GET", /^\/projects\/([^/]+)\/requests\/([^/]+)$/, (m, body, path) => {
+      const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
+      if (!req) fail(404, "not_found", "Not found", path);
+      return req;
+    }],
     ["POST", /^\/projects\/([^/]+)\/requests\/([^/]+)\/answer$/, (m, body, path) => {
       const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
       if (!req) fail(404, "not_found", "Not found", path);
