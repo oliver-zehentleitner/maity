@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, landing_stats
+from maity_hub import clock, landing_stats, moderation
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -190,6 +190,8 @@ def hold(engine: Engine, agent: factory.Agent, how: str) -> None:
                 .where(t.credential.c.membership_id == agent.membership_id)
                 .values(paused_since=now)
             )
+        elif how == "suspended_by_moderation":  # the real path, which also ends its credentials
+            moderation.suspend(conn, agent.owner_id, "rpt-x")
         else:  # the owner's account suspended; its membership acts as paused
             conn.execute(
                 update(t.human)
@@ -198,7 +200,9 @@ def hold(engine: Engine, agent: factory.Agent, how: str) -> None:
             )
 
 
-@pytest.mark.parametrize("how", ["isolated", "paused", "instances_paused", "suspended"])
+@pytest.mark.parametrize(
+    "how", ["isolated", "paused", "instances_paused", "suspended", "suspended_by_moderation"]
+)
 def test_a_held_member_has_no_instance_online(
     setup: tuple[flow.Human, TestClient, str], migrated: Engine, how: str
 ) -> None:
@@ -220,12 +224,20 @@ def test_a_held_member_has_no_instance_online(
 
     assert value(public.get("/badge/maintainer/maity.svg")) == "0 agents online"
     single = owner.get(f"/projects/maintainer/maity/members/{lead.agent_id}").json()
-    assert single["manages"]["direct"] == counts(1, 2, 0, 0)  # counted, none online
-    if how != "suspended":  # a real suspension revokes the credentials (moderation.suspend)
+    if how == "suspended_by_moderation":  # it ends the agent's credentials: no instance left
+        assert single["manages"]["direct"] == counts(1, 0, 0, 0)
+    else:
+        assert single["manages"]["direct"] == counts(1, 2, 0, 0)  # counted, none online
+    if how != "suspended":  # set directly, the credentials stay: only the real path ends them
         landing_stats.reset()
         with migrated.begin() as conn:
             found = landing_stats.compute(conn)
-        assert (found["instances"], found["instances_online"], found["agents_online"]) == (3, 0, 0)
+        instances = 1 if how == "suspended_by_moderation" else 3  # the lead's, or all three
+        assert (found["instances"], found["instances_online"], found["agents_online"]) == (
+            instances,
+            0,
+            0,
+        )
 
 
 def test_a_paused_dormant_instance_is_not_online_beside_a_live_one(

@@ -1097,6 +1097,7 @@ def scenario(run: Run, page: Page) -> None:
     project_tabs_step(run, page)
     invitations_step(run, page)
     agents_page_step(run, page)
+    handle_hints_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
@@ -1687,6 +1688,63 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.shot(page, "chat-composer-3x")
     compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
     assert abs(field.bounding_box()["height"] - one) < 2
+
+    # The list's heading and its two actions as icons in one row (tsk-qgy2tb3w3x93): light and
+    # dark, 390 and 1280 px, with and without the unread count on the Chat tab; the text is the
+    # name and the tooltip; the focus ring shows on the keyboard's focus.
+    def heading_row(where: str) -> None:
+        row = page.evaluate(
+            "(() => { const t = document.querySelector('.chat-list-pane .toolbar'), h = t.querySelector('h2');"
+            " const box = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };"
+            " return { bar: box(t), h: box(h), icons: Array.from(t.querySelectorAll('a.icon-button')).map(box) }; })()"
+        )
+        h, icons = row["h"], row["icons"]
+        assert len(icons) == 2, f"{where}: {len(icons)} icon actions in the heading's row"
+        for left, top, right, bottom in icons:
+            middle = (top + bottom) / 2
+            assert h[1] <= middle <= h[3], f"{where}: an icon at {top}-{bottom} px is not in the heading's row {h[1]}-{h[3]}"
+            assert left >= h[2] - 0.5 and right <= row["bar"][2] + 0.5, f"{where}: an icon at {left}-{right} px, heading ends {h[2]}"
+            assert right - left >= 32 and bottom - top >= 32, f"{where}: an icon target of {right - left}×{bottom - top} px"
+        fits(where)
+
+    run.step("chat list: its two actions are icons beside the heading at every width")
+    tab = view_tab(page, "Chat")
+    try:
+        for unread in (False, True):
+            if unread:
+                run.maity(alpha, "say", "human", "An unread line for the Chat tab's count.")
+            for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
+                page.set_viewport_size({"width": width, "height": height})
+                page.emulate_media(color_scheme=scheme)
+                page.goto(f"{run.base}/owner/e2e-alpha/chat")
+                listing = page.locator(".chat-list-pane")
+                expect(listing.locator(".toolbar h2")).to_have_text("Chat")
+                expect(tab).to_have_accessible_name(re.compile(r"^Chat 1 unread$") if unread else "Chat")
+                for name in ("New group chat", "Message the project"):
+                    action = listing.get_by_role("link", name=name, exact=True)
+                    expect(action).to_have_attribute("title", name)
+                    expect(action).to_have_text("")
+                where = f"the chat list at {width} px {scheme}{', unread' if unread else ''}"
+                heading_row(where)
+                run.shot(page, f"chat-list-icons-{width}-{scheme}{'-unread' if unread else ''}")
+        # The keyboard reaches both, with the ring every focusable element has.
+        listing.locator("a.new-group").focus()
+        page.keyboard.press("Tab")
+        ring = page.evaluate(
+            "(() => { const a = document.activeElement, s = getComputedStyle(a);"
+            " return [a.classList.contains('message-project'), a.matches(':focus-visible'), s.outlineStyle, parseFloat(s.outlineWidth)]; })()"
+        )
+        assert ring[0] and ring[1] and ring[2] == "solid" and ring[3] >= 2, f"the focus after New group chat: {ring}"
+        run.shot(page, "chat-list-icons-focus")
+        run.a11y(page, "chat list, its actions as icons")
+    finally:
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    # Back to the conversation: reading it takes the count off the tab again.
+    page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
+    expect(page.locator("ol.messages li.msg.in").last).to_contain_text("An unread line for the Chat tab's count.")
+
     # The meat-proxy switch of this chat (§9.3, tsk-n872zkxmwbec): switched here, kept by the hub, given back to the profile.
     meat = compose.locator("button.meat-chat-toggle")
     follow = compose.get_by_role("button", name="Follow my profile", exact=True)
@@ -3753,6 +3811,16 @@ def visitor_step(run: Run, page: Page) -> None:
     assert page.request.get(f"{run.base}/owner/e2e-alpha?as=public").headers.get("etag"), "no public page served"
     context = page.context.browser.new_context()
     guest = context.new_page()
+    # An address that shows nothing (tsk-h1e5zmq1wnhj): "not found" in the frame, no sign-in form.
+    # Its "Public projects" is the hub's page: a page load, not a route change (tsk-mg681fdn8p6m).
+    guest.goto(f"{run.base}/no-such-page-here")
+    not_found = guest.locator("section.view-not-found")
+    expect(not_found).to_be_visible()
+    expect(guest.locator("#login-email")).to_have_count(0)
+    not_found.get_by_role("link", name="Public projects", exact=True).click()
+    expect(guest).to_have_url(f"{run.base}/explore")
+    expect(guest.locator("h1")).to_have_text("Public projects")
+    assert not guest.evaluate("!!(window.Maity && window.Maity.route)"), "/explore: still the dashboard"
     guest.goto(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
     guest.locator('a[href="/owner/e2e-alpha"]').click()
@@ -4196,6 +4264,88 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "why")
 
 
+def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
+    """One's own fleet on the Agents page's Organisation tab (tsk-q989pagmk2x9): the owner on top,
+    E2E Agent under them, E2E Reviewer (which reports to it) under that; each agent's instances
+    as dots linking to their sessions; light and dark at 1280 and 390 px, nothing wider than the window."""
+    run.step("agents: the Organisation tab shows one's own agents as a tree under oneself")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    reviewer = next(m for m in members if m.get("handle") == "e2e-reviewer")
+    assert reviewer["reports_to"] == agent_id, reviewer
+    page.goto(f"{run.base}/owner/e2e-alpha/agents")
+    tabs = page.locator("main nav.agents-tabs")
+    expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
+    tabs.get_by_role("link", name="Organisation", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
+    expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()
+    tree = page.locator("ul.fleet-tree")
+    node = lambda mid: tree.locator(f"li.fleet-member[data-member='{mid}']")
+    expect(node(me["id"])).to_have_count(1)
+    expect(node(me["id"]).locator(f"li.fleet-member[data-member='{agent_id}']")).to_have_count(1)
+    expect(node(agent_id).locator(f"li.fleet-member[data-member='{reviewer['id']}']")).to_have_count(1)
+    owned = {m["id"] for m in members if m["kind"] == "agent" and m.get("owner_id") == me["id"]}
+    shown = set(tree.locator("li.fleet-member").evaluate_all("(all) => all.map((li) => li.dataset.member)"))
+    assert shown == owned | {me["id"]}, (shown, owned)
+    dots = node(agent_id).locator(":scope > .fleet-node a.fleet-dot")
+    live = [i for i in next(m for m in members if m["id"] == agent_id)["instances"] if not i.get("revoked_at")]
+    expect(dots).to_have_count(len(live))
+    expect(dots.first).to_have_attribute("href", re.compile(rf"/owner/e2e-alpha/members/{agent_id}/sessions/"))
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            page.reload()
+            expect(node(reviewer["id"])).to_be_visible()
+            wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+            assert wide[0] <= wide[1], f"the fleet at {width} px {scheme} is {wide[0]} px wide"
+            size = dots.first.bounding_box()
+            assert size and size["width"] >= 24 and size["height"] >= 24, f"a dot's target at {width} px: {size}"
+            run.shot(page, f"agents-fleet-{width}-{scheme}")
+        run.a11y(page, "agents, the Organisation tab")
+    finally:
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+
+    # Drawn with a boss of someone else's and a lead instance, as the hub would send them (the run
+    # has one owner): the stub is the boss's handle as text, nothing else of theirs is on the page.
+    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
+    foreign = {"id": "agt-e2eforeign01", "kind": "agent", "handle": "e2e-foreign-boss", "display_name": "Foreign Boss E2E",
+               "owner_id": "hum-e2eelsewhere", "trust": "member", "role": "manager", "areas": ["/"], "presence": "online",
+               "instances": [{"id": "fb1", "presence": "online", "lead": True, "claims": 4}]}
+
+    def with_foreign_boss(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            if item["id"] == agent_id:
+                item["reports_to"] = foreign["id"]
+                for n, inst in enumerate(i for i in item.get("instances", []) if not i.get("revoked_at")):
+                    inst["lead"] = n == 0
+        body["items"].append(foreign)
+        route.fulfill(json=body)
+
+    page.route(listing, with_foreign_boss)
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            page.reload()
+            stub = node(agent_id).locator(":scope > p.fleet-stub")
+            expect(stub).to_have_text("reports to @e2e-foreign-boss")
+            expect(stub.locator("a, span")).to_have_count(0)
+            expect(node(foreign["id"])).to_have_count(0)
+            html = tree.evaluate("(t) => t.outerHTML")
+            assert "Foreign Boss E2E" not in html and foreign["id"] not in html and "fb1" not in html, html
+            expect(node(agent_id).locator(":scope > .fleet-node a.fleet-dot.lead")).to_have_count(1)
+            expect(node(reviewer["id"])).to_be_visible()
+            run.shot(page, f"agents-fleet-foreign-boss-{width}-{scheme}")
+    finally:
+        page.unroute(listing, with_foreign_boss)
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    no_problems(run, "agents organisation")
+
+
 def join_reports_to_step(run: Run, page: Page, agent_id: str) -> None:
     """Whom an agent reports to, chosen in the join panel (tsk-nbadjbr9zpg7, §3.1, §2.3): the
     first agent joined without one reports to nobody, the reviewer joined with the first agent as
@@ -4262,6 +4412,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     run.maity(
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
     )
+    agents_fleet_step(run, page, agent_id)
     join_reports_to_step(run, page, agent_id)
     view_tab(page, "Members").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
@@ -5322,6 +5473,85 @@ def agents_page_step(run: Run, page: Page) -> None:
     expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()
     run.a11y(page, "agents page, a row opened")
     no_problems(run, "agents page")
+
+
+# The handle hints that stand in the page (tsk-srzrkf2parzt): each one's lines (its height over its
+# line height) and whether it runs wider than itself; hidden ones are not counted.
+HANDLE_HINTS = """() => Array.from(document.querySelectorAll("p.handle-explain")).filter((p) => p.offsetParent !== null).map((p) => {
+  const s = getComputedStyle(p), lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
+  const owner = document.querySelector('[aria-describedby~="' + p.id + '"]');
+  return { field: owner ? owner.id : null, lines: Math.round(p.getBoundingClientRect().height / lh), wide: p.scrollWidth > p.clientWidth + 1 };
+})"""
+
+
+def handle_hints_step(run: Run, page: Page) -> None:
+    """Every field that asks for a handle explains the word (tsk-srzrkf2parzt): one sentence the field
+    names in its aria-describedby, at most two lines at 390 and 360 px, light and dark. The seven fields:
+    your own handle, an agent's when it is added, renamed or joined, an organisation's when it is
+    created or renamed (here with a handle of the full 31 characters), and the person invited to one."""
+    run.step("handle hints: every handle field explains the word, at most two lines on a phone")
+    org = "e2e-hints-organisation-handle-x"
+    assert len(org) == 31, org
+    page.goto(f"{run.base}/account/orgs")
+    page.locator("#org-new-handle").fill(org)
+    page.locator("#org-new-name").fill("E2E Hints Organisation")
+    page.get_by_role("button", name="Create the organisation", exact=True).click()
+    expect(page.locator("#org-handle")).to_have_value(org)
+
+    def measured(where: str) -> list[dict]:
+        hints = page.evaluate(HANDLE_HINTS)
+        for x in hints:
+            assert x["field"], f"{where}: a handle hint no field names: {hints}"
+            assert x["lines"] <= 2 and not x["wide"], f"{where}: {x}"
+        return hints
+
+    try:
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            for width in (390, 360):
+                page.set_viewport_size({"width": width, "height": 900})
+                at = f"{width} px {scheme}"
+                seen: set[str] = set()
+                page.goto(f"{run.base}/account")
+                expect(page.locator(".handle-editor p.handle-explain")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"account, {at}")}
+                page.goto(f"{run.base}/account/orgs")
+                expect(page.locator("#org-new-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"new organisation, {at}")}
+                page.goto(f"{run.base}/account/orgs/{org}")
+                expect(page.locator("#org-invite-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"organisation, {at}")}
+                page.goto(f"{run.base}/agents")
+                page.get_by_role("button", name="+ Add an agent", exact=True).click()
+                expect(page.locator("#agent-new-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"new agent, {at}")}
+                page.goto(f"{run.base}/agents")
+                row = page.locator("tr.agent-row", has_text="E2E Agent").first
+                row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+                page.locator("tr.agent-manage").first.locator("details.agent-settings summary").click()
+                expect(page.locator("tr.agent-manage").first.locator("p.handle-explain").first).to_be_visible()
+                seen |= {x["field"] for x in measured(f"agent settings, {at}")}
+                page.goto(f"{run.base}/agents")
+                page.get_by_role("button", name="Join an agent", exact=True).click()
+                page.locator("#join-agent").select_option("")
+                expect(page.locator("#join-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"join an agent, {at}")}
+                fields = {f for f in seen if f}
+                kinds = {
+                    "own": any(re.fullmatch(r"handle-[a-z0-9]{1,8}", f) for f in fields),
+                    "agent-new": "agent-new-handle" in fields,
+                    "agent-edit": any(f.startswith("agent-handle-") for f in fields),
+                    "join": "join-handle" in fields,
+                    "org-new": "org-new-handle" in fields,
+                    "org-rename": "org-handle" in fields,
+                    "org-invite": "org-invite-handle" in fields,
+                }
+                assert all(kinds.values()), f"handle hints at {at}: {kinds} from {sorted(fields)}"
+                print(f"   handle hints: 7 kinds, each at most two lines at {at}")
+    finally:
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    no_problems(run, "handle hints")
 
 
 def invitations_step(run: Run, page: Page) -> None:

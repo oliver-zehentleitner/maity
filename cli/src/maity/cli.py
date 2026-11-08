@@ -923,7 +923,8 @@ def _described(facts: gitfacts.Facts, probed: bool = False) -> str:
     if facts.pr is not None:
         state = onboarding.inline(facts.pr.state.lower())
         via = ", read by the hub's probe" if probed else ""
-        return f"{where}, PR #{facts.pr.number} ({state}{via})"
+        title = f' "{onboarding.inline(facts.pr.title)}"' if facts.pr.title else ""
+        return f"{where}, PR #{facts.pr.number}{title} ({state}{via})"
     if facts.pr_unknown_reason is not None:
         return f"{where}, pull request unknown: {onboarding.inline(facts.pr_unknown_reason)}"
     return f"{where}, no pull request"
@@ -951,7 +952,9 @@ def _probed_pr(
     stands in, and nothing refuses on its account.
 
     Only a pull request the card already links is asked about, never one the agent names
-    (8c58cebb), and the probe reads fresh (`max_age=0`) from the project's repository only.
+    (8c58cebb), and the probe is asked with `max_age=0` and reads the project's repository
+    only; the hub may still answer from a read up to 30 s old (`FORCED_FLOOR`, §11.4), so a
+    head pushed since then refuses rather than files another commit.
     The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
     links = card.get("links") if isinstance(card, dict) else None
     linked = sorted(
@@ -981,14 +984,65 @@ def _probed_pr(
         if not isinstance(pr, dict) or pr.get("found") is not True or pr.get("number") != number:
             continue
         sha, state, url = pr.get("head_sha"), pr.get("state"), pr.get("url")
+        title = str(pr.get("title")) if isinstance(pr.get("title"), str) else ""
         if not (isinstance(sha, str) and _SHA.match(sha)) or not isinstance(state, str):
             continue
         if not isinstance(url, str) or _pr_key(url) != (repository, number):
             continue
         if sha == head and (not merged_only or state.lower() == "merged"):
-            return gitfacts.PullRequest(number=number, head=sha, state=state, url=url), None
+            found = gitfacts.PullRequest(number=number, head=sha, state=state, url=url, title=title)
+            return found, None
         others.append(f"PR #{number} ({onboarding.inline(state.lower())}) has head {sha}")
     return None, (others or None)
+
+
+def _belongs(card: Any, facts: gitfacts.Facts, card_id: str) -> bool:
+    """Whether the pull request found looks like the card's: the card links it or its last
+    report names it (8c58cebb checks those), or the card id is in the pull request's title, its
+    body (where gh read it) or the branch's name. A guess, which a person confirms (`--yes`)."""
+    pr = facts.pr
+    if pr is None:
+        return True
+    found = _pr_key(pr.url, pr.number)
+    links = card.get("links") if isinstance(card, dict) else None
+    for link in links if isinstance(links, list) else []:
+        if isinstance(link, dict) and link.get("kind") == "pr":
+            if _pr_key(link.get("forge_url"), link.get("number")) == found:
+                return True
+    before = onboarding.get(onboarding.get(card, "report"), "pr")
+    if isinstance(before, dict) and _pr_key(before.get("url"), before.get("number")) == found:
+        return True
+    needle = card_id.lower()
+    return any(needle in (text or "").lower() for text in (pr.title, pr.body, facts.branch))
+
+
+def _confirm_pr(card_id: str, facts: gitfacts.Facts, yes: bool) -> bool:
+    """A pull request that does not look like the card's: `--yes`, a "y" on a terminal, or a
+    refusal. Without a terminal nothing is asked; the refusal names `--yes`."""
+    if facts.pr is None:
+        return True
+    named = f'PR #{facts.pr.number} "{onboarding.inline(facts.pr.title)}"'
+    if yes:
+        return True
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        _err(
+            f"report refused: {named} on branch {onboarding.inline(facts.branch)} does not name "
+            f"{card_id} in its title, body or branch; check that it is the card's pull request "
+            f"and report again with --yes, or report from the card's branch"
+        )
+        return False
+    print(
+        f"maity: {named} does not name {card_id} in its title, body or branch. "
+        f"Report {card_id} with it? [y/N] ",
+        end="",
+        file=sys.stderr,
+        flush=True,
+    )
+    answer = sys.stdin.readline().strip().lower()
+    if answer in ("y", "yes"):
+        return True
+    _err("report not sent")
+    return False
 
 
 def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
@@ -1125,6 +1179,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     mismatch = _card_pr_mismatch(card, facts, args.task)
     if mismatch:
         _err(f"report refused: {mismatch}")
+        return EXIT_REFUSED
+    if not _belongs(card, facts, args.task) and not _confirm_pr(args.task, facts, args.yes):
         return EXIT_REFUSED
     path = session.project_path("tasks", args.task, "report")
     task = session.client.call("POST", path, body=body)
@@ -2263,8 +2319,10 @@ def cmd_memory_delete(args: argparse.Namespace) -> int:
     """`DELETE …/memory/{id}` (§19.2): the hub decides who may; the answer is the tombstone."""
     _memory_flags_after_action(args)
     entry = _text(args.entry, "the entry")
-    if not re.fullmatch(r"mem-[a-z0-9]+", entry):
-        raise UsageError(f"{entry!r} is not an entry id (mem-…)")
+    # Ids are opaque (docs/api.md §1.1): only what would leave its path segment is refused
+    # here, as `_id` does; an id the hub does not have is its `not_found`.
+    if not entry.strip() or entry in (".", ".."):
+        raise UsageError(f"{entry!r} is not an entry id")
     session = Session()
     body = {"reason": _text(args.reason, "--reason")} if args.reason is not None else None
     answer = session.client.call("DELETE", session.project_path("memory", entry), body=body)
@@ -4222,6 +4280,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="REASON",
         help="why this change has no decision to keep, 10 characters or more (§6.23)",
     )
+    p.add_argument(
+        "--yes",
+        action="store_true",
+        help="the pull request found is the card's although it does not name the card id; "
+        "confirms only that, never a refusal over another pull request or a head mismatch",
+    )
     _json_flag(p)
     p.set_defaults(handler=cmd_report)
 
@@ -4455,7 +4519,7 @@ def build_parser() -> argparse.ArgumentParser:
         "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
         "in this clone and every file:line, name in backticks and hash in the message is there "
         "(commands and their output go under a heading `## Ran`, which is not checked); each "
-        "cite quote is limited to 300 characters by the hub",
+        "cite quote stays on one line, at most 300 characters (the hub's limit)",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
@@ -4569,7 +4633,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_memory_add)
     r = msub.add_parser("delete", help="delete an entry of your team's or role's memory",
                         formatter_class=fmt)  # fmt: skip
-    r.add_argument("entry", metavar="ID", help="the entry, mem-…")
+    r.add_argument("entry", metavar="ID", help="the entry's id")
     r.add_argument("--reason", help="why, kept on the tombstone")
     _json_flag(r)
     r.set_defaults(handler=cmd_memory_delete)
@@ -5252,15 +5316,16 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
     return True
 
 
-# Where each command's free text lives: (attribute, its --…-file attribute, the flag named in
-# errors, required). A value of `-` reads standard input, once per command.
-TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
+# Where each command's free text lives: (attribute, its --…-file attribute or None for a
+# command without a file flag, the flag named in errors, required). A value of `-` reads
+# standard input, once per command.
+TEXT_ARGS: dict[Handler, tuple[tuple[str, str | None, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
     cmd_note_add: (("body", "body_file", "the note", True),),
-    cmd_task_create: (("body", "body_file", "--body", False),),
+    cmd_task_create: (("body", None, "--body", False),),  # stdin only, no file flag
     cmd_report: (("summary", "summary_file", "--summary", True),),
-    cmd_jourfixe_post: (("body", "body_file", "the post", True),),
-    cmd_memory_add: (("text", "text_file", "the entry", False),),
+    cmd_jourfixe_post: (("body", None, "the post", True),),  # stdin only, no file flag
+    cmd_memory_add: (("text", None, "the entry", False),),  # stdin only, no file flag
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
         ("next", "next_file", "--next", True),
@@ -5268,7 +5333,7 @@ TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
 }
 
 
-def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
+def _texts(args: argparse.Namespace) -> tuple[tuple[str, str | None, str, bool], ...]:
     handler = getattr(args, "handler", None)
     if handler is cmd_say:  # with --chat the text is the first positional
         return (("to" if args.chat is not None else "body", "body_file", "the message", False),)
@@ -5319,7 +5384,8 @@ def _load_texts(args: argparse.Namespace) -> None:
     _say_update_text(args)
     stdin_used = False
     for attr, file_attr, flag, required in _texts(args):
-        value, path = getattr(args, attr, None), getattr(args, file_attr, None)
+        value = getattr(args, attr, None)
+        path = getattr(args, file_attr, None) if file_attr is not None else None
         if path is not None:
             if value is not None:
                 raise UsageError(f"{flag}: give the text or a file, not both")
