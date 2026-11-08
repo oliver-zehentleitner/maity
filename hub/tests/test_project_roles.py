@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import events, merged
 from maity_hub import tables as t
@@ -18,7 +18,6 @@ LEGAL = {
     "name": "legal",
     "base": "reviewer",
     "description": "Checks licences",
-    "guide": "You check",
 }
 
 
@@ -39,14 +38,12 @@ def assign(owner: flow.Human, member_id: str, role: str) -> Any:
     return owner.patch(f"{BASE}/members/{member_id}", {"trust": "member", "role": role})
 
 
-def test_the_list_is_put_whole_and_read_back_with_who_set_the_guide(
-    owner: flow.Human, migrated: Engine
-) -> None:
+def test_the_list_is_put_whole_and_read_back(owner: flow.Human, migrated: Engine) -> None:
     assert owner.get(f"{BASE}/roles").json() == {"custom": []}
     response = put(owner, [LEGAL, {"name": "translator", "base": "writer"}])
     assert response.status_code == 200, response.text
     expected = [
-        {**LEGAL, "guide_by": "maintainer"},
+        {**LEGAL, "guide": "", "guide_by": None},
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
     assert response.json() == {"custom": expected}
@@ -64,6 +61,29 @@ def test_the_list_is_put_whole_and_read_back_with_who_set_the_guide(
     assert kinds.count("policy_changed") == 1
 
 
+def test_a_stored_guide_stays_with_its_role_and_a_new_role_has_none(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """§2.3: a guide is set with the briefings (§6.28), not in a `PUT`; one stored before
+    stays with its role and who set it, and shows in the list."""
+    assert put(owner, [LEGAL]).status_code == 200
+    stored = [{**LEGAL, "guide": "You check", "guide_by": "maintainer"}]
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(roles=stored))
+    changed = {**LEGAL, "description": "Checks licences and notices"}
+    response = put(owner, [changed, {"name": "translator", "base": "writer"}])
+    assert response.status_code == 200, response.text
+    expected = [
+        {**changed, "guide": "You check", "guide_by": "maintainer"},
+        {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
+    ]
+    assert response.json() == {"custom": expected}
+    assert owner.get(f"{BASE}/roles").json() == {"custom": expected}
+    # Removed and put again, the role starts without a guide.
+    assert put(owner, []).status_code == 200
+    assert put(owner, [LEGAL]).json()["custom"] == [{**LEGAL, "guide": "", "guide_by": None}]
+
+
 @pytest.mark.parametrize(
     ("custom", "fields"),
     [
@@ -76,7 +96,12 @@ def test_the_list_is_put_whole_and_read_back_with_who_set_the_guide(
         ([{"name": "legal", "base": "manager"}], {"custom[0].base": "unknown"}),
         ([{"name": "legal", "base": "purple-team"}], {"custom[0].base": "unknown"}),
         ([LEGAL, LEGAL], {"custom[1].name": "duplicate"}),
-        ([{**LEGAL, "guide": "x" * 501}], {"custom[0].guide": "too_long"}),
+        ([{**LEGAL, "guide": "You check"}], {"custom[].guide": "moved"}),
+        ([LEGAL, {**LEGAL, "name": "law", "guide": ""}], {"custom[].guide": "moved"}),
+        (
+            [{**LEGAL, "guide": "x", "description": "x" * 201}],
+            {"custom[].guide": "moved", "custom[0].description": "too_long"},
+        ),
         ([{**LEGAL, "description": "x" * 201}], {"custom[0].description": "too_long"}),
         ([{**LEGAL, "colour": "red"}], {"custom[0].colour": "unknown_field"}),
         ([{"name": f"role-{i}", "base": "coder"} for i in range(13)], {"custom": "too_many"}),
@@ -233,9 +258,14 @@ def test_role_base_in_substitutes_takes_a_project_role_on_that_base(
 
 
 def test_the_rules_carry_a_project_roles_guide_quoted_with_who_set_it(
-    owner: flow.Human, make_client: ClientFactory
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    put(owner, [{**LEGAL, "guide": "You check licences.\nAsk before merging."}])
+    put(owner, [LEGAL])
+    guide = "You check licences.\nAsk before merging."  # stored before the guides moved
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).values(roles=[{**LEGAL, "guide": guide, "guide_by": "maintainer"}])
+        )
     agent = flow.agent(make_client, owner)
     assign(owner, agent.id, "legal")
     rules = agent.get(f"{BASE}/rules").text

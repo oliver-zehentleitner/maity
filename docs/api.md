@@ -11033,7 +11033,7 @@ learns its content.
 | `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
-| `chat_unread` (§9.2; not built yet, tsk-xemkg9x1kwt8) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
+| `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
@@ -11199,7 +11199,7 @@ Two sets per reader, because reading and waking are different things:
   its participation has `wake: all` (not built, §9.2) — and never by `conversation_created` or
   `conversation_updated`; what a human wrote there without mentioning it
   reaches it later, at most once per read cycle, as `chat_unread`
-  (§9.2, "The unread nudge", not built yet); a human participant is woken by every message
+  (§9.2, "The unread nudge"); a human participant is woken by every message
   of the others. A cross-project group chat (§9.5) wakes an
   agent the same way and no other: only a message that mentions it,
   once, and never by the chat being created or changed. The admin see-all extension, the owner's view of a group
@@ -12608,9 +12608,8 @@ The conversation view:
   the design is `wake: all` per agent participation (not built, above), which
   wakes on human messages only and so cannot loop. The dashboard may prefill the `@` of a chat's only agent; that
   is the client's convenience, not a hub rule.
-- **The unread nudge** (not built yet, tsk-xemkg9x1kwt8: until the hub
-  ships it, an agent is woken in a group chat by a mention only). What a
-  human writes without a mention does not stay unseen until the agent's next resume. The hub's worker, in its
+- **The unread nudge.** What a human writes without a mention does not
+  stay unseen until the agent's next resume. The hub's worker, in its
   pass every minute (§5.3), emits `chat_unread` (§8.2) for an agent
   participant of a group chat when all of these hold:
   - the chat holds *counted* messages: written by a human participant
@@ -12635,10 +12634,19 @@ The conversation view:
   in the chat. The next counted message then starts a new cycle, again
   after the delay. The nudge's own `seq` plays no part: the event is
   written after the messages it counts, so reading exactly those leaves
-  the read mark below it, while a later message read or posted carries
-  it past. The event wakes the agent by its `wake` rule
+  the read mark below it, while a message written after the nudge, read
+  or posted, carries it past. The event wakes the agent by its `wake` rule
   (§6.18). A `wait` that returns it, or a resume, does not move the read
   mark, as for a mention.
+
+  Exactness: the counts leave out every message redacted before the hub's
+  pass starts. Exactness against a redaction that commits while a pass
+  runs is not promised: the nudge is a wake-up hint, and reading the chat
+  shows a redacted message only as its tombstone (§8.5), never its body.
+  The hub reads at most a budget of messages (2000) per stay and call,
+  moving the read's end up to the newest message each time: while that
+  many or more new human messages arrive in a chat between passes, the
+  nudge may not come; with fewer, the read catches up and the nudge comes.
 
   Bounded on purpose:
   - one wake per agent and chat per read cycle, never sooner than the delay
@@ -12855,14 +12863,13 @@ answer. Before it answers it reads what it missed with `maity chat <id>`
 readable and counts as unread, and never ends a `wait` — except a human
 participant's message where the agent's `wake` is `all` (not built, §9.2).
 What humans wrote there unread for the nudge delay ends one `wait` as
-`chat_unread`, once per read cycle (§9.2, "The unread nudge", not built
-yet): the agent reads the chat with `maity chat <id>` and answers if it
+`chat_unread`, once per read cycle (§9.2, "The unread nudge"): the agent reads the chat with `maity chat <id>` and answers if it
 is addressed or concerned; nothing obliges it to answer.
 
 The generated rules (§6.9) say what a chat is to an agent: being in a
 group chat is not a task; it answers when mentioned — or, in a chat
 where its `wake` is `all` (not built, §9.2), when a human writes — reads
-a chat a `chat_unread` names (not built yet, §9.2) and answers there only what concerns it,
+a chat a `chat_unread` names (§9.2) and answers there only what concerns it,
 and otherwise reads when it resumes (a change of these rules bumps the rules version,
 §6.9); a request in a chat carries the authority of the
 writer's trust and role and no more (`context/trust.md`), so a go that needs
