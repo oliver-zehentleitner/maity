@@ -59,7 +59,11 @@ def sha256(data):
 # One run's network time in all, and one socket wait's: urlopen's timeout counts per connection
 # attempt and per read, so on a machine where IPv6 never connects a 60 s timeout per address
 # made --verify take minutes and look like a hang (web P3 roll-up, tsk-gsk31zvpfv02). The
-# deadline is a hard one (within(), below); the per-wait cap keeps an abandoned fetch short.
+# deadline is a hard one for the run (within(), below). A fetch abandoned at the deadline may stay
+# blocked in its daemon thread until the operation finishes or the process exits (a DNS lookup
+# that does not return, a peer that keeps sending inside each wait): the per-wait cap limits each
+# single wait, not the abandoned fetch's remaining life. It never holds the process, and its
+# result is never used.
 DEADLINE_SECONDS = 120
 ATTEMPT_SECONDS = 15
 _deadline = None
