@@ -298,7 +298,7 @@ Before sending, `maity report` prints the branch, the head and the pull request 
 When the card neither links that pull request nor names it in its last report (the cases 8c58cebb
 already checks or refuses), the pull request counts as the card's only if the card id appears in
 its title, its body (where gh read one; the probe's answer has none) or the branch's name.
-Otherwise a terminal is asked `[y/N]`, and only "y" sends; without a terminal the report is
+Otherwise a terminal is asked `[y/N]`, and only "y" or "yes" sends; without a terminal the report is
 refused (exit 4) and the message names the way out, `--yes`. `--yes` confirms only this guess: it
 never overrides a refusal over another pull request the card links or a head that does not match.
 
@@ -318,4 +318,3 @@ contradict: the refusals that rest on facts keep no override.
 - Checking whether the branch already belongs to another card: the hub has no lookup of cards by
   branch or pull request before a merge (linked cards are computed at the merge, §17.4); a
   client-side half check would read as a guarantee it is not. Left as a known gap.
-
