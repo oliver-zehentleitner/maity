@@ -157,6 +157,35 @@ def test_reading_the_chat_rearms_it_and_a_wait_does_not(room: Room) -> None:
     assert len(nudges) == 2 and nudges[1].payload["unread"] == 1
 
 
+def test_reading_right_after_the_nudge_closes_the_cycle(room: Room) -> None:
+    """The read mark is a message's seq and the nudge is written after the messages it counts:
+    the cycle closes on the nudge's `newest_seq`, not its own seq (review of #1484)."""
+    r = room
+    first, _ = r.agents
+    r.say(r.owner, "one")
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    seq = nudge.seq
+    r.read(first)  # nothing newer than the nudge's messages: the mark stays below its seq
+    with r.engine.connect() as conn:
+        mark = conn.execute(
+            select(t.conversation_read.c.last_seq)
+            .join(t.membership, t.membership.c.id == t.conversation_read.c.reader)
+            .where(
+                t.conversation_read.c.conversation_id == r.chat,
+                t.membership.c.agent_id == first.id,
+            )
+        ).scalar_one()
+    assert mark < seq
+    r.at(12)
+    r.say(r.owner, "two")
+    r.at(23)
+    chat_unread.sweep(r.engine)
+    nudges = r.nudges(first)
+    assert len(nudges) == 2 and nudges[1].payload["unread"] == 1
+
+
 def test_posting_moves_the_mark_too(room: Room) -> None:
     r = room
     first, _ = r.agents
