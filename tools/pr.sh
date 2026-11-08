@@ -160,9 +160,10 @@ repo="$repo_owner/$repo_name"
 if [ -n "$body_file" ]; then
   [ -f "$body_file" ] && [ -r "$body_file" ] || die "cannot read the body file $body_file"
   # The fixed list, at a line's start after anything but letters and digits (spaces, emoji,
-  # symbols, `>`, emphasis, link markup), in any case; emphasis may close before the colon
-  # (`**Co-Authored-By**:`). In the C locale every byte of an emoji is such a character.
-  attribution='^[^[:alnum:]]*(generated[[:space:]]+(with|by)([^[:alnum:]]|$)|(co-authored-by|claude-session)[*_]*:)'
+  # symbols, `>`, emphasis, link markup), in any case; emphasis and a link's closing `](url)` may
+  # come before the colon (`**Co-Authored-By**:`, `[Claude-Session](https://...):`). In the C
+  # locale every byte of an emoji is such a character.
+  attribution='^[^[:alnum:]]*(generated[[:space:]]+(with|by)([^[:alnum:]]|$)|(co-authored-by|claude-session)[*_]*(\]\([^)]*\))?[*_]*:)'
   found=$(LC_ALL=C grep -Ein -m 1 -- "$attribution" "$body_file")
   status=$?
   case $status in
