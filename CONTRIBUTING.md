@@ -63,6 +63,30 @@ not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetc
 them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
 blocked, as in Claude Code's cloud sessions.
 
+## Opening and editing a pull request from a cloud session
+
+Where the GitHub tool or GitHub's GraphQL API is refused, as in Claude
+Code's cloud sessions, `gh pr create` and `gh pr edit` cannot work. Open
+and edit your pull request over the REST API instead:
+
+```sh
+tools/pr.sh open --title "…" --body-file body.md     # the checked-out branch against main
+tools/pr.sh edit 1234 --body-file body.md            # or --title "…", or both
+```
+
+`open` refuses a branch that origin does not have at your local head:
+push first. `edit` changes only the pull request whose head is your
+checked-out branch (`--branch B` names another of yours): every agent
+pushes as the same GitHub account, so the head is what tells the pull
+requests apart. The body always comes from a file, sent as it is, and a
+body with an attribution line (`Co-Authored-By:`, `Claude-Session:`,
+"Generated with … Claude Code") is refused. It prints GitHub's answer
+(number, URL, head, title). Exit 1 means it refused, with the reason;
+exit 2 means it could not run, and it never ends in 0 then. Owner,
+repository and host are origin's, as for the overlap check. Opening a
+pull request for a cloud session is no longer the lead's job: open your
+own and send the lead its number.
+
 ## The guard tests before a review request
 
 Run `tools/guards.sh` before you ask for a review (`HUB_PYTHON=` a Python

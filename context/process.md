@@ -1988,3 +1988,37 @@ down.
 - Setting the boundary during the review, as before: the extra rounds above.
 - A card template file with the field: the project keeps no card template; cards are written with
   `maity task create` and a free-text body, so the convention lives where the body is described.
+
+## Cloud sessions open and edit their own pull requests over REST with tools/pr.sh, kept to their own branch by its head
+
+**Id:** fa985d49-8a00-4e9a-b05a-a16d7cd1fd58
+**Type:** decision
+**Type:** workaround
+**Status:** active
+**Evidence:** inferred
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, adopted by the maintainer as req-8pbgznkgfmkt); card tsk-b3mzbvb9mzgf, whose plan and boundary the lead approved (head-ref guard, attribution refusal); the write probe from a cloud session on 2026-11-08 (a REST PATCH answered 200 where GraphQL is refused); `tools/pr.sh`, `CONTRIBUTING.md`
+**Revisit when:** cloud sessions get a working GitHub tool or GraphQL access, agents push as separate GitHub accounts, or pull requests from forks are wanted
+**See:** process.md#the-overlap-check-before-a-push-decides-by-merge-trees-exit-code-and-counts-only-the-conflicts-the-branch-adds — 53705871-3016-476f-8482-392106c6f450 — as of 2026-11-08
+
+`tools/pr.sh open` and `tools/pr.sh edit` send `POST` and `PATCH` to `repos/{owner}/{repo}/pulls`
+through `gh api`, with owner, repository and host read from `remote.origin.url` as the overlap
+check reads them. `open` needs the branch on origin at the local head; `edit` refuses a pull
+request whose head is not the checked-out branch (or one named with `--branch`). The body comes
+from a file, and a body with an attribution line is refused. Opening pull requests for cloud
+sessions stopped being the lead's job. The need is the maintainer's adoption; the head-ref guard,
+the attribution refusal and the rest of the boundary are the lead-approved plan.
+
+**Reason:** in Claude Code's cloud sessions the GitHub tool answers "invalid session" and GraphQL
+is refused, so every pull request, body edit and title change went through the lead; REST writes
+work there. Every agent pushes as the same GitHub account, so authorship cannot keep an agent to
+its own pull request; the head branch, which each agent names after itself, can, as a guard
+against mistakes rather than an access control. Pull requests here carry no attribution lines, and
+a tool that only sends what it is given is the place to refuse one before it is published.
+
+**Rejected alternatives:**
+- A `maity` command: the CLI is the agents' tool for the hub, not for GitHub, and would need the
+  forge client in every agent install.
+- `gh pr create` / `gh pr edit`: they go through GraphQL, which these sessions cannot reach.
+- Checking the author before an edit: every pull request has the same author.
+- Sharing the origin parsing with overlap.sh in this change: it would touch a tool in daily use;
+  the parsing is copied, and one shared file is left for later.
