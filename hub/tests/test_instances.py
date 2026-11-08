@@ -440,6 +440,26 @@ def test_revoking_one_instance_leaves_the_others_working(
     assert updated.payload["changed"] == ["team"]
 
 
+def test_a_revoke_whose_reason_reads_member_removed_still_says_the_lead_ended(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Whether the lead's end is announced is the caller's word, not the reason a human
+    wrote: a revoke with the text `member_removed` still says `member_updated` (§6.17)."""
+    first = flow.agent(make_client, owner)
+    _second(make_client, owner, first)
+    assert _team(owner, first.id, lead_instance=first.instance).status_code == 200
+    before = len(_events(migrated, "member_updated"))
+    revoked = owner.post(
+        f"/projects/maintainer/maity/credentials/{first.credential_id}/revoke",
+        {"reason": "member_removed"},
+    )
+    assert revoked.status_code == 200
+    view = owner.get(f"/projects/maintainer/maity/members/{first.id}").json()
+    assert view["team"]["lead_instance"] is None
+    updated = _events(migrated, "member_updated")[before:]
+    assert [u.payload["changed"] for u in updated] == [["team"]]
+
+
 def test_removing_the_member_revokes_every_instance(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
