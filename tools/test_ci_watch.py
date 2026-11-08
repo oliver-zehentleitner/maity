@@ -218,6 +218,16 @@ class QueueTest(unittest.TestCase):
                 self.assertIn(said, self.said[0][1])
                 self.assertEqual(self.lines(), [])
 
+    def test_a_deleted_pull_request_is_reported_and_removed(self) -> None:
+        self.add()
+
+        def gh(path: str) -> object:
+            raise ci_watch.NotFound(path)
+
+        ci_watch.run_pass(self.queue, gh, self.say, REPO, log=io.StringIO())
+        self.assertIn("no such pull request", self.said[0][1])
+        self.assertEqual(self.lines(), [])
+
     def test_no_run_yet_waits(self) -> None:
         self.add()
         self.assertEqual(self.one_pass(FakeGh()), 0)
@@ -292,6 +302,185 @@ class QueueTest(unittest.TestCase):
             self.assertEqual(ci_watch.main(["add", str(self.queue), "7", SHA[:7], AUTHOR]), 2)
         self.assertEqual(ci_watch.main(["remove", str(self.queue), "7"]), 0)
         self.assertEqual(self.lines(), [])
+
+
+INBOX = "agt-watcher"
+SENDER = "agt-author"
+
+
+def message(seq: int, body: str, **fields: object) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "seq": seq,
+        "type": "notice",
+        "from": SENDER,
+        "from_instance": "ab12",
+        "to": f"{INBOX}#hrjz",
+        "body": body,
+    }
+    item.update(fields)
+    return item
+
+
+class FakeMessages:
+    """`maity messages`: everything after a seq, oldest first; None asks for the newest."""
+
+    def __init__(self, items: list[dict[str, Any]]) -> None:
+        self.items = items
+        self.calls: list[int | None] = []
+
+    def __call__(self, after: int | None) -> list[dict[str, Any]]:
+        self.calls.append(after)
+        if after is None:
+            return sorted(self.items, key=lambda i: -i["seq"])[:1]
+        return [i for i in sorted(self.items, key=lambda i: i["seq"]) if i["seq"] > after]
+
+
+class IntakeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.queue = self.tmp / "ciwatch.txt"
+        self.cursor = self.tmp / "ciwatch.txt.seq"
+        self.said: list[tuple[str, str]] = []
+        self.gh = FakeGh()
+
+    def say(self, author: str, text: str) -> None:
+        self.said.append((author, text))
+
+    def lines(self) -> list[str]:
+        return self.queue.read_text().splitlines() if self.queue.exists() else []
+
+    def intake(self, items: list[dict[str, Any]], start: int | None = 100) -> int:
+        if start is not None:
+            self.cursor.write_text(f"{start}\n")
+        return ci_watch.intake_pass(
+            self.queue, INBOX, FakeMessages(items), self.gh, self.say, REPO, log=io.StringIO()
+        )
+
+    def test_the_sender_is_the_author_never_the_text(self) -> None:
+        self.assertEqual(self.intake([message(101, f"ciwatch 7 {SHA}")]), 1)
+        self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
+        self.assertEqual(self.said, [(f"{SENDER}#ab12", self.said[0][1])])
+        self.assertIn(f"#7 {SHA} added", self.said[0][1])
+        self.assertEqual(self.cursor.read_text().strip(), "101")
+
+    def test_an_address_in_the_text_is_not_taken(self) -> None:
+        self.intake([message(101, f"ciwatch 7 {SHA} {AUTHOR}")])
+        self.assertEqual(self.lines(), [])
+        self.assertEqual(self.said, [])
+
+    def test_other_messages_and_messages_to_others_get_no_answer(self) -> None:
+        taken = self.intake(
+            [
+                message(101, "please review #7"),
+                message(102, f"ciwatch 7 {SHA}", to="agt-someone-else#x1"),
+                message(103, f"ciwatch 7 {SHA}", to="all"),
+                message(104, f"ciwatch 7 {SHA[:7]}"),
+            ]
+        )
+        self.assertEqual(taken, 0)
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.lines(), [])
+        self.assertEqual(self.cursor.read_text().strip(), "104")
+
+    def test_its_own_messages_are_never_intake(self) -> None:
+        self.intake([message(101, f"ciwatch 7 {SHA}", **{"from": INBOX})])
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.lines(), [])
+
+    def test_refusals_get_one_answer_each(self) -> None:
+        cases: dict[str, dict[str, Any]] = {
+            "its head is " + NEWER: {"head": {"sha": NEWER, "ref": BRANCH}},
+            "the pull request is merged": {"merged": True, "state": "closed"},
+            "the pull request is closed": {"state": "closed"},
+        }
+        for why, change in cases.items():
+            with self.subTest(why):
+                self.said.clear()
+                self.gh = FakeGh()
+                self.gh.pr.update(change)
+                self.assertEqual(self.intake([message(101, f"ciwatch 7 {SHA}")]), 0)
+                self.assertEqual(len(self.said), 1)
+                self.assertIn(f"not added: {why}.", self.said[0][1])
+                self.assertEqual(self.lines(), [])
+
+    def test_an_unknown_pull_request_is_refused(self) -> None:
+        def gh(path: str) -> object:
+            raise ci_watch.NotFound(path)
+
+        self.gh = gh  # type: ignore[assignment]
+        self.intake([message(101, f"ciwatch 7 {SHA}")])
+        self.assertIn("not added: no such pull request.", self.said[0][1])
+
+    def test_a_message_without_sender_instance_is_refused_to_the_member(self) -> None:
+        self.intake([message(101, f"ciwatch 7 {SHA}", from_instance=None)])
+        self.assertEqual(
+            self.said, [(SENDER, "ciwatch: #7 not added: the message has no sender instance")]
+        )
+        self.assertEqual(self.lines(), [])
+
+    def test_a_newer_head_replaces_the_older_line(self) -> None:
+        ci_watch.add(self.queue, ci_watch.Entry(7, NEWER, AUTHOR))
+        self.intake([message(101, f"ciwatch 7 {SHA}")])
+        self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
+
+    def test_the_first_start_takes_no_old_message(self) -> None:
+        items = [message(101, f"ciwatch 7 {SHA}"), message(102, "hello")]
+        self.assertEqual(self.intake(items, start=None), 0)
+        self.assertEqual(self.cursor.read_text().strip(), "102")
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.lines(), [])
+        # A message after the start is taken on the next pass.
+        self.assertEqual(self.intake([*items, message(103, f"ciwatch 7 {SHA}")], start=None), 1)
+
+    def test_the_cursor_survives_a_restart_and_nothing_is_answered_twice(self) -> None:
+        items = [message(101, f"ciwatch 7 {SHA}")]
+        self.intake(items)
+        self.intake(items, start=None)
+        self.assertEqual(len(self.said), 1)
+
+    def test_a_failing_say_retries_exactly_that_message(self) -> None:
+        items = [message(101, "hello"), message(102, f"ciwatch 7 {SHA}")]
+
+        def say(author: str, text: str) -> None:
+            raise ci_watch.Transient("maity say: offline")
+
+        self.cursor.write_text("100\n")
+        with self.assertRaises(ci_watch.Transient):
+            ci_watch.intake_pass(
+                self.queue, INBOX, FakeMessages(items), self.gh, say, REPO, log=io.StringIO()
+            )
+        self.assertEqual(self.cursor.read_text().strip(), "101")
+        self.intake(items, start=None)
+        self.assertEqual(len(self.said), 1)
+        self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
+
+    def test_answers_per_pass_are_capped(self) -> None:
+        items = [message(101 + n, f"ciwatch 7 {SHA}") for n in range(ci_watch.INTAKE_PER_PASS + 5)]
+        self.intake(items)
+        self.assertEqual(len(self.said), ci_watch.INTAKE_PER_PASS)
+        self.intake(items, start=None)
+        self.assertEqual(len(self.said), ci_watch.INTAKE_PER_PASS + 5)
+
+    def test_maity_messages_is_read_only(self) -> None:
+        # `maity messages` acknowledges nothing and moves no cursor (its --help says so); the
+        # watcher only ever calls it with --json, --after/--limit/--cursor, nothing that writes.
+        with mock.patch("subprocess.run") as sub:
+            sub.return_value.returncode = 0
+            sub.return_value.stdout = '{"items": [], "next_cursor": null}'
+            ci_watch.maity_messages(100)
+            ci_watch.maity_messages(None)
+        for call in sub.call_args_list:
+            argv = call.args[0]
+            self.assertEqual(argv[:3], ["maity", "messages", "--json"])
+            self.assertTrue(set(argv[3::2]) <= {"--after", "--limit", "--cursor"}, argv)
+
+    def test_run_refuses_an_inbox_with_an_instance(self) -> None:
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"MAITY_STATE_DIR": "x"}), contextlib.redirect_stderr(err):
+            code = ci_watch.main(["run", str(self.queue), "--once", "--inbox", "agt-x#hrjz"])
+        self.assertEqual(code, 2)
+        self.assertIn("--inbox", err.getvalue())
 
 
 if __name__ == "__main__":

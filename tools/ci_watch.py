@@ -2,7 +2,8 @@
 
     python3 tools/ci_watch.py add <queue> <pr> <full head sha> <author handle#instance>
     python3 tools/ci_watch.py remove <queue> <pr>
-    python3 tools/ci_watch.py run <queue> [--once] [--interval 120] [--repo owner/name]
+    python3 tools/ci_watch.py run <queue> [--inbox <member id>] [--once] [--interval 120]
+                                          [--repo owner/name]
 
 The queue file holds one line per watched head: `<pr> <full head sha> <author>`, where the
 author is the Maity address the result goes to (`handle#instance` or `agt-…#instance`). The
@@ -15,6 +16,24 @@ started by that pull request's branch (`pull_request` event), and waits until th
 completed. It then reports the `ci-ok` job's conclusion, and the jobs that failed, to the author
 and removes the line. A head that moved, a closed or merged pull request, and a conflict with
 main (no run starts then) are reported and removed too.
+
+Intake through Maity, for authors who cannot reach the file (a cloud session): with `--inbox
+<member id>`, `run` first reads the project's messages to that member and takes each one whose
+whole text is `ciwatch <pr> <full head sha>`:
+
+    maity say --type notice <watcher address> 'ciwatch <pr> <full head sha>'
+
+The author is the message's sender as the hub records it (`from#from_instance`), never an
+address in the text. The pull request must be open with that SHA as its head; then the line is
+added (a newer head replaces an older one, as with `add`). The sender gets one answer per such
+message, added or why not; any other message is left alone and gets no answer, and the
+watcher's own messages are never read as intake, so it cannot answer itself. The last message
+read is kept in `<queue>.seq`; a first start begins after the newest message and never takes
+older ones. Reading messages moves no read mark of the identity (`maity messages` acknowledges
+nothing), so a `maity wait` of the same identity still gets every message.
+
+What the intake does not check: that the sender wrote the pull request. Anyone who can message
+the watcher can have any open head watched, and the result goes to them.
 
 Who reports: `run` posts with `maity say` under the Maity identity of the `MAITY_STATE_DIR` it is
 started with, and refuses to start without one, so the sender is never a guess. On the shared
@@ -52,6 +71,9 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _PR = re.compile(r"^[1-9][0-9]*$")
 # A Maity address: a handle or member id, `#`, an instance. No `/`, so never a path.
 _AUTHOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*#[A-Za-z0-9]+$")
+_INTAKE = re.compile(r"^ciwatch ([1-9][0-9]*) ([0-9a-f]{40})$")
+# At most this many intake messages per pass; the rest wait for the next pass.
+INTAKE_PER_PASS = 50
 _FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
 
 
@@ -61,6 +83,10 @@ class Refused(Exception):
 
 class Transient(Exception):
     """A `gh` or `maity` call that failed; the line is tried again on the next pass."""
+
+
+class NotFound(Exception):
+    """GitHub answered 404: the pull request does not exist."""
 
 
 @dataclass(frozen=True)
@@ -146,6 +172,8 @@ def _drop(queue: Path, entry: Entry) -> None:
 
 Gh = Callable[[str], object]
 Say = Callable[[str, str], None]
+# Messages after a seq, oldest first; None for the newest seq there is.
+Messages = Callable[[int | None], list[dict[str, object]]]
 
 
 def check(entry: Entry, gh: Gh, repo: str = REPO) -> str | None:
@@ -211,7 +239,10 @@ def run_pass(queue: Path, gh: Gh, say: Say, repo: str = REPO, log: TextIO = sys.
         if entry is None:
             continue
         try:
-            report = check(entry, gh, repo)
+            try:
+                report = check(entry, gh, repo)
+            except NotFound:
+                report = f"CI watch: #{entry.pr} on {entry.sha}: no such pull request; not watched."
             if report is None:
                 continue
             say(entry.author, report)
@@ -224,6 +255,108 @@ def run_pass(queue: Path, gh: Gh, say: Say, repo: str = REPO, log: TextIO = sys.
     return done
 
 
+def _cursor(queue: Path) -> Path:
+    return queue.with_name(queue.name + ".seq")
+
+
+def _member(address: object) -> str:
+    return str(address or "").split("#", 1)[0]
+
+
+def admit(pr: int, sha: str, gh: Gh, repo: str = REPO) -> str | None:
+    """Why the head may not be watched, or None when it may."""
+    try:
+        data = gh(f"repos/{repo}/pulls/{pr}")
+    except NotFound:
+        return "no such pull request"
+    assert isinstance(data, dict)
+    if data.get("merged"):
+        return "the pull request is merged"
+    if data.get("state") != "open":
+        return "the pull request is closed"
+    head = data["head"]["sha"]
+    if head != sha:
+        return f"its head is {head}"
+    return None
+
+
+def intake_pass(
+    queue: Path,
+    inbox: str,
+    messages: Messages,
+    gh: Gh,
+    say: Say,
+    repo: str = REPO,
+    log: TextIO = sys.stderr,
+) -> int:
+    """Takes `ciwatch <pr> <sha>` messages to `inbox` into the queue; returns how many."""
+    cursor = _cursor(queue)
+    try:
+        after = int(cursor.read_text(encoding="utf-8").strip())
+    except FileNotFoundError:
+        newest = messages(None)
+        seq = int(str(newest[0]["seq"])) if newest else 0
+        cursor.write_text(f"{seq}\n", encoding="utf-8")
+        print(f"ci_watch: intake starts after message {seq}", file=log)
+        return 0
+    taken = 0
+    answered = 0
+    for item in messages(after):
+        seq = int(str(item["seq"]))
+        sender = str(item.get("from") or "")
+        match = _INTAKE.match(str(item.get("body") or "").strip())
+        if _member(item.get("to")) == inbox and sender != inbox and match:
+            if answered >= INTAKE_PER_PASS:
+                break
+            instance = item.get("from_instance")
+            author = f"{sender}#{instance}"
+            pr, sha = int(match[1]), match[2]
+            if not instance or not _AUTHOR.match(author):
+                say(sender, f"ciwatch: #{pr} not added: the message has no sender instance")
+            else:
+                why = admit(pr, sha, gh, repo)
+                if why is None:
+                    add(queue, Entry(pr, sha, author))
+                    say(author, f"ciwatch: #{pr} {sha} added; the result comes when CI is done.")
+                    print(f"ci_watch: added #{pr} {sha} for {author}", file=log)
+                    taken += 1
+                else:
+                    say(author, f"ciwatch: #{pr} {sha} not added: {why}.")
+            answered += 1
+        # Written after each message, so a failure above retries exactly this one.
+        cursor.write_text(f"{seq}\n", encoding="utf-8")
+    return taken
+
+
+def maity_messages(after: int | None) -> list[dict[str, object]]:
+    """`maity messages --json`: after a seq, oldest first, every page; or the newest one."""
+    base = ["maity", "messages", "--json"]
+    if after is None:
+        return _maity_page([*base, "--limit", "1"])["items"]
+    items: list[dict[str, object]] = []
+    page = _maity_page([*base, "--after", str(after), "--limit", "200"])
+    items.extend(page["items"])
+    while page.get("next_cursor"):
+        page = _maity_page(
+            [*base, "--after", str(after), "--limit", "200", "--cursor", str(page["next_cursor"])]
+        )
+        items.extend(page["items"])
+    return items
+
+
+def _maity_page(argv: list[str]) -> dict[str, list[dict[str, object]]]:
+    done = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        raise Transient(f"maity messages: {done.stderr.strip()[:200]}")
+    try:
+        data = json.loads(done.stdout)
+    except ValueError as bad:
+        raise Transient("maity messages: not JSON") from bad
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise Transient("maity messages: no items")
+    return data
+
+
 def gh_get(path: str) -> object:
     """`gh api <path>`: a GET, never anything that writes."""
     done = subprocess.run(
@@ -233,6 +366,8 @@ def gh_get(path: str) -> object:
         check=False,
     )
     if done.returncode != 0:
+        if "HTTP 404" in done.stderr:
+            raise NotFound(path)
         raise Transient(f"gh api {path.split('?')[0]}: {done.stderr.strip()[:200]}")
     try:
         return json.loads(done.stdout)
@@ -268,6 +403,9 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--once", action="store_true", help="one pass, then exit")
     p_run.add_argument("--interval", type=int, default=120, help="seconds between passes")
     p_run.add_argument("--repo", default=REPO)
+    p_run.add_argument(
+        "--inbox", help="member id whose `ciwatch <pr> <sha>` messages are taken into the queue"
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "add":
@@ -281,7 +419,16 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not os.environ.get("MAITY_STATE_DIR"):
             raise Refused("run: set MAITY_STATE_DIR to the identity the reports go out under")
+        if args.inbox is not None and not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", args.inbox):
+            raise Refused("--inbox: give a member id, without `#instance`")
         while True:
+            if args.inbox:
+                try:
+                    intake_pass(
+                        args.queue, args.inbox, maity_messages, gh_get, maity_say, args.repo
+                    )
+                except Transient as trouble:
+                    print(f"ci_watch: intake: {trouble}; tried again next pass", file=sys.stderr)
             run_pass(args.queue, gh_get, maity_say, args.repo)
             if args.once:
                 return 0

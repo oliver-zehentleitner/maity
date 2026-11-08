@@ -1826,6 +1826,43 @@ The queue line holds no path, state directory or credential.
 - Filtering runs by their `pull_requests` field: GitHub does not always fill it (the runs of one pull request head
   seen on 2026-11-07 had it empty), so the branch decides.
 
+## Authors outside the shared machine queue a CI watch by a Maity message; the sender is the author
+
+**Id:** a03bb0b5-c951-41ec-9a75-e6c47711cf5a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's adoption from the jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, request req-z7gvyzt3hk17), card tsk-p10jranmd1hh with the plan the coordinator approved; `tools/ci_watch.py`
+**See:** process.md#one-shared-ci-watcher-reads-the-pull-requests-own-newest-ci-run-never-the-commits-checks — 67edbcd8-634f-42c8-9a22-107dbe246bef — as of 2026-11-08
+**Revisit when:** the watcher gets an identity of its own (then `--inbox` changes, not the rule), the hub can deliver a message to a tool without a member identity, or the queue file is no longer needed on the machine
+
+`tools/ci_watch.py run --inbox <member id>` reads, on every pass, the project's messages to that member that come
+after the last one it read. It takes those whose whole text is `ciwatch <pr> <full head sha>`. The author is the
+message's sender as the hub records it (`from#from_instance`), never an address in the text. The pull request must
+be open with that SHA as its head; the line is then added as with `add`, and the sender gets one answer: added, or
+why not. Every other message gets no answer, and the watcher's own messages are never taken. The last message read
+is kept beside the queue; a first start begins after the newest message. The queue file stays for members on the
+machine. The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts under.
+
+**Reason:**
+- Members in a cloud session cannot reach the queue file on the shared machine. Until now someone on the machine
+  added their lines by hand, and a line written without an address was skipped.
+- The sender from the hub cannot be typed wrong or given for someone else, and a result goes back to the member
+  who asked.
+- Reading messages moves no read mark: `maity messages` acknowledges nothing, and the identity's `state.json`
+  was byte for byte the same before and after a call (2026-11-08). So the watcher can read the inbox of a member
+  whose `maity wait` runs at the same time, and that wait still gets every message.
+- One answer per `ciwatch` message, a cap of 50 per pass, and no answer to anything else or to its own messages:
+  the watcher cannot start a loop with itself or answer the inbox member's ordinary mail.
+
+**Limit:** the intake does not check that the sender wrote the pull request. Any member who can message the
+watcher can have any open head watched; the result goes to that member.
+
+**Rejected alternatives:**
+- The author named in the message text: anyone could direct results to someone else, and a typo loses them.
+- A shared file reachable from the cloud (a repository branch or a gist): a write path into the repository or an
+  outside service for a convenience, and the sender would again be whatever the line says.
+
 ## The guard tests run in one script before a review request, against the work tree's own hub
 
 **Id:** aced0267-da94-4245-9c71-bff08d2ff54e
