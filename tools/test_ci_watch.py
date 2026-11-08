@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import shutil
 import sys
@@ -339,8 +340,14 @@ class FakeMessages:
             found = [i for i in sorted(self.items, key=lambda i: i["seq"]) if i["seq"] > after]
         pages: list[list[dict[str, Any]]] = [[] for _ in range(self.gaps)]
         pages += [found[n : n + self.size] for n in range(0, len(found), self.size)] or [[]]
-        at = int(cursor or 0)
-        following = str(at + 1) if at + 1 < len(pages) else None
+        # As on the hub (§8.8), a cursor only works with the `after` it was handed out for.
+        at = 0
+        if cursor:
+            bound, _, index = cursor.partition(":")
+            if bound != str(after):
+                raise ci_watch.Transient("maity messages: invalid cursor")
+            at = int(index)
+        following = f"{after}:{at + 1}" if at + 1 < len(pages) else None
         return list(pages[at]), following
 
 
@@ -497,7 +504,7 @@ class IntakeTest(unittest.TestCase):
         self.assertIsNone(self.saved()["after"])
         self.intake(items, start=None, gaps=gaps)
         assert self.messages is not None
-        self.assertEqual(self.messages.calls[0], (None, str(ci_watch.PAGES_PER_PASS)))
+        self.assertEqual(self.messages.calls[0], (None, f"None:{ci_watch.PAGES_PER_PASS}"))
         self.assertIsNone(self.saved()["after"])
         self.intake(items, start=None, gaps=gaps)
         self.assertEqual(self.saved()["after"], 101)
@@ -515,6 +522,15 @@ class IntakeTest(unittest.TestCase):
         self.intake(items)
         self.intake(items, start=None)
         self.assertEqual(len(self.said), 1)
+
+    def test_a_resumed_read_skips_what_was_already_handled(self) -> None:
+        # Route: a resumed read starts at the pass's original `after` and meets handled items.
+        items = [message(101 + n, f"ciwatch 7 {SHA}") for n in range(3)]
+        saved = state(102)
+        saved["resume"] = [100, "100:0"]
+        ci_watch._save(self.queue, saved)
+        self.intake(items, start=None, size=1)
+        self.assertEqual([text[-13:] for _, text in self.said], ["(request 103)"])
 
     def test_an_endless_pull_request_number_is_no_request_and_stops_nothing(self) -> None:
         # Route: a number past Python's int-string limit made `int()` raise, every pass.
@@ -561,6 +577,19 @@ class IntakeTest(unittest.TestCase):
             self.intake(items, start=None, say=lost)
         self.assertEqual(self.said, [])
         self.assertEqual(self.saved()["outbox"], [])
+
+    def test_a_failed_answer_waits_for_a_pass_that_reads_to_the_end(self) -> None:
+        # Route: a pass that runs out of pages has not seen whether the answer was posted.
+        items = [message(102, f"ciwatch 7 {SHA}")]
+
+        def lost(author: str, text: str) -> None:
+            raise ci_watch.Transient("maity say: connection reset")
+
+        self.intake(items, say=lost)
+        self.intake(items, start=None, gaps=ci_watch.PAGES_PER_PASS + 2)
+        self.assertEqual(self.said, [])
+        self.intake(items, start=None, gaps=ci_watch.PAGES_PER_PASS + 2)
+        self.assertEqual(len(self.said), 1)
 
     def test_an_answer_posted_just_before_a_crash_is_not_said_again(self) -> None:
         # Route: `say` posted the answer and the process ended before anything was saved after.
@@ -652,6 +681,23 @@ class IntakeTest(unittest.TestCase):
             ci_watch._save(self.queue, state(200))
         self.assertEqual((self.tmp / "ciwatch.txt.intake").read_text(), before)
 
+    def test_a_state_file_with_a_field_of_the_wrong_shape_is_passing_trouble(self) -> None:
+        # Route: a valid `after` with a broken field crashed the watcher with a TypeError.
+        broken: tuple[dict[str, Any], ...] = (
+            {"outbox": 3},
+            {"tries": []},
+            {"resume": 7},
+            {"pass": "1"},
+            {"outbox": [{"to": "a#b"}]},
+        )
+        for change in broken:
+            with self.subTest(change):
+                (self.tmp / "ciwatch.txt.intake").write_text(json.dumps({**state(5), **change}))
+                with self.assertRaises(ci_watch.Transient) as caught:
+                    self.intake([message(101, f"ciwatch 7 {SHA}")], start=None)
+                self.assertIn("wrong shape", str(caught.exception))
+                self.assertEqual(self.said, [])
+
     def test_a_state_file_that_cannot_be_read_is_passing_trouble(self) -> None:
         # Route: an OSError on reading the state ended the runner before its queue pass.
         ci_watch._save(self.queue, state(100))
@@ -707,8 +753,19 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(len(self.messages.calls), ci_watch.PAGES_PER_PASS)
         self.assertEqual(self.said, [])
         self.intake(items, start=None, gaps=ci_watch.PAGES_PER_PASS + 2)
-        self.assertEqual(self.messages.calls[0], (100, str(ci_watch.PAGES_PER_PASS)))
+        self.assertEqual(self.messages.calls[0], (100, f"100:{ci_watch.PAGES_PER_PASS}"))
         self.assertEqual(len(self.said), 1)
+        self.assertIsNone(self.saved()["resume"])
+
+    def test_a_resumed_read_uses_the_cursor_with_the_after_it_was_handed_out_for(self) -> None:
+        # Route: resuming with the advanced `after` sends a cursor the hub calls invalid.
+        pages = ci_watch.PAGES_PER_PASS
+        items = [message(101 + n, f"ciwatch 7 {SHA}") for n in range(pages + 2)]
+        self.intake(items, size=1)
+        self.assertEqual(self.saved()["resume"], [100, f"100:{pages}"])
+        self.assertEqual(len(self.said), pages)
+        self.intake(items, start=None, size=1)
+        self.assertEqual(len(self.said), pages + 2)
         self.assertIsNone(self.saved()["resume"])
 
     def test_maity_messages_is_read_only(self) -> None:

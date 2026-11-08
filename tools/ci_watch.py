@@ -39,7 +39,8 @@ answers stays: if the hub changed the posted body and the response was lost, the
 misses it and the answer is said again. A pass reads at most five pages and answers at most 50
 requests; the next pass goes on from there. A first start begins after the newest message,
 following empty pages (across passes, from a saved continuation), and never takes older ones.
-An unreadable state file is logged every pass and the queue pass still runs. Reading
+An unreadable state file is logged every pass and the queue pass still runs. One `run` per
+queue: the state file is not locked against a second runner. Reading
 messages moves no read mark of the identity (`maity messages` acknowledges nothing), so a
 `maity wait` of the same identity still gets every message. But every read is a hub call, and
 every hub call is presence (docs/api.md §2.4): each pass marks the instance of the
@@ -331,7 +332,37 @@ def _load(queue: Path) -> dict[str, Any] | None:
     state.setdefault("resume", None)
     state.setdefault("tries", {})
     state.setdefault("outbox", [])
+    if not _well_formed(state):
+        raise Transient(f"{_intake_file(queue)}: a field has the wrong shape; fix or remove it")
     return state
+
+
+def _well_formed(state: dict[str, Any]) -> bool:
+    resume = state["resume"]
+    outbox = state["outbox"]
+    return (
+        isinstance(state["pass"], int)
+        and (
+            resume is None
+            or (
+                isinstance(resume, list)
+                and len(resume) == 2
+                and isinstance(resume[0], int)
+                and isinstance(resume[1], str)
+            )
+        )
+        and isinstance(state["tries"], dict)
+        and all(isinstance(n, int) for n in state["tries"].values())
+        and isinstance(outbox, list)
+        and all(
+            isinstance(a, dict)
+            and isinstance(a.get("to"), str)
+            and isinstance(a.get("text"), str)
+            and (a.get("failed") is None or isinstance(a.get("failed"), int))
+            and isinstance(a.get("tries", 0), int)
+            for a in outbox
+        )
+    )
 
 
 def _save(queue: Path, state: dict[str, Any]) -> None:
