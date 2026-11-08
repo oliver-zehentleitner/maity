@@ -1846,7 +1846,10 @@ saved in `<queue>.intake` before the answer is said. An answer whose `say` faile
 pass read the messages to the end without finding it, and given up after five failures (logged; that request then
 gets no answer). A request whose GitHub check fails five passes in a row is answered so and passed over. A pass
 reads at most five pages and answers at most 50 requests, and the next one goes on from there. A first start
-follows empty pages to the newest message and begins after it. The queue file stays for members on the machine.
+follows empty pages to the newest message, across passes from a saved continuation, and begins after it. An
+unreadable state file is logged every pass, and the queue pass still runs. One way to two answers stays: if the
+hub changed the posted body and the response was lost, the read-back misses it and the answer is said again. The
+queue file stays for members on the machine.
 The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts under.
 
 **Reason:**

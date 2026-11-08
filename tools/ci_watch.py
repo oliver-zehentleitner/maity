@@ -34,9 +34,12 @@ The decision, the answer and the last message read are saved in `<queue>.intake`
 answer is said. An answer whose `maity say` failed is said again only after a later pass read
 the messages to the end without finding it there (a `say` whose response got lost did post
 it), and given up after five failures, logged; then the request gets no answer. A request
-whose GitHub check fails five passes in a row is answered so and passed over. A pass reads at
-most five pages and answers at most 50 requests; the next pass goes on from there. A first
-start begins after the newest message, past empty pages, and never takes older ones. Reading
+whose GitHub check fails five passes in a row is answered so and passed over. One way to two
+answers stays: if the hub changed the posted body and the response was lost, the read-back
+misses it and the answer is said again. A pass reads at most five pages and answers at most 50
+requests; the next pass goes on from there. A first start begins after the newest message,
+following empty pages (across passes, from a saved continuation), and never takes older ones.
+An unreadable state file is logged every pass and the queue pass still runs. Reading
 messages moves no read mark of the identity (`maity messages` acknowledges nothing), so a
 `maity wait` of the same identity still gets every message. But every read is a hub call, and
 every hub call is presence (docs/api.md §2.4): each pass marks the instance of the
@@ -309,13 +312,20 @@ def _intake_file(queue: Path) -> Path:
 
 
 def _load(queue: Path) -> dict[str, Any] | None:
+    """The saved intake state; None before the first start. While the first start is still
+    looking for the newest message, `after` is None and `starting` holds its continuation."""
     try:
         state = json.loads(_intake_file(queue).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    except OSError as bad:
+        raise Transient(f"{_intake_file(queue)}: cannot be read ({bad.strerror})") from bad
     except ValueError as bad:
         raise Transient(f"{_intake_file(queue)}: not JSON; fix or remove it") from bad
-    if not isinstance(state, dict) or not isinstance(state.get("after"), int):
+    if not isinstance(state, dict):
+        raise Transient(f"{_intake_file(queue)}: not an object; fix or remove it")
+    starting = state.get("after") is None and isinstance(state.get("starting"), str)
+    if not starting and not isinstance(state.get("after"), int):
         raise Transient(f"{_intake_file(queue)}: no `after`; fix or remove it")
     state.setdefault("pass", 0)
     state.setdefault("resume", None)
@@ -338,16 +348,18 @@ def _seq(item: dict[str, object]) -> int:
     return seq
 
 
-def _newest(messages: Messages) -> int:
-    """The newest message's seq, following continuations past empty pages; 0 for none."""
-    cursor: str | None = None
+def _newest(messages: Messages, cursor: str | None) -> int | str:
+    """The newest message's seq (0 for none), following continuations past empty pages from
+    `cursor`; or, when the read budget runs out first, the continuation to go on from."""
     for _ in range(PAGES_PER_PASS):
-        items, cursor = messages(None, cursor)
+        items, following = messages(None, cursor)
         if items:
             return max(_seq(item) for item in items)
-        if not cursor:
+        if not following:
             return 0
-    raise Transient("intake: no newest message within the read budget")
+        cursor = following
+    assert cursor is not None
+    return cursor
 
 
 def _send(
@@ -422,10 +434,15 @@ def intake_pass(
     answer whose `say` failed is said again only after a later pass has read the messages to
     the end without finding it, since a `say` whose response was lost did post it."""
     state = _load(queue)
-    if state is None:
-        seq = _newest(messages)
-        _save(queue, {"after": seq, "pass": 0, "resume": None, "tries": {}, "outbox": []})
-        print(f"ci_watch: intake starts after message {seq}", file=log)
+    if state is None or state["after"] is None:
+        found = _newest(messages, state["starting"] if state else None)
+        if isinstance(found, str):
+            # Only empty pages so far: the next pass goes on from here, never from the top.
+            _save(queue, {"after": None, "starting": found})
+            print("ci_watch: intake still looking for the newest message", file=log)
+            return 0
+        _save(queue, {"after": found, "pass": 0, "resume": None, "tries": {}, "outbox": []})
+        print(f"ci_watch: intake starts after message {found}", file=log)
         return 0
     state["pass"] += 1
     for answer in state["outbox"]:
@@ -581,7 +598,8 @@ def main(argv: list[str] | None = None) -> int:
                     intake_pass(
                         args.queue, args.inbox, maity_messages, gh_get, maity_say, args.repo
                     )
-                except Transient as trouble:
+                except (Transient, OSError) as trouble:
+                    # Never stops the queue pass below: results still go out.
                     print(f"ci_watch: intake: {trouble}; tried again next pass", file=sys.stderr)
             run_pass(args.queue, gh_get, maity_say, args.repo)
             if args.once:

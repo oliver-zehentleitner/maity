@@ -489,6 +489,23 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(self.said, [])
         self.assertEqual(self.lines(), [])
 
+    def test_a_long_first_start_goes_on_across_passes_never_from_the_top(self) -> None:
+        # Route: more empty pages than one pass reads; each pass began again from the top.
+        items = [message(101, f"ciwatch 7 {SHA}")]
+        gaps = 2 * ci_watch.PAGES_PER_PASS + 2
+        self.intake(items, start=None, gaps=gaps)
+        self.assertIsNone(self.saved()["after"])
+        self.intake(items, start=None, gaps=gaps)
+        assert self.messages is not None
+        self.assertEqual(self.messages.calls[0], (None, str(ci_watch.PAGES_PER_PASS)))
+        self.assertIsNone(self.saved()["after"])
+        self.intake(items, start=None, gaps=gaps)
+        self.assertEqual(self.saved()["after"], 101)
+        self.assertEqual(self.said, [])
+        self.intake([*items, message(102, f"ciwatch 7 {SHA}")], start=None)
+        self.assertEqual(len(self.said), 1)
+        self.assertTrue(self.said[0][1].endswith("(request 102)"))
+
     def test_the_first_start_with_no_message_at_all_starts_at_zero(self) -> None:
         self.intake([], start=None)
         self.assertEqual(self.saved()["after"], 0)
@@ -634,6 +651,46 @@ class IntakeTest(unittest.TestCase):
         with killed, self.assertRaises(OSError):
             ci_watch._save(self.queue, state(200))
         self.assertEqual((self.tmp / "ciwatch.txt.intake").read_text(), before)
+
+    def test_a_state_file_that_cannot_be_read_is_passing_trouble(self) -> None:
+        # Route: an OSError on reading the state ended the runner before its queue pass.
+        ci_watch._save(self.queue, state(100))
+        denied = mock.patch.object(Path, "read_text", side_effect=PermissionError(13, "denied"))
+        with denied, self.assertRaises(ci_watch.Transient) as caught:
+            ci_watch._load(self.queue)
+        self.assertIn("ciwatch.txt.intake: cannot be read", str(caught.exception))
+
+    def test_trouble_in_the_intake_never_stops_the_queue_pass(self) -> None:
+        for trouble in (ci_watch.Transient("maity messages: offline"), PermissionError(13, "x")):
+            with self.subTest(type(trouble).__name__):
+                err = io.StringIO()
+                with (
+                    mock.patch.dict(os.environ, {"MAITY_STATE_DIR": "x"}),
+                    mock.patch.object(ci_watch, "intake_pass", side_effect=trouble),
+                    mock.patch.object(ci_watch, "run_pass") as queue_pass,
+                    contextlib.redirect_stderr(err),
+                ):
+                    code = ci_watch.main(["run", str(self.queue), "--once", "--inbox", INBOX])
+                self.assertEqual(code, 0)
+                queue_pass.assert_called_once()
+                self.assertIn("ci_watch: intake:", err.getvalue())
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
+    def test_main_runs_the_queue_pass_with_a_real_unreadable_state_file(self) -> None:
+        ci_watch._save(self.queue, state(100))
+        intake = self.tmp / "ciwatch.txt.intake"
+        intake.chmod(0)
+        self.addCleanup(intake.chmod, 0o600)
+        err = io.StringIO()
+        with (
+            mock.patch.dict(os.environ, {"MAITY_STATE_DIR": "x"}),
+            mock.patch.object(ci_watch, "run_pass") as queue_pass,
+            contextlib.redirect_stderr(err),
+        ):
+            code = ci_watch.main(["run", str(self.queue), "--once", "--inbox", INBOX])
+        self.assertEqual(code, 0)
+        queue_pass.assert_called_once()
+        self.assertIn("ciwatch.txt.intake: cannot be read", err.getvalue())
 
     def test_answers_per_pass_are_capped(self) -> None:
         items = [message(101 + n, f"ciwatch 7 {SHA}") for n in range(ci_watch.INTAKE_PER_PASS + 5)]
