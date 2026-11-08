@@ -12645,8 +12645,9 @@ The conversation view:
   shows a redacted message only as its tombstone (§8.5), never its body.
   The hub reads at most a budget of messages (2000) per stay and call,
   moving the read's end up to the newest message only once the read has
-  reached it: at any rate of new messages the read finishes and the nudge
-  comes, for a backlog of n messages about n / 2000 passes later.
+  reached it: at any rate of new messages or redactions the read finishes
+  and the nudge comes, for a backlog of n events in the chat about n / 2000
+  passes later.
 
   Bounded on purpose:
   - one wake per agent and chat per read cycle, never sooner than the delay
