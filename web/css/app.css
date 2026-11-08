@@ -1,6 +1,15 @@
 /* Maity dashboard. Light and dark through prefers-color-scheme; every
    colour is a token on :root. */
 
+/* The brand's faces, beside this file in css/fonts/ with their SIL OFL texts (copies of the
+   landing page's, hub/src/maity_hub/landing_assets/fonts/). Relative, so they load served from
+   /assets/css/ (same origin, `default-src 'self'`) and from file:// in fixture mode alike. */
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url("fonts/inter-600.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("fonts/inter-700.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 700; font-display: swap; src: url("fonts/space-grotesk-700.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400 500; font-display: swap; src: url("fonts/jetbrains-mono-500.woff2") format("woff2"); }
+
 :root {
   --bg: #f7f7f5;
   --surface: #ffffff;
@@ -19,8 +28,8 @@
   --route: #b54708; /* an event's route on Paths: 5.43:1 on --surface, 4.75:1 on --surface-2 (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
-  --flag-bg: #fff6dd;
-  --error-bg: #fde8e7;
+  --flag-bg: var(--warn-soft);
+  --error-bg: var(--bad-soft);
   /* A preferences diff (js/preferences.js): lines removed and added. */
   --diff-del-bg: #fde8e7;
   --diff-add-bg: #e3f4e8;
@@ -30,8 +39,27 @@
   --avatar-l: 40%;
   --radius: 8px;
   --gap: 16px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --display: "Space Grotesk", "Inter", system-ui, sans-serif; /* titles: h1, h2, panel and column heads */
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The design refresh (tsk-89mqceyxhbpv, step 1): soft grounds for states, a field edge,
+     spacing steps, radii and a shadow. Text on a soft ground is --text or the state's own
+     colour mixed a fifth of the way to --text (as --ktw-warn), never the bare state colour. */
+  --accent-soft: #e6effc;
+  --ok-soft: #e3f4e8;
+  --warn-soft: #fff6dd;
+  --bad-soft: #fde8e7;
+  --field: #8a939d; /* an input's edge: 3.2:1 on --surface, 3.0:1 on --bg (WCAG 1.4.11) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --r-card: 14px;
+  --r-field: 10px;
+  --r-pill: 999px;
+  --shadow: 0 1px 2px rgba(20, 24, 29, 0.04), 0 6px 18px rgba(20, 24, 29, 0.06);
 }
 
 /* Dark: by the system's choice unless this browser picked Light, or when it
@@ -56,13 +84,19 @@
     --route: #f79009;
     --warn: #d29922;
     --bad: #ff7b72;
-    --flag-bg: #2d2610;
-    --error-bg: #3a1716;
+    --flag-bg: var(--warn-soft);
+    --error-bg: var(--bad-soft);
     --diff-del-bg: #3a1716;
     --diff-add-bg: #14301d;
     --out-bg: #1b3050;
     --avatar-bg: #2a3138;
     --avatar-l: 66%;
+    --accent-soft: #17263f;
+    --ok-soft: #14301d;
+    --warn-soft: #2d2610;
+    --bad-soft: #3a1716;
+    --field: #6b747e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
   }
 }
 :root[data-theme="dark"] {
@@ -83,13 +117,19 @@
   --route: #f79009;
   --warn: #d29922;
   --bad: #ff7b72;
-  --flag-bg: #2d2610;
-  --error-bg: #3a1716;
+  --flag-bg: var(--warn-soft);
+  --error-bg: var(--bad-soft);
   --diff-del-bg: #3a1716;
   --diff-add-bg: #14301d;
   --out-bg: #1b3050;
   --avatar-bg: #2a3138;
   --avatar-l: 66%;
+  --accent-soft: #17263f;
+  --ok-soft: #14301d;
+  --warn-soft: #2d2610;
+  --bad-soft: #3a1716;
+  --field: #6b747e;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -165,6 +205,7 @@ body {
 
 a { color: var(--accent); }
 
+h1, h2 { font-family: var(--display); letter-spacing: -0.01em; }
 h2 { font-size: 1.25rem; margin: 0 0 12px; }
 h3 { font-size: 1rem; margin: 4px 0; }
 h4, h3.sub { font-size: 0.85rem; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -183,7 +224,7 @@ button, select, textarea, input {
 button {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-field);
   padding: 6px 12px;
   cursor: pointer;
 }
@@ -194,8 +235,8 @@ button.danger { color: var(--bad); }
 
 select, textarea, input {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--field);
+  border-radius: var(--r-field);
   padding: 6px 8px;
 }
 
@@ -372,10 +413,10 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .error:empty { display: none; }
 
 .flag {
-  background: var(--flag-bg);
+  background: var(--warn-soft);
   border-left: 3px solid var(--warn);
-  padding: 6px 10px;
-  border-radius: 4px;
+  padding: 8px 12px;
+  border-radius: var(--r-field);
 }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -487,8 +528,9 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .card, .profile {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  padding: var(--s3) 14px;
   min-width: 0;
 }
 
@@ -990,13 +1032,13 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
-.panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--radius); }
+.panel { display: grid; gap: 12px; margin: 8px 0; padding: var(--s3); background: var(--surface-2); border-radius: var(--r-card); }
 /* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
 .inline-form, .login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 /* The settings panel sits under the page's h1: its sections are h2, styled small. */
-.panel-title { margin: 0; font-size: 1rem; }
+.panel-title { margin: 0; font-size: 1rem; font-family: var(--display); }
 .panel-sub { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
 .inline-form button, .login button { justify-self: end; }
