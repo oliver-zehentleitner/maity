@@ -62,9 +62,13 @@ def commit_of(ref: str, cwd: Path) -> str | None:
 
 def changed_files(base: str, sha: str, cwd: Path) -> list[str]:
     """The paths as stored, NUL-separated: git's quoted display form of a name like `é.py`
-    would start with a quote and match no package."""
+    would start with a quote and match no package. Without rename detection, so a file moved
+    out of a package or project counts for both: the one it left can break as well."""
     out = subprocess.run(
-        ["git", "diff", "-z", "--name-only", base, sha], cwd=cwd, check=True, capture_output=True
+        ["git", "diff", "-z", "--no-renames", "--name-only", base, sha],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
     ).stdout
     return [name for name in out.decode("utf-8", "surrogateescape").split("\0") if name]
 
@@ -153,10 +157,19 @@ def installed(python: str) -> dict[str, str]:
     return dict(line.split(" ", 1) for line in out.stdout.splitlines())
 
 
+def committed(path: str, top: Path) -> str | None:
+    """`path` as HEAD has it, which is the pushed commit: an uncommitted edit of it is not what
+    CI will read."""
+    found = subprocess.run(
+        ["git", "show", f"HEAD:{path}"], cwd=top, check=False, capture_output=True, text=True
+    )
+    return found.stdout if found.returncode == 0 else None
+
+
 def ktw_ready(top: Path) -> str | None:
     """The ktw-lint to run, when it is the version CI pins; None after saying why not."""
-    workflow = top / KTW_WORKFLOW
-    pin = ktw_pin(workflow.read_text()) if workflow.exists() else None
+    workflow = committed(KTW_WORKFLOW, top)
+    pin = ktw_pin(workflow) if workflow is not None else None
     if pin is None:
         print(
             f"pre-push: no `# lint-vX` pin of the linter action in {KTW_WORKFLOW};"
@@ -273,7 +286,12 @@ def main(argv: Sequence[str], stdin: Iterable[str]) -> int:
             failed.append(f"lint or types in {package}")
     for project in projects:
         print(f"pre-push: ktw-lint {project}", file=sys.stderr, flush=True)
-        if subprocess.run([ktw_lint, project], check=False, cwd=top).returncode != 0:
+        try:
+            code = subprocess.run([ktw_lint, project], check=False, cwd=top).returncode
+        except OSError as error:  # gone or no longer runnable since its --version answered
+            print(f"pre-push: ktw-lint {project} could not run: {error}", file=sys.stderr)
+            code = 1
+        if code != 0:
             failed.append(f"ktw-lint {project}")
     if failed:
         print(

@@ -264,6 +264,44 @@ class PrePushTest(unittest.TestCase):
         self.assertIn("uncommitted changes in web/context, web/.keep-the-why", result.stderr)
         self.assertEqual(self.ran(), [])
 
+    def test_the_pin_is_read_from_the_pushed_commit_not_the_working_tree(self) -> None:
+        """Review R1 of #1508: an uncommitted edit of the workflow's pin chose the linter."""
+        sha = self.commit("docs/a.md")
+        workflow = self.repo / ".github" / "workflows" / "ktw-lint.yml"
+        workflow.write_text(WORKFLOW.replace(PIN, "0.20.3.0"))
+        result = self.push(f"refs/heads/b {sha} refs/heads/b {self.base}", KTW_VERSION="0.20.3.0")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("found ktw-lint 0.20.3.0", result.stderr)
+        self.assertIn(f"CI runs ktw-lint {PIN}", result.stderr)
+        self.assertEqual(self.ran(), [])
+
+    def test_a_file_moved_out_of_a_project_lints_the_project_it_left(self) -> None:
+        """Review R1 of #1508: with rename detection only the destination counted."""
+        (self.repo / "web" / "src").mkdir(parents=True)
+        self.git("mv", "hub/context/index.md", "web/src/hub-index.md")
+        self.git("commit", "-q", "-m", "move")
+        sha = self.git("rev-parse", "HEAD")
+        result = self.push(f"refs/heads/b {sha} refs/heads/b {self.base}", KTW_FAIL="hub")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("failed: ktw-lint hub.", result.stderr)
+        self.assertIn("ktw hub", self.ran())
+        self.assertIn("ktw web", self.ran())
+
+    def test_a_ktw_lint_that_vanishes_after_its_version_is_a_failure(self) -> None:
+        sha = self.commit("web/src/a.js")
+        vanishing = self.tmp / "vanishing"
+        vanishing.write_text(
+            f'#!/bin/sh\nif [ "$1" = --version ]; then echo "ktw-lint {PIN}"; rm -f "$0"; fi\n'
+        )
+        vanishing.chmod(0o755)
+        result = self.push(
+            f"refs/heads/b {sha} refs/heads/b {self.base}", MAITY_HOOK_KTW_LINT=str(vanishing)
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ktw-lint web could not run", result.stderr)
+        self.assertIn("failed: ktw-lint web.", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_a_new_branch_without_a_remote_main_checks_everything(self) -> None:
         self.git("update-ref", "-d", "refs/remotes/origin/main")
         sha = self.commit("docs/a.md")

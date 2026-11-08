@@ -1539,11 +1539,15 @@ matrix (`.`, `hub`, `cli`, `web`; a file outside the three packages belongs to t
 that job does (card tsk-nb0f9gq7qyrb, the same jour fixe, which asked for ktw-lint too). A change to a project's
 `context/` or `.keep-the-why` also lints its family: a child's the root, the root's every child, since CI checks a
 family link on both ends. The `ktw-lint` it runs (PATH, or `MAITY_HOOK_KTW_LINT`) must answer `--version` with
-the version of the `# lint-vX` comment on the action's pin in `.github/workflows/ktw-lint.yml`, which
+the version of the `# lint-vX` comment on the action's pin in `.github/workflows/ktw-lint.yml` as the pushed
+commit has it (an uncommitted edit of the workflow chooses nothing; review R1 of #1508), which
 `tools/ktw_pin.py` already holds to the context schema; otherwise the hook refuses before any check, naming
 both versions and `pipx install --force keep-the-why-lint==X`. It installs nothing and asks no network: the
 version comes from the file. A push that touches only `web/` or the root's files needs no hub environment. Its
-working-tree check covers each linted project's `context/` and `.keep-the-why`.
+working-tree check covers each linted project's `context/` and `.keep-the-why`. The pushed files are listed
+without rename detection (`--no-renames`), so a file moved out of a package or project counts for the one it
+left too, which can break by losing it (review R1 of #1508: a moved `hub/context/index.md` left hub's ktw-lint
+unrun).
 
 **Rejected alternatives:**
 - A hook that is on for everyone (installed by a setup step, or a check in CI that it is set): the card asked for
