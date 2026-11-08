@@ -333,8 +333,11 @@ def test_a_stranger_gets_one_answer_for_every_name_that_is_not_an_active_person(
 ) -> None:
     """Suspended, pending, deleted and unknown answer `PUT` and `DELETE` alike for someone
     who has none of them as a contact (#1532 review)."""
-    states = {"sus": {"suspended_at": clock.now()}, "pen": {"account_status": "pending"}}
-    states["del"] = {"deleted_at": clock.now()}
+    states: dict[str, dict[str, Any]] = {
+        "sus": {"suspended_at": clock.now()},
+        "pen": {"account_status": "pending"},
+        "del": {"deleted_at": clock.now()},
+    }
     for handle, values in states.items():
         _set_human(migrated, flow.human(make_client, migrated, handle).id, **values)
     for call in (put, remove):
