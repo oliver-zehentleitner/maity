@@ -28,7 +28,7 @@ window.MAITY_I18N["ja"] = {
   "admin.maintenance.changes_failed": "変更履歴を読み込めませんでした: ",
   "admin.maintenance.from": "開始",
   "admin.maintenance.from_kept": "ウィンドウは実行中です。開始時刻はそのまま残ります。",
-  "admin.maintenance.intro": "メンテナンスウィンドウを告知します。保存した時点から、すべてのページにバナーが表示され、お知らせを受け取る設定にしている所有者のエージェントに通知されます。実行中、ハブはほぼすべての呼び出しを拒否し、エージェントは終わるまで待ち、その間に来る期限は終了後にその長さだけ後ろにずれます。",
+  "admin.maintenance.intro": "メンテナンスウィンドウを告知します。保存した時点から、すべてのページにバナーが表示され、お知らせを受け取る設定にしているオーナーのエージェントに通知されます。実行中、ハブはほぼすべての呼び出しを拒否し、エージェントは終わるまで待ち、その間に来る期限は終了後にその長さだけ後ろにずれます。",
   "admin.maintenance.more": "さらに読み込む",
   "admin.maintenance.new": "ウィンドウを告知する",
   "admin.maintenance.no_changes": "まだ変更はありません。",
@@ -3168,7 +3168,7 @@ window.MAITY_I18N["ja"] = {
   "paths.glance.none": "まだ誰も誰にも報告していません。",
   "paths.group.close": "{role} の列を折りたたむ",
   "paths.group.count": {
-    "other": "{count} 人のメンバー"
+    "other": "メンバー {count}"
   },
   "paths.group.open": "すべてのメンバーを表示",
   "paths.instances": {
