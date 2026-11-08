@@ -3969,9 +3969,55 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     fsBtn().click(); await tick();
     fsBtn().click(); await tick();
     expect(!fsHtml.classList.contains("chat-full") && fsLog.join() === "push,back,push,push,back", "chat full screen: the button again ends it " + JSON.stringify(fsLog));
+    // While full, the page outside the chat is inert, and only what the full screen marked is set back (fmzu at #1525).
+    const fsPre = new El("div");
+    fsPre.setAttribute("inert", "");
+    body.appendChild(fsPre);
+    const fsInert = (el) => el.getAttribute("inert") != null;
+    const fsUp = [];
+    for (let el = fsPane; el && el !== body; el = el.parentNode) fsUp.push(el);
+    fsBtn().click(); await tick();
+    const fsCovered = [fsInert(header), fsInert(productLine), fsUp.some(fsInert), fsInert(fsPre)];
+    fsBtn().click(); await tick();
+    expect(JSON.stringify(fsCovered) === JSON.stringify([true, true, false, true]) && !fsInert(header) && !fsInert(productLine) && fsInert(fsPre),
+      "chat full screen: the page outside the chat is inert while full and set back after, what was inert before stays " + JSON.stringify(fsCovered));
+    fsPre.remove();
+    // A route change while full takes the layer's entry for the new address: no second stop at the chat (fmzu, e5kk at #1525).
+    const fsLoc = win.location.replace;
+    const fsRepl = [];
+    win.location.replace = function (h) { fsRepl.push(h); return fsLoc.call(this, h); };
+    fsBtn().click(); await tick();
+    const fsBefore = fsLog.length;
+    expect(typeof docListeners.click === "function", "chat full screen: in fixture mode a link watch while full");
+    let fsLinkPrevented = false;
+    const fsLink = { getAttribute: (k) => (k === "href" ? "#/maintainer/maity/chat" : null), hasAttribute: () => false };
+    docListeners.click({ defaultPrevented: false, button: 0, target: { closest: () => fsLink }, preventDefault() { fsLinkPrevented = true; } });
+    for (let k = 0; k < 4; k++) await tick();
+    expect(fsLinkPrevented && JSON.stringify(fsRepl) === JSON.stringify(["#/maintainer/maity/chat"]) && fsLog.length === fsBefore
+      && !fsHtml.classList.contains("chat-full") && !fsInert(header) && !docListeners.click,
+      "chat full screen: a link while full replaces the layer's entry, no push, no back, the full screen over " + JSON.stringify([fsRepl, fsLog.slice(fsBefore)]));
+    await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    fsBtn().click(); await tick();
+    const fsBefore2 = fsLog.length;
+    win.Maity.route.go("/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(fsRepl) === JSON.stringify(["#/maintainer/maity/chat", "#/maintainer/maity/inbox"]) && fsLog.length === fsBefore2
+      && !fsHtml.classList.contains("chat-full"), "chat full screen: go() while full replaces the layer's entry " + JSON.stringify([fsRepl, fsLog.slice(fsBefore2)]));
+    win.location.replace = fsLoc;
+    // Panes drawn are not held by the view's disposers: one hook, taken only on entering, whatever the panes (fmzu at #1525).
+    const fsHooks = [];
+    const fsCtx = { onDispose: (f) => fsHooks.push(f) };
+    const fsButtons = [];
+    for (let k = 0; k < 12; k++) fsButtons.push(win.Maity.chatParts.fullScreen(fsCtx, new El("section")));
+    const fsHooksDrawn = fsHooks.length;
+    fsButtons[0].click(); fsButtons[0].click(); fsButtons[5].click();
+    const fsHooksUsed = fsHooks.length;
+    fsHooks.forEach((f) => f());
+    expect(fsHooksDrawn === 0 && fsHooksUsed === 1 && !fsHtml.classList.contains("chat-full") && fsButtons[5].getAttribute("aria-pressed") === "false",
+      "chat full screen: twelve panes drawn add no disposer, entering adds one, and it ends the chat that is full " + JSON.stringify([fsHooksDrawn, fsHooksUsed]));
+    await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
     fsBtn().click(); await tick();
     await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
-    expect(!fsHtml.classList.contains("chat-full"), "chat full screen: another view ends it");
+    expect(!fsHtml.classList.contains("chat-full") && !fsInert(header), "chat full screen: another view ends it");
     win.history.pushState = fsWas.push; win.history.back = fsWas.back;
     await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
     // At phone width (the same request; §16.13): the product line is only "Maity 2026", a group chat
@@ -14311,6 +14357,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && rtNotHub.every(([drawn, route]) => !drawn && route),
     "route: a click on /explore or /for/<slug> is a page load, the address still a route; /explorer, /for and deeper paths are not those pages "
     + JSON.stringify(rtHub) + JSON.stringify(rtNotHub));
+  // A layer over the view (the full-screen chat) over http(s): its entry is taken by a route change,
+  // go() or a link, never left as a second stop at the same address (fmzu, e5kk at #1525).
+  rtWin.location.href = rtWin.location.pathname + rtWin.location.search;
+  rtWin.history.state = null;
+  const rtLayerClosed = [];
+  const rtLayer0 = rtPushed.length;
+  R.layer(() => rtLayerClosed.push("go"));
+  R.go("/maintainer/maity/board");
+  const rtGoEntries = rtPushed.slice(rtLayer0).map((x) => x[0]);
+  rtWin.location.href = rtWin.location.pathname + rtWin.location.search;
+  const rtLayer1 = rtPushed.length;
+  R.layer(() => rtLayerClosed.push("link"));
+  const rtLinkStayed = rtLink("/maintainer/maity/contract#s-6.8");
+  const rtLinkEntries = rtPushed.slice(rtLayer1).map((x) => x[0]);
+  const rtLayer2 = rtPushed.length;
+  R.go("/all");
+  expect(JSON.stringify(rtGoEntries) === JSON.stringify(["push", "replace"]) && JSON.stringify(rtLinkEntries) === JSON.stringify(["push", "replace"]) && rtLinkStayed
+    && JSON.stringify(rtLayerClosed) === JSON.stringify(["go", "link"]) && JSON.stringify(rtPushed.slice(rtLayer2).map((x) => x[0])) === JSON.stringify(["push"]),
+    "route: a route change with a layer open closes it and replaces its entry, by go() or a link to a place; without a layer go() pushes again "
+    + JSON.stringify([rtGoEntries, rtLinkEntries, rtLayerClosed]));
 
   checkFields("at the end");
   expect(HANDLE_FIELDS.every(([k]) => handleSeen.has(k)) && !handleBare.size,

@@ -451,11 +451,30 @@ window.Maity = window.Maity || {};
   // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
   // button again, with Escape (unless something open, a menu or the mention list, took it), with
   // the browser's back (a layer of the history, js/route.js), and when the chat leaves the page.
+  // One chat is full at a time; its end is kept here, so a pane drawn is never held by the view's
+  // disposers (Chats replaces panes without disposing the view, fmzu at #1525).
+  let fullEnd = null; // the full chat's end, while one is full
+  let fullHooked = false; // the view's disposers hold endFull once, until they run
+  const endFull = () => { fullHooked = false; if (fullEnd) fullEnd(false); };
+  // While full, everything outside the chat is inert: the page under it can take no focus and is
+  // not read (fmzu at #1525). Only what this marks is set back; what was inert before stays.
+  function coverRest(pane) {
+    const marked = [];
+    for (let el = pane; el && el.parentNode && el !== document.body; el = el.parentNode) {
+      Array.from(el.parentNode.childNodes).forEach((sib) => {
+        if (sib === el || !sib.setAttribute || sib.getAttribute("inert") != null) return;
+        sib.setAttribute("inert", "");
+        marked.push(sib);
+      });
+    }
+    return () => marked.forEach((sib) => sib.removeAttribute("inert"));
+  }
   function fullScreen(ctx, pane) {
     const root = document.documentElement;
     const button = h("button", { type: "button", class: "icon-button chat-full-toggle" });
     let held = null; // the history layer while full
     let watch = null;
+    let uncover = null;
     const isFull = () => held !== null;
     const label = () => {
       const text = isFull() ? M.t("chat.full.leave") : M.t("chat.full.enter");
@@ -477,8 +496,10 @@ window.Maity = window.Maity || {};
       if (!isFull()) return;
       const layer = held;
       held = null;
+      if (fullEnd === end) fullEnd = null;
       root.classList.toggle("chat-full", false);
       pane.classList.toggle("chat-full-pane", false);
+      if (uncover) { uncover(); uncover = null; }
       document.removeEventListener("keydown", onKey);
       if (watch) { watch.disconnect(); watch = null; }
       if (back) layer.back(); else layer.drop();
@@ -486,9 +507,13 @@ window.Maity = window.Maity || {};
     }
     button.addEventListener("click", () => {
       if (isFull()) { end(true); return; }
+      if (fullEnd) fullEnd(false);
       held = M.route.layer(() => end(false));
+      fullEnd = end;
+      if (!fullHooked && ctx.onDispose) { fullHooked = true; ctx.onDispose(endFull); }
       root.classList.toggle("chat-full", true);
       pane.classList.toggle("chat-full-pane", true);
+      uncover = coverRest(pane);
       document.addEventListener("keydown", onKey);
       // Chats replaces a pane in place: the one that left takes the full screen with it.
       if (window.MutationObserver && pane.parentNode) {
@@ -497,7 +522,6 @@ window.Maity = window.Maity || {};
       }
       label();
     });
-    if (ctx.onDispose) ctx.onDispose(() => end(false));
     label();
     return button;
   }

@@ -2984,6 +2984,7 @@ def chat_phone_views(run: Run, browser) -> None:
                 if width == 390:
                     run.shot(page, f"chat-full-{scheme}")
                     run.a11y(page, f"chat full screen, {scheme} system theme")
+                    page.set_viewport_size({"width": width, "height": height})  # a11y ends at 1280x900
                 page.keyboard.press("Escape")
                 expect(pane.get_by_role("button", name="Read in full screen", exact=True)).to_have_attribute("aria-pressed", "false")
                 expect(page.locator("html.chat-full")).to_have_count(0)
@@ -2993,6 +2994,32 @@ def chat_phone_views(run: Run, browser) -> None:
                 expect(page.locator("html.chat-full")).to_have_count(0)
                 same = page.evaluate("() => window.__drawn === document.querySelector('.chat-pane.group-chat') && window.__drawn.isConnected")
                 assert same, f"{where}: back drew the chat again"
+                # While full, Tab never reaches the covered page (fmzu at #1525): the rest is inert.
+                toggle.click()
+                expect(page.locator("html.chat-full")).to_have_count(1)
+                outside = []
+                for _ in range(40):
+                    page.keyboard.press("Tab")
+                    at = page.evaluate("() => { const el = document.activeElement; const pane = document.querySelector('.chat-pane.group-chat');"
+                                       " return !el || el === document.body || pane.contains(el) ? '' : el.tagName + '.' + el.className; }")
+                    if at:
+                        outside.append(at)
+                assert not outside, f"{where}: Tab left the full-screen chat for {outside[:3]}"
+                page.keyboard.press("Escape")
+                expect(page.locator("html.chat-full")).to_have_count(0)
+                # Leaving by a link while full (Back to the list on a phone) takes the layer's entry: one Back
+                # returns to the chat, not to a second stop at it (fmzu, e5kk at #1525).
+                if width <= 720:
+                    toggle.click()
+                    expect(page.locator("html.chat-full")).to_have_count(1)
+                    stops = page.evaluate("() => history.length")
+                    pane.locator("a.chat-back").click()
+                    expect(page).to_have_url(re.compile(r"#/maintainer/maity/chat$"))
+                    expect(page.locator("html.chat-full")).to_have_count(0)
+                    assert page.evaluate("() => history.length") == stops, f"{where}: leaving by a link left the layer's entry behind"
+                    page.go_back()
+                    expect(page).to_have_url(re.compile(r"#/maintainer/maity/chat/cnv-0007$"))
+                    expect(page.locator("html.chat-full")).to_have_count(0)
                 assert not errors, f"{where}: {errors}"
             finally:
                 context.close()

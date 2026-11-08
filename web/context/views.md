@@ -3998,7 +3998,9 @@ The full screen ends:
 - with the browser's back;
 - when the chat leaves the page: another view, or Chats putting another pane in its place.
 
-Back works through `M.route.layer` (js/route.js). Entering pushes one history entry at the same address. Back from it only closes the layer: the router does not draw the view again, so the history, its scroll position and a draft stay as they were. The button and Escape leave that entry with a `history.back()` of their own, so no extra entry is left behind.
+Back works through `M.route.layer` (js/route.js). Entering pushes one history entry at the same address. Back from it only closes the layer: the router does not draw the view again, so the history, its scroll position and a draft stay as they were. The button and Escape leave that entry with a `history.back()` of their own, so no extra entry is left behind. A route change while it is full (a link in the chat, Back to the list, `go()`) closes the layer and takes its entry for the new address (`replaceState`, in fixture mode `location.replace`). Back from there returns to the chat once, not twice.
+
+While full, everything outside the chat is `inert`: no focus reaches the covered page, and a reader does not read it. Only what the full screen marked is set back when it ends. The full chat's end is kept once in `js/chat.js`, not per pane: Chats swaps panes without disposing the view, and a closure per drawn pane would hold every pane visited until Chats is left.
 
 **Reason:** on a phone the room above and below the messages is what makes a chat readable. The three things the owner named take that room and carry nothing the reader needs there: the product line's other parts, the participants (also under Manage) and the composer's hint. The full screen is for reading; on a phone it is the only way to see more than a few messages. Back is how a phone leaves anything that covers the page, so it must end the full screen and nothing more.
 
@@ -4020,13 +4022,14 @@ Back works through `M.route.layer` (js/route.js). Entering pushes one history en
 
 The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is the first item of the header's "+" menu (Project, then Agent and User), which is named "Add a project, an agent or a person". The empty state's Create a project stays.
 
-While a tab is dragged, the tab under the pointer shows a 3 px line in the accent colour: at its start when the pointer is on its first half, at its end on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is an inset `box-shadow`, so nothing in the row moves.
+While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
 
 **Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
 
 **Rejected alternatives:**
 - New project as an item of the tabs menu: that menu is about the tabs, not about creating.
 - The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
+- An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 

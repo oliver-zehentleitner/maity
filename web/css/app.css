@@ -1972,7 +1972,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
 
 /* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
-   never sticky, small and muted; at phone width it wraps between its parts, never sideways. */
+   never sticky, small and muted; wider than phone width it wraps between its parts, never sideways. */
 .product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
   padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .product-line:empty { display: none; }

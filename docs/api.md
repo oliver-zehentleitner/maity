@@ -18844,9 +18844,10 @@ without the frame (a failed `GET /site/chrome`, a model without header
 or footer, a maintenance window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
-fixed, so it takes no room on a phone. Small and muted. At phone width it
-stays one line where it fits and wraps between its parts where a
-language is longer, never scrolling sideways.
+fixed, so it takes no room on a phone. Small and muted. Wider than phone
+width it stays one line where it fits and wraps between its parts where a
+language is longer; at phone width it is only its first part (above).
+Never scrolling sideways.
 
 **Beyond the decision.** The card leaves these open, and the contract
 settles them: the line is centred, the year's icon is decorative, the
