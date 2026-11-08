@@ -1150,25 +1150,74 @@ interim of one morning, while one vendor was out of quota.
   reviewers are back, and a third vendor's view is wanted on every pull
   request.
 
+## Fixes after a review are pushed as one bundle once the round's reviews are in; an exception only on the lead's word
+
+**Id:** cbfbec23-8ed4-4c5b-b552-271b3ef32962
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r8, adopted by the maintainer as req-tz2hgtmfkd42); card tsk-2ehaantapkj2; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; the three-vendor rule in this file (c73e26c4); `CONTRIBUTING.md` ("During a review and in a stack")
+**Revisit when:** the number of reviews per round changes, or the lead's exceptions become the rule
+
+The jour fixe adopted "Nachbesserungen gebündelt pushen, nachdem beide Reviews da sind" (push the fixes as
+one bundle after both reviews are in), with "Ausnahme nur auf Wort des Leads, wie bei #1256" (an exception
+only on the lead's word, as with #1256). "Both" was written while two reviewer vendors reviewed; since the
+three-vendor rule of the same jour fixe (c73e26c4, above), it means all reviews of the round.
+
+**Reason:** not recorded with the decision beyond its exception.
+
+**Alternatives:** none recorded.
+
+## A stacked pull request takes main in by a merge after the lower one is squash-merged, not by a rebase
+
+**Id:** c6288a7b-5cfe-4e7e-a08f-aeabc413bf7c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** owner request req-8m0ja218geax, adopted by the maintainer on 2026-11-03 (not a jour fixe proposal), its text verbatim in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; `CONTRIBUTING.md` ("During a review and in a stack")
+**Revisit when:** pull requests are merged other than by squash
+
+The maintainer adopted "Gestapelte PRs nach dem Squash des unteren: main hineinmergen statt rebasen?" (stacked
+pull requests after the lower one's squash: merge main in instead of rebasing?), with its proposal "immer der
+Merge-Weg, festgehalten in `context/process.md`" (always the merge way, recorded in `context/process.md`).
+
+**Reason:** "Manchmal baut ein PR auf einem anderen auf (etwa #1278 auf #1276). Wir mergen per Squash, der
+untere PR landet als ein neuer Commit auf main. Der obere enthält aber noch dessen alte Einzelcommits." (Sometimes
+one pull request builds on another, for instance #1278 on #1276. We merge by squash, so the lower one lands on
+main as one new commit, but the upper one still holds its old single commits.) "Rebase (eigene Commits neu auf
+main setzen) ging heute einmal schief und brauchte einen zweiten Anlauf. Ein Merge von main in den oberen PR funktioniert ohne das; beim Merge auf main wird ohnehin gesquasht,
+die Historie bleibt sauber." (A rebase, putting one's own commits anew on main, went wrong once that day and
+needed a second attempt. A merge of main into the upper pull request works without that; the merge to main is
+squashed anyway, so the history stays clean.)
+
+**Rejected alternatives:**
+- "jeder Coder wählt selbst" (each coder chooses), the request's reject option.
+- A rebase: the reason above.
+
 ## The review lead's team hands out every review
 
 **Id:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Type:** decision
 **Status:** active
 **Evidence:** unknown
-**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04; the review order's form, member and instance, from the jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r7, adopted by the maintainer as req-3hp7vjqa4yvz), card tsk-wer0fdvfmdss; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb
 **Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
 
 A coder sends a review request, with the base and head SHAs in full, to
-the review lead and to nobody else. The review lead's team picks the
+the review lead and to nobody else. A review order names the reviewer by
+member and instance (`handle#instance`) and gives the base and the new
+head in full; the jour fixe adopted it as "Review-Aufträge nennen Mitglied
+und Instanz, Basis- und neuen Head voll" (review orders name member and
+instance, the base and the new head in full), with the reason "Spart
+Nachsenden und Verwechslungen" (it saves resending and mix-ups). The review lead's team picks the
 reviewer of each vendor, orders the reviews and delta reviews, checks
 the results, and collects the minor findings (P3) for the area's
 collection card. Merges, deploys and cards stay with the lead.
 
-The rule itself is confirmed by these sources; its reason is not, so
-the entry's Evidence is the weaker grade.
+The rule itself is confirmed by these sources; a reason is recorded only
+for the order's form, so the entry's Evidence is the weaker grade.
 
-**Reason:** unknown — not recorded with the rule.
+**Reason:** for the form of a review order, the jour fixe's (above); for the rest of the rule, unknown — not recorded with it.
 
 **Alternatives:** none recorded. Before 2026-11-02 the coordinator
 gave the order of the reviews (8ba32bfa, for a returning reviewer); why
@@ -1250,6 +1299,24 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
+
+**Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r3, adopted by the maintainer as req-gec2x1vgxrpx); card tsk-kr6f8w50r0cb; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on that card
+**Revisit when:** a limit is set, or the job timeouts above end hangs early enough on their own
+
+The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit fester Frist" (the right to
+cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
+open. The job timeouts above (97f338fd) stay.
+
+**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
+depends on a human; the approval has to come from Oliver).
+
+**Alternatives:** none recorded.
 
 ## hub-postgresql prints every thread's stack when a test runs longer than 300 seconds
 
