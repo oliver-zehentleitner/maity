@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select, update
 
-from maity_hub import events, idempotency, policy, project_roles, rules
+from maity_hub import events, guide, idempotency, policy, project_roles, rules
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of
@@ -41,7 +41,9 @@ def read_roles(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).connect() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(project_roles.view(mine.project))
+        return JSONResponse(
+            {"builtin": guide.builtin(mine.project), **project_roles.view(mine.project)}
+        )
 
 
 @router.put("/projects/{owner}/{slug}/roles")

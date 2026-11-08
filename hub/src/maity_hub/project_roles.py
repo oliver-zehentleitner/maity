@@ -49,7 +49,8 @@ def on_base(project: Any, base: str) -> list[str]:
 
 
 def view(project: Any) -> dict[str, Any]:
-    """`GET …/roles`: `{custom: [{name, base, description, guide, guide_by}]}`."""
+    """The `custom` half of `GET …/roles`: `{custom: [{name, base, description, guide,
+    guide_by}]}`; the built-in roles are `guide.builtin`."""
     return {"custom": of(project)}
 
 
