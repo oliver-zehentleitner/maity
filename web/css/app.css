@@ -359,12 +359,22 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
    right, behind a separator, the project's state and absence; on a narrow
    screen that block goes under the chips. */
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
-.switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
+/* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
+   a project's state keeps the far end of the row. */
+.switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
 /* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
 .tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
 .tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }
 .switcher a[draggable="true"] { cursor: grab; }
-.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; }
+/* Where a dragged tab will go: an upright line in the gap before or after the tab under it (js/app.js
+   dragTab). Placed absolutely, it moves nothing; the row keeps room for the line after its last tab. */
+.switcher a[draggable="true"] { position: relative; }
+.switcher a.drop-before::before, .switcher a.drop-after::after { content: ""; position: absolute; top: 2px; bottom: 2px; width: 3px;
+  border-radius: 2px; background: var(--accent); pointer-events: none; }
+.switcher a.drop-before::before { inset-inline-start: -5px; }
+.switcher a.drop-after::after { inset-inline-end: -5px; }
+.switcher-row nav.switcher { padding-inline-end: 6px; }
+.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; margin-inline-start: auto; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -964,6 +974,12 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .chat-layout.open .chat-pane .messages { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
 .chat-layout.open .chat-pane .compose { flex: none; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
+/* Full screen (js/chat.js fullScreen, tsk-fnch2yxp2kk1): the open chat covers the window, over the
+   header, the list and the product line, on the page's own ground; the page under it does not
+   scroll. Its column is the window's height, whatever --chat-h says for the page. */
+html.chat-full body { overflow: hidden; }
+html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 20; height: 100dvh; margin: 0;
+  padding: 8px 12px; box-sizing: border-box; background: var(--bg); }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
 /* The pane being left, until the next one is drawn. */
@@ -1165,7 +1181,6 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .button-link:hover { border-color: var(--accent); }
 .message-form textarea { width: 100%; }
 a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text); text-decoration: none; }
-.switcher .new-project { color: var(--muted); }
 .reply.later { color: var(--muted); }
 .notice:empty { display: none; }
 
@@ -1192,6 +1207,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .compose > button, .compose-actions > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
   .release-edit .row > button, .pause > button, .runner-actions > button, .runner-actions .rename { flex: 1 1 100%; justify-self: stretch; }
   .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
+  /* A group chat on a phone (the owner's request, tsk-fnch2yxp2kk1): no "In it: …" line over the
+     messages, and the composer's label, which names the field, is read out but not shown. */
+  .group-people-line { display: none; }
+  .group-chat .compose-head > label[for="chat-text"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* No keys to press on a phone, mostly: the hint goes, the button is laid out as it was. */
   .compose-actions { flex-wrap: wrap; }
   /* On a phone the composer folds away for reading; the 2× or 3× chosen on a
@@ -1958,18 +1977,21 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
 
 /* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
-   never sticky, small and muted; at phone width it wraps between its parts, never sideways. */
+   never sticky, small and muted; wider than phone width it wraps between its parts, never sideways. */
 .product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
   padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .product-line:empty { display: none; }
-/* At phone width the credit right after the year wraps the line onto one more row: less padding
-   above and below keeps the group chat inside the window at 390 x 844. The links keep their
-   24 px targets. */
-@media (max-width: 600px) { .product-line { padding-top: 8px; padding-bottom: 12px; } }
+/* At phone width the line is only its first part, "Maity 2026" (§16.13; the owner's request,
+   tsk-fnch2yxp2kk1): the rest wrapped it over three rows. Less padding above and below keeps
+   the group chat inside the window at 390 x 844. */
+@media (max-width: 600px) {
+  .product-line { padding-top: 8px; padding-bottom: 12px; }
+  .product-line > .product-sep, .product-line > .product-part ~ .product-part { display: none; }
+}
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
 /* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line
-   wraps at phone width, whatever stands on the row above or below it. */
+   wraps between its parts, wider than phone width, whatever stands on the row above or below it. */
 .product-line a { color: inherit; display: inline-flex; align-items: center; min-height: 24px; }
 .product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
 .product-icon { justify-content: center; min-width: 24px; border-radius: 3px; }

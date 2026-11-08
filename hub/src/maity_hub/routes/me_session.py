@@ -742,7 +742,7 @@ def _setup_block(conn: Connection, project: Any) -> dict[str, Any]:
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
     """§5.2: what I asked and is open, what was answered since my cursor, what I may answer."""
     from maity_hub import inbox
-    from maity_hub.routes.requests import request_view
+    from maity_hub.routes.requests import request_views
 
     if mine.row.isolated_since is not None:  # no request reaches an isolated agent (§6.2)
         return {"mine_open": [], "answered_since_cursor": [], "to_answer": [], "truncated": False}
@@ -777,9 +777,9 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     ]
     # Bounded like the rest of the packet (§5.2): an admin may answer everything open.
     return {
-        "mine_open": [request_view(conn, r) for r in mine_open[:PACKET_REQUESTS]],
-        "answered_since_cursor": [request_view(conn, r) for r in answered[-PACKET_REQUESTS:]],
-        "to_answer": [request_view(conn, r) for r in to_answer[:PACKET_REQUESTS]],
+        "mine_open": request_views(conn, mine_open[:PACKET_REQUESTS]),
+        "answered_since_cursor": request_views(conn, answered[-PACKET_REQUESTS:]),
+        "to_answer": request_views(conn, to_answer[:PACKET_REQUESTS]),
         "truncated": any(len(x) > PACKET_REQUESTS for x in (mine_open, answered, to_answer)),
     }
 
