@@ -3759,9 +3759,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
   await go("#/maintainer/maity/chat");
-  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.textContent === "Message the project");
+  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.getAttribute("aria-label") === "Message the project");
   expect(msgLink && msgLink.getAttribute("href") === "#/maintainer/maity/message"
     && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the Chat tab, no tab");
+  // tsk-qgy2tb3w3x93: both actions are icons in the heading's row; their text is the name and the tooltip, nothing shown.
+  const gcIcons = main.querySelector(".chat-list-pane .toolbar").querySelectorAll("a.icon-button");
+  expect(gcIcons.length === 2 && gcIcons.map((a) => a.getAttribute("aria-label")).join("|") === "New group chat|Message the project"
+    && gcIcons.every((a) => a.getAttribute("title") === a.getAttribute("aria-label") && a.textContent.trim() === ""
+      && a.querySelector("svg") && a.querySelector("svg").getAttribute("aria-hidden") === "true"
+      && a.querySelector("svg path").getAttribute("fill-rule") === "evenodd"),
+    "chat list: New group chat and Message the project are icon links named by their text, with it as the tooltip");
   const msgPosts = [];
   const mPost0 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };
@@ -4249,6 +4256,148 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await asked.i18n.ready;
     expect(asked.i18n.language === "de" && asked.i18n.explicit() === "de" && !("maity.language" in asked.kept),
       "language: ?lang= is the visitor's choice, and nothing is stored for it");
+  }
+  // Before sign-in the page takes the landing page's own language, from GET /site/chrome
+  // (tsk-jh94ax9pphxs): the hub chooses it from the raw ?lang=, Accept-Language, the landing
+  // page's languages and its default_language. js/i18n.js afresh on a public host, with a hub
+  // that answers the frame as a landing page with these pages and this default would.
+  {
+    const TEN = ["en", "de", "fr", "es", "pt", "it", "nl", "ja", "ko", "zh-Hans"];
+    const hubPage = (pages, fallback, languages) => (asked) => {
+      if (asked !== null && pages.includes(asked)) return asked;  // ?lang= only as an exact page
+      for (const tag of languages) { const found = pages.find((p) => p === tag || p === tag.split("-")[0]); if (found) return found; }
+      return fallback;
+    };
+    const visitor = ({ search = "", languages = ["en-US"], answer, protocol = "https:" }) => {
+      const asked = [];
+      const timers = [];
+      const page = {
+        MAITY_I18N: Object.fromEntries(TEN.map((t) => [t, {}])), MAITY_I18N_LANGUAGES: TEN,
+        location: { search, protocol }, navigator: { languages },
+        localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+        document: { documentElement: { lang: "" }, baseURI: "https://hub.example/", currentScript: null },
+        setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; },
+        clearTimeout: (t) => clearTimeout(t),
+        AbortController, URLSearchParams, URL, Intl, Promise, Object, console,
+      };
+      page.window = page;
+      page.Maity = { api: { get: (path, opts) => {
+        asked.push(path);
+        const raw = new URLSearchParams(path.split("?")[1] || "").get("lang");
+        return answer(raw, opts, path);
+      } } };
+      vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
+      return { i18n: page.Maity.i18n, asked, page };
+    };
+    const frame = (pick) => (raw) => Promise.resolve({ language: pick(raw), header: {}, footer: {} });
+
+    // 1. default_language de, a browser that asks only for sv: the landing page's de.
+    const sv = visitor({ languages: ["sv"], answer: frame(hubPage(["de", "en"], "de", ["sv"])) });
+    await sv.i18n.follow(null);
+    expect(sv.i18n.language === "de" && JSON.stringify(sv.asked) === '["/site/chrome"]',
+      "visitor language: default_language de and a browser asking for sv read de, as the landing page " + sv.i18n.language);
+    // 2. Pages only in en and fr, a browser asking for de: the landing page's en, though de has a catalog.
+    const de = visitor({ languages: ["de"], answer: frame(hubPage(["en", "fr"], "en", ["de"])) });
+    await de.i18n.follow(null);
+    const deFr = visitor({ languages: ["de", "fr"], answer: frame(hubPage(["en", "fr"], "en", ["de", "fr"])) });
+    await deFr.i18n.follow(null);
+    expect(de.i18n.language === "en" && deFr.i18n.language === "fr",
+      "visitor language: pages en and fr, a browser asking for de reads en, one asking for de, fr reads fr " + [de.i18n.language, deFr.i18n.language]);
+    // 3. A non-exact ?lang= goes to the hub as written; the landing page ignores it, so does the page.
+    const deAt = visitor({ search: "?lang=de-AT", languages: ["en-US"], answer: frame(hubPage(TEN, "en", ["en-US"])) });
+    await deAt.i18n.follow(null);
+    expect(deAt.i18n.language === "en" && JSON.stringify(deAt.asked) === '["/site/chrome?lang=de-AT"]',
+      "visitor language: ?lang=de-AT is asked as written and read as the landing page reads it " + deAt.asked);
+    expect(deAt.i18n.explicit() === null, "visitor language: an overridden ?lang=de-AT is no account choice either");
+    // An unknown ?lang=xx: the hub ignores it, so does the page, and it is no choice to store.
+    const xx = visitor({ search: "?lang=xx", languages: ["de"], answer: frame(hubPage(["en", "fr"], "en", ["de"])) });
+    await xx.i18n.follow(null);
+    expect(xx.i18n.language === "en" && xx.i18n.explicit() === null && JSON.stringify(xx.asked) === '["/site/chrome?lang=xx"]',
+      "visitor language: ?lang=xx with a frame reads the landing page's en and stores nothing " + [xx.i18n.language, xx.i18n.explicit()]);
+    // 4. A reload with ?lang= the landing page has no page in follows the frame, the address unchanged.
+    const ko = visitor({ search: "?lang=ko", languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await ko.i18n.follow(null);
+    expect(ko.i18n.language === "en" && ko.i18n.explicit() === null,
+      "visitor language: a reload with ?lang=ko and no ko page follows the landing page; the address still says ko, and registration stores no ko");
+    // Where the landing page has the page, ?lang= stays the person's choice for the account.
+    const fr = visitor({ search: "?lang=fr", languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await fr.i18n.follow(null);
+    expect(fr.i18n.language === "fr" && fr.i18n.explicit() === "fr", "visitor language: ?lang=fr with a fr page is shown and stays the person's choice");
+    // A signed-in account decides, without a read.
+    const own = visitor({ languages: ["sv"], answer: frame(() => "de") });
+    await own.i18n.follow("fr");
+    expect(own.i18n.language === "fr" && own.asked.length === 0, "visitor language: an account's interface_language decides, no frame read");
+    // Signed in without an interface_language (the session read answered 200): the browser's
+    // rule, as for an account before #1474, and no frame read.
+    const unset = visitor({ languages: ["en-US"], answer: frame(() => "de") });
+    await unset.i18n.follow(null, true);
+    const unsetChanged = await unset.i18n.frame("de");
+    expect(unset.i18n.language === "en" && unset.asked.length === 0 && unsetChanged === false,
+      "visitor language: a signed-in account without interface_language keeps the browser's rule, no frame read " + [unset.i18n.language, unset.asked]);
+    // A newer address with a ?lang= that has no catalog here ends a pick made on the page.
+    const sv2 = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await sv2.i18n.follow(null);
+    await sv2.i18n.choose("de");
+    sv2.page.location.search = "?lang=sv";
+    await sv2.i18n.follow(null);
+    expect(sv2.i18n.language === "en", "visitor language: a newer ?lang=sv ends the pick, the frame decides " + sv2.i18n.language);
+    // Arrived with ?lang=de, then a route without ?lang= (a link to /login): the page's ?lang=
+    // stays, read from the same address, so nothing flips back.
+    const routed = visitor({ search: "?lang=de", languages: ["en-US"], answer: frame(hubPage(["en", "de"], "en", ["en-US"])) });
+    await routed.i18n.follow(null);
+    routed.page.location.search = "";
+    await routed.i18n.follow(null);
+    expect(routed.i18n.language === "de" && JSON.stringify(routed.asked) === '["/site/chrome?lang=de"]',
+      "visitor language: a route without ?lang= after ?lang=de keeps de and reads the same address " + [routed.i18n.language, routed.asked]);
+    // A newer ?lang=de-AT after a pick of de ends the pick too (a raw value other than the pick's).
+    const deAt2 = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await deAt2.i18n.follow(null);
+    await deAt2.i18n.choose("de");
+    deAt2.page.location.search = "?lang=de";
+    await deAt2.i18n.follow(null);
+    const keptOwn = deAt2.i18n.language;
+    deAt2.page.location.search = "?lang=de-AT";
+    await deAt2.i18n.follow(null);
+    expect(keptOwn === "de" && deAt2.i18n.language === "en",
+      "visitor language: the pick's own ?lang=de keeps it, a newer ?lang=de-AT ends it " + [keptOwn, deAt2.i18n.language]);
+    // Read once per page and address, however often the session answers 401.
+    await sv.i18n.follow(null);
+    expect(sv.asked.length === 1, "visitor language: the frame is read once per page");
+    // A choice made on the page holds for the page's life, also against the frame.
+    const picked = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
+    await picked.i18n.follow(null);
+    await picked.i18n.choose("ko");
+    await picked.i18n.follow(null);
+    const pickedChanged = await picked.i18n.frame("en");
+    expect(picked.i18n.language === "ko" && pickedChanged === false, "visitor language: a pick on the page holds against the frame");
+    expect(picked.i18n.explicit() === "ko", "visitor language: a pick that holds against the frame is the person's choice for the account");
+    // The frame's own read draws the page again once where it differs, never where it agrees.
+    const drawn = visitor({ languages: ["de"], answer: () => new Promise(() => {}) });
+    drawn.i18n.frameWait = 20;
+    await drawn.i18n.follow(null);
+    const first = await drawn.i18n.frame("en");
+    const again = await drawn.i18n.frame("en");
+    const agree = visitor({ languages: ["de"], answer: frame(() => "de") });
+    await agree.i18n.follow(null);
+    const agreeChanged = await agree.i18n.frame("de");
+    expect(first === true && again === false && agreeChanged === false && drawn.i18n.language === "en",
+      "visitor language: one redraw where the frame differs, none again, none where it agrees " + [first, again, agreeChanged]);
+    // A failed read, and a late one: the rule without the frame, and no view held past frameWait.
+    const failed = visitor({ languages: ["de-AT"], answer: () => Promise.reject(Object.assign(new Error("down"), { status: 503 })) });
+    await failed.i18n.follow(null);
+    const late = visitor({ languages: ["de-AT"], answer: (raw, opts) => new Promise((resolve, reject) => {
+      if (opts && opts.signal) opts.signal.addEventListener("abort", () => reject(new Error("aborted")));
+    }) });
+    late.i18n.frameWait = 30;
+    const started = Date.now();
+    await late.i18n.follow(null);
+    const waited = Date.now() - started;
+    expect(failed.i18n.language === "de" && late.i18n.language === "de" && waited < 1000,
+      "visitor language: a failed or late frame read leaves the browser's rule and holds nothing past frameWait " + [failed.i18n.language, late.i18n.language, waited]);
+    // Fixture mode: its frame answers English whatever is asked, so it is not read.
+    const fixture = visitor({ protocol: "file:", languages: ["de-AT"], answer: frame(() => "en") });
+    await fixture.i18n.follow(null);
+    expect(fixture.i18n.language === "de" && fixture.asked.length === 0, "visitor language: fixture mode reads no frame");
   }
   // The reader's language (§6.2): the account's, else ?lang= or the choice, then the browser's, then en.
   {
@@ -7249,6 +7398,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const orgMembers = () => main.querySelector("section.org-members");
   expect(orgMembers() && byId("org-role-hum-maintainer") && byId("org-role-hum-anna") && text(orgMembers()).includes("@maintainer (you)")
     && btn(orgMembers(), "Leave") && btn(orgMembers(), "Remove"), "orgs: an owner may change every role, remove others and leave");
+  expect(main.querySelector("section.org-picture") && !main.querySelector("section.org-picture .picture-motif"),
+    "motif: an organisation's picture has no motif to choose");
   byId("org-role-hum-maintainer").value = "admin"; byId("org-role-hum-maintainer").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(text(orgMembers()).includes("Not changed: the organisation would have no owner left") && byId("org-role-hum-maintainer").value === "owner",
     "orgs: the last owner's demotion is refused in words and the role shown again");
@@ -7311,6 +7462,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const avHeading = main.querySelector(".picture-heading");
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
+  expect(!main.querySelector(".picture-motif"), "motif: the account's own picture has no motif to choose");
   // The agents' pictures are on /agents now (tsk-hn82893h9sdh): the account only points there.
   expect(!main.querySelector(".picture-list") && !byId("avatar-file-agt-x") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/agents" && text(a) === "Your agents"),
     "picture: the account has no agents of its own any more, a link to Your agents instead");
@@ -7365,6 +7517,73 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
     && text(agCard("agt-x")).includes("guest/guestlab") && byId("avatar-file-agt-x") && byId("avatar-file-agt-b"),
     "agents page: every profile of one's own, by global name, its memberships, each with its picture");
+  // An agent's motif (§6.10): chosen by its owner beside the upload, grouped by theme, with a preview;
+  // it shows while there is no upload, and the hub's refusals are said in words.
+  {
+    const mpSel = () => byId("avatar-motif-agt-b");
+    const mpCard = () => agCard("agt-b");
+    let mpStored = {};
+    const mpRead = async () => { mpStored = (await win.Maity.api.get("/agents")).items.find((a) => a.id === "agt-b") || {}; };
+    const mpProfile = () => mpStored;
+    const mpOpen = async () => {
+      await go("#/agents"); for (let k = 0; k < 8; k++) await tick();
+      const head = main.querySelectorAll("tr.agent-row").find((tr) => tr.getAttribute("data-agent") === "agt-b");
+      const row = head && head.querySelector("button.agent-manage");
+      if (row && row.getAttribute("aria-expanded") !== "true") { row.click(); for (let k = 0; k < 6; k++) await tick(); }
+    };
+    await mpOpen();
+    for (let k = 0; k < 4; k++) await tick();
+    const groups = mpSel() ? mpSel().querySelectorAll("optgroup") : [];
+    expect(mpSel() && mpSel().value === "" && groups.length === 2 && groups[0].getAttribute("label") === "Classic"
+      && groups[1].getAttribute("label") === "Office robots" && groups[0].querySelectorAll("option").length === 3
+      && !mpCard().querySelector(".picture-motif-preview img"),
+      "motif: the picker on an agent's card, themes as groups in the catalog's words, none chosen, no preview");
+    // The gate (account.js): one's own picture never, whatever the id, and only an agent's id.
+    const mpOwn = win.Maity.pictureEditor({ id: "agt-b", display_name: "Agent B", avatar_source: "generated", avatar_motif: null }, "/me/avatar", true, () => {});
+    const mpOrg = win.Maity.pictureEditor({ id: "org-oz00team0001", display_name: "OZ Team", avatar_source: null }, "/orgs/oz-team/avatar", false, () => {});
+    expect(!mpOwn.querySelector(".picture-motif") && !mpOrg.querySelector(".picture-motif") && mpCard().querySelector(".picture-motif"),
+      "motif: no picker for one's own picture, even an agent's, nor for an organisation's; an owner's agent has one");
+    mpSel().value = "fox"; mpSel().dispatch("change"); await tick();
+    const mpImg = mpCard().querySelector(".picture-motif-preview img");
+    expect(mpImg && mpImg.getAttribute("src") === "/api/v1/avatars/public/73880339f1ff49f8aeabdfba2a82f696"
+      && mpImg.getAttribute("alt") === "A fox face, orange on teal", "motif: the chosen one previewed from its public address, with its alt text");
+    const mpPatches = [], mpPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 6; k++) await tick();
+    await mpRead();
+    expect(JSON.stringify(mpPatches) === JSON.stringify([["/agents/agt-b", { avatar_motif: "fox" }]])
+      && mpProfile().avatar_motif === "fox" && mpProfile().avatar_source === "motif"
+      && /^\/api\/v1\/avatars\/agt-b\?v=/.test(mpProfile().avatar_url || ""),
+      "motif: Save sends PATCH /agents/{id} with the name, and the motif shows: " + JSON.stringify(mpPatches));
+    expect(text(main).includes("Motif saved; it shows now."), "motif: saved, said");
+    await mpOpen();
+    expect(mpSel() && mpSel().value === "fox" && text(mpCard()).includes("A motif from the hub's set."),
+      "motif: drawn again, the chosen motif selected and the source named");
+    mpPatches.length = 0;
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!mpPatches.length && text(mpCard()).includes("Nothing changed."), "motif: the same choice again sends nothing");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("held", 403, "/agents/agt-b", "forbidden", { reason: "moderation_hold" }));
+    mpSel().value = "comet"; mpSel().dispatch("change");
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: a moderation decision reset this picture; no motif while it stands"),
+      "motif: a moderation hold is said in words");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("unknown", 400, "/agents/agt-b", "invalid", { fields: { avatar_motif: "unknown" } }));
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: the hub has no motif of that name"), "motif: a name the set no longer holds is said in words");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("limited", 429, "/agents/agt-b", "rate_limited", {}));
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mpCard()).includes("Motif not saved: too many changes of this picture in the last hour"), "motif: the per-avatar limit is said in words");
+    win.Maity.api.patch = (p, b) => { mpPatches.push([p, b]); return mpPatch(p, b); };
+    mpPatches.length = 0;
+    mpSel().value = ""; mpSel().dispatch("change");
+    btn(mpCard(), "Save the motif").click(); for (let k = 0; k < 6; k++) await tick();
+    await mpRead();
+    expect(JSON.stringify(mpPatches) === JSON.stringify([["/agents/agt-b", { avatar_motif: null }]])
+      && mpProfile().avatar_motif === null && mpProfile().avatar_source === "generated" && text(main).includes("Motif cleared."),
+      "motif: No motif clears it with null, and the generated picture shows again");
+    win.Maity.api.patch = mpPatch;
+    await mpOpen();
+  }
   expect(text(agCard("agt-b")).includes("maintainer/maity · member · coder") && text(agCard("agt-b")).includes("1 of 1 instance active")
     && agCard("agt-b").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/agents/agt-b/rulebook"),
     "agents page: a membership with trust and role, the instances against the team's limit, the rulebook linked: " + text(agCard("agt-b")).slice(0, 200));
@@ -7523,6 +7742,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "picture: an owner sets an agent's picture, which its member view carries");
   expect(avRow() && text(main).includes("Picture uploaded.") && btn(avRow(), "Remove the upload"),
     "picture: the row stays open, says so and offers Remove");
+  // The motif in the Manage row on Members (§6.10): the chosen one selected, and clearing it sent.
+  {
+    const mmPatches = [], mmPatch = win.Maity.api.patch;
+    await win.Maity.api.patch("/agents/agt-c", { avatar_motif: "owl" });
+    win.Maity.api.patch = (p, b) => { mmPatches.push([p, b]); return mmPatch(p, b); };
+    await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick(); await agOpen("agt-c");
+    for (let k = 0; k < 4; k++) await tick();
+    const mmSel = byId("avatar-motif-agt-c");
+    expect(mmSel && mmSel.value === "owl", "motif: the Manage row on Members selects the agent's chosen motif");
+    if (mmSel) { mmSel.value = ""; mmSel.dispatch("change"); }
+    const mmRow = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-c");
+    if (mmRow && btn(mmRow, "Save the motif")) btn(mmRow, "Save the motif").click();
+    for (let k = 0; k < 6; k++) await tick();
+    const mmAfter = (await win.Maity.api.get("/agents")).items.find((a) => a.id === "agt-c") || {};
+    expect(JSON.stringify(mmPatches) === JSON.stringify([["/agents/agt-c", { avatar_motif: null }]]) && mmAfter.avatar_motif === null,
+      "motif: No motif in the Manage row clears the chosen one: " + JSON.stringify(mmPatches));
+    win.Maity.api.patch = mmPatch;
+  }
   await go("#/account/picture");
   // The hub's refusals in words.
   const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));

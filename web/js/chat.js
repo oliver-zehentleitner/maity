@@ -150,6 +150,12 @@ window.Maity = window.Maity || {};
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
+  // An action above the list as an icon in the heading's row (tsk-qgy2tb3w3x93): as text the two
+  // took a row of their own and wrapped. A link still, since it opens a page; its text stays as
+  // the name and the tooltip.
+  const iconLink = (cls, href, label, icon) =>
+    h("a", { class: "icon-button " + cls, href, "aria-label": label, title: label }, icon(20));
+
   function conversations(ctx, currentId) {
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
@@ -206,12 +212,12 @@ window.Maity = window.Maity || {};
     // nor one read along from outside the project.
     const closedProject = ctx.outsider || ctx.project.state === "archived";
     const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chat.conversations") },
-      h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? M.t("chat.title.group_chats") : M.t("chat.title")),
+      h("div", { class: "toolbar chat-actions" }, h("h2", null, ctx.outsider ? M.t("chat.title.group_chats") : M.t("chat.title")),
         // A human guest creates no group chat (§2.3, §9.2).
-        closedProject || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, M.t("chat.new_group")),
+        closedProject || M.trust.guest(ctx) ? null : iconLink("new-group", ctx.link("chat", "new"), M.t("chat.new_group"), M.icons.newGroup),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
-        ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, M.t("chat.message_project"))),
+        ctx.outsider ? null : iconLink("message-project", ctx.link("message"), M.t("chat.message_project"), M.icons.writeProject)),
       none, ul, status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };

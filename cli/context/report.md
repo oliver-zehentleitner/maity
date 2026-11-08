@@ -282,3 +282,39 @@ the check against the card's pull request.
   installed and logged in, not where it is missing.
 - Reporting `pr_status: unknown` on a linked card: that is the partial truth
   66da7721 and 8c58cebb refuse.
+
+## A pull request that does not name the card is shown and confirmed before the report goes out
+
+**Id:** 703050b5-cac9-4dac-bbb7-7876397d1c81
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-41hjdphkcw4e, adopted by the maintainer on 2026-11-03 (req-e78k30f6r49k: a report from the wrong branch put the card on the wrong pull request); the lead's go on the plan, with the branch check left out as a known gap (Maity messages, 2026-11-08); `cli/src/maity/cli.py` `_described`, `_belongs`, `_confirm_pr`
+**See:** report.md#a-report-is-checked-against-the-cards-pull-request-without-a-flag-to-name-one — 8c58cebb-b7e1-4947-8776-8f5bcb6c566c — as of 2026-11-08
+**See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-08
+**Revisit when:** the hub can tell which card a branch or pull request already belongs to before a merge, or agents routinely confirm with `--yes` without looking
+
+Before sending, `maity report` prints the branch, the head and the pull request with its title.
+When the card neither links that pull request nor names it in its last report (the cases 8c58cebb
+already checks or refuses), the pull request counts as the card's only if the card id appears in
+its title, its body (where gh read one; the probe's answer has none) or the branch's name.
+Otherwise a terminal is asked `[y/N]`, and only "y" or "yes" sends; without a terminal the report is
+refused (exit 4) and the message names the way out, `--yes`. `--yes` confirms only this guess: it
+never overrides a refusal over another pull request the card links or a head that does not match.
+
+No contract change: a report fixes nothing on the card for good. The pull request lives in the
+card's latest `report` (§6.6), a newer report from the right branch or one with `--no-code`
+replaces it, and a forge link is removed with `DELETE …/links/{id}` (§6.13).
+
+**Reason:** the facts of a report come from the checkout, and the checkout can be the wrong one;
+8c58cebb catches that only where the card already names a pull request. Naming the card id in the
+title or the branch is how the team writes pull requests, so its absence is a cheap signal worth a
+confirmation. Unlike the `--force` 66da7721 rejected, `--yes` answers a guess, not a fact the tools
+contradict: the refusals that rest on facts keep no override.
+
+**Rejected alternatives:**
+- Refusing a pull request that does not name the card, with no way to confirm: a correct pull
+  request with a terse title would be unreportable.
+- Checking whether the branch already belongs to another card: the hub has no lookup of cards by
+  branch or pull request before a merge (linked cards are computed at the merge, §17.4); a
+  client-side half check would read as a guarantee it is not. Left as a known gap.

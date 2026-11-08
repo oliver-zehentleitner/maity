@@ -185,6 +185,25 @@ def test_a_repository_grant_allows_only_plain_commands(rule: str) -> None:
     assert any("not a plain command" in p and repr(rule) in p for p in found), found
 
 
+@pytest.mark.parametrize("rule", ["make  test", " make test", "make test "])
+def test_a_grant_with_a_run_of_spaces_says_single_spaces(rule: str) -> None:
+    """The grammar takes single spaces between words; a run of them is refused, and the
+    message says why instead of leaving the empty word to be guessed."""
+    grant = (
+        f'\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = [{json.dumps(rule)}]\n'
+    )
+    found = problems(minimal(grant=grant))
+    assert any("single spaces" in p and repr(rule) in p for p in found), found
+
+
+def test_a_refused_grant_without_extra_spaces_names_no_spacing() -> None:
+    grant = '\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = ["make $TARGET"]\n'
+    found = problems(minimal(grant=grant))
+    assert any("not a plain command" in p for p in found) and not any(
+        "single spaces" in p for p in found
+    )
+
+
 def test_a_plain_repository_grant_is_kept() -> None:
     grant = (
         '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
