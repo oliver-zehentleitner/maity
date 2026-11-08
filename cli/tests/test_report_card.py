@@ -482,6 +482,16 @@ def test_the_title_reaches_the_terminal_disarmed(
     assert "Leases tsk-0004" in line and "\x1b" not in line and "\x07" not in line
 
 
+def test_yes_never_overrides_an_open_pull_request_of_the_last_report(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The second case of 8c58cebb: the last report names another pull request, still open."""
+    _gh_view(bin_dir, _head(joined), "OPEN")
+    _card(fake, report=_before(780, "open", observed="open"))
+    assert _report_yes() == cli.EXIT_REFUSED and not _sent(fake)
+    assert "#780, still open; this checkout" in capsys.readouterr().err
+
+
 def test_a_link_past_the_cap_is_not_probed_even_where_it_would_match(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
