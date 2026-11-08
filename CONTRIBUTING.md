@@ -63,6 +63,27 @@ not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetc
 them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
 blocked, as in Claude Code's cloud sessions.
 
+## The coverage check before a MERGE-READY
+
+Before you report a pull request as ready to merge, check that its green
+`ci-ok` run saw every `main` commit on its files:
+
+```sh
+tools/coverage.sh <pr>
+```
+
+CI tests the pull request merged with `main` as `main` was when the run
+started. The check reads that `main` from the run's checkout logs, then lists
+the `main` commits that are in neither that `main` nor the pull request's
+head and change one of its files (a merge counts too). Exit 0 means there
+are none. Exit 1
+names them: merge `origin/main` into the branch and push for a new run (a
+re-run tests the old merge again). Exit 2 means the check could not run,
+including when `ci-ok` is not green yet or the pull request is stacked on
+another branch; it never ends in 0 then. It needs bash 4.4 or newer, `gh` and
+a full (not shallow) clone, and it only reads: GitHub over REST and a
+`git fetch` of `origin main` and the pull request's head into refs of its own.
+
 ## Opening and editing a pull request from a cloud session
 
 Where the GitHub tool or GitHub's GraphQL API is refused, as in Claude
@@ -80,8 +101,9 @@ checked-out branch (`--branch B` names another of yours): every agent
 pushes as the same GitHub account, so the head is what tells the pull
 requests apart. The body always comes from a file, sent as it is, and a
 body with a line that starts with an attribution (`Co-Authored-By:`,
-`Claude-Session:`, "Generated with … Claude Code") is refused. It prints GitHub's answer
-(number, URL, head, title). Exit 1 means it refused, with the reason;
+`Claude-Session:`, "Generated with … Claude Code") is refused. It prints
+GitHub's answer (number, URL, head, title). Exit 1 means it refused, with
+the reason;
 exit 2 means it could not run, and it never ends in 0 then. Owner,
 repository and host are origin's, as for the overlap check. Opening a
 pull request for a cloud session is no longer the lead's job: open your

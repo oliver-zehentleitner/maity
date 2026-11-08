@@ -1793,6 +1793,110 @@ server, count as minor (the coordinator's scope for #1475).
 - `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
   up and a program whose exit status still has to be read at every call; bash alone has neither.
 
+## The coverage check before a MERGE-READY reads the main the ci-ok run tested from its checkout log
+
+**Id:** e48eb4a5-27b3-4e6f-b1f1-127b4e5a79d1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-z539g0je0rfk, from the jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, adopted by the maintainer as req-cem2fmhpg425); the exit 2 for a ci-ok that is not green is the coordinating agent's; `tools/coverage.sh`, `tools/test_coverage.py`, `CONTRIBUTING.md` ("The coverage check before a MERGE-READY")
+**Revisit when:** GitHub's run object names the merge commit or the base it tested, actions/checkout changes its `HEAD is now at` line, or ci.yml stops testing `refs/pull/N/merge`
+
+`tools/coverage.sh <pr>` answers one question for an open pull request based on `main`: does the
+merge that its newest green `ci-ok` run tested contain every `main` commit that changes one of the
+pull request's files? It picks the run as the CI watcher does (the newest `pull_request` run of
+`ci.yml` for exactly the head and branch, `ci-ok` of that attempt), reads the tested `main` from the
+line `HEAD is now at <sha> Merge <head> into <main>` that actions/checkout writes in a job's log
+(every job of the attempt is read, and all such lines must agree), and requires that `<head>` is the
+pull request's head and `<main>` is on `main` as just fetched. `main` and the head are fetched into
+refs of the check's own. The pull request's files are `git diff --no-renames --name-only -z <merge
+base> <head>`. The candidates are `git rev-list <main> ^<tested main> ^<head>`: the `main` commits in
+neither side of the tested merge. A candidate is a gap when `git diff --quiet` against any of its
+parents finds a change in one of the files, so a merge counts both for an edit made in the merge and
+for a side it takes. Exit 0 when there is no gap, 1 when there is (each named with its files), 2
+when the check could not run: a closed, merged or stacked pull request, a shallow clone, a head that
+differs between GitHub and the fetch, no run, a run not completed, a `ci-ok` that is not green or
+missing, a list of runs or jobs that fills its page of 100, a log that is gone or names no merge,
+another head, or different merges in different jobs, a tested `main` not on `main`, a commit
+without a parent, and every failed `gh` or `git` call it needs. It only reads.
+
+**Reason:**
+- A pull request's run tests `refs/pull/N/merge`, the merge with `main` as it was when the run
+  started. A `main` commit on the same files that lands later is in neither the run nor the review.
+  `git merge-tree --write-tree` of today's `main` with the head prints a tree id and exit 0 for a
+  clean merge, which says nothing about what the run saw; the check prints it for information only.
+  The jour fixe of 2026-11-08 asked for one command after authors had checked it by hand (#1448).
+- The run object has no field for the tested merge or base: its `head_sha` is the pull request's head
+  and `pull_requests` can be empty. The checkout log is the only record GitHub keeps of it (run
+  42478321216 of #1493: `Merge 45ad8a8d… into 8062dfb7…`). Logs expire with GitHub's retention, so a
+  missing log stops the check instead of guessing.
+- The head in the log line must be the pull request's head: a log of another merge would answer for
+  another commit.
+- A `ci-ok` that is not green is exit 2, not 1: there is no tested run to compare with, and 1 says
+  "merge `main` and push", which would not help a red run.
+- `--no-renames` counts a rename under both names, as in the overlap check, so a `main` edit of a file
+  the pull request renames is found.
+- The review of #1502 (round 1: ChatGPT all three, Grok the second and third) found three routes to a wrong exit 0 in the first version,
+  each reproduced by a test that is red on that version:
+  - `git rev-list --no-merges` dropped a merge that changes a file itself, by a conflict resolution
+    or an edit during the merge. Now every candidate counts, merges too, against each parent. "Any
+    parent" also catches a merge that takes a file back from its other side; it can name a merge
+    whose side the run had already seen, which says "merge `main` again" once too often but never
+    hides a gap.
+  - The file list was read line by line from git's display output, in which git quotes a name with
+    a newline, a tab, a double quote or a backslash even with `core.quotePath=false`; the quoted
+    form matched no file, and a gap on such a file read as none. The list is read NUL-separated.
+  - The check took `refs/remotes/origin/main` after `git fetch origin main`. A clone whose fetch
+    refspec does not cover `main` leaves that ref at an old commit, and the check compared against
+    it. `main` is fetched into a ref of the check's own.
+- The candidates exclude what the head contains: a `main` the pull request merged is in the tested
+  merge through the head, whatever `main` the run merged into.
+- Every job log is read, not the first that names a merge, so two jobs that checked out different
+  merges stop the check instead of the first one deciding. A shallow clone may lack the history
+  the merge base and the candidates come from, and a list that fills its page may continue on a
+  page not read; both stop the check rather than answer from part of the history.
+- Reading a job's merge line tells grep's "no such line" (1) from a failure (anything else), and
+  the steps after grep are checked too. Before, a failed `grep | cut | sort` gave empty output,
+  which read as a job without a checkout: a job naming an older `main` was skipped and another job
+  decided, exit 0 (the review of #1502, ChatGPT, delta 1, by a `sort` made to fail; a test does the
+  same with `sort` and with `grep`).
+- It needs bash 4.4, the first with `mapfile -d` for the NUL-separated file list, and checks for it
+  (delta 1 of #1502: the first text said bash 4).
+- The lists of runs and jobs are counted, and a merge line checked for being one, in bash itself,
+  not with `grep -c` or `wc -l` inside a numeric test, which drops their exit status: a grep that
+  printed a partial count and failed turned a full page into exit 0 (delta 2 of #1502, ChatGPT; a
+  test with such a grep for both lists). Every other command substitution is checked; the ones
+  left unchecked, the `tr` in a die message that runs only while the check is already exiting 2,
+  and merge-tree's tree id, decide nothing.
+- Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
+  (`LC_ALL=C`), so the locale changes nothing. A test runs it under German and English; the German
+  part runs only where `de_DE.UTF-8` is installed and is skipped elsewhere, CI included.
+- A job log is plain text with the runner's colour codes (a log of run 42478321216 has 27 lines
+  with an escape character). gh 2.97.0 and later refuse to print a non-JSON body with escape
+  sequences unless given `--allow-escape-sequences` (cli/cli `pkg/cmd/api/api.go` at v2.97.0;
+  GHSA-3m3g-3wcr-px46), and older gh rejects that flag as unknown, so the check passes it exactly
+  when `gh api --help` lists it. Without that every real run with a current gh ended in 2, and the
+  message blamed log expiry (the review of #1502, Grok, round 1); a failed log read now quotes gh's
+  own error. The log is only searched for the merge line and never printed. Commit subjects are
+  printed with their control characters replaced by `?`.
+
+**Rejected alternatives:**
+- Compare the run's start time with the commits' dates: commit dates are the author's, not when
+  `main` got them, and a merge can bring old commits.
+- Take the base from the pull request's `base.sha`: it is a field of the pull request, not of the run,
+  and GitHub does not document it as the `main` a given run's merge was built from.
+- Exit 1 for every `main` commit since the merge base, without the run: a pull request whose run
+  already tested the newer `main` would be sent to merge `main` again for nothing.
+- A merge counts only when a file differs from all its parents (git's combined diff): it misses a
+  merge that takes an old version of a file from a side the run had seen, so the tested `main`
+  had the newer one and today's `main` has the old one.
+- Always passing `--allow-escape-sequences`: every gh before 2.97.0 stops with "unknown flag", and
+  the development machine runs gh 2.45.0.
+- `git rev-list -- <files>` with its history simplification to find the candidates: which merges it
+  keeps depends on the simplification mode, while a diff against each parent says it directly.
+- Handle stacked pull requests: their run tests a merge into the lower branch, whose own coverage is
+  another question; the check says so and stops.
+
 ## One shared CI watcher reads the pull request's own newest ci run, never the commit's checks
 
 **Id:** 67edbcd8-634f-42c8-9a22-107dbe246bef
