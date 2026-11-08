@@ -61,12 +61,34 @@ window.Maity = window.Maity || {};
           save.disabled = false;
         }
       },
-    }, h("label", { for: id }, M.t("handles.label", { what })), h("span", { class: "handle-at" }, "@"), input, " ", save, error, status.el);
+    }, h("label", { for: id }, M.t("handles.label", { what })), h("span", { class: "handle-at" }, "@"), input, " ", save,
+    explain("you", who.handle, input), error, status.el);
     return h("div", { class: "handle-editor" }, form,
       aliases.length
         ? h("p", { class: "muted" }, M.tn("handles.aliases", { list: aliases.map((a) => "@" + a).join(", ") }))
         : h("p", { class: "muted" }, M.t("handles.aliases_none")));
   }
 
-  M.handles = { editor, refusal, FORMAT };
+  // What a handle is, under every field that asks for one (tsk-srzrkf2parzt): one short sentence.
+  // `kind`: you or org, with `handle` in an address of this instance as the example; agent, with
+  // `handle` as a mention; person, with none. The input names the hint in its aria-describedby,
+  // beside its other hints.
+  const address = (handle) => ((window.location && window.location.host) || "maity.team") + "/" + handle;
+  const WORDS = {
+    you: (handle) => M.t("handles.explain.you", { example: address(handle) }),
+    org: (handle) => M.t("handles.explain.org", { example: address(handle) }),
+    agent: (handle) => M.t("handles.explain.agent", { example: "@" + handle }),
+    person: () => M.t("handles.explain.person"),
+  };
+  let explained = 0;
+  function explain(kind, handle, input) {
+    const id = "handle-explain-" + (++explained);
+    if (input) {
+      const before = input.getAttribute("aria-describedby");
+      input.setAttribute("aria-describedby", before ? before + " " + id : id);
+    }
+    return h("p", { class: "hint handle-explain", id }, WORDS[kind](handle));
+  }
+
+  M.handles = { editor, refusal, explain, FORMAT };
 })(window.Maity);

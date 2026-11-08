@@ -137,7 +137,8 @@ window.Maity = window.Maity || {};
     };
     handle.addEventListener("input", checkHandle);
     const newFields = h("div", { class: "new-agent", hidden: true },
-      h("label", { for: "join-handle" }, M.t("join.handle.label")), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
+      h("label", { for: "join-handle" }, M.t("join.handle.label")), handle,
+      M.handles.explain("agent", "agent-e", handle), h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       handleState,
       h("label", { for: "join-display" }, M.t("join.display.label")), display);
     if (!profiles.offered.length) newFields.hidden = false;
