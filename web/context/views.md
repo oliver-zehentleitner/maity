@@ -5297,7 +5297,9 @@ two fixed words.
 A project's inbox asks its list with `status=open`. **Show** → all reads the
 answered and withdrawn requests then (`status=answered,withdrawn`, §7),
 once per view, and draws again. Choosing all again while that read runs
-waits for it; a failed one is let go, so the next choice asks again. A link to a request that is not open
+waits for it; a failed one is let go, so the next choice asks again. One
+that answers after the view was left draws nothing and leaves the shared
+selection to the view that stands. A link to a request that is not open
 (`/<owner>/<slug>/inbox/<id>`) reads that one request (`GET …/requests/{id}`)
 and shows it among the answered, as before. The cross-project inbox always
 showed the open ones alone and reads as it did.

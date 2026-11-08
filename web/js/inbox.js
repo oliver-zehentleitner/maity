@@ -566,6 +566,10 @@ window.Maity = window.Maity || {};
     // a linked request that is not open by its id (§7, GET …/requests/{id}).
     let closedRead = ctx.scope !== "project";
     let closedReading = null;
+    // Left for another view: a read that answers later draws nothing and leaves the shared `ui`
+    // alone, whose selection by then belongs to the view that stands (review of #1519).
+    let left = false;
+    if (ctx.onDispose) ctx.onDispose(() => { left = true; });
     const addClosed = (more) => {
       const have = new Set(items.map((r) => r.id));
       more.forEach((r) => { if (!have.has(r.id)) items.push(r); });
@@ -770,8 +774,10 @@ window.Maity = window.Maity || {};
             (err) => { closedReading = null; throw err; });
           try {
             await closedReading;
+            if (left) return;
             listStatus.done();
           } catch (err) {
+            if (left) return;
             listStatus.fail(M.t("inbox.answered_failed"), err);
           }
         }

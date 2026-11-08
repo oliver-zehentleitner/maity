@@ -825,11 +825,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A slow history read is shared: all → open → all while it runs asks once (review of #1519); a
   // failed one is let go, and the next all asks again.
   const ohGet = win.Maity.api.getAll, ohReads = [];
-  let ohRelease = null, ohFail = false;
+  let ohRelease = null, ohFail = false, ohHold = true;
   win.Maity.api.getAll = (p, ...r) => {
     if (!/\/projects\/maintainer\/maity\/requests\?status=answered,withdrawn$/.test(p)) return ohGet(p, ...r);
     ohReads.push(p);
     if (ohFail) return Promise.reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable"));
+    if (!ohHold) return ohGet(p, ...r);
     return new Promise((resolve) => { ohRelease = () => resolve(ohGet(p, ...r)); });
   };
   await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
@@ -851,6 +852,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ohFailed && ohReads.length === 2 && main.querySelectorAll(".entry").length === 8,
     "inbox: a failed history read is said, and the next all asks again " + JSON.stringify([ohFailed, ohReads.length]));
   ohShow("open"); await tick();
+  // A history read that answers after its inbox was left draws nothing and keeps the selection of
+  // the inbox that stands (review of #1519); the control: no answer comes, the selection holds too.
+  for (const ohLate of [true, false]) {
+    ohRelease = null; ohReads.length = 0;
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    ohHold = true; ohShow("all"); ohHold = false; for (let k = 0; k < 2; k++) await tick();
+    await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+    const ohEntries = main.querySelectorAll("li.entry");
+    const ohPick = ohEntries[ohEntries.length - 1];
+    const ohId = ohPick && ohPick.getAttribute("data-request");
+    ohPick.querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick();
+    const ohChosen = (main.querySelector("li.entry.current") || { getAttribute: () => null }).getAttribute("data-request");
+    if (ohLate) { ohRelease(); for (let k = 0; k < 6; k++) await tick(); }
+    byId("inbox-group").checked = true; byId("inbox-group").dispatch("change"); await tick();
+    byId("inbox-group").checked = false; byId("inbox-group").dispatch("change"); await tick();
+    const ohAfter = (main.querySelector("li.entry.current") || { getAttribute: () => null }).getAttribute("data-request");
+    expect(ohEntries.length >= 2 && ohReads.length === 1 && ohChosen === ohId && ohAfter === ohId,
+      "inbox: " + (ohLate ? "a history read answering after its inbox was left" : "no answer after its inbox was left")
+      + " keeps the open inbox's selection " + JSON.stringify([ohEntries.length, ohId, ohChosen, ohAfter]));
+    if (!ohLate) ohRelease();
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    ohShow("open"); await tick();
+  }
+  ohHold = true;
   win.Maity.api.getAll = ohGet;
   const obGet = win.Maity.api.getAll, obReads = [];
   win.Maity.api.getAll = (p, ...r) => { if (/\/projects\/maintainer\/maity\/requests\?/.test(p)) obReads.push(p.split("?")[1]); return obGet(p, ...r); };
