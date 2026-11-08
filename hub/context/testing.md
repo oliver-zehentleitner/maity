@@ -142,7 +142,8 @@ identity, through `pg_depend`: `RESTART IDENTITY` locks them too, and a session 
 number holds the `TRUNCATE` up; the tables resolved as the unqualified `TRUNCATE` resolves them,
 quoted and through `search_path`, not only in `current_schema()`), with state and last statement from `pg_stat_activity`, ends them
 with `pg_terminate_backend` and fails that one test with `LeakedConnection`. When it finds none,
-the message says so instead of claiming an end, since the next cleanup will wait again. Only client
+the message says so instead of claiming an end, since the next cleanup may wait again (unless that
+session ends first). Only client
 sessions of the suite's own role in this database count; one that cannot be ended is named with
 the reason, and the others are still ended. The next
 test's cleanup goes through.
