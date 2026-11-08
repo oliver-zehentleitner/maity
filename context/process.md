@@ -1890,7 +1890,7 @@ clean filter that reports old content).
 - The `make` targets with the Python as the author's environment finds it: the case above, where the shared
   environment tests another checkout.
 
-## A claim about main, GitHub or a red head names the command, the head it ran on and its full output
+## A factual sentence about main, GitHub or a red old head in a pull request text or review request names the command, the head it ran on and its full output
 
 **Id:** 9c15b539-a190-4672-9219-c3ef09fb1016
 **Type:** decision
@@ -1903,7 +1903,7 @@ A factual sentence in a pull request text or a review request about main ("alrea
 not touch these files"), about GitHub ("GitHub leaves the field empty") or "the old head is red" names the
 command that showed it, the head it ran on and its full output.
 
-**Reason:** in the week before, such sentences were written from a grep cut short or from one sample, and only
+**Reason:** such sentences were written from a grep cut short or from one sample, and only
 the reviewers corrected them.
 
 **Rejected alternatives:**

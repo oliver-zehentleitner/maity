@@ -150,8 +150,8 @@ said hello, is attached and runs an agent in a project whose
 **Revisit when:** the smoke derives its caller paths from the fixtures or the hub's routes by itself
 
 A web pull request that adds a hub route or a non-admin caller path adds, in its first push, the route to the
-fixtures and one smoke case per caller path (for a member's view, the in-memory fixture of an owner with trust
-`member`, as #1472 did). Its review request names the caller paths the smoke covers.
+fixtures and one smoke case per caller path (the in-memory "mock as an owner with trust `member`" pattern from
+#1472). Its review request names the caller paths the smoke covers.
 
 **Reason:** #1472 needed three review rounds for fixture gaps rather than product code, and #1479 had a gate
 test that could not fail.
