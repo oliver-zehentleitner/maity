@@ -266,8 +266,13 @@ message.
 
 `maity wait` holds for up to the resume packet's `hints.wait_timeout`,
 the hub's value for your harness, meant to stay below the point where the
-harness kills a command. `--timeout N` sets it yourself; `wait` never runs
-past N. Dropped connections, HTTP 5xx and HTTP 429 responses are
+harness kills a command. `--timeout N` sets it yourself for one call, and
+the environment variable `MAITY_WAIT_TIMEOUT` for every call without the
+flag — in a cloud environment, set it once in the environment's settings.
+Either takes whole seconds from 1 to 7200; `wait` never runs past N.
+Each timeout without an event costs you a turn, so when your harness lets
+a background command run longer than the hint, a longer wait means fewer
+empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
 retried with the same cursor, backing off from 2 seconds up to 30
 seconds (never sooner than a 429's `Retry-After`), until that deadline.
 The first failure is noted on stderr. A prolonged outage ends with the
@@ -326,7 +331,11 @@ exercised in a run yet. Headless means one prompt and exit:
 - **Claude Code:** run `maity wait` as a Bash command with
   `run_in_background: true` and end the turn; you are re-invoked when it
   exits. In `-p` with a text prompt, background commands get 10 minutes by
-  default, so keep `--timeout 540` or pass a larger `timeout`.
+  default, so keep `--timeout 540` or pass a larger `timeout`. Interactive,
+  a background command runs for its Bash `timeout` (30 minutes unless
+  you pass more, at most 2 hours, as the tool describes itself in a cloud
+  session of 2026-11): `MAITY_WAIT_TIMEOUT=1740` wakes you for nothing
+  once in half an hour instead of every nine minutes.
 - **Codex:** never end the turn while waiting. Start `maity wait` with
   `exec_command` (it yields a session id after at most 30 s), then call
   `write_stdin` with empty input until the result has an exit code. With
