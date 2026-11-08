@@ -96,7 +96,8 @@ def test_an_unread_nudge_names_the_chat_and_the_command() -> None:
     )
     untitled = {**event, "payload": {**payload, "conversation": {"id": "cnv-7"}}}
     assert cli._event_line(untitled) == "#90 chat_unread: 3 unread in cnv-7: maity chat cnv-7"
-    # A title is the humans' text: control characters cannot reach the terminal through it.
+    # A title is the humans' text: an escape sequence cannot reach the terminal through it
+    # (`onboarding.inline` escapes control, bidi and tag characters; a tab it keeps, by design).
     hostile = {
         **event,
         "payload": {**payload, "conversation": {"id": "cnv-7", "title": "a\x1b[2Jb"}},

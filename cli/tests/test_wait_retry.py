@@ -515,3 +515,49 @@ def test_wait_bounds_hold_at_both_ends(
     assert cli.main(["wait"]) == cli.EXIT_TIMEOUT
     assert clock.now == 7195
     assert cli.main(["wait", "--timeout", "1"]) == cli.EXIT_TIMEOUT
+
+
+@pytest.mark.parametrize(
+    ("hint", "ends_at"),
+    [(300, 295), (True, 595), (False, 595), (0, 595), (-1, 595), ("200", 595), (1.5, 595)]
+    + [(None, 595), ("missing", 595), ("no hints", 595)],
+)
+def test_each_resume_replaces_the_hint_an_invalid_one_falls_back_to_600(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    hint: object,
+    ends_at: int,
+) -> None:
+    """Review of #1491: an earlier valid hint (120) must not survive a resume whose packet
+    brings an invalid one or none; through the real resume, then wait (§13)."""
+    monkeypatch.delenv(cli.WAIT_ENV, raising=False)
+    state.save_state(joined, {**state.load_state(joined), "wait_timeout": 120})
+    packet: dict[str, Any] = {"session": {"id": "ses-b-0005"}, "hints": {}}
+    if hint == "no hints":  # an older hub's packet, without the object at all
+        del packet["hints"]
+    elif hint != "missing":  # a key left out, as a supervised session's packet does (§15.11)
+        packet["hints"]["wait_timeout"] = hint
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, packet)
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    _outage(fake)
+    assert cli.main(["wait"]) == cli.EXIT_TIMEOUT
+    assert clock.now == ends_at
+
+
+@pytest.mark.parametrize("answer", [(503, "unavailable"), (200, ["not", "an", "object"])])
+def test_a_failed_resume_keeps_the_last_successful_hint(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: tuple[int, Any],
+) -> None:
+    """A resume that fails stores nothing: the hint stays the last successful resume's, as
+    cli/context/commands.md cff2a54d says."""
+    monkeypatch.delenv(cli.WAIT_ENV, raising=False)
+    state.save_state(joined, {**state.load_state(joined), "wait_timeout": 120})
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: answer
+    assert cli.main(["resume"]) != cli.EXIT_OK
+    assert state.load_state(joined)["wait_timeout"] == 120

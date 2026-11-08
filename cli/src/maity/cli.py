@@ -377,9 +377,14 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
     _warn_old_cli(field(packet, "hints", "cli_version"))
+    # Each resume replaces the hint: a valid one is kept, anything else (missing, null, not a
+    # positive whole number) removes the old one, so `wait` falls back to 600 as §13 says
+    # rather than keep an earlier packet's value (review of #1491).
     wait_timeout = field(packet, "hints", "wait_timeout")
     if _positive_int(wait_timeout):
         session.data["wait_timeout"] = wait_timeout
+    else:
+        session.data.pop("wait_timeout", None)
     # §6.23: what `maity report` checks locally until the next resume says otherwise.
     session.data["keep_the_why_required"] = (
         field(packet, "keep_the_why", "commitment") == "required"

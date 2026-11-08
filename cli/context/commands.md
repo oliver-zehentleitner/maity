@@ -1351,7 +1351,11 @@ variable `MAITY_WAIT_TIMEOUT`, else from the resume packet's
 `hints.wait_timeout`, else 600. N is whole seconds from 1 to 7200. A
 `--timeout` or `MAITY_WAIT_TIMEOUT` outside that is a usage error that
 names its source. A hint above 7200 is taken as 7200, and one that is not
-a positive whole number is ignored, which gives 600. The default stays as
+a positive whole number is ignored, which gives 600. The hint used is the
+latest successful resume's: a resume whose packet carries no valid one
+(an invalid value, null, the key or the whole `hints` object missing)
+removes the stored one, rather than leave an earlier packet's value in
+place; a resume that fails stores nothing. The default stays as
 it was.
 
 The two kinds of source are treated differently because of who can
