@@ -65,7 +65,15 @@ window.Maity = window.Maity || {};
       const input = h("input", { id, type: a.type, autocomplete: a.autocomplete, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       const submit = h("button", { type: "submit" }, M.t("stepup.confirm"));
-      const done = () => { open.delete(slot); clear(slot); slot.hidden = true; };
+      // A question ends once (an answer, a refusal or Cancel), and only its own slot entry goes:
+      // a verify answered after Cancel finds the slot holding the next question and leaves it.
+      let settled = false;
+      const done = () => {
+        settled = true;
+        if (open.get(slot) !== cancelled) return;
+        open.delete(slot); clear(slot); slot.hidden = true;
+      };
+      const cancelled = () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); };
       // The mailed code: sent as the question opens; a failure is said where the code goes.
       const sent = a.send ? h("p", { class: "hint step-up-sent", role: "status" }) : null;
       async function send(again) {
@@ -78,7 +86,7 @@ window.Maity = window.Maity || {};
           error.textContent = a.wrong(err) || M.t("stepup.not_confirmed", { reason: err.message });
         }
       }
-      open.set(slot, () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); });
+      open.set(slot, cancelled);
       const form = h("form", {
         class: "step-up inline-form",
         onsubmit: async (e) => {
@@ -90,9 +98,11 @@ window.Maity = window.Maity || {};
           error.textContent = "";
           try {
             await a.prove(value);
+            if (settled) return;
             done();
             resolve();
           } catch (err) {
+            if (settled) return;
             submit.disabled = false;
             error.textContent = a.wrong(err) || M.t("stepup.not_confirmed", { reason: err.message });
             input.value = "";
@@ -104,7 +114,7 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, a.hint(what || M.t("stepup.this_action"))), sent,
       h("label", { for: id }, a.label), input, submit,
       a.send ? h("button", { type: "button", class: "step-up-resend", onclick: () => send(true) }, M.t("stepup.mail.send_again")) : null,
-      h("button", { type: "button", onclick: () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); } }, M.t("stepup.cancel")),
+      h("button", { type: "button", onclick: cancelled }, M.t("stepup.cancel")),
       error);
       if (a.send) send(false);
       slot.hidden = false;

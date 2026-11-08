@@ -25,6 +25,7 @@
     {"method": "GET", "path": "/projects/{project}/tasks?status=all"},
     {"method": "GET", "path": "/projects/{project}/tasks/{task}/notes?state=all"},
     {"method": "GET", "path": "/projects/{project}/tasks/{task}/history"},
+    {"method": "GET", "path": "/site/chrome?lang=en"},
     {"method": "DELETE", "path": "/runners/{runner}"},
     {"method": "POST", "path": "/projects/{project}/tasks", "body": {"title": "A shape card"}},
     {"method": "POST", "path": "/projects/{project}/tasks/{task}/notes", "body": {"body": "A shape note."}},
