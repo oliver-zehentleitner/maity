@@ -371,9 +371,10 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
 
 
 def request_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
-    """The views of a page of requests, as `request_view` shows each, in a fixed number
-    of statements: what they read of other tables is read once for all of them
-    (`_known`), so a page costs the same for 5 rows as for 200."""
+    """The views of a page of requests, as `request_view` shows each: what they read of
+    other tables is read once for all of them (`_known`), so a page costs the same for 5
+    rows as for 200. The one exception is a placement's request, whose placement summary
+    is still read per row (`placements.request_summary`)."""
     if not rows:
         return []
     known = _known(conn, rows)
