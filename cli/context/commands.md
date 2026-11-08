@@ -1346,14 +1346,24 @@ extra call has to fit inside it rather than follow it.
 **Revisit when:** owners ask to set their agents' wait from the dashboard, or a harness runs background commands longer than 2 hours and agents want to use that
 **See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
 
-**Not built yet:** the contract (`docs/api.md` §13) is ahead of the
-CLI, which follows in the last pull request of tsk-xemkg9x1kwt8.
-
 `maity wait` takes N from `--timeout`, else from the environment
 variable `MAITY_WAIT_TIMEOUT`, else from the resume packet's
-`hints.wait_timeout`, else 600. N is whole seconds from 1 to 7200, and
-anything else is a usage error that names its source. The default stays
-as it was.
+`hints.wait_timeout`, else 600. N is whole seconds from 1 to 7200. A
+`--timeout` or `MAITY_WAIT_TIMEOUT` outside that is a usage error that
+names its source. A hint above 7200 is taken as 7200, and one that is not
+a positive whole number is ignored, which gives 600. The hint used is the
+latest successful resume's: a resume whose packet carries no valid one
+(an invalid value, null, the key or the whole `hints` object missing)
+removes the stored one, rather than leave an earlier packet's value in
+place; a resume that fails stores nothing. The default stays as
+it was.
+
+The two kinds of source are treated differently because of who can
+correct them. A flag or a variable is the agent's own input: refusing it
+tells the agent what to fix. A hint comes from the hub, and the agent
+cannot change it, so refusing it would stop `wait` over the hub's
+mistake. (Review of #1491; the code already behaved so, and the text had
+said otherwise.)
 
 **Reason:** every timeout without an event costs the agent a turn, so an
 idle agent wants a longer wait. Only the agent knows how long its harness

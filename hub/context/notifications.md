@@ -366,7 +366,11 @@ oldest is two minutes old, unless ten notification mails left in the past hour; 
 join the hour's digest. `hourly`, `daily` and `weekly` digests go out when the full hour,
 `daily_at` or the latest `weekly_on` at `daily_at` (in the human's time zone) has passed since
 the last one, recorded in `notification_mail_state`; a moment missed while the hub was down
-goes out at the next pass. A human's first pass only starts those clocks. When the
+goes out at the next pass. The moment `daily_at` names is compared as an instant (UTC), not
+as a wall time in the human's zone: compared by its digits, a `daily_at` in the hour the clocks
+skip (Europe/Vienna 02:30 on 2027-03-28) fell due at 03:10 by its digits and again at 03:31 by
+its instant, two digests in one day (nte-qx197ssstbj8; reproduced by a test, red before the
+change). A human's first pass only starts those clocks. When the
 notification mail of the past hour, sent or waiting, reaches the instance's `max_per_hour`,
 nothing is queued for the human; their items stay pending and the first pass with room again
 sends everything due in one mail (§18.5, "merged into each human's next mail"). A kind set
@@ -389,6 +393,8 @@ the incident of 2026-10-26 showed does not scale.
   per minute that grows with the humans' histories, the shape the incident was about.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
+- Recording the skipped-hour double digest as accepted instead of fixing it (offered in the
+  same note): the fix is one conversion per moment.
 
 ## A page of the bell is cut from items derived only as far as the page reaches; no cache
 

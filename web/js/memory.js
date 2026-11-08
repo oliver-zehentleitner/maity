@@ -240,7 +240,7 @@ window.Maity = window.Maity || {};
           h("p", { class: "hint" }, M.t("memory.soul.version", { version: v.version, who: authorOf(v.by), when: formatTime(v.at) })),
           h("pre", { class: "memory-text" }, v.markdown))));
       } catch (err) {
-        append(clear(versions), h("li", { class: "send-status failed" }, M.t("memory.not_read"), err.message));
+        append(clear(versions), h("li", { class: "send-status failed" }, M.t("memory.not_read", { reason: err.message })));
       }
     });
     // Read when opened: every agent's text at once is a cost nobody asked for.

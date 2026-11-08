@@ -346,7 +346,8 @@ deletions reach only the claim. The object of a deleted attachment goes at once,
 row names once it is older than 30 minutes; a folder of a project the database does not know
 is left alone and named once in the log. Without `--apply` it counts those removals too. After each copy it checks the object's
 size and the SHA-256 it wrote as metadata (the bytes themselves are protected in transit by the
-client's checksum). A folder it cannot read (`lost+found`) counts as failed, the rest is copied.
+client's checksum). A folder no project has (`lost+found`) is left alone and named in the log; a
+project's folder it cannot read counts as failed, the rest is copied.
 Without `--apply` it only counts.
 
 1. Upgrade to a hub version that has the `s3` store, still with `attachments.store: local`, and

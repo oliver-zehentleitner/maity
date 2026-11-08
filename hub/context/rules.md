@@ -74,3 +74,31 @@ to form fields would need a special case.
   and any later change of the review line would all have to follow.
 - The error fields without `settings.`, exactly as first written: inconsistent with the rest of
   the settings and with the nested path pydantic reports.
+
+## Role rules: a value that adds no line is stored and announced, but moves no rules_version
+
+**Id:** 85bd0bcc-59e0-49c9-bd4d-2fbe64df6eb4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review finding nte-w1s31e3ebxrp P3-2 at #1279; the reviews of #1486, 2026-11-08
+**See:** rules.md#role-rules-the-reviewers-narrowing-is-a-line-of-its-own-and-the-errors-carry-the-settings-path — 8b9bc48b-4f12-4082-8ca5-c8e00b04ca01 — as of 2026-11-08
+
+A `role_rules` value that adds no rule line (`subagent_per_card: false`, an empty `checklist`, a
+role with neither) reads as every rule off, like an absent key. The hub stores it as given and
+names it in `project_updated`, but moves no `rules_version` and writes no `rules_changed`
+(`routes.projects._effective_role_rules`). Only a change of what the role rules add moves the
+version, and only such a change gives a bump the reason `settings.role_rules`; a `PATCH` whose
+role rules add nothing leaves the bump, and its reason, to the input that made it.
+
+**Reason:** the version tells running agents to read their rules again; a value that leaves the
+text as it was gave them nothing new to read (`{}`, then `false`, then `[]` went from version 1
+to 4). Storing it as given keeps §6.1's promise that the hub refuses what it would otherwise drop
+and never filters silently, and a `GET` shows back what was sent.
+
+**Rejected alternatives:**
+- Dropping a value without effect before storing it, as the plan for the roll-up first said:
+  the hub would filter valid input silently, which §6.1 rules out, and a client would read back
+  something other than it sent.
+- Bumping for every stored change, as before: running agents re-read unchanged rules, and the
+  bump's reason named role rules that changed nothing.

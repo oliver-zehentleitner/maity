@@ -1141,7 +1141,14 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         .all()
     )
     for credential_id in credentials:
-        revoke(conn, credential_id, "member_removed", by=change.approver, holder_moves=True)
+        revoke(
+            conn,
+            credential_id,
+            "member_removed",
+            by=change.approver,
+            holder_moves=True,
+            member_goes=True,
+        )
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
     released = isolation.release_claims(conn, target.id)
