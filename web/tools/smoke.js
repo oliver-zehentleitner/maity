@@ -6488,9 +6488,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(header).includes("Review") && onSettings() && text(main).includes("State saved.")
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
     "state changed to review; the save stays on the Settings tab, says so, the tab marked current");
+  // The field holds the account's time zone, the one the absence is then shown in (§5.1).
+  await win.Maity.api.patch("/me/notification-settings", { email: { timezone: "Asia/Kolkata" } });
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
+  const absenceSaved = (await win.Maity.api.get("/projects/maintainer/maity")).absence;
+  expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only")
+    && absenceSaved && absenceSaved.until === "2026-10-25T02:30:00Z" && text(header.querySelector(".project-state")).includes("08:00 AM"),
+    "absence set: entered in the account's time zone, saved as that instant and shown as entered " + JSON.stringify(absenceSaved) + " " + text(header.querySelector(".project-state")));
+  await win.Maity.api.patch("/me/notification-settings", { email: { timezone: null } });
   // An admin who is no owner: launch is offered disabled, until the project is in launch, which they may leave.
   const lnGet = win.Maity.api.get;
   let lnState = "build";
@@ -11482,14 +11488,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(byId("account-timezone-state")) === "" && !tzButton("Use none").hidden && text(tzForm()).includes("Time zone saved."),
       "time zone: a chosen zone is sent, /me carries it, and every time and day is shown in it, not in the browser's");
     // A datetime-local field reads and writes the account's zone; a time a clock change skips is
-    // the moment after the gap, one it repeats the first.
+    // moved forward by the gap's length, one it repeats the first.
     const tzWall = win.Maity.fmt.fromWall("2026-11-09T05:30");
     expect(win.Maity.fmt.toWall(tzAt) === "2026-11-09T05:30" && tzWall && tzWall.toISOString() === "2026-11-08T20:30:00.000Z",
       "time zone: a datetime-local value goes both ways in the account's zone");
     win.Maity.i18n.setZone("Europe/Vienna");
     expect(win.Maity.fmt.fromWall("2026-03-29T02:30").toISOString() === "2026-03-29T01:30:00.000Z"
       && win.Maity.fmt.fromWall("2026-10-25T02:30").toISOString() === "2026-10-25T00:30:00.000Z",
-      "time zone: a skipped local time is the moment after the gap, a repeated one the first");
+      "time zone: a skipped local time moves forward by the gap's length, a repeated one is the first");
+    win.Maity.i18n.setZone("Australia/Lord_Howe");
+    expect(win.Maity.fmt.toWall(win.Maity.fmt.fromWall("2026-10-04T02:15")) === "2026-10-04T02:45",
+      "time zone: in a half-hour gap a skipped time moves forward by half an hour");
     win.Maity.i18n.setZone("Asia/Tokyo");
     await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
     expect(text(main.querySelector(".mail-timezone-link")).startsWith("The digests and quiet hours follow your time zone, Asia/Tokyo"),
@@ -14203,6 +14212,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   finish("/held-401", 401, { error: { code: "unauthenticated", message: "Old session ended" } });
   await old401;
   expect(!main.querySelector(".login"), "stale session: a late401 still cannot end the new session");
+  // §5.1 (tsk-j8s6n725a06r): the account's zone comes only from a /me answer of the current session
+  // that set out after the last saved change of the zone; the saved change sets it from its answer.
+  const zoneFetch = ctx.fetch;
+  const zoneHeld = [];
+  const zoneReply = (data) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => data });
+  const zoneMe = (zone) => Object.assign({}, F["me.json"], { member: Object.assign({}, F["me.json"].member, { kind: "human", timezone: zone }) });
+  ctx.fetch = (url, init) => {
+    if (url === "/api/v1/me") return new Promise((resolve) => zoneHeld.push(resolve));
+    if (url === "/api/v1/me/notification-settings" && init && init.method === "PATCH") {
+      return Promise.resolve(zoneReply({ email: { timezone: JSON.parse(init.body).email.timezone } }));
+    }
+    return zoneFetch(url, init);
+  };
+  win.Maity.i18n.setZone(null);
+  const zoneLate = win.Maity.api.get("/me");
+  await win.Maity.api.patch("/me/notification-settings", { email: { timezone: "Europe/Vienna" } });
+  zoneHeld.shift()(zoneReply(zoneMe("Asia/Tokyo")));
+  await zoneLate;
+  expect(win.Maity.i18n.zone() === "Europe/Vienna", "time zone: a /me answer that set out before a saved change does not undo it");
+  const zoneFresh = win.Maity.api.get("/me");
+  zoneHeld.shift()(zoneReply(zoneMe("America/New_York")));
+  await zoneFresh;
+  expect(win.Maity.i18n.zone() === "America/New_York", "time zone: a /me answer that set out after the change sets the zone");
+  const zoneEnded = win.Maity.api.get("/me").catch((err) => err);
+  win.Maity.sessionEpoch = (win.Maity.sessionEpoch || 0) + 1;
+  zoneHeld.shift()(zoneReply(zoneMe("Asia/Tokyo")));
+  expect((await zoneEnded).code === "aborted" && win.Maity.i18n.zone() === "America/New_York",
+    "time zone: a /me answer of an ended session is refused and sets no zone");
+  ctx.fetch = zoneFetch;
+  // Signing out below must not leave this account's zone to the next person in the tab.
+  win.Maity.i18n.setZone("Asia/Tokyo");
   // The readable CSRF cookie is optional: logout must send the token supplied
   // by /auth/session before invalidating it along with the old replies.
   document.cookie = "";
@@ -14223,6 +14263,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await tick(); await tick();
   expect(serverSignedOut && logoutToken === F["auth-session.json"].csrf_token && main.querySelector(".login"),
     "stale session: logout with no readable cookie sends the fallback CSRF token and stays signed out");
+  expect(win.Maity.i18n.accountZone() === null && win.Maity.fmt.time("2026-11-08T20:30:00Z").includes("08:30 PM"),
+    "time zone: signing out drops the account's zone, times are in the browser's zone again");
+  win.Maity.i18n.setZone("Asia/Tokyo");
+  win.Maity.api.endSession();
+  expect(win.Maity.i18n.accountZone() === null, "time zone: a session that ends drops the account's zone");
+  win.Maity.i18n.setZone("Asia/Tokyo");
+  await win.Maity.api.get("/auth/session").catch(() => {});
+  expect(win.Maity.i18n.accountZone() === null && win.Maity.fmt.time("2026-11-08T20:30:00Z").includes("08:30 PM"),
+    "time zone: a session check that answers 401 drops the account's zone");
   ctx.fetch = staleFetch;
   mode = "down";
   await go("#/maintainer/maity/inbox");

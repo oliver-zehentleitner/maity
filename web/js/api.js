@@ -5254,7 +5254,24 @@ window.Maity = window.Maity || {};
   let sessionBlocked = false;
   const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
+  // §5.1: every absolute time is shown in the account's zone, or the browser's without one. A GET
+  // /me answer sets it only when it passed the session check (an answer of an ended session is
+  // refused before this) and no change of the zone was saved while it was on its way; a saved
+  // change of the settings sets it from their answer.
+  let zoneSaves = 0;
   function request(method, path, body, raw, signal) {
+    const saves = zoneSaves;
+    const answer = requestOnce(method, path, body, raw, signal);
+    const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
+    if (method === "GET" && path === "/me") {
+      return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
+    }
+    if (method === "PATCH" && path === "/me/notification-settings") {
+      return answer.then((s) => { if (s && s.email && "timezone" in s.email) { zoneSaves += 1; setZone(s.email.timezone); } return s; });
+    }
+    return answer;
+  }
+  function requestOnce(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     if (method !== "GET" && M.onWrite) M.onWrite();
@@ -5264,13 +5281,9 @@ window.Maity = window.Maity || {};
     const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
-    const asked = (source === "fixtures"
+    const p = (source === "fixtures"
       ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
       : fromApi(method, path, body, raw, signal)).catch(told);
-    // §5.1: every absolute time is shown in the account's zone, or the browser's without one.
-    const p = method === "GET" && path === "/me"
-      ? asked.then((m) => { if (m && m.member && m.member.kind === "human" && M.i18n.setZone) M.i18n.setZone(m.member.timezone); return m; })
-      : asked;
     if (path === "/auth/session") {
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
@@ -5328,6 +5341,8 @@ window.Maity = window.Maity || {};
       sessionCsrf = null;
       lastSession = null;
       M.sessionEpoch = (M.sessionEpoch || 0) + 1;
+      // The next person in this tab sees times in the browser's zone until their own /me.
+      if (M.i18n && M.i18n.setZone) M.i18n.setZone(null);
     },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),

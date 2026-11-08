@@ -282,7 +282,8 @@ window.Maity = window.Maity || {};
     return w ? day(value) + "T" + pad(w.hour) + ":" + pad(w.minute) : "";
   }
   // The moment a datetime-local value names in the zone, as a Date; null when unreadable. A time
-  // a clock change skips reads as the moment after the gap; one it repeats, as the first.
+  // a clock change skips moves forward by the gap's length (02:30 in a one-hour gap is 03:30); one
+  // it repeats reads as the first.
   function fromWall(text) {
     const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(text || ""));
     if (!m) return null;
@@ -334,8 +335,9 @@ window.Maity = window.Maity || {};
   i18n.frameWait = 1500;
   // The account's interface language, or null. Signed in without one (`signedIn`, the session
   // read answered 200): the browser's rule, as docs/api.md §6.2 says, and no frame read. Signed
-  // out (the 401): the visitor's language, the frame read first.
+  // out (the 401): the visitor's language, the frame read first, and no account's time zone.
   i18n.follow = (tag, signedIn) => {
+    if (!signedIn) accountZone = null;
     const own = closest(tag);
     account = !!own || !!signedIn;
     if (own) return use(own);

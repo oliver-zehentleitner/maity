@@ -1367,12 +1367,17 @@ scrolling stays as it was.
 **Revisit when:** the dashboard shows a time that is not an instant (a date without a time, a wall time of a schedule), or the hub starts rendering times itself
 
 `M.fmt` formats every absolute time with `timeZone` set to the account's zone, which `M.api`
-takes from each `GET /me` (`member.timezone`); while that is `null`, or a name the browser's
-Intl does not know, it is the browser's zone. The places that worked on the browser's local clock
+takes from each `GET /me` (`member.timezone`) that passed the session check and set out after the
+last saved change of the zone, and from the settings `PATCH` that saves it; while that is `null`,
+or a name the browser's Intl does not know, it is the browser's zone. A session that ends
+(signing out, expiry, a 401 on the session check) drops it, so the next person in the tab does
+not see the last account's zone. The places that worked on the browser's local clock
 (`getDate`, `toDateString`, `toLocaleDateString`) go through the same helper: chat's day
-separators compare `M.fmt.day`, the maintenance banner's "same day" test too, and the admin's
-`datetime-local` fields read and write the account's zone with `M.fmt.toWall` / `fromWall`
-(a time a clock change skips is the moment after the gap, one it repeats the first). Relative
+separators compare `M.fmt.day`, the maintenance banner's "same day" test too, and the
+`datetime-local` fields (the instance admin's maintenance window, the owner's absence) read and
+write the account's zone with `M.fmt.toWall` / `fromWall`
+(a time a clock change skips moves forward by the gap's length, so 02:30 in a one-hour gap is
+03:30; one it repeats is the first). Relative
 times ("5 min ago") do not use the zone. Timestamps in the API stay UTC.
 
 **Reason:** the owner decided that every time shown follows the zone the human set (confirmed).

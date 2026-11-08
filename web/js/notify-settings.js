@@ -371,7 +371,7 @@ window.Maity = window.Maity || {};
     const list = h("datalist", { id: "account-timezone-list" },
       [own].concat(zones.filter((z) => z !== own)).map((z) => h("option", { value: z })));
     const field = h("input", { id: "account-timezone", type: "text", autocomplete: "off", spellcheck: "false",
-      list: "account-timezone-list", placeholder: own, "aria-describedby": "account-timezone-state account-timezone-error" });
+      list: "account-timezone-list", "aria-describedby": "account-timezone-state account-timezone-error" });
     const state = h("p", { class: "hint", id: "account-timezone-state" });
     const error = h("p", { class: "field-error", id: "account-timezone-error", role: "alert" });
     const button = h("button", { type: "submit" }, M.t("zone.save"));
@@ -394,8 +394,7 @@ window.Maity = window.Maity || {};
       status.busy(M.t("notify.saving"));
       try {
         settings = await M.api.patch("/me/notification-settings", { email: { timezone: value } });
-        saved(settings);
-        M.i18n.setZone(settings.email.timezone);
+        saved(settings);  // M.api has set the zone from the answer
         show();
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("zone.saved")));
