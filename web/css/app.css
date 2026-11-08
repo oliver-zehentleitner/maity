@@ -765,6 +765,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
 .role { color: var(--muted); }
+/* One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): an instance a dot in its presence's
+   colour inside a 24 px target, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
+.fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
+.fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+.fleet-dot.online::before { background: var(--ok); }
+.fleet-dot.away::before { background: var(--warn); }
+.fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
+.fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
+.fleet-stub a { color: inherit; }
+.fleet-me { font-size: 1.02rem; }
+@media (max-width: 600px) {
+  .fleet-tree ul { padding-left: 12px; }
+}
 .org-faces, .paths-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .org-face[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .paths-chip { border-radius: 999px; padding: 4px 12px; }

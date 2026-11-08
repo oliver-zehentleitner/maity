@@ -4196,6 +4196,51 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "why")
 
 
+def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
+    """One's own fleet on the Agents page's Organisation tab (tsk-q989pagmk2x9): the owner on top,
+    E2E Agent under them, E2E Reviewer (which reports to it) under that; each agent's instances
+    as dots linking to their sessions; light and dark at 1280 and 390 px, nothing wider than the window."""
+    run.step("agents: the Organisation tab shows one's own agents as a tree under oneself")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    reviewer = next(m for m in members if m.get("handle") == "e2e-reviewer")
+    assert reviewer["reports_to"] == agent_id, reviewer
+    page.goto(f"{run.base}/owner/e2e-alpha/agents")
+    tabs = page.locator("main nav.agents-tabs")
+    expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
+    tabs.get_by_role("link", name="Organisation", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
+    expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()
+    tree = page.locator("ul.fleet-tree")
+    node = lambda mid: tree.locator(f"li.fleet-member[data-member='{mid}']")
+    expect(node(me["id"])).to_have_count(1)
+    expect(node(me["id"]).locator(f"li.fleet-member[data-member='{agent_id}']")).to_have_count(1)
+    expect(node(agent_id).locator(f"li.fleet-member[data-member='{reviewer['id']}']")).to_have_count(1)
+    owned = {m["id"] for m in members if m["kind"] == "agent" and m.get("owner_id") == me["id"]}
+    shown = set(tree.locator("li.fleet-member").evaluate_all("(all) => all.map((li) => li.dataset.member)"))
+    assert shown == owned | {me["id"]}, (shown, owned)
+    dots = node(agent_id).locator(":scope > .fleet-node a.fleet-dot")
+    live = [i for i in next(m for m in members if m["id"] == agent_id)["instances"] if not i.get("revoked_at")]
+    expect(dots).to_have_count(len(live))
+    expect(dots.first).to_have_attribute("href", re.compile(rf"/owner/e2e-alpha/members/{agent_id}/sessions/"))
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            page.reload()
+            expect(node(reviewer["id"])).to_be_visible()
+            wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+            assert wide[0] <= wide[1], f"the fleet at {width} px {scheme} is {wide[0]} px wide"
+            size = dots.first.bounding_box()
+            assert size and size["width"] >= 24 and size["height"] >= 24, f"a dot's target at {width} px: {size}"
+            run.shot(page, f"agents-fleet-{width}-{scheme}")
+        run.a11y(page, "agents, the Organisation tab")
+    finally:
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    no_problems(run, "agents organisation")
+
+
 def join_reports_to_step(run: Run, page: Page, agent_id: str) -> None:
     """Whom an agent reports to, chosen in the join panel (tsk-nbadjbr9zpg7, §3.1, §2.3): the
     first agent joined without one reports to nobody, the reviewer joined with the first agent as
@@ -4262,6 +4307,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     run.maity(
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
     )
+    agents_fleet_step(run, page, agent_id)
     join_reports_to_step(run, page, agent_id)
     view_tab(page, "Members").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")

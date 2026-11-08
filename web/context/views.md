@@ -50,6 +50,14 @@ fetched or kept. Each agent's node lists its live instances as links to
 their Sessions on the member's page, the target an instance has everywhere
 else; a dormant one says so beside its link.
 
+The Agents page's Organisation tab (`agents/organisation`, the maintainer,
+2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
+in the project alone, under oneself: a boss or an area owner of someone
+else's places none of them, and an own agent that reports to someone
+else's shows that as a stub with the boss's name and nothing more of the
+other side. Its instances are dots in their presence's colour, the lead
+ringed. Built from the same member list, so no second tree and no hub field.
+
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
 changes, while a computed one shows exactly what the policy acts on.
