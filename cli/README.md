@@ -1256,3 +1256,9 @@ make lock     # after changing the dev extra or requirements/release.in (uv from
 The tests run real git against a bare remote, a fake `gh` on an isolated
 `PATH`, and a hub on loopback (`tests/fakehub.py`). The fake hub verifies
 the signature with its own implementation of the contract.
+
+Locally they need no database and no running hub. `make test` runs them in
+one process (the dev set has no pytest-xdist), which stays within a shared
+machine's limits (`CONTRIBUTING.md`, "Local test environment"). Run them from
+the `.venv` that `make dev` builds: it has `build`, without which the sdist
+tests in `tests/test_versioninfo.py` fail.
