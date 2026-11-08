@@ -91,7 +91,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("h3", null, M.t("orgs.new.title")),
-    h("label", { for: "org-new-handle" }, M.t("orgs.handle")), handle, M.handles.explain("org", "oz-team", handle),
+    h("label", { for: "org-new-handle" }, M.t("orgs.handle")), handle, M.handles.explain("org", handle),
     h("p", { class: "hint" }, M.t("orgs.new.hint")),
     h("label", { for: "org-new-name" }, M.t("orgs.name")), name,
     go, status.el);
@@ -178,7 +178,7 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    h("label", { for: "org-invite-handle" }, M.t("orgs.handle")), handle, M.handles.explain("person", "", handle),
+    h("label", { for: "org-invite-handle" }, M.t("orgs.handle")), handle, M.handles.explain("person", handle),
     h("label", { for: "org-invite-role" }, M.t("orgs.role")), role, go, status.el);
     const rows = invitations.map((x) => {
       const line = M.statusLine();
@@ -248,7 +248,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: "org-name" }, M.t("orgs.name")), name,
-    h("label", { for: "org-handle" }, M.t("orgs.handle")), handle, M.handles.explain("org", org.handle, handle),
+    h("label", { for: "org-handle" }, M.t("orgs.handle")), handle, M.handles.explain("org", handle),
     h("p", { class: "hint" }, held ? M.t("orgs.settings.held") : M.t("orgs.settings.rename_hint")),
     h("p", { class: "check" }, create, h("label", { for: "org-members-create" }, " " + M.t("orgs.settings.members_create"))),
     h("p", { class: "check" }, page, h("label", { for: "org-public-page" }, " " + M.t("orgs.settings.public_page"))),

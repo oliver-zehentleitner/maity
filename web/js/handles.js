@@ -62,32 +62,31 @@ window.Maity = window.Maity || {};
         }
       },
     }, h("label", { for: id }, M.t("handles.label", { what })), h("span", { class: "handle-at" }, "@"), input, " ", save,
-    explain("you", who.handle, input), error, status.el);
+    explain("you", input), error, status.el);
     return h("div", { class: "handle-editor" }, form,
       aliases.length
         ? h("p", { class: "muted" }, M.tn("handles.aliases", { list: aliases.map((a) => "@" + a).join(", ") }))
         : h("p", { class: "muted" }, M.t("handles.aliases_none")));
   }
 
-  // What a handle is, under every field that asks for one (tsk-srzrkf2parzt): one short sentence.
-  // `kind`: you or org, with `handle` in an address of this instance as the example; agent, with
-  // `handle` as a mention; person, with none. The input names the hint in its aria-describedby,
-  // beside its other hints.
-  const address = (handle) => ((window.location && window.location.host) || "maity.team") + "/" + handle;
+  // What a handle is, under every field that asks for one (tsk-srzrkf2parzt): one short sentence
+  // of fixed words, so it stays within two lines on a phone whatever the handle or the host is
+  // (no handle or address filled in). `kind`: you, agent, org or person. The input names the hint in
+  // its aria-describedby, beside its other hints.
   const WORDS = {
-    you: (handle) => M.t("handles.explain.you", { example: address(handle) }),
-    org: (handle) => M.t("handles.explain.org", { example: address(handle) }),
-    agent: (handle) => M.t("handles.explain.agent", { example: "@" + handle }),
+    you: () => M.t("handles.explain.you"),
+    agent: () => M.t("handles.explain.agent"),
+    org: () => M.t("handles.explain.org"),
     person: () => M.t("handles.explain.person"),
   };
   let explained = 0;
-  function explain(kind, handle, input) {
+  function explain(kind, input) {
     const id = "handle-explain-" + (++explained);
     if (input) {
       const before = input.getAttribute("aria-describedby");
       input.setAttribute("aria-describedby", before ? before + " " + id : id);
     }
-    return h("p", { class: "hint handle-explain", id }, WORDS[kind](handle));
+    return h("p", { class: "hint handle-explain", id }, WORDS[kind]());
   }
 
   M.handles = { editor, refusal, explain, FORMAT };
