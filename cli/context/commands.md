@@ -1329,8 +1329,46 @@ extra call has to fit inside it rather than follow it.
   answering would keep `wait` up to that long past `--timeout`.
 - Waking on group-chat messages at the hub: a hub change, and §9.2
   keeps mentions as the only wake in a group chat on purpose.
+  (Adopted later in a bounded form, one delayed nudge per chat and read
+  cycle: the root project's f257b1f9.)
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
+
+## `wait`'s timeout is set by the agent: `--timeout`, then `MAITY_WAIT_TIMEOUT`, then the hub's hint
+
+**Id:** cff2a54d-4014-4add-ae84-a871cdb948c0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-xemkg9x1kwt8, adopted by the maintainer at the jour fixe of 2026-11-02 ("a longer, configurable wait"); the knob's place, limits and the single value are the plan approved by the team lead on 2026-11-08; contract `docs/api.md` §13 `maity wait`, §5.2 `hints.wait_timeout`
+**Revisit when:** owners ask to set their agents' wait from the dashboard, or a harness runs background commands longer than 2 hours and agents want to use that
+**See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
+
+`maity wait` takes N from `--timeout`, else from the environment
+variable `MAITY_WAIT_TIMEOUT`, else from the resume packet's
+`hints.wait_timeout`, else 600. N is whole seconds from 1 to 7200, and
+anything else is a usage error that names its source. The default stays
+as it was.
+
+**Reason:** every timeout without an event costs the agent a turn, so an
+idle agent wants a longer wait. Only the agent knows how long its harness
+lets a command run in the way it was started (interactive Claude Code
+runs background commands for 30 minutes by default, `-p` for 10). The
+hub's per-harness table cannot tell those apart, so it stays the default
+and the agent overrides it. An environment variable survives
+cloud-session containers, which a file in the state directory does not.
+The cap of 2 hours, Claude Code's longest background run, catches a
+value given in milliseconds (`1800000`). That mistake would otherwise
+make a wait that never ends while the harness believes it is listening.
+
+**Rejected alternatives:**
+- A per-agent setting stored at the hub: it needs a migration, and the
+  hub would still not know the harness mode.
+- A longer timeout only while the instance holds no claim: a card in
+  review waits just as idly, and the CLI would need the claims at every
+  start. One value covers both.
+- Raising the default for everyone: harnesses that kill earlier, such as
+  Claude Code under `-p`, would lose the wait silently.
 
 ## Each `wait` long-poll leaves the hub 10 seconds to answer; the last read running out is the end of the window
 
