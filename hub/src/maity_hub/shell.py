@@ -7,11 +7,14 @@ answers to a visitor with a session or while the landing page is off (§16.7).
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import os
 import re
 import stat
+from dataclasses import dataclass
 from html import escape
+from mimetypes import guess_type
 from pathlib import Path
 
 from fastapi import Request, Response
@@ -24,7 +27,7 @@ from starlette.routing import BaseRoute, Match
 from starlette.staticfiles import NotModifiedResponse
 from starlette.types import Receive, Scope, Send
 
-from maity_hub import paths, public_pages
+from maity_hub import compression, paths, public_pages
 from maity_hub.errors import error_response
 
 # The built files the dashboard names under `/assets/` (§16.11): web/'s directories of
@@ -41,28 +44,68 @@ SHELL_HEADERS = {
 # A dashboard file is revalidated on every use (docs/api.md §1, §16.11; req-s246xb6k1mpp): it
 # holds no data, and a deploy must reach a browser at once.
 ASSET_CACHE = "no-cache"
-# A file's ETag by its path, kept while its change time and size stay the same.
-_ETAGS: dict[str, tuple[int, int, str]] = {}
 
 
-def content_etag(full_path: str, stat_result: os.stat_result) -> str:
-    """A strong ETag from the file's content, not from its time and size as Starlette's: an
+@dataclass(frozen=True)
+class AssetForm:
+    """What a dashboard file is served as: its content's strong ETag and, for a compressible
+    file of `compression.MINIMUM_SIZE` and more, its gzip form with an ETag of its own."""
+
+    mtime_ns: int
+    size: int
+    media_type: str
+    etag: str
+    gzipped: bytes | None
+    gzip_etag: str | None
+
+
+# A file's forms by its path, kept while its change time and size stay the same.
+_FORMS: dict[str, AssetForm] = {}
+
+
+def asset_form(full_path: str, stat_result: os.stat_result) -> AssetForm:
+    """The ETag comes from the file's content, not from its time and size as Starlette's: an
     image built with normalised file times could otherwise keep an old ETag for a changed file
     of the same size. Read once per file and process, again when its change time or size
-    moves."""
-    known = _ETAGS.get(full_path)
-    if known is not None and known[:2] == (stat_result.st_mtime_ns, stat_result.st_size):
-        return known[2]
+    moves. The gzip form is made here too, at the middleware's level and with no time in its
+    header, so the same content always gives the same bytes and the same ETag."""
+    known = _FORMS.get(full_path)
+    if known is not None and (known.mtime_ns, known.size) == (
+        stat_result.st_mtime_ns,
+        stat_result.st_size,
+    ):
+        return known
     with open(full_path, "rb") as file:
-        digest = hashlib.file_digest(file, "sha256").hexdigest()
-    etag = f'"{digest[:32]}"'
-    _ETAGS[full_path] = (stat_result.st_mtime_ns, stat_result.st_size, etag)
-    return etag
+        data = file.read()
+    digest = hashlib.sha256(data).hexdigest()[:32]
+    media_type = guess_type(full_path)[0] or "text/plain"
+    gzipped = None
+    if len(data) >= compression.MINIMUM_SIZE and not compression.already_compressed(media_type):
+        gzipped = gzip.compress(data, compresslevel=compression.LEVEL, mtime=0)
+    form = AssetForm(
+        mtime_ns=stat_result.st_mtime_ns,
+        size=stat_result.st_size,
+        media_type=media_type,
+        etag=f'"{digest}"',
+        gzipped=gzipped,
+        gzip_etag=None if gzipped is None else f'"{digest}-gzip"',
+    )
+    _FORMS[full_path] = form
+    return form
+
+
+class AssetFileResponse(FileResponse):
+    """A dashboard file as it is stored. It has no `Last-Modified`, so an `If-Range` is
+    compared with the ETag alone, and a date never selects a range."""
+
+    def _should_use_range(self, http_if_range: str) -> bool:
+        return not http_if_range.startswith("W/") and http_if_range == self.headers["etag"]
 
 
 class AssetFiles(StaticFiles):
     """The files under `/assets/`: scripts, stylesheets and brand files, no dotfiles; each
-    answered `no-cache` with an ETag of its content, `304` when `If-None-Match` names it."""
+    answered `no-cache` with a strong ETag of its content, per encoding, and `304` when
+    `If-None-Match` names it."""
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         # `path` is normalised; the root arrives as ".".
@@ -72,10 +115,11 @@ class AssetFiles(StaticFiles):
         return await super().get_response(path, scope)
 
     def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
-        # Starlette runs this in a worker thread: the file is hashed here, not on the event loop.
+        # Starlette runs this in a worker thread: the file is read, hashed and gzipped here,
+        # not on the event loop.
         full_path, stat_result = super().lookup_path(path)
         if stat_result is not None and stat.S_ISREG(stat_result.st_mode):
-            content_etag(full_path, stat_result)
+            asset_form(full_path, stat_result)
         return full_path, stat_result
 
     def file_response(
@@ -85,14 +129,31 @@ class AssetFiles(StaticFiles):
         scope: Scope,
         status_code: int = 200,
     ) -> Response:
-        etag = content_etag(os.fspath(full_path), stat_result)
-        headers = {"Cache-Control": ASSET_CACHE, "ETag": etag}
-        response = FileResponse(
-            full_path, status_code=status_code, stat_result=stat_result, headers=headers
-        )
-        # Only the content decides: no Last-Modified, so `If-Modified-Since` never answers 304.
-        del response.headers["last-modified"]
-        if self.is_not_modified(response.headers, Headers(scope=scope)):
+        form = asset_form(os.fspath(full_path), stat_result)
+        request = Headers(scope=scope)
+        headers = {"Cache-Control": ASSET_CACHE}
+        response: Response
+        if form.gzipped is not None:
+            # Which form is sent depends on Accept-Encoding: every answer says so, a 304 too.
+            headers["Vary"] = "Accept-Encoding"
+        if (
+            form.gzipped is not None
+            and form.gzip_etag is not None
+            and compression.accepts_gzip(request.get("accept-encoding", ""))
+        ):
+            headers |= {"ETag": form.gzip_etag, "Content-Encoding": "gzip"}
+            response = Response(
+                form.gzipped, status_code=status_code, media_type=form.media_type, headers=headers
+            )
+        else:
+            headers["ETag"] = form.etag
+            response = AssetFileResponse(
+                full_path, status_code=status_code, stat_result=stat_result, headers=headers
+            )
+            # Only the content decides: no Last-Modified, so `If-Modified-Since` never answers
+            # 304 and a date `If-Range` never selects a range.
+            del response.headers["last-modified"]
+        if self.is_not_modified(response.headers, request):
             return NotModifiedResponse(response.headers)
         return response
 

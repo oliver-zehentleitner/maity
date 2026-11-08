@@ -550,7 +550,9 @@ address.
 **Revisit when:** the hub serves secrets on reads, or a deployment compresses at its ingress as well
 
 A `GET` or `HEAD` under `/api/v1/` or `/assets/` of 1024 bytes and more
-is gzipped at level 6 when the request accepts it (docs/api.md §1.1).
+is gzipped at level 6 when the request accepts it (docs/api.md §1.1); the
+dashboard's own files are gzipped by `shell.AssetFiles` instead, with an
+ETag per form (c6768529).
 Writes are never compressed, nor anything under `/api/v1/auth/`, the
 join and invitation documents a token opens (`/api/v1/join/{token}`,
 `/api/v1/invitations/{token}`), an attachment's bytes, or any address
@@ -596,13 +598,25 @@ same size for more CPU.
 `shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
 `js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
 `ETag`, the first 32 hex digits of the file's SHA-256, and drops
-`Last-Modified`. A matching `If-None-Match` gets `304` with the same two
+`Last-Modified`. A matching `If-None-Match` gets `304` with the same
 headers. `no-cache` is on the middleware's `ROUTE_CACHE` (images.md
 96d70040), so it is kept; a 404 under `/assets/` and every `/api/v1/`
 answer stay `no-store`, the shell keeps its own `no-cache`, and
-`/assets/landing/` its own rule. The digest is read in `lookup_path`,
-which Starlette runs in a worker thread, and kept per process for the
-file's path while its change time and size stay the same.
+`/assets/landing/` its own rule.
+
+Each encoding is a representation with its own strong tag. A file of
+1024 bytes and more whose type is not compressed already has a gzip form,
+made by `AssetFiles` itself at the middleware's level 6 and with no time
+in its header, tagged `"<digest>-gzip"`; a request that accepts gzip gets
+it with `Content-Encoding: gzip`. Such a file's answers, the `304`s
+included, say `Vary: Accept-Encoding`. The compression middleware leaves
+these four directories alone (`compression.OWN_ENCODING`); it still
+compresses the rest of `/assets/` and `/api/v1/` as 5cfd29b6 says. A
+`Range` on the stored form is honoured with an `If-Range` that names its
+ETag; a date or another tag gets the whole file. The gzip form is sent
+whole. The file is read, hashed and gzipped in `lookup_path`, which
+Starlette runs in a worker thread, and kept per process for its path
+while its change time and size stay the same.
 
 **Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
 dashboard's static files may be cached"): the files hold no private
@@ -611,12 +625,20 @@ data, and every reload fetched all 97 of them, 691 KB gzipped
 so a deploy reaches it at once: a changed file has a new ETag and comes
 back `200`; two pods with different files during a rolling update give
 different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
-alone never answers `304`.
+alone never answers `304`, and a date `If-Range` never selects a range:
+Starlette compares it with `Last-Modified`, which these answers do not
+have, so `AssetFileResponse` compares the ETag alone.
 
 **Rejected alternatives:**
 - Starlette's own ETag (an MD5 of the change time and size): an image
   built with normalised file times could keep the old ETag for a changed
   file of the same size, and a browser would keep the old file.
+- The middleware's gzip with the stored file's tag (the first version of
+  this PR): two different bodies under one strong ETag, and its `304`
+  went out before the middleware could add `Vary` (review of #1518,
+  RFC 9110 §8.8.3.3, §15.4.5).
+- A weak ETag for both forms: the contract (§16.11) promises a strong
+  one, and a weak tag can never select a range.
 - Versioned names with a long `max-age` (`?v=<digest>`, `immutable`, as
   `/assets/landing/` does): a reload would send no requests at all, but
   the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite

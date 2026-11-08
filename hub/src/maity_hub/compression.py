@@ -1,16 +1,16 @@
 """Responses gzipped where the client asks for it (hub/context/serving.md).
 
 Reads of the API and the dashboard's files (`/api/v1/`, `/assets/`) of 1024 bytes and more, at
-level 6: the board's pages of cards are about four times smaller on the wire. Starlette
-compresses a body of 128 KiB and more in a worker thread, so the event loop keeps answering
-meanwhile. Left as they are: every write, where the hub hands out a credential, a join line
-or a code; everything under `/api/v1/auth/`, the session with its CSRF token among it; the
-join and invitation documents a token opens (`/api/v1/join/{token}`,
-`/api/v1/invitations/{token}`), which carry it; and every page outside these two prefixes
-(the shell, a join or link page, a public page), so that no answer carries a secret
-compressed together with what the request sent. An
-attachment's bytes go as they are stored, with their length: a file someone sent, often
-compressed already, streamed against its digest.
+level 6 (the dashboard's own files under `/assets/` by `shell.AssetFiles`, with an ETag per
+encoding; everything else here): the board's pages of cards are about four times smaller on the
+wire. Starlette compresses a body of 128 KiB and more in a worker thread, so the event loop
+keeps answering meanwhile. Left as they are: every write, where the hub hands out a credential,
+a join line or a code; everything under `/api/v1/auth/`, the session with its CSRF token among
+it; the join and invitation documents a token opens (`/api/v1/join/{token}`,
+`/api/v1/invitations/{token}`), which carry it; and every page outside these two prefixes (the
+shell, a join or link page, a public page), so that no answer carries a secret compressed
+together with what the request sent. An attachment's bytes go as they are stored, with their
+length: a file someone sent, often compressed already, streamed against its digest.
 """
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ UNCOMPRESSED = (
     f"/api/{API_VERSION}/join/",
     f"/api/{API_VERSION}/invitations/",
 )
+# The dashboard's own files (`shell.ASSET_DIRS`): `shell.AssetFiles` gzips them itself, so each
+# encoding carries its own strong ETag and a `304` its `Vary` (hub/context/serving.md c6768529).
+OWN_ENCODING = ("/assets/brand/", "/assets/css/", "/assets/js/", "/assets/vendor/")
 # Named here rather than taken from Starlette's default, which older releases kept shorter.
 ALREADY_COMPRESSED = (
     "application/gzip",
@@ -56,8 +59,34 @@ def compressed(method: str, path: str) -> bool:
         method in READS
         and path.startswith(COMPRESSED)
         and not path.startswith(UNCOMPRESSED)
+        and not path.startswith(OWN_ENCODING)
         and not ATTACHMENT_BYTES.search(path)
     )
+
+
+def already_compressed(media_type: str) -> bool:
+    """Whether a type is on `ALREADY_COMPRESSED`, as Starlette's middleware tells it."""
+    media_type = media_type.partition(";")[0].strip().lower()
+    return not {media_type, media_type.partition("/")[0] + "/*"}.isdisjoint(ALREADY_COMPRESSED)
+
+
+def accepts_gzip(accept_encoding: str) -> bool:
+    """Whether `Accept-Encoding` takes gzip: `gzip` or `*` with a weight above 0."""
+    for part in accept_encoding.split(","):
+        name, _, params = part.partition(";")
+        if name.strip().lower() not in ("gzip", "*"):
+            continue
+        weight = 1.0
+        for param in params.split(";"):
+            key, _, value = param.partition("=")
+            if key.strip().lower() == "q":
+                try:
+                    weight = float(value.strip())
+                except ValueError:
+                    weight = 0.0
+        if weight > 0:
+            return True
+    return False
 
 
 class Compression:
