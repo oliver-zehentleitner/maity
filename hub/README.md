@@ -338,7 +338,8 @@ The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
 plain `pytest` runs one process. On a machine several people or agents share, a
 full suite does not run: run the test files a change affects, with at most two
-workers, `make test PYTEST_ARGS="-n 2 tests/test_board.py"`, or in a run slot,
+workers. A few files may run as `make test PYTEST_ARGS="-n 2 tests/test_board.py"`;
+a heavier run goes in a run slot,
 `../tools/run_slot.sh make test PYTEST_ARGS="-n auto tests/test_board.py"`, where
 `-n auto` starts two (`CONTRIBUTING.md`, "PostgreSQL runs and a shared machine").
 To run them against a server database, point
