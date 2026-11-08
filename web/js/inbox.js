@@ -561,15 +561,17 @@ window.Maity = window.Maity || {};
   // js/ids.js): opened, and listed among the answered when it is one; an id
   // the project's inbox does not hold is said.
   M.views.inbox = async function (ctx, root, args) {
+    // Left for another view: a read that answers later draws nothing and leaves the shared state
+    // (`ui`, `ownAgents`, `membersOf`) alone, which by then belongs to the view that stands
+    // (review of #1519). Checked after every read of the way in, and in the Show handler.
+    let left = false;
+    if (ctx.onDispose) ctx.onDispose(() => { left = true; });
     const items = await load(ctx);
+    if (left) return;
     // What the open list lacks is read on its own: the answered ones when Show asks for all,
     // a linked request that is not open by its id (§7, GET …/requests/{id}).
     let closedRead = ctx.scope !== "project";
     let closedReading = null;
-    // Left for another view: a read that answers later draws nothing and leaves the shared `ui`
-    // alone, whose selection by then belongs to the view that stands (review of #1519).
-    let left = false;
-    if (ctx.onDispose) ctx.onDispose(() => { left = true; });
     const addClosed = (more) => {
       const have = new Set(items.map((r) => r.id));
       more.forEach((r) => { if (!have.has(r.id)) items.push(r); });
@@ -582,25 +584,32 @@ window.Maity = window.Maity || {};
       } catch (err) {
         if (err.status !== 404) throw err;
       }
+      if (left) return;
     }
     if (!closedRead && ui.show === "all") {
       addClosed(await closedOf(ctx));
+      if (left) return;
       closedRead = true;
     }
-    ownAgents = new Set();
-    membersOf = {};
+    // Read into this view's own objects, and made the shared ones only once it still stands.
+    const members = {};
+    let own = new Set();
     if (ctx.scope !== "project") {
       const slugs = [...new Set(items.map((r) => r.slug))].filter((s) => s && ctx.projects.some((p) => p.full_name === s));
       await Promise.all(slugs.map((s) => M.api.getAll("/projects/" + M.api.projectPath(s) + "/members")
-        .then((r) => { membersOf[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
+        .then((r) => { members[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
+      if (left) return;
     }
     // Inside a project the member list says whose an agent is; the profiles are needed across projects
     // and for a personal request only.
     if (ctx.scope !== "project" || items.some((r) => r.personal)) {
       try {
-        ownAgents = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
+        own = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
       } catch (ignored) { /* no Talk where the reader's agents are unknown */ }
+      if (left) return;
     }
+    ownAgents = own;
+    membersOf = members;
     const wanted = ctx.scope === "project" && args && args[0] ? args[0] : null;
     const wantedReq = wanted ? items.find((r) => r.id === wanted) : null;
     let showAll = false;

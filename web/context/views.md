@@ -5299,7 +5299,7 @@ answered and withdrawn requests then (`status=answered,withdrawn`, §7),
 once per view, and draws again. Choosing all again while that read runs
 waits for it; a failed one is let go, so the next choice asks again. One
 that answers after the view was left draws nothing and leaves the shared
-selection to the view that stands. A link to a request that is not open
+selection to the view that stands; so does every read on the way in. A link to a request that is not open
 (`/<owner>/<slug>/inbox/<id>`) reads that one request (`GET …/requests/{id}`)
 and shows it among the answered, as before. The cross-project inbox always
 showed the open ones alone and reads as it did.

@@ -875,6 +875,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
     ohShow("open"); await tick();
   }
+  // The same on the way in (review of #1519 delta 2): Show already all, the inbox opened again reads the
+  // history while it loads; left before that read answers, it draws nothing. The control: no answer comes.
+  for (const ohLate of [true, false]) {
+    ohRelease = null; ohReads.length = 0; ohHold = false;
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    ohShow("all"); for (let k = 0; k < 4; k++) await tick();
+    ohHold = true;
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
+    ohHold = false;
+    const ohHeldIn = !!ohRelease && !byId("inbox-show");
+    await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+    const ohEntries = main.querySelectorAll("li.entry");
+    const ohPick = ohEntries[ohEntries.length - 1];
+    const ohId = ohPick && ohPick.getAttribute("data-request");
+    ohPick.querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick();
+    if (ohLate) { ohRelease(); for (let k = 0; k < 6; k++) await tick(); }
+    byId("inbox-group").checked = true; byId("inbox-group").dispatch("change"); await tick();
+    byId("inbox-group").checked = false; byId("inbox-group").dispatch("change"); await tick();
+    const ohAfter = (main.querySelector("li.entry.current") || { getAttribute: () => null }).getAttribute("data-request");
+    expect(ohHeldIn && ohEntries.length >= 2 && ohAfter === ohId,
+      "inbox: " + (ohLate ? "a history read of the way in answering after the inbox was left" : "no answer of the way in after the inbox was left")
+      + " keeps the open inbox's selection " + JSON.stringify([ohHeldIn, ohId, ohAfter]));
+    if (!ohLate) ohRelease();
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    ohShow("open"); await tick();
+  }
   ohHold = true;
   win.Maity.api.getAll = ohGet;
   const obGet = win.Maity.api.getAll, obReads = [];
