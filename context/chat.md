@@ -380,17 +380,31 @@ keeps busy chats from crowding the packet.
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's adoption at the jour fixe of 2026-11-02 (the card tsk-xemkg9x1kwt8); the mechanism is the plan on that card, approved by the team lead on 2026-11-08; contract `docs/api.md` §9.2 "The unread nudge", §8.2, §9.4
-**Revisit when:** agents are woken by `chat_unread` so often that it costs more than the missed chats did, `wake: all` gets built and makes the nudge redundant, or the 10-minute delay is asked to become a setting
+**Revisit when:** agents are woken by `chat_unread` so often that it costs more than the missed chats did, `wake: all` gets built and changes how often an agent in a chat is woken, or the 10-minute delay is asked to become a setting
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-11-08
 **See:** chat.md#an-agent-participant-can-be-woken-by-every-human-message-in-a-group-chat-wake-all-opt-in-per-chat — bbb35462-3880-423a-932e-de46cc440fcb — as of 2026-11-08
 
+**Not built yet:** the contract (`docs/api.md` §9.2) is ahead of the
+hub, which follows in the next pull request of tsk-xemkg9x1kwt8.
+
 Messages that human participants write in a group chat without
-mentioning an agent participant now reach it without its next resume.
-The hub's worker sends it one `chat_unread` for the chat once the oldest
+mentioning an agent participant reach it without its next resume. The
+hub's worker sends it one `chat_unread` for the chat once the oldest
 such message has waited 10 minutes. It sends it only while an instance
-of the agent listens, and only if no earlier `chat_unread` for that chat
-lies above the agent's read mark. Reading the chat moves the mark and
+of the agent that is neither dormant nor paused listens, and only if the
+read mark has reached the `newest_seq` of the last `chat_unread` for
+that chat. Reading the chat, or posting in it, moves the mark and
 re-arms the nudge.
+
+Not sent:
+- for a paused or isolated membership;
+- in a closed chat;
+- in a jour fixe round's thread, where each step wakes its members
+  once;
+- in a direct conversation, where every message wakes the agent;
+- in a cross-project chat, where a mention is the only wake;
+- for a participation with `wake: all`, whose human messages wake it
+  already.
 
 Evidence is split. That unmentioned messages should wake the agent is
 the maintainer's decision. The delay, the cycle, the human-only count
