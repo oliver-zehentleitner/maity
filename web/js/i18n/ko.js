@@ -4590,7 +4590,7 @@ window.MAITY_I18N["ko"] = {
   },
   "users.email.copied": "복사됨",
   "users.email.copy": "복사",
-  "users.email.copy_failed": "복사하지 못했습니다",
+  "users.email.copy_failed": "복사하지 못했어요",
   "users.email.copy_label": "{name}의 이메일 주소 복사",
   "users.filter.active": "활성",
   "users.filter.all": "모든 계정",
