@@ -1803,18 +1803,22 @@ server, count as minor (the coordinator's scope for #1475).
 **Revisit when:** GitHub's run object names the merge commit or the base it tested, actions/checkout changes its `HEAD is now at` line, or ci.yml stops testing `refs/pull/N/merge`
 
 `tools/coverage.sh <pr>` answers one question for an open pull request based on `main`: does the
-`main` that its newest green `ci-ok` run tested contain every `main` commit, since the merge base,
-that changes one of the pull request's files? It picks the run as the CI watcher does (the newest
-`pull_request` run of `ci.yml` for exactly the head and branch, `ci-ok` of that attempt), reads the
-tested `main` from the line `HEAD is now at <sha> Merge <head> into <main>` that actions/checkout
-writes in a job's log, and requires that `<head>` is the pull request's head and `<main>` is on
-`origin/main`. The pull request's files are `git diff --no-renames --name-only <merge base> <head>`,
-the commits `git rev-list --no-merges --full-history origin/main ^<merge base> -- <files>`, and each is
-covered when `git merge-base --is-ancestor` puts it in the tested `main`. Exit 0 when all are, 1 when
-any is not (each named with its files), 2 when the check could not run: a closed, merged or stacked
-pull request, a head that differs between GitHub and the fetch, no run, a run not completed, a
-`ci-ok` that is not green or missing, a log that is gone or names no merge or another head, a tested
-`main` not on `origin/main`, and every failed `gh` or `git` call it needs. It only reads.
+merge that its newest green `ci-ok` run tested contain every `main` commit that changes one of the
+pull request's files? It picks the run as the CI watcher does (the newest `pull_request` run of
+`ci.yml` for exactly the head and branch, `ci-ok` of that attempt), reads the tested `main` from the
+line `HEAD is now at <sha> Merge <head> into <main>` that actions/checkout writes in a job's log
+(every job of the attempt is read, and all such lines must agree), and requires that `<head>` is the
+pull request's head and `<main>` is on `main` as just fetched. `main` and the head are fetched into
+refs of the check's own. The pull request's files are `git diff --no-renames --name-only -z <merge
+base> <head>`. The candidates are `git rev-list <main> ^<tested main> ^<head>`: the `main` commits in
+neither side of the tested merge. A candidate is a gap when `git diff --quiet` against any of its
+parents finds a change in one of the files, so a merge counts both for an edit made in the merge and
+for a side it takes. Exit 0 when there is no gap, 1 when there is (each named with its files), 2
+when the check could not run: a closed, merged or stacked pull request, a shallow clone, a head that
+differs between GitHub and the fetch, no run, a run not completed, a `ci-ok` that is not green or
+missing, a list of runs or jobs that fills its page of 100, a log that is gone or names no merge,
+another head, or different merges in different jobs, a tested `main` not on `main`, a commit
+without a parent, and every failed `gh` or `git` call it needs. It only reads.
 
 **Reason:**
 - A pull request's run tests `refs/pull/N/merge`, the merge with `main` as it was when the run
@@ -1832,6 +1836,25 @@ pull request, a head that differs between GitHub and the fetch, no run, a run no
   "merge `main` and push", which would not help a red run.
 - `--no-renames` counts a rename under both names, as in the overlap check, so a `main` edit of a file
   the pull request renames is found.
+- The review of #1502 (ChatGPT, round 1) found three routes to a wrong exit 0 in the first version,
+  each reproduced by a test that is red on that version:
+  - `git rev-list --no-merges` dropped a merge that changes a file itself, by a conflict resolution
+    or an edit during the merge. Now every candidate counts, merges too, against each parent. "Any
+    parent" also catches a merge that takes a file back from its other side; it can name a merge
+    whose side the run had already seen, which says "merge `main` again" once too often but never
+    hides a gap.
+  - The file list was read line by line from git's display output, in which git quotes a name with
+    a newline, a tab, a double quote or a backslash even with `core.quotePath=false`; the quoted
+    form matched no file, and a gap on such a file read as none. The list is read NUL-separated.
+  - The check took `refs/remotes/origin/main` after `git fetch origin main`. A clone whose fetch
+    refspec does not cover `main` leaves that ref at an old commit, and the check compared against
+    it. `main` is fetched into a ref of the check's own.
+- The candidates exclude what the head contains: a `main` the pull request merged is in the tested
+  merge through the head, whatever `main` the run merged into.
+- Every job log is read, not the first that names a merge, so two jobs that checked out different
+  merges stop the check instead of the first one deciding. A shallow clone may lack the history
+  the merge base and the candidates come from, and a list that fills its page may continue on a
+  page not read; both stop the check rather than answer from part of the history.
 - Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
   (`LC_ALL=C`), so the locale changes nothing; a test runs it under German and English.
 
@@ -1842,6 +1865,11 @@ pull request, a head that differs between GitHub and the fetch, no run, a run no
   and GitHub does not document it as the `main` a given run's merge was built from.
 - Exit 1 for every `main` commit since the merge base, without the run: a pull request whose run
   already tested the newer `main` would be sent to merge `main` again for nothing.
+- A merge counts only when a file differs from all its parents (git's combined diff): it misses a
+  merge that takes an old version of a file from a side the run had seen, so the tested `main`
+  had the newer one and today's `main` has the old one.
+- `git rev-list -- <files>` with its history simplification to find the candidates: which merges it
+  keeps depends on the simplification mode, while a diff against each parent says it directly.
 - Handle stacked pull requests: their run tests a merge into the lower branch, whose own coverage is
   another question; the check says so and stops.
 

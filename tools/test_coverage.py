@@ -181,7 +181,7 @@ class CoverageTest(unittest.TestCase):
         """The pull request's head as origin serves it (`refs/pull/N/head`)."""
         self.git("checkout", "-q", "--detach", start or self.base)
         head = self.commit(files, "pr")
-        self.git("push", "-q", "origin", f"{head}:refs/pull/{PR}/head")
+        self.git("push", "-q", "origin", f"+{head}:refs/pull/{PR}/head")
         self.git("checkout", "-q", "main")
         return head
 
@@ -264,7 +264,9 @@ class CoverageTest(unittest.TestCase):
                 )
                 # Only the pull request's file, not b.txt, which it does not change.
                 self.assertIn(f"  {late} main late on a [a.txt]", out)
-                self.assertIn("1 of 1 main commits", out[-1])
+                self.assertIn(
+                    "coverage: 1 main commits on #12's files are not in the tested main", out[-1]
+                )
                 self.assertEqual(self.git("for-each-ref", "refs/maity-coverage"), "")
 
     def test_every_main_commit_in_the_tested_main_is_covered(self) -> None:
@@ -275,8 +277,7 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
         self.assertEqual(
             got.stdout.splitlines()[-1],
-            "coverage: all 1 main commits on #12's files since the merge base are in the tested"
-            " main",
+            "coverage: every main commit on #12's files is in the tested main",
         )
 
     def test_a_later_main_commit_on_another_file_is_no_gap(self) -> None:
@@ -285,7 +286,7 @@ class CoverageTest(unittest.TestCase):
         self.on_main({"b.txt": lines("main b")}, "main on b")
         got = self.run_check(self.github(head, tested))
         self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
-        self.assertIn("all 0 main commits", got.stdout)
+        self.assertIn("every main commit on #12's files is in the tested main", got.stdout)
 
     def test_a_rename_counts_under_its_old_name(self) -> None:
         head = self.pull_request({"old.txt": None, "new.txt": lines("o")})
@@ -333,6 +334,99 @@ class CoverageTest(unittest.TestCase):
         got = self.run_check(data)
         self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
 
+    # Routes to a wrong exit 0 (review R1 of #1502); each test is red on 0452c230.
+
+    def merge_on_main(self, side: dict[str, str | None], resolve: dict[str, str | None]) -> str:
+        """A merge on main of a side branch from the merge base's main, with `resolve` written
+        into the merge itself (as a conflict resolution or an edit during the merge does)."""
+        self.git("checkout", "-q", "-b", "side", self.base)
+        self.commit(side, "side")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--no-commit", "--no-ff", "-s", "ours", "side")
+        for name, text in {**side, **resolve}.items():
+            if text is None:
+                (self.clone / name).unlink()
+            else:
+                (self.clone / name).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "merge side")
+        return self.push_main()
+
+    def test_a_merge_on_main_that_changes_a_pr_file_is_named(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.on_main({"c.txt": lines("main c")}, "main on c")
+        merge = self.merge_on_main({"b.txt": lines("side b")}, {"a.txt": lines("merge a")})
+        got = self.run_check(self.github(head, tested))
+        self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+        self.assertIn(f"  {merge} merge side [a.txt]", got.stdout.splitlines())
+
+    def test_a_merge_that_takes_a_pr_file_from_its_other_parent_is_named(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.on_main({"a.txt": lines("main a")}, "main on a")
+        # The side branch keeps the merge base's a.txt; the merge takes it, undoing "main on a".
+        merge = self.merge_on_main({"b.txt": lines("side b")}, {"a.txt": lines("a")})
+        got = self.run_check(self.github(head, tested))
+        self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+        self.assertIn(f"  {merge} merge side [a.txt]", got.stdout.splitlines())
+
+    def test_a_file_name_git_would_quote_is_matched(self) -> None:
+        for name in ("new\nline.txt", "tab\there.txt", 'quote".txt', "back\\slash.txt", "ü.txt"):
+            with self.subTest(name=name):
+                self.git("checkout", "-q", "main")
+                start = self.on_main({name: lines("start")}, f"add {name}")
+                head = self.pull_request({name: lines("pr")}, start=start)
+                late = self.on_main({name: lines("late")}, f"main on {name}")
+                got = self.run_check(self.github(head, start))
+                self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+                self.assertIn(late, got.stdout)
+
+    def test_the_fetched_main_counts_not_a_stale_tracking_ref(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.git("rev-parse", "main")
+        # origin/main stays at the tested main: the clone fetches another branch by default.
+        self.git(
+            "config", "remote.origin.fetch", "+refs/heads/unrelated:refs/remotes/origin/unrelated"
+        )
+        self.git("checkout", "-q", "main")
+        late = self.commit({"a.txt": lines("main late")}, "main late on a")
+        self.git("push", "-q", "origin", "main:main")
+        self.git("update-ref", "refs/remotes/origin/main", tested)
+        got = self.run_check(self.github(head, tested))
+        self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+        self.assertIn(f"  {late} main late on a [a.txt]", got.stdout.splitlines())
+        self.assertEqual(self.git("for-each-ref", "refs/maity-coverage"), "")
+
+    def test_jobs_that_name_different_merges_stop_the_check(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        older = self.git("rev-parse", "main")
+        newer = self.on_main({"b.txt": lines("main b")}, "main on b")
+        data = self.github(head, newer)
+        data["logs"]["4"] = checkout_log(head, older)
+        self.assert_stops(self.run_check(data), "name different merges")
+
+    def test_a_shallow_clone_stops_the_check(self) -> None:
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.on_main({"b.txt": lines("main b")}, "main on b")
+        shallow = self.tmp / "shallow"
+        self.git("clone", "-q", "--depth", "1", f"file://{self.origin}", str(shallow), cwd=self.tmp)
+        url = "https://github.com/acme/widgets.git"
+        self.git("config", "remote.origin.url", url, cwd=shallow)
+        self.git("config", "--add", f"url.file://{self.origin}.insteadOf", url, cwd=shallow)
+        self.clone = shallow
+        self.assert_stops(self.run_check(self.github(head, tested)), "shallow clone")
+
+    def test_main_merged_into_the_pr_after_its_tested_main_counts_as_tested(self) -> None:
+        tested = self.git("rev-parse", "main")
+        later = self.on_main({"a.txt": lines("main a")}, "main on a")
+        self.git("checkout", "-q", "--detach", self.base)
+        self.commit({"a.txt": lines("pr a")}, "pr")
+        self.git("merge", "-q", "-X", "theirs", "-m", "merge main", later)
+        head = self.git("rev-parse", "HEAD")
+        self.git("push", "-q", "origin", f"+{head}:refs/pull/{PR}/head")
+        self.git("checkout", "-q", "main")
+        got = self.run_check(self.github(head, tested))
+        self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
+
     def test_no_changed_file_is_exit_0(self) -> None:
         head = self.pull_request({})
         got = self.run_check(self.github(head, self.base))
@@ -375,25 +469,51 @@ class CoverageTest(unittest.TestCase):
             ),
             "log gone": ({"logs": {"3": checkout_log(head, tested)}}, "log of job 2 failed"),
             "other head": (
-                {"logs": {"2": checkout_log(other, tested)}},
+                {"logs": {**good["logs"], "3": checkout_log(other, tested)}},
                 f"tested a merge of {other}, not of #12's head {head}",
             ),
             "two merges": (
-                {"logs": {"2": checkout_log(head, tested) + checkout_log(head, other)}},
+                {
+                    "logs": {
+                        **good["logs"],
+                        "2": checkout_log(head, tested) + checkout_log(head, other),
+                    }
+                },
                 "names more than one merge",
             ),
             "tested main unknown": (
-                {"logs": {"2": checkout_log(head, "f" * 40)}},
+                {"logs": {**good["logs"], "3": checkout_log(head, "f" * 40)}},
                 f"the tested main {'f' * 40} is not in this clone",
             ),
             "tested main off main": (
-                {"logs": {"2": checkout_log(head, head)}},
+                {"logs": {**good["logs"], "3": checkout_log(head, head)}},
                 f"the tested main {head} is not on origin/main",
             ),
             "gh pulls fails": ({"fail": "pulls/"}, "reading pull request #12"),
             "gh runs fails": ({"fail": "actions/runs?"}, "listing the ci runs"),
             "gh jobs fails": ({"fail": "actions/runs/500/"}, "listing the jobs of run 500"),
             "bad answer": ({"pr": {**pr, "head": "nothex"}}, "unexpected answer"),
+            "a full page of runs": (
+                {
+                    "runs": [
+                        {"created_at": "2026-11-08T10:00:00Z", "id": 500 + n, "status": "completed"}
+                        for n in range(100)
+                    ]
+                },
+                "100 or more ci runs",
+            ),
+            "a full page of jobs": (
+                {
+                    "jobs": {
+                        "500/1": [
+                            {"id": 1000 + n, "conclusion": "success", "name": f"job {n}"}
+                            for n in range(99)
+                        ]
+                        + [{"id": 4, "conclusion": "success", "name": "ci-ok"}]
+                    }
+                },
+                "100 or more jobs",
+            ),
         }
         for name, (change, says) in cases.items():
             with self.subTest(name):
