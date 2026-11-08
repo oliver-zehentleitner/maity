@@ -71,7 +71,7 @@ def already_compressed(media_type: str) -> bool:
 
 
 # A weight as RFC 9110 §12.4.2 writes it: 0 to 1, at most three decimals.
-_QVALUE = re.compile(r"0(?:\.\d{0,3})?|1(?:\.0{0,3})?")
+_QVALUE = re.compile(r"0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?")  # DIGIT is ASCII (RFC 5234)
 
 
 def accepts_gzip(accept_encoding: str) -> bool:

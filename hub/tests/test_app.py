@@ -276,6 +276,8 @@ def test_the_middleware_leaves_the_dashboards_files_to_assetfiles() -> None:
         "gzip;q=-1",
         "gzip;q=0.0001",
         "gzip;q=bogus",
+        "gzip;q=0.\u0661",  # an Arabic-Indic digit one
+        "gzip;q=0.\uff11",  # a full-width digit one
     ):
         assert not compression.accepts_gzip(refused), refused
 
