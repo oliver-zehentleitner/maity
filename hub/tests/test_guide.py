@@ -37,6 +37,24 @@ def test_the_texts_are_the_contracts_word_for_word() -> None:
     assert _table("| Role | default of `guide_role` |") == guide.ROLE
 
 
+def test_the_descriptions_are_the_role_tables_column_word_for_word() -> None:
+    """§2.3: `GET …/roles` describes each built-in role with the table's "What the member
+    does", in the table's order."""
+    lines = (
+        CONTRACT.read_text(encoding="utf-8")
+        .split("| Role | What the member does | Its scopes |", 1)[1]
+        .splitlines()[2:]
+    )
+    rows: list[tuple[str, str]] = []
+    for line in lines:
+        if not line.startswith("|"):
+            break
+        found = re.fullmatch(r"\| `([a-z-]+)` \| (.*) \| .* \|", line)
+        assert found, line
+        rows.append((found[1], found[2]))
+    assert list(guide.DESCRIPTION.items()) == rows
+
+
 def test_every_built_in_role_has_a_text() -> None:
     assert set(guide.ROLE) == set(rules._ROLE)
 

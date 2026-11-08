@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import events, merged
+from maity_hub import events, guide, merged, scopes
 from maity_hub import tables as t
 from maity_hub.views import principal_id
 from tests import flow
@@ -39,7 +39,7 @@ def assign(owner: flow.Human, member_id: str, role: str) -> Any:
 
 
 def test_the_list_is_put_whole_and_read_back(owner: flow.Human, migrated: Engine) -> None:
-    assert owner.get(f"{BASE}/roles").json() == {"custom": []}
+    assert owner.get(f"{BASE}/roles").json()["custom"] == []
     response = put(owner, [LEGAL, {"name": "translator", "base": "writer"}])
     assert response.status_code == 200, response.text
     expected = [
@@ -47,7 +47,7 @@ def test_the_list_is_put_whole_and_read_back(owner: flow.Human, migrated: Engine
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
     assert response.json() == {"custom": expected}
-    assert owner.get(f"{BASE}/roles").json() == {"custom": expected}
+    assert owner.get(f"{BASE}/roles").json()["custom"] == expected
     with migrated.connect() as conn:
         [changed] = conn.execute(
             select(t.event).where(t.event.c.kind == "policy_changed").order_by(t.event.c.seq)
@@ -78,7 +78,7 @@ def test_a_stored_guide_stays_with_its_role_and_a_new_role_has_none(
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
     assert response.json() == {"custom": expected}
-    assert owner.get(f"{BASE}/roles").json() == {"custom": expected}
+    assert owner.get(f"{BASE}/roles").json()["custom"] == expected
     # Removed and put again, the role starts without a guide.
     assert put(owner, []).status_code == 200
     assert put(owner, [LEGAL]).json()["custom"] == [{**LEGAL, "guide": "", "guide_by": None}]
@@ -122,6 +122,39 @@ def test_only_a_human_with_project_admin_puts_the_list(
     )
     assert refused.status_code in (401, 403), refused.text
     assert agent.get(f"{BASE}/roles").status_code == 200  # every member reads it
+
+
+def test_the_list_shows_every_built_in_role_with_its_description_guide_and_scopes(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    put(owner, [LEGAL])
+    # A guest reads it too, and sees the role's own scopes, not what its trust leaves it.
+    guest = flow.agent(make_client, owner, trust="guest", role="coder")
+    answer = guest.get(f"{BASE}/roles").json()
+    assert set(answer) == {"builtin", "custom"}
+    assert [r["name"] for r in answer["custom"]] == ["legal"]
+    builtin = answer["builtin"]
+    assert [r["name"] for r in builtin] == list(guide.DESCRIPTION)
+    assert {r["name"] for r in builtin} == set(scopes.ROLES)
+    for role in builtin:
+        name = role["name"]
+        assert set(role) == {"name", "description", "guide", "scopes"}
+        assert role["description"] == guide.DESCRIPTION[name]
+        assert role["guide"] == guide.ROLE[name]
+        assert role["scopes"] == scopes.role_scopes(name)
+    by_name = {r["name"]: r for r in builtin}
+    # §2.3: a proxy has the coder's scopes; the answers it relays are opened per call.
+    assert by_name["proxy"]["scopes"] == by_name["coder"]["scopes"]
+    assert by_name["purple-team"]["scopes"] == by_name["reviewer"]["scopes"]
+    assert by_name["ops"]["scopes"] == [
+        "project:read",
+        "tasks:write",
+        "releases:write",
+        "requests:ask",
+        "events:post",
+        "ticker:post",
+        "agents:propose",
+    ]
 
 
 def test_a_project_role_is_assigned_and_has_exactly_its_bases_scopes(
