@@ -102,12 +102,15 @@ window.Maity = window.Maity || {};
     return h("li", null, h("strong", null, toolName(tool.id)), (tool.version ? " " + tool.version : "") + " · " + parts.join(" · "));
   }
 
+  // Whole sentences, one each: an empty list has a sentence of its own rather than a word put
+  // into the list's place ("allows the projects none").
   function allows(c) {
-    const values = {
-      projects: (c.projects || []).length ? names(c.projects) : M.t("runners.caps.none"),
-      repositories: (c.repositories || []).length ? names(c.repositories) : M.t("runners.caps.none"),
-    };
-    return c.require_local_approval ? M.t("runners.caps.allows_approval", values) : M.t("runners.caps.allows", values);
+    return [
+      (c.projects || []).length ? M.t("runners.caps.projects", { projects: names(c.projects) }) : M.t("runners.caps.projects_none"),
+      (c.repositories || []).length ? M.t("runners.caps.repositories", { repositories: names(c.repositories) })
+        : M.t("runners.caps.repositories_none"),
+      c.require_local_approval ? M.t("runners.caps.approval") : null,
+    ].filter(Boolean).join(" ");
   }
 
   // What a runner can do, in words: hosts or pools, tools, how agents are kept apart.

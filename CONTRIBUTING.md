@@ -225,6 +225,13 @@ Imperative, plain English, one concern per commit:
 `hub: claim tasks with a lease`. A handful of meaningful commits per
 feature; `context/` entries are the exception and get one each.
 
+## During a review and in a stack
+
+- Fixes after a review are pushed as one bundle once every review of the
+  round is in, not after the first; an exception only on the lead's word.
+- After the lower pull request of a stack is squash-merged, merge
+  `origin/main` into the upper one instead of rebasing it.
+
 ## Issues
 
 A bug is a GitHub issue; the form asks for the component, the version and

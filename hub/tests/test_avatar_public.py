@@ -327,6 +327,8 @@ def _manifest(folder: Path) -> dict[str, Any]:
         lambda m, f: m["motifs"][0].update(label="x" * 41),
         lambda m, f: m["motifs"][0].update(alt="x" * 121),
         lambda m, f: m["motifs"][0].update(file="../manifest.json"),
+        # a NUL in the file name: refused like a separator, not a traceback at the start
+        lambda m, f: m["motifs"][0].update(file="fox.png\x00"),
         lambda m, f: (f / m["motifs"][0]["file"]).write_bytes(image(size=(512, 500))),
         lambda m, f: (f / m["motifs"][0]["file"]).write_bytes(b"\x89PNG" + bytes(70 * 1024)),
         # a PNG signature without an IHDR: the header check refuses it, the start goes on
