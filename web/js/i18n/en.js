@@ -1387,6 +1387,8 @@ window.MAITY_I18N["en"] = {
   "inbox.action.valid": "The go is valid until {at}, once.",
   "inbox.answered": "Answered: {answer}",
   "inbox.answered_by_for": "{by} for {who}",
+  "inbox.answered_failed": "The answered requests could not be read: {reason}",
+  "inbox.answered_loading": "Reading the answered requests…",
   "inbox.asker_for": "{by} for {name}",
   "inbox.card": "{ref} — {title} ({status})",
   "inbox.chat_with": "Chat with {name}",

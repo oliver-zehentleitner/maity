@@ -1291,6 +1291,23 @@ def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
         got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
         answer = got.get("answer") or {}
         assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+
+        # The inbox reads its open requests first (tsk-y8gkq1kvt63c): the answered consent is
+        # read alone by its link and opened among the answered, and Show -> all lists it, read then.
+        lists: list[str] = []
+        page.on("request", lambda r: lists.append(r.url.split("?", 1)[1]) if "/projects/owner/e2e-alpha/requests?" in r.url else None)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_have_attribute("data-request", request_id)
+        expect(current).to_have_class(re.compile(r"\bdone\b"))
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        page.locator("#inbox-show").select_option("open")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+        page.locator("#inbox-show").select_option("all")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        page.locator("#inbox-show").select_option("open")
+        assert lists and all(q.startswith("status=open") or q.startswith("status=answered%2Cwithdrawn") or q.startswith("status=answered,withdrawn") for q in lists), lists
+        assert not any(q.startswith("status=all") for q in lists), f"the inbox read the whole history: {lists}"
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})
         page.emulate_media(color_scheme="light")
@@ -3723,7 +3740,8 @@ def request_action_step(run: Run, page: Page) -> None:
             "used_seq": None,
         },
     }
-    pattern = re.compile(r"/api/v1/projects/owner/e2e-alpha/requests\?status=all")
+    # The inbox reads the open requests alone (tsk-y8gkq1kvt63c); this one is open.
+    pattern = re.compile(r"/api/v1/projects/owner/e2e-alpha/requests\?status=open")
 
     def answer(route) -> None:
         route.fulfill(json={"items": [entry], "next_cursor": None})

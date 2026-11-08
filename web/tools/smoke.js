@@ -820,7 +820,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   win.Maity.api.post = ansPost;
   expect(text(main).includes("No open requests."), "inbox empty");
-  const show = byId("inbox-show"); show.value = "all"; show.dispatch("change"); await tick();
+  // The inbox reads its open requests first; Show → all reads the answered and withdrawn ones,
+  // once per view (tsk-y8gkq1kvt63c: the history no longer slows the first drawing).
+  const obGet = win.Maity.api.getAll, obReads = [];
+  win.Maity.api.getAll = (p, ...r) => { if (/\/projects\/maintainer\/maity\/requests\?/.test(p)) obReads.push(p.split("?")[1]); return obGet(p, ...r); };
+  await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const obFirst = obReads.splice(0);
+  const show = byId("inbox-show"); show.value = "all"; show.dispatch("change"); for (let k = 0; k < 6; k++) await tick();
+  const obAll = obReads.splice(0);
+  byId("inbox-show").value = "open"; byId("inbox-show").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  byId("inbox-show").value = "all"; byId("inbox-show").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  const obAgain = obReads.splice(0);
+  win.Maity.api.getAll = obGet;
+  expect(JSON.stringify(obFirst) === JSON.stringify(["status=open"]) && JSON.stringify(obAll) === JSON.stringify(["status=answered,withdrawn"]) && !obAgain.length,
+    "inbox: the first drawing reads the open requests alone, Show all reads the answered once " + JSON.stringify([obFirst, obAll, obAgain]));
   expect(main.querySelectorAll(".entry").length === 8, "show all: 8 entries in maity, answered ones too");
   const ansHead = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Merge PR #2"));
   ansHead.click(); await tick();
@@ -5296,10 +5309,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const idShowBefore = idShown();
   byId("inbox-show").value = "open"; byId("inbox-show").dispatch("change"); await tick();
+  // The link to an answered request reads that one request, not the answered list (tsk-y8gkq1kvt63c).
+  const idGetAll = win.Maity.api.getAll, idGet = win.Maity.api.get, idReads = [];
+  win.Maity.api.getAll = (p, ...r) => { if (/\/maintainer\/maity\/requests/.test(p)) idReads.push(p); return idGetAll(p, ...r); };
+  win.Maity.api.get = (p, ...r) => { if (/\/maintainer\/maity\/requests/.test(p)) idReads.push(p); return idGet(p, ...r); };
   await go("#/maintainer/maity/inbox/req-0009"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  win.Maity.api.getAll = idGetAll; win.Maity.api.get = idGet;
   const idEntry = main.querySelector("li.entry.current");
   expect(idEntry && idEntry.attrs["data-request"] === "req-0009" && idEntry.classList.contains("done") && document.activeElement === idEntry.querySelector("button.entry-head"),
     "ids: a request's link opens it, an answered one among the answered, its head focused");
+  expect(JSON.stringify(idReads) === JSON.stringify(["/projects/maintainer/maity/requests?status=open", "/projects/maintainer/maity/requests/req-0009"]),
+    "ids: the link to an answered request reads the open list and that request alone " + JSON.stringify(idReads));
   await go("#/maintainer/maity/inbox/req-0011"); for (let k = 0; k < 4; k++) await tick();
   const idTitle = main.querySelector("li.entry.current .title-refs");
   expect(idTitle && idHrefs(idTitle) === "#2=https://github.com/oliver-zehentleitner/maity/issues/2" && !main.querySelector("li.entry.current button.entry-head a"),
@@ -5844,7 +5864,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(reads.length === 1 && main.querySelectorAll("li.entry").length === before + 1 && text(main).includes("Came in meanwhile"),
       where + ": Reload the list reads the list anew and shows the new entry " + JSON.stringify(reads) + " " + before + " " + main.querySelectorAll("li.entry").length);
   };
-  await reloadShows("project inbox", (p) => p.endsWith("/requests?status=all"));
+  await reloadShows("project inbox", (p) => p.endsWith("/requests?status=open"));
   win.Maity.api.get = realGet2;
   await go("#/all");
   byId("inbox-project").value = "maintainer/sample"; byId("inbox-project").dispatch("change"); await tick();
@@ -10202,7 +10222,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }], priority: "normal", action: { method: "PATCH", path: "/projects/maintainer/maity", query: "x=1", body: raw, body_sha256: "ab12", used_at: null, used_seq: null } }, extra || {});
     let current = act();
     const sent = [];
-    win.Maity.api.getAll = (p, ...r) => (/\/requests\?status=all$/.test(p) ? Promise.resolve({ items: [current] }) : getAll(p, ...r));
+    win.Maity.api.getAll = (p, ...r) => (/\/requests\?status=open$/.test(p) ? Promise.resolve({ items: [current] }) : getAll(p, ...r));
     win.Maity.api.post = (p, b) => { if (/req-act\/answer$/.test(p)) { sent.push(b); return Promise.resolve(Object.assign(act(), { status: "answered" })); } return post(p, b); };
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
     const call = () => main.querySelector(".request-action");
