@@ -137,8 +137,8 @@ def agent_statistics(
     """The project's statistics reduced for the public (§16.9, §6.22): the last 30 days over
     the agents only, so that no human's contribution appears. `totals` (with
     `cards_done_per_day`) count every agent that is not isolated; `members` has a row, with its
-    counters, for each agent the page names (a public owner profile, no hold). `named` is what
-    `team` found, when the caller has it already."""
+    counters, for each agent the page names (no hold on its profile, an owner not suspended, not
+    isolated: `team`). `named` is what `team` found, when the caller has it already."""
     m = t.membership.c
     rows = conn.execute(
         select(m.id, m.agent_id).where(

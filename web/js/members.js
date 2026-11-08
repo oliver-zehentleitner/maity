@@ -269,7 +269,7 @@ window.Maity = window.Maity || {};
       if (known && !known.then) { fill(known); return slot; }
       append(slot, h("p", { class: "muted" }, M.t("members.picture.reading")));
       const reading = known || ownProfile(m.id)
-        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source, handle: a.handle || m.handle, memberships: a.memberships || [] }), (error) => ({ error }))
+        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source, avatar_motif: a.avatar_motif || null, handle: a.handle || m.handle, memberships: a.memberships || [] }), (error) => ({ error }))
         .then((got) => { profileOf.set(m.id, got); return got; });
       profileOf.set(m.id, reading);
       reading.then((got) => { if (slot.isConnected !== false) fill(got); });

@@ -148,6 +148,22 @@
    "session_id": "string"
   }
  },
+ "GET /avatars/motifs": {
+  "object": {
+   "motifs": {
+    "array": {
+     "object": {
+      "alt": "string",
+      "label": "string",
+      "name": "string",
+      "theme": "string",
+      "url": "string"
+     }
+    }
+   },
+   "version": "string"
+  }
+ },
  "GET /me": {
   "object": {
    "deletion": "null",
