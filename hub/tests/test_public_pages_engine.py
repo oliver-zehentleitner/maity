@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, public_pages
+from maity_hub import clock, db, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.routes import seo
@@ -301,6 +301,52 @@ def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction
     assert len(late) == 1, "the cleanup read the targets again under the lock"
     finished(late[0])
     assert set(rows(migrated)) == {"/a", "/n"}
+
+
+def test_on_postgresql_the_cleanup_holds_one_targets_lock_at_a_time(
+    migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A writer may take several targets' locks in an order of its own across its transaction
+    (an organisation's suspension touches its projects one after the other, each with its
+    cards: the #1509 review, fmzu). Here one holds "y" and then waits for "x" while the cleanup
+    holds "x": had the cleanup kept "x" and gone on to "y", the two would wait for each other
+    and PostgreSQL would end one. With one lock per candidate, both finish."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("SQLite writes one transaction at a time; advisory locks are PostgreSQL's")
+    config = hub(settings)
+    shown.targets.update({t: (t.upper(), True, clock.now()) for t in ("a", "x", "y")})
+    public_pages.render_all(migrated, config)
+    del shown.targets["x"], shown.targets["y"]  # gone, their pages left: both are candidates
+    original = db.xact_lock
+    holds_y = threading.Event()
+    writer: list[Future[None]] = []
+
+    def other_writer() -> None:
+        with migrated.begin() as conn:
+            original(conn, f"public_page:{NOTE}:y")
+            holds_y.set()
+            original(conn, f"public_page:{NOTE}:x")
+
+    def xact_lock(conn: Connection, name: str) -> None:
+        original(conn, name)
+        if name == f"public_page:{NOTE}:x" and not writer:
+            future = Future[None]()
+
+            def step() -> None:
+                try:
+                    other_writer()
+                    future.set_result(None)
+                except BaseException as error:
+                    future.set_exception(error)
+
+            writer.append(future)
+            threading.Thread(target=step, daemon=True).start()
+            assert holds_y.wait(10)
+
+    monkeypatch.setattr(public_pages, "xact_lock", xact_lock)
+    public_pages.render_all(migrated, config)
+    writer[0].result(timeout=10)  # not ended as a deadlock's victim
+    assert set(rows(migrated)) == {"/a"}
 
 
 def test_startup_renders_every_page_again_before_any_is_served(

@@ -3,7 +3,8 @@
 - hub: the full render of the public pages (at start and by the worker) no longer deletes the page
   of a target that became public while it ran. Its cleanup reads which targets exist when it runs,
   not the list it started from, and decides each page it would delete again under that target's
-  render lock, so a target switched off and on again meanwhile keeps its new page (PostgreSQL).
+  render lock, one target per transaction, so a target switched off and on again meanwhile keeps
+  its new page (PostgreSQL) and the cleanup never holds two targets' locks at once.
 - hub: an avatar motif whose file name holds a NUL is refused like one with `/` or `\`. The motifs
   are not served and the hub starts, instead of ending its start with a traceback.
 
