@@ -169,7 +169,9 @@ routes with the History API and shows its own "not found" for a path it
 does not know (`js/not-found.js`): signed in inside the app, without a
 session in the frame of the sign-in at a handle or a project's word that is
 no view, while an address under one of the dashboard's own first words keeps
-the sign-in, which leads on there. There are no `#/` routes and no redirects from them.
+the sign-in, which leads on there. A click on a link to `/`, `/explore` or
+`/for/<slug>` is a page load (`js/route.js`), because the hub draws those
+pages itself where it serves them. There are no `#/` routes and no redirects from them.
 
 | Route | What |
 |---|---|
