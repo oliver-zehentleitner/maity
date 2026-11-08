@@ -1862,6 +1862,11 @@ without a parent, and every failed `gh` or `git` call it needs. It only reads.
   same with `sort` and with `grep`).
 - It needs bash 4.4, the first with `mapfile -d` for the NUL-separated file list, and checks for it
   (delta 1 of #1502: the first text said bash 4).
+- The lists of runs and jobs are counted, and a merge line checked for being one, in bash itself,
+  not with `grep -c` or `wc -l` inside a numeric test, which drops their exit status: a grep that
+  printed a partial count and failed turned a full page into exit 0 (delta 2 of #1502, ChatGPT; a
+  test with such a grep for both lists). Every other command substitution is checked; the one
+  left unchecked, merge-tree's tree id, is printed for information and decides nothing.
 - Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
   (`LC_ALL=C`), so the locale changes nothing. A test runs it under German and English; the German
   part runs only where `de_DE.UTF-8` is installed and is skipped elsewhere, CI included.

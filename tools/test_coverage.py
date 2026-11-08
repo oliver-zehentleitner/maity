@@ -120,8 +120,8 @@ FAKE_GH = textwrap.dedent("""\
 
 
 # A stand-in for a tool the script pipes through (`sort`, `grep`): it fails, as on a read error,
-# without output when its input holds the text in <name>.fail next to it, and runs the real tool
-# otherwise.
+# when its input holds the text in <name>.fail next to it, after printing <name>.out if there is
+# one (a partial answer), and runs the real tool otherwise.
 FAULTY = textwrap.dedent("""\
     #!/usr/bin/env python3
     import os, pathlib, subprocess, sys
@@ -129,6 +129,9 @@ FAULTY = textwrap.dedent("""\
     marker = (here.parent / (here.name + ".fail")).read_text()
     data = sys.stdin.buffer.read()
     if marker.encode() in data:
+        out = here.parent / (here.name + ".out")
+        if out.exists():
+            sys.stdout.write(out.read_text())
         print(here.name + ": read error", file=sys.stderr)
         sys.exit(2)
     real = (here.parent / (here.name + ".real")).read_text()
@@ -500,11 +503,13 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
         self.assertIn(f"  {late} main on b [b.txt]", got.stdout.splitlines())
 
-    def faulty(self, tool: str, marker: str) -> None:
+    def faulty(self, tool: str, marker: str, partial: str | None = None) -> None:
         real = shutil.which(tool)
         assert real is not None
         (self.bin / f"{tool}.real").write_text(real)
         (self.bin / f"{tool}.fail").write_text(marker)
+        if partial is not None:
+            (self.bin / f"{tool}.out").write_text(partial)
         stand_in = self.bin / tool
         stand_in.write_text(FAULTY)
         stand_in.chmod(0o755)
@@ -525,6 +530,30 @@ class CoverageTest(unittest.TestCase):
                 self.faulty(tool, older)
                 self.assert_stops(self.run_check(data), "of job 4 failed")
                 (self.bin / tool).unlink()
+
+    def test_a_full_page_is_counted_without_a_helper_that_can_fail(self) -> None:
+        """Review delta 2 of #1502: a full page of runs or jobs counted by `grep -c` inside a
+        numeric test read a failed grep's partial count as the count (exit 0). The script counts
+        the lines itself; a grep that fails on the list after printing "5" changes nothing."""
+        head = self.pull_request({"a.txt": lines("pr a")})
+        tested = self.git("rev-parse", "main")
+        good = self.github(head, tested)
+        runs = [
+            {"created_at": "2026-11-08T10:00:00Z", "id": 400 + n, "status": "completed"}
+            for n in range(100)
+        ]
+        jobs = [
+            {"id": 1000 + n, "conclusion": "skipped", "name": f"page{n}"} for n in range(97)
+        ] + good["jobs"]["500/1"]
+        cases: dict[str, tuple[dict[str, Any], str, str]] = {
+            "runs": ({"runs": runs, "jobs": {"499/1": good["jobs"]["500/1"]}}, "400", "ci runs"),
+            "jobs": ({"jobs": {"500/1": jobs}}, "page0", "jobs"),
+        }
+        for name, (change, marker, says) in cases.items():
+            with self.subTest(name):
+                self.faulty("grep", marker, partial="5\n")
+                self.assert_stops(self.run_check({**good, **change}), f"100 or more {says}")
+                (self.bin / "grep").unlink()
 
     def test_the_bash_gate_is_the_version_that_has_mapfile_d(self) -> None:
         """`mapfile -d` came with bash 4.4; the gate and CONTRIBUTING must say so. Static: no bash

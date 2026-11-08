@@ -102,7 +102,7 @@ api() {
 # rejects as an unknown flag; so the flag is passed when `gh api --help` lists it.
 gh_help=$(gh api --help 2>&1) || die "gh api --help failed: ${gh_help//$'\n'/ }"
 log_flags=()
-grep -q -e '--allow-escape-sequences' <<<"$gh_help" && log_flags=(--allow-escape-sequences)
+[[ $gh_help == *--allow-escape-sequences* ]] && log_flags=(--allow-escape-sequences)
 
 # 1. The pull request.
 info=$(api "$repo/pulls/$pr" --jq '"\(.state) \(.merged) \(.head.sha) \(.base.ref) \(.head.ref)"') \
@@ -146,16 +146,19 @@ fetched=$(git rev-parse --verify --quiet "$tmp/head^{commit}") || die "no fetche
 runs=$(api "$repo/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
   --jq '.workflow_runs[] | "\(.created_at) \(.id) \(.run_attempt) \(.status) \(.conclusion) \(.path) \(.head_branch)"') \
   || die "listing the ci runs of $head failed (gh api)"
-# One page of 100 is read; a full page may have more after it, so the check does not guess.
-[ "$(grep -c . <<<"$runs")" -lt 100 ] || die "$head has 100 or more ci runs; only one page is read"
 matching=()
+count=0
 while IFS= read -r line; do
   [ -n "$line" ] || continue
+  count=$((count + 1))
   [[ $line =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\ [0-9]+\ [0-9]+\ [a-z_]+\ [a-z_]+\ [^\ ]+\ [^\ ]+$ ]] \
     || die "unexpected line in the list of ci runs: $line"
   read -r _ _ _ _ _ path branch <<<"$line"
   [ "$path" = "$WORKFLOW" ] && [ "$branch" = "$head_ref" ] && matching+=("$line")
 done <<<"$runs"
+# One page of 100 is read; a full page may have more after it, so the check does not guess. The
+# lines are counted in bash, so no failed helper can read as a count.
+[ "$count" -lt 100 ] || die "$head has 100 or more ci runs; only one page is read"
 # Newest by start time, then by id: the same order as tools/ci_watch.py. Sorted bytewise, since a
 # locale's collation may skip the punctuation of a timestamp.
 newest=""
@@ -170,16 +173,18 @@ run_url="https://$repo_host/$repo_owner/$repo_name/actions/runs/$run_id"
 jobs=$(api "$repo/actions/runs/$run_id/attempts/$attempt/jobs?per_page=100" \
   --jq '.jobs[] | "\(.id) \(.conclusion) \(.name)"') \
   || die "listing the jobs of run $run_id failed (gh api)"
-[ "$(grep -c . <<<"$jobs")" -lt 100 ] || die "run $run_id has 100 or more jobs; only one page is read"
 summary=""
 job_ids=()
+count=0
 while IFS= read -r line; do
   [ -n "$line" ] || continue
+  count=$((count + 1))
   [[ $line =~ ^([0-9]+)\ ([a-z_]+)\ (.+)$ ]] || die "unexpected line in the list of jobs: $line"
   [ "${BASH_REMATCH[3]}" = "$SUMMARY_JOB" ] && summary=${BASH_REMATCH[2]}
   # A skipped job checked nothing out and has no log.
   [ "${BASH_REMATCH[2]}" = skipped ] || job_ids+=("${BASH_REMATCH[1]}")
 done <<<"$jobs"
+[ "$count" -lt 100 ] || die "run $run_id has 100 or more jobs; only one page is read"
 [ -n "$summary" ] || die "run $run_id has no $SUMMARY_JOB job: $run_url"
 [ "$summary" = success ] || die "$SUMMARY_JOB is $summary in the newest ci run for $head: $run_url"
 
@@ -201,7 +206,7 @@ for job in ${job_ids[@]+"${job_ids[@]}"}; do
   esac
   merges=$(cut -d' ' -f6- <<<"$found" | LC_ALL=C sort -u) || die "reading the merge line of job $job failed"
   [ -n "$merges" ] || die "reading the merge line of job $job gave nothing"
-  [ "$(wc -l <<<"$merges")" -eq 1 ] || die "job $job's log names more than one merge: ${merges//$'\n'/; }"
+  [[ $merges != *$'\n'* ]] || die "job $job's log names more than one merge: ${merges//$'\n'/; }"
   if [ -z "$merge" ]; then
     merge=$merges
     merge_job=$job
