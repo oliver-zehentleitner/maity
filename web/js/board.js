@@ -542,8 +542,8 @@ window.Maity = window.Maity || {};
           c.status === "done"
             ? h("strong", null, M.t("board.release.shipped"))
             : M.tn("board.release.ready", { ready: h("strong", null, M.t("board.release.ready_words")) }))
-        : h("div", { class: "readiness not-ready" }, h("strong", null, M.t("board.release.not_ready")),
-          h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId))))),
+        : h("div", { class: "readiness not-ready" }, M.tn("board.release.not_ready", { reasons: h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId)))) })
+          .map((p) => (typeof p === "string" ? h("strong", null, p) : p))),
       noProbe && !closed
         ? h("p", { class: "flag" }, M.t("board.release.no_probe"))
         : null,

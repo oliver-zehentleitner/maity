@@ -4285,6 +4285,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     i18n.language = was;
     delete win.MAITY_I18N.de;
   }
+  // A failure is one sentence per language (tsk-0zbms0wwqhmm): the reason stands where the catalog's
+  // sentence puts it, not after a prefix; "" is the reason alone; the labels are sentences too.
+  {
+    const i18n = win.Maity.i18n;
+    const st = win.Maity.statusLine();
+    st.fail(win.Maity.t("notify.not_saved"), { message: "boom" });
+    expect(st.el.textContent === "Not saved: boom" && st.el.className === "send-status failed", "reason: English reads as before " + st.el.textContent);
+    st.fail("", { message: "alone" });
+    expect(st.el.textContent === "alone", "reason: an empty sentence is the reason alone");
+    win.MAITY_I18N.de = { "notify.not_saved": "Wegen {reason} nicht gespeichert.", "prefs.diff.added": "Neu ({line}) hinzugefügt",
+      "board.release.not_ready": "{reasons} — darum nicht bereit", "inbox.label.project": "{entry} (aus {name})" };
+    const was = i18n.language;
+    i18n.language = "de";
+    st.fail(win.Maity.t("notify.not_saved"), { message: "Zeitüberschreitung" });
+    expect(st.el.textContent === "Wegen Zeitüberschreitung nicht gespeichert.", "reason: a language puts the reason in the middle " + st.el.textContent);
+    expect(win.Maity.reasonIn("A {reason} and {reason}", "x") === "A x and x" && win.Maity.reasonIn("$& {reason}", "$1") === "$& $1",
+      "reason: every placeholder filled, the reason's text taken as it is");
+    const added = win.Maity.tn("prefs.diff.added", { line: "L" }), notReady = win.Maity.tn("board.release.not_ready", { reasons: "R" }),
+      label = win.Maity.tn("inbox.label.project", { name: "Maity", entry: "E" });
+    expect(JSON.stringify([added, notReady, label]) === JSON.stringify([["Neu (", "L", ") hinzugefügt"], ["R", " — darum nicht bereit"], ["E", " (aus ", "Maity", ")"]]),
+      "reason: the labels are sentences with their element where the language puts it " + JSON.stringify([added, notReady, label]));
+    i18n.language = was;
+    delete win.MAITY_I18N.de;
+  }
   // A visitor's language is the landing page's rule (tsk-a9n9p6952wwb): ?lang=, then the browser's,
   // then en, never a choice stored in the browser, which the hub's pages cannot read. js/i18n.js loaded
   // afresh, as a new page is, over a browser that still keeps an older version's stored choice.

@@ -1488,7 +1488,11 @@ without one the choice on `/register` or `?lang=`, then the browser's
 a string literal at `M.t`, and on any view whose prose string literals
 grow past `tools/strings-baseline.json`: new text goes into the catalog,
 old text moves over view by view (`make fixtures` then lowers the
-baseline; nothing raises it but an edit to the file).
+baseline; nothing raises it but an edit to the file). A failure is a whole
+sentence with `{reason}` (`Maity.reasonIn`, `status.fail`): `make check` also
+fails on an English text that ends in ": " and on a key given to `status.fail`
+without `{reason}`; `tools/reason_sentences.py` turned the old prefixes into
+such sentences.
 
 A translation is `i18n/<lang>.json`, one of the ten languages of
 `docs/api.md` §16.7. `make check` fails on a key English does not have,

@@ -869,6 +869,55 @@ def check_error_words(english):
             finding(os.path.join(ROOT, "js", "errors.js"), 1, "error code %r of docs/api.md §1.3 has no words" % code)
 
 
+def entry_texts(entry):
+    return [entry] if isinstance(entry, str) else list(entry.values())
+
+
+def check_prefixes(english):
+    """A text that ends in ": " is a prefix: the code joins something after it, in English order
+    (tsk-0zbms0wwqhmm). The whole sentence goes into the catalog, with a placeholder where the
+    joined part stands: {reason} for a failure, or a node filled with M.tn."""
+    for key, entry in sorted(english.items()):
+        if any(text.endswith(": ") for text in entry_texts(entry)):
+            finding(os.path.join(I18N, "en.json"), 1, "key %r ends in \": \", a prefix: write the whole "
+                    "sentence with a placeholder ({reason} for a failure)" % key)
+
+
+def first_argument(code, start):
+    """The span of the call's first argument, from just after its "(" to its "," or ")"."""
+    depth = 0
+    for i in range(start, len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return start, i
+            depth -= 1
+        elif c == "," and depth == 0:
+            return start, i
+    return start, len(code)
+
+
+def check_fail_sentences(path, src, code, english):
+    """statusLine().fail(sentence, err) puts the reason where the sentence has {reason}: a catalog
+    text handed to it as its first argument has the placeholder (tsk-0zbms0wwqhmm)."""
+    for m in re.finditer(r"\.fail\(", code):
+        begin, end = first_argument(code, m.end())
+        for t in re.finditer(r"\b(?:M|Maity)\.t\(\s*", code[begin:end]):
+            # The sentence itself, not a text filled into it (M.t("x", { what: M.t("y") })).
+            part = code[begin:begin + t.start()]
+            if sum(part.count(c) for c in "([{") != sum(part.count(c) for c in ")]}"):
+                continue
+            at = begin + t.end()
+            quote = src[at] if at < len(src) else ""
+            close = src.find(quote, at + 1) if quote in ("\"", "'") else -1
+            key = src[at + 1:close] if close > 0 else None
+            if key in english and not all("{reason}" in text for text in entry_texts(english[key])):
+                finding(path, code.count("\n", 0, m.start()) + 1,
+                        "fail() puts the reason at {reason}: key %r has none" % key)
+
+
 def check_i18n(write, release=False, notes=None):
     catalogs = {}
     names = sorted(f for f in os.listdir(I18N) if f.endswith(".json") and not f.endswith(I18N_META)) if os.path.isdir(I18N) else []
@@ -903,6 +952,7 @@ def check_i18n(write, release=False, notes=None):
         finding(os.path.join(I18N, "en.json"), 1, "missing: English is the catalog every language follows")
         return
     check_translations(catalogs, write, release, notes if notes is not None else [])
+    check_prefixes(english)
     used = set()
     counts = {}
     for f in sorted(os.listdir(os.path.join(ROOT, "js"))):
@@ -927,6 +977,7 @@ def check_i18n(write, release=False, notes=None):
             used.add(key)
             if key not in english:
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
+        check_fail_sentences(path, src, code, english)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text, before in literals if prose(text, before))
     check_error_words(english)

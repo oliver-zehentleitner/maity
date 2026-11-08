@@ -967,9 +967,17 @@ chat is found again by its participants, never by its title; its
 maker may rename it (§9.2). Rejected: a chat without a title (the
 hub allows one), named from its participants when read: every list
 that shows the chat would need that naming, and the participants alone
-do not say what the chat is for. Still put together from
-pieces: a status line's prefix and its reason ("Not saved: " + the
-hub's words, `status.fail`), for a later part of stage 2.
+do not say what the chat is for. A failure is one
+sentence with `{reason}` where the hub's words go ("Not saved:
+{reason}"): `status.fail(sentence, err)` fills it through
+`M.reasonIn`, so a language may put the reason first or in the middle.
+Text before an element (an inbox entry's label, a diff line's "added:",
+the list of what blocks a release) has its own placeholder (`{entry}`,
+`{line}`, `{reasons}`) filled with that element by `M.tn`. `make check`
+fails on an English text that ends in ": " and on a key handed to
+`status.fail` without `{reason}` (tsk-0zbms0wwqhmm). Rejected: the
+reason glued after the sentence in code, which fixed its place for
+every language.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code

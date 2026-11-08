@@ -82,8 +82,8 @@ window.Maity = window.Maity || {};
 
   // Inline, one line per row: it reads the same at 390 px as at 1280.
   const SIGNS = { same: " ", del: "−", add: "+" };
-  // Getters: the words are the catalog's when shown.
-  const SAID = { same: "", get del() { return M.t("prefs.diff.removed"); }, get add() { return M.t("prefs.diff.added"); } };
+  // The words a screen reader says with a changed line, one sentence with {line} (tsk-0zbms0wwqhmm).
+  const SAID = { del: (line) => M.tn("prefs.diff.removed", { line }), add: (line) => M.tn("prefs.diff.added", { line }) };
   function diffView(before, after) {
     if (before === after) return h("p", { class: "muted" }, M.t("prefs.diff.same"));
     const lines = diffLines(before, after);
@@ -91,8 +91,9 @@ window.Maity = window.Maity || {};
       h("ol", { class: "pref-diff", "aria-label": M.t("prefs.diff.label") },
       lines.map((d) => h("li", { class: "pref-" + d.op },
         h("span", { class: "pref-sign", "aria-hidden": "true" }, SIGNS[d.op]),
-        SAID[d.op] ? h("span", { class: "visually-hidden" }, SAID[d.op]) : null,
-        h("span", { class: "pref-line" }, d.text || " "))))];
+        Object.hasOwn(SAID, d.op)
+          ? SAID[d.op](h("span", { class: "pref-line" }, d.text || " ")).map((p) => (typeof p === "string" ? h("span", { class: "visually-hidden" }, p) : p))
+          : h("span", { class: "pref-line" }, d.text || " "))))];
   }
 
   const handleOf = (who) => (who && who.handle ? "@" + who.handle : who && (who.member_id || who.id)) || M.t("prefs.someone");

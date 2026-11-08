@@ -288,4 +288,48 @@ expect(pseudo_run.pieces_of("Keep it; @agent-d sorts `x` the tabs.") >= {"Keep i
        "pseudo: a fixture's text comes apart where a page splits it")
 expect(len(pseudo_run.routes_of_smoke()) > 50, "pseudo: the routes come from the smoke test")
 
+# A failure is one sentence with {reason} (tsk-0zbms0wwqhmm): no English text ends in ": ", and
+# what statusLine().fail() is handed has the placeholder; a text filled into it need not.
+SENTENCES = {
+    "s.not_saved": "Not saved: {reason}",
+    "s.prefix": "Not saved: ",
+    "s.plural": {"one": "{count} left: {reason}", "other": "{count} left: "},
+    "s.what": "{what} failed: {reason}",
+    "s.busy": "Linking",
+}
+
+
+def found_by(run):
+    check.findings.clear()
+    run()
+    out = list(check.findings)
+    check.findings.clear()
+    return out
+
+
+said = found_by(lambda: check.check_prefixes(SENTENCES))
+expect(len(said) == 2 and "'s.plural'" in said[0] and "'s.prefix'" in said[1],
+       "a text or a plural form that ends in \": \" is a prefix " + repr(said))
+
+
+def fail_findings(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return found_by(lambda: check.check_fail_sentences("js/x.js", src, code, SENTENCES))
+
+
+expect(fail_findings('status.fail(M.t("s.not_saved"), err);') == [], "fail() with a sentence that has {reason}")
+expect(len(fail_findings('status.fail(M.t("s.prefix"), err);')) == 1, "fail() with a text without {reason}")
+expect(len(fail_findings('status.fail(ok ? M.t("s.not_saved") : M.t("s.prefix"), err);')) == 1,
+       "fail() with a ternary, one branch without {reason}")
+expect(fail_findings('status.fail(M.t("s.what", { what: M.t("s.busy") }), err);') == [],
+       "a text filled into the sentence is not the sentence")
+expect(len(fail_findings('status.fail(M.t("s.plural", { count: 2 }), err);')) == 1,
+       "a plural sentence needs {reason} in each form")
+expect(fail_findings('status.fail("", err); note(M.t("s.prefix"), err);') == [], "only fail()'s first argument is the sentence")
+expect(fail_findings('status.fail(M.t("s.not_saved"), { message: M.t("s.prefix") });') == [],
+       "a text in the error, fail()'s second argument, is the reason, not the sentence")
+expect(fail_findings('status.fail(M.t("s.not_saved"), M.t("s.prefix"));') == [],
+       "the first argument ends at its comma")
+
 raise SystemExit(1 if failures else 0)

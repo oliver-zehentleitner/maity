@@ -165,8 +165,10 @@ window.Maity = window.Maity || {};
       el,
       busy: (text) => { el.textContent = text; el.className = "send-status"; },
       done: () => { el.textContent = ""; el.className = "send-status"; },
-      // An ambiguous mention is said with the long forms to write (§8.6).
-      fail: (prefix, err) => { el.textContent = prefix + (M.dom.ambiguousMention(err) || err).message; el.className = "send-status failed"; },
+      // sentence: the catalog's whole sentence with {reason} where its language puts the reason
+      // (tsk-0zbms0wwqhmm), or "" for the reason alone. An ambiguous mention is said with the long
+      // forms to write (§8.6).
+      fail: (sentence, err) => { el.textContent = M.reasonIn(sentence, (M.dom.ambiguousMention(err) || err).message); el.className = "send-status failed"; },
     };
   }
 
