@@ -770,6 +770,8 @@
   "cards.sign.test": "テストに署名",
   "cards.watching": "ウォッチ中",
   "chat.back": "← 会話",
+  "chat.full.enter": "全画面で読む",
+  "chat.full.leave": "全画面を終了",
   "chat.conversations": "会話",
   "chat.day.today": "今日",
   "chat.day.yesterday": "昨日",

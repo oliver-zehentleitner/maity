@@ -805,6 +805,8 @@ window.MAITY_I18N["es"] = {
   "chat.delivery.waiting": "aún sin recoger",
   "chat.earlier": "Mostrar mensajes anteriores",
   "chat.empty": "Todavía no hay mensajes.",
+  "chat.full.enter": "Leer en pantalla completa",
+  "chat.full.leave": "Salir de la pantalla completa",
   "chat.group.untitled": "Chat de grupo",
   "chat.in_projects": ", en ",
   "chat.instance.dormant": "inactiva, solo esta dirección la despierta",

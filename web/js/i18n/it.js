@@ -805,6 +805,8 @@ window.MAITY_I18N["it"] = {
   "chat.delivery.waiting": "non ancora ritirato",
   "chat.earlier": "Mostra messaggi precedenti",
   "chat.empty": "Ancora nessun messaggio.",
+  "chat.full.enter": "Leggi a schermo intero",
+  "chat.full.leave": "Esci dallo schermo intero",
   "chat.group.untitled": "Chat di gruppo",
   "chat.in_projects": ", in ",
   "chat.instance.dormant": "inattiva, la sveglia solo questo indirizzo",

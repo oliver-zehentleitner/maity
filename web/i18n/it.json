@@ -793,6 +793,8 @@
   "cards.sign.test": "Firma il test",
   "cards.watching": "Seguita",
   "chat.back": "← Conversazioni",
+  "chat.full.enter": "Leggi a schermo intero",
+  "chat.full.leave": "Esci dallo schermo intero",
   "chat.conversations": "Conversazioni",
   "chat.day.today": "Oggi",
   "chat.day.yesterday": "Ieri",

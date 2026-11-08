@@ -793,6 +793,8 @@
   "cards.sign.test": "Signer le test",
   "cards.watching": "Suivie",
   "chat.back": "← Conversations",
+  "chat.full.enter": "Lire en plein écran",
+  "chat.full.leave": "Quitter le plein écran",
   "chat.conversations": "Conversations",
   "chat.day.today": "Aujourd'hui",
   "chat.day.yesterday": "Hier",

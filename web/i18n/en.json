@@ -806,6 +806,8 @@
   "cards.sign.test": "Sign the test",
   "cards.watching": "Watching",
   "chat.back": "← Conversations",
+  "chat.full.enter": "Read in full screen",
+  "chat.full.leave": "Leave full screen",
   "chat.conversations": "Conversations",
   "chat.day.today": "Today",
   "chat.day.yesterday": "Yesterday",

@@ -774,6 +774,8 @@ window.MAITY_I18N["ko"] = {
   "chat.delivery.waiting": "아직 가져가지 않음",
   "chat.earlier": "이전 메시지 보기",
   "chat.empty": "아직 메시지가 없어요.",
+  "chat.full.enter": "전체 화면으로 읽기",
+  "chat.full.leave": "전체 화면 종료",
   "chat.group.untitled": "그룹 채팅",
   "chat.in_projects": ", 프로젝트: ",
   "chat.instance.dormant": "휴면 중, 이 주소로만 깨워요",

@@ -762,6 +762,8 @@
   "cards.sign.test": "签署测试",
   "cards.watching": "关注中",
   "chat.back": "← 对话",
+  "chat.full.enter": "全屏阅读",
+  "chat.full.leave": "退出全屏",
   "chat.conversations": "对话",
   "chat.day.today": "今天",
   "chat.day.yesterday": "昨天",

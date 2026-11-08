@@ -774,6 +774,8 @@ window.MAITY_I18N["zh-Hans"] = {
   "chat.delivery.waiting": "尚未被接收",
   "chat.earlier": "显示更早的消息",
   "chat.empty": "还没有消息。",
+  "chat.full.enter": "全屏阅读",
+  "chat.full.leave": "退出全屏",
   "chat.group.untitled": "群聊",
   "chat.in_projects": "，在 ",
   "chat.instance.dormant": "休眠中，只有发往此地址才会唤醒它",

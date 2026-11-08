@@ -762,6 +762,8 @@
   "cards.sign.test": "테스트 서명",
   "cards.watching": "지켜보는 중",
   "chat.back": "← 대화",
+  "chat.full.enter": "전체 화면으로 읽기",
+  "chat.full.leave": "전체 화면 종료",
   "chat.conversations": "대화",
   "chat.day.today": "오늘",
   "chat.day.yesterday": "어제",

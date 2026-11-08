@@ -3919,6 +3919,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // From a chat: an @name there tells nobody; the hint offers a project message with it.
   await go("#/maintainer/maity/chat/agt-d");
   {
+    // Full screen (tsk-fnch2yxp2kk1): a button in the chat's heading row covers the window with the chat;
+    // the button again, Escape or the browser's back ends it, and back leaves the view as drawn.
+    const fsHtml = document.documentElement;
+    const fsPane = main.querySelector("section.chat-pane");
+    const fsBtn = () => main.querySelector("section.chat-pane .toolbar button.chat-full-toggle");
+    const fsWas = { push: win.history.pushState, back: win.history.back };
+    const fsLog = [];
+    win.history.pushState = () => { fsLog.push("push"); };
+    win.history.back = () => { fsLog.push("back"); if (win.onpopstate) win.onpopstate({ type: "popstate" }); };
+    const fsState = () => [fsHtml.classList.contains("chat-full"), fsPane.classList.contains("chat-full-pane"), fsBtn().getAttribute("aria-pressed"), fsBtn().getAttribute("aria-label")];
+    expect(fsBtn() && fsBtn().getAttribute("type") === "button" && fsBtn().getAttribute("title") === "Read in full screen"
+      && JSON.stringify(fsState()) === JSON.stringify([false, false, "false", "Read in full screen"]) && fsBtn().querySelector("svg"),
+      "chat full screen: an icon button in a direct chat's heading row, named and with its tooltip, not pressed");
+    fsBtn().click(); await tick();
+    expect(JSON.stringify(fsState()) === JSON.stringify([true, true, "true", "Leave full screen"]) && fsLog.join() === "push",
+      "chat full screen: a press covers the window with the chat and takes one history entry " + JSON.stringify([fsState(), fsLog]));
+    let fsPrevented = false;
+    docListeners.keydown({ key: "Escape", defaultPrevented: false, preventDefault: () => { fsPrevented = true; } }); await tick();
+    expect(JSON.stringify(fsState()) === JSON.stringify([false, false, "false", "Read in full screen"]) && fsPrevented && fsLog.join() === "push,back",
+      "chat full screen: Escape ends it and leaves its history entry " + JSON.stringify([fsState(), fsLog]));
+    fsBtn().click(); await tick();
+    win.onpopstate({ type: "popstate" }); await tick(); // the browser's back
+    expect(JSON.stringify(fsState()) === JSON.stringify([false, false, "false", "Read in full screen"]) && fsLog.join() === "push,back,push"
+      && main.querySelector("section.chat-pane") === fsPane, "chat full screen: the browser's back ends it, the chat stays as drawn " + JSON.stringify([fsState(), fsLog]));
+    fsBtn().click(); await tick();
+    fsBtn().click(); await tick();
+    expect(!fsHtml.classList.contains("chat-full") && fsLog.join() === "push,back,push,push,back", "chat full screen: the button again ends it " + JSON.stringify(fsLog));
+    fsBtn().click(); await tick();
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    expect(!fsHtml.classList.contains("chat-full"), "chat full screen: another view ends it");
+    win.history.pushState = fsWas.push; win.history.back = fsWas.back;
+    await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    // At phone width (the same request; §16.13): the product line is only "Maity 2026", a group chat
+    // shows no "In it:" line, and its composer's label is read out but not shown. The full screen
+    // is fixed over the window at its height.
+    const fsCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8").replace(/\s+/g, " ");
+    const fsPhone = fsCss.split("@media (max-width: 600px) {").slice(1).map((b) => b.split("} }")[0] + "}").join(" ");
+    expect(fsPhone.includes(".product-line > .product-sep, .product-line > .product-part ~ .product-part { display: none; }")
+      && fsPhone.includes(".group-people-line { display: none; }")
+      && fsPhone.includes('.group-chat .compose-head > label[for="chat-text"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }')
+      && !/label\[for="chat-text"\] \{[^}]*display: none/.test(fsCss),
+      "phone width: the product line is its first part, no In it: line, the composer's label hidden from sight, not from a reader");
+    expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0;") && fsCss.includes("height: 100dvh;")
+      && fsCss.includes("html.chat-full body { overflow: hidden; }"), "chat full screen: the chat fixed over the whole window, the page under it still");
+  }
+  {
     // A direct chat offers the members too; a pick keeps the draft and the hint that a mention tells nobody here.
     const dmText = byId("chat-text");
     const dmWas = dmText.value;
@@ -8799,6 +8845,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const pane = main.querySelector("section.chat-pane.group-chat");
     expect(at >= 0 && send > at && pane && !Array.from(pane.childNodes).some((n) => (n.className || "").split(" ").includes("send-status") && n.getAttribute("role") === "status" && n !== kids[at] && n.getAttribute("tabindex") === "-1"),
       "group chat: the send status stands in the action row, before Send, not below the composer");
+    const gfs = pane && pane.querySelector(".toolbar button.chat-full-toggle");
+    expect(gfs && gfs.getAttribute("aria-label") === "Read in full screen" && gfs.getAttribute("aria-pressed") === "false",
+      "chat full screen: a group chat has the button in its heading row too");
   }
   {
     // A group chat offers its participants alone: the hub resolves a mention against them only (§8.6).

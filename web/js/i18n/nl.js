@@ -805,6 +805,8 @@ window.MAITY_I18N["nl"] = {
   "chat.delivery.waiting": "nog niet opgepikt",
   "chat.earlier": "Eerdere berichten tonen",
   "chat.empty": "Nog geen berichten.",
+  "chat.full.enter": "Lezen op volledig scherm",
+  "chat.full.leave": "Volledig scherm verlaten",
   "chat.group.untitled": "Groepschat",
   "chat.in_projects": ", in ",
   "chat.instance.dormant": "slapend, alleen dit adres wekt de instantie",

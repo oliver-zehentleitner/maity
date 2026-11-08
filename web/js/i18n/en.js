@@ -820,6 +820,8 @@ window.MAITY_I18N["en"] = {
   "chat.delivery.waiting": "not picked up yet",
   "chat.earlier": "Show earlier messages",
   "chat.empty": "No messages yet.",
+  "chat.full.enter": "Read in full screen",
+  "chat.full.leave": "Leave full screen",
   "chat.group.untitled": "Group chat",
   "chat.in_projects": ", in ",
   "chat.instance.dormant": "dormant, only this address wakes it",

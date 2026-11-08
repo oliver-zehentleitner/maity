@@ -93,11 +93,40 @@ window.Maity = window.Maity || {};
     return true;
   }
 
+  // A layer over the view, such as the full-screen chat (tsk-fnch2yxp2kk1): it takes one entry
+  // of the history at the same address, so the browser's back closes it and nothing else. Opened
+  // with layer(close); the result's back() closes it as that back would, by leaving its entry;
+  // drop() forgets it without touching the history (the view left first). One layer at a time.
+  let layerOpen = null; // { close } while a layer holds its entry
+  let leaving = false; // our own history.back() of a layer: its popstate is ours
+  function closedLayer() {
+    if (leaving) { leaving = false; return true; }
+    if (!layerOpen) return false;
+    const { close } = layerOpen;
+    layerOpen = null;
+    close();
+    return true;
+  }
+  function layer(close) {
+    window.history.pushState(window.history.state, "", window.location.href);
+    const mine = { close };
+    layerOpen = mine;
+    return {
+      back() { if (layerOpen !== mine) return; layerOpen = null; leaving = true; window.history.back(); },
+      drop() { if (layerOpen === mine) layerOpen = null; },
+    };
+  }
+
   // The view is drawn again on every change of the address: back and
   // forward, a link, go().
   function listen(fn) {
     onChange = fn;
-    window.addEventListener(fixture ? "hashchange" : "popstate", fn);
+    window.addEventListener(fixture ? "hashchange" : "popstate", (e) => {
+      // A back that only closes a layer (layer() below) leaves the view as drawn.
+      if (e && e.type === "popstate" && closedLayer()) return;
+      fn(e);
+    });
+    if (fixture) window.addEventListener("popstate", closedLayer);
     if (fixture) return;
     // A click on a link of the dashboard stays in the page; a modified
     // click, another target or a hub path is the browser's.
@@ -168,5 +197,5 @@ window.Maity = window.Maity || {};
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, dropFragment, jump };
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump };
 })(window.Maity);

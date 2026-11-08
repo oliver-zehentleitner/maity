@@ -740,6 +740,8 @@
   "cards.sign.test": "Test signieren",
   "cards.watching": "Beobachtet",
   "chat.back": "← Unterhaltungen",
+  "chat.full.enter": "Im Vollbild lesen",
+  "chat.full.leave": "Vollbild verlassen",
   "chat.conversations": "Unterhaltungen",
   "chat.day.today": "Heute",
   "chat.day.yesterday": "Gestern",

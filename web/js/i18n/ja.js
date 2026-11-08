@@ -782,6 +782,8 @@ window.MAITY_I18N["ja"] = {
   "chat.delivery.waiting": "まだ受け取られていません",
   "chat.earlier": "以前のメッセージを表示",
   "chat.empty": "メッセージはまだありません。",
+  "chat.full.enter": "全画面で読む",
+  "chat.full.leave": "全画面を終了",
   "chat.group.untitled": "グループチャット",
   "chat.in_projects": "、プロジェクト: ",
   "chat.instance.dormant": "休眠中。このアドレス宛てでのみ起動します",

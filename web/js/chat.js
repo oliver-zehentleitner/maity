@@ -446,6 +446,62 @@ window.Maity = window.Maity || {};
   // keyboard, 100dvh does not everywhere.
   // The lines of history an open chat keeps in view however small the screen.
   const HISTORY_LEAST = 60;
+  // Full screen (the owner's request, tsk-fnch2yxp2kk1): the open chat covers the window, the
+  // page around it hidden, to read on a phone. A button in the chat's heading row, as the list's
+  // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
+  // button again, with Escape (unless something open, a menu or the mention list, took it), with
+  // the browser's back (a layer of the history, js/route.js), and when the chat leaves the page.
+  function fullScreen(ctx, pane) {
+    const root = document.documentElement;
+    const button = h("button", { type: "button", class: "icon-button chat-full-toggle" });
+    let held = null; // the history layer while full
+    let watch = null;
+    const isFull = () => held !== null;
+    const label = () => {
+      const text = isFull() ? M.t("chat.full.leave") : M.t("chat.full.enter");
+      button.setAttribute("aria-label", text);
+      button.setAttribute("title", text);
+      button.setAttribute("aria-pressed", String(isFull()));
+      clear(button);
+      append(button, (isFull() ? M.icons.collapse : M.icons.expand)(20));
+    };
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      end(true);
+      button.focus();
+    };
+    // `back`: leave the layer's entry too (the button, Escape); not when the browser's back
+    // already did, or the chat left the page.
+    function end(back) {
+      if (!isFull()) return;
+      const layer = held;
+      held = null;
+      root.classList.toggle("chat-full", false);
+      pane.classList.toggle("chat-full-pane", false);
+      document.removeEventListener("keydown", onKey);
+      if (watch) { watch.disconnect(); watch = null; }
+      if (back) layer.back(); else layer.drop();
+      label();
+    }
+    button.addEventListener("click", () => {
+      if (isFull()) { end(true); return; }
+      held = M.route.layer(() => end(false));
+      root.classList.toggle("chat-full", true);
+      pane.classList.toggle("chat-full-pane", true);
+      document.addEventListener("keydown", onKey);
+      // Chats replaces a pane in place: the one that left takes the full screen with it.
+      if (window.MutationObserver && pane.parentNode) {
+        watch = new window.MutationObserver(() => { if (!pane.isConnected) end(false); });
+        watch.observe(pane.parentNode, { childList: true });
+      }
+      label();
+    });
+    if (ctx.onDispose) ctx.onDispose(() => end(false));
+    label();
+    return button;
+  }
+
   function fitToScreen(layout) {
     let watcher = null, swaps = null, frame = 0;
     // The pane's parts now watched: only the current pane's, so a pane Chats
@@ -564,7 +620,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, togglePin, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -897,6 +953,7 @@ window.Maity = window.Maity || {};
       h("a", { class: "chat-back", href: ctx.link("chat") }, M.t("chat.back")),
       h("div", { class: "toolbar" },
         heading,
+        fullScreen(ctx, pane),
         h("span", { class: "muted" }, agent.session
           ? (agent.session.listening ? M.t("chat.session.listening", { id: agent.session.id }) : M.t("chat.session", { id: agent.session.id }))
           : M.t("chat.session.none")),

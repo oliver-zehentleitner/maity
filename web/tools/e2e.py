@@ -780,6 +780,7 @@ def main() -> int:
                     join_reports_layout(run, browser)
                     profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
+                    chat_phone_views(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
@@ -2925,6 +2926,72 @@ def chat_height_views(run: Run, browser) -> None:
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()
+
+
+def chat_phone_views(run: Run, browser) -> None:
+    """The owner's request for phones (tsk-fnch2yxp2kk1), in fixture mode, in a group chat at
+    1280 x 800, 390 x 844 and 360 x 780, light and dark. At phone width the product line is only
+    "Maity 2026" on one row (§16.13), the "In it:" line is not shown, and the composer's label is
+    out of sight but still names the field. In every size the full screen covers the window with the
+    chat, nothing scrolls sideways, and the button, Escape and the browser's back end it, back
+    without drawing the chat again."""
+    run.step("fixtures: a chat on a phone, the product line, the hint lines and the full screen")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 800), (390, 844), (360, 780)):
+        phone = width <= 600
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            page = context.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            where = f"cnv-0007 at {width}x{height}, {scheme}"
+            try:
+                page.goto(f"{index}?lang=en#/maintainer/maity/chat/cnv-0007")
+                pane = page.locator(".chat-layout.open .chat-pane.group-chat")
+                pane.locator(".compose").wait_for()
+                page.wait_for_timeout(500)
+                parts = page.evaluate(
+                    "() => Array.from(document.querySelectorAll('#product-line > *')).filter((el) => el.getClientRects().length)"
+                    ".map((el) => el.textContent.trim())"
+                )
+                line = page.locator("#product-line").bounding_box()
+                if phone:
+                    assert len(parts) == 1 and parts[0].startswith("Maity ") and line and line["height"] < 48, f"{where}: {parts} {line}"
+                else:
+                    assert len(parts) == 7, f"{where}: the product line shows {parts}"
+                people = pane.locator(".group-people-line")
+                assert people.count() == 1 and people.is_visible() is not phone, f"{where}: In it: shown {people.is_visible()}"
+                label = pane.locator(".compose-head label[for='chat-text']")
+                box = label.bounding_box()
+                assert (box is not None and box["width"] <= 1) if phone else label.is_visible(), f"{where}: the label {box}"
+                expect(page.get_by_role("textbox", name=re.compile(r"^Message \("))).to_have_count(1)
+                # The full screen: the button, Escape, the button again, then the browser's back.
+                page.evaluate("() => { window.__drawn = document.querySelector('.chat-pane.group-chat'); }")
+                toggle = pane.get_by_role("button", name="Read in full screen", exact=True)
+                toggle.click()
+                expect(pane.get_by_role("button", name="Leave full screen", exact=True)).to_have_attribute("aria-pressed", "true")
+                full = page.evaluate(
+                    "() => { const r = document.querySelector('.chat-pane.group-chat').getBoundingClientRect();"
+                    " return [r.left, r.top, r.width, r.height, window.innerWidth, window.innerHeight,"
+                    " document.documentElement.scrollWidth, document.querySelector('.chat-pane .compose').getBoundingClientRect().bottom]; }"
+                )
+                assert abs(full[0]) <= 0.5 and abs(full[1]) <= 0.5 and abs(full[2] - full[4]) <= 1 and abs(full[3] - full[5]) <= 1, f"{where}: full screen {full}"
+                assert full[6] <= full[4] and full[7] <= full[5] + 0.5, f"{where}: sideways or the composer below the window {full}"
+                if width == 390:
+                    run.shot(page, f"chat-full-{scheme}")
+                    run.a11y(page, f"chat full screen, {scheme} system theme")
+                page.keyboard.press("Escape")
+                expect(pane.get_by_role("button", name="Read in full screen", exact=True)).to_have_attribute("aria-pressed", "false")
+                expect(page.locator("html.chat-full")).to_have_count(0)
+                toggle.click()
+                expect(page.locator("html.chat-full")).to_have_count(1)
+                page.go_back()
+                expect(page.locator("html.chat-full")).to_have_count(0)
+                same = page.evaluate("() => window.__drawn === document.querySelector('.chat-pane.group-chat') && window.__drawn.isConnected")
+                assert same, f"{where}: back drew the chat again"
+                assert not errors, f"{where}: {errors}"
+            finally:
+                context.close()
 
 
 # Every element in the lines of `selector` (the Current sessions box, the bell's pinned block):
