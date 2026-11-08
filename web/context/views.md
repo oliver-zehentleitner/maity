@@ -4008,6 +4008,26 @@ Back works through `M.route.layer` (js/route.js). Entering pushes one history en
 - A route of its own for the full screen (`…/chat/<id>/full`): a reload or a shared link would open a page with no way out but the button, and the router would draw the chat again on every switch.
 - A history entry without the layer: the router draws the view again on every back (js/app.js `route.listen`), so the chat would be read again and lose its scroll position.
 
+## The row of tabs has no New project tab; the tabs menu follows the tabs, a dragged tab's place is a line
+
+**Id:** 4ff40142-df78-4c11-8f0c-c0024adecd79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged
+**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than three items, or a drop learns a right-to-left order
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
+
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is the first item of the header's "+" menu (Project, then Agent and User), which is named "Add a project, an agent or a person". The empty state's Create a project stays.
+
+While a tab is dragged, the tab under the pointer shows a 3 px line in the accent colour: at its start when the pointer is on its first half, at its end on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is an inset `box-shadow`, so nothing in the row moves.
+
+**Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
+
+**Rejected alternatives:**
+- New project as an item of the tabs menu: that menu is about the tabs, not about creating.
+- The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7

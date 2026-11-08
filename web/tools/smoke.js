@@ -397,13 +397,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
     tabChip(SA).dispatch("keydown", { key: "ArrowRight", altKey: false, shiftKey: true });
     expect(tabIds() === SA + "," + MA, "tabs: no move past the first place, and none without Alt");
-    // A drag: dropped on another tab, it goes before it.
+    // A drag: dropped on another tab, it goes before it. While it is dragged, a line shows the place by the
+    // drop's own half: before the tab on its first half, after it on its second (tsk-hp9gq9rmrdq2).
+    const dropSide = (el) => (el.classList.contains("drop-before") ? "before" : "") + (el.classList.contains("drop-after") ? "after" : "");
+    const anyDropLine = () => header.querySelectorAll("nav.switcher a").some((a) => dropSide(a));
+    const halfBox = { left: 100, width: 80, top: 0, height: 24, right: 180, bottom: 24 };
     tabChip(MA).dispatch("dragstart", { dataTransfer: null });
     let overPrevented = false;
-    tabChip(SA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = true; } });
-    tabChip(SA).dispatch("drop", { dataTransfer: null });
+    tabChip(MA).dispatch("dragover", { dataTransfer: null, currentTarget: tabChip(MA) });
+    const noLineOnSelf = !anyDropLine();
+    const saChip = tabChip(SA);
+    saChip.getBoundingClientRect = () => halfBox;
+    saChip.dispatch("dragover", { dataTransfer: null, currentTarget: saChip, clientX: 170 });
+    const lineAfter = dropSide(saChip);
+    saChip.dispatch("dragover", { dataTransfer: null, currentTarget: saChip, clientX: 110, preventDefault() { overPrevented = true; } });
+    const lineBefore = dropSide(saChip);
+    saChip.dispatch("dragleave", { dataTransfer: null, currentTarget: saChip });
+    const lineLeft = dropSide(saChip);
+    saChip.dispatch("dragover", { dataTransfer: null, currentTarget: saChip, clientX: 110 });
+    expect(noLineOnSelf && lineAfter === "after" && lineBefore === "before" && lineLeft === "" && dropSide(saChip) === "before",
+      "tabs: while dragging, a line shows the place by the drop's half, none on the tab itself, gone on leaving " + JSON.stringify([noLineOnSelf, lineAfter, lineBefore, lineLeft]));
+    saChip.dispatch("drop", { dataTransfer: null, currentTarget: saChip, clientX: 110 });
     tabChip(MA).dispatch("dragend");
-    expect(overPrevented && tabIds() === MA + "," + SA && kept().open.join() === MA + "," + SA, "tabs: a tab dragged onto another goes before it");
+    expect(overPrevented && tabIds() === MA + "," + SA && kept().open.join() === MA + "," + SA && !anyDropLine(),
+      "tabs: a tab dragged onto another goes before it, and the line is gone");
+    // A drag that ends anywhere else takes its line along.
+    tabChip(SA).dispatch("dragstart", { dataTransfer: null });
+    tabChip(MA).dispatch("dragover", { dataTransfer: null, currentTarget: tabChip(MA) });
+    const lineDuring = anyDropLine();
+    tabChip(SA).dispatch("dragend");
+    expect(lineDuring && !anyDropLine() && tabIds() === MA + "," + SA, "tabs: a drag ended outside a tab leaves no line and no move");
     tabChip(MA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = false; } });
     expect(overPrevented, "tabs: no drop target without a tab being dragged");
     // The tabs menu: one switch per project, the start set, nothing sent for a switch.
@@ -8544,7 +8567,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = npGetAll;
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
   expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
-  expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
+  // The row of tabs has no new-project tab; the "+" menu leads there (tsk-hp9gq9rmrdq2).
+  expect(!header.querySelectorAll(".switcher a").some((a) => a.getAttribute("href") === "#/new"), "switcher: no new-project tab");
   await go("#/new"); await tick();
   const fieldError0 = (id) => text(byId(id + "-error"));
   expect(plainTitle() === "New project · Maity" && byId("project-slug"), "create-project view");
@@ -10771,8 +10795,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const addBtn = header.querySelector(".add-menu");
   addBtn.click(); await tick();
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
-  expect(addBtn.getAttribute("aria-label") === "Add an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite"]),
-    "header: the + menu leads to the agents page and the invitations page " + JSON.stringify(addItems));
+  expect(addBtn.getAttribute("aria-label") === "Add a project, an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Project=#/new", "Agent=#/agents", "User=#/invite"]),
+    "header: the + menu leads to the create form, the agents page and the invitations page " + JSON.stringify(addItems));
   // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
   expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
     "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));

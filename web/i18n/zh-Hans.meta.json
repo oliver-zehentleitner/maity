@@ -4883,10 +4883,6 @@
     "en": "008df04307a93de8",
     "text": "22a204aab8cb67e1"
   },
-  "header.new_project": {
-    "en": "12b032afb3e80b4a",
-    "text": "cd24d7fffc892072"
-  },
   "header.observe": {
     "en": "d07888db631e55d7",
     "text": "b4fc4f6dd1afc170"
@@ -10172,8 +10168,12 @@
     "text": "7ca84dc4f04aac65"
   },
   "menu.add.label": {
-    "en": "46a58c01cabfa80e",
-    "text": "b08c99d895dafa0f"
+    "en": "f6a991eb7a84e22b",
+    "text": "b9e3fc5fb53ca21d"
+  },
+  "menu.add.project": {
+    "en": "6c6b7df3070f112f",
+    "text": "2c925658d1f8c37f"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",

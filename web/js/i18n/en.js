@@ -1364,7 +1364,6 @@ window.MAITY_I18N["en"] = {
     "other": "{count} unread mentions"
   },
   "header.new": "New project",
-  "header.new_project": "+ New project",
   "header.observe": "Read along",
   "header.orgs": "Organisations",
   "header.person": "People",
@@ -2805,7 +2804,8 @@ window.MAITY_I18N["en"] = {
   "mentions.instance.dormant": "instance, dormant",
   "mentions.list": "Members to mention",
   "menu.add.agent": "Agent",
-  "menu.add.label": "Add an agent or a person",
+  "menu.add.label": "Add a project, an agent or a person",
+  "menu.add.project": "Project",
   "menu.add.user": "User",
   "menu.agents": "Agents",
   "menu.instance_admin": "Instance administration",

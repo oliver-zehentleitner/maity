@@ -1003,7 +1003,10 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "answer")
 
     run.step("a second project, the same agent joins it and asks")
-    page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
+    # A new project is in the "+" menu; the row of tabs has none (tsk-hp9gq9rmrdq2).
+    expect(page.locator("nav.switcher a[href='/new']")).to_have_count(0)
+    page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+    page.get_by_role("menuitem", name="Project", exact=True).click()
     create_project(run, page, "E2E Beta", "e2e-beta")
     url, code = join_line(run, page, "e2e-beta", None)
     beta = run.clone("clone-beta")
@@ -1158,7 +1161,8 @@ def scenario(run: Run, page: Page) -> None:
             run.shot(page, f"phone-{view}{suffix}")
             run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
         # The create form: its preset select has long option labels.
-        page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
+        page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+        page.get_by_role("menuitem", name="Project", exact=True).click()
         expect(page.locator("main section.view-new")).to_be_visible()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"/new is {width[0]} px wide at {width[1]} px"
@@ -5745,10 +5749,28 @@ def project_tabs_step(run: Run, page: Page) -> None:
     box = first.bounding_box()
     assert box is not None
     alpha.dispatch_event("dragstart", {"dataTransfer": dt})
+    # While dragging, a line shows the place by the drop's own half (tsk-hp9gq9rmrdq2): after on the second half,
+    # before on the first; one tab marked at a time.
+    first.dispatch_event("dragover", {"dataTransfer": dt, "clientX": box["x"] + box["width"] - 2})
+    expect(first).to_have_class(re.compile(r"\bdrop-after\b"))
     first.dispatch_event("dragover", {"dataTransfer": dt, "clientX": box["x"] + 2})
+    expect(first).to_have_class(re.compile(r"\bdrop-before\b"))
+    expect(first).not_to_have_class(re.compile(r"\bdrop-after\b"))
+    expect(page.locator("nav.switcher a.drop-before, nav.switcher a.drop-after")).to_have_count(1)
+    # The line itself: an upright bar in the gap before the tab, drawn and inside the row's visible box.
+    line = first.evaluate("(el) => { const s = getComputedStyle(el, '::before'); const r = el.getBoundingClientRect();"
+                          " const n = el.parentNode.getBoundingClientRect();"
+                          " return [s.content, s.width, parseFloat(s.left), r.left, n.left, s.backgroundColor]; }")
+    assert line[0] == '""' and line[1] == "3px" and line[2] < 0 and line[3] + line[2] >= line[4], f"the drop line is not drawn in the gap: {line}"
+    run.shot(page, "tabs-drop-line")
     first.dispatch_event("drop", {"dataTransfer": dt, "clientX": box["x"] + 2})
     page.locator("nav.switcher a[data-project]", has_text="E2E Alpha").dispatch_event("dragend", {"dataTransfer": dt})
     expect(tabs.first).to_contain_text("E2E Alpha")
+    expect(page.locator("nav.switcher a.drop-before, nav.switcher a.drop-after")).to_have_count(0)
+    # The tabs menu stands right after the last tab, not at the row's far end.
+    gap = page.evaluate("(() => { const t = Array.from(document.querySelectorAll('nav.switcher a')).pop().getBoundingClientRect();"
+                        " const m = document.querySelector('.tabs-menu-box').getBoundingClientRect(); return [m.left - t.right, Math.abs(m.top - t.top) < t.height]; })()")
+    assert 0 <= gap[0] <= 24 and gap[1], f"the tabs menu is not right after the tabs: {gap}"
     # The tabs menu: one switch per project; switching one off closes its tab, the menu stays.
     menu = page.locator(".tabs-menu-box")
     menu.get_by_role("button", name="Project tabs", exact=True).click()

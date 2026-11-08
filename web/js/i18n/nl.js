@@ -1337,7 +1337,6 @@ window.MAITY_I18N["nl"] = {
     "other": "{count} ongelezen vermeldingen"
   },
   "header.new": "Nieuw project",
-  "header.new_project": "+ Nieuw project",
   "header.observe": "Meelezen",
   "header.orgs": "Organisaties",
   "header.person": "Mensen",
@@ -2741,7 +2740,8 @@ window.MAITY_I18N["nl"] = {
   "mentions.instance.dormant": "instantie, slapend",
   "mentions.list": "Leden om te noemen",
   "menu.add.agent": "Agent",
-  "menu.add.label": "Een agent of een persoon toevoegen",
+  "menu.add.label": "Een project, een agent of een persoon toevoegen",
+  "menu.add.project": "Project",
   "menu.add.user": "Gebruiker",
   "menu.agents": "Agents",
   "menu.instance_admin": "Beheer van de instantie",

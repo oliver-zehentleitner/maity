@@ -1304,7 +1304,6 @@ window.MAITY_I18N["ja"] = {
     "other": "未読のメンション {count} 件"
   },
   "header.new": "新しいプロジェクト",
-  "header.new_project": "+ 新しいプロジェクト",
   "header.observe": "閲覧のみで参加",
   "header.orgs": "組織",
   "header.person": "人間",
@@ -2682,7 +2681,8 @@ window.MAITY_I18N["ja"] = {
   "mentions.instance.dormant": "インスタンス (休眠中)",
   "mentions.list": "メンション先のメンバー",
   "menu.add.agent": "エージェント",
-  "menu.add.label": "エージェントまたは人間を追加",
+  "menu.add.label": "プロジェクト、エージェントまたは人間を追加",
+  "menu.add.project": "プロジェクト",
   "menu.add.user": "ユーザー",
   "menu.agents": "エージェント",
   "menu.instance_admin": "インスタンスの管理",

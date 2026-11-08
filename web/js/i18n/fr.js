@@ -1337,7 +1337,6 @@ window.MAITY_I18N["fr"] = {
     "other": "{count} mentions non lues"
   },
   "header.new": "Nouveau projet",
-  "header.new_project": "+ Nouveau projet",
   "header.observe": "Suivre en lecture",
   "header.orgs": "Organisations",
   "header.person": "Personnes",
@@ -2741,7 +2740,8 @@ window.MAITY_I18N["fr"] = {
   "mentions.instance.dormant": "instance, en sommeil",
   "mentions.list": "Membres à mentionner",
   "menu.add.agent": "Agent",
-  "menu.add.label": "Ajouter un agent ou une personne",
+  "menu.add.label": "Ajouter un projet, un agent ou une personne",
+  "menu.add.project": "Projet",
   "menu.add.user": "Utilisateur",
   "menu.agents": "Agents",
   "menu.instance_admin": "Administration de l'instance",
