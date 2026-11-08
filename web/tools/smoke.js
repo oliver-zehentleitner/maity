@@ -4227,6 +4227,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
   await go("#/maintainer/maity/inbox");
 
+  // Clicking through cards (tsk-d61rvjm6gteh): each opens in place and reads that card's notes and history,
+  // never the list, the members, the project, the session or /me again; closing it reads nothing.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const rrReads = [];
+  const rrGet = win.Maity.api.get, rrGetAll = win.Maity.api.getAll;
+  win.Maity.api.get = (p) => { rrReads.push(p); return rrGet(p); };
+  win.Maity.api.getAll = (p) => { rrReads.push(p); return rrGetAll(p); };
+  const rrPanel = () => main.querySelector("aside.card-panel");
+  const rrSettle = async () => { for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5)); };
+  for (const id of ["tsk-0001", "tsk-0004", "tsk-0006"]) { await go("#/maintainer/maity/tasks/" + id); await rrSettle(); }
+  const rrCount = (re) => rrReads.filter((p) => re.test(p.split("?")[0])).length;
+  expect(rrPanel() && main.querySelectorAll("aside.card-panel").length === 1 && text(rrPanel().querySelector(".card-panel-head .card-id")) === "tsk-0006"
+    && rrCount(/\/tasks$/) === 0 && rrCount(/\/members$/) === 0 && rrCount(/^\/projects\/maintainer\/maity$/) === 0
+    && rrCount(/^\/auth\/session$/) === 0 && rrCount(/^\/me$/) === 0
+    && ["tsk-0001", "tsk-0004", "tsk-0006"].every((id) => rrCount(new RegExp("/tasks/" + id + "/notes$")) === 1),
+    "board: three cards opened one after another read their notes, never the list, the members or the session " + JSON.stringify(rrReads));
+  rrReads.length = 0;
+  const rrProto = Object.getPrototypeOf(main), rrFocus = rrProto.focus;
+  rrProto.focus = function () { document.activeElement = this; };
+  await go("#/maintainer/maity/board"); await rrSettle();
+  const rrMarked = main.querySelectorAll("article.card.wanted");
+  expect(!rrPanel() && rrMarked.length === 1 && rrMarked[0].attrs["data-card"] === "tsk-0006" && document.activeElement === rrMarked[0].querySelector("a.card-open")
+    && !rrReads.length, "board: closing the card reads nothing, marks it and focuses its title " + JSON.stringify(rrReads));
+  rrProto.focus = rrFocus; document.activeElement = undefined;
+  win.Maity.api.get = rrGet; win.Maity.api.getAll = rrGetAll;
+
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
   const cfLs = win.localStorage;
@@ -10471,8 +10497,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(stPatches.length === 1 && !("parent" in stPatches[0][1]) && JSON.stringify(stPatches[0][1].related.slice().sort()) === JSON.stringify(["tsk-0006", "tsk-0099"]),
     "subtasks: changing only the related cards sends them alone, keeping the one not loaded " + JSON.stringify(stPatches));
   win.Maity.api.getAll = stGetAll; win.Maity.api.patch = stPatch;
-  // Folding is no redraw: the column filter, the search and the scroll stay.
-  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  // Folding is no redraw: the column filter, the search and the scroll stay. Through the inbox: a
+  // card closed on the board reads no list again (tsk-d61rvjm6gteh), and the list above was filtered.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
   byId("board-column").value = "review"; byId("board-column").dispatch("change"); await tick();
   byId("board-search").value = "subtasks"; byId("board-search").dispatch("input"); await tick();
   win.scrollY = 240;
@@ -10871,9 +10898,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("chat-text").value = "Across projects"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(gxPosts[0]) === JSON.stringify(["/projects/maintainer/maity/conversations/agt-a/messages", { body: "Across projects" }])
     && text(main.querySelector("ol.messages")).includes("Across projects"), "chats: sending from the global view posts to the conversation's project");
+  // A stream answer with nothing chat-like in it reads nothing (tsk-d61rvjm6gteh): a long-poll that only timed
+  // out, an inbox item, the counts read every 15 seconds. A moved chat count reads one round.
+  const gqSettle = async () => { await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick(); };
+  const gqBefore = gxGets.length;
+  win.Maity.notify.changed([]); win.Maity.notify.changed([{ kind: "inbox" }]); win.Maity.notify.changed([{ kind: "security" }]); win.Maity.notify.changed();
+  await gqSettle();
+  const gqQuiet = gxGets.slice(gqBefore).filter((p) => p.includes("/conversations"));
+  const gqCounts = win.Maity.notify.state.counts;
+  win.Maity.notify.state.counts = Object.assign({}, gqCounts, { chat: ((gqCounts && gqCounts.chat) || 0) + 1 });
+  const gqMoved = gxGets.length;
+  win.Maity.notify.changed(); await gqSettle();
+  const gqRound = gxGets.slice(gqMoved).filter((p) => p.endsWith("/conversations?observed=true"));
+  win.Maity.notify.state.counts = gqCounts;
+  expect(gqQuiet.length === 0 && gqRound.length >= 1,
+    "chats: a stream answer with no chat in it reads no list; a moved chat count reads one round " + JSON.stringify([gqQuiet, gqRound]));
   // The notifications stream drives it: a burst is one re-read of the lists and one fetch of the open conversation.
   const gxBefore = gxGets.length;
-  for (let k = 0; k < 4; k++) win.Maity.notify.changed();
+  for (let k = 0; k < 4; k++) win.Maity.notify.changed([{ kind: "chat" }]);
   await tick();
   expect(gxGets.length === gxBefore, "chats: stream events wait to settle");
   await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick();
@@ -10886,7 +10928,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // What the stream cannot say is read again on its nudge: a removal shows as removed in the open chat.
   const gxLastSeq = Number(main.querySelectorAll("ol.messages li.msg").map((li) => li.getAttribute("data-seq")).filter(Boolean).sort((a, b) => a - b)[0]);
   await gxPost("/projects/maintainer/maity/events/" + gxLastSeq + "/redact", { reason: "wrong chat" });
-  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick();
   const gxRemoved = main.querySelectorAll("ol.messages li.msg").find((li) => li.getAttribute("data-seq") === String(gxLastSeq));
   expect(gxRemoved && gxRemoved.querySelector(".msg-redacted") && !gxRemoved.querySelector(".md"),
     "chats: a message removed elsewhere shows as removed in the open chat after the stream's nudge");
@@ -10913,9 +10955,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     return new Promise((resolve) => gxHold.push(() => { gxInflight--; resolve(gxGetAll(p)); }));
   };
   const gxStart = gxCalls.length;
-  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
-  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
-  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
   const gxTick = fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(gxMaxInflight <= 1, "chats: slow reads never overlap: one update in flight, the rest waits for it (" + gxMaxInflight + " held reads at once)");
   for (let round = 0; round < 12 && gxHold.length; round++) { gxHold.splice(0).forEach((f) => f()); for (let k = 0; k < 6; k++) await tick(); }
@@ -10945,7 +10987,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && main.querySelector(".chat-back") && main.querySelector(".chat-back").getAttribute("href") === "#/chats", "chats: a group chat opens in the global view too");
   // A rename elsewhere reaches its open pane on the stream's nudge.
   await gxPatch("/projects/maintainer/maity/conversations/cnv-0007", { title: "Release 0.2: go" });
-  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 8; k++) await tick();
+  win.Maity.notify.changed([{ kind: "chat" }]); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 8; k++) await tick();
   expect(text(main.querySelector("section.group-chat")).includes("Release 0.2: go"), "chats: a group chat renamed elsewhere shows its new title after the stream's nudge");
   await go("#/chats/someone/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No project of yours named someone/nowhere."), "chats: an unknown project is said");

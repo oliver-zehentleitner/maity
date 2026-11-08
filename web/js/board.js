@@ -661,7 +661,7 @@ window.Maity = window.Maity || {};
     // A link from elsewhere (an id in a text, the URL) reveals its card
     // whatever the filters said; the board's own title keeps them.
     const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
-    const marked = wanted || returning;
+    let marked = wanted || returning;
     // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin.
     ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
@@ -903,6 +903,15 @@ window.Maity = window.Maity || {};
       window.setTimeout(() => panel.focus(), 0);
     }
 
+    // Closed on the board itself (the route follows, below): the panel goes, the card keeps its mark.
+    function closePanel() {
+      if (!panel) return;
+      if (panel.el.parentNode) panel.el.parentNode.removeChild(panel.el);
+      boardBody.className = "board-body";
+      panel = null;
+      panelCard = null;
+    }
+
     function shown(c) {
       if (!inGroup(filter.column, c.status)) return false;
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
@@ -1103,6 +1112,34 @@ window.Maity = window.Maity || {};
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
         });
       } catch (err) { status.fail(M.t("board.presence_failed"), err); }
+    });
+    // A card opened or closed on this board is followed here: the panel changes and that card is
+    // read, never the list, the members or the project again (tsk-d61rvjm6gteh: a full render per
+    // card read all of them, so clicking through cards read the members every second). Any other
+    // address, another project's included, renders as before.
+    ctx.followRoute((where) => {
+      if (where.scope !== "project" || where.slug !== ctx.slug || (where.route !== "tasks" && where.route !== "board")) return false;
+      const id = where.args[0] || null;
+      if (!id) {
+        const left = panel ? panel.id : null;
+        wantedNote.textContent = "";
+        closePanel();
+        lastBoard = null;
+        marked = left;
+        const el = draw();
+        const title = el && el.querySelector("a.card-open");
+        if (el) window.setTimeout(() => (title || el).focus(), 0);
+        return true;
+      }
+      if (panel && panel.id === id) return true;
+      // A card the filters hide, or one outside the board's window, is a link from elsewhere:
+      // drawn afresh as before, which shows it whatever the filters say.
+      if (!byId[id] || !shown(byId[id])) return false;
+      closePanel();
+      marked = id;
+      draw();
+      openPanel(byId[id]);
+      return true;
     });
   };
 })(window.Maity);

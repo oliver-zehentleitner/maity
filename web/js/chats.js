@@ -183,7 +183,24 @@ window.Maity = window.Maity || {};
       return running;
     }
     let settle = null;
-    const nudge = () => { window.clearTimeout(settle); settle = window.setTimeout(() => run(false), SETTLE_MS); };
+    // Only a stream answer with a chat or mention in it, or one that moved the chat counts (§18.2
+    // counts.chat, by_project's chat). Each answer, and each counts read every NOTICE_MS, used to read
+    // every project's chats and the open conversation again, whatever it was about (tsk-d61rvjm6gteh):
+    // an inbox item, a sign-in, a long-poll that only timed out. The rest waits for the round.
+    const chatCounts = () => {
+      const st = M.notify.state;
+      const per = Object.keys(st.byProject || {}).sort().map((k) => [k, (st.byProject[k] || {}).chat || 0]);
+      return JSON.stringify([st.counts ? st.counts.chat || 0 : 0, per]);
+    };
+    let seenCounts = chatCounts();
+    const CHATTY = new Set(["chat", "mention"]);
+    const nudge = (items) => {
+      const now = chatCounts();
+      if (now === seenCounts && !(items || []).some((x) => x && CHATTY.has(x.kind))) return;
+      seenCounts = now;
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => run(false), SETTLE_MS);
+    };
     const unsubscribe = M.notify.subscribe(nudge);
     ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); paneSeq++; if (pane) pane.close(); });
     // Every project's chats each round: none while the tab is hidden.
