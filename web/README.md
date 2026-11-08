@@ -337,8 +337,10 @@ too.
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
 2. **Board** (`/<owner>/<slug>/board`; `/<owner>/<slug>/tasks/<id>` opens that
-   card, below; opened or closed from the board itself it reads what the
-   panel needs, never the list or the members again): cards by status (`proposed` to
+   card, below; opened from the board itself it reads only what the
+   panel needs (the roles, the card's notes and history, its updates and
+   restricted text where they apply), closed there it reads nothing, and
+   neither reads the list or the members again): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report — a code report's why (§6.23) as a link to its entry's
