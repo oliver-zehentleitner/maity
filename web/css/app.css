@@ -49,7 +49,7 @@
   --ok-soft: #e3f4e8;
   --warn-soft: #fff6dd;
   --bad-soft: #fde8e7;
-  --field: #8a939d; /* an input's edge: 3.2:1 on --surface, 3.0:1 on --bg (WCAG 1.4.11) */
+  --field: #7d8691; /* an input's edge: 3.69:1 on --surface, 3.44:1 on --bg, 3.23:1 on --surface-2 (WCAG 1.4.11) */
   --s1: 4px;
   --s2: 8px;
   --s3: 12px;
@@ -95,7 +95,7 @@
     --ok-soft: #14301d;
     --warn-soft: #2d2610;
     --bad-soft: #3a1716;
-    --field: #6b747e;
+    --field: #737c86; /* 3.92:1 on --surface, 4.36:1 on --bg, 3.43:1 on --surface-2 */
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
   }
 }
@@ -128,7 +128,7 @@
   --ok-soft: #14301d;
   --warn-soft: #2d2610;
   --bad-soft: #3a1716;
-  --field: #6b747e;
+  --field: #737c86;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 :root[data-theme="light"] { color-scheme: light; }
@@ -415,7 +415,7 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .flag {
   background: var(--warn-soft);
   border-left: 3px solid var(--warn);
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: var(--r-field);
 }
 
@@ -530,7 +530,7 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: var(--r-card);
   box-shadow: var(--shadow);
-  padding: var(--s3) 14px;
+  padding: 10px 12px;
   min-width: 0;
 }
 
@@ -1032,7 +1032,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
-.panel { display: grid; gap: 12px; margin: 8px 0; padding: var(--s3); background: var(--surface-2); border-radius: var(--r-card); }
+.panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--r-card); }
 /* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
 .inline-form, .login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
