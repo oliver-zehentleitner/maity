@@ -3973,6 +3973,64 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   parts watched, and after twenty switches the observer watched over a hundred elements no longer
   in the page. Only the current pane's parts are watched; the ones that leave are let go.
 
+## On a phone a chat shows less around it, and any chat can take the whole window
+
+**Id:** 0e55c22f-572b-44a8-882a-52e1d4ee6813
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change
+**Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
+**See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
+
+At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
+- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.
+- A group chat shows no "In it: …" line over the messages. Its participants stay under Manage.
+- The composer's label ("Message (@handle reaches someone in the chat)") is out of sight but still the field's label. A reader still hears what the field is for.
+
+Wider than that, nothing changes.
+
+Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
+
+The full screen ends:
+- with the button again;
+- with Escape, unless something open, a menu or the mention list, took that Escape first;
+- with the browser's back;
+- when the chat leaves the page: another view, or Chats putting another pane in its place.
+
+Back works through `M.route.layer` (js/route.js). Entering pushes one history entry at the same address. Back from it only closes the layer: the router does not draw the view again, so the history, its scroll position and a draft stay as they were. The button and Escape leave that entry with a `history.back()` of their own, so no extra entry is left behind. A route change while it is full (a link in the chat, Back to the list, `go()`) closes the layer and takes its entry for the new address (`replaceState`, in fixture mode `location.replace`). Back from there returns to the chat once, not twice.
+
+While full, everything outside the chat is `inert`: no focus reaches the covered page, and a reader does not read it. Only what the full screen marked is set back when it ends. The full chat's end is kept once in `js/chat.js`, not per pane: Chats swaps panes without disposing the view, and a closure per drawn pane would hold every pane visited until Chats is left.
+
+**Reason:** on a phone the room above and below the messages is what makes a chat readable. The three things the owner named take that room and carry nothing the reader needs there: the product line's other parts, the participants (also under Manage) and the composer's hint. The full screen is for reading; on a phone it is the only way to see more than a few messages. Back is how a phone leaves anything that covers the page, so it must end the full screen and nothing more.
+
+**Rejected alternatives:**
+- `display: none` on the composer's label: the field would lose its name for a screen reader.
+- The Fullscreen API (`requestFullscreen`): iOS Safari does not allow it on elements other than video, and it also hides the browser's own controls, which the owner did not ask for.
+- A route of its own for the full screen (`…/chat/<id>/full`): a reload or a shared link would open a page with no way out but the button, and the router would draw the chat again on every switch.
+- A history entry without the layer: the router draws the view again on every back (js/app.js `route.listen`), so the chat would be read again and lose its scroll position.
+
+## The row of tabs has no New project tab; the tabs menu follows the tabs, a dragged tab's place is a line
+
+**Id:** 4ff40142-df78-4c11-8f0c-c0024adecd79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged
+**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than three items, or a drop learns a right-to-left order
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
+
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is the first item of the header's "+" menu (Project, then Agent and User), which is named "Add a project, an agent or a person". The empty state's Create a project stays.
+
+While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
+
+**Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
+
+**Rejected alternatives:**
+- New project as an item of the tabs menu: that menu is about the tabs, not about creating.
+- The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
+- An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7

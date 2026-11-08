@@ -87,7 +87,10 @@ async def _encoding(method: str, path: str) -> str | None:
     ("method", "path", "expected"),
     [
         ("GET", "/api/v1/projects/o/p/tasks", "gzip"),
-        ("GET", "/assets/js/app.js", "gzip"),
+        # The dashboard's own files are gzipped by `shell.AssetFiles`, with an ETag per form
+        # (test_app.py); the middleware leaves them alone. The landing page's files it gzips.
+        ("GET", "/assets/js/app.js", None),
+        ("GET", "/assets/landing/landing.js", "gzip"),
         ("HEAD", "/api/v1/projects/o/p/tasks", "gzip"),
         ("POST", "/api/v1/projects/o/p/tasks", None),
         ("PATCH", "/api/v1/me", None),
