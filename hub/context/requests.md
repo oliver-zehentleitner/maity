@@ -114,8 +114,39 @@ keeps the count flat as requests grow.
 - Batching every lookup of `request_view` for a list: the view reads from many helpers
   that events and single reads share, so a batched variant would be a second form of the
   same view that has to agree with it, for a cost that the page already bounds.
+  Taken up later, with the single read going through the batch:
+  cc80e184-7bab-430d-aebf-46871b70de1a.
 - Paging in SQL: the `agent` sort orders by the asker's handle and the filters
   (`to=me`, `may_read`) are decided in Python, so the database cannot cut the page alone.
+
+## A page of requests is built in one batch, and a single read is a page of one
+
+**Id:** cc80e184-7bab-430d-aebf-46871b70de1a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the inbox speed card tsk-fxjtwmkc4md5 (the owner's report that the inbox takes about 7 s) and its plan note, approved by the lead, 2026-11-08
+**See:** requests.md#a-request-listing-sorts-and-pages-light-entries-and-builds-full-views-only-for-its-page — 1a0b7116-3d75-451f-9b49-fcdad7cdeead — as of 2026-11-08
+**Revisit when:** a field of the request view needs a lookup that `_known` cannot read for all rows at once, or the placement summary shows up on many requests of a page
+
+`request_views(conn, rows)` builds the views of a page: `_known` reads what they show of
+other tables (memberships, agent names, humans, avatars, asking instances, cards, reports,
+the deleted shape of `needs_in_session`) in one query per table for all rows, and
+`shape_deleted` runs once over the page. `request_view` is `_view` over a `_known` of one
+row, so a list, an event payload and a single read build the view on the same path. The
+listings and the resume packet use the batch. A request's placement summary is still read
+per row: only the requests of a placement carry one.
+
+**Reason:** the light entries bounded the cost by the page, but the page itself still cost
+about six statements per row: 1,219 for a page of 200 on a local fixture, and on a server
+database each one is a round trip, so the inbox's pages took seconds each. With the batch
+the same page costs 24 statements, the same for 50, 200 or 600 requests. The earlier
+objection to batching was a second form of the view that has to agree with the first;
+with the single read going through the batch there is only one form.
+
+**Rejected alternatives:**
+- A batched variant beside the per-row `request_view`: two forms of one view to keep in
+  agreement, the objection recorded in 1a0b7116-3d75-451f-9b49-fcdad7cdeead.
 
 ## An instance address in `to` is stored as written, resolved when each event is written; the asking instance is never stored
 
