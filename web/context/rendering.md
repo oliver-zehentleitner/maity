@@ -1370,7 +1370,7 @@ scrolling stays as it was.
 takes from each `GET /me` (`member.timezone`) that passed the session check and set out after the
 last saved change of the zone, and from the settings `PATCH` that saves it; while that is `null`,
 or a name the browser's Intl does not know, it is the browser's zone. A session that ends
-(signing out, expiry, a 401 on the session check) drops it, so the next person in the tab does
+(signing out, expiry, a 401 on the newest session check of the current session) drops it, so the next person in the tab does
 not see the last account's zone. The places that worked on the browser's local clock
 (`getDate`, `toDateString`, `toLocaleDateString`) go through the same helper: chat's day
 separators compare `M.fmt.day`, the maintenance banner's "same day" test too, and the

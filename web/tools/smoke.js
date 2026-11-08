@@ -14337,8 +14337,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const zoneHeld = [];
   const zoneReply = (data) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => data });
   const zoneMe = (zone) => Object.assign({}, F["me.json"], { member: Object.assign({}, F["me.json"].member, { kind: "human", timezone: zone }) });
+  const sessionHeld = [];
+  const zoneRefused = () => ({ ok: false, status: 401, headers: { get: () => null }, json: async () => ({ error: { code: "unauthenticated", message: "Signed out" } }) });
   ctx.fetch = (url, init) => {
     if (url === "/api/v1/me") return new Promise((resolve) => zoneHeld.push(resolve));
+    if (url === "/api/v1/auth/session") return new Promise((resolve) => sessionHeld.push(resolve));
     if (url === "/api/v1/me/notification-settings" && init && init.method === "PATCH") {
       return Promise.resolve(zoneReply({ email: { timezone: JSON.parse(init.body).email.timezone } }));
     }
@@ -14359,6 +14362,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   zoneHeld.shift()(zoneReply(zoneMe("Asia/Tokyo")));
   expect((await zoneEnded).code === "aborted" && win.Maity.i18n.zone() === "America/New_York",
     "time zone: a /me answer of an ended session is refused and sets no zone");
+  // A session check's 401 that comes back after a newer session read (a session ended and a new one
+  // began, or a newer read of the same session) is not the visitor's: it keeps the newer account's zone.
+  const zoneKolkata = async () => {
+    const read = win.Maity.api.get("/me");
+    zoneHeld.shift()(zoneReply(zoneMe("Asia/Kolkata")));
+    await read;
+  };
+  const oldCheck = win.Maity.api.get("/auth/session").catch((err) => err);
+  win.Maity.api.endSession();
+  const newCheck = win.Maity.api.get("/auth/session");
+  sessionHeld[1](zoneReply(F["auth-session.json"]));
+  await newCheck;
+  await zoneKolkata();
+  sessionHeld[0](zoneRefused());
+  await oldCheck;
+  expect(win.Maity.i18n.zone() === "Asia/Kolkata", "time zone: an old session check's 401 after a new session keeps the new account's zone");
+  sessionHeld.length = 0;
+  const olderCheck = win.Maity.api.get("/auth/session").catch((err) => err);
+  const newerCheck = win.Maity.api.get("/auth/session");
+  sessionHeld[1](zoneReply(F["auth-session.json"]));
+  await newerCheck;
+  sessionHeld[0](zoneRefused());
+  await olderCheck;
+  expect(win.Maity.i18n.zone() === "Asia/Kolkata", "time zone: an older session check's 401 after a newer one keeps the zone");
   ctx.fetch = zoneFetch;
   // Signing out below must not leave this account's zone to the next person in the tab.
   win.Maity.i18n.setZone("Asia/Tokyo");
