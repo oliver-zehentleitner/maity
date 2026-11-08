@@ -133,10 +133,26 @@ def at_a_terminal(env: dict[str, str], command: str, typed: bytes) -> tuple[int,
             os.write(terminal, typed)
             sent = True
     else:  # the deadline passed: a hung script must not hang the run with it
-        os.kill(pid, signal.SIGKILL)
+        return _ended(pid, terminal), seen
     os.close(terminal)
     _, status = os.waitpid(pid, 0)
     return os.waitstatus_to_exitcode(status), seen
+
+
+def _ended(pid: int, terminal: int, grace: float = 5.0) -> int:
+    """SIGTERM first, so the script's trap stops its server; SIGKILL only after `grace`."""
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            os.close(terminal)
+            return os.waitstatus_to_exitcode(status)
+        time.sleep(0.05)
+    os.kill(pid, signal.SIGKILL)
+    os.close(terminal)
+    _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status)
 
 
 def test_at_a_terminal_the_command_can_read(run: dict[str, str]) -> None:
