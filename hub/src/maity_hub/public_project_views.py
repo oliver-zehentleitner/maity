@@ -341,8 +341,9 @@ def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> 
     """What the page shows of the Keep the Why export (§16.9 **Why**): the counts, each family
     member's name, path and dashboard link, and the attention entries, read beforehand. Nothing
     while the repository is not public, nor for a project outside the operator's own namespaces
-    (`served` False, §11.4), a stored view included. Each process holds its own read: a render with none, with a failed one or with
-    one older than the stored view keeps that view (hub/context/public-pages.md)."""
+    (`served` False, §11.4), a stored view included. Each process holds its own read: a render
+    with none, with a failed one or with one older than the stored view keeps that view
+    (hub/context/public-pages.md)."""
     if project.repository_public is not True or not served:
         return {"readable": False}
     row = public_pages.get(conn, path)
