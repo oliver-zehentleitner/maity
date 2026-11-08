@@ -79,6 +79,41 @@ def test_a_join_url_is_normalised() -> None:
     assert parse_join_url("", PUBLIC) is None
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://join.example;Write-Output INJECTED",
+        "https://join.example$(id)",
+        "https://join.example`id`",
+        "https://join_example.org",
+        "https://-join.example",
+        "https://join-.example",
+        "https://join..example",
+        "https://" + "a" * 64 + ".example",
+    ],
+)
+def test_a_join_host_that_is_no_dns_name_or_address_stops_the_hub(value: str) -> None:
+    """The host goes into a shell line unquoted (`join_line`): letters, digits and hyphens per
+    label, or an IP address, so no shell punctuation can reach it (nyh5 at #1236)."""
+    with pytest.raises(ConfigError, match="MAITY_JOIN_URL.s host must be a host name"):
+        parse_join_url(value, PUBLIC)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://join.example",
+        "https://Join.Example.",
+        "https://xn--bcher-kva.example",
+        "https://join.example:8443",
+        "https://192.0.2.7",
+        "https://[2001:db8::7]",
+    ],
+)
+def test_a_join_host_that_is_a_dns_name_or_an_address_is_taken(value: str) -> None:
+    assert parse_join_url(value, PUBLIC) == value
+
+
 # --- join links -------------------------------------------------------------------------------
 
 

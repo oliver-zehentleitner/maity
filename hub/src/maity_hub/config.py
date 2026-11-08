@@ -580,6 +580,20 @@ def parse_cli_install(value: str) -> str:
     return value or DEFAULT_CLI_INSTALL
 
 
+_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE)
+
+
+def _dns_name_or_address(host: str) -> bool:
+    """A host name of letters, digits and hyphens per label (RFC 1123), or an IP address."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    labels = host.removesuffix(".").split(".")
+    return len(host) <= 253 and all(_LABEL.fullmatch(label) for label in labels)
+
+
 def parse_join_url(value: str, public_url: str) -> str | None:
     """`MAITY_JOIN_URL`: https, a host and nothing else, and not the public URL's host
     (§1.1). Anything else stops the hub."""
@@ -601,6 +615,12 @@ def parse_join_url(value: str, public_url: str) -> str | None:
         or parts.fragment
     ):
         raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
+    if not _dns_name_or_address(parts.hostname):
+        # The host goes into a shell line unquoted (`join_line`): no shell punctuation.
+        raise ConfigError(
+            "MAITY_JOIN_URL's host must be a host name (letters, digits and hyphens per label)"
+            f" or an IP address, got {value!r}"
+        )
     if parts.hostname.lower().rstrip(".") == (urlsplit(public_url).hostname or "").lower().rstrip(
         "."
     ):
