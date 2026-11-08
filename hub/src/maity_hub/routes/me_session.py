@@ -508,7 +508,9 @@ def _packet(
     peers = []
     areas = []
     own_view: dict[str, Any] = {"covering": []}
-    for row, view in zip(members, member_views(conn, members), strict=True):
+    views = dict(zip((m.id for m in members), member_views(conn, members), strict=True))
+    for row in members:
+        view = views[row.id]
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
         if row.id == mine.id:
             own_view = view
@@ -652,7 +654,7 @@ def _packet(
             "availability_policy": availability.policy_of(mine.row),  # §6.12
             "covering": own_view["covering"],  # whom it covers (§6.12)
             # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
-            "manages": instance_counts.for_member(conn, mine.row),
+            "manages": instance_counts.manages(members, views, [mine.row.id])[mine.row.id],
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,

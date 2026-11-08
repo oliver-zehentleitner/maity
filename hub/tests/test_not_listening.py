@@ -244,13 +244,23 @@ def test_the_start_wakes_the_member_it_reports_to_and_the_end_nobody(setup: Setu
     from maity_hub import events
 
     s = setup
+    with s.engine.begin() as conn:  # the agent reports to its owner: a boss to route to
+        boss = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == s.owner.id)
+        ).scalar_one()
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == s.agent.id)
+            .values(reports_to=boss)
+        )
     s.message()
     s.at(11)
     s.sweep()
     s.agent.get(f"{BASE}/events", params={"after": _cursor(s), "wait": 0})
     s.sweep()
     started, ended = s.events()
-    assert started.audience[-1].startswith("member:") or "trust:admin" in started.audience
+    # With a boss the admins still read it (`admins_always`, unlike `holder_stalled`).
+    assert started.audience == [f"member:{s.owner.id}", "trust:admin"]
     with s.engine.connect() as conn:
         reader = conn.execute(
             select(t.membership).where(t.membership.c.agent_id == s.agent.id)

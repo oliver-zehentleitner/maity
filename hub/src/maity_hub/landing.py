@@ -17,6 +17,8 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
+from fastapi import Request
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -799,3 +801,17 @@ def public(value: dict[str, Any]) -> dict[str, Any]:
 def etag(body: dict[str, Any]) -> str:
     raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
     return '"' + hashlib.sha256(raw).hexdigest()[:32] + '"'
+
+
+def cached_json(request: Request, body: dict[str, Any], *, by_language: bool = False) -> Response:
+    """A public JSON answer a visitor may cache for a minute, with its ETag: `304` when the
+    request names that tag in `If-None-Match`. `by_language` adds `Vary: Accept-Language` for
+    an answer that follows the visitor's language."""
+    tag = etag(body)
+    headers = {"Cache-Control": "public, max-age=60", "ETag": tag}
+    if by_language:
+        headers["Vary"] = "Accept-Language"
+    wanted = request.headers.get("if-none-match", "")
+    if tag in [part.strip() for part in wanted.split(",")]:
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(body, headers=headers)

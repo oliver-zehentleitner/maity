@@ -187,6 +187,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const inlineFields = new Map();
   function checkFields(at) {
     if (typeof main === "undefined" || !main) return;
+    checkHandleHints(at);
     main.querySelectorAll("label").forEach((label) => {
       const target = label.getAttribute("for");
       const cls = (label.className || "").split(/\s+/);
@@ -197,6 +198,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       if (!control || ["checkbox", "radio"].includes(control.attrs.type)) return;
       if (laidOut(parent)) return;
       if (!inlineFields.has(target)) inlineFields.set(target, at + " in <" + (parent.tagName || "?").toLowerCase() + " class=\"" + (parent.className || "") + "\">");
+    });
+  }
+  // Every field that asks for a handle explains the word (tsk-srzrkf2parzt): a hint the input names
+  // in its aria-describedby. Which kinds of field smoke saw, and any without the hint.
+  const HANDLE_FIELDS = [["own", /^handle-[a-z0-9]{1,8}$/], ["agent-new", /^agent-new-handle$/], ["agent-edit", /^agent-handle-/],
+    ["join", /^join-handle$/], ["org-new", /^org-new-handle$/], ["org-invite", /^org-invite-handle$/], ["org-rename", /^org-handle$/]];
+  const handleSeen = new Set(), handleBare = new Map();
+  function checkHandleHints(at) {
+    main.querySelectorAll("input").forEach((input) => {
+      const id = (input.attrs && input.attrs.id) || "";
+      const kind = HANDLE_FIELDS.find(([, re]) => re.test(id));
+      if (!kind) return;
+      handleSeen.add(kind[0]);
+      const named = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter((x) => /^handle-explain-/.test(x));
+      const hint = named.length && main.querySelectorAll("p.handle-explain").find((p) => p.attrs.id === named[0] && text(p).length);
+      if (!hint && !handleBare.has(kind[0])) handleBare.set(kind[0], at);
     });
   }
   // A project's Agents lists one's agents as rows (tsk-05meme59sq1x): open every row's card, as the tests read them.
@@ -14032,6 +14049,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     + JSON.stringify(rtHub) + JSON.stringify(rtNotHub));
 
   checkFields("at the end");
+  expect(HANDLE_FIELDS.every(([k]) => handleSeen.has(k)) && !handleBare.size,
+    "handles: every field that asks for a handle has its hint, named in aria-describedby; seen " + JSON.stringify([...handleSeen])
+    + ", without " + JSON.stringify([...handleBare]));
   expect(!inlineFields.size, "forms: no label runs inline beside its field on any page smoke shows " + JSON.stringify([...inlineFields]));
   console.log(failures ? failures + " failure(s)" : "all ok");
   process.exit(failures ? 1 : 0);
