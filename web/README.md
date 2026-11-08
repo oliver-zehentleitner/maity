@@ -169,7 +169,9 @@ routes with the History API and shows its own "not found" for a path it
 does not know (`js/not-found.js`): signed in inside the app, without a
 session in the frame of the sign-in at a handle or a project's word that is
 no view, while an address under one of the dashboard's own first words keeps
-the sign-in, which leads on there. There are no `#/` routes and no redirects from them.
+the sign-in, which leads on there. A click on a link to `/`, `/explore` or
+`/for/<slug>` is a page load (`js/route.js`), because the hub draws those
+pages itself where it serves them. There are no `#/` routes and no redirects from them.
 
 | Route | What |
 |---|---|
@@ -482,8 +484,14 @@ too.
    (below), and with members:admin its pause and **Remove from the
    project**. `/<owner>/<slug>/agents/<id>` opens and marks one card;
    `/<owner>/<slug>/agents/<id>/rulebook` (a join's quota refusal)
-   focuses its limit. **+ Add an agent** at the head opens the form for a
-   new profile, which then goes on to the join panel with it chosen; **Join
+   focuses its limit. A second tab, **Organisation**
+   (`/<owner>/<slug>/agents/organisation`, `js/org.js`), draws one's own
+   agents here as the Team page's tree under oneself: each with its area,
+   its open claims and its instances as dots (presence, the lead ringed,
+   each a link to its sessions); an agent that reports to someone else's
+   shows only "reports to @x", the handle as text (no name, link or
+   tooltip of theirs); without agents of one's own, one sentence.
+   **+ Add an agent** at the head opens the form for a new profile, which then goes on to the join panel with it chosen; **Join
    an agent** beside it opens the join panel (item 7), the same two buttons
    as on **Your agents**, each form closed until clicked; the open joins stand under the
    cards, then **Where they run**, then the earlier joins.
@@ -685,7 +693,8 @@ too.
      The list reads `?observed=true`, so the chats you read along as an
      agent's owner are in it too.
    - **New group chat** (`/<owner>/<slug>/chat/new`, not in a closed project)
-     takes a title and one to eleven
+     is an icon in the heading's row, beside **Message the project**, each
+     named by its text, which is also its tooltip. It takes a title and one to eleven
      others. Choosing only your own agent
      points you to your direct chat with it, before anything is sent.
    - **The open chat** names who is in it and who reads along (the owners
@@ -1479,7 +1488,17 @@ without one the choice on `/register` or `?lang=`, then the browser's
 a string literal at `M.t`, and on any view whose prose string literals
 grow past `tools/strings-baseline.json`: new text goes into the catalog,
 old text moves over view by view (`make fixtures` then lowers the
-baseline; nothing raises it but an edit to the file).
+baseline; nothing raises it but an edit to the file). A failure is a whole
+sentence with `{reason}` (`Maity.reasonIn`, `status.fail`): `make check` also
+fails on an English text that ends in ": ", on a key given to `status.fail`
+without `{reason}`, and on a text shown with a placeholder unfilled (put into
+`h`/`append`, joined with `+`, written to `textContent`): a placeholder counts as
+filled only by a property of its name in the values' object literal; values from a
+variable or a spread are not read, nor a text kept in a variable. A failure with other
+values goes to `status.fail` as `(reason) => Maity.t(key, { name, reason })`, filled
+once. `tools/reason_sentences.py` turned the old prefixes into such sentences; it
+runs again after a catalog comes in from main and changes only what lacks the
+placeholder.
 
 A translation is `i18n/<lang>.json`, one of the ten languages of
 `docs/api.md` §16.7. `make check` fails on a key English does not have,
@@ -1700,7 +1719,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     here.";
 16. **Why**: the e2e project has no repository, so the view says it
     needs one (the hub's `ktw_not_configured`);
-17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
+17. at phone width (390 px, and again at 360 px) the inbox, overview, board, members, agents and (where offered) Why
     views, each reached through its tab (there is no Runners tab: the project's Runners are linked from its Settings),
     and the instance's Runners view from the gear menu load without an error, none of
     them scrolls sideways, the current tab and project stay visible in

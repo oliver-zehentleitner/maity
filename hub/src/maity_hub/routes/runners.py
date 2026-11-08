@@ -688,6 +688,10 @@ def remove(conn: Connection, runner_id: str, *, agents: str, instance_rule: str,
     live = live_credential_id(conn, runner_id)
     if live is not None:
         revoke_runner_credential(conn, live, "runner_removed", by=by, applied=applied)
+    else:
+        # A key revoked already (under `keep`, or for a leak): what the removal applied is
+        # added to that key's record, as for a later revoke's stop (§15.3).
+        _record_applied(conn, runner_id, applied)
     for project_id in attached_project_ids(conn, runner_id):
         detach(conn, project_id, runner_id, by)
     # An open re-pair would bring the removed runner back.

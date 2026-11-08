@@ -307,7 +307,7 @@ create humans with handles such as `admin` without going through the CLI.
 **Source:** card tsk-ftnk7d1p5117, PR 1 of the plan the lead decided on 2026-10-29 (the plan is note nte-b5yq1r1xv4c4 on the card); the incident of 2026-10-26
 **Revisit when:** the cluster gets a log or metrics stack that scrapes or parses something better than `key=value` lines, or the pool line needs the number of callers waiting for a connection
 
-Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`): how
+Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`; a refusal adds a tail, see af4976fc-5ed8-4d31-bcb3-b0e71c6fa14d): how
 long the hub took from the middleware's first line, and the pattern the answering route was
 declared with (`request_stats.route_of`): the route's `path_format`, with the `/api/v1` prefix put
 back where the route's regular expression takes the rest of the path, because the route object's
@@ -374,6 +374,37 @@ nothing from the request, for the reasons of the entry above.
   answer; the request log's `ms=` gives exact values where needed.
 - Summing the request log with `kubectl logs`: it works for what the log still holds, and needs no
   code, but the time it reaches back shrinks as traffic grows.
+
+## A refused call names its code and its reason or scope in the request log, read from the answer itself
+
+**Id:** af4976fc-5ed8-4d31-bcb3-b0e71c6fa14d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-5d8hdtqhje26, from tsk-7jhpzrvsnzm3 (2026-11-06): a project owner's joins were refused 30 times and ops could not tell which check refused them, because the line said only `403`; which answers get the tail was decided by the lead on the card's plan, 2026-11-08
+**Revisit when:** the hub gets structured (JSON) logs or a log stack that indexes fields, or a `reason` or `scope` that is not a code token turns up as `?` in the log
+**See:** serving.md#the-request-log-carries-ms-and-the-routes-pattern-and-one-stats-line-a-minute-says-how-loaded-the-hub-is — 8c9025ea-d9d4-449e-a343-ecd802ddbdfd — as of 2026-11-08
+
+A 403, and any other 4xx whose `details` carry a `reason` or a `scope`, ends its request log line
+in `error=<code>` with `reason=<r>` and `scope=<s>` where present (docs/api.md §1.1). A 404 or a
+validation error with neither adds nothing. `middleware._noting_refusal` reads the code from the
+answer's `Maity-Error` header and peeks at the envelope as it passes, at most 16 KiB and only
+when the answer is not compressed. Every message goes on unchanged. Only a code token (lowercase
+letters, digits, `_ . : -`, up to 64 characters) is written; anything else is `?`.
+
+**Reason:** the line had to tell the refusing checks apart without carrying anything from the
+request. A reason and a scope are the hub's own codes, but a few details elsewhere hold free
+text, so the token guard keeps a future text reason out of the log. Reading the answer covers every
+way a refusal is made: a raised `ApiError`, an envelope a route returns itself, and the
+middleware's own refusals. Limiting the tail to 403 and to 4xx that name a reason keeps the log
+as quiet as before for the common 404 and 400.
+
+**Rejected alternatives:**
+- Recording code and reason in the app's exception handlers: misses the envelopes a route returns
+  without raising and the refusals the middleware answers before the app.
+- `error=` on every 4xx: more noise for 404s and validation errors, whose code the status already
+  says; the lead chose the narrower form.
+- Logging `details` whole: `fields` and other details can name what the request sent.
 
 ## The `stats` line says how late the event loop runs and how many worker threads are busy, from a tick on the loop
 

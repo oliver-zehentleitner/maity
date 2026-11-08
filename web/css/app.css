@@ -1,6 +1,15 @@
 /* Maity dashboard. Light and dark through prefers-color-scheme; every
    colour is a token on :root. */
 
+/* The brand's faces, beside this file in css/fonts/ with their SIL OFL texts (copies of the
+   landing page's, hub/src/maity_hub/landing_assets/fonts/). Relative, so they load served from
+   /assets/css/ (same origin, `default-src 'self'`) and from file:// in fixture mode alike. */
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url("fonts/inter-600.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("fonts/inter-700.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 700; font-display: swap; src: url("fonts/space-grotesk-700.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400 500; font-display: swap; src: url("fonts/jetbrains-mono-500.woff2") format("woff2"); }
+
 :root {
   --bg: #f7f7f5;
   --surface: #ffffff;
@@ -19,8 +28,8 @@
   --route: #b54708; /* an event's route on Paths: 5.43:1 on --surface, 4.75:1 on --surface-2 (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
-  --flag-bg: #fff6dd;
-  --error-bg: #fde8e7;
+  --flag-bg: var(--warn-soft);
+  --error-bg: var(--bad-soft);
   /* A preferences diff (js/preferences.js): lines removed and added. */
   --diff-del-bg: #fde8e7;
   --diff-add-bg: #e3f4e8;
@@ -30,8 +39,27 @@
   --avatar-l: 40%;
   --radius: 8px;
   --gap: 16px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --display: "Space Grotesk", "Inter", system-ui, sans-serif; /* titles: h1, h2, panel and column heads */
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The design refresh (tsk-89mqceyxhbpv, step 1): soft grounds for states, a field edge,
+     spacing steps, radii and a shadow. Text on a soft ground is --text or the state's own
+     colour mixed a fifth of the way to --text (as --ktw-warn), never the bare state colour. */
+  --accent-soft: #e6effc;
+  --ok-soft: #e3f4e8;
+  --warn-soft: #fff6dd;
+  --bad-soft: #fde8e7;
+  --field: #7d8691; /* an input's edge: 3.69:1 on --surface, 3.44:1 on --bg, 3.23:1 on --surface-2 (WCAG 1.4.11) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --r-card: 14px;
+  --r-field: 10px;
+  --r-pill: 999px;
+  --shadow: 0 1px 2px rgba(20, 24, 29, 0.04), 0 6px 18px rgba(20, 24, 29, 0.06);
 }
 
 /* Dark: by the system's choice unless this browser picked Light, or when it
@@ -56,13 +84,19 @@
     --route: #f79009;
     --warn: #d29922;
     --bad: #ff7b72;
-    --flag-bg: #2d2610;
-    --error-bg: #3a1716;
+    --flag-bg: var(--warn-soft);
+    --error-bg: var(--bad-soft);
     --diff-del-bg: #3a1716;
     --diff-add-bg: #14301d;
     --out-bg: #1b3050;
     --avatar-bg: #2a3138;
     --avatar-l: 66%;
+    --accent-soft: #17263f;
+    --ok-soft: #14301d;
+    --warn-soft: #2d2610;
+    --bad-soft: #3a1716;
+    --field: #737c86; /* 3.92:1 on --surface, 4.36:1 on --bg, 3.43:1 on --surface-2 */
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
   }
 }
 :root[data-theme="dark"] {
@@ -83,13 +117,19 @@
   --route: #f79009;
   --warn: #d29922;
   --bad: #ff7b72;
-  --flag-bg: #2d2610;
-  --error-bg: #3a1716;
+  --flag-bg: var(--warn-soft);
+  --error-bg: var(--bad-soft);
   --diff-del-bg: #3a1716;
   --diff-add-bg: #14301d;
   --out-bg: #1b3050;
   --avatar-bg: #2a3138;
   --avatar-l: 66%;
+  --accent-soft: #17263f;
+  --ok-soft: #14301d;
+  --warn-soft: #2d2610;
+  --bad-soft: #3a1716;
+  --field: #737c86; /* 3.92:1 on --surface, 4.36:1 on --bg, 3.43:1 on --surface-2 */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -165,6 +205,7 @@ body {
 
 a { color: var(--accent); }
 
+h1, h2 { font-family: var(--display); letter-spacing: -0.01em; }
 h2 { font-size: 1.25rem; margin: 0 0 12px; }
 h3 { font-size: 1rem; margin: 4px 0; }
 h4, h3.sub { font-size: 0.85rem; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -183,7 +224,7 @@ button, select, textarea, input {
 button {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-field);
   padding: 6px 12px;
   cursor: pointer;
 }
@@ -194,8 +235,8 @@ button.danger { color: var(--bad); }
 
 select, textarea, input {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--field);
+  border-radius: var(--r-field);
   padding: 6px 8px;
 }
 
@@ -372,10 +413,10 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .error:empty { display: none; }
 
 .flag {
-  background: var(--flag-bg);
+  background: var(--warn-soft);
   border-left: 3px solid var(--warn);
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: var(--r-field);
 }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -487,7 +528,8 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .card, .profile {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
   padding: 10px 12px;
   min-width: 0;
 }
@@ -566,6 +608,9 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 6px; }
 .icon-button .icon .icon-fill { fill: currentColor; }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
+/* A link that looks like the icon buttons: it opens a page, so it stays a link (the chat list's actions). */
+a.icon-button { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+a.icon-button:hover { border-color: var(--accent); }
 /* A phone's thumb: bigger targets; the arrows wrap onto their own line. */
 @media (max-width: 600px) {
   .icon-button, .card-actions .menu-button { min-width: 40px; min-height: 40px; }
@@ -765,6 +810,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
 .role { color: var(--muted); }
+/* One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): an instance a dot in its presence's
+   colour inside a 24 px target, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
+.fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
+.fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+.fleet-dot.online::before { background: var(--ok); }
+.fleet-dot.away::before { background: var(--warn); }
+.fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
+.fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
+.fleet-stub a { color: inherit; }
+.fleet-me { font-size: 1.02rem; }
+@media (max-width: 600px) {
+  .fleet-tree ul { padding-left: 12px; }
+}
 .org-faces, .paths-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .org-face[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .paths-chip { border-radius: 999px; padding: 4px 12px; }
@@ -987,13 +1047,13 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
-.panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--radius); }
+.panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--r-card); }
 /* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
 .inline-form, .login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 /* The settings panel sits under the page's h1: its sections are h2, styled small. */
-.panel-title { margin: 0; font-size: 1rem; }
+.panel-title { margin: 0; font-size: 1rem; font-family: var(--display); }
 .panel-sub { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
 .inline-form button, .login button { justify-self: end; }
@@ -1216,8 +1276,13 @@ a.member-chip:hover { border-color: var(--accent); }
 .chip-dot.presence-paused { background: var(--warn); }
 
 /* Group chats (js/group-chat.js). */
-.chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.chat-list-pane .new-group { white-space: nowrap; }
+/* The project's heading and its two icon actions in one row at every width (tsk-qgy2tb3w3x93):
+   the heading gives way and ellipsizes, the icons never move below it. The global list (js/chats.js)
+   keeps its phone layout: its lead control sits under the heading at the left edge, where its menu
+   opens on screen. */
+.chat-list-pane .toolbar.chat-actions { flex-wrap: nowrap; }
+.chat-list-pane .toolbar.chat-actions h2 { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-list-pane .toolbar.chat-actions .icon-button { flex: none; }
 .mention-count { background: var(--accent); color: var(--accent-text); }
 .group-people-line, .group-observers { margin: 0 0 4px; font-size: 0.85rem; overflow-wrap: anywhere; }
 .group-manage { margin: 4px 0 8px; }
@@ -1810,6 +1875,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
+.handle-form .handle-explain { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }

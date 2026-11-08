@@ -122,6 +122,68 @@ window.Maity = window.Maity || {};
     return h("ul", { class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)), deeper);
   }
 
+  // One's own fleet, the Organisation tab of a project's Agents (tsk-q989pagmk2x9; the maintainer,
+  // 2026-11-02): the same tree, built from one's own agents here alone, under oneself. An agent
+  // that reports to someone else's shows that as a stub, and nothing more of the other side.
+  const live = (m) => (m.instances || []).filter((i) => !i.revoked_at);
+
+  const STATE_WORDS = {
+    online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
+    offline: () => M.t("chat.presence.offline"), dormant: () => M.t("org.fleet.dormant"),
+  };
+  // An instance as a dot in its presence's colour, the lead ringed, a link to its sessions.
+  function fleetDots(ctx, m) {
+    const handle = M.dom.handleOf(ctx, m) || m.handle || m.id;
+    const list = live(m);
+    if (!list.length) return h("span", { class: "muted fleet-none" }, M.t("org.fleet.no_instances"));
+    return h("span", { class: "fleet-dots" }, list.map((i) => {
+      const state = i.dormant ? "dormant" : (i.presence || "offline");
+      const words = [Object.hasOwn(STATE_WORDS, state) ? STATE_WORDS[state]() : state];
+      if (i.lead) words.push(M.t("org.fleet.lead"));
+      return h("a", { class: "fleet-dot " + state + (i.lead ? " lead" : ""), href: M.dom.instanceHref(ctx, m.id, i.id),
+        "aria-label": M.t("org.fleet.dot", { address: "@" + handle + "#" + i.id, state: words.join(", ") }),
+        title: "#" + i.id + " · " + words.join(", ") });
+    }));
+  }
+
+  // Someone else's boss by its handle alone, as text: no link to their page, no name, no tooltip
+  // (the card: "reports to @x", nothing more of the other side). Where the list gives no handle,
+  // a neutral sentence, never its id or a name.
+  function bossStub(ctx, id) {
+    const m = ctx.memberById ? ctx.memberById[id] : null;
+    const handle = m ? M.dom.handleOf(ctx, m) || m.handle : null;
+    return handle ? M.t("org.fleet.reports_to", { who: "@" + handle }) : M.t("org.fleet.reports_to_someone");
+  }
+
+  function fleetNode(ctx, m, tree, own, byId) {
+    const kids = tree.children[m.id] || [];
+    const claims = live(m).reduce((n, i) => n + (i.claims || 0), 0);
+    const boss = m.reports_to && !own.has(m.reports_to) && m.reports_to !== ctx.me.id ? m.reports_to : null;
+    return h("li", { class: "fleet-member", "data-member": m.id },
+      h("div", { class: "org-node fleet-node" },
+        M.avatar(m, 20),
+        h("strong", null, M.dom.memberRef(ctx, m.id)),
+        m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
+        fleetDots(ctx, m),
+        h("span", { class: "muted fleet-claims" }, M.t("org.fleet.claims", { count: claims }))),
+      boss ? h("p", { class: "fleet-stub" }, bossStub(ctx, boss)) : null,
+      kids.length ? h("ul", null, kids.map((k) => fleetNode(ctx, byId[k.id], tree, own, byId))) : null);
+  }
+
+  function drawFleet(ctx) {
+    const mine = (ctx.members || []).filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id && !m.removed_at);
+    if (!mine.length) return h("p", { class: "muted fleet-empty" }, M.t("org.fleet.empty"));
+    // Built from one's own agents alone: a boss or an area owner of someone else's places nobody
+    // here (buildTree follows a reports_to only to a member it was given).
+    const tree = buildTree(mine);
+    const own = new Set(mine.map((m) => m.id));
+    const byId = Object.fromEntries(mine.map((m) => [m.id, m]));
+    const me = (ctx.members || []).find((m) => m.id === ctx.me.id) || ctx.me;
+    return h("ul", { class: "org-tree fleet-tree" }, h("li", { class: "fleet-member", "data-member": ctx.me.id },
+      h("div", { class: "org-node fleet-node fleet-me" }, M.avatar(me, 20), h("strong", null, M.dom.memberRef(ctx, ctx.me.id))),
+      h("ul", null, tree.roots.map((r) => fleetNode(ctx, byId[r.id], tree, own, byId)))));
+  }
+
   // Tree or Paths (js/paths.js), kept per browser like the other per-reader choices; a
   // browser that keeps nothing starts at the tree.
   const FACE = "maity.org.face";
@@ -156,5 +218,5 @@ window.Maity = window.Maity || {};
     });
   };
 
-  M.org = { buildTree, drawTree, contains };
+  M.org = { buildTree, drawTree, drawFleet, contains };
 })(window.Maity);

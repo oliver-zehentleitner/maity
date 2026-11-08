@@ -104,6 +104,20 @@ verified.
 - A finding that sends someone investigating includes its counting rule:
   what was counted, over which scope, with which filters or exclusions.
   Include enough evidence to reproduce the count.
+- A factual sentence in a pull request text or a review request about
+  main ("already on main", "main did not touch these files"), about GitHub,
+  or that the old head is red names the command, the head it ran on and the
+  command's full output.
+
+## Before the first review
+
+- A card for a tool or a security-relevant change carries a `Boundary:`
+  paragraph in its body before the first review order: what the change
+  guarantees, what it does not, and what counts as P3. The review lead
+  quotes it to all three reviewers in round one.
+- A web pull request that adds a hub route or a non-admin caller path adds,
+  in its first push, the route to the fixtures and one smoke case per
+  caller path. Its review request names the caller paths the smoke covers.
 
 ## PostgreSQL runs and a shared machine
 

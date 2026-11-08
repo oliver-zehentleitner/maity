@@ -655,7 +655,7 @@ Plural forms follow the catalog's language, not the locale of the numbers: a Ger
 the English catalog needs English forms.
 
 The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
-or `?lang=`). Without one it leaves the field out, so the account keeps
+or `?lang=`, unless the landing page's frame overrode that `?lang=`: fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
 `?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
@@ -689,7 +689,8 @@ the session themselves. A catalog per language keeps nine languages off every pa
 
 **Id:** 323db387-6c53-4a63-86bd-13a464b114e7
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17
 **Evidence:** confirmed
 **Source:** card tsk-a9n9p6952wwb (landing in English, sign-in and visitor views in German for the same visitor, 2026-11-06), reproduced on maity.team 2026-11-07; the lead's go on the plan (Maity message, 2026-11-07); `web/js/i18n.js`, `hub/src/maity_hub/render.py` `choose_language`
 **See:** rendering.md#english-is-always-loaded-the-readers-language-comes-as-its-own-script-chosen-by-one-rule-in-one-place — 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6 — as of 2026-11-07
@@ -727,6 +728,58 @@ but the public pages set no language or tracking cookie (context/scope.md, hub/c
 `/` reads only the session cookie, to choose between the landing page and the dashboard), and
 `GET /site/chrome` and `GET /auth/pages/{page}`, which vary on `Accept-Language` only, would need
 `Vary: Cookie`. Keeping the choice across visits is the maintainer's call, and it is that cookie.
+
+## Before sign-in the dashboard takes the landing page's own language from `GET /site/chrome`
+
+**Id:** fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jh94ax9pphxs, the follow-up 323db387 named, and the gaps the reviews of #1463 found (2026-11-07); the lead's go on the plan and on the revised hook, with the redraw accepted and a short timeout required (Maity messages, 2026-11-07); `web/js/i18n.js`, `web/js/site-chrome.js`, `hub/src/maity_hub/render.py` `choose_language`
+**See:** rendering.md#before-sign-in-the-dashboard-takes-the-landing-pages-order-for-the-language-and-keeps-nothing-in-the-browser — 323db387-6c53-4a63-86bd-13a464b114e7 — as of 2026-11-07
+**Revisit when:** `GET /site/chrome` stops choosing its language as the landing page does, the maintainer wants a visitor's choice kept across visits (that is a language cookie, 323db387), or the read's cost or delay shows on signed-out pages
+
+Without an account's `interface_language` the dashboard takes the landing page's own language.
+On the 401 of `GET /auth/session`, which every view without a session waits for, `i18n` reads
+`GET /site/chrome` once per page and address, with the address's `?lang=` as written (or the last
+one this page saw, or a pick on it, across routes without one) or without `lang`, and takes its
+`language`: the hub chooses it from the exact `?lang=`, `Accept-Language`,
+the landing page's languages and its `default_language` (§16.7.5). The frame on `/login` and
+`/register` reads the same address (the browser's cache answers it) and its `language` counts the
+same way; where it differs from what the page was drawn in, the page draws itself again once, never
+when they agree. Precedence: the account's language, then a choice made on the page (it holds for
+the page's life, until an address with any other `?lang=` value, as `sv`, `xx` or `de-AT` after
+a pick of `de`), then the
+frame's, then `?lang=` (the closest catalog), the browser's languages and `en`. A signed-in account
+without an `interface_language` (the session read answered 200) is no visitor: it keeps the
+browser's rule and never reads the frame. Nothing goes into the browser's storage, as
+323db387 decided. The read is given `i18n.frameWait` (1500 ms): a failed or late answer leaves the
+rule without it and holds no view; fixture mode reads nothing, its frame answering English whatever
+is asked.
+
+**Reason:** the reviews of #1463 showed the dashboard's own rule could only approximate the landing
+page's: the landing page offers only the languages it has pages in, takes `?lang=` only as an exact
+offered tag and falls back to its `default_language`. Asking the hub, which already chooses the
+frame's language that way, makes them one choice instead of two that agree only with all ten pages
+and `default_language: en`.
+
+**Consequence:** a reload with a `?lang=` the landing page has no page in (pages `en` and `fr`,
+`?lang=ko`) follows the landing page, though the address still shows `?lang=ko`, as the landing page
+itself does; only a choice made on the page holds against the frame, for that page. Such an
+overridden `?lang=` is no choice of the person's either: `/register` does not store it as the
+account's `interface_language`, or the account would read Korean while the landing page reads
+English, the split this entry closes. Every signed-out
+page load costs one more `GET`, `Cache-Control: public, max-age=60`.
+
+**Rejected alternatives:**
+- Waiting for the read before every visitor view: a slow hub would delay every signed-out page;
+  the short timeout keeps the delay bounded instead, and the redraw is only where the two differ.
+- Reading the frame before `M.i18n.ready`, on every page load: also for signed-in readers, who never
+  need it, and before the session says whether there is one.
+- Reading it only where the frame is drawn (`/login`, `/register`): the visitor views, which the card
+  was about, would keep the gap.
+- Restricting the pickers to the landing page's languages while the frame stands: a person may
+  still want a dashboard language the landing page lacks; their choice holds for the page instead.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 
@@ -914,9 +967,27 @@ chat is found again by its participants, never by its title; its
 maker may rename it (§9.2). Rejected: a chat without a title (the
 hub allows one), named from its participants when read: every list
 that shows the chat would need that naming, and the participants alone
-do not say what the chat is for. Still put together from
-pieces: a status line's prefix and its reason ("Not saved: " + the
-hub's words, `status.fail`), for a later part of stage 2.
+do not say what the chat is for. A failure is one
+sentence with `{reason}` where the hub's words go ("Not saved:
+{reason}"): `status.fail(sentence, err)` fills it through
+`M.reasonIn`, so a language may put the reason first or in the middle.
+Text before an element (an inbox entry's label, a diff line's "added:",
+the list of what blocks a release) has its own placeholder (`{entry}`,
+`{line}`, `{reasons}`) filled with that element by `M.tn`. A failure
+with other values is handed over as a function of the reason,
+`(reason) => M.t(key, { name, reason })`, so its text is filled once:
+a value that reads "{reason}" (a file's name) stays as it is. A failure
+shown outside a status line is filled where it is shown
+(`M.t(key, { reason })`). `make check` fails on an English text that
+ends in ": ", on a key handed to `status.fail` without `{reason}`, and
+on a text put into an element, joined with `+` or written to
+`textContent` with a placeholder left unfilled, a placeholder counting
+as filled only where the values' object literal has a property of that
+name. It does not read values from a variable or a spread, nor follow a
+text kept in a variable (tsk-0zbms0wwqhmm, #1498). Rejected: the
+reason glued after the sentence in code, which fixed its place for
+every language; filling `{reason}` in the finished text for every
+failure, which filled it again inside a value.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code

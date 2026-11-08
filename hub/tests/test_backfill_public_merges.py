@@ -143,8 +143,8 @@ def test_another_project_stays_untouched_by_a_run_and_its_undo(
     assert backfill.run(migrated, named, change=True, undo=False, stamp="2026-11-02") == 1
     assert merges(migrated, project_id)[12]["public"] is True
     assert merges(migrated, other) == theirs
-    backfill.run(migrated, backfill.Named(other, "maintainer/other", URL), change=True,
-                 undo=False, stamp="2026-11-02")  # fmt: skip
+    assert backfill.run(migrated, backfill.Named(other, "maintainer/other", URL), change=True,
+                        undo=False, stamp="2026-11-02") == 2  # fmt: skip
     assert backfill.run(migrated, named, change=True, undo=True, stamp="") == 1
     assert "public" not in merges(migrated, project_id)[12]
     assert all(m["public"] is True for m in merges(migrated, other).values())

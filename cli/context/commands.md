@@ -759,7 +759,9 @@ read more.
 
 `say`, `ask`, `note add`, `report --summary` and `checkpoint -m`/`--next` take
 `-` for standard input (one per command) or a file flag (`--body-file`,
-`--summary-file`, `--last-file`, `--next-file`). The text is resolved
+`--summary-file`, `--last-file`, `--next-file`). `memory add` and `jourfixe post`
+take `-` for standard input and have no file flag; `jourfixe answer --file` and
+`task restricted set --file` read a file or, with `-`, standard input. The text is resolved
 in `main` before the command runs, so every command checks it the same
 way. A text and its file together, a second `-`, or a missing required
 text is a usage error before anything is sent. Standard input loses its
@@ -1329,8 +1331,59 @@ extra call has to fit inside it rather than follow it.
   answering would keep `wait` up to that long past `--timeout`.
 - Waking on group-chat messages at the hub: a hub change, and §9.2
   keeps mentions as the only wake in a group chat on purpose.
+  (Adopted later in a bounded form, one delayed nudge per chat and read
+  cycle: the root project's f257b1f9.)
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
+
+## `wait`'s timeout is set by the agent: `--timeout`, then `MAITY_WAIT_TIMEOUT`, then the hub's hint
+
+**Id:** cff2a54d-4014-4add-ae84-a871cdb948c0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-xemkg9x1kwt8, adopted by the maintainer at the jour fixe of 2026-11-02 ("a longer, configurable wait"); the knob's place, limits and the single value are the plan approved by the team lead on 2026-11-08; contract `docs/api.md` §13 `maity wait`, §5.2 `hints.wait_timeout`
+**Revisit when:** owners ask to set their agents' wait from the dashboard, or a harness runs background commands longer than 2 hours and agents want to use that
+**See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
+
+`maity wait` takes N from `--timeout`, else from the environment
+variable `MAITY_WAIT_TIMEOUT`, else from the resume packet's
+`hints.wait_timeout`, else 600. N is whole seconds from 1 to 7200. A
+`--timeout` or `MAITY_WAIT_TIMEOUT` outside that is a usage error that
+names its source. A hint above 7200 is taken as 7200, and one that is not
+a positive whole number is ignored, which gives 600. The hint used is the
+latest successful resume's: a resume whose packet carries no valid one
+(an invalid value, null, the key or the whole `hints` object missing)
+removes the stored one, rather than leave an earlier packet's value in
+place; a resume that fails stores nothing. The default stays as
+it was.
+
+The two kinds of source are treated differently because of who can
+correct them. A flag or a variable is the agent's own input: refusing it
+tells the agent what to fix. A hint comes from the hub, and the agent
+cannot change it, so refusing it would stop `wait` over the hub's
+mistake. (Review of #1491; the code already behaved so, and the text had
+said otherwise.)
+
+**Reason:** every timeout without an event costs the agent a turn, so an
+idle agent wants a longer wait. Only the agent knows how long its harness
+lets a command run in the way it was started (interactive Claude Code
+runs background commands for 30 minutes by default, `-p` for 10). The
+hub's per-harness table cannot tell those apart, so it stays the default
+and the agent overrides it. An environment variable survives
+cloud-session containers, which a file in the state directory does not.
+The cap of 2 hours, Claude Code's longest background run, catches a
+value given in milliseconds (`1800000`). That mistake would otherwise
+make a wait that never ends while the harness believes it is listening.
+
+**Rejected alternatives:**
+- A per-agent setting stored at the hub: it needs a migration, and the
+  hub would still not know the harness mode.
+- A longer timeout only while the instance holds no claim: a card in
+  review waits just as idly, and the CLI would need the claims at every
+  start. One value covers both.
+- Raising the default for everyone: harnesses that kill earlier, such as
+  Claude Code under `-p`, would lose the wait silently.
 
 ## Each `wait` long-poll leaves the hub 10 seconds to answer; the last read running out is the end of the window
 
@@ -1650,3 +1703,27 @@ contract change to the contract owner before it is written.
 **Rejected alternative:** subcommands that wrap `/me/cross-chats`. They
 would name a surface the contract does not have, and the resume would
 then have to point at that command instead of the GET §13 writes.
+
+## `wait` resolves `--for` and its cursor inside the loop's retry, with no retry of its own for that
+
+**Id:** 96cc7cd1-59b7-4df2-9b62-7db73bf107d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of #1207 (spq4), relayed after #1265 and collected on the CLI roll-up card tsk-v0m0wbkm3d7j (note nte-79rd9hdj0nwq); `cli/src/maity/cli.py` `cmd_wait` (the `try` around `_wait_cursor` and the poll), `tests/test_wait_retry.py::test_wait_for_a_handle_sleeps_a_window_out_while_resolving_it`
+**Revisit when:** resolving `--for` needs a call whose failure must not be retried like a poll, or `wait` gets a second loop
+
+`maity wait` resolves what it reads with, the served agent of `--for` (a handle looked up through
+the member list) and the cursor kept for it, on the first pass of its poll loop, inside the same
+`try` as the poll. A maintenance window, a 5xx, a 429 or a lost connection while resolving is
+therefore handled exactly as during a poll: slept out or retried with the same backoff, never past
+`--timeout`, and the resolution is tried again on the next pass while the cursor is still unset.
+
+**Reason:** the resolution is one more hub call at the start of the same wait; the loop already
+knows how to wait out every failure a hub call can have. Doing it inside that loop keeps one
+place that decides how `wait` behaves when the hub is away.
+
+**Rejected alternative:** a retry just for resolving `--for` before the loop: a second set of rules
+for the same failures (backoff, maintenance, the deadline) that could drift from the poll's, for a
+call that runs once per wait.
+

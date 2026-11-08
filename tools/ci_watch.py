@@ -2,7 +2,8 @@
 
     python3 tools/ci_watch.py add <queue> <pr> <full head sha> <author handle#instance>
     python3 tools/ci_watch.py remove <queue> <pr>
-    python3 tools/ci_watch.py run <queue> [--once] [--interval 120] [--repo owner/name]
+    python3 tools/ci_watch.py run <queue> [--inbox <member id>] [--once] [--interval 120]
+                                          [--repo owner/name]
 
 The queue file holds one line per watched head: `<pr> <full head sha> <author>`, where the
 author is the Maity address the result goes to (`handle#instance` or `agt-…#instance`). The
@@ -15,6 +16,42 @@ started by that pull request's branch (`pull_request` event), and waits until th
 completed. It then reports the `ci-ok` job's conclusion, and the jobs that failed, to the author
 and removes the line. A head that moved, a closed or merged pull request, and a conflict with
 main (no run starts then) are reported and removed too.
+
+Intake through Maity, for authors who cannot reach the file (a cloud session): with `--inbox
+<member id>`, `run` first reads the project's messages to that member and takes each one whose
+whole text is `ciwatch <pr> <full head sha>`:
+
+    maity say --type notice <watcher address> 'ciwatch <pr> <full head sha>'
+
+The author is the message's sender as the hub records it (`from#from_instance`), never an
+address in the text. The pull request must be open with that SHA as its head; then the line is
+added (a newer head replaces an older one, as with `add`). The number has at most nine digits.
+Any other message is left alone and gets no answer, and the watcher's own messages are never
+read as intake, so it never answers itself.
+
+Each request is decided once and answered (added, or why not), with `(request <seq>)` at the end.
+The decision, the answer and the last message read are saved in `<queue>.intake` before the
+answer is said. An answer whose `maity say` failed is said again only after a later pass read
+the messages to the end without finding it there (a `say` whose response got lost did post
+it), and given up after five failures, logged; then the request gets no answer. A request
+whose GitHub check fails five passes in a row is answered so and passed over. One way to two
+answers stays: if the hub changed the posted body and the response was lost, the read-back
+misses it and the answer is said again. A pass reads at most five pages and answers at most 50
+requests; the next pass goes on from there. A first start begins after the newest message,
+following empty pages (across passes, from a saved continuation), and never takes older ones.
+Nothing in the intake stops the queue pass: an unreadable or malformed state file, or any
+other error there, is logged every pass and tried again, and the results still go out. One `run` per
+queue: the state file is not locked against a second runner. Reading
+messages moves no read mark of the identity (`maity messages` acknowledges nothing), so a
+`maity wait` of the same identity still gets every message. But every read is a hub call, and
+every hub call is presence (docs/api.md §2.4): each pass marks the instance of the
+`MAITY_STATE_DIR` online and renews the leases of the claims it holds. Until the watcher has an
+identity of its own, that instance's claims do not run out while the watcher runs, even if its
+session is stuck; run it under an instance that holds no claims where that matters. A message
+whose sender is no member id gets no answer (logged).
+
+What the intake does not check: that the sender wrote the pull request. Anyone who can message
+the watcher can have any open head watched, and the result goes to them.
 
 Who reports: `run` posts with `maity say` under the Maity identity of the `MAITY_STATE_DIR` it is
 started with, and refuses to start without one, so the sender is never a guess. On the shared
@@ -43,7 +80,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 REPO = "oliver-zehentleitner/maity"
 WORKFLOW = ".github/workflows/ci.yml"
@@ -52,6 +89,16 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _PR = re.compile(r"^[1-9][0-9]*$")
 # A Maity address: a handle or member id, `#`, an instance. No `/`, so never a path.
 _AUTHOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*#[A-Za-z0-9]+$")
+_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# The pull request number is bounded, so a message can never make `int()` fail.
+_INTAKE = re.compile(r"^ciwatch ([1-9][0-9]{0,8}) ([0-9a-f]{40})$")
+# Per pass: at most this many answers and this many pages of messages; the rest waits for the
+# next pass, which goes on where this one stopped.
+INTAKE_PER_PASS = 50
+PAGES_PER_PASS = 5
+# A request whose GitHub check fails this many passes in a row is answered and passed over;
+# an answer whose `maity say` fails this many times is given up (and logged).
+TRIES = 5
 _FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
 
 
@@ -61,6 +108,10 @@ class Refused(Exception):
 
 class Transient(Exception):
     """A `gh` or `maity` call that failed; the line is tried again on the next pass."""
+
+
+class NotFound(Exception):
+    """GitHub answered 404: the pull request does not exist."""
 
 
 @dataclass(frozen=True)
@@ -211,7 +262,10 @@ def run_pass(queue: Path, gh: Gh, say: Say, repo: str = REPO, log: TextIO = sys.
         if entry is None:
             continue
         try:
-            report = check(entry, gh, repo)
+            try:
+                report = check(entry, gh, repo)
+            except NotFound:
+                report = f"CI watch: #{entry.pr} on {entry.sha}: no such pull request; not watched."
             if report is None:
                 continue
             say(entry.author, report)
@@ -224,6 +278,291 @@ def run_pass(queue: Path, gh: Gh, say: Say, repo: str = REPO, log: TextIO = sys.
     return done
 
 
+def _member(address: object) -> str:
+    return str(address or "").split("#", 1)[0]
+
+
+def _clean(text: str) -> str:
+    """Another program's output for one log line: control characters shown as `?`."""
+    return "".join(c if c.isprintable() else "?" for c in text.strip()[:200])
+
+
+def admit(pr: int, sha: str, gh: Gh, repo: str = REPO) -> str | None:
+    """Why the head may not be watched, or None when it may."""
+    try:
+        data = gh(f"repos/{repo}/pulls/{pr}")
+    except NotFound:
+        return "no such pull request"
+    assert isinstance(data, dict)
+    if data.get("merged"):
+        return "the pull request is merged"
+    if data.get("state") != "open":
+        return "the pull request is closed"
+    head = data["head"]["sha"]
+    if head != sha:
+        return f"its head is {head}"
+    return None
+
+
+Page = tuple[list[dict[str, object]], str | None]
+# (after, cursor) -> (items, next cursor): after a seq, oldest first; None for newest first.
+Messages = Callable[[int | None, str | None], Page]
+
+
+def _intake_file(queue: Path) -> Path:
+    return queue.with_name(queue.name + ".intake")
+
+
+def _load(queue: Path) -> dict[str, Any] | None:
+    """The saved intake state; None before the first start. While the first start is still
+    looking for the newest message, `after` is None and `starting` holds its continuation."""
+    try:
+        state = json.loads(_intake_file(queue).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except OSError as bad:
+        raise Transient(f"{_intake_file(queue)}: cannot be read ({bad.strerror})") from bad
+    except ValueError as bad:
+        raise Transient(f"{_intake_file(queue)}: not JSON; fix or remove it") from bad
+    if not isinstance(state, dict):
+        raise Transient(f"{_intake_file(queue)}: not an object; fix or remove it")
+    # A first start in progress has `after` present and null, and a continuation; else `after`
+    # is an int. A missing `after` is never taken for either.
+    after = state.get("after", False)
+    starting = after is None and isinstance(state.get("starting"), str)
+    if not starting and (isinstance(after, bool) or not isinstance(after, int)):
+        raise Transient(f"{_intake_file(queue)}: no `after`; fix or remove it")
+    state.setdefault("pass", 0)
+    state.setdefault("resume", None)
+    state.setdefault("tries", {})
+    state.setdefault("outbox", [])
+    if not _well_formed(state):
+        raise Transient(f"{_intake_file(queue)}: a field has the wrong shape; fix or remove it")
+    return state
+
+
+def _well_formed(state: dict[str, Any]) -> bool:
+    resume = state["resume"]
+    outbox = state["outbox"]
+    return (
+        isinstance(state["pass"], int)
+        and (
+            resume is None
+            or (
+                isinstance(resume, list)
+                and len(resume) == 2
+                and isinstance(resume[0], int)
+                and isinstance(resume[1], str)
+            )
+        )
+        and isinstance(state["tries"], dict)
+        and all(isinstance(n, int) for n in state["tries"].values())
+        and isinstance(outbox, list)
+        and all(
+            isinstance(a, dict)
+            and isinstance(a.get("to"), str)
+            and isinstance(a.get("text"), str)
+            and (a.get("failed") is None or isinstance(a.get("failed"), int))
+            and isinstance(a.get("tries", 0), int)
+            for a in outbox
+        )
+    )
+
+
+def _save(queue: Path, state: dict[str, Any]) -> None:
+    path = _intake_file(queue)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _seq(item: dict[str, object]) -> int:
+    seq = item.get("seq")
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        raise Transient("maity messages: a message without a seq")
+    return seq
+
+
+def _newest(messages: Messages, cursor: str | None) -> int | str:
+    """The newest message's seq (0 for none), following continuations past empty pages from
+    `cursor`; or, when the read budget runs out first, the continuation to go on from."""
+    for _ in range(PAGES_PER_PASS):
+        items, following = messages(None, cursor)
+        if items:
+            return max(_seq(item) for item in items)
+        if not following:
+            return 0
+        cursor = following
+    assert cursor is not None
+    return cursor
+
+
+def _send(
+    queue: Path, state: dict[str, Any], answer: dict[str, Any], say: Say, log: TextIO
+) -> None:
+    """Says an answer from the outbox; it leaves the outbox once said or given up."""
+    try:
+        say(answer["to"], answer["text"])
+    except Transient as trouble:
+        answer["failed"] = state["pass"]
+        answer["tries"] = answer.get("tries", 0) + 1
+        if answer["tries"] >= TRIES:
+            state["outbox"].remove(answer)
+            print(f"ci_watch: intake: gave up answering {answer['to']}: {trouble}", file=log)
+        else:
+            print(f"ci_watch: intake: {trouble}; answer tried again", file=log)
+    else:
+        state["outbox"].remove(answer)
+    _save(queue, state)
+
+
+def _decide(
+    item: dict[str, object],
+    match: re.Match[str],
+    seq: int,
+    state: dict[str, Any],
+    queue: Path,
+    gh: Gh,
+    repo: str,
+) -> tuple[str, str, Entry | None] | None:
+    """(to, answer, entry to add) for one request, or None when the sender is no member id to
+    answer; a GitHub failure raises Transient until it has failed TRIES passes in a row, then
+    the request is answered and passed over."""
+    sender = str(item.get("from") or "")
+    if not _MEMBER.match(sender):
+        return None
+    instance = item.get("from_instance")
+    author = f"{sender}#{instance}"
+    pr, sha = int(match[1]), match[2]
+    tag = f" (request {seq})"
+    if not instance:
+        return sender, f"ciwatch: #{pr} not added: the message has no sender instance.{tag}", None
+    if not _AUTHOR.match(author):
+        return sender, f"ciwatch: #{pr} not added: the sender instance is not valid.{tag}", None
+    try:
+        why = admit(pr, sha, gh, repo)
+    except Transient:
+        tries = state["tries"][str(seq)] = state["tries"].get(str(seq), 0) + 1
+        if tries < TRIES:
+            _save(queue, state)
+            raise
+        why = f"GitHub did not answer {tries} times; send it again"
+    if why is None:
+        text = f"ciwatch: #{pr} {sha} added; the result comes when CI is done.{tag}"
+        return author, text, Entry(pr, sha, author)
+    return author, f"ciwatch: #{pr} {sha} not added: {why}.{tag}", None
+
+
+def intake_pass(
+    queue: Path,
+    inbox: str,
+    messages: Messages,
+    gh: Gh,
+    say: Say,
+    repo: str = REPO,
+    log: TextIO = sys.stderr,
+) -> int:
+    """Takes `ciwatch <pr> <sha>` messages to `inbox` into the queue; returns how many.
+
+    Each request is decided once: the queue line, the answer (in the outbox) and the seq read
+    are saved before the answer is said, so a failed or lost `say` never decides it again. An
+    answer whose `say` failed is said again only after a later pass has read the messages to
+    the end without finding it, since a `say` whose response was lost did post it."""
+    state = _load(queue)
+    if state is None or state["after"] is None:
+        found = _newest(messages, state["starting"] if state else None)
+        if isinstance(found, str):
+            # Only empty pages so far: the next pass goes on from here, never from the top.
+            _save(queue, {"after": None, "starting": found})
+            print("ci_watch: intake still looking for the newest message", file=log)
+            return 0
+        _save(queue, {"after": found, "pass": 0, "resume": None, "tries": {}, "outbox": []})
+        print(f"ci_watch: intake starts after message {found}", file=log)
+        return 0
+    state["pass"] += 1
+    for answer in state["outbox"]:
+        if answer.get("failed") is None:  # decided by an earlier pass that stopped before say
+            answer["failed"] = state["pass"] - 1
+    _save(queue, state)
+    if state["resume"]:
+        start, cursor = state["resume"]
+    else:
+        start, cursor = state["after"], None
+    taken = answered = 0
+    stopped = at_end = False
+    for _ in range(PAGES_PER_PASS):
+        items, following = messages(start, cursor)
+        for item in items:
+            seq = _seq(item)
+            if seq <= state["after"]:
+                continue
+            body = str(item.get("body") or "").strip()
+            sender = str(item.get("from") or "")
+            if sender == inbox:
+                # Our own message: an answer whose `say` failed may have been posted after all.
+                for answer in state["outbox"]:
+                    if answer["text"] == body and _member(item.get("to")) == _member(answer["to"]):
+                        state["outbox"].remove(answer)
+                        break
+            elif _member(item.get("to")) == inbox and (match := _INTAKE.match(body)):
+                if answered >= INTAKE_PER_PASS:
+                    stopped = True
+                    break
+                decided = _decide(item, match, seq, state, queue, gh, repo)
+                if decided is None:
+                    print(f"ci_watch: intake: message {seq} has no sender to answer", file=log)
+                    state["after"] = seq
+                    _save(queue, state)
+                    continue
+                to, text, entry = decided
+                if entry is not None:
+                    add(queue, entry)
+                    print(f"ci_watch: added #{entry.pr} {entry.sha} for {entry.author}", file=log)
+                    taken += 1
+                answer = {"seq": seq, "to": to, "text": text, "failed": None}
+                state["outbox"].append(answer)
+                state["tries"].pop(str(seq), None)
+                state["after"] = seq
+                _save(queue, state)
+                _send(queue, state, answer, say, log)
+                answered += 1
+                continue
+            state["after"] = seq
+            _save(queue, state)
+        if stopped or not following:
+            at_end = not stopped
+            break
+        cursor = following
+    state["resume"] = None if stopped or at_end else [start, cursor]
+    _save(queue, state)
+    if at_end:
+        for answer in [a for a in state["outbox"] if a["failed"] < state["pass"]]:
+            if answered >= INTAKE_PER_PASS:
+                break
+            _send(queue, state, answer, say, log)
+            answered += 1
+    return taken
+
+
+def maity_messages(after: int | None, cursor: str | None) -> Page:
+    """One page of `maity messages --json`: after a seq, oldest first; or newest first."""
+    argv = ["maity", "messages", "--json"]
+    argv += ["--limit", "1"] if after is None else ["--after", str(after), "--limit", "200"]
+    if cursor:
+        argv += ["--cursor", cursor]
+    done = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        raise Transient(f"maity messages: {_clean(done.stderr)}")
+    try:
+        data = json.loads(done.stdout)
+    except ValueError as bad:
+        raise Transient("maity messages: not JSON") from bad
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise Transient("maity messages: no items")
+    following = data.get("next_cursor")
+    return data["items"], str(following) if following else None
+
+
 def gh_get(path: str) -> object:
     """`gh api <path>`: a GET, never anything that writes."""
     done = subprocess.run(
@@ -233,7 +572,9 @@ def gh_get(path: str) -> object:
         check=False,
     )
     if done.returncode != 0:
-        raise Transient(f"gh api {path.split('?')[0]}: {done.stderr.strip()[:200]}")
+        if "HTTP 404" in done.stderr:
+            raise NotFound(path)
+        raise Transient(f"gh api {path.split('?')[0]}: {_clean(done.stderr)}")
     try:
         return json.loads(done.stdout)
     except ValueError as bad:
@@ -249,7 +590,7 @@ def maity_say(author: str, text: str) -> None:
         check=False,
     )
     if done.returncode != 0:
-        raise Transient(f"maity say: {done.stderr.strip()[:200]}")
+        raise Transient(f"maity say: {_clean(done.stderr)}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -268,6 +609,9 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--once", action="store_true", help="one pass, then exit")
     p_run.add_argument("--interval", type=int, default=120, help="seconds between passes")
     p_run.add_argument("--repo", default=REPO)
+    p_run.add_argument(
+        "--inbox", help="member id whose `ciwatch <pr> <sha>` messages are taken into the queue"
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "add":
@@ -281,7 +625,23 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not os.environ.get("MAITY_STATE_DIR"):
             raise Refused("run: set MAITY_STATE_DIR to the identity the reports go out under")
+        if args.inbox is not None and not _MEMBER.match(args.inbox):
+            raise Refused("--inbox: give a member id, without `#instance`")
         while True:
+            if args.inbox:
+                try:
+                    intake_pass(
+                        args.queue, args.inbox, maity_messages, gh_get, maity_say, args.repo
+                    )
+                except Exception as trouble:  # noqa: BLE001 - nothing in the intake stops the queue
+                    # Whatever went wrong, from the hub, GitHub or the local state file: the line
+                    # names the state file and the kind, and the queue pass below still runs.
+                    kind = "" if isinstance(trouble, Transient) else f"{type(trouble).__name__}: "
+                    print(
+                        f"ci_watch: intake ({_intake_file(args.queue)}): {kind}{trouble}; "
+                        "tried again next pass",
+                        file=sys.stderr,
+                    )
             run_pass(args.queue, gh_get, maity_say, args.repo)
             if args.once:
                 return 0
