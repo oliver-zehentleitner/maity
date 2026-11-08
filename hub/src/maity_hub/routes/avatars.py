@@ -1,5 +1,5 @@
-"""`/avatars/{id}`, `/me/avatar`, `/agents/{id}/avatar` and `/orgs/{org}/avatar` (docs/api.md §6.10,
-§6.26).
+"""`/avatars/{id}`, `/avatars/public/{digest}`, `/avatars/motifs`, `/me/avatar`,
+`/agents/{id}/avatar` and `/orgs/{org}/avatar` (docs/api.md §6.10, §6.26).
 
 `GET` serves the stored picture to the callers §6.10 lists and is `not_found` for
 everyone else, before `If-None-Match` is compared. `PUT` takes the raw image, has it
@@ -16,7 +16,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from maity_hub import avatars, idempotency, images, moderation, orgs
+from maity_hub import avatars, idempotency, images, moderation, motifs, orgs
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
@@ -28,19 +28,74 @@ router = APIRouter()
 idempotency.LOADERS["avatar"] = idempotency.plain(avatars.state)
 
 
-@router.get("/avatars/{member_id}")
-def get_avatar(member_id: str, request: Request, caller: AnyCaller) -> Response:
-    with engine_of(request).begin() as conn:
-        found = (
-            avatars.current(conn, member_id) if avatars.may_read(conn, caller, member_id) else None
-        )
-    if found is None:  # whether it exists is not told: authorized first, then compared
-        raise not_found()
-    data, tag = found
-    headers = {**avatars.HEADERS, "ETag": tag}
+def _side(request: Request) -> int:
+    """`?s=` (§6.10, Sizes): exactly `32`, `64`, `128` or `256`, 256 without it. Read only
+    once the image is found, so a caller who may not see one learns nothing from it."""
+    given = request.query_params.getlist("s")
+    if not given:
+        return avatars.STORED_SIDE
+    if len(given) != 1 or given[0] not in {str(side) for side in avatars.SIZES}:
+        raise invalid({"s": "unsupported"}, "s is one of 32, 64, 128 and 256")
+    return int(given[0])
+
+
+def _image(request: Request, data: bytes, tag: str, headers: dict[str, str]) -> Response:
+    headers = {**headers, "ETag": tag}
     if _matches(request.headers.get("if-none-match"), tag):
         return Response(status_code=304, headers=headers)
     return Response(content=data, media_type="image/png", headers=headers)
+
+
+@router.get("/avatars/motifs")
+def list_motifs(request: Request, caller: AnyCaller) -> JSONResponse:
+    """The motifs an agent may choose (§6.10), for a human or agent session."""
+    if caller.kind not in ("human", "agent"):
+        raise forbidden(message="the motifs are for humans and agent credentials")
+    serving = motifs.current()
+    return JSONResponse(
+        {
+            "version": serving.version,
+            "motifs": [
+                {
+                    "name": m.name,
+                    "theme": m.theme,
+                    "label": m.label,
+                    "alt": m.alt,
+                    "url": avatars.public_url(m.etag),
+                }
+                for m in serving.motifs
+            ],
+        }
+    )
+
+
+@router.get("/avatars/public/{digest}")
+def get_public_avatar(digest: str, request: Request) -> Response:
+    """A picture a public page shows (§6.10), with or without a session, at an address that
+    names no account: `not_found` for a digest no public picture has, before `s` is read."""
+    engine = engine_of(request)
+    with engine.begin() as conn:
+        found = avatars.public(conn, settings_of(request), digest)
+    if found is None:
+        raise not_found()
+    data, tag, owner_id, source = found
+    side = _side(request)
+    data, tag = avatars.at_size(engine, settings_of(request), owner_id, (data, tag, source), side)
+    return _image(request, data, tag, avatars.PUBLIC_HEADERS)
+
+
+@router.get("/avatars/{member_id}")
+def get_avatar(member_id: str, request: Request, caller: AnyCaller) -> Response:
+    engine = engine_of(request)
+    with engine.begin() as conn:
+        found = (
+            avatars.stored(conn, member_id) if avatars.may_read(conn, caller, member_id) else None
+        )
+    if found is None:  # whether it exists is not told: authorized first, then compared
+        raise not_found()
+    side = _side(request)
+    data, tag = avatars.at_size(engine, settings_of(request), member_id, found, side)
+    return _image(request, data, tag, avatars.HEADERS)
 
 
 def _me(caller: Caller) -> str:
@@ -85,10 +140,11 @@ def _change(
     def action(conn: Connection) -> idempotency.Outcome:
         if check is not None:
             check(conn)
+        # The lock first: a reset holds it until its hold is written, so the check reads it.
+        avatars.lock_owner(conn, owner_id)
         if png is not None:  # a picture moderation reset stays so while its hold stands
             moderation.refuse_held(conn, "profile", owner_id, "remove")
         avatars.count_change(conn, owner_id)  # given back if this transaction rolls back
-        avatars.lock_owner(conn, owner_id)
         before = avatars.state(conn, owner_id)
         if png is None:
             avatars.remove_upload(conn, owner_id)

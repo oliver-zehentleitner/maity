@@ -20,7 +20,7 @@ from typing import Any, cast
 from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, ticker_read
+from maity_hub import clock, restricted, ticker_read
 from maity_hub import tables as t
 from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 
@@ -234,8 +234,11 @@ def emit(
     actor: Actor | None = None,
     subject: tuple[str, str] | None = None,
     conversation_id: str | None = None,
+    restricted_list: Sequence[int] | None = None,
 ) -> int:
-    """Append one event inside the caller's transaction; returns its `seq`."""
+    """Append one event inside the caller's transaction; returns its `seq`. A
+    `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
+    the event, never served, read again against the set at every read."""
     project = lock_project(conn, project_id)
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
@@ -267,7 +270,11 @@ def emit(
         from maity_hub.instances import team_wakes  # instances writes events itself
 
         wakes = team_wakes(
-            conn, project_id, audience, actor.membership_id if actor else None, watchers
+            conn,
+            project_id,
+            audience,
+            actor.membership_id if actor else None,
+            [*watchers, *(restricted_list or ())],
         )
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
@@ -313,6 +320,11 @@ def emit(
         conn.execute(
             insert(t.event_watcher),
             [{"seq": seq, "membership_id": watcher} for watcher in watchers],
+        )
+    if restricted_list:
+        conn.execute(
+            insert(t.restricted_event_list),
+            [{"seq": seq, "membership_id": member} for member in restricted_list],
         )
     if kind in {"message", "task_claimed"}:
         from maity_hub import onboarding
@@ -365,6 +377,21 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
+    if (
+        kind in MEMBER_KINDS
+        and project.public_page != "on"
+        and subject
+        and subject[0] == "member"
+        and _shown_member_change(kind, payload)
+    ):
+        # Under `public_agents: all` an agent's membership in any project lists it on its
+        # owner's agents page (§16.9, "A person's agents"); a public project's change reaches
+        # that page above, as a dependent of the project's page.
+        from maity_hub import public_people
+
+        public_people.touch_owner_of(
+            conn, subject[1], removal=kind != "member_joined", only_all=True
+        )
     return seq
 
 
@@ -457,12 +484,15 @@ def hidden_redactions(
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
       chat's event in the batch names: the owner reads along (§9.2);
     - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4);
+    - with `membership`, `restricted:<seq>` for each `restricted_changed` it reads now: on
+      the event's private list and in the project's restricted-access set (§6.4);
     - `circle:<seq>` for each jour fixe event of a round or series with `circle: owner`:
       it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7);
     - `outside:<conversation>` for each thread of such a round whose `circle_owner` the
       human is not: owning an agent in it does not let them read along (§20.5)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     hidden |= {f"watching:{seq}" for seq in watched_seqs(conn, rows, membership)}
+    hidden |= {f"restricted:{seq}" for seq in restricted.readable_seqs(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
     hidden |= _owners_circles(conn, rows)
     hidden |= _outside_rounds(conn, rows, membership)
@@ -649,6 +679,10 @@ def readable_by(
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
         return False  # as if it had never been a member then, whatever its trust (§8.2)
+    if row.kind == restricted.KIND:
+        # Its private list intersected with the set at this read, and nothing else: not the
+        # see-all of owners and admins, not its actor once out of the set (§6.4).
+        return f"restricted:{row.seq}" in hidden
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden
@@ -886,6 +920,13 @@ def wakes(
         if row.actor_membership == membership.id:
             return own and row.actor_credential_id != credential_id
         return own
+    if row.kind == restricted.KIND:
+        # A card's change wakes the agents on its list that are in the set, as a `member:`
+        # token does, never the writer's own; a change of the set wakes nobody (§6.4).
+        if (row.payload or {}).get("task_id") is None or row.actor_membership == membership.id:
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
     if row.kind == "member_not_listening":

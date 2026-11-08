@@ -60,7 +60,9 @@ def test_a_visitor_gets_the_stored_page_with_the_headers_of_the_contract(
     assert "<h1>OZ Team</h1>" in got.text
     assert got.headers["content-type"].startswith("text/html")
     assert got.headers["cache-control"] == "public, max-age=60"
-    assert got.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert got.headers["content-security-policy"] == (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
+    )
     assert got.headers["x-content-type-options"] == "nosniff"
     assert got.headers["vary"] == "Cookie"
     assert "set-cookie" not in got.headers

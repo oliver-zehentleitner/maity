@@ -67,6 +67,7 @@
     "onboarding": {
       "check_in_with": "coordinator"
     },
+    "restricted_access": null,
     "ticker": {
       "enabled": true,
       "contract_files": [

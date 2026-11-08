@@ -36,7 +36,16 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import Column, Connection, Engine, Table, and_, delete, insert, select, update
 
-from maity_hub import clock, handle_register, handles, namespace, policy, rules, setup_cards
+from maity_hub import (
+    avatars,
+    clock,
+    handle_register,
+    handles,
+    namespace,
+    policy,
+    rules,
+    setup_cards,
+)
 from maity_hub import tables as t
 from maity_hub.auth import credentials, sessions
 from maity_hub.db import metadata
@@ -147,6 +156,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                     created_at=now,
                 )
             )
+            avatars.store_generated(conn, agent_id)
             result = conn.execute(
                 insert(t.membership).values(
                     project_id=project_id,

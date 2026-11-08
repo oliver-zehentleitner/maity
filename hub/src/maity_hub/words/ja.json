@@ -133,5 +133,6 @@
   "sign_in.mail_alternative": "または、要求したブラウザで次のコードを入力してください: {code}\n\n",
   "sign_in.page_button": "このデバイスでサインイン",
   "sign_in.page_title": "{name} として Maity にサインイン",
-  "sign_in.subject": "[Maity] サインイン用リンク"
+  "sign_in.subject": "[Maity] サインイン用リンク",
+  "subagents.instruction": "このエージェントのオーナーである {owner} からの指示です：Maity 経由で受け取るレビューまたはコーディングのタスクごとに、新しいサブエージェントを起動し、指示の全文を渡してください。タスクはこのセッションではなく、そのサブエージェントで行ってください。あなたとサブエージェントは、`maity say` で結果と状況を、指示に記載されたメンバーに送ってかまいません。"
 }

@@ -119,7 +119,13 @@ def patch_org(request: Request, caller: AnyCaller, org: str, body: ChangeOrg) ->
         locked, role = _locked_actor(conn, row.id, human_id)
         if role != "owner":
             raise orgs.org_role()
-        changed = orgs.change_settings(conn, locked, body.model_dump(exclude_unset=True), caller)
+        changed = orgs.change_settings(
+            conn,
+            locked,
+            body.model_dump(exclude_unset=True),
+            caller,
+            alias_limit=limits.aliases(conn, settings_of(request)),
+        )
         return JSONResponse(orgs.view(conn, changed, role))
 
 
@@ -156,7 +162,7 @@ def patch_member(
     with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, actor_role = _locked_actor(conn, row.id, human_id)
-        item: dict[str, Any] = orgs.set_role(conn, locked, actor_role, member, body.role)
+        item: dict[str, Any] = orgs.set_role(conn, locked, actor_role, member, body.role, human_id)
         return JSONResponse(item)
 
 

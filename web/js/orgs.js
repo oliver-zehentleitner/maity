@@ -113,6 +113,13 @@ window.Maity = window.Maity || {};
         ROLES.filter((r) => mine === "owner" || r !== "owner").map((r) => h("option", { value: r }, M.trust.trustWord(r))));
       pick.value = m.role;
       pick.addEventListener("change", async () => {
+        // An owner holds trust owner in every project of the organisation (§6.26), which
+        // can bring them into a restricted-access set: said before (§6.1 "Every way into the set").
+        if (pick.value === "owner" && m.role !== "owner" && M.restricted
+          && !window.confirm(M.restricted.aheadOrg("@" + org.handle, "@" + m.handle) + "\n\n" + M.t("orgs.member.ahead_confirm"))) {
+          pick.value = m.role;
+          return;
+        }
         pick.disabled = true;
         status.busy(M.t("orgs.member.changing"));
         try {

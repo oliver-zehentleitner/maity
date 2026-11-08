@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
-from sqlalchemy import Connection, Engine, insert, inspect, select
+from sqlalchemy import Connection, Engine, delete, insert, inspect, select, update
 
-from maity_hub import clock, handle_register, namespace
+from maity_hub import avatars, clock, handle_register, namespace
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.passwords import hash_password
@@ -16,6 +18,104 @@ from maity_hub.ids import new_id
 
 PASSWORD = "correct horse battery staple"
 _HASH = hash_password(PASSWORD)  # scrypt is slow on purpose; hash once per run
+SIGN_IN_DOMAIN = "sign-in.example"
+_ADDRESS_FIELDS = ("address", "address_normalized", "address_status", "verified_at")
+
+
+@contextmanager
+def sign_in_address(engine: Engine, human_id: str) -> Iterator[str]:
+    """The address a password login takes (docs/api.md §2.1). An account without one gets
+    `<id>@sign-in.example`, verified, for the length of the block; afterwards its settings
+    are as before, so a test of the address itself still starts from none."""
+    settings = t.notification_settings
+    with engine.begin() as conn:
+        row = conn.execute(select(settings).where(settings.c.human_id == human_id)).first()
+    if row is not None and row.address and row.address_status in ("verified", "disabled"):
+        yield row.address
+        return
+    address = f"{human_id}@{SIGN_IN_DOMAIN}".lower()
+    lent = {
+        "address": address,
+        "address_normalized": address,
+        "address_status": "verified",
+        "verified_at": clock.now(),
+    }
+    with engine.begin() as conn:
+        if row is None:
+            conn.execute(
+                insert(settings).values(
+                    human_id=human_id, preferences={}, epoch=0, hard_failures=0,
+                    updated_at=clock.now(), **lent,
+                )
+            )  # fmt: skip
+        else:
+            conn.execute(update(settings).where(settings.c.human_id == human_id).values(**lent))
+    try:
+        yield address
+    finally:
+        with engine.begin() as conn:
+            if row is None:
+                conn.execute(delete(settings).where(settings.c.human_id == human_id))
+            else:
+                before = {name: getattr(row, name) for name in _ADDRESS_FIELDS}
+                conn.execute(
+                    update(settings).where(settings.c.human_id == human_id).values(**before)
+                )
+
+
+def earlier_admin(engine: Engine) -> str:
+    """A human made a day before everyone else: the instance admin (§16), so that the human
+    under test may remove its own verified address, which the admin may not (§18.4)."""
+    admin_id = human(engine, "first-admin")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == admin_id)
+            .values(created_at=clock.now() - timedelta(days=1))
+        )
+    return admin_id
+
+
+def login(
+    client: Any,
+    human_id: str,
+    password: str = PASSWORD,
+    headers: dict[str, str] | None = None,
+    engine: Engine | None = None,
+    **body: Any,
+) -> Any:
+    """`POST /auth/login` for `human_id` with its sign-in address (above), on `engine`, or on
+    the database of the client's app; `body` adds fields such as `next`. A client that talks to
+    a hub over HTTP has no app, so its caller passes the engine."""
+    engine = engine if engine is not None else client.app.state.engine
+    with sign_in_address(engine, human_id) as address:
+        return client.post(
+            "/api/v1/auth/login",
+            json={"email": address, "password": password, **body},
+            headers=headers,
+        )
+
+
+def login_handle(
+    client: Any,
+    handle: str,
+    password: str = PASSWORD,
+    headers: dict[str, str] | None = None,
+    **body: Any,
+) -> Any:
+    """`login` for the human whose current handle is `handle`; for no such human, an address
+    of no account."""
+    engine: Engine = client.app.state.engine
+    with engine.begin() as conn:
+        human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    if not isinstance(human_id, str):
+        address = f"{handle}@{SIGN_IN_DOMAIN}"
+        return client.post(
+            "/api/v1/auth/login",
+            json={"email": address, "password": password, **body},
+            headers=headers,
+        )
+    return login(client, human_id, password, headers, **body)
 
 
 def human(engine: Engine, handle: str | None = None) -> str:
@@ -190,6 +290,7 @@ def agent(
     trust: str | None = None,
     with_session: bool = True,
     instance: str = "wle2",
+    picture: bool = True,  # False on a database from before the generated picture (§6.10)
 ) -> Agent:
     agent_id = new_id("agent")
     with engine.begin() as conn:
@@ -202,6 +303,8 @@ def agent(
                 created_at=clock.now(),
             )
         )
+        if picture:
+            avatars.store_generated(conn, agent_id)
     membership_id = membership(engine, project_id, role, trust, agent_id=agent_id)
     credential_id = new_id("credential")
     value, verifier = credentials.issue(credential_id)

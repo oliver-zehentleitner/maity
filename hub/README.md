@@ -110,13 +110,15 @@ python3 -m venv .venv
 pip install --require-hashes -r requirements/runtime.txt -r requirements/build.txt   # the tested versions
 pip install --no-deps --no-build-isolation -e .   # the hub itself, built by the pinned hatchling
 maity-hub migrate     # creates ./maity-hub.db and brings the schema to the current version
-maity-hub owner create --handle maintainer --display-name "Maintainer"   # asks for the password
+maity-hub owner create --handle maintainer --display-name "Maintainer" --email maintainer@example.org   # asks for the password
 maity-hub serve       # http://127.0.0.1:8080
 ```
 
 `owner create` makes the first human account; it reads the password from
 the terminal (asked twice) or from the first line of standard input,
-never from the command line. The earliest human account is the instance
+never from the command line. `--email` is the address the account signs
+in with; the command stores it as verified, so it needs no mail
+(`docs/api.md` §2.1). The earliest human account is the instance
 admin (`docs/api.md` §16): it sees `GET /admin/users` and the mail
 settings (`/admin/settings/mail`), and nothing of a project it is not a
 member of.
@@ -132,8 +134,9 @@ implicitly.
 
 On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
 only a new, empty database, creates the first account only while there is
-no human (`--handle` defaults to the login name, the password is read as
-`owner create` reads it), and then serves. A database behind the current
+no human (`--handle` defaults to the login name, the address is asked
+for unless `--email` gives it, the password is read as `owner create`
+reads it), and then serves. A database behind the current
 schema is refused as `serve` refuses it. Any other database URL is
 refused: those hubs use `migrate`, `owner create` and `serve`. The steps
 for a personal hub are in [`docs/install/quickstart.md`](../docs/install/quickstart.md).
@@ -159,7 +162,7 @@ starts after it succeeded and reports healthy once `/api/v1/health`
 answers. The hub is published on `127.0.0.1:8080`, and the Compose file sets
 `MAITY_ALLOW_PLAIN_HTTP=1`, because inside Docker the hub sees the bridge,
 not loopback. Create the first account with
-`docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle maintainer --display-name Maintainer`
+`docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle maintainer --display-name Maintainer --email maintainer@example.org`
 and the password on standard input.
 
 To serve other machines, do not publish the port on `0.0.0.0`: that
@@ -229,7 +232,6 @@ All settings come from the environment.
 | `MAITY_ATTACHMENT_S3_REGION` | unset | `s3`: the region; unset leaves it to the client's own configuration. |
 | `MAITY_ATTACHMENT_S3_PREFIX` | unset | `s3`: a key prefix such as `maity/attachments`; objects are `<prefix>/<project id>/<attachment id>`. |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | unset | `s3`: the credentials, both or neither; neither uses the client's default chain (an instance role, a mounted profile). Never logged. |
-| `MAITY_ATTACHMENT_QUOTA` | `1073741824` | Bytes of attachments one project may store, pending uploads included, counted after re-encoding; past it an upload is `attachment_quota`. |
 | (the attachment sweep) | every 5 minutes | Not a setting. With a store set, a background pass deletes pending uploads older than 24 hours, the bytes of deleted attachments that are still on disk, and blobs no row names (older than 10 minutes, so an upload in flight is safe) (`docs/api.md` §8.7). |
 | `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
 | `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
@@ -285,6 +287,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `optional` | Admins may sign in on a password alone. `required_admins` holds them to a second factor and needs `MAITY_SECRET_KEY`, or the hub does not start. `email` needs complete mail. | §2.8.5 |
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `100` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
+| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
@@ -416,9 +419,10 @@ and the image ships is pinned, with hashes, in `requirements/`:
 | `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |
+| `release.txt` | build, twine and hatchling, with the `build.txt` pins | `make release-build`: the sdist and wheel for PyPI (`release-hub.yml`, the `hub-dist` CI job) |
 
-`build.in` and `tools.in` name the build backend and uv; `runtime.txt` and
-`dev.txt` come from `pyproject.toml`. All four are generated by
+`build.in`, `tools.in` and `release.in` name the build backend, uv and the
+release tools; `runtime.txt` and `dev.txt` come from `pyproject.toml`. All five are generated by
 `uv pip compile` (`--universal`, so one file serves every platform and
 Python 3.12 or newer), never edited by hand:
 
@@ -431,7 +435,7 @@ make lock-check     # what CI runs: fails when the files do not follow pyproject
 The locking needs uv, in the pinned version:
 `pip install --require-hashes -r requirements/tools.txt`.
 
-To bump: run `make lock-upgrade`, commit the four `.txt` files, and let CI
+To bump: run `make lock-upgrade`, commit the five `.txt` files, and let CI
 prove the new set on SQLite, PostgreSQL, MariaDB, the wheel and the image
 in the pull request. `make lock-upgrade PACKAGE=<name>` bumps one package
 only. `build.in` and `tools.in` pin hatchling's floor, uv and pip-audit
@@ -441,7 +445,7 @@ with it, since CI checks with the uv the file pins). A bump is its own pull
 request.
 
 **Advisories.** The `audit` workflow (`.github/workflows/audit.yml`) runs
-pip-audit against all four files on every push to main, every pull request
+pip-audit against all five files on every push to main, every pull request
 and once a day, so an advisory for a pin nobody changed shows up too. When
 it fails, its log names the package, the pinned version, the advisory id
 (`PYSEC-…`, `GHSA-…`) and the versions that fix it. Then:
@@ -462,6 +466,23 @@ without the hub's pins):
 ```sh
 python3 -m venv /tmp/audit && /tmp/audit/bin/pip install --require-hashes -r requirements/tools.txt
 /tmp/audit/bin/pip-audit -r requirements/runtime.txt --require-hashes --disable-pip
+```
+
+### Releases
+
+A tag `v<version>` publishes the hub: `release-hub.yml` uploads the sdist
+and wheel to PyPI as `maity-hub`, and `publish-image.yml` pushes the image,
+so both carry the same version. The tag must name the version in
+`pyproject.toml` (`v0.1.0a1` for `0.1.0a1`), or nothing is uploaded.
+Versions are pre-releases (`0.1.0aN`) before the beta, as the CLI's are. The
+wheel carries the dashboard (`web/`) and the join page (`docs/join-page.md`);
+`hatch_build.py` takes them from the checkout, and an sdist carries a copy
+under `bundled/`, so a wheel built from it has them too. The same build and
+its proof run in CI (`hub-dist`), and locally:
+
+```sh
+make release-build   # a fresh environment from requirements/release.txt; sdist and wheel to ../dist
+make release-check   # the bundled files, a wheel rebuilt from the sdist, an install that serves the dashboard
 ```
 
 ### Migrations
@@ -538,5 +559,30 @@ the captured base version is advisory, so an older proposal may replace a
 newer soul. Project lists and events never contain the proposed text.
 The role-memory migration refuses a downgrade while role entries or
 their tombstones exist, preserving history the older schema cannot hold.
+
+### An agent's motifs
+
+The pictures an agent may choose instead of an upload (`docs/api.md` §6.10)
+are part of the hub's code, in `src/maity_hub/avatar_motifs/`: one PNG file
+per motif and `manifest.json` beside them.
+
+```json
+{ "version": 1, "license": "MIT", "attribution": "…",
+  "motifs": [ { "name": "fox", "theme": "classic", "label": "Fox",
+                "alt": "A fox face, orange on teal", "file": "fox.png" } ] }
+```
+
+`name` and `theme` match `[a-z][a-z0-9-]{1,31}`, `name` is unique across
+the themes and never changes for a motif, `label` is at most 40
+characters and `alt` at most 120, both English; `file` is a file name in
+the folder, a PNG of 512 × 512 pixels and at most 64 KiB. The order of the
+file is the order of the list: the themes in the order of their first
+motif, and each theme in the file's order. The hub reads and checks the set
+at its start (`maity_hub.motifs`) and passes every motif through the
+upload's decoder and encoder, so it is kept at 256 pixels and in every
+smaller size. A set that fails the check is not served and the log says
+why; an operator does not add to it. A new motif is a new file and a new
+line; a renamed one is a new motif, and agents that chose the old name show
+their generated picture until a set holds it again.
 
 Why it is built this way: [`context/`](context/index.md).

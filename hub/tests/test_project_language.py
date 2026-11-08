@@ -52,6 +52,7 @@ def test_language_merges_and_emits_only_effective_changes(
         "language": "de",
         "release_checklist": ["keep this"],
         "onboarding": {"check_in_with": "coordinator"},
+        "restricted_access": None,
     }
     owner.patch("/projects/maintainer/maity", {"settings": {"language": "de"}})
     owner.patch("/projects/maintainer/maity", {"settings": {}})
@@ -144,6 +145,7 @@ def test_settings_merge_uses_the_row_read_under_the_project_lock(
     assert response.json()["settings"] == {
         **expected,
         "onboarding": {"check_in_with": "coordinator"},
+        "restricted_access": None,
     }
     with migrated.connect() as conn:
         language_events = (
