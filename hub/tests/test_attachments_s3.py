@@ -656,3 +656,27 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     assert "failed: 2" in out.out and SECRET not in out.out + out.err  # the copy and the clean
     monkeypatch.setenv("MAITY_ATTACHMENT_STORE", "local")
     assert cli.main(["attachments", "copy-to-s3"]) == cli.EXIT_CONFIG  # no target
+
+
+def test_the_sweep_reads_nothing_in_a_folder_no_project_has(
+    migrated: Engine, config: AttachmentS3
+) -> None:
+    """A folder no project has is skipped before its keys: no HEAD and no lock per object of
+    it (attachments.sweep), only the one warning."""
+    store = attachment_store.S3Store(config)
+    raw(config).put_object(Bucket=config.bucket, Key="prj-unknown/att-foreign", Body=b"x")
+    heads: list[str] = []
+    head = store.client.head_object
+
+    def counted(**kwargs: Any) -> Any:
+        heads.append(kwargs["Key"])
+        return head(**kwargs)
+
+    store.client.head_object = counted
+    try:
+        attachments.sweep(migrated, store)
+    finally:
+        store.client.head_object = head
+    assert not [k for k in heads if "prj-unknown/" in k], heads
+    assert raw(config).head_object(Bucket=config.bucket, Key="prj-unknown/att-foreign")
+    raw(config).delete_object(Bucket=config.bucket, Key="prj-unknown/att-foreign")

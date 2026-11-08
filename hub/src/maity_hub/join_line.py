@@ -50,10 +50,8 @@ def posix(install: str, url: str, code: str) -> str:
     step comes first, so a CLI installed earlier is found too, and only for a pipx install line.
     The inner braces keep a compound install line whole behind the `||`."""
     path = f"{PIPX_PATH} && " if install.startswith("pipx ") else ""
-    return (
-        f"{path}{{ command -v maity >/dev/null 2>&1 || {{ {install}; }}; }} "
-        f"&& {plain(url, code)}"
-    )
+    join = plain(url, code)
+    return f"{path}{{ command -v maity >/dev/null 2>&1 || {{ {install}; }}; }} && {join}"
 
 
 def windows(install: str, url: str, code: str) -> str | None:
