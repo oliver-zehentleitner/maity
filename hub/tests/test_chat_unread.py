@@ -316,6 +316,21 @@ def _reads_messages(statement: str, params: Any) -> bool:
     return "event" in statement and "message" in [v for v in values if isinstance(v, str)]
 
 
+def _payload_keys(seen: list[tuple[str, Any]]) -> set[str]:
+    """The payload keys the statements project: SQLite passes each JSON path as a parameter
+    (`$."mentions"`); a statement with `event.payload` and no such path reads all of it."""
+    keys: set[str] = set()
+    for statement, params in seen:
+        if "event.payload" not in statement:
+            continue
+        values = params.values() if isinstance(params, dict) else params or ()
+        paths = [v for v in values if isinstance(v, str) and v.startswith("$.")]
+        if not paths:
+            keys.add("<all>")
+        keys.update(path.removeprefix("$.").strip('"') for path in paths)
+    return keys
+
+
 def _names_body(statement: str, params: Any) -> bool:
     values = params.values() if isinstance(params, dict) else params or ()
     return "body" in statement or any(isinstance(v, str) and "body" in v for v in values)
@@ -359,8 +374,10 @@ def test_a_listening_agent_reads_no_message_before_the_delay_and_no_body_at_all(
         chat_unread.sweep(r.engine)
     assert [n.payload["unread"] for n in r.nudges(first)] == [40]
     assert not [s for s, _ in seen if _BARE_PAYLOAD.search(s)]
-    # Nor a projection of the body (review of #1490, P3): no statement names it.
+    # Nor any projection of the payload but the mentions and a nudge's newest_seq (review of
+    # #1490, P3): a body projection beside the mentions slipped through the bare check.
     assert not [s for s, p in seen if _names_body(s, p)]
+    assert _payload_keys(seen) <= {"mentions", "newest_seq"}
     # The open cycle reads no message on the next passes either.
     r.at(12)
     with _Statements(r.engine) as seen:
