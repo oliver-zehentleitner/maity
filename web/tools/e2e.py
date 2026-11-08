@@ -4546,6 +4546,17 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     ], view["pull_requests_typed"]
     run.shot(page, "release-edited")
     run.a11y(page, "board, release edited")
+    # The same release in the card panel, whose ground is --surface-2: its warning text
+    # (an unmet dependency, "Not ready") must read there too (tsk-sg1tdmwdy09z).
+    page.goto(f"{run.base}/owner/e2e-alpha/tasks/{rel['id']}")
+    panel = page.locator(".card-panel")
+    expect(panel.locator(".readiness.not-ready")).to_be_visible()
+    expect(panel.locator(".deps li.unmet").first).to_be_visible()
+    run.shot(page, "release-in-panel")
+    run.a11y(page, "card panel, a release not ready")
+    page.keyboard.press("Escape")
+    expect(page.locator(".card-panel")).to_have_count(0)
+    expect(card).to_be_visible()
     # One open editor at phone width: it stays inside the screen.
     page.set_viewport_size({"width": 390, "height": 844})
     card.get_by_role("button", name="Typed pull requests", exact=True).click()
