@@ -1942,6 +1942,8 @@ def report(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
+        # First: an expert reports nothing, also on a card that is done or cancelled (§6.4).
+        mine.require("tasks:write")
         _check_why(body, mine.project)
         card = _project_card(conn, mine, card_id)
         already_done = card.status == "done"

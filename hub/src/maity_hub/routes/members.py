@@ -467,6 +467,20 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
     return any((cover or {}).get("for") == principal for cover in covers)
 
 
+def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:
+    """An expert takes no cards (§2.3 "The expert"): what the member holds, what an open
+    takeover would move to it and what a cover would give back to it are settled first.
+    Checked when the PATCH arrives and again when a deferred change is written."""
+    if role == "expert" and target.role != "expert" and _cards_on_the_way(conn, target):
+        raise ApiError(
+            409,
+            "conflict",
+            "the member holds cards or has cards on the way to it; settle them before the "
+            "role is expert",
+            {"reason": "holds_cards"},
+        )
+
+
 def apply_patch(
     conn: Connection,
     change: Change,
@@ -484,16 +498,7 @@ def apply_patch(
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
         changed["line_consent"] = True
-    if changed.get("role") == "expert" and _cards_on_the_way(conn, target):
-        # An expert takes no cards (§2.3 "The expert"): what it holds, what an open takeover
-        # would move to it and what a cover would give back to it are settled first.
-        raise ApiError(
-            409,
-            "conflict",
-            "the member holds cards or has cards on the way to it; settle them before the "
-            "role is expert",
-            {"reason": "holds_cards"},
-        )
+    _check_no_cards_for_expert(conn, target, changed.get("role"))
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
@@ -678,6 +683,8 @@ def patch_member(
                 admin_agents.check_instance_pause(held, mine.principal_id, pause[1] is None)
         if "reports_to" in given:
             cross_owner.check_may_supersede(conn, mine, target.id)
+        # Before any consent request: a go could not write it while cards are on the way.
+        _check_no_cards_for_expert(conn, target, values.get("role"))
         if line_lead and line.needs_consent(mine.project, target, values, pause):
             # The whole PATCH waits for a human's go, as under ᵃ (§2.3 "The manager").
             request_id = line.propose(

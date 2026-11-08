@@ -122,6 +122,34 @@ def test_a_holder_becomes_an_expert_only_after_its_cards_go_back(
     assert changed.status_code == 200, changed.text
 
 
+def test_a_role_change_to_expert_that_waits_for_a_go_is_refused_while_cards_are_held(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """§2.3 "The expert": a role change an admin agent proposes is refused at once while
+    the member holds a card, not filed as a request that no go could write."""
+    admin = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = _card(owner).json()["id"]
+    assert reviewer.post(f"{PROJECT}/tasks/{card}/claim", {}).status_code == 200
+    refused = admin.patch(f"{PROJECT}/members/{reviewer.id}", {"role": "expert"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "holds_cards"}
+
+
+@pytest.mark.parametrize("status", ["cancelled", "done"])
+def test_an_expert_reports_on_no_closed_card(
+    owner: flow.Human, expert: flow.Agent, migrated: Engine, status: str
+) -> None:
+    """§6.4: a report needs `tasks:write`, checked before the card's status."""
+    card = _card(owner).json()["id"]
+    with migrated.begin() as conn:  # closed past the API, the way a card ends anyhow
+        conn.execute(update(t.card).where(t.card.c.id == card).values(status=status))
+    body = {"summary": "Done.", "pr_status": "none", "code": False}
+    refused = expert.post(f"{PROJECT}/tasks/{card}/report", body)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
+
+
 def test_an_expert_arbiter_moves_its_contract_to_final_and_nothing_else(
     owner: flow.Human, expert: flow.Agent
 ) -> None:
