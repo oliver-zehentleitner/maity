@@ -1867,6 +1867,9 @@ def _leads_within_team(mine: Membership, card: Any, assignee: str) -> bool:
 
 
 def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:
+    # The holder's writes are work: a member whose role took `tasks:write` away, an expert,
+    # neither checkpoints nor reports (§2.3 "The expert").
+    mine.require("tasks:write")
     card = _project_card(conn, mine, card_id)
     if cards.sibling_holds(mine, card):
         raise _not_holder(card)

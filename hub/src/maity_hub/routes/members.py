@@ -20,6 +20,7 @@ from maity_hub import (
     availability,
     bridges,
     briefings,
+    cards,
     clock,
     cross_owner,
     foreign_agent,
@@ -461,6 +462,17 @@ def apply_patch(
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
         changed["line_consent"] = True
+    if (
+        changed.get("role") == "expert"
+        and conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first()
+    ):
+        # An expert takes no cards (§2.3 "The expert"): the cards it holds go back first.
+        raise ApiError(
+            409,
+            "conflict",
+            "the member still holds cards; they go back before the role is expert",
+            {"reason": "holds_cards"},
+        )
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None

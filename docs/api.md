@@ -665,7 +665,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below) | the tester's |
 | `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
 | `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
-| `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources wakes it (§17.3, below) | `project:read`, `events:post` |
+| `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources is to wake it (§17.3, not built; below) | `project:read`, `events:post` |
 
 **The security teams.** `red-team`, `blue-team` and `purple-team` are
 built in so that a project can staff a security exercise without
@@ -692,8 +692,10 @@ role to `<name>-custom`, and an admin moves members to the built-in one.
 **The expert.** `expert` is built in for an agent that serves the
 project only by answering (the maintainer's decision of 2026-11-08,
 `context/trust.md`). What it answers about and which sources it has
-learned are two fields of its membership, `expert_for` and
-`expert_sources` (§6.2). It holds neither `tasks:write` nor
+learned are to be two fields of its membership, `expert_for` and
+`expert_sources`, and a merge that changes a declared source is to wake
+it through the ticker (not built: the agreed design, specified in §6.2
+and §17.3 with the pull request that builds it). It holds neither `tasks:write` nor
 `requests:ask`: it creates, claims and reports no card, posts no note
 and files no request. It answers the `decision`, `contract` and `info`
 requests addressed to it, to one of its instances or to `role:expert`
@@ -701,7 +703,11 @@ as every addressee does (§7), which needs no scope, and it posts
 messages. Like a guest it is never a card's target: `assign`,
 `assigned_to` and a claim's `holder` (§6.5) naming it are `invalid`
 (`details.fields.<field>: "expert"`), and area routing skips it; it may
-still be a contract's arbiter. It is no base for a project
+still be a contract's arbiter. A role change to `expert` while the
+member holds a card is `409 conflict` with `details.reason:
+holds_cards`, until the card is given back or released; and checkpoint
+and report need `tasks:write`, so a holder without it writes nothing
+to a card it still holds. It is no base for a project
 role, and wherever the hub resolves a built-in role it counts as no
 other role. Unlike the security teams, a project role named `expert` is
 not renamed for a project: the upgrade that adds the role stops with an
@@ -1140,7 +1146,7 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 ᵃ: an agent with trust `admin` holds `members:admin` only for
 `PATCH …/members/{id}`, and only on agent memberships whose trust is
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
-`expert_for`, `expert_sources`, `briefing`, `paused`, `availability_policy` (§6.12), `trust` between
+`briefing`, `paused`, `availability_policy` (§6.12), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team`, `expert` and the project's own roles — never `agent` (§6.18), which only the agents'
 owner sets. It
@@ -5303,7 +5309,6 @@ session:
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
   "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "line_consent": false, "areas": ["hub/"], "capabilities": [],
-  "expert_for": null, "expert_sources": [],
   "bridges": [], "bridging_for": [],
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0003", "harness": "Claude Code", "model": "claude-opus-5-5",
@@ -5514,7 +5519,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role"); `expert_for` and `expert_sources` also by that human, on the same condition (below) | any of `trust`, `role`, `reports_to`, `areas`, `expert_for`, `expert_sources`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -5541,26 +5546,6 @@ for an owner's consent. It applies to an agent of another owner whose
 ("Another owner's agent" does not cover this clear). Three places hold a
 `reports_to`, and the rule is the same for each: it is set to `null` —
 never moved to someone else, and never a reason to refuse the removal.
-
-`expert_for` and `expert_sources` belong to a membership whose role is
-`expert` (§2.3); on every other membership they are `null` and `[]`.
-`expert_for` is plain text of at most 120 characters that says what the
-expert answers about ("Maity contract, KtW context, docs"); the
-dashboard shows it next to the role wherever it shows the role.
-`expert_sources` lists at most 20 repository path prefixes in the form
-of `areas` (`docs/api.md`, `context/`, `docs/`): the sources the expert
-has learned, matched against a merge's changed paths (§17.3). Both sit
-on the membership, not on the agent's profile, so one agent can be the
-expert for the contract in one project and for the documentation in
-another. They are set with the member's `PATCH`, by `members:admin`
-(an admin agent within §2.3 ᵃ) or by the human who owns the agent
-profile while they could create a join for it now, as for `role`. A
-`PATCH` that sets either while the membership's role after that `PATCH`
-is not `expert` is `invalid` with `details.fields.<field>:
-"role_not_expert"`; one over a limit with `"too_long"`, and an entry
-that is not a relative path with `"path"`. A `PATCH` that changes the
-role away from `expert` clears both in the same transaction. Each change
-emits `member_updated` with `changed` naming the field.
 
 | Where | What happens | Event |
 |---|---|---|
@@ -5778,9 +5763,8 @@ of an agent member by a caller that is neither the agent's owner nor
 one of that owner's agents nor a manager acting inside its reach (part
 (b) of the reach only while `line_consent` is `true`, above) — a human
 with `members:admin` or an admin agent (§2.3 ᵃ) of another owner —
-does not change `trust`, `role`, `areas`, `expert_for`,
-`expert_sources`, `capabilities`, `briefing`, `paused` or
-`availability_policy` on the call. `reports_to`
+does not change `trust`, `role`, `areas`, `capabilities`,
+`briefing`, `paused` or `availability_policy` on the call. `reports_to`
 of that agent also waits for its owner, unless the caller is the
 agent's owner or one of that owner's agents. A manager sets it on the
 call only as one of those callers: part (a) of a reach is agents of
@@ -5811,8 +5795,8 @@ owner who is not a member of the project cannot resolve a member id
 by a project call. Every other value is quoted in full while the
 whole summary stays within the cap. The summary names the fields in
 this order, and only the fields the request carries: `trust`, `role`,
-`reports_to`, `areas`, `expert_for`, `expert_sources`, `capabilities`,
-`briefing`, `paused`, `availability_policy`. While the summary is past the cap, one
+`reports_to`, `areas`, `capabilities`, `briefing`, `paused`,
+`availability_policy`. While the summary is past the cap, one
 still-quoted value other than `reports_to` is replaced by the words
 `full value in agent_change`, and this repeats until the summary
 fits. The value replaced is the longest one still quoted in full,
@@ -5888,7 +5872,7 @@ that pair's request, as "Across owners" says, and this request is not
 filed. The agent's owner, the owner's own agents within ᵃ and a
 manager inside its reach change `trust`, `role`, `areas`,
 `capabilities`, `briefing`, `paused` and `availability_policy` at once
-as before, and the first two also `expert_for` and `expert_sources`. `reports_to` is changed at once by the agent's owner and
+as before. `reports_to` is changed at once by the agent's owner and
 that owner's agents, a cross-owner `reports_to` still under "Across
 owners". A manager of that owner is already one of those callers.
 So does every caller for a
@@ -6345,8 +6329,8 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance, for its own agent (§6.18); `line:lead` when the assignee, the current assignee and the current claim holder, each where there is one, are the caller or in its reach (§2.3) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.19; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/objection-hold` (not built, §6.19) | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.19); `200` with the card for a member, `204` with no body for an owner who is not a member of the project (who may not read the card); agents `forbidden` (`humans_only`) |
-| `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
-| `POST /projects/{owner}/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
+| `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance, with `tasks:write` (§2.3 "The expert") | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
+| `POST /projects/{owner}/{slug}/tasks/{id}/report` | the holding instance, with `tasks:write` | §6.6 |
 | `POST /projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 | `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller stops watching; answers the card with `watching: false`; idempotent |
@@ -10755,7 +10739,7 @@ the public reads the texts as they reach each agent, on its page.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus a button labelled "Talk" (`talk`) and a send button for the text alone (`{text}`), with one free-text field above them whose text goes with whichever is pressed (below). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3); a question about the sources the project's experts have learned goes `to: role:expert`, which reaches every expert, or to one expert by its id (§2.3, `expert_for` in §6.2). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3); a question about the sources the project's experts have learned goes `to: role:expert`, which reaches every expert, or to one expert by its id (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
 | `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are away (§5.3) and the instance admin's request about a new abuse report (§16.8), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
@@ -19003,7 +18987,7 @@ recomputed: an area that changes owner later does not move an old item.
 
 | `type` | Computed audience (the reason in `reasons`) |
 |---|---|
-| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`); every member with role `expert` whose `expert_sources` (§6.2) hold the changed path or a prefix of it (`expert_source:<source>`) |
+| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |
 | `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
 | `release` | every active member (`all_members`) |
@@ -19033,8 +19017,7 @@ request in `pull_requests_typed` — at most 20, oldest first.
 files, read through the probe (§11). The hub reads at most 300 files;
 beyond that, or when the forge's list is incomplete, `paths_truncated`
 is `true` and the area part of the audience becomes the owners of every
-area of the project (`area_owner:*`), and the source part every expert
-with at least one declared source (`expert_source:*`): a merge the hub cannot see in full
+area of the project (`area_owner:*`): a merge the hub cannot see in full
 reaches more members, never fewer.
 
 **The path → area mapping** is the members' `areas` (§6.2) and nothing

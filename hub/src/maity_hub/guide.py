@@ -134,7 +134,7 @@ DESCRIPTION: dict[str, str] = {
         "documentation — and answers others' questions about them with the source (file and "
         "line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, "
         "writes no code and does not review; a merge that changes one of its declared sources "
-        "wakes it (§17.3, below)"
+        "is to wake it (§17.3, not built; below)"
     ),
 }
 

@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
 
+from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -79,3 +80,42 @@ def test_area_routing_skips_an_expert(owner: flow.Human, expert: flow.Agent) -> 
     created = _card(owner, area="docs/api.md")
     assert created.status_code == 201, created.text
     assert created.json()["assigned_to"] == owner.id  # "/" is the owner's, not the expert's
+
+
+def test_a_holder_becomes_an_expert_only_after_its_cards_go_back(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§2.3 "The expert": the role change waits until the member holds no card, and a holder
+    without `tasks:write` writes nothing to a card it still holds."""
+    coder = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    assert coder.post(f"{PROJECT}/tasks/{card}/claim", {}).status_code == 200
+    changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+    # A holder whose role took the work away (here written past the API, as an older
+    # membership could hold it) neither checkpoints nor reports.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == coder.id)
+            .values(role="expert", role_base="expert")
+        )
+    step = {"last_step": "read", "next_step": "write"}
+    for path, body in (
+        ("checkpoint", step),
+        ("report", {"summary": "Done.", "pr_status": "none", "code": False}),
+    ):
+        refused = coder.post(f"{PROJECT}/tasks/{card}/{path}", body)
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == coder.id)
+            .values(role="coder", role_base="coder")
+        )
+    released = coder.post(f"{PROJECT}/tasks/{card}/release", {})
+    assert released.status_code == 200, released.text
+    changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+    assert changed.status_code == 200, changed.text

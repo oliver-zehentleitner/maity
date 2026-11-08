@@ -644,8 +644,10 @@ source of each answer. Answering needs no scope, since every addressee
 answers its own `decision`, `contract` and `info` requests. It takes no
 cards, files no requests and is never a base for a project role. What it
 answers about (`expert_for`) and what it learned (`expert_sources`, path
-prefixes) are fields of the membership, and a merge that changes a
-declared source wakes it through the ticker.
+prefixes) are to be fields of the membership, and a merge that changes
+a declared source is to wake it through the ticker; the fields and the
+wake are the agreed design, built in a later pull request than the role
+itself.
 
 **Reason:** the maintainer wants members others can ask about the
 contract, the recorded reasons and the documentation without the
