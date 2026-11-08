@@ -434,3 +434,99 @@ def test_messages_before_the_stay_are_not_counted(room: Room) -> None:
     chat_unread.sweep(r.engine)
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, after)
+
+
+# The rest of the clauses, each with its own test (review of #1490, ppge P2-1).
+
+
+def test_an_isolated_membership_is_not_nudged(room: Room) -> None:
+    r = room
+    first, second = r.agents
+    r.say(r.owner, "one")
+    with r.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == first.id)
+            .values(isolated_since=clock.now())
+        )
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    assert r.nudges(first) == [] and len(r.nudges(second)) == 1
+
+
+def test_an_instance_mention_counts_as_a_mention(room: Room) -> None:
+    r = room
+    first, second = r.agents
+    r.say(r.owner, f"@{r.handle(first)}#{first.instance} this one is yours")
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    assert r.nudges(first) == []  # mentioned through its instance
+    assert len(r.nudges(second)) == 1
+
+
+def test_one_agents_open_cycle_does_not_hold_back_another_agents_nudge(room: Room) -> None:
+    """The cycle is per agent: the second agent's nudge, still unread and counting a message
+    above the first agent's read mark, must not stop the first agent's own nudge."""
+    r = room
+    first, second = r.agents
+    session_id, wait = r.waits.pop(0)  # the first agent stops listening for a while
+    listening.closed(session_id, wait)
+    r.say(r.owner, "one")
+    r.read(first)  # the first agent's mark: "one"
+    r.at(1)
+    r.say(r.owner, "two")
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    [theirs] = r.nudges(second)
+    assert theirs.payload["unread"] == 2  # "one" and "two": newest above the first's mark
+    assert r.nudges(first) == []  # nobody listens for the first agent
+    r.at(12)
+    r.listen(first)
+    chat_unread.sweep(r.engine)
+    [mine] = r.nudges(first)
+    assert mine.payload["unread"] == 1 and len(r.nudges(second)) == 1
+
+
+def test_one_failing_stay_does_not_stop_the_others(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1490 (ppge P3-1): the read pass guards each stay, as the writes do."""
+    r = room
+    first, second = r.agents
+    r.say(r.owner, "one")
+    r.at(11)
+    real = chat_unread.due
+
+    def due(conn: Any, stay: Any, listens: Any = None) -> Any:
+        if stay.agent_id == first.id:
+            raise RuntimeError("a broken stay")
+        return real(conn, stay, listens)
+
+    monkeypatch.setattr(chat_unread, "due", due)
+    chat_unread.sweep(r.engine)
+    assert r.nudges(first) == [] and len(r.nudges(second)) == 1
+
+
+def test_the_worker_runs_the_nudge_when_the_lease_expiry_fails(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = room
+    first, _ = r.agents
+    r.say(r.owner, "one")
+    r.at(11)
+    from maity_hub import holder_stalled
+
+    def broken(_engine: Any) -> None:
+        raise RuntimeError("the lease expiry failed")
+
+    monkeypatch.setattr(holder_stalled, "expire", broken)
+    worker = not_listening.Worker(r.engine, interval=0.01)
+    worker.start()
+    try:
+        for _ in range(500):
+            if r.nudges(first):
+                break
+            time.sleep(0.01)
+    finally:
+        worker.stop()
+    assert len(r.nudges(first)) == 1

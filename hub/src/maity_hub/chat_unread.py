@@ -237,13 +237,18 @@ def check(engine: Engine, conversation_id: str, membership_id: int) -> int | Non
 def sweep(engine: Engine) -> list[int]:
     """Every agent's open stay in an open group chat: read first, outside the lock, and only
     a stay whose nudge is due is checked again and written under it. The seqs written."""
+    pending = []
     with engine.connect() as conn:
         listens: dict[int, bool] = {}
-        pending = [
-            (stay.conversation_id, stay.membership_id)
-            for stay in _candidates(conn)
-            if due(conn, stay, listens) is not None
-        ]
+        for stay in _candidates(conn):
+            try:
+                if due(conn, stay, listens) is not None:
+                    pending.append((stay.conversation_id, stay.membership_id))
+            except Exception:  # one stay's failure must not stop the others' reads either
+                log.exception(
+                    "the unread nudge of %s in %s failed", stay.membership_id, stay.conversation_id
+                )
+                conn.rollback()  # a failed statement aborts the transaction on PostgreSQL
     written = []
     for conversation_id, membership_id in pending:
         try:
