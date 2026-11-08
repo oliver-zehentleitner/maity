@@ -2538,13 +2538,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const fleetMembers = [
       { id: "me", kind: "human", display_name: "Me Myself", trust: "owner", role: "manager", areas: [] },
-      { id: "o2", kind: "human", display_name: "Other Owner", trust: "member", role: "coder", areas: [] },
+      { id: "o2", kind: "human", handle: "o2h", display_name: "Other Owner", trust: "member", role: "coder", areas: [] },
       { id: "a1", kind: "agent", handle: "a1h", display_name: "Lead Agent", owner_id: "me", reports_to: "me", areas: ["web/"], presence: "online",
         instances: [{ id: "x", presence: "online", lead: true, claims: 2 }, { id: "y", presence: "away", claims: 1 },
           { id: "z", presence: "offline", dormant: { since: "2026-11-01T10:00:00Z" } }, { id: "r", presence: "offline", revoked_at: "2026-11-01T09:00:00Z", claims: 5 }] },
       { id: "a2", kind: "agent", handle: "a2h", display_name: "Coder Agent", owner_id: "me", reports_to: "a1", areas: [], presence: "offline", instances: [{ id: "p", presence: "offline" }] },
       { id: "a3", kind: "agent", handle: "a3h", display_name: "Area Agent", owner_id: "me", areas: ["web/js/"], presence: "offline", instances: [{ id: "q", presence: "online" }] },
       { id: "a4", kind: "agent", handle: "a4h", display_name: "Lent Agent", owner_id: "me", reports_to: "f1", areas: ["hub/"], presence: "offline", instances: [] },
+      { id: "a5", kind: "agent", handle: "a5h", display_name: "Human-led Agent", owner_id: "me", reports_to: "o2", areas: [], presence: "offline", instances: [] },
+      { id: "a6", kind: "agent", handle: "a6h", display_name: "Orphan Agent", owner_id: "me", reports_to: "ghost-boss", areas: [], presence: "offline", instances: [] },
       { id: "f1", kind: "agent", handle: "f1h", display_name: "Foreign Boss", owner_id: "o2", areas: ["/"], presence: "online", instances: [{ id: "fb", presence: "online", lead: true, claims: 9 }] },
       { id: "f2", kind: "agent", handle: "f2h", display_name: "Foreign Coder", owner_id: "o2", reports_to: "a1", areas: [], presence: "online", instances: [{ id: "fc", presence: "online" }] }];
     const fleetCtx = (members) => {
@@ -2555,8 +2557,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const F = win.Maity.org && win.Maity.org.drawFleet ? win.Maity.org.drawFleet(fleetCtx(fleetMembers)) : null;
     const fNodes = F ? F.querySelectorAll("li.fleet-member") : [];
     const fDepth = (id) => { let d = 0; let n = fNodes.find((x) => x.getAttribute("data-member") === id); while (n && n !== F) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return n ? d : -1; };
-    expect(F && JSON.stringify(fNodes.map((n) => n.getAttribute("data-member")).sort()) === JSON.stringify(["a1", "a2", "a3", "a4", "me"])
-      && fDepth("me") === 0 && fDepth("a1") === 1 && fDepth("a4") === 1 && fDepth("a2") === 2 && fDepth("a3") === 2,
+    expect(F && JSON.stringify(fNodes.map((n) => n.getAttribute("data-member")).sort()) === JSON.stringify(["a1", "a2", "a3", "a4", "a5", "a6", "me"])
+      && fDepth("me") === 0 && fDepth("a1") === 1 && fDepth("a4") === 1 && fDepth("a5") === 1 && fDepth("a6") === 1 && fDepth("a2") === 2 && fDepth("a3") === 2,
       "fleet: one's own agents alone under oneself, by reports_to and by area among them; someone else's area or report places nobody "
         + fNodes.map((n) => n.getAttribute("data-member") + ":" + fDepth(n.getAttribute("data-member"))).join(" "));
     const fNode = (id) => fNodes.find((x) => x.getAttribute("data-member") === id).querySelector(".fleet-node");
@@ -2569,9 +2571,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(fNode("a4")).includes("no active instance"),
       "fleet: an agent's area and its open claims, the revoked instance's not counted; none active said");
     const stubs = F ? F.querySelectorAll(".fleet-stub") : [];
-    expect(stubs.length === 1 && text(stubs[0]) === "reports to Foreign Boss" && stubs[0].parentNode.getAttribute("data-member") === "a4"
-      && text(F).split("Foreign Boss").length === 2 && !text(F).includes("Foreign Coder") && !text(F).includes("Other Owner") && !text(F).includes("#fb"),
-      "fleet: an agent that reports to someone else's shows a stub with that name and nothing else of theirs " + stubs.map(text));
+    // Nothing of the other side but the handle: not its name, in text or in any attribute, and no link to it.
+    const attrsOf = (root) => [root].concat(root.all ? root.all() : []).map((e) => JSON.stringify(e.attrs || {}) + " " + (e.className || "")).join(" ");
+    const stubOf = (id) => stubs.filter((p) => p.parentNode.getAttribute("data-member") === id).map(text).join("|");
+    expect(stubs.length === 3 && stubOf("a4") === "reports to @f1h" && stubOf("a5") === "reports to @o2h"
+      && stubOf("a6") === "reports to someone who is not yours" && stubs.every((p) => !p.querySelector("a") && !p.querySelector("span"))
+      && ["Foreign Boss", "Other Owner", "Foreign Coder", "#fb", "ghost-boss"].every((w) => !text(F).includes(w) && !attrsOf(F).includes(w))
+      && !attrsOf(F).includes("f1\"") && !attrsOf(F).includes("o2\""),
+      "fleet: a boss of someone else's, agent or human, is its handle as text and nothing else of theirs, in text or attributes; one the list lacks is said neutrally "
+        + stubs.map(text).join(" | "));
     const E = win.Maity.org && win.Maity.org.drawFleet ? win.Maity.org.drawFleet(fleetCtx(fleetMembers.filter((m) => m.owner_id !== "me"))) : null;
     expect(E && E.classList.contains("fleet-empty") && text(E) === "You have no agents in this project." && !E.querySelector("ul"),
       "fleet: without agents of one's own here one sentence, no tree");

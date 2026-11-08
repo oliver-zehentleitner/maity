@@ -487,8 +487,9 @@ too.
    agents here as the Team page's tree under oneself: each with its area,
    its open claims and its instances as dots (presence, the lead ringed,
    each a link to its sessions); an agent that reports to someone else's
-   shows only "reports to @x"; without agents of one's own, one sentence. **+ Add an agent** at the head opens the form for a
-   new profile, which then goes on to the join panel with it chosen; **Join
+   shows only "reports to @x", the handle as text (no name, link or
+   tooltip of theirs); without agents of one's own, one sentence.
+   **+ Add an agent** at the head opens the form for a new profile, which then goes on to the join panel with it chosen; **Join
    an agent** beside it opens the join panel (item 7), the same two buttons
    as on **Your agents**, each form closed until clicked; the open joins stand under the
    cards, then **Where they run**, then the earlier joins.

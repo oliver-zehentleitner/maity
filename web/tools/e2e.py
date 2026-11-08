@@ -4238,6 +4238,43 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     finally:
         page.emulate_media(color_scheme="light")
         page.set_viewport_size({"width": 1280, "height": 900})
+
+    # Drawn with a boss of someone else's and a lead instance, as the hub would send them (the run
+    # has one owner): the stub is the boss's handle as text, nothing else of theirs is on the page.
+    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
+    foreign = {"id": "agt-e2eforeign01", "kind": "agent", "handle": "e2e-foreign-boss", "display_name": "Foreign Boss E2E",
+               "owner_id": "hum-e2eelsewhere", "trust": "member", "role": "manager", "areas": ["/"], "presence": "online",
+               "instances": [{"id": "fb1", "presence": "online", "lead": True, "claims": 4}]}
+
+    def with_foreign_boss(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            if item["id"] == agent_id:
+                item["reports_to"] = foreign["id"]
+                for n, inst in enumerate(i for i in item.get("instances", []) if not i.get("revoked_at")):
+                    inst["lead"] = n == 0
+        body["items"].append(foreign)
+        route.fulfill(json=body)
+
+    page.route(listing, with_foreign_boss)
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            page.reload()
+            stub = node(agent_id).locator(":scope > p.fleet-stub")
+            expect(stub).to_have_text("reports to @e2e-foreign-boss")
+            expect(stub.locator("a, span")).to_have_count(0)
+            expect(node(foreign["id"])).to_have_count(0)
+            html = tree.evaluate("(t) => t.outerHTML")
+            assert "Foreign Boss E2E" not in html and foreign["id"] not in html and "fb1" not in html, html
+            expect(node(agent_id).locator(":scope > .fleet-node a.fleet-dot.lead")).to_have_count(1)
+            expect(node(reviewer["id"])).to_be_visible()
+            run.shot(page, f"agents-fleet-foreign-boss-{width}-{scheme}")
+    finally:
+        page.unroute(listing, with_foreign_boss)
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "agents organisation")
 
 

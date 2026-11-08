@@ -146,6 +146,15 @@ window.Maity = window.Maity || {};
     }));
   }
 
+  // Someone else's boss by its handle alone, as text: no link to their page, no name, no tooltip
+  // (the card: "reports to @x", nothing more of the other side). Where the list gives no handle,
+  // a neutral sentence, never its id or a name.
+  function bossStub(ctx, id) {
+    const m = ctx.memberById ? ctx.memberById[id] : null;
+    const handle = m ? M.dom.handleOf(ctx, m) || m.handle : null;
+    return handle ? M.t("org.fleet.reports_to", { who: "@" + handle }) : M.t("org.fleet.reports_to_someone");
+  }
+
   function fleetNode(ctx, m, tree, own, byId) {
     const kids = tree.children[m.id] || [];
     const claims = live(m).reduce((n, i) => n + (i.claims || 0), 0);
@@ -157,7 +166,7 @@ window.Maity = window.Maity || {};
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
         fleetDots(ctx, m),
         h("span", { class: "muted fleet-claims" }, M.t("org.fleet.claims", { count: claims }))),
-      boss ? h("p", { class: "fleet-stub" }, M.tn("org.fleet.reports_to", { who: M.dom.memberRef(ctx, boss) })) : null,
+      boss ? h("p", { class: "fleet-stub" }, bossStub(ctx, boss)) : null,
       kids.length ? h("ul", null, kids.map((k) => fleetNode(ctx, byId[k.id], tree, own, byId))) : null);
   }
 

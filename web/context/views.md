@@ -54,8 +54,8 @@ The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
 in the project alone, under oneself: a boss or an area owner of someone
 else's places none of them, and an own agent that reports to someone
-else's shows that as a stub with the boss's name and nothing more of the
-other side. Its instances are dots in their presence's colour, the lead
+else's shows that as a stub with the boss's handle, as text, and nothing
+more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
 ringed. Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
