@@ -25,7 +25,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## A
 
 ## B
-- [brand.md](brand.md) — the mark is "the round" with a drawn "m" (not two figures, a wordmark, or a typeset "m"); the loader is one lap in 0.9 s; a circle is a human, a rounded square an agent; the header lockup as two images switched by the theme, the site copying web/brand/
+- [brand.md](brand.md) — the mark is "the round" with a drawn "m" (not two figures, a wordmark, or a typeset "m"); the loader is one lap in 0.9 s; a circle is a human, a rounded square an agent; the header lockup as two images switched by the theme, the site copying web/brand/; the dashboard's brand fonts are copies of the landing page's beside app.css, loaded by a relative URL
 
 ## C
 
