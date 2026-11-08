@@ -358,3 +358,79 @@ def test_a_listening_agent_reads_no_message_before_the_delay_and_no_body_at_all(
     with _Statements(r.engine) as seen:
         assert chat_unread.sweep(r.engine) == []
     assert not [s for s, p in seen if _reads_messages(s, p)]
+
+
+# Each clause below has its own test (review of #1490, e5zv P3).
+
+
+def _credential_of(r: Room, agent: flow.Agent, **values: Any) -> None:
+    with r.engine.begin() as conn:
+        conn.execute(
+            update(t.credential).where(t.credential.c.id == agent.credential_id).values(**values)
+        )
+
+
+@pytest.mark.parametrize("column", ["dormant_since", "paused_since"])
+def test_a_dormant_or_paused_instance_does_not_count_as_listening(room: Room, column: str) -> None:
+    r = room
+    first, second = r.agents
+    _credential_of(r, first, **{column: clock.now()})
+    r.say(r.owner, "one")
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    assert r.nudges(first) == [] and len(r.nudges(second)) == 1
+
+
+def test_a_round_thread_is_not_nudged(room: Room) -> None:
+    r = room
+    r.say(r.owner, "one")
+    with r.engine.begin() as conn:
+        conn.execute(
+            update(t.conversation).where(t.conversation.c.id == r.chat).values(hub_thread=True)
+        )
+    r.at(11)
+    assert chat_unread.sweep(r.engine) == []
+
+
+def test_a_redacted_message_is_not_counted(room: Room) -> None:
+    r = room
+    first, _ = r.agents
+    gone = r.say(r.owner, "taken back")
+    r.at(5)
+    kept = r.say(r.owner, "stays")
+    with r.engine.begin() as conn:
+        conn.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+    r.at(11)
+    assert chat_unread.sweep(r.engine) == []  # the oldest counted one is 6 minutes old
+    r.at(16)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
+
+
+def test_messages_before_the_stay_are_not_counted(room: Room) -> None:
+    """The window: a member re-added to a chat starts fresh from its latest join (§9.2)."""
+    r = room
+    first, _ = r.agents
+    before = r.say(r.owner, "before the stay")
+    r.at(5)
+    after = r.say(r.owner, "after the stay")
+    with r.engine.begin() as conn:
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == first.id)
+        ).scalar_one()
+        conn.execute(
+            update(t.conversation_participant)
+            .where(
+                t.conversation_participant.c.conversation_id == r.chat,
+                t.conversation_participant.c.membership_id == member,
+            )
+            .values(window_after=before)
+        )
+    r.at(11)
+    assert chat_unread.sweep(r.engine) != []  # the second agent's nudge
+    assert r.nudges(first) == []  # its only counted message is 6 minutes old
+    r.at(16)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, after)

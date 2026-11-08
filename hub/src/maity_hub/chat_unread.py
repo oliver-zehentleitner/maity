@@ -71,7 +71,7 @@ def _candidates(conn: Connection, conversation_id: str | None = None) -> list[An
     return list(conn.execute(query))
 
 
-def _listening(conn: Connection, membership_id: str) -> bool:
+def _listening(conn: Connection, membership_id: int) -> bool:
     """Whether an instance of the agent that is neither dormant nor paused has a live
     session with an open long-poll (§5.3)."""
     s, cr = t.agent_session.c, t.credential.c
@@ -171,7 +171,7 @@ def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
 
 
 def due(
-    conn: Connection, stay: Any, listens: dict[str, bool] | None = None
+    conn: Connection, stay: Any, listens: dict[int, bool] | None = None
 ) -> dict[str, Any] | None:
     """The nudge's payload when one is due for this stay now, else None. The cheap checks
     come first, so that what needs no nudge reads no message: whether the agent listens
@@ -203,7 +203,7 @@ def due(
     }
 
 
-def check(engine: Engine, conversation_id: str, membership_id: str) -> int | None:
+def check(engine: Engine, conversation_id: str, membership_id: int) -> int | None:
     """One stay: emit the nudge when it is due, under the project's lock. The seq or None."""
     with transaction(engine) as conn:
         project_id = conn.execute(
@@ -238,7 +238,7 @@ def sweep(engine: Engine) -> list[int]:
     """Every agent's open stay in an open group chat: read first, outside the lock, and only
     a stay whose nudge is due is checked again and written under it. The seqs written."""
     with engine.connect() as conn:
-        listens: dict[str, bool] = {}
+        listens: dict[int, bool] = {}
         pending = [
             (stay.conversation_id, stay.membership_id)
             for stay in _candidates(conn)
