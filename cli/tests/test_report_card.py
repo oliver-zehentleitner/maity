@@ -480,3 +480,19 @@ def test_the_title_reaches_the_terminal_disarmed(
     assert _report() == cli.EXIT_OK
     line = next(ln for ln in capsys.readouterr().err.splitlines() if "reporting" in ln)
     assert "Leases tsk-0004" in line and "\x1b" not in line and "\x07" not in line
+
+
+def test_a_link_past_the_cap_is_not_probed_even_where_it_would_match(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the sixth link has the pushed head: it is never asked about, so the report is
+    refused as unknown on the linked card, never filed with that pull request."""
+    head = _head(joined)
+    numbers = list(range(1, cli.PROBED_LINKS_MAX + 2))
+    asked = _probe(fake, {numbers[-1]: head})
+    _card(fake, links=[_link(n) for n in numbers])
+    assert _report() == cli.EXIT_REFUSED
+    probed = [dict(p.split("=", 1) for p in q.split("&"))["pr"] for q in asked]
+    assert probed == [str(n) for n in numbers[: cli.PROBED_LINKS_MAX]]
+    assert str(numbers[-1]) not in probed and not _sent(fake)
+    assert "this checkout has an unknown pull request" in capsys.readouterr().err

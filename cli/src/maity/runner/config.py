@@ -257,9 +257,12 @@ def _commands(values: Any) -> str | None:
         return problem
     bad = [v for v in values if not plain_command(v)]
     if bad:
+        # A run of spaces makes an empty word, which the grammar refuses: said, not collapsed.
+        spaced = any("  " in v or v != v.strip(" ") for v in bad)
         return ("not a plain command (a program and plain arguments: no variable, `env`,"
-                " quotes or shell operators, not maity): "
-                + ", ".join(repr(v) for v in bad))  # fmt: skip
+                " quotes or shell operators, not maity"
+                + ("; separate the words with single spaces" if spaced else "")
+                + "): " + ", ".join(repr(v) for v in bad))  # fmt: skip
     return None
 
 
