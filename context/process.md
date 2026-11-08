@@ -1874,10 +1874,10 @@ The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts u
 
 **Limit:** the intake does not check that the sender wrote the pull request. Any member who can message the
 watcher can have any open head watched; the result goes to that member. And every read is a hub call, which is
-presence (docs/api.md §2.4): each pass, every 120 s, marks the inbox instance online and renews the leases of the
-claims it holds. Until the watcher has an identity of its own, that instance's claims do not run out while the
-watcher runs, even if its own session is stuck, so the stuck-holder reassignment does not reach them; where that
-matters the watcher runs under an instance that holds no claims.
+presence (docs/api.md §2.4): each pass, every 120 s, marks the instance of the `MAITY_STATE_DIR` the watcher runs
+under online and renews the leases of the claims it holds. Until the watcher has an identity of its own, that
+instance's claims do not run out while the watcher runs, even if its own session is stuck, so the stuck-holder
+reassignment does not reach them; where that matters the watcher runs under an instance that holds no claims.
 
 **Rejected alternatives:**
 - The author named in the message text: anyone could direct results to someone else, and a typo loses them.
