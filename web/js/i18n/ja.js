@@ -1385,7 +1385,7 @@ window.MAITY_I18N["ja"] = {
   "inbox.reply_placeholder": "ご自身の言葉で返信",
   "inbox.retry": "もう一度試す",
   "inbox.send": "送信",
-  "inbox.send_needs_reply": "回答のいずれかを選んでください。メモはその回答に添えられます。",
+  "inbox.send_needs_reply": "回答のいずれかを選んでください。ノートはその回答に添えられます。",
   "inbox.sending": "送信中…",
   "inbox.session": "セッション {id}",
   "inbox.show": "表示",
