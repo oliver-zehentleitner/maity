@@ -11,7 +11,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, text, update
 from sqlalchemy import event as sqlalchemy_event
 
 from maity_hub import chat_unread, clock, listening, not_listening
@@ -317,17 +317,21 @@ def _reads_messages(statement: str, params: Any) -> bool:
 
 
 def _payload_keys(seen: list[tuple[str, Any]]) -> set[str]:
-    """The payload keys the statements project: SQLite passes each JSON path as a parameter
-    (`$."mentions"`); a statement with `event.payload` and no such path reads all of it."""
+    """The payload keys the statements project, on SQLite (`JSON_EXTRACT(event.payload, ?)`
+    with a `$."key"` parameter) and PostgreSQL (`event.payload -> %(name)s` with the key as
+    the parameter). An occurrence of `event.payload` that is neither reads all of it."""
     keys: set[str] = set()
     for statement, params in seen:
-        if "event.payload" not in statement:
+        found = statement.count("event.payload")
+        if not found:
             continue
-        values = params.values() if isinstance(params, dict) else params or ()
-        paths = [v for v in values if isinstance(v, str) and v.startswith("$.")]
-        if not paths:
+        values = list(params.values()) if isinstance(params, dict) else list(params or ())
+        named = re.findall(r"event\.payload\s*->>?\s*%\((\w+)\)s", statement)
+        keys.update(str(params[name]) for name in named if isinstance(params, dict))
+        sqlite = [v for v in values if isinstance(v, str) and v.startswith("$.")]
+        keys.update(v.removeprefix("$.").strip('"') for v in sqlite)
+        if found > len(named) + len(sqlite):
             keys.add("<all>")
-        keys.update(path.removeprefix("$.").strip('"') for path in paths)
     return keys
 
 
@@ -644,3 +648,49 @@ def test_a_redaction_inside_the_range_read_starts_the_read_over(
         chat_unread.sweep(r.engine)
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
+
+
+def test_a_failed_statement_in_one_stay_does_not_spoil_the_others(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1490 (ppge P3-1): a real SQL error in one stay's read. On PostgreSQL it
+    aborts the transaction, which the read pass rolls back before the next stay."""
+    r = room
+    first, second = r.agents
+    r.say(r.owner, "one")
+    r.at(11)
+    real = chat_unread._mark
+
+    def mark(conn: Any, stay: Any) -> int:
+        if stay.agent_id == first.id:
+            conn.execute(text("SELECT no_such_column FROM no_such_table"))
+        return real(conn, stay)
+
+    monkeypatch.setattr(chat_unread, "_mark", mark)
+    chat_unread.sweep(r.engine)
+    assert r.nudges(first) == [] and len(r.nudges(second)) == 1
+
+
+def test_the_worker_runs_the_nudge_when_the_not_listening_sweep_fails(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1490 (ppge P3-3)."""
+    r = room
+    first, _ = r.agents
+    r.say(r.owner, "one")
+    r.at(11)
+
+    def broken(_engine: Any) -> None:
+        raise RuntimeError("the not-listening sweep failed")
+
+    monkeypatch.setattr(not_listening, "sweep", broken)
+    worker = not_listening.Worker(r.engine, interval=0.01)
+    worker.start()
+    try:
+        for _ in range(500):
+            if r.nudges(first):
+                break
+            time.sleep(0.01)
+    finally:
+        worker.stop()
+    assert len(r.nudges(first)) == 1

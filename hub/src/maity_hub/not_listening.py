@@ -303,10 +303,14 @@ class Worker:
                     continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
-                        sweep(self.engine)
                         from maity_hub import chat_unread, holder_stalled
 
-                        # Each its own try: a failure in one does not skip the other this minute.
+                        # Each step its own try: a failure in one does not skip the others.
+                        try:
+                            sweep(self.engine)
+                        except Exception:
+                            log.exception("the not-listening sweep failed")
+
                         try:
                             holder_stalled.expire(self.engine)  # `claim_expired` (§6.5)
                         except Exception:
