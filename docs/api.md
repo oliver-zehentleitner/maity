@@ -112,7 +112,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   max-age=86400, s-maxage=60` at its address by digest, which names no
   account and changes with the picture), and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
-  a deploy. The hub serves no
+  a deploy, and the dashboard's files under `/assets/` (§16.11),
+  `no-cache` with an `ETag` of the file's content, for the same reason.
+  The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - A page the hub renders with a token in its path (`/join/{token}` as
@@ -18462,7 +18464,11 @@ landing page's own files (§16.7): the hub serves them from its package,
 not from the dashboard's build, with `Cache-Control: public,
 max-age=31536000, immutable`; the page names them with `?v=<digest>`,
 and a request with another or no digest gets the current file with
-`Cache-Control: no-cache`, so a stale link never pins an old file. Only
+`Cache-Control: no-cache`, so a stale link never pins an old file. The
+dashboard's files under `/assets/` (`css/`, `js/`, `brand/`, `vendor/`)
+are answered `Cache-Control: no-cache` with a strong `ETag` taken from
+the file's content; a request whose `If-None-Match` matches gets `304`
+without a body. Only
 the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files

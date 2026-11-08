@@ -7,15 +7,21 @@ answers to a visitor with a session or while the landing page is off (§16.7).
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import stat
 from html import escape
 from pathlib import Path
 
 from fastapi import Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
+from starlette.responses import FileResponse
 from starlette.routing import BaseRoute, Match
+from starlette.staticfiles import NotModifiedResponse
 from starlette.types import Receive, Scope, Send
 
 from maity_hub import paths, public_pages
@@ -32,8 +38,31 @@ SHELL_HEADERS = {
 }
 
 
+# A dashboard file is revalidated on every use (docs/api.md §1, §16.11; req-s246xb6k1mpp): it
+# holds no data, and a deploy must reach a browser at once.
+ASSET_CACHE = "no-cache"
+# A file's ETag by its path, kept while its change time and size stay the same.
+_ETAGS: dict[str, tuple[int, int, str]] = {}
+
+
+def content_etag(full_path: str, stat_result: os.stat_result) -> str:
+    """A strong ETag from the file's content, not from its time and size as Starlette's: an
+    image built with normalised file times could otherwise keep an old ETag for a changed file
+    of the same size. Read once per file and process, again when its change time or size
+    moves."""
+    known = _ETAGS.get(full_path)
+    if known is not None and known[:2] == (stat_result.st_mtime_ns, stat_result.st_size):
+        return known[2]
+    with open(full_path, "rb") as file:
+        digest = hashlib.file_digest(file, "sha256").hexdigest()
+    etag = f'"{digest[:32]}"'
+    _ETAGS[full_path] = (stat_result.st_mtime_ns, stat_result.st_size, etag)
+    return etag
+
+
 class AssetFiles(StaticFiles):
-    """The files under `/assets/`: scripts, stylesheets and brand files, no dotfiles."""
+    """The files under `/assets/`: scripts, stylesheets and brand files, no dotfiles; each
+    answered `no-cache` with an ETag of its content, `304` when `If-None-Match` names it."""
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         # `path` is normalised; the root arrives as ".".
@@ -41,6 +70,31 @@ class AssetFiles(StaticFiles):
         if len(parts) < 2 or parts[0] not in ASSET_DIRS or any(p.startswith(".") for p in parts):
             raise HTTPException(status_code=404)
         return await super().get_response(path, scope)
+
+    def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
+        # Starlette runs this in a worker thread: the file is hashed here, not on the event loop.
+        full_path, stat_result = super().lookup_path(path)
+        if stat_result is not None and stat.S_ISREG(stat_result.st_mode):
+            content_etag(full_path, stat_result)
+        return full_path, stat_result
+
+    def file_response(
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        etag = content_etag(os.fspath(full_path), stat_result)
+        headers = {"Cache-Control": ASSET_CACHE, "ETag": etag}
+        response = FileResponse(
+            full_path, status_code=status_code, stat_result=stat_result, headers=headers
+        )
+        # Only the content decides: no Last-Modified, so `If-Modified-Since` never answers 304.
+        del response.headers["last-modified"]
+        if self.is_not_modified(response.headers, Headers(scope=scope)):
+            return NotModifiedResponse(response.headers)
+        return response
 
 
 # The dashboard's invitation page, `/invite/{token}` (§16.11): the token is in its path.

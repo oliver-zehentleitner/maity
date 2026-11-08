@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -139,6 +140,61 @@ def test_built_files_are_served_under_assets(client: TestClient, web_dir: Path) 
     # The old place of a file is not a file any more: it is a dashboard path, the shell.
     old = client.get("/js/app.js")
     assert old.status_code == 200 and "<title>dashboard</title>" in old.text
+
+
+def test_a_built_file_is_revalidated_by_the_etag_of_its_content(
+    client: TestClient, web_dir: Path
+) -> None:
+    # docs/api.md §1 and §16.11 (req-s246xb6k1mpp): `no-cache`, a content ETag, 304 on a match.
+    (web_dir / "css").mkdir()
+    # Above 1024 bytes, so the answer is gzipped too (serving.md 5cfd29b6).
+    content = "body{}\n" * 300
+    (web_dir / "css" / "app.css").write_text(content)
+    first = client.get("/assets/css/app.css", headers={"Accept-Encoding": "gzip"})
+    assert first.status_code == 200 and first.text == content
+    assert first.headers["content-encoding"] == "gzip"
+    assert first.headers["cache-control"] == "no-cache"
+    etag = first.headers["etag"]
+    assert etag.startswith('"') and not etag.startswith("W/") and len(etag) == 34
+    assert "last-modified" not in first.headers
+    again = client.get(
+        "/assets/css/app.css", headers={"If-None-Match": etag, "Accept-Encoding": "gzip"}
+    )
+    assert again.status_code == 304 and again.content == b""
+    assert again.headers["etag"] == etag and again.headers["cache-control"] == "no-cache"
+    other = client.get("/assets/css/app.css", headers={"If-None-Match": '"0"'})
+    assert other.status_code == 200 and other.headers["etag"] == etag
+    # Only the ETag decides: a date alone never answers 304.
+    dated = client.get(
+        "/assets/css/app.css", headers={"If-Modified-Since": "Fri, 01 Jan 2100 00:00:00 GMT"}
+    )
+    assert dated.status_code == 200
+
+
+def test_a_changed_file_with_the_same_time_and_size_gets_a_new_etag(
+    client: TestClient, web_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub import shell
+
+    target = web_dir / "js" / "app.js"
+    target.parent.mkdir()
+    target.write_text("// one")
+    old = client.get("/assets/js/app.js").headers["etag"]
+    stamp = target.stat().st_mtime_ns
+    target.write_text("// two")
+    os.utime(target, ns=(stamp, stamp))
+    # A new image with normalised file times starts a new process: nothing is remembered.
+    monkeypatch.setattr(shell, "_ETAGS", {})
+    response = client.get("/assets/js/app.js", headers={"If-None-Match": old})
+    assert response.status_code == 200 and response.text == "// two"
+    assert response.headers["etag"] != old
+
+
+def test_only_the_built_files_leave_no_store(client: TestClient, web_dir: Path) -> None:
+    assert client.get("/api/v1/health").headers["cache-control"] == "no-store"
+    missing = client.get("/assets/js/none.js")
+    assert missing.status_code == 404 and missing.headers["cache-control"] == "no-store"
+    assert "etag" not in missing.headers
 
 
 @pytest.mark.parametrize(

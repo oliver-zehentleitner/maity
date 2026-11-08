@@ -583,3 +583,43 @@ by review.
 cluster, and none for a hub run without that ingress. Compressing every
 answer: the pages and writes above. Level 9, Starlette's default: the
 same size for more CPU.
+
+## The dashboard's files are revalidated by an ETag of their content, not `no-store`
+
+**Id:** c6768529-3654-45c7-bd5e-aab3067ce04f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision req-s246xb6k1mpp (option A, 2026-11-08), the card tsk-pcw785rhymyg and its plan note nte-smnd4dr3gw6y; docs/api.md §1, §16.11
+**Revisit when:** a file under `/assets/` carries anything per user or private, or the shell names its files by digest (versioned names, below)
+
+`shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
+`js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
+`ETag`, the first 32 hex digits of the file's SHA-256, and drops
+`Last-Modified`. A matching `If-None-Match` gets `304` with the same two
+headers. `no-cache` is on the middleware's `ROUTE_CACHE` (images.md
+96d70040), so it is kept; a 404 under `/assets/` and every `/api/v1/`
+answer stay `no-store`, the shell keeps its own `no-cache`, and
+`/assets/landing/` its own rule. The digest is read in `lookup_path`,
+which Starlette runs in a worker thread, and kept per process for the
+file's path while its change time and size stay the same.
+
+**Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
+dashboard's static files may be cached"): the files hold no private
+data, and every reload fetched all 97 of them, 691 KB gzipped
+(tsk-fxjtwmkc4md5). `no-cache` makes a browser ask again on every use,
+so a deploy reaches it at once: a changed file has a new ETag and comes
+back `200`; two pods with different files during a rolling update give
+different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
+alone never answers `304`.
+
+**Rejected alternatives:**
+- Starlette's own ETag (an MD5 of the change time and size): an image
+  built with normalised file times could keep the old ETag for a changed
+  file of the same size, and a browser would keep the old file.
+- Versioned names with a long `max-age` (`?v=<digest>`, `immutable`, as
+  `/assets/landing/` does): a reload would send no requests at all, but
+  the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite
+  in `shell_document`, the `url()` references inside the CSS would stay
+  `no-cache` anyway, and it is a contract change of its own. A
+  follow-up once this card's numbers are measured.
