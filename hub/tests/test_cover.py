@@ -450,13 +450,13 @@ def test_a_substitute_who_could_not_answer_a_proposals_kind_is_skipped(
 # --- the rights of a substitute, on trust and role (§6.12, §2.3) ------------------------------
 
 
-def test_an_entry_that_became_a_guest_or_a_proxy_does_not_cover(
+def test_an_entry_that_became_a_guest_a_proxy_or_an_expert_does_not_cover(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:
     """The policy was valid when it was set; the walk checks every entry as it is now."""
     covered = flow.agent(make_client, owner)
-    guest, proxy, sub = (flow.agent(make_client, owner) for _ in range(3))
-    for agent in (covered, guest, proxy, sub):
+    guest, proxy, expert, sub = (flow.agent(make_client, owner) for _ in range(4))
+    for agent in (covered, guest, proxy, expert, sub):
         agent.resume()
     card = task(owner)
     owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": covered.id})
@@ -464,13 +464,14 @@ def test_an_entry_that_became_a_guest_or_a_proxy_does_not_cover(
         owner,
         covered.id,
         on_unavailable="substitute",
-        substitutes=[guest.id, proxy.id, sub.id],
+        substitutes=[guest.id, proxy.id, expert.id, sub.id],
         grace_minutes=0,
     )
     with migrated.begin() as conn:
         for agent, values in (
             (guest, {"trust": "guest"}),
             (proxy, {"role": "proxy", "role_base": "proxy"}),
+            (expert, {"role": "expert", "role_base": "expert"}),  # takes no cards (§2.3)
         ):
             conn.execute(
                 update(t.membership).where(t.membership.c.agent_id == agent.id).values(**values)

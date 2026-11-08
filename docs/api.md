@@ -706,7 +706,8 @@ messages. Like a guest it is never a card's target: `assign`,
 still be a contract's arbiter, and as arbiter it moves the contract's
 `state` (§6.8) without `tasks:write`: that `PATCH`, with `contract.state`
 alone, is the one edit of a card it makes, and every other `PATCH` of a
-card is `forbidden` (`details.scope: "tasks:write"`). A role change to `expert` while the
+card is `forbidden` (`details.scope: "tasks:write"`). No cover gives it a
+card (§6.12) and no takeover moves one to it (§6.19). A role change to `expert` while the
 member holds a card is `409 conflict` with `details.reason:
 holds_cards`, until the card is given back or released; and checkpoint
 and report need `tasks:write`, so a holder without it writes nothing
@@ -8066,13 +8067,13 @@ human's too:
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest or a proxy never covers (`details.fields.substitutes`: `guest`, `proxy`). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers (`details.fields.substitutes`: `guest`, `proxy`, `expert`; `role:expert` is `expert` too, and an expert a `role:` or `trust:` token reaches is skipped). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
 A `PATCH` names any of the three; a field not named keeps its value. The
 codes in `details.fields` are keyed `availability_policy.<field>`:
 `on_unavailable` `unknown`; `grace_minutes` `out_of_range`; `substitutes`
-`self`, `not_a_member`, `guest`, `proxy`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
+`self`, `not_a_member`, `guest`, `proxy`, `expert`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
 `required` (`substitute` with an empty list).
 
 Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`
@@ -8998,7 +8999,8 @@ instance: an instance address, or a member id that the hub resolves to
 that agent's only active instance (dormant ones not counted, §6.17), to its lead under `distribution:
 lead`, or to the next one under `round_robin`; a member id that leaves
 the choice open (`free` with several instances) is `invalid`
-(`details.fields.to: "instance_required"`). Naming someone else needs `tasks:admin`, or being the lead of
+(`details.fields.to: "instance_required"`), and so is an expert, which
+takes no cards (`details.fields.to: "expert"`, §2.3). Naming someone else needs `tasks:admin`, or being the lead of
 the holding agent with `to` an instance of that agent. `reason` is
 required. The card must be claimed (`not_claimed` otherwise: claim or
 assign it instead) by someone other than `to`; one open takeover per

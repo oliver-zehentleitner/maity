@@ -136,3 +136,33 @@ def test_an_expert_arbiter_moves_its_contract_to_final_and_nothing_else(
     final = expert.patch(path, {"contract": {"state": "final"}})
     assert final.status_code == 200, final.text
     assert final.json()["contract"]["state"] == "final"
+
+
+@pytest.mark.parametrize("entry", ["member", "role:expert"])
+def test_an_expert_is_no_substitute(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent, entry: str
+) -> None:
+    """§6.12: a guest, a proxy or an expert never covers."""
+    covered = flow.agent(make_client, owner)
+    named = expert.id if entry == "member" else entry
+    refused = owner.patch(
+        f"{PROJECT}/members/{covered.id}",
+        {"availability_policy": {"on_unavailable": "substitute", "substitutes": [named]}},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {
+        "availability_policy.substitutes": "expert"
+    }
+
+
+def test_no_takeover_moves_a_card_to_an_expert(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§6.19: the receiver `to` is never an expert."""
+    holder = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    assert holder.post(f"{PROJECT}/tasks/{card}/claim", {}).status_code == 200
+    refused = owner.post(
+        f"{PROJECT}/tasks/{card}/takeover", {"reason": "silent for hours", "to": expert.id}
+    )
+    _invalid(refused, "to")

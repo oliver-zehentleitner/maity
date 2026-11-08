@@ -149,6 +149,8 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
         target = member_row(conn, mine.project.id, principal)
     except ApiError:
         raise invalid({"to": "not_a_member"}) from None
+    if target.role == "expert":  # an expert takes no cards (§2.3 "The expert")
+        raise invalid({"to": "expert"})
     if named is None and target.agent_id is not None and target.distribution == "round_robin":
         chosen = instances.round_robin(conn, target)
         if chosen is not None:

@@ -72,7 +72,11 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     seen: set[int] = set()
     shown = []
     for member in order:
-        if member.trust == "guest" or member.role == "proxy" or member.isolated_since is not None:
+        if (
+            member.trust == "guest"
+            or member.role in ("proxy", "expert")  # an expert takes no cards (§2.3)
+            or member.isolated_since is not None
+        ):
             continue  # never a substitute, whatever the policy said when it was set
         if member.id != row.id and member.id not in seen:
             seen.add(member.id)
