@@ -26,6 +26,8 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -53,11 +55,36 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+# One run's network time in all, and one attempt's: urlopen's timeout counts per connection
+# attempt and per read, so on a machine where IPv6 never connects a 60 s timeout per address
+# made --verify take minutes and look like a hang (web P3 roll-up, tsk-gsk31zvpfv02).
+DEADLINE_SECONDS = 120
+ATTEMPT_SECONDS = 15
+_deadline = None
+
+
+def remaining():
+    """Seconds left of the run's network time; Refused once it is spent."""
+    global _deadline
+    if _deadline is None:
+        _deadline = time.monotonic() + DEADLINE_SECONDS
+    left = _deadline - time.monotonic()
+    if left <= 0:
+        raise Refused("network: no answer within %d s in all" % DEADLINE_SECONDS)
+    return left
+
+
 def fetch(url):
     if not url.startswith("https://"):
         raise Refused("not an https address: %s" % url)
-    with urllib.request.urlopen(url, timeout=60) as r:
-        data = r.read(MAX_BYTES + 1)
+    try:
+        with urllib.request.urlopen(url, timeout=min(ATTEMPT_SECONDS, remaining())) as r:
+            data = r.read(MAX_BYTES + 1)
+    except (urllib.error.URLError, OSError) as e:
+        # A refused or timed-out connection, a TLS failure, an HTTP error status: one line, no
+        # traceback (HTTPError and URLError are OSErrors; reason is the cause where there is one).
+        raise Refused("network: %s: %s" % (url, getattr(e, "reason", None) or e))
+    remaining()
     if len(data) > MAX_BYTES:
         raise Refused("larger than %d bytes: %s" % (MAX_BYTES, url))
     return data

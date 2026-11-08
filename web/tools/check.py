@@ -627,9 +627,11 @@ def glossary_duplicates(text):
 GLOSSARY_NOT_CHECKED = {"resume"}
 # The other form of address, for the address glossary.md names: a word of it in a text is a
 # finding. German "Sie" and "Ihr…" count only inside a sentence, where they cannot be "she",
-# "they" or "her"; Dutch "u" not after a number, where it is hours. Japanese, Korean and
-# Chinese name a register, not words, so nothing is checked there; an address this table
-# does not know is itself a finding, so a change to the glossary's table cannot pass unseen.
+# "they" or "her"; Dutch "u" not after a number, where it is hours. Japanese and Korean name
+# a register, not words, so nothing is checked there. Chinese is unchecked by a slip, not as a
+# register (web/context KtW 7d49c1e3): its pattern would be ("zh-Hans", "你"): "您". An address
+# this table does not know is itself a finding, so a change to the glossary's table cannot pass
+# unseen.
 GLOSSARY_OTHER_ADDRESS = {
     ("de", "du"): re.compile(r"(?<![.!?:]\s)(?<!^)\b(?:Sie|Ihr|Ihre|Ihrem|Ihren|Ihrer|Ihres)\b|\bIhnen\b"),
     ("fr", "vous"): re.compile(r"\b(?:tu|toi|tes)\b", re.I),
