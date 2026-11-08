@@ -542,8 +542,8 @@ window.Maity = window.Maity || {};
           c.status === "done"
             ? h("strong", null, M.t("board.release.shipped"))
             : M.tn("board.release.ready", { ready: h("strong", null, M.t("board.release.ready_words")) }))
-        : h("div", { class: "readiness not-ready" }, h("strong", null, M.t("board.release.not_ready")),
-          h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId))))),
+        : h("div", { class: "readiness not-ready" }, M.tn("board.release.not_ready", { reasons: h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId)))) })
+          .map((p) => (typeof p === "string" ? h("strong", null, p) : p))),
       noProbe && !closed
         ? h("p", { class: "flag" }, M.t("board.release.no_probe"))
         : null,
@@ -751,7 +751,7 @@ window.Maity = window.Maity || {};
       try {
         await reload(focusKey, fromPanel);
       } catch (err) {
-        status.fail(M.t("board.could_not_refresh", { done }), err);
+        status.fail((reason) => M.t("board.could_not_refresh", { done, reason }), err);
         return true;
       }
       status.done();
@@ -1057,7 +1057,7 @@ window.Maity = window.Maity || {};
         try {
           await reload("move:" + created.id);
         } catch (err) {
-          status.fail(M.t("board.could_not_refresh", { done }), err);
+          status.fail((reason) => M.t("board.could_not_refresh", { done, reason }), err);
         }
       }, closeForm);
       append(clear(formBox), f.form);

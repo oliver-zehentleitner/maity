@@ -165,7 +165,7 @@ window.Maity = window.Maity || {};
       try {
         answer = await call();
       } catch (err) {
-        status.fail(M.t("members.act.failed", { action: label }), refusal(err));
+        status.fail((reason) => M.t("members.act.failed", { action: label, reason }), refusal(err));
         return false;
       }
       if (settled) settled();
@@ -173,7 +173,7 @@ window.Maity = window.Maity || {};
         await reload();
         redraw(focusKey);
       } catch (err) {
-        status.fail(M.t("members.act.refresh_failed", { done }), err);
+        status.fail((reason) => M.t("members.act.refresh_failed", { done, reason }), err);
         return isConsent(answer) ? "consent" : true;
       }
       status.done();
@@ -638,7 +638,7 @@ window.Maity = window.Maity || {};
       try {
         answer = await M.api.post(memberPath + "/bridges", { bridge: bridgeId, purpose });
       } catch (err) {
-        status.fail(M.t("members.act.failed", { action: label }), refusal(err));
+        status.fail((reason) => M.t("members.act.failed", { action: label, reason }), refusal(err));
         return;
       }
       const draft = edits.get(m.id);
@@ -648,7 +648,7 @@ window.Maity = window.Maity || {};
         await reload();
         redraw("bridge-pick:" + m.id);
       } catch (err) {
-        status.fail(M.t("members.act.refresh_failed", { done }), err);
+        status.fail((reason) => M.t("members.act.refresh_failed", { done, reason }), err);
         return;
       }
       status.done();

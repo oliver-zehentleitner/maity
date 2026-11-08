@@ -115,14 +115,25 @@ window.Maity = window.Maity || {};
       p.state ? h("span", { class: "state state-" + p.state }, ctx.stateLabel(p.state)) : null);
   }
 
-  // What the entry's button starts with where its badge is not seen: whose
-  // request it is, one whole label per case.
-  function hiddenLabel(req, names) {
+  // The entry's button where its badge is not seen: whose request it is, then the entry's own
+  // parts ({entry}), one whole sentence per case, so the language decides where they stand
+  // (tsk-0zbms0wwqhmm). The words are for a screen reader alone; the parts are seen.
+  function labelled(req, names, entry) {
     const name = names.project(req) || (req.org ? "@" + req.org.handle : "");
-    if (!req.personal) return M.t("inbox.label.project", { name });
-    // Neither project nor organisation (a report's request, §16.8): Personal alone.
-    if (!name) return M.t("inbox.label.personal_alone");
-    return req.project && req.org ? M.t("inbox.label.personal_into", { name, org: req.org.handle }) : M.t("inbox.label.personal", { name });
+    const pieces = !req.personal ? M.tn("inbox.label.project", { name, entry })
+      // Neither project nor organisation (a report's request, §16.8): Personal alone.
+      : !name ? M.tn("inbox.label.personal_alone", { entry })
+        : req.project && req.org ? M.tn("inbox.label.personal_into", { name, org: req.org.handle, entry }) : M.tn("inbox.label.personal", { name, entry });
+    const out = [];
+    pieces.forEach((p) => {
+      if (typeof p !== "string") { out.push(p); return; }
+      const last = out[out.length - 1];
+      if (last && last.hiddenWords) { last.textContent += p; return; }
+      const span = h("span", { class: "visually-hidden" }, p);
+      span.hiddenWords = true;
+      out.push(span);
+    });
+    return out;
   }
 
   function entrySummary(ctx, req, names, expanded, onToggle) {
@@ -134,12 +145,14 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" || req.personal ? h("span", { class: "visually-hidden" }, hiddenLabel(req, names)) : null,
-    h("span", { class: "prio prio-" + req.priority }, req.priority),
-    h("span", { class: "kind" }, Object.hasOwn(CLASS_LABELS, req.class) ? CLASS_LABELS[req.class] : req.class),
-    h("span", { class: "title" }, req.title),
-    ui.later.has(keyOf(req)) ? h("span", { class: "muted" }, M.t("inbox.later_mark")) : null,
-    h("span", { class: "meta" }, asker(req) + " · " + formatAgo(req.created_at)));
+    (() => {
+      const entry = [h("span", { class: "prio prio-" + req.priority }, req.priority),
+        h("span", { class: "kind" }, Object.hasOwn(CLASS_LABELS, req.class) ? CLASS_LABELS[req.class] : req.class),
+        h("span", { class: "title" }, req.title),
+        ui.later.has(keyOf(req)) ? h("span", { class: "muted" }, M.t("inbox.later_mark")) : null,
+        h("span", { class: "meta" }, asker(req) + " · " + formatAgo(req.created_at))].filter(Boolean);
+      return ctx.scope === "all" || req.personal ? labelled(req, names, entry) : entry;
+    })());
   }
 
   // A reply id is chosen by the asking agent, so it never becomes a class:
