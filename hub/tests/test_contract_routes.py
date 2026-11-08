@@ -47,6 +47,10 @@ def _index() -> set[tuple[str, str]]:
         cells = line.split(" | ")
         methods = [m.strip() for m in cells[0].strip("| ").split(",")]
         if len(cells) < 3 or not set(methods) <= set(METHODS):
+            # Only the table's head and its rule may go unread: a row of another form names
+            # no route the test would check, so it fails here instead of passing unseen.
+            head = line.startswith("| Method |") or re.fullmatch(r"\|[-| ]+\|", line)
+            assert not line.startswith("|") or head, f"a §12 row that does not parse: {line}"
             continue
         if cells[1].endswith("(outside the API)"):
             continue
