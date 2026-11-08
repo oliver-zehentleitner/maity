@@ -471,7 +471,8 @@ def choose_motif(conn: Connection, agent_id: str, name: Any, caller: Any) -> Non
 
 
 def clear_motif(conn: Connection, agent_id: str) -> None:
-    """The agent's chosen motif dropped: a moderation reset (§16.8), a deleted profile."""
+    """The agent's chosen motif dropped by a moderation reset (§16.8). A deleted profile
+    clears it in its own update (routes/agents.py), not here."""
     conn.execute(
         update(t.agent_profile).where(t.agent_profile.c.id == agent_id).values(avatar_motif=None)
     )
