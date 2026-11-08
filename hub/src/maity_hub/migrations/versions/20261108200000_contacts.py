@@ -43,10 +43,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("human_id", "contact_id", name=op.f("pk_contact")),
         **MYSQL,
     )
+    op.create_index("ix_contact_human", "contact", ["human_id", "since"])
     op.create_index("ix_contact_contact", "contact", ["contact_id", "since"])
 
 
 def downgrade() -> None:
-    # The index goes with the table: MariaDB refuses to drop it alone while the foreign key
+    # The indexes go with the table: MariaDB refuses to drop one alone while a foreign key
     # needs it (error 1553).
     op.drop_table("contact")

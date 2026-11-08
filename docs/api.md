@@ -10702,14 +10702,18 @@ contacts and are contacts.
   suspended or pending account are `not_found`, as `GET /people/{handle}`
   answers for those (§6.27).
 - An organisation's handle is `invalid` (`details.reason:
-  not_a_person`). The caller's own handle is `invalid`
+  not_a_person`); a deleted organisation's is `not_found`, as `GET
+  /people/{handle}` answers. The caller's own handle is `invalid`
   (`details.reason: self`).
-- Handles are public, so these answers reveal nothing that a profile
-  does not. Unlike `GET /people/{handle}`, `PUT` does not need the
-  person to show the caller anything: someone without a public page or
-  a shared project can be added too.
-- `DELETE` also takes a suspended or pending account, so that a contact
-  can always be removed; a name that is no account's is `not_found`.
+- Unlike `GET /people/{handle}`, `PUT` does not need the person to show
+  the caller anything: someone without a public page or a shared
+  project can be added too. So `PUT` tells an active person from every
+  other name. Handles are public, so that is no secret; it does not tell
+  a suspended, pending or deleted account from a name that is nobody's.
+- `DELETE` answers like `PUT` for every name, with one exception: a
+  suspended or pending account that is one of the caller's contacts is
+  removed (`204`), so that a contact can always be removed. For anyone
+  else such an account stays `not_found`, as on `GET /people/{handle}`.
 
 **Limit.** 100 new contacts per human per day. A `PUT` beyond that is
 `rate_limited` with `Retry-After`; a `PUT` for a contact the caller has

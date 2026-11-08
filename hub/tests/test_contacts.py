@@ -111,6 +111,9 @@ def test_who_may_add_whom(anna: flow.Human, make_client: ClientFactory, migrated
     assert _reason(put(anna, "anna")) == "self"
     make_org(anna, "acme", "Acme")
     assert _reason(put(anna, "acme")) == "not_a_person"
+    with migrated.begin() as conn:
+        conn.execute(update(t.org).where(t.org.c.handle == "acme").values(deleted_at=clock.now()))
+    assert put(anna, "acme").status_code == 404  # as GET /people answers a deleted one
     assert put(anna, "nobody-here").status_code == 404
     agent_handle = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["handle"]
     assert put(anna, agent_handle).status_code == 404  # an agent's handle names nobody here
@@ -197,13 +200,48 @@ def test_a_refused_add_spends_no_attempt(anna: flow.Human, ben: flow.Human) -> N
     assert put(anna, "ben").status_code == 204
 
 
-def test_the_export_carries_both_sides(anna: flow.Human, ben: flow.Human) -> None:
-    put(anna, "ben")
-    put(ben, "anna")
+def test_an_add_that_fails_after_its_count_gives_the_attempt_back(
+    anna: flow.Human, ben: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contacts.ADDED.configure(1, contacts.DAY)
+
+    def fails(conn: Any, human_id: str, contact_id: str) -> bool:
+        raise ApiError(409, "conflict", "a failure after the count")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(contacts, "add", fails)
+        assert put(anna, "ben").status_code == 409
+    assert put(anna, "ben").status_code == 204  # the one attempt was given back
+
+
+def test_an_add_another_call_made_first_gives_the_attempt_back(
+    anna: flow.Human,
+    ben: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contacts.ADDED.configure(1, contacts.DAY)
+    flow.human(make_client, migrated, "cleo")
+    with monkeypatch.context() as patched:
+        patched.setattr(contacts, "add", lambda conn, human_id, contact_id: False)  # lost race
+        assert put(anna, "ben").status_code == 204
+    assert put(anna, "cleo").status_code == 204  # the attempt was given back
+
+
+def test_the_export_carries_each_side_where_it_belongs(
+    anna: flow.Human, ben: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    flow.human(make_client, migrated, "cleo")
+    put(anna, "ben")  # one way: ben may contact anna
+    put(ben, "cleo")
     body = anna.get("/me/export").json()
     assert [c["handle"] for c in body["contacts"]] == ["ben"]
-    assert [c["handle"] for c in body["contact_of"]] == ["ben"]
+    assert body["contact_of"] == []
     assert set(body["contacts"][0]) == {"handle", "since"}
+    body = ben.get("/me/export").json()
+    assert [c["handle"] for c in body["contacts"]] == ["cleo"]
+    assert [c["handle"] for c in body["contact_of"]] == ["anna"]
 
 
 def test_deleting_an_account_ends_its_contacts_both_ways(
@@ -265,3 +303,45 @@ def test_a_deletion_that_waits_for_an_add_removes_the_contact(
         finished(step)
         deletion.commit()
     assert _rows(migrated) == 0
+
+
+@pytest.mark.parametrize(
+    ("column", "value"), [("suspended_at", "now"), ("account_status", "pending")]
+)
+def test_removing_tells_nobody_else_that_an_account_is_not_active(
+    anna: flow.Human,
+    ben: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    column: str,
+    value: str,
+) -> None:
+    """A suspended or pending account answers `DELETE` as `GET /people` does, `not_found`,
+    except to the one who has it as a contact (#1532 review)."""
+    cleo = flow.human(make_client, migrated, "cleo")
+    put(anna, "ben")
+    _set_human(migrated, ben.id, **{column: clock.now() if value == "now" else value})
+    assert remove(cleo, "ben").status_code == 404  # never added: same as an unknown name
+    assert remove(cleo, "nobody-here").status_code == 404
+    assert remove(anna, "ben").status_code == 204  # her contact: she can always remove it
+    assert remove(anna, "ben").status_code == 404  # and then it is not hers any more
+    assert _rows(migrated) == 0
+
+
+def test_a_stranger_gets_one_answer_for_every_name_that_is_not_an_active_person(
+    anna: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Suspended, pending, deleted and unknown answer `PUT` and `DELETE` alike for someone
+    who has none of them as a contact (#1532 review)."""
+    states = {"sus": {"suspended_at": clock.now()}, "pen": {"account_status": "pending"}}
+    states["del"] = {"deleted_at": clock.now()}
+    for handle, values in states.items():
+        _set_human(migrated, flow.human(make_client, migrated, handle).id, **values)
+    for call in (put, remove):
+        answers = {
+            name: (r.status_code, r.json())
+            for name in ("sus", "pen", "del", "nobody-here")
+            for r in [call(anna, name)]
+        }
+        assert len(set(map(str, answers.values()))) == 1, answers
+        assert answers["nobody-here"][0] == 404

@@ -29,9 +29,11 @@ CONTACT_OF = "contact_of"  # who has the human as a contact: whom they may conta
 
 def target(conn: Connection, me: str, handle: str, *, active: bool) -> str:
     """The human `handle` names (a live alias too, §6.24), for a change of `me`'s contacts in
-    this transaction. `active`: an approved, active account only, as `GET /people` answers
-    (§6.27); else any account not deleted, so that a contact can always be removed. An
-    organisation is `not_a_person`, the caller `self`.
+    this transaction. An approved, active account, as `GET /people` answers (§6.27); with
+    `active` false (a removal) also a suspended or pending one, but only when it is one of
+    `me`'s contacts, so that the one person who added it can always remove it and nobody
+    else learns that the account is not active (#1532 review). Every other case is
+    `not_found`, except an organisation's live handle (`not_a_person`) and the caller (`self`).
 
     The person's `account_lock` is taken shared before their row is read, in the order every
     human transaction takes it (`write_guard`): a deletion of that account either waits for
@@ -40,7 +42,13 @@ def target(conn: Connection, me: str, handle: str, *, active: bool) -> str:
     deletion's cleanup (#1532 review)."""
     human_id = handles.human_id_of(conn, handle)
     if human_id is None:
-        if handles.org_id_of(conn, handle) is not None:
+        org_id = handles.org_id_of(conn, handle)
+        org = (
+            None
+            if org_id is None
+            else conn.execute(select(t.org.c.deleted_at).where(t.org.c.id == org_id)).first()
+        )
+        if org is not None and org.deleted_at is None:  # a deleted one is `not_found`, as GET
             raise ApiError(
                 400, "invalid", "only a person can be a contact", {"reason": "not_a_person"}
             )
@@ -55,7 +63,8 @@ def target(conn: Connection, me: str, handle: str, *, active: bool) -> str:
     ).first()
     if human is None or human.deleted_at is not None:
         raise not_found()
-    if active and (human.suspended_at is not None or human.account_status != "active"):
+    shown = human.suspended_at is None and human.account_status == "active"
+    if not shown and (active or not has(conn, me, human_id)):
         raise not_found()
     return human_id
 

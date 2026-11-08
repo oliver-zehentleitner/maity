@@ -2002,6 +2002,7 @@ contact = Table(
     _ref("contact_id", "human.id", nullable=False),
     Column("since", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("human_id", "contact_id"),
+    Index("ix_contact_human", "human_id", "since"),  # /me/contacts, newest first
     Index("ix_contact_contact", "contact_id", "since"),
     CheckConstraint("human_id <> contact_id", name="not_self"),
     **MYSQL_TABLE,
