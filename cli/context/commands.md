@@ -846,7 +846,9 @@ missing commit.
 A reviewer learnt the limit from the hub's refusal, after writing the whole review. `citecheck`
 now names each quote longer than `QUOTE_MAX` (300 characters, counted with `len()` as the hub
 counts them, not bytes) with its length, as one more bad cite: the send is refused, exit 1,
-before any request. The length needs no repository, so it is checked even where the clone or
+before any request. So the whole check, cites and text, runs before the recipient's lookup
+(`_address`), which asks the hub about a handle or a member id; a refused review asks the hub
+nothing (the first version checked after that lookup, R1 of #1504). The length needs no repository, so it is checked even where the clone or
 the commit is missing and the rest of the cites go unchecked. A cite that is too long and also
 not at its line gets both lines, so one round of fixing covers both.
 

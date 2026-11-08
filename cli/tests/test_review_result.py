@@ -30,8 +30,8 @@ def events(fake: fakehub.FakeHub) -> None:
     fake.routes[("POST", f"{P}/events")] = lambda s: (201, {"seq": 7})
 
 
-def _say(*extra: str) -> list[str]:
-    return ["say", "agt-a", "--type", "review_result", *extra]
+def _say(*extra: str, to: str = "agt-a") -> list[str]:
+    return ["say", to, "--type", "review_result", *extra]
 
 
 def test_the_review_is_sent_as_given_from_a_file(
@@ -345,6 +345,7 @@ def test_a_quote_with_umlauts_stands_under_a_c_locale(tmp_path: Path) -> None:
 REPO = Path(citecheck.__file__).resolve().parents[3]
 
 
+@pytest.mark.parametrize("to", ["agt-a", "some-agent"])  # a member id, a handle
 @pytest.mark.parametrize(
     ("quote", "named"),
     [
@@ -363,6 +364,7 @@ def test_a_quote_longer_than_the_hub_takes_refuses_the_send(
     capsys: pytest.CaptureFixture[str],
     quote: str,
     named: str | None,
+    to: str,
 ) -> None:
     _commit("b.txt", f"first\n{quote}\n")
     path = _review_at(
@@ -371,14 +373,15 @@ def test_a_quote_longer_than_the_hub_takes_refuses_the_send(
         {"path": "b.txt", "line": 2, "quote": quote},
     )
     before = len(fake.signed())
-    if named is None:
+    if named is None:  # sent; to the member id, which the test hub knows
         assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_OK
+        assert fake.signed()[-1].json()["review"]["cites"][1]["quote"] == quote
         return
-    assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_ERROR
+    assert cli.main(_say("Approve.", "--review-file", path, to=to)) == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert "not sent: 1 cite(s)" in err
     assert f"review.cites.1 b.txt:2: {named}" in err
-    assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
+    assert fake.signed()[before:] == []  # not even the recipient's lookup
 
 
 def test_a_long_quote_is_refused_without_a_clone(
@@ -401,7 +404,7 @@ def test_a_long_quote_is_refused_without_a_clone(
         cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_ERROR
     )
     assert "review.cites.0 a.txt: the quote has 301 characters" in capsys.readouterr().err
-    assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
+    assert fake.signed()[before:] == []  # not even the recipient's lookup
 
 
 def test_the_quote_limit_is_the_hubs() -> None:
