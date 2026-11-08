@@ -14127,6 +14127,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !rtLink("/api/v1/help") && !rtLink("https://github.com/x/y") && !rtLink("/all", { target: "_blank" }) && !rtLink("/all", { event: { ctrlKey: true } })
     && !rtLink("/all", { download: "x" }) && rtPushed.length === rtBefore + 1,
     "route: a click on a dashboard link stays in the page; a hub path, another site, a new tab, a modified click or a download is the browser's");
+  // The pages the hub draws itself at an address the dashboard also answers (tsk-mg681fdn8p6m): the
+  // frame's /explore and a landing variant load as pages, never a route change to the unknown-address view.
+  const rtHubBefore = rtPushed.length;
+  const rtHub = ["/explore", "/explore?lang=de", "/for/teams", "/for/teams?c=x"].map((x) => rtLink(x));
+  const rtNotHub = ["/explorer", "/for", "/for/teams/x"].map((x) => [!!(R.hubDrawn && R.hubDrawn(x)), R.isRoute(x)]);
+  expect(rtHub.every((x) => x === false) && rtPushed.length === rtHubBefore && R.isRoute("/explore") && R.isRoute("/for/teams")
+    && rtNotHub.every(([drawn, route]) => !drawn && route),
+    "route: a click on /explore or /for/<slug> is a page load, the address still a route; /explorer, /for and deeper paths are not those pages "
+    + JSON.stringify(rtHub) + JSON.stringify(rtNotHub));
 
   checkFields("at the end");
   expect(HANDLE_FIELDS.every(([k]) => handleSeen.has(k)) && !handleBare.size,
