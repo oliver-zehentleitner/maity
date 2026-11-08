@@ -468,9 +468,10 @@ window.Maity = window.Maity || {};
 
     // Whom one's own agent reports to, for its human owner whatever their
     // trust and role (§2.3): nobody, the owner (where a member here), or
-    // another of the owner's agents in the project; only reports_to is
-    // sent. A boss of another owner is not offered (that edge needs both
-    // owners' consent, §6.2), and one set already stays chosen, marked,
+    // another of the owner's agents in the project, which apply at once;
+    // or a member of another owner, a cross-owner edge that waits for the
+    // other side's consent (§6.2, "Own consent"), marked in its option. Only
+    // reports_to is sent. A boss the list leaves out stays chosen, marked,
     // so that saving does not end it unasked.
     function reportsToPart(m, memberPath) {
       if (!ownAgent(m) || m.removed_at) return null;
@@ -487,10 +488,13 @@ window.Maity = window.Maity || {};
         return false;
       };
       // Never a guest (§2.3), never one that would close a circle.
-      const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !M.trust.guest(x) && !circle(x.id));
+      const offered = members.filter((x) => !x.removed_at && x.id !== m.id && !M.trust.guest(x) && !circle(x.id));
+      const mine = offered.filter((x) => x.id === ctx.me.id || ownAgent(x));
+      const others = offered.filter((x) => !mine.includes(x));
       const options = [["", M.t("members.reports.nobody")]].concat(mine.map((x) => [x.id, x.id === ctx.me.id
         ? M.t("members.reports.you", { name: x.display_name })
-        : M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]));
+        : M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]),
+      others.map((x) => [x.id, M.t("members.reports.cross", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]));
       if (m.reports_to && !options.some(([v]) => v === m.reports_to)) {
         options.push([m.reports_to, M.t("members.reports.other_owner", { name: ctx.nameOf(m.reports_to) })]);
       }
@@ -506,7 +510,7 @@ window.Maity = window.Maity || {};
           save.disabled = true;
           await act(M.t("members.reports.saving"), to ? M.t("members.reports.saved", { name: m.display_name, boss: ctx.nameOf(to) })
             : M.t("members.reports.saved_nobody", { name: m.display_name }),
-            () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id);
+            () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id, null, () => ({ owner: m.owner_id }));
           save.disabled = false;
         },
       }, h("label", { for: id }, M.t("members.reports.label")), pick, save,

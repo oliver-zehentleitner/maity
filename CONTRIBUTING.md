@@ -59,7 +59,9 @@ branch adds no conflict, not that it merges cleanly with everything: read
 the lines. Exit 1 means your branch adds a conflict: settle the order with
 the other author or the lead before you push. Exit 2 means the check could
 not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetches
-`origin main` and the head of every pull request open in origin's repository.
+`origin main` and the head of every pull request open in origin's repository. It lists
+them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
+blocked, as in Claude Code's cloud sessions.
 
 ## The guard tests before a review request
 
