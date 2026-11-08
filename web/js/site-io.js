@@ -219,7 +219,7 @@ window.Maity = window.Maity || {};
             saved.push(steps[i].what);
           } catch (err) {
             const left = steps.slice(i).map((s) => s.what);
-            status.fail(M.t("site.stopped", { what: steps[i].what }), { message: (err.code === "cancelled" ? M.t("site.cancelled") : refusalWords(err)) + " "
+            status.fail((reason) => M.t("site.stopped", { what: steps[i].what, reason }), { message: (err.code === "cancelled" ? M.t("site.cancelled") : refusalWords(err)) + " "
               + (saved.length ? M.t("site.saved_list", { parts: M.fmt.list(saved) }) : M.t("site.saved_none")) + " " + M.t("site.not_saved_list", { parts: M.fmt.list(left) }) });
             now = await readNow().catch(() => now);
             return;

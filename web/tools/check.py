@@ -918,6 +918,68 @@ def check_fail_sentences(path, src, code, english):
                         "fail() puts the reason at {reason}: key %r has none" % key)
 
 
+def call_end(code, start):
+    """Where the call whose "(" ends at start closes: the index of its ")"."""
+    depth = 0
+    for i in range(start, len(code)):
+        if code[i] in "([{":
+            depth += 1
+        elif code[i] in ")]}":
+            if depth == 0:
+                return i
+            depth -= 1
+    return len(code)
+
+
+def callee_of(code, at):
+    """The name of the call whose argument list holds position at, or None."""
+    depth = 0
+    for i in range(at - 1, -1, -1):
+        c = code[i]
+        if c in ")]}":
+            depth += 1
+        elif c in "([{":
+            if depth == 0:
+                if c != "(":
+                    return None
+                m = re.search(r"([A-Za-z_$][\w$]*)\s*$", code[:i])
+                return m.group(1) if m else None
+            depth -= 1
+    return None
+
+
+def check_unfilled_placeholders(path, src, code, english):
+    """A text put on the page as M.t returns it has every placeholder filled: a failure's {reason}
+    left for status.fail is filled there, but put straight into an element (h, append), joined
+    with + or written to textContent it would read "{reason}" (tsk-0zbms0wwqhmm, #1498)."""
+    for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
+        at = m.end()
+        quote = src[at] if at < len(src) else ""
+        close = src.find(quote, at + 1) if quote in ("\"", "'") else -1
+        key = src[at + 1:close] if close > 0 else None
+        if key not in english:
+            continue
+        names = set(re.findall(r"\{([a-z][a-z0-9_]*)\}", "".join(entry_texts(english[key]))))
+        if not names:
+            continue
+        end = call_end(code, at)
+        values = code[close + 1:end]
+        # Values from a variable or a call (M.t(key, times)) are not read here: only none or a literal.
+        given = values.strip().lstrip(",").strip()
+        if given and not given.startswith("{"):
+            continue
+        missing = sorted(n for n in names if not re.search(r"\b%s\b\s*[:,}]" % n, values))
+        if not missing:
+            continue
+        before = code[:m.start()].rstrip()
+        after = code[end + 1:].lstrip()
+        shown = (callee_of(code, m.start()) in ("h", "append") or before.endswith("+") or after.startswith("+")
+                 or re.search(r"textContent\s*=$", before))
+        if shown:
+            finding(path, code.count("\n", 0, m.start()) + 1,
+                    "key %r is shown with {%s} unfilled" % (key, "}, {".join(missing)))
+
+
 def check_i18n(write, release=False, notes=None):
     catalogs = {}
     names = sorted(f for f in os.listdir(I18N) if f.endswith(".json") and not f.endswith(I18N_META)) if os.path.isdir(I18N) else []
@@ -978,6 +1040,7 @@ def check_i18n(write, release=False, notes=None):
             if key not in english:
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
         check_fail_sentences(path, src, code, english)
+        check_unfilled_placeholders(path, src, code, english)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text, before in literals if prose(text, before))
     check_error_words(english)

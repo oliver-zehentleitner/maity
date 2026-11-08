@@ -4294,6 +4294,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(st.el.textContent === "Not saved: boom" && st.el.className === "send-status failed", "reason: English reads as before " + st.el.textContent);
     st.fail("", { message: "alone" });
     expect(st.el.textContent === "alone", "reason: an empty sentence is the reason alone");
+    st.fail("Not saved:", { message: " later" });
+    expect(st.el.textContent === "Not saved: later", "reason: a sentence without {reason} keeps the reason after it " + st.el.textContent);
+    st.fail(win.Maity.t("notify.not_saved"), { message: "" });
+    expect(st.el.textContent === "Not saved: ", "reason: an empty reason leaves the sentence " + JSON.stringify(st.el.textContent));
+    st.fail((reason) => win.Maity.t("attach.not_attached_named", { name: "{reason}.txt", reason }), { message: "upload failed" });
+    expect(st.el.textContent === "Not attached: {reason}.txt: upload failed",
+      "reason: a sentence with other values is filled once, a value reading {reason} stays as it is " + st.el.textContent);
     win.MAITY_I18N.de = { "notify.not_saved": "Wegen {reason} nicht gespeichert.", "prefs.diff.added": "Neu ({line}) hinzugefügt",
       "board.release.not_ready": "{reasons} — darum nicht bereit", "inbox.label.project": "{entry} (aus {name})" };
     const was = i18n.language;
@@ -11219,6 +11226,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(mmSoul()).includes("No soul written yet"), "memory: an agent without a soul says so");
     byId("soul-" + mmSid).value = "Small pull requests."; mmSoul().querySelector("form.soul-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
     expect(text(mmSoul()).includes("Version 1") && text(mmSoul()).includes("Saved."), "memory: saving makes a version");
+    // A failed read of the earlier versions is one sentence, the reason at its {reason} (#1498).
+    win.Maity.api.get = (p, o) => (/\/versions$/.test(p) ? Promise.reject(new Error("boom")) : mmGet(p, o));
+    const mmEarlier = mmSoul().querySelector("details.soul-earlier");
+    mmEarlier.open = true; mmEarlier.dispatch("toggle"); for (let k = 0; k < 4; k++) await tick();
+    const mmFailed = mmEarlier.querySelector("li.send-status");
+    expect(mmFailed && text(mmFailed) === "The memory could not be read: boom",
+      "memory: a failed read of the earlier versions says its reason in the sentence " + (mmFailed && text(mmFailed)));
+    win.Maity.api.get = mmGet;
     // A guest: no form, no Delete.
     win.Maity.api.get = (p, o) => (p === "/me" ? mmGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "guest"; }); return x; }) : mmGet(p, o));
     await go("#/all"); await go("#/maintainer/maity/memory"); for (let k = 0; k < 6; k++) await tick();

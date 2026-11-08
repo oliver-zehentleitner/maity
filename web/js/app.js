@@ -1997,7 +1997,7 @@ window.Maity = window.Maity || {};
       const part = h("section", { class: "panel admin-section", id: "admin-maintenance", "aria-label": M.t("admin.maintenance.title") });
       append(root, part);
       append(clear(main), root);
-      M.adminMaintenance.section({ me }, part).catch((err) => { const status = statusLine(); status.fail(M.t("admin.section_failed", { section: M.t("admin.maintenance.title") }), err); append(part, status.el); });
+      M.adminMaintenance.section({ me }, part).catch((err) => { const status = statusLine(); status.fail((reason) => M.t("admin.section_failed", { section: M.t("admin.maintenance.title"), reason }), err); append(part, status.el); });
       document.title = M.t("admin.maintenance.title") + " · Maity";
       return true;
     }

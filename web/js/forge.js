@@ -83,7 +83,7 @@ window.Maity = window.Maity || {};
         await call();
       } catch (err) {
         if (err.code === "cancelled") { status.done(); return; }
-        status.fail(M.t("forge.failed", { what: busy }), said(err));
+        status.fail((reason) => M.t("forge.failed", { what: busy, reason }), said(err));
         return;
       }
       note = { ok: done };
@@ -113,7 +113,7 @@ window.Maity = window.Maity || {};
         } catch (err) {
           linkButton.disabled = false;
           if (err.code === "cancelled") status.done();
-          else status.fail(M.t("forge.failed", { what: M.t("forge.link.busy") }), said(err));
+          else status.fail((reason) => M.t("forge.failed", { what: M.t("forge.link.busy"), reason }), said(err));
         }
       });
       const tokenId = "forge-token";
@@ -140,7 +140,7 @@ window.Maity = window.Maity || {};
               token.focus();
               return;
             }
-            status.fail(M.t("forge.failed", { what: M.t("forge.token.busy") }), said(err));
+            status.fail((reason) => M.t("forge.failed", { what: M.t("forge.token.busy"), reason }), said(err));
             return;
           }
           token.value = "";
@@ -206,10 +206,10 @@ window.Maity = window.Maity || {};
           e.target.disabled = false;
           if (err.code === "cancelled") { status.done(); return; }
           if (err.code === "conflict" && err.details && err.details.reason === "repository_changed") {
-            status.fail(M.t("forge.failed", { what: M.t("forge.confirm.busy") }), { message: M.t("forge.confirm.changed", { url: String(err.details.url || "") }) });
+            status.fail((reason) => M.t("forge.failed", { what: M.t("forge.confirm.busy"), reason }), { message: M.t("forge.confirm.changed", { url: String(err.details.url || "") }) });
             return;
           }
-          status.fail(M.t("forge.failed", { what: M.t("forge.confirm.busy") }), err);
+          status.fail((reason) => M.t("forge.failed", { what: M.t("forge.confirm.busy"), reason }), err);
           return;
         }
         ctx.refresh();

@@ -751,7 +751,7 @@ window.Maity = window.Maity || {};
       try {
         await reload(focusKey, fromPanel);
       } catch (err) {
-        status.fail(M.t("board.could_not_refresh", { done }), err);
+        status.fail((reason) => M.t("board.could_not_refresh", { done, reason }), err);
         return true;
       }
       status.done();
@@ -1057,7 +1057,7 @@ window.Maity = window.Maity || {};
         try {
           await reload("move:" + created.id);
         } catch (err) {
-          status.fail(M.t("board.could_not_refresh", { done }), err);
+          status.fail((reason) => M.t("board.could_not_refresh", { done, reason }), err);
         }
       }, closeForm);
       append(clear(formBox), f.form);

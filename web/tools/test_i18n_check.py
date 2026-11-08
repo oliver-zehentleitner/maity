@@ -332,4 +332,46 @@ expect(fail_findings('status.fail(M.t("s.not_saved"), { message: M.t("s.prefix")
 expect(fail_findings('status.fail(M.t("s.not_saved"), M.t("s.prefix"));') == [],
        "the first argument ends at its comma")
 
+expect(fail_findings('status.fail((reason) => M.t("s.what", { what: name, reason }), err);') == [],
+       "fail() with a sentence filled once, as a function of the reason")
+expect(len(fail_findings('status.fail((reason) => M.t("s.prefix", { reason }), err);')) == 1,
+       "a function's text is held to {reason} too")
+
+
+def shown_findings(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return found_by(lambda: check.check_unfilled_placeholders("js/x.js", src, code, SENTENCES))
+
+
+for src, what in [
+    ('h("li", null, M.t("s.not_saved"), err.message);', "an element's child, the reason beside it (memory.js, #1498)"),
+    ('append(box, M.t("s.not_saved"));', "appended"),
+    ('const s = M.t("s.not_saved") + err.message;', "joined with + after"),
+    ('const s = "x" + M.t("s.not_saved");', "joined with + before"),
+    ('el.textContent = M.t("s.not_saved");', "written to textContent"),
+    ('h("p", null, M.t("s.what", { what: "x" }));', "one value given, {reason} not"),
+]:
+    expect(len(shown_findings(src)) == 1, "shown unfilled: " + what)
+for src, what in [
+    ('h("li", null, M.t("s.not_saved", { reason: err.message }));', "filled with a value"),
+    ('h("li", null, M.t("s.what", { what, reason }));', "filled by shorthand"),
+    ('status.fail(M.t("s.not_saved"), err);', "left for fail() to fill"),
+    ('act(M.t("s.busy"), M.t("s.not_saved"), call);', "handed to a helper that fails with it"),
+    ('save(body, { notSaved: M.t("s.not_saved") });', "a helper's words"),
+    ('h("p", null, M.t("s.what", values));', "values from a variable are not read"),
+    ('h("p", null, M.t("s.busy"));', "a text without placeholders"),
+]:
+    expect(shown_findings(src) == [], "not shown unfilled: " + what)
+
+# The rules above are called directly; make check runs them only through check_i18n, so each
+# must be called there too (ppge, #1498 R1).
+import ast
+import inspect
+import textwrap
+wired = {n.func.id for n in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(check.check_i18n))))
+         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+for rule in ("check_prefixes", "check_fail_sentences", "check_unfilled_placeholders"):
+    expect(rule in wired, "make check runs " + rule)
+
 raise SystemExit(1 if failures else 0)

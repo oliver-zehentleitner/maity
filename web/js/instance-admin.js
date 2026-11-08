@@ -172,7 +172,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, M.t("admin.section.pages")), fold, nav);
     const failed = (label, into) => (err) => {
       const status = M.statusLine();
-      status.fail(M.t("admin.section_failed", { section: label }), err);
+      status.fail((reason) => M.t("admin.section_failed", { section: label, reason }), err);
       append(into, status.el);
     };
     await M.siteIo.section(ctx, whole).catch(failed(M.t("admin.section.site"), whole));
@@ -224,7 +224,7 @@ window.Maity = window.Maity || {};
       const section = h("section", { class: "panel admin-section", "aria-label": label, id: "admin-" + key }); append(root, section);
       shown.push([label, section, path]);
       try { await load(section); }
-      catch (err) { const status = M.statusLine(); status.fail(M.t("admin.section_failed", { section: label }), err); append(section, status.el); }
+      catch (err) { const status = M.statusLine(); status.fail((reason) => M.t("admin.section_failed", { section: label, reason }), err); append(section, status.el); }
     }
     const buttons = shown.map(([label, section]) => h("button", { type: "button", "aria-controls": section.id, "aria-pressed": "false",
       onclick: () => pick(section) }, label));

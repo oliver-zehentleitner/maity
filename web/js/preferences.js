@@ -230,7 +230,7 @@ window.Maity = window.Maity || {};
             status.done();
           } catch (err) {
             box.checked = !want;
-            status.fail(M.t("prefs.projects.failed", { name: nameOf(p.full_name) }), err);
+            status.fail((reason) => M.t("prefs.projects.failed", { name: nameOf(p.full_name), reason }), err);
           } finally {
             box.disabled = false;
           }

@@ -973,11 +973,19 @@ sentence with `{reason}` where the hub's words go ("Not saved:
 `M.reasonIn`, so a language may put the reason first or in the middle.
 Text before an element (an inbox entry's label, a diff line's "added:",
 the list of what blocks a release) has its own placeholder (`{entry}`,
-`{line}`, `{reasons}`) filled with that element by `M.tn`. `make check`
-fails on an English text that ends in ": " and on a key handed to
-`status.fail` without `{reason}` (tsk-0zbms0wwqhmm). Rejected: the
+`{line}`, `{reasons}`) filled with that element by `M.tn`. A failure
+with other values is handed over as a function of the reason,
+`(reason) => M.t(key, { name, reason })`, so its text is filled once:
+a value that reads "{reason}" (a file's name) stays as it is. A failure
+shown outside a status line is filled where it is shown
+(`M.t(key, { reason })`). `make check` fails on an English text that
+ends in ": ", on a key handed to `status.fail` without `{reason}`, and
+on a text put into an element, joined with `+` or written to
+`textContent` with a placeholder left unfilled; it does not follow a
+text through a variable (tsk-0zbms0wwqhmm, #1498). Rejected: the
 reason glued after the sentence in code, which fixed its place for
-every language.
+every language; filling `{reason}` in the finished text for every
+failure, which filled it again inside a value.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code
