@@ -12570,6 +12570,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
+  // The window and the session are read together (tsk-y8gkq1kvt63c): the session is asked while
+  // the window's read still waits, /me only once the session has answered, and the page draws.
+  {
+    const bpGet = win.Maity.api.get, bpFresh = win.Maity.maintenance.fresh, asked = [];
+    let freeWindow = null, freeSession = null;
+    win.Maity.maintenance.fresh = () => new Promise((res) => { freeWindow = () => bpFresh().then(res); });
+    win.Maity.api.get = (p, o) => {
+      if (p === "/auth/session" || p === "/me") asked.push(p);
+      if (p === "/auth/session" && !freeSession) return new Promise((res, rej) => { freeSession = () => bpGet(p, o).then(res, rej); });
+      return bpGet(p, o);
+    };
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const whileWindow = asked.slice();
+    freeWindow(); for (let k = 0; k < 4; k++) await tick();
+    const beforeSession = asked.slice();
+    freeSession(); for (let k = 0; k < 10; k++) await tick();
+    const drawn = !!main.querySelector("section.view-board");
+    win.Maity.api.get = bpGet; win.Maity.maintenance.fresh = bpFresh;
+    expect(JSON.stringify(whileWindow) === JSON.stringify(["/auth/session"]) && JSON.stringify(beforeSession) === JSON.stringify(["/auth/session"])
+      && asked.includes("/me") && drawn,
+      "boot: the session is asked while the window's read waits, /me after the session answers, and the page draws "
+      + JSON.stringify([whileWindow, beforeSession, asked, drawn]));
+  }
+
   // Languages: project writes are human-admin only; personal language is not mail-gated.
   const languageGet = win.Maity.api.get;
   const languagePatch = win.Maity.api.patch;

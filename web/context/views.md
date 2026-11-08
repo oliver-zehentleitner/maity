@@ -5283,3 +5283,29 @@ two fixed words.
 - A grid of all motifs as pictures, chosen by a click: every opened card would load 36 images at
   once, and the choice would need its own keyboard handling, which a `<select>` already has.
 - Catalog keys for every motif now: a table that falls out of step with each new motif in the set.
+
+## The boot reads the window and the session together; /me still after the session
+
+**Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
+**Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
+
+`render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
+instead of after it, and handles the answers in the old order: the window first, then the session.
+`GET /me` still waits for the session's answer.
+
+**Reason:** two round trips in a row before the session was known. The answers stay in their order
+because each one decides whether the next matters (a running window, no session, a session that
+owes the second factor). The window is cached for a minute, so later drawings mostly save nothing;
+the first load saves one round trip.
+
+**Rejected alternatives:** /me early as well (the card's first plan), gated by the hub's readable
+session cookie and quiet towards the page. It fails by design for a session that still owes the
+second factor (403) and for a cookie that outlived its session (401), which e2e's check for failed
+answers reported; allowing those would have meant a harness exception that could hide a real
+failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
+and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
+outside `M.api`: a second client with its own error handling.
