@@ -997,7 +997,11 @@ def patch_task(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("tasks:write")
+        # An arbiter without `tasks:write`, an expert, still moves its contract's state
+        # (§2.3 "The expert", §6.8); every other edit needs the scope, checked first.
+        if given != {"contract"}:
+            mine.require("tasks:write")
+        mine.require("project:read")
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
@@ -1030,6 +1034,8 @@ def patch_task(
             and card.kind == "contract"
             and _is_arbiter(conn, mine, card.contract or {})
         )
+        if not arbiter_move:
+            mine.require("tasks:write")
         # And the release fields are any releaser's, holder or not (§6.7).
         release_edit = (
             given == {"release"} and card.kind == "release" and mine.may("releases:write")

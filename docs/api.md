@@ -702,8 +702,11 @@ requests addressed to it, to one of its instances or to `role:expert`
 as every addressee does (§7), which needs no scope, and it posts
 messages. Like a guest it is never a card's target: `assign`,
 `assigned_to` and a claim's `holder` (§6.5) naming it are `invalid`
-(`details.fields.<field>: "expert"`), and area routing skips it; it may
-still be a contract's arbiter. A role change to `expert` while the
+(`details.fields.<field>: "expert"`), and area routing skips it. It may
+still be a contract's arbiter, and as arbiter it moves the contract's
+`state` (§6.8) without `tasks:write`: that `PATCH`, with `contract.state`
+alone, is the one edit of a card it makes, and every other `PATCH` of a
+card is `forbidden` (`details.scope: "tasks:write"`). A role change to `expert` while the
 member holds a card is `409 conflict` with `details.reason:
 holds_cards`, until the card is given back or released; and checkpoint
 and report need `tasks:write`, so a holder without it writes nothing

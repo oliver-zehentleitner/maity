@@ -119,3 +119,20 @@ def test_a_holder_becomes_an_expert_only_after_its_cards_go_back(
     assert released.status_code == 200, released.text
     changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
     assert changed.status_code == 200, changed.text
+
+
+def test_an_expert_arbiter_moves_its_contract_to_final_and_nothing_else(
+    owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§2.3 "The expert" and §6.8: the arbiter's state move needs no `tasks:write`; every
+    other edit of the card still does."""
+    created = _card(owner, kind="contract", contract={"arbiter": expert.id})
+    assert created.status_code == 201, created.text
+    path = f"{PROJECT}/tasks/{created.json()['id']}"
+    for body in ({"title": "Mine now"}, {"contract": {"state": "final", "watchers": []}}):
+        refused = expert.patch(path, body)
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
+    final = expert.patch(path, {"contract": {"state": "final"}})
+    assert final.status_code == 200, final.text
+    assert final.json()["contract"]["state"] == "final"
