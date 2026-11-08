@@ -412,6 +412,67 @@ def test_the_request_log_reads_no_body_it_cannot_parse() -> None:
 
 
 @pytest.mark.parametrize(
+    ("chunks", "named"),
+    [
+        ([16 * 1024 * 1024], False),  # one chunk over the cap: nothing is copied
+        ([10 * 1024, 10 * 1024], False),  # the second chunk would cross the cap
+        ([16 * 1024 - 100, 100, 1], False),  # one byte past the cap, in the last chunk
+        ([16 * 1024], True),  # exactly the cap: still read
+        ([8 * 1024, 8 * 1024], True),
+    ],
+)
+def test_the_refusal_note_never_copies_more_than_its_cap(
+    monkeypatch: pytest.MonkeyPatch, chunks: list[int], named: bool
+) -> None:
+    """The copy of a refusal's body stays within 16 KiB at every point, also for a single large
+    chunk; a body that would pass the cap is not read, and is still passed on whole."""
+    import json
+
+    from maity_hub import middleware
+
+    largest = [0]
+
+    class Measured(bytearray):
+        def __iadd__(self, other: bytes) -> Measured:  # type: ignore[override, misc]
+            result = super().__iadd__(other)
+            largest[0] = max(largest[0], len(self))
+            return result
+
+    monkeypatch.setattr(middleware, "bytearray", Measured, raising=False)
+    total = sum(chunks)
+    envelope = json.dumps(_envelope({"reason": "owner_only"})).encode()
+    body = envelope + b" " * (total - len(envelope))  # JSON allows trailing whitespace
+    pieces, start = [], 0
+    for size in chunks:
+        pieces.append(body[start : start + size])
+        start += size
+    sent: list[object] = []
+
+    async def send(message: object) -> None:
+        sent.append(message)
+
+    state: dict[str, object] = {}
+    wrapped = middleware._noting_refusal(send, state)
+    headers = [(b"content-type", b"application/json"), (b"maity-error", b"forbidden")]
+    messages: list[dict[str, object]] = [
+        {"type": "http.response.start", "status": 403, "headers": headers}
+    ] + [
+        {"type": "http.response.body", "body": piece, "more_body": i < len(pieces) - 1}
+        for i, piece in enumerate(pieces)
+    ]
+
+    async def run() -> None:
+        for message in messages:
+            await wrapped(message)
+
+    asyncio.run(run())
+    assert largest[0] <= middleware._REFUSAL_BODY_MAX
+    assert all(out is given for out, given in zip(sent, messages, strict=True))
+    tail = middleware._refusal_tail({"state": state}, 403)
+    assert tail == (" error=forbidden reason=owner_only" if named else " error=forbidden")
+
+
+@pytest.mark.parametrize(
     ("status", "headers"),
     [
         (200, [(b"content-type", b"text/event-stream")]),  # a long-poll or event stream
@@ -451,6 +512,7 @@ def test_the_refusal_note_passes_every_answer_on_unchanged(
 
     asyncio.run(run())
     assert sent == messages
+    assert all(out is given for out, given in zip(sent, messages, strict=True))  # same objects
     assert b"".join(m["body"] for m in sent[1:]) == b"".join(chunks)  # type: ignore[index]
     assert ("refusal" in state) == (status == 403)
     assert state.get("refusal", {}) in ({}, {"code": "forbidden"})

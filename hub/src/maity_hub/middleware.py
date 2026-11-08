@@ -442,12 +442,14 @@ def _noting_refusal(send: Send, state: dict[str, Any]) -> Send:
                 if b"content-encoding" not in headers:
                     body = bytearray()
         elif message["type"] == "http.response.body" and body is not None:
-            body += message.get("body", b"")
-            if len(body) > _REFUSAL_BODY_MAX:
-                body = None
-            elif not message.get("more_body", False):
-                state["refusal"].update(_named(bytes(body)))
-                body = None
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > _REFUSAL_BODY_MAX:
+                body = None  # never copied past the cap: the body is not read for the log
+            else:
+                body += chunk
+                if not message.get("more_body", False):
+                    state["refusal"].update(_named(bytes(body)))
+                    body = None
         await send(message)
 
     return wrapped
