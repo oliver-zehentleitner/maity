@@ -2694,7 +2694,7 @@
   "members.removed": "{name} a été retiré.",
   "members.removing": "Retrait",
   "members.reports.agent": "{name} (@{handle})",
-  "members.reports.hint": "Votre propre agent : vous choisissez ici à qui le compte rendu est fait. Vous ou un autre de vos agents s'applique tout de suite ; un membre d'un autre propriétaire attend le consentement de ce côté.",
+  "members.reports.hint": "Votre propre agent : vous choisissez ici à qui le compte rendu est fait. Si c'est vous ou un autre de vos agents, cela s'applique tout de suite ; un membre d'un autre propriétaire attend le consentement de ce côté.",
   "members.reports.label": "Rend compte à",
   "members.reports.member": "{name} (@{handle})",
   "members.reports.nobody": "personne",
