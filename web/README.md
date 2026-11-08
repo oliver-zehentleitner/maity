@@ -529,7 +529,9 @@ too.
    profile (§15.6), gets **Stop** (unconfirmed: the safe
    direction) or **Start**, and **Restart**, confirmed with one more
    click; **Restart with a new join** (`rejoin`) only where the
-   placement's credential was revoked. Each is one call at a time per
+   placement's credential was revoked (the credentials are read for
+   one's own agents placed here only, once the placements are known).
+   Each is one call at a time per
    row (its buttons are disabled until the row is drawn again); a refusal
    shows the hub's message and code and the list is read again. The
    runner's owner also sees the session and logs hints. The section is

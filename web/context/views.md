@@ -1693,6 +1693,32 @@ project's feed (the card allowed it): still one more long-poll per tab,
 and the list of the other projects would still need the stream. Polling
 the lists every few seconds: more reads than the stream for slower news.
 
+## The Agents page reads credentials only for its own agents that are placed
+
+**Id:** a71aebc3-1d25-4e28-90ce-f96f8c716c02
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: 27 credential lists at once, queuing from 95 to 568 ms); the plan on tsk-d61rvjm6gteh (PR C), approved by the coordinator the same day
+**Revisit when:** the placements list carries whether its credential was revoked, or the member list carries the credentials
+
+A project's Agents page read the credentials of every agent of one's own
+in it, at once, before the "Where they run" section could draw. That
+section needs them only to know whether a placement's credential was
+revoked, which decides whether **Restart with a new join** is offered. It
+now reads the placements first and asks for the credentials of one's own
+agents that have a placement, once each; a placement that appears later
+asks for its agent then.
+
+**Reason:** on the measured project those reads were the page's slowest
+part, and most of them served nothing: few agents have a placement.
+
+**Rejected alternatives:**
+- The credentials read when a row is expanded: the rejoin choice stands in
+  the placement row as it is drawn, so the read would only move.
+- The revoked state in the placements or member list: one read less, but a
+  contract change, which this card's boundary excludes.
+
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
 **Id:** f1e41ebd-42a8-484b-b260-f69ee036a00c

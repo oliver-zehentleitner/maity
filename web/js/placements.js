@@ -86,10 +86,22 @@ window.Maity = window.Maity || {};
       h("code", { tabindex: "0", role: "region", "aria-label": words.region }, text), copy);
   }
 
-  // The section, read and drawn into the Agents view. `credentials`: the
-  // agents' credentials as the view read them ({agentId: [credential]}),
-  // for whether a placement's credential was revoked (§15.6 `rejoin`).
+  // The section, read and drawn into the Agents view. `credentials`: for whether a placement's
+  // credential was revoked (§15.6 `rejoin`), the agents' credentials as the view read them
+  // ({agentId: [credential]}), or a function asked for the agents placed here only, once each
+  // ((ids) => that map): a project with many agents and few placements reads few lists
+  // (tsk-d61rvjm6gteh).
   async function section(ctx, credentials) {
+    const loads = typeof credentials === "function";
+    const creds = loads ? {} : (credentials || {});
+    const asked = new Set();
+    const credentialsFor = async (list) => {
+      if (!loads) return;
+      const ids = [...new Set(list.map((p) => p.agent && p.agent.id).filter((id) => id && !asked.has(id)))];
+      if (!ids.length) return;
+      ids.forEach((id) => asked.add(id));
+      try { Object.assign(creds, await credentials(ids)); } catch (err) { /* no rejoin offered where they are unknown */ }
+    };
     const box = h("section", { class: "placements", "aria-labelledby": "placements-title" });
     const list = h("ul", { class: "placement-list" });
     const status = M.statusLine();
@@ -114,7 +126,7 @@ window.Maity = window.Maity || {};
     // event waits until it is done, so neither is wiped.
     const busy = new Set();
     const revoked = (p) => {
-      const list = (p.agent && p.agent.id && credentials[p.agent.id]) || [];
+      const list = (p.agent && p.agent.id && creds[p.agent.id]) || [];
       const c = list.find((x) => x.id === p.credential_id);
       return !!(c && c.revoked_at);
     };
@@ -203,6 +215,7 @@ window.Maity = window.Maity || {};
       reading = (async () => {
         try {
           items = (await M.api.getAll(ctx.base + "/placements")).items;
+          await credentialsFor(items);
           if (!busy.size) draw();
         } catch (err) {
           status.fail(M.t("placements.read_failed"), err);
@@ -219,6 +232,7 @@ window.Maity = window.Maity || {};
       append(box, h("h3", { id: "placements-title" }, M.t("placements.title")), M.errorBox(err));
       return box;
     }
+    await credentialsFor(items);
     draw();
     ctx.onEvents((events) => { if (events.some((e) => EVENTS.test(e.kind))) reread(); });
     append(box, h("h3", { id: "placements-title" }, M.t("placements.title")),
