@@ -91,6 +91,11 @@ PUBLIC_PATHS = re.compile(
     r"|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
+# A picture a public page shows (§6.10): its address changes with the picture, so a browser
+# keeps it a day; a shared cache no longer than a public page, so it goes within a minute
+# once the picture stops being public.
+PUBLIC_AVATARS = re.compile(r"/api/v1/avatars/public/[^/]+")
+PUBLIC_AVATARS_CACHE = b"public, max-age=86400, s-maxage=60"
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # The landing page's own files (§16.7): a file asked for under its digest may be cached for good;
@@ -138,6 +143,8 @@ class HubMiddleware:
         if not on_join_host and scope.get("method") in ("GET", "HEAD"):
             if PUBLIC_PATHS.fullmatch(path):
                 public = b"public, max-age=60"
+            elif PUBLIC_AVATARS.fullmatch(path):
+                public = PUBLIC_AVATARS_CACHE
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
             elif LANDING_FILES.fullmatch(path):

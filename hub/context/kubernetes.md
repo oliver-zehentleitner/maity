@@ -301,9 +301,9 @@ that of the mail settings and cannot be repaired by setting the variable again.
 **See:** kubernetes.md#mail-the-signing-key-and-the-smtp-password-come-from-secrets-by-reference-the-rest-are-plain-values — f1c9c8ad-96ad-408d-b536-fdf027c5fe35 — as of 2026-10-29
 **Revisit when:** the store moves to an object store (`s3`), or fourteen tars and dumps no longer fit comfortably on the node's disk (the volume holds more than a few GiB)
 
-`deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath` and
-an optional `quotaBytes`), mounts it into the hub and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every
-start. The quota stays at the hub's default of 1 GiB per project.
+`deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath`),
+mounts it into the hub and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every start. What one project may store is
+the admin limit `max_attachment_storage_per_project` (default 1 GiB, `context/attachments.md` 24123f11), not a chart value.
 
 The files are not in the database, so the nightly backup takes them along: an init container of the backup Job, running as the hub's user (10001), tars
 the volume into `maity-<time stamp>.attachments.tar` and hands the time stamp to the dump container, which writes `maity-<time stamp>.dump`, rotates

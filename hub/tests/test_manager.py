@@ -88,9 +88,7 @@ def _signed_in_owner(make_client: ClientFactory, engine: Engine, agent_id: str) 
         ).scalar_one()
         handle = conn.execute(select(t.human.c.handle).where(t.human.c.id == owner_id)).scalar_one()
     client = make_client()
-    logged_in = client.post(
-        "/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD}
-    )
+    logged_in = factory.login(client, str(owner_id))
     assert logged_in.status_code == 200, logged_in.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, str(owner_id), str(handle))

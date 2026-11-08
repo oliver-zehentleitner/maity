@@ -28,6 +28,18 @@ from pathlib import Path
 from .. import state
 
 TIMEOUT = 60.0
+# `write` on the agents' side: $1 the directory, $2 the file; the text on stdin. A link at the
+# path is removed first (`mv` would otherwise move into a linked directory), a directory there
+# is refused, and the temporary file is removed when a step fails. Every `--` comes before the
+# first operand: BSD tools read no options after it, so `chmod 600 -- f` names a file `--`.
+_WRITE = (
+    'mkdir -p -m 700 -- "$1" || exit 1; '
+    'if [ -L "$2" ]; then rm -f -- "$2" || exit 1; '
+    'elif [ -d "$2" ]; then echo "$2 is a directory" >&2; exit 1; fi; '
+    't=$(mktemp "$2.XXXXXX") || exit 1; '
+    'if cat > "$t" && chmod -- 600 "$t" && mv -f -- "$t" "$2"; then exit 0; fi; '
+    'rm -f -- "$t"; exit 1'
+)
 REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
@@ -98,10 +110,15 @@ class AsUser:
         return Path(pwd.getpwnam(str(self.user)).pw_dir)
 
     def write(self, path: Path, text: str) -> Path:
-        """A file 0600 for the agents' side."""
+        """A file 0600 for the agents' side; the file's own directory is made 0700 if missing.
+        Tools BSD, macOS and GNU all have (`sh`, `mkdir`, `mktemp`, `cat`, `chmod`, `mv`), and
+        no `install`: GNU's `-D` (make the missing parents) is not the same everywhere; some
+        BSD and macOS versions refuse `-D`, others give it another meaning. A temporary file
+        next to the path is renamed over it. A link planted at the path, to a file or a
+        directory, is replaced, not followed; a directory at the path is refused."""
         if self.direct:
             return state.write_file(path, text)
-        done = self.run(["install", "-D", "-m", "600", "/dev/stdin", str(path)], input=text)
+        done = self.run(["sh", "-c", _WRITE, "sh", str(path.parent), str(path)], input=text)
         if done.returncode != 0:
             raise OSError(f"cannot write {path} for the agents: {done.stderr.strip()[:200]}")
         return path

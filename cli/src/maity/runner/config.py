@@ -208,6 +208,61 @@ def _positive(value: Any) -> str | None:
     return None if value > 0 else "must be greater than 0"
 
 
+# A command allowed by a repository's grant: a program, then plain arguments, nothing else.
+# The program is a name or a path, never an assignment (`NAME=…`, `NAME+=…`), quoted, `env`
+# or maity (which runs outside the harness's sandbox and is granted on its own), whatever
+# its path, case or Windows extension; no part of an argument names maity either. No quotes,
+# variables, escapes or shell operators anywhere, and `*` only in an argument.
+_PROGRAM = re.compile(r"[A-Za-z0-9_./+-]+")
+_ARGUMENT = re.compile(r"[A-Za-z0-9_./=:@%+,*-]+")
+_REFUSED_PROGRAMS = frozenset({"env", "maity"})
+_WINDOWS_EXTENSIONS = (".exe", ".cmd", ".bat", ".com", ".ps1")
+
+
+def _program_name(word: str) -> str:
+    """`word` as the name a program is found by: its last path part, lowercased, without a
+    Windows extension."""
+    name = word.rsplit("/", 1)[-1].lower()
+    for ext in _WINDOWS_EXTENSIONS:
+        if name.endswith(ext):
+            return name[: -len(ext)]
+    return name
+
+
+def plain_command(rule: str) -> bool:
+    """Whether a grant's allow rule is a plain command: a program that is not `env` or maity,
+    then arguments of plain characters, none of them maity."""
+    words = rule.split(" ")
+    if not words or not _PROGRAM.fullmatch(words[0]):
+        return False
+    if _program_name(words[0]) in _REFUSED_PROGRAMS:
+        return False
+    return all(_ARGUMENT.fullmatch(w) and not _names_maity(w) for w in words[1:])
+
+
+# What can stand between the parts of an argument: path separators, a drive's or a rule's
+# colon, an option's `=`, list separators.
+_ARGUMENT_PARTS = re.compile(r"[/:=@%+,]")
+
+
+def _names_maity(argument: str) -> bool:
+    """Whether any part of `argument` is maity: `/tmp/a:b/maity`, `C:/bin/MAITY.EXE`,
+    `C:maity`, `--exec=maity`."""
+    return any(_program_name(part) == "maity" for part in _ARGUMENT_PARTS.split(argument))
+
+
+def _commands(values: Any) -> str | None:
+    problem = _strings()(values)
+    if problem is not None:
+        return problem
+    bad = [v for v in values if not plain_command(v)]
+    if bad:
+        return ("not a plain command (a program and plain arguments: no variable, `env`,"
+                " quotes or shell operators, not maity): "
+                + ", ".join(repr(v) for v in bad))  # fmt: skip
+    return None
+
+
 def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable[[Any], str | None]:
     def check(values: Any) -> str | None:
         if not all(isinstance(v, str) and v for v in values):
@@ -367,7 +422,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             if table is None:
                 continue
             grants[normalise_repository(name)] = RepositoryGrant(
-                allow=tuple(table.get("allow", list, [], check=_strings())),
+                allow=tuple(table.get("allow", list, [], check=_commands)),
                 network=tuple(table.get("network", list, [], check=_strings())),
             )
             table.done()

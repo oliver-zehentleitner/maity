@@ -128,13 +128,20 @@ def test_a_patch_that_changes_nothing_is_refused_and_a_null_switch_too(
     assert who.patch("/me", {}).status_code == 400
     assert who.patch("/me", {"public_profile": None}).status_code == 400
     assert who.patch("/me", {"public_presence": None}).status_code == 400
+    assert who.patch("/me", {"public_stats": None}).status_code == 400
+    assert who.patch("/me", {"public_stats": "yes"}).status_code == 400
 
 
 def test_an_agent_sets_neither_field(make_client: ClientFactory, migrated: Engine) -> None:
     owner = flow.human(make_client, migrated)
     flow.project(owner)
     bot = flow.agent(make_client, owner, role="admin")
-    for body in ({"public_profile": True}, {"public_presence": False}, {"public_bio": "hello"}):
+    for body in (
+        {"public_profile": True},
+        {"public_presence": False},
+        {"public_stats": True},
+        {"public_bio": "hello"},
+    ):
         refused = bot.patch("/me", body)
         assert refused.status_code == 403, refused.text
         assert refused.json()["error"]["details"]["reason"] == "humans_only"
@@ -165,18 +172,27 @@ def test_a_deleted_person_has_no_page(
     admin_first(migrated, moment)
     pat = person(pages(make_client), migrated, moment)
     anyone = visitor(make_client)
-    assert pat.patch("/me", {"public_profile": True, "public_bio": "hello"}).status_code == 200
+    switched = pat.patch(
+        "/me",
+        {
+            "public_profile": True,
+            "public_bio": "hello",
+            "public_stats": True,
+            "public_agents": "all",
+        },
+    )
+    assert switched.status_code == 200
     assert shown(anyone, "pat") is not None
     assert ask_deletion(pat).status_code == 202
     assert press(pat, token_of(migrated)).status_code == 200
     assert shown(anyone, "pat") is None
     with migrated.connect() as conn:
-        assert conn.execute(select(t.public_page).where(t.public_page.c.path == "/pat")).all() == []
+        both = select(t.public_page).where(t.public_page.c.path.in_(["/pat", "/pat/agents"]))
+        assert conn.execute(both).all() == []
         row = conn.execute(select(t.human).where(t.human.c.id == pat.id)).one()
-        assert (row.public_profile, row.public_bio) == (
-            False,
-            None,
-        )  # the text goes with the person
+        # the text and the switches of the numbers and the agents go with the person
+        assert (row.public_profile, row.public_bio, row.public_stats) == (False, None, False)
+        assert row.public_agents == "public_projects"
         assert pat.id not in public_people.targets(conn)
 
 

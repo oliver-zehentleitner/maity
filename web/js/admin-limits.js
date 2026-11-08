@@ -1,9 +1,11 @@
 // Limits, a section of /admin (docs/api.md §16.5; js/instance-admin.js
 // shows it to the instance admin only): the caps on what one human may
-// hold — agent profiles and organisations owned — with each value's
-// source (§16.2) and how many humans are at or over it, and the
+// hold — agent profiles, organisations owned, projects and earlier names — with each value's
+// source (§16.2) and how many humans are at or over it, the attachment storage of
+// each project (no count beside it: a project's own total is in its view, §6.1), and the
 // attachment storage of the whole hub with what is stored now. A value is
-// a number (1–10000; the storage in GiB, sent as bytes), no limit, or the
+// a number (1–10000; earlier names 1–8, never no limit; a project's storage in MiB, the hub's in GiB,
+// both sent as bytes), no limit, or the
 // default; one set by the environment is shown and not changed here, and
 // a number left as it was is not sent again. Only what changed is sent, and a change
 // asks for the password or a code where the hub requires it (§2.8.4).
@@ -30,6 +32,12 @@ window.Maity = window.Maity || {};
       atWords: (n) => M.t("limits.orgs.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
     { key: "max_projects_per_owner", at: "owners_at_project_limit", label: () => M.t("limits.projects.label"), hint: () => M.t("limits.projects.hint"),
       atWords: (n) => M.t("limits.projects.at", { count: n }), unit: 1, max: 10000, invalid: () => M.t("limits.error.invalid") },
+    // Earlier names of one id (§6.24–§6.26): 1 to 8, and no "no limit" to choose.
+    { key: "max_aliases", at: "names_at_alias_limit", label: () => M.t("limits.aliases.label"), hint: () => M.t("limits.aliases.hint"),
+      atWords: (n) => M.t("limits.aliases.at", { count: n }), unit: 1, max: 8, bounded: true, invalid: () => M.t("limits.error.invalid_aliases") },
+    // Each project's alike, whoever owns it (§8.7): in MiB here, bytes for the hub, 1 MiB to 1 PiB.
+    { key: "max_attachment_storage_per_project", label: () => M.t("limits.project_storage.label"), hint: () => M.t("limits.project_storage.hint"),
+      unit: MIB, max: 1024 * 1024 * 1024, invalid: () => M.t("limits.error.invalid_project_storage") },
     // The whole hub's, not a person's (§8.7): in GiB here, bytes for the hub, 1 GiB to 1 PiB.
     { key: "max_attachment_storage", at: "attachment_storage_used", label: () => M.t("limits.storage.label"), hint: () => M.t("limits.storage.hint"),
       atWords: (n) => stored(n), unit: GIB, max: 1024 * 1024, invalid: () => M.t("limits.error.invalid_storage") },
@@ -57,12 +65,12 @@ window.Maity = window.Maity || {};
         // How the value is chosen: a number, no limit, or the default.
         const mode = h("select", { id: id + "-mode", disabled: locked ? true : null },
           h("option", { value: "number" }, M.t("limits.mode.number")),
-          h("option", { value: "unlimited" }, M.t("limits.mode.unlimited")),
+          f.bounded ? null : h("option", { value: "unlimited" }, M.t("limits.mode.unlimited")),
           h("option", { value: "default" }, M.t("limits.mode.default")));
         mode.value = v.source === "default" ? "default" : v.value === "unlimited" ? "unlimited" : "number";
         const number = h("input", { id, type: "number", min: "1", max: String(f.max), step: "1", disabled: locked ? true : null,
           "aria-describedby": id + "-hint " + id + "-error" });
-        // A stored value that is no whole GiB (set in bytes) is shown rounded and kept unless edited.
+        // A stored value that is no whole GiB or MiB (set in bytes) is shown rounded and kept unless edited.
         const shown = typeof v.value === "number" ? String(f.unit === 1 ? v.value : Math.round((v.value / f.unit) * 100) / 100) : "";
         number.value = shown;
         const showNumber = () => { number.hidden = mode.value !== "number"; };
@@ -77,13 +85,13 @@ window.Maity = window.Maity || {};
           h("label", { for: id + "-mode" }, M.t("limits.mode")), mode,
           h("label", { for: id, class: "visually-hidden" }, f.label()), number,
           h("p", { class: "hint", id: id + "-hint" }, f.hint() + " " + (locked ? M.t("limits.locked") : M.t("limits.source", { source: sourceOf(v.source) }))),
-          h("p", { class: "muted limits-at" }, f.atWords(current[f.at] || 0)),
+          f.at ? h("p", { class: "muted limits-at" }, f.atWords(current[f.at] || 0)) : null,
           error) };
       });
       const save = h("button", { type: "submit" }, M.t("limits.save"));
       append(body, h("form", {
         class: "inline-form admin-limits",
-        // The script checks each field itself: a stored storage value that is no whole GiB,
+        // The script checks each field itself: a stored storage value that is no whole unit,
         // shown rounded, must not let the browser's step check stop the whole form.
         novalidate: true,
         onsubmit: async (e) => {

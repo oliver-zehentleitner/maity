@@ -133,5 +133,6 @@
   "sign_in.mail_alternative": "Oder gib diesen Code in dem Browser ein, in dem du den Link angefordert hast: {code}\n\n",
   "sign_in.page_button": "Auf diesem Gerät anmelden",
   "sign_in.page_title": "Bei Maity anmelden als {name}",
-  "sign_in.subject": "[Maity] Anmeldelink"
+  "sign_in.subject": "[Maity] Anmeldelink",
+  "subagents.instruction": "Anweisung von {owner}, Besitzer dieses Agenten: Starte für jede Review- oder Programmieraufgabe, die du über Maity bekommst, einen neuen Subagenten und gib ihm den Auftrag vollständig; erledige die Aufgabe in diesem Subagenten, nicht in dieser Sitzung. Du und deine Subagenten dürft Ergebnisse und Status mit `maity say` an die Mitglieder schicken, die der Auftrag nennt."
 }

@@ -622,11 +622,106 @@ def glossary_duplicates(text):
     return found
 
 
+# Terms the glossary keeps `unchanged` in every language that a check cannot hold to it:
+# `resume` is translated as an ordinary verb (glossary.md, below its row).
+GLOSSARY_NOT_CHECKED = {"resume"}
+# The other form of address, for the address glossary.md names: a word of it in a text is a
+# finding. German "Sie" and "Ihr…" count only inside a sentence, where they cannot be "she",
+# "they" or "her"; Dutch "u" not after a number, where it is hours. Japanese, Korean and
+# Chinese name a register, not words, so nothing is checked there; an address this table
+# does not know is itself a finding, so a change to the glossary's table cannot pass unseen.
+GLOSSARY_OTHER_ADDRESS = {
+    ("de", "du"): re.compile(r"(?<![.!?:]\s)(?<!^)\b(?:Sie|Ihr|Ihre|Ihrem|Ihren|Ihrer|Ihres)\b|\bIhnen\b"),
+    ("fr", "vous"): re.compile(r"\b(?:tu|toi|tes)\b", re.I),
+    ("es", "tú"): re.compile(r"\b(?:usted|ustedes)\b", re.I),
+    ("it", "tu"): re.compile(r"\b(?:Lei|Suo|Sua|Suoi|Sue)\b"),
+    ("pt", "você"): re.compile(r"\b(?:teu|teus|tua|tuas|contigo|ti|tu)\b", re.I),
+    ("nl", "je"): re.compile(r"\buw\b|(?<![\d}]\s)(?<![\d}+])\bu\b(?!\+)", re.I),
+    ("ja", "です・ます"): None,
+    ("ko", "해요체"): None,
+    ("zh-Hans", "你"): None,
+}
+# What a text says beside its words: code spans and placeholders (`{harness}` is no harness).
+# A placeholder reads as a number, as it mostly is one ("{count} u" is hours in Dutch).
+GLOSSARY_CODE = re.compile(r"`[^`]*`")
+
+
+def glossary_words(text):
+    return PLACEHOLDER.sub("0", GLOSSARY_CODE.sub(" ", text))
+
+
+def glossary_rules(text):
+    """What glossary.md fixes mechanically: the terms every language keeps (a Words row
+    `unchanged` in all of them), and each language's address as its table names it."""
+    lines = text.splitlines()
+    rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in lines
+            if line.startswith("| ") and line.count("|") == 11]  # fmt: skip
+    fixed = []
+    for row in rows[1:]:
+        if row[1:] and all(cell == "unchanged" for cell in row[1:]):
+            fixed += [t.strip() for t in row[0].split(",") if t.strip() and t.strip() not in GLOSSARY_NOT_CHECKED]
+    address, inside = {}, False
+    for line in lines:
+        if line.startswith("## "):
+            inside = line.strip() == "## How the reader is addressed"
+        elif inside and line.startswith("| `"):
+            cells = [cell.strip() for cell in line.split("|")[1:-1]]
+            named = re.findall(r"`([^`]+)`", cells[1])
+            address[cells[0].strip("`")] = named[0] if named else cells[1].split()[0]
+    return fixed, address
+
+
+def glossary_term(term):
+    """A term with a space or a hyphen between its words: German writes Keep-the-Why-Export."""
+    return re.compile(r"[ \-]".join(re.escape(word) for word in term.split()), re.I)
+
+
+def glossary_problems(lang, data, english, fixed, address):
+    """A translation against glossary_rules: a fixed term translated, the other address used."""
+    problems = []
+    other = GLOSSARY_OTHER_ADDRESS.get((lang, address.get(lang)))
+    terms = [(term, glossary_term(term)) for term in fixed]
+    for key, entry in sorted(data.items()):
+        source = english.get(key)
+        if source is None or not well_formed(entry):
+            continue
+        texts = entry.values() if isinstance(entry, dict) else [entry]
+        sources = " ".join(source.values()) if isinstance(source, dict) else source
+        said = glossary_words(sources)
+        for text in texts:
+            words = glossary_words(text)
+            for term, pattern in terms:
+                if pattern.search(said) and not pattern.search(words):
+                    problems.append("%s: %r is translated; glossary.md keeps it unchanged" % (key, term))
+            found = other.search(words) if other else None
+            if found:
+                problems.append("%s: %r is not the address glossary.md names (%s)" % (key, found.group(0), address[lang]))
+    return sorted(set(problems))
+
+
 def check_glossary():
     path = os.path.join(I18N, "glossary.md")
-    if os.path.exists(path):
-        for language, word, things in glossary_duplicates(read(path)):
-            finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
+    if not os.path.exists(path):
+        return
+    text = read(path)
+    for language, word, things in glossary_duplicates(text):
+        finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
+    fixed, address = glossary_rules(text)
+    for lang, said in sorted(address.items()):
+        if (lang, said) not in GLOSSARY_OTHER_ADDRESS:
+            finding(path, 1, "%s: address %r is not in GLOSSARY_OTHER_ADDRESS of tools/check.py" % (lang, said))
+    words = os.path.join(os.path.dirname(ROOT), "hub", "src", "maity_hub", "words")
+    for folder in (I18N, words):
+        if not os.path.isdir(folder) or not os.path.exists(os.path.join(folder, "en.json")):
+            continue
+        english = load_catalog(os.path.join(folder, "en.json"))
+        for name in sorted(os.listdir(folder)):
+            lang = name[:-len(".json")]
+            if not name.endswith(".json") or name.endswith(I18N_META) or lang == "en" or english is None:
+                continue
+            data = load_catalog(os.path.join(folder, name))
+            for problem in glossary_problems(lang, data or {}, english, fixed, address):
+                finding(os.path.join(folder, name), 1, problem)
 
 
 def list_gaps(lang):

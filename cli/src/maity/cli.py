@@ -22,7 +22,7 @@ import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, NoReturn
 
 from maity import (
     __version__,
@@ -175,6 +175,8 @@ class Session:
 
     on_request: str | None = None
     for_target: str | None = None
+    # Under `task restricted` an unknown `--for` name is refused without repeating it (§13).
+    for_quiet: bool = False
 
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
@@ -202,7 +204,7 @@ class Session:
             if target.startswith("agt-"):
                 self.client.for_member = target
             else:
-                self.client.for_resolve = lambda: _member_id(self, target)
+                self.client.for_resolve = lambda: _for_member_id(self, target)
 
     @property
     def for_member(self) -> str | None:
@@ -915,11 +917,13 @@ def _why(args: argparse.Namespace) -> dict[str, str] | None:
 _PR_URL = re.compile(r"^https://[^/]+/([^/]+/[^/]+)/pull/(\d+)/?$")
 
 
-def _described(facts: gitfacts.Facts) -> str:
+def _described(facts: gitfacts.Facts, probed: bool = False) -> str:
     """What the report states, in one line: branch, head and pull request."""
     where = f"{onboarding.inline(facts.branch)} at {facts.head[:12]}"
     if facts.pr is not None:
-        return f"{where}, PR #{facts.pr.number} ({onboarding.inline(facts.pr.state.lower())})"
+        state = onboarding.inline(facts.pr.state.lower())
+        via = ", read by the hub's probe" if probed else ""
+        return f"{where}, PR #{facts.pr.number} ({state}{via})"
     if facts.pr_unknown_reason is not None:
         return f"{where}, pull request unknown: {onboarding.inline(facts.pr_unknown_reason)}"
     return f"{where}, no pull request"
@@ -931,6 +935,60 @@ def _pr_key(url: Any, number: Any = None) -> tuple[str, int] | None:
     if match is None:
         return None
     return match.group(1).lower(), int(number if isinstance(number, int) else match.group(2))
+
+
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+PROBED_LINKS_MAX = 5  # a card links one or two pull requests; more are not read one by one
+
+
+def _probed_pr(
+    session: Session, card: Any, head: str, merged_only: bool = False
+) -> tuple[gitfacts.PullRequest | None, list[str] | None]:
+    """The card's linked pull request whose head is `head`, read through the hub's probe (§11)
+    when gh could not answer, and with `merged_only` one the forge has merged; else the linked
+    pull requests the probe read that are not it (`PR #N has head …`), for the refusal. `None`
+    for those when the probe cannot say (not configured, unavailable, nothing found): nothing
+    stands in, and nothing refuses on its account.
+
+    Only a pull request the card already links is asked about, never one the agent names
+    (8c58cebb), and the probe reads fresh (`max_age=0`) from the project's repository only.
+    The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
+    links = card.get("links") if isinstance(card, dict) else None
+    linked = sorted(
+        {
+            key
+            for link in (links if isinstance(links, list) else [])
+            if isinstance(link, dict) and link.get("kind") == "pr"
+            if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
+        }
+    )
+    if len(linked) > PROBED_LINKS_MAX:
+        _err(
+            f"the card links {len(linked)} pull requests; the hub's probe is asked about the "
+            f"first {PROBED_LINKS_MAX} only"
+        )
+    others: list[str] = []
+    for repository, number in linked[:PROBED_LINKS_MAX]:
+        try:
+            answer = session.client.call(
+                "GET", session.project_path("probe"), query=[("pr", str(number)), ("max_age", "0")]
+            )
+        except hub.HubError:
+            return None, None
+        if not isinstance(answer, dict) or str(answer.get("repository", "")).lower() != repository:
+            continue  # a link to another repository of the owner: the probe reads only this one
+        pr = answer.get("pr")
+        if not isinstance(pr, dict) or pr.get("found") is not True or pr.get("number") != number:
+            continue
+        sha, state, url = pr.get("head_sha"), pr.get("state"), pr.get("url")
+        if not (isinstance(sha, str) and _SHA.match(sha)) or not isinstance(state, str):
+            continue
+        if not isinstance(url, str) or _pr_key(url) != (repository, number):
+            continue
+        if sha == head and (not merged_only or state.lower() == "merged"):
+            return gitfacts.PullRequest(number=number, head=sha, state=state, url=url), None
+        others.append(f"PR #{number} ({onboarding.inline(state.lower())}) has head {sha}")
+    return None, (others or None)
 
 
 def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
@@ -1008,18 +1066,62 @@ def cmd_report(args: argparse.Namespace) -> int:
         status = task.get("status") if isinstance(task, dict) else None
         return _done(args, task, f"reported {args.task} (no code); task is now {status}")
     facts = gitfacts.collect(Path.cwd())
+    card: Any = None
+    probed = False
+    no_forge = facts.pr is None and bool(facts.pr_unknown_reason or facts.forge_error)
+    gone = no_forge and facts.remote_branch and facts.remote_head is None and not facts.dirty
+    if gone and gitfacts.mismatches(facts):
+        # The branch is gone and gh cannot say whether its pull request was merged (f720dd3c):
+        # a merged pull request the card links, with this very head, stands in for it. The
+        # local refusal stands when the card cannot be read.
+        try:
+            card = session.client.call("GET", session.project_path("tasks", args.task))
+        except hub.HubError:
+            card = None
+        found, others = (
+            _probed_pr(session, card, facts.head, merged_only=True) if card else (None, None)
+        )
+        if others:
+            _err(
+                f"report refused: the branch {onboarding.inline(facts.remote_branch)} is gone on "
+                f"the remote and the hub's probe reads {'; '.join(others)}, local HEAD is at "
+                f"{facts.head}; check out the merged head of the card's pull request"
+            )
+            return EXIT_REFUSED
+        if found is not None:
+            facts = dataclasses.replace(
+                facts, remote_head=facts.head, branch_merged=True, pr=found,
+                pr_unknown_reason=None, forge_error=None,
+            )  # fmt: skip
+            probed = True
     problems = gitfacts.mismatches(facts)
     if problems:
         _err("report refused, the code does not match what would be reported:")
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return EXIT_REFUSED
+    if card is None:
+        card = session.client.call("GET", session.project_path("tasks", args.task))
+    if not probed and no_forge and facts.remote_head:
+        # gh missing or failing: the card's linked pull request may stand in, read by the hub.
+        found, others = _probed_pr(session, card, facts.remote_head)
+        if others:
+            _err(
+                f"report refused: the hub's probe reads {'; '.join(others)}, the branch "
+                f"{onboarding.inline(facts.remote_branch)} is at {facts.remote_head}; push the "
+                f"work to the card's pull request or report from its branch"
+            )
+            return EXIT_REFUSED
+        if found is not None:
+            facts = dataclasses.replace(facts, pr=found, pr_unknown_reason=None, forge_error=None)
+            probed = True
+    if facts.forge_error:
+        raise gitfacts.FactsError(facts.forge_error)  # 66da7721: never "no pull request"
     body = _report_body(facts, args.summary.strip(), args.done)
     if why is not None:
         body["why"] = why
     # Said before anything is sent, so a report from the wrong checkout shows as such.
-    _err(f"reporting {_described(facts)}")
-    card = session.client.call("GET", session.project_path("tasks", args.task))
+    _err(f"reporting {_described(facts, probed)}")
     mismatch = _card_pr_mismatch(card, facts, args.task)
     if mismatch:
         _err(f"report refused: {mismatch}")
@@ -2547,6 +2649,172 @@ def cmd_task_edit(args: argparse.Namespace) -> int:
     return _done(args, card, f"updated {args.card}: {', '.join(sorted(patch))}")
 
 
+# A card's restricted text (§6.4 "Restricted text", §13). The text is read only from a file or
+# stdin, never from the command line, which the machine's process list and the shell's
+# history show; it stays in memory, never in a file, a log or another process's arguments.
+_RESTRICTED_ARGV_HINT = (
+    "a restricted text is never an argument: give it with --file FILE, or --file - for stdin"
+)
+
+
+def _quiet_errors(parser: argparse.ArgumentParser) -> None:
+    """argparse's errors name what was typed (`unrecognized arguments: …`, `invalid choice: …`,
+    `ignored explicit argument …`): under `task restricted` that may be the restricted text
+    itself, so its parsers say a fixed sentence instead, with the usage, and exit 2."""
+
+    def error(message: str) -> NoReturn:
+        parser.print_usage(sys.stderr)
+        parser.exit(EXIT_USAGE, f"{parser.prog}: error: {_RESTRICTED_ARGV_HINT}\n")
+
+    parser.error = error  # type: ignore[method-assign]
+
+
+def _restricted_argv(argv: Sequence[str]) -> bool:
+    """`task` and, after it, `restricted`: the command line may hold a restricted text."""
+    words = list(argv)
+    return "task" in words and "restricted" in words[words.index("task") + 1 :]
+
+
+def _quiet_ancestors(parser: argparse.ArgumentParser) -> None:
+    """The root and `task` parsers fail before `restricted`'s own parser runs
+    (`--version=…`, `--help=…`): for a restricted command line they say the fixed sentence too."""
+    _quiet_errors(parser)
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            task = action.choices.get("task")
+            if task is not None:
+                _quiet_errors(task)
+
+
+def _restricted_card(card: str) -> str:
+    """Text where the card id belongs is refused without repeating it."""
+    if any(ch.isspace() for ch in card):
+        raise UsageError("the card id has white space in it; " + _RESTRICTED_ARGV_HINT)
+    return card
+
+
+def _restricted_path(session: Session, card: str) -> str:
+    return session.project_path("tasks", _restricted_card(card), "restricted")
+
+
+def _restricted_who(value: Any) -> str:
+    who = _obj(value)
+    handle = who.get("handle")
+    return "@" + onboarding.inline(handle) if handle else "a deleted account"
+
+
+def _restricted_state(state: dict[str, Any]) -> str:
+    """`version N, changed by @x at T`, or the version alone before the first write."""
+    line = f"version {onboarding.inline(state.get('version'))}"
+    if state.get("updated_by") or state.get("updated_at"):
+        line += (f", changed by {_restricted_who(state.get('updated_by'))}"
+                 f" at {onboarding.inline(state.get('updated_at'))}")  # fmt: skip
+    return line
+
+
+def cmd_task_restricted_show(args: argparse.Namespace) -> int:
+    """`GET …/tasks/{id}/restricted`; the text quoted as data, its escapes as `maity wait`'s."""
+    session = Session()
+    state = _obj(session.client.call("GET", _restricted_path(session, args.card)))
+    if args.json:
+        _print_json(state)
+        return EXIT_OK
+    text = state.get("text")
+    print(f"{onboarding.inline(args.card)} restricted text, {_restricted_state(state)}")
+    if isinstance(text, str):
+        print("\n".join("  " + line for line in onboarding.quote(text)))
+    else:
+        print("  no restricted text")
+    history = [h for h in state.get("history") or [] if isinstance(h, dict)]
+    if history:
+        print("  changes:")
+        for item in history:
+            action = "set" if item.get("action") == "set" else "cleared"
+            by, at = _restricted_who(item.get("by")), onboarding.inline(item.get("at"))
+            print(f"    version {onboarding.inline(item.get('version'))} {action} by {by} at {at}")
+    return EXIT_OK
+
+
+def _restricted_text(source: str) -> str:
+    """The text from a file or, with `-`, from stdin, less one final line ending (a file and a
+    here-document end with one); the rest is sent as it is and checked by the hub."""
+    if source == "-":
+        text = _stdin_text()
+    else:
+        # The path is not repeated in a refusal: a text given there by mistake stays unsaid.
+        try:
+            text = Path(source).read_text(encoding="utf-8").removeprefix(_BOM)
+        except UnicodeDecodeError:
+            raise UsageError("--file: the file is not UTF-8; save it as UTF-8") from None
+        except OSError as exc:
+            raise UsageError(
+                f"--file: the file cannot be read ({exc.strerror or 'error'})"
+            ) from None
+    for ending in ("\r\n", "\n"):
+        if text.endswith(ending):
+            return text[: -len(ending)]
+    return text
+
+
+def _restricted_write(args: argparse.Namespace, method: str, text: str | None) -> int:
+    """Read the version, then `PUT` or `DELETE` with it. A `conflict` is never retried: the
+    current version and who changed it are read again and said, never the text."""
+    session = Session()
+    path = _restricted_path(session, args.card)
+    version = _obj(session.client.call("GET", path)).get("version")
+    if not isinstance(version, int):
+        raise CommandError("the hub sent no version for the restricted text")
+    try:
+        if method == "PUT":
+            state = session.client.call("PUT", path, body={"text": text, "base_version": version})
+        else:
+            state = session.client.call("DELETE", path, query=[("base_version", str(version))])
+    except hub.HubError as exc:
+        if exc.code == "rate_limited" and exc.retry_after is not None:
+            # The cap's wait (§1.7), said; the write is not tried again.
+            raise CommandError(
+                f"{exc}\n  retry after: {exc.retry_after:.0f} s (nothing was written)"
+            ) from None
+        if exc.code != "conflict":
+            raise
+        now = _obj(session.client.call("GET", path))
+        raise CommandError(
+            f"not written: the restricted text of {onboarding.inline(args.card)} changed after "
+            f"it was read; it is now {_restricted_state(now)}. Read it with `maity task "
+            "restricted show` and write again if it should still change"
+        ) from None
+    state = _obj(state)
+    if args.json:
+        _print_json(state)
+        return EXIT_OK
+    done = "set" if method == "PUT" else "cleared"
+    print(
+        f"{done} the restricted text of {onboarding.inline(args.card)}: {_restricted_state(state)}"
+    )
+    return EXIT_OK
+
+
+def cmd_task_restricted_set(args: argparse.Namespace) -> int:
+    """`PUT …/restricted` with `{text, base_version}`, the text from `--file` alone."""
+    if args.file is None:
+        raise UsageError(_RESTRICTED_ARGV_HINT)
+    _restricted_card(args.card)  # before the file or stdin is read
+    return _restricted_write(args, "PUT", _restricted_text(args.file))
+
+
+def cmd_task_restricted_clear(args: argparse.Namespace) -> int:
+    """`DELETE …/restricted?base_version=` with the version just read."""
+    return _restricted_write(args, "DELETE", None)
+
+
+# Every command whose leftover words are refused without repeating them (see `main`).
+_RESTRICTED_HANDLERS: tuple[Handler, ...] = (
+    cmd_task_restricted_show,
+    cmd_task_restricted_set,
+    cmd_task_restricted_clear,
+)
+
+
 def _releases(session: Session) -> list[dict[str, Any]]:
     """Every release card of the project, following the pages."""
     return _cards(session, [("kind", "release"), ("status", "all")])
@@ -2730,6 +2998,19 @@ def _address(
                 shown = shlex.quote(onboarding.inline(to))
                 raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
+
+
+def _for_member_id(session: Session, target: str) -> str:
+    """`--for` resolved to a member id; under `task restricted` a failure names no name."""
+    if not Session.for_quiet:
+        return _member_id(session, target)
+    try:
+        return _member_id(session, target)
+    except CommandError:
+        raise CommandError(
+            "--for names no single agent of this project (the name is not repeated under "
+            "task restricted); give the agent's member id"
+        ) from None
 
 
 def _member_id(session: Session, which: str) -> str:
@@ -4722,6 +5003,37 @@ def build_parser() -> argparse.ArgumentParser:
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_task_edit)
+    r = tsub.add_parser(
+        "restricted",
+        help="a card's restricted text, for members of the restricted-access set",
+        description="A card's restricted text (§6.4): read and written only by the members of "
+        "the project's restricted-access set (§6.1). `set` takes the text from a file or, "
+        "with --file -, from stdin, never as an argument: a command line shows in the "
+        "process list and the shell's history. Access restriction, not encryption.",
+        formatter_class=fmt,
+    )
+    _quiet_errors(r)
+    rsub = r.add_subparsers(dest="restricted_command", metavar="<action>", required=True)
+    rr = rsub.add_parser("show", help="the text, its version and its changes", formatter_class=fmt)
+    rr.add_argument("card", type=_id, help="the card id")
+    _json_flag(rr)
+    rr.set_defaults(handler=cmd_task_restricted_show)
+    _quiet_errors(rr)
+    rr = rsub.add_parser(
+        "set", help="set the text from a file or stdin (--file -)", formatter_class=fmt
+    )
+    rr.add_argument("card", type=_id, help="the card id")
+    rr.add_argument(
+        "--file", metavar="FILE", help="the text as UTF-8, - for stdin; never on the command line"
+    )
+    _json_flag(rr)
+    rr.set_defaults(handler=cmd_task_restricted_set)
+    _quiet_errors(rr)
+    rr = rsub.add_parser("clear", help="clear the text", formatter_class=fmt)
+    rr.add_argument("card", type=_id, help="the card id")
+    _json_flag(rr)
+    rr.set_defaults(handler=cmd_task_restricted_clear)
+    _quiet_errors(rr)
 
     p = add(
         "note",
@@ -5073,12 +5385,25 @@ def _utf8_streams() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
+    if _restricted_argv(sys.argv[1:] if argv is None else argv):
+        _quiet_ancestors(parser)
     args, extra = parser.parse_known_args(argv)
+    if extra and getattr(args, "handler", None) in _RESTRICTED_HANDLERS:
+        # Never repeated: what is left over may be the restricted text itself (§13).
+        parser.error(_RESTRICTED_ARGV_HINT)
     if extra and not _say_body_after_options(args, extra):
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
     Session.for_target = args.for_target
+    Session.for_quiet = handler in _RESTRICTED_HANDLERS
+    if Session.for_quiet and args.for_target is not None:
+        if any(ch.isspace() or not ch.isprintable() for ch in args.for_target):
+            # Text where the agent belongs: refused before any call, not repeated (§13).
+            _err(
+                "--for: an agent's handle or member id has no white space; " + _RESTRICTED_ARGV_HINT
+            )
+            return EXIT_USAGE
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE

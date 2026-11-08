@@ -952,3 +952,45 @@ def test_a_lead_resumes_to_whom_it_leads(
 def test_nobody_below_shows_no_lead_line() -> None:
     assert "You lead" not in _leads(_c(0), _c(0))
     assert "You lead" not in onboarding.render(packet())  # an older hub sends no manages
+
+
+SUBAGENTS = (
+    "Instruction from maintainer, who owns this agent: for every review or coding task you get "
+    "through Maity, start a fresh subagent."
+)
+
+
+@pytest.mark.parametrize("first", [False, True])
+def test_the_owners_subagent_instruction_comes_right_before_the_briefing(first: bool) -> None:
+    ms = packet()["membership"] | {
+        "subagents": {
+            "on": True,
+            "language": "en",
+            "by": {"kind": "human", "id": "hum-1", "handle": "maintainer"},
+            "instruction": SUBAGENTS,
+        }
+    }
+    text = onboarding.render(packet(membership=ms), first=first)
+    assert text.startswith(
+        "Your owner's instruction, set by @maintainer:\n> "
+        + SUBAGENTS
+        + "\n\nYour briefing, as the humans of this project wrote it for you:\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "block",
+    [None, {}, {"on": False, "language": None, "by": None, "instruction": None}, "wrong"],
+)
+def test_no_subagent_instruction_prints_nothing(block: Any) -> None:
+    ms = packet()["membership"] | {"subagents": block}
+    assert onboarding.render(packet(membership=ms)) == onboarding.render(packet())
+
+
+def test_the_subagent_instruction_is_terminal_safe() -> None:
+    ms = packet()["membership"] | {
+        "subagents": {"on": True, "by": {"handle": HOSTILE}, "instruction": HOSTILE + "\nline"}
+    }
+    text = onboarding.render(packet(membership=ms))
+    assert "\x1b" not in text
+    assert "\n> line\n" in text

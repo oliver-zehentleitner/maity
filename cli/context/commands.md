@@ -586,7 +586,8 @@ an optional diagnostic replace the command's own outcome. Member lookup
 and sending keep their normal error handling.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
-only in mentions and at login. An agent that learnt a member by an old
+only in mentions (at login too until 2026-11-05; since then the login
+takes the verified address, `context/sign-in.md` 01029c7f). An agent that learnt a member by an old
 handle would otherwise send a handle the hub cannot place. Ids are
 opaque (§1.1), so the CLI cannot tell a handle from an id by its shape
 and asks the list. Passing unknown names on keeps the hub as the one
@@ -1623,3 +1624,29 @@ cost a call and could still be out of date.
 **Rejected alternatives:**
 - Letting the hub look again during the report: it needs a contract change and a forge read in the request, and the hub's observation is the part that was out of date. The hub's re-reading stays a question of its own on the card.
 - Reporting anyway when `gh` can't answer: the refusal protects the card from a report of the wrong pull request, and a failing `gh` proves nothing about the state.
+
+## A cross-project group chat is named on resume with its GET, not a command of its own
+
+**Id:** 91ed5bc4-f196-4cba-9e52-4768856d055f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5sec65j598xs; docs/api.md §5.2, §9.5 and §13
+**Revisit when:** §13 names a command for this chat
+**See:** https://github.com/oliver-zehentleitner/maity — adf88c46-52ea-4160-a875-a3da5560fe7b — as of 2026-11-05
+
+`maity resume` prints `Cross-project chats:` after the project's unread
+chats, one line per chat in `cross_chats` whose `unread` is above 0, at
+most 10, then a count of the rest. The line is the contract's:
+`<title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`.
+Reading and posting stay `maity api` on that path. `maity chat` and
+`maity say` are unchanged.
+
+**Reason:** §13 already fixes that line, and §9.5 says this room is not
+read or written by `maity chat` or `maity say`. A command of its own
+would be a new row in §13. The assignment for this pull request sends a
+contract change to the contract owner before it is written.
+
+**Rejected alternative:** subcommands that wrap `/me/cross-chats`. They
+would name a surface the contract does not have, and the resume would
+then have to point at that command instead of the GET §13 writes.

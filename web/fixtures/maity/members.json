@@ -50,7 +50,14 @@
       "paused": null,
       "joined_at": "2026-10-21T07:55:00Z",
       "briefing": null,
-      "owner_preferences": false
+      "owner_preferences": false,
+      "subagents": true,
+      "subagents_language": "en",
+      "subagents_by": {
+        "kind": "human",
+        "id": "hum-maintainer",
+        "handle": "maintainer"
+      }
     },
     {
       "id": "agt-b",

@@ -43,8 +43,10 @@ from maity_hub import (
     public_pages,
     public_projects,
     releases,
+    restricted,
     rules,
     setup_cards,
+    start_tabs,
     ticker,
     wakeups,
 )
@@ -207,6 +209,84 @@ def _announced_role_rules(stored: dict[str, Any] | None) -> dict[str, Any] | Non
     }
 
 
+class RestrictedAccessIn(Strict):
+    """`settings.restricted_access` (§6.1): `mode` and `members` checked by
+    `_checked_restricted`, which names each refusal; `included` and `cards_with_text` are the
+    hub's and ignored, so a read sent back is accepted."""
+
+    mode: Any = None
+    members: Any = None
+    included: Any = None
+    cards_with_text: Any = None
+
+
+MAX_RESTRICTED_MEMBERS = 200
+
+
+def _checked_restricted(
+    conn: Connection, project: Any, given: RestrictedAccessIn | None
+) -> dict[str, Any] | None:
+    """`settings.restricted_access` as stored, `{mode, members}`, or None for the closed
+    default (§6.1 "Changing it"): every refusal named, nothing dropped. An id the stored list
+    holds already is accepted as it is, so a list read and sent back passes after a member
+    left; only a new id has to be an active member that is no guest, and under
+    `nobody_except` an agent's owner too."""
+    if given is None:
+        return None
+    field = "settings.restricted_access"
+    if given.mode is None:
+        raise invalid({f"{field}.mode": "required"})
+    if given.mode not in restricted.MODES:
+        raise invalid({f"{field}.mode": "unknown_mode"})
+    if given.members is None:
+        raise invalid({f"{field}.members": "required"})
+    if not isinstance(given.members, list) or not all(isinstance(m, str) for m in given.members):
+        raise invalid({f"{field}.members": "list_type"})
+    members: list[str] = given.members
+    if len(members) > MAX_RESTRICTED_MEMBERS:
+        raise invalid({f"{field}.members": "too_many"})
+    if len(set(members)) != len(members):
+        raise invalid({f"{field}.members": "duplicate"})
+    stored = set(((restricted.access(project) or {}).get("members")) or [])
+    errors: dict[str, str] = {}
+    for member_id in members:
+        if member_id in stored:
+            continue
+        reason = _restricted_refusal(conn, project.id, member_id, given.mode)
+        if reason is not None:
+            errors[f"{field}.members.{member_id}"] = reason
+    if errors:
+        raise invalid(errors)
+    return {"mode": given.mode, "members": list(members)}
+
+
+def _restricted_refusal(conn: Connection, project_id: str, member_id: str, mode: str) -> str | None:
+    found = conn.execute(
+        select(t.membership.c.trust, t.membership.c.agent_id).where(
+            t.membership.c.project_id == project_id,
+            (t.membership.c.agent_id == member_id) | (t.membership.c.human_id == member_id),
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if found is None:
+        return "not_a_member"
+    if found.trust == restricted.GUEST:
+        return "guest"
+    if found.agent_id is not None and mode == "nobody_except":
+        owner = conn.execute(
+            select(t.membership.c.trust)
+            .join(t.agent_profile, t.agent_profile.c.owner_id == t.membership.c.human_id)
+            .where(
+                t.agent_profile.c.id == member_id,
+                t.membership.c.project_id == project_id,
+                t.membership.c.active.is_(True),
+            )
+        ).first()
+        if owner is None or owner.trust == restricted.GUEST:
+            return "owner_not_a_member"
+    return None
+
+
 class SettingsIn(Strict):
     """Top-level keys (§6.1): a key named replaces its whole value, `null` removes it."""
 
@@ -217,6 +297,8 @@ class SettingsIn(Strict):
     language: str | None = None
     # The file the overview links and shows as the project's contract (§6.8).
     contract_path: str | None = None
+    # Who reads and writes the cards' restricted text (§6.1, §6.4); checked in the PATCH.
+    restricted_access: RestrictedAccessIn | None = None
 
     @field_validator("language", mode="before")
     @classmethod
@@ -573,9 +655,10 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
-def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] | None:
-    """The project's attachment bytes against its quota, for a caller with `project:admin`
-    in it (§8.7); anyone else gets None."""
+def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int | None] | None:
+    """The project's attachment bytes against its limit `max_attachment_storage_per_project`
+    (`quota`, None under `unlimited`), for a caller with `project:admin` in it (§8.7); anyone
+    else gets None."""
     caller = getattr(request.state, "caller", None)
     if caller is None:
         return None
@@ -587,7 +670,7 @@ def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] 
         return None
     return {
         "used": attachments.used(conn, project.id),
-        "quota": settings_of(request).attachment_quota,
+        "quota": limits.of(conn, settings_of(request), limits.PROJECT_STORAGE),
     }
 
 
@@ -608,6 +691,29 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     held = moderation.view(moderation.hold(conn, "project", project.id))
     if held is not None:  # only while a hold stands (§16.8)
         view["moderation"] = held
+    _serve_restricted(conn, project, request, view)
+    return view
+
+
+def _reader(conn: Connection, project: Any, request: Request) -> Membership | None:
+    caller = getattr(request.state, "caller", None)
+    if caller is None:
+        return None
+    try:
+        return membership(conn, caller, namespace.full_name(conn, project))
+    except ApiError:
+        return None
+
+
+def _serve_restricted(
+    conn: Connection, project: Any, request: Request, view: dict[str, Any]
+) -> dict[str, Any]:
+    """`settings.restricted_access` per reader (§6.1 "Reading the setting"): `null` without
+    the key, `{mode, members, included, cards_with_text}` to a human with `project:admin` and
+    to a member in the set, `{mode, included}` to every other."""
+    view["settings"]["restricted_access"] = restricted.served(
+        conn, project, _reader(conn, project, request)
+    )
     return view
 
 
@@ -637,15 +743,20 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         return JSONResponse(
             {
                 "items": [
-                    project_view(
+                    _serve_restricted(
+                        conn,
                         r,
-                        settings,
-                        names[r.id].split("/")[0],
-                        shown[r.id],
-                        _export(r, request),
-                        aliases[r.id],
-                        _stored(conn, r, request),
-                        confirmed[r.id],
+                        request,
+                        project_view(
+                            r,
+                            settings,
+                            names[r.id].split("/")[0],
+                            shown[r.id],
+                            _export(r, request),
+                            aliases[r.id],
+                            _stored(conn, r, request),
+                            confirmed[r.id],
+                        ),
                     )
                     for r in rows
                 ],
@@ -774,6 +885,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         key = result.inserted_primary_key
         assert key is not None
         owner = int(key[0])
+        assert caller.human_id is not None  # a human's call: `HumanCaller`
+        start_tabs.append(conn, caller.human_id, project_id)  # a new project opens last (§5.1)
         if body.policy is not None:
             proposed = _apply_policy(
                 conn,
@@ -867,7 +980,8 @@ def patch_project(
         actor = caller.actor(mine.id)
         # A rename first, so that every event below names the project by its new full name.
         renamed = "slug" in given and body.slug is not None
-        if renamed and project_names.rename(conn, mine, str(body.slug), words, actor):
+        aliases = limits.aliases(conn, settings_of(request)) if renamed else 0
+        if renamed and project_names.rename(conn, mine, str(body.slug), words, actor, aliases):
             project = _load(conn, project.id)
             mine = replace(mine, project=project)
         owner_id = _owner_id(conn, project.id)
@@ -875,6 +989,7 @@ def patch_project(
         rules_inputs_changed = False
         bumped = False  # one PATCH moves `rules_version` once (§6.1)
         settings_changed: dict[str, Any] = {}
+        restricted_before: set[int] | None = None
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
             rules_inputs_changed = True
@@ -932,6 +1047,13 @@ def patch_project(
             dumped = body.settings.model_dump()
             if body.settings.role_rules is not None:
                 dumped["role_rules"] = _checked_role_rules(body.settings.role_rules)
+            if "restricted_access" in named:
+                # A human with `project:admin` and a step-up (§6.1 "Changing it").
+                second_factor.require_step_up(conn, settings_of(request), caller)
+                dumped["restricted_access"] = _checked_restricted(
+                    conn, project, body.settings.restricted_access
+                )
+                restricted_before = restricted.resolve(conn, project)
             if "onboarding" in named:
                 changed, stored, announcement = onboarding.replace_setting(
                     conn, project, body.settings.onboarding, mine.id
@@ -1017,6 +1139,16 @@ def patch_project(
                 {"fields": settings_changed},
                 actor=actor,
                 subject=("project", namespace.full_name(conn, project)),
+            )
+        if restricted_before is not None and "settings.restricted_access" in settings_changed:
+            # A change that widens the set is told to the set (§6.1 "Not encryption", §6.4).
+            restricted.entered(
+                conn,
+                project.id,
+                restricted_before,
+                "setting",
+                restricted.person(conn, mine.id),
+                actor,
             )
         if "repository" in given:
             if values.get("repository_url") != project.repository_url:
@@ -1215,7 +1347,8 @@ def transfer_project(
         project_names.authority(conn, mine)
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         limit = limits.of(conn, settings_of(request), "max_projects_per_owner")
-        request_id = project_names.transfer(conn, mine, caller, body.to, limit)
+        aliases = limits.aliases(conn, settings_of(request))
+        request_id = project_names.transfer(conn, mine, caller, body.to, limit, aliases)
         if request_id is None:  # the move happened in the call: the project as it is now (§6.26)
             return idempotency.Outcome(
                 200, "project", mine.project.id, load_project(conn, mine.project.id, request)
@@ -1326,6 +1459,9 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
     if body.settings is not None and "role_rules" in body.settings.model_fields_set:
         # An agent does not write the rules it works under (§6.1 "Role rules").
         raise humans_only("the role rules are set by a human")
+    if body.settings is not None and "restricted_access" in body.settings.model_fields_set:
+        # Who reads the restricted text is a human's call, an admin agent's too (§6.1).
+        raise humans_only("the restricted-access set is set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
         raise humans_only("no agent changes this, whatever its role")

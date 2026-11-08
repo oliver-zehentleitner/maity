@@ -194,6 +194,14 @@ then `… <n> more: maity chats`), and a `wait` that times out says so in
 one line on stderr. The last seconds of `--timeout` (up to 5, a quarter
 of a short one) are kept for that check, so `wait` never runs past it.
 
+A cross-project group chat is not one of those. When the resume packet's
+`cross_chats` has unread messages, a block `Cross-project chats:` follows
+(at most 10, then `… <k> more: GET /me/cross-chats`). Each line names
+`GET /me/cross-chats/<id>/messages`. `maity api` sends that path.
+`maity chat` and `maity say` stay a project's conversation. An agent
+posts with `maity api POST /me/cross-chats/<id>/messages --json` and a
+body `{"body": "…"}`. It cannot create the chat or add a participant.
+
 `join` exchanges the code, stores the credential without printing it,
 prints a short pointer block for `AGENTS.md` (`--pointer` writes it there,
 and into `CLAUDE.md` where one exists that does not import `AGENTS.md`),
@@ -634,6 +642,36 @@ hint line. `task show` prints the body, dependencies and assignee too;
 `--json` on `show` and `list` is the hub's cards as they came, with
 control, C1, bidi and tag characters and lone surrogates escaped.
 
+### A card's restricted text
+
+```sh
+maity task restricted show tsk-0004                 # the text quoted as data, its version and changes
+maity task restricted set tsk-0004 --file note.txt  # set it from a UTF-8 file
+maity task restricted set tsk-0004 --file - <<'END'
+the text, from stdin
+END
+maity task restricted clear tsk-0004
+```
+
+A card may carry one short plain text that only the members of the
+project's restricted-access set read and write (`docs/api.md` §6.1, §6.4).
+`set` takes the text from a file or, with `--file -`, from stdin. It never
+takes it as an argument: a command line shows in the machine's process list
+and in the shell's history. On a `task restricted` command line no usage
+error repeats what was typed, from `maity` and `task` as from `restricted`
+and its actions (a word left over, an unknown action, a value given to a
+flag that takes none): each says one fixed sentence, exits 2 and sends
+nothing. A `--for` with white space in it is refused the same way, and a
+`--for` name no agent has is refused without repeating it. One final line ending is dropped. `set` and `clear` read the
+version just before and send it. On a `conflict` nothing is retried: the
+current version and who changed it are printed, never the text. On
+`rate_limited` the wait the hub names (`Retry-After`) is printed, and
+nothing is retried. The text stays in memory: never in
+the state directory, a log or a temporary file. This is an access
+restriction, not encryption: project admins can add themselves, the
+server's operators can read it, and an agent in the set passes it to its
+owner and its model provider.
+
 ## Notes and links
 
 ```sh
@@ -840,7 +878,8 @@ written, `pair` says so and prints what to put in it. `--config` (or
 the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
-that every agent would inherit, a configuration file others could
+that every agent would inherit, a Claude Code version other than the one
+its sandbox was checked with (a warning), a configuration file others could
 change (a warning), and finally `GET /health` on the hub
 (`--offline` skips it). A minimal configuration:
 
@@ -859,6 +898,25 @@ modes = ["interactive", "supervised"]
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
+
+A repository can get more than the default grant, in a table of its own:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+allow = ["make test", "python -m pytest *"]   # commands the agent may run
+network = ["pypi.org"]                        # hosts the sandbox may reach
+```
+
+Each `allow` entry is a plain command: a program (a name or a path),
+then arguments of letters, digits and `_ . / = : @ % + , -`, separated
+by single spaces, with `*` allowed in an argument. Anything else is
+refused when the configuration is read: a variable assignment in front
+(`FOO=1 make`, `FOO+=1 make`), `env` under any path, quotes, `$`,
+backticks, backslashes and shell operators, a `:` in the program
+(Claude Code's `prog:*` form: write `prog *`), `maity` as the program,
+and `maity` as any part of an argument (between `/`, `:`, `=` and the
+other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
+case or with a Windows extension. `maity` is the runner's own rule.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
@@ -1038,9 +1096,12 @@ Code's sandbox, as a plain `maity …` call. Checked with Claude Code
 2.1.318: a command, a variable or a PATH placed in front of that call
 does not run outside the sandbox (the runner's permission rules refuse
 it, and past them it runs inside). This is the harness's behaviour, not
-a contract; recheck it with other versions. Not covered: an allow rule
-from the repository's own grant that itself starts with such a prefix,
-and Codex. Where it does not hold, a prefixed call would run as the
+a contract: with another Claude Code version the runner still starts the
+agent, and `maity runner check` and the runner's log say that the
+version was not checked. A repository's grant may only add plain
+commands (below, under the configuration); a rule with a variable or
+`env` in front, or that names `maity`, is refused when the configuration
+is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
 operator's account in the `single` layout, as the agents' user's account
 in `agent_user`. Run agents that read untrusted text (issues, pull
 requests, web pages) in the `agent_user` layout, which keeps your own
@@ -1185,9 +1246,10 @@ rules a member follows.
 ## Development
 
 ```sh
-make dev      # .venv with ruff, black, mypy, pytest
+make dev      # .venv from requirements/dev.txt (hashed; the hub's ruff, black, mypy, pytest)
 make check    # ruff, black --check (line length 100), mypy --strict, pytest
 make format
+make lock     # after changing the dev extra or requirements/release.in (uv from hub/requirements/tools.txt)
 ```
 
 The tests run real git against a bare remote, a fake `gh` on an isolated
