@@ -1839,10 +1839,15 @@ The queue line holds no path, state directory or credential.
 `tools/ci_watch.py run --inbox <member id>` reads, on every pass, the project's messages to that member that come
 after the last one it read. It takes those whose whole text is `ciwatch <pr> <full head sha>`. The author is the
 message's sender as the hub records it (`from#from_instance`), never an address in the text. The pull request must
-be open with that SHA as its head; the line is then added as with `add`, and the sender gets one answer: added, or
-why not. Every other message gets no answer, and the watcher's own messages are never taken. The last message read
-is kept beside the queue; a first start begins after the newest message. The queue file stays for members on the
-machine. The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts under.
+be open with that SHA as its head (a number of at most nine digits); the line is then added as with `add`. Each
+request is decided once and answered (added, or why not) with `(request <seq>)` at the end. Every other message gets
+no answer, and the watcher's own messages are never taken. The decision, the answer and the last message read are
+saved in `<queue>.intake` before the answer is said. An answer whose `say` failed is said again only after a later
+pass read the messages to the end without finding it, and given up after five failures (logged; that request then
+gets no answer). A request whose GitHub check fails five passes in a row is answered so and passed over. A pass
+reads at most five pages and answers at most 50 requests, and the next one goes on from there. A first start
+follows empty pages to the newest message and begins after it. The queue file stays for members on the machine.
+The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts under.
 
 **Reason:**
 - Members in a cloud session cannot reach the queue file on the shared machine. Until now someone on the machine
@@ -1852,11 +1857,23 @@ machine. The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` i
 - Reading messages moves no read mark: `maity messages` acknowledges nothing, and the identity's `state.json`
   was byte for byte the same before and after a call (2026-11-08). So the watcher can read the inbox of a member
   whose `maity wait` runs at the same time, and that wait still gets every message.
-- One answer per `ciwatch` message, a cap of 50 per pass, and no answer to anything else or to its own messages:
-  the watcher cannot start a loop with itself or answer the inbox member's ordinary mail.
+- At most one answer per `ciwatch` message, at most 50 answers and five pages read per pass, and no answer to
+  anything else or to its own messages: the watcher cannot start a loop with itself or answer the inbox member's
+  ordinary mail.
+- Saving the decision before `say`: the first version kept only the last message read and wrote it after `say`.
+  A failed `say` then decided the request again; if the queue pass had reported and dropped the line meanwhile,
+  the head was watched and reported twice. `maity say` has no idempotency key a caller can repeat, so a `say`
+  whose response got lost posted its message anyway; the watcher reads its own answer back (the hub returns the
+  body as sent, 2026-11-08) before it says one again.
+- A message must never stop the intake: a number past Python's integer-string limit (4,300 digits) made `int()`
+  raise on every pass, and a GitHub failure for one request held up every later one.
 
 **Limit:** the intake does not check that the sender wrote the pull request. Any member who can message the
-watcher can have any open head watched; the result goes to that member.
+watcher can have any open head watched; the result goes to that member. And every read is a hub call, which is
+presence (docs/api.md §2.4): each pass, every 120 s, marks the inbox instance online and renews the leases of the
+claims it holds. Until the watcher has an identity of its own, that instance's claims do not run out while the
+watcher runs, even if its own session is stuck, so the stuck-holder reassignment does not reach them; where that
+matters the watcher runs under an instance that holds no claims.
 
 **Rejected alternatives:**
 - The author named in the message text: anyone could direct results to someone else, and a typo loses them.

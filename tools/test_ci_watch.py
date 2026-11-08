@@ -322,17 +322,30 @@ def message(seq: int, body: str, **fields: object) -> dict[str, Any]:
 
 
 class FakeMessages:
-    """`maity messages`: everything after a seq, oldest first; None asks for the newest."""
+    """`maity messages`: pages of `size`, oldest first after a seq, newest first for None.
+    `gaps` empty pages with a continuation come first, as when the hub's scan budget runs out."""
 
-    def __init__(self, items: list[dict[str, Any]]) -> None:
+    def __init__(self, items: list[dict[str, Any]], size: int = 200, gaps: int = 0) -> None:
         self.items = items
-        self.calls: list[int | None] = []
+        self.size = size
+        self.gaps = gaps
+        self.calls: list[tuple[int | None, str | None]] = []
 
-    def __call__(self, after: int | None) -> list[dict[str, Any]]:
-        self.calls.append(after)
+    def __call__(self, after: int | None, cursor: str | None) -> ci_watch.Page:
+        self.calls.append((after, cursor))
         if after is None:
-            return sorted(self.items, key=lambda i: -i["seq"])[:1]
-        return [i for i in sorted(self.items, key=lambda i: i["seq"]) if i["seq"] > after]
+            found = sorted(self.items, key=lambda i: -i["seq"])
+        else:
+            found = [i for i in sorted(self.items, key=lambda i: i["seq"]) if i["seq"] > after]
+        pages: list[list[dict[str, Any]]] = [[] for _ in range(self.gaps)]
+        pages += [found[n : n + self.size] for n in range(0, len(found), self.size)] or [[]]
+        at = int(cursor or 0)
+        following = str(at + 1) if at + 1 < len(pages) else None
+        return list(pages[at]), following
+
+
+def state(after: int) -> dict[str, Any]:
+    return {"after": after, "pass": 0, "resume": None, "tries": {}, "outbox": []}
 
 
 class IntakeTest(unittest.TestCase):
@@ -340,9 +353,9 @@ class IntakeTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.queue = self.tmp / "ciwatch.txt"
-        self.cursor = self.tmp / "ciwatch.txt.seq"
         self.said: list[tuple[str, str]] = []
         self.gh = FakeGh()
+        self.messages: FakeMessages | None = None
 
     def say(self, author: str, text: str) -> None:
         self.said.append((author, text))
@@ -350,11 +363,23 @@ class IntakeTest(unittest.TestCase):
     def lines(self) -> list[str]:
         return self.queue.read_text().splitlines() if self.queue.exists() else []
 
-    def intake(self, items: list[dict[str, Any]], start: int | None = 100) -> int:
+    def saved(self) -> dict[str, Any]:
+        loaded = ci_watch._load(self.queue)
+        assert loaded is not None
+        return loaded
+
+    def intake(
+        self,
+        items: list[dict[str, Any]],
+        start: int | None = 100,
+        say: ci_watch.Say | None = None,
+        **paging: int,
+    ) -> int:
         if start is not None:
-            self.cursor.write_text(f"{start}\n")
+            ci_watch._save(self.queue, state(start))
+        self.messages = FakeMessages(items, **paging)
         return ci_watch.intake_pass(
-            self.queue, INBOX, FakeMessages(items), self.gh, self.say, REPO, log=io.StringIO()
+            self.queue, INBOX, self.messages, self.gh, say or self.say, REPO, log=io.StringIO()
         )
 
     def test_the_sender_is_the_author_never_the_text(self) -> None:
@@ -362,7 +387,9 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
         self.assertEqual(self.said, [(f"{SENDER}#ab12", self.said[0][1])])
         self.assertIn(f"#7 {SHA} added", self.said[0][1])
-        self.assertEqual(self.cursor.read_text().strip(), "101")
+        self.assertTrue(self.said[0][1].endswith("(request 101)"))
+        self.assertEqual(self.saved()["after"], 101)
+        self.assertEqual(self.saved()["outbox"], [])
 
     def test_an_address_in_the_text_is_not_taken(self) -> None:
         self.intake([message(101, f"ciwatch 7 {SHA} {AUTHOR}")])
@@ -381,7 +408,7 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(taken, 0)
         self.assertEqual(self.said, [])
         self.assertEqual(self.lines(), [])
-        self.assertEqual(self.cursor.read_text().strip(), "104")
+        self.assertEqual(self.saved()["after"], 104)
 
     def test_its_own_messages_are_never_intake(self) -> None:
         self.intake([message(101, f"ciwatch 7 {SHA}", **{"from": INBOX})])
@@ -415,7 +442,27 @@ class IntakeTest(unittest.TestCase):
     def test_a_message_without_sender_instance_is_refused_to_the_member(self) -> None:
         self.intake([message(101, f"ciwatch 7 {SHA}", from_instance=None)])
         self.assertEqual(
-            self.said, [(SENDER, "ciwatch: #7 not added: the message has no sender instance")]
+            self.said,
+            [(SENDER, "ciwatch: #7 not added: the message has no sender instance. (request 101)")],
+        )
+        self.assertEqual(self.lines(), [])
+
+    def test_a_sender_that_is_no_member_id_gets_no_answer_and_stops_nothing(self) -> None:
+        # Route: `say("")` failed every pass and held up every later request.
+        items = [
+            message(101, f"ciwatch 7 {SHA}", **{"from": ""}),
+            message(102, f"ciwatch 7 {SHA}", **{"from": "a b"}),
+            message(103, f"ciwatch 7 {SHA}"),
+        ]
+        self.assertEqual(self.intake(items), 1)
+        self.assertEqual([to for to, _ in self.said], [f"{SENDER}#ab12"])
+        self.assertEqual(self.saved()["after"], 103)
+
+    def test_an_invalid_sender_instance_is_refused_for_that_reason(self) -> None:
+        self.intake([message(101, f"ciwatch 7 {SHA}", from_instance="a/b")])
+        self.assertEqual(
+            self.said,
+            [(SENDER, "ciwatch: #7 not added: the sender instance is not valid. (request 101)")],
         )
         self.assertEqual(self.lines(), [])
 
@@ -427,33 +474,166 @@ class IntakeTest(unittest.TestCase):
     def test_the_first_start_takes_no_old_message(self) -> None:
         items = [message(101, f"ciwatch 7 {SHA}"), message(102, "hello")]
         self.assertEqual(self.intake(items, start=None), 0)
-        self.assertEqual(self.cursor.read_text().strip(), "102")
+        self.assertEqual(self.saved()["after"], 102)
         self.assertEqual(self.said, [])
         self.assertEqual(self.lines(), [])
         # A message after the start is taken on the next pass.
         self.assertEqual(self.intake([*items, message(103, f"ciwatch 7 {SHA}")], start=None), 1)
 
-    def test_the_cursor_survives_a_restart_and_nothing_is_answered_twice(self) -> None:
+    def test_the_first_start_follows_empty_pages_to_the_newest_message(self) -> None:
+        # Route: the hub's first page is empty with a continuation (its scan budget ran out).
+        items = [message(101, f"ciwatch 7 {SHA}"), message(102, "hello")]
+        self.intake(items, start=None, gaps=2)
+        self.assertEqual(self.saved()["after"], 102)
+        self.intake(items, start=None)
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.lines(), [])
+
+    def test_the_first_start_with_no_message_at_all_starts_at_zero(self) -> None:
+        self.intake([], start=None)
+        self.assertEqual(self.saved()["after"], 0)
+
+    def test_the_state_survives_a_restart_and_nothing_is_answered_twice(self) -> None:
         items = [message(101, f"ciwatch 7 {SHA}")]
         self.intake(items)
         self.intake(items, start=None)
         self.assertEqual(len(self.said), 1)
 
-    def test_a_failing_say_retries_exactly_that_message(self) -> None:
+    def test_an_endless_pull_request_number_is_no_request_and_stops_nothing(self) -> None:
+        # Route: a number past Python's int-string limit made `int()` raise, every pass.
+        items = [message(101, f"ciwatch {'9' * 5000} {SHA}"), message(102, f"ciwatch 7 {SHA}")]
+        self.assertEqual(self.intake(items), 1)
+        self.assertEqual(len(self.said), 1)
+        self.assertIn("#7 ", self.said[0][1])
+        self.assertEqual(self.saved()["after"], 102)
+
+    def test_a_failed_answer_never_adds_the_watch_again(self) -> None:
+        # Route: say fails, the queue pass reports and drops the line, the retry added it again.
         items = [message(101, "hello"), message(102, f"ciwatch 7 {SHA}")]
 
-        def say(author: str, text: str) -> None:
+        def offline(author: str, text: str) -> None:
             raise ci_watch.Transient("maity say: offline")
 
-        self.cursor.write_text("100\n")
-        with self.assertRaises(ci_watch.Transient):
-            ci_watch.intake_pass(
-                self.queue, INBOX, FakeMessages(items), self.gh, say, REPO, log=io.StringIO()
-            )
-        self.assertEqual(self.cursor.read_text().strip(), "101")
+        self.assertEqual(self.intake(items, say=offline), 1)
+        self.assertEqual(self.saved()["after"], 102)
+        self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
+        ci_watch.remove(self.queue, 7)  # the queue pass reported and dropped it
+        self.assertEqual(self.intake(items, start=None), 0)
+        self.assertEqual(self.lines(), [])
+        self.assertEqual(len(self.said), 1)  # the answer, said again once
+        self.assertTrue(self.said[0][1].endswith("(request 102)"))
+        self.intake(items, start=None)
+        self.assertEqual(len(self.said), 1)
+
+    def test_an_answer_whose_response_was_lost_is_not_said_again(self) -> None:
+        # Route: say posted the answer, but its response got lost, so it looked failed.
+        items = [message(102, f"ciwatch 7 {SHA}")]
+
+        def lost(author: str, text: str) -> None:
+            if any(i["seq"] == 150 for i in items):
+                self.say(author, text)  # a later `say` goes through
+                return
+            items.append(message(150, text, **{"from": INBOX, "to": author}))
+            raise ci_watch.Transient("maity say: connection reset")
+
+        # The pass that lost the response read its pages before the answer was posted, so it
+        # must not say it again itself; the next pass finds it.
+        self.intake(items, say=lost)
+        self.assertEqual(self.said, [])
+        for _ in range(3):
+            self.intake(items, start=None, say=lost)
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.saved()["outbox"], [])
+
+    def test_an_answer_posted_just_before_a_crash_is_not_said_again(self) -> None:
+        # Route: `say` posted the answer and the process ended before anything was saved after.
+        items = [message(102, f"ciwatch 7 {SHA}")]
+
+        def posted_then_crash(author: str, text: str) -> None:
+            items.append(message(150, text, **{"from": INBOX, "to": author}))
+            raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            self.intake(items, say=posted_then_crash)
+        for _ in range(3):
+            self.intake(items, start=None)
+        self.assertEqual(self.said, [])
+        self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
+
+    def test_an_answer_decided_before_a_crash_is_said_once(self) -> None:
+        # Route: the process ends between saving the decision and `say`.
+        items = [message(102, f"ciwatch 7 {SHA}")]
+
+        def crash(author: str, text: str) -> None:
+            raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            self.intake(items, say=crash)
+        self.intake(items, start=None)
         self.intake(items, start=None)
         self.assertEqual(len(self.said), 1)
         self.assertEqual(self.lines(), [f"7 {SHA} {SENDER}#ab12"])
+
+    def test_an_answer_that_never_goes_out_is_given_up(self) -> None:
+        items = [message(102, f"ciwatch 7 {SHA}")]
+
+        def offline(author: str, text: str) -> None:
+            raise ci_watch.Transient("maity say: no such member")
+
+        self.intake(items, say=offline)
+        for _ in range(ci_watch.TRIES * 2):
+            self.intake(items, start=None, say=offline)
+        self.assertEqual(self.saved()["outbox"], [])
+
+    def test_a_request_github_never_answers_is_answered_and_passed_over(self) -> None:
+        # Route: a GitHub failure for one request held up every later request.
+        items = [message(101, f"ciwatch 7 {SHA}"), message(102, f"ciwatch 8 {SHA}")]
+
+        def gh(path: str) -> object:
+            if path.endswith("/pulls/7"):
+                raise ci_watch.Transient("gh api: HTTP 502")
+            return FakeGh().pr
+
+        self.gh = gh  # type: ignore[assignment]
+        ci_watch._save(self.queue, state(100))
+        for _ in range(ci_watch.TRIES - 1):
+            with self.assertRaises(ci_watch.Transient):
+                self.intake(items, start=None)
+        self.assertEqual(self.said, [])
+        self.intake(items, start=None)
+        self.assertEqual(len(self.said), 2)
+        self.assertIn("#7 ", self.said[0][1])
+        self.assertIn("GitHub did not answer", self.said[0][1])
+        self.assertIn(f"#8 {SHA} added", self.said[1][1])
+
+    def test_a_message_without_a_seq_is_passing_trouble(self) -> None:
+        # Route: `int(str(item["seq"]))` raised ValueError on a malformed page.
+        item = message(101, f"ciwatch 7 {SHA}")
+        item["seq"] = None
+        ci_watch._save(self.queue, state(100))
+        with self.assertRaises(ci_watch.Transient):
+            ci_watch.intake_pass(
+                self.queue, INBOX, lambda after, cursor: ([item], None), self.gh, self.say
+            )
+        self.assertEqual(self.said, [])
+
+    def test_an_unreadable_state_file_is_passing_trouble_and_says_where(self) -> None:
+        for text in ("{not json", '{"pass": 3}', "[]"):
+            with self.subTest(text):
+                (self.tmp / "ciwatch.txt.intake").write_text(text)
+                with self.assertRaises(ci_watch.Transient) as caught:
+                    self.intake([message(101, f"ciwatch 7 {SHA}")], start=None)
+                self.assertIn("ciwatch.txt.intake", str(caught.exception))
+                self.assertEqual(self.said, [])
+
+    def test_the_state_is_replaced_whole_never_written_in_place(self) -> None:
+        # Route: a kill during an in-place write left an empty cursor that crashed every start.
+        ci_watch._save(self.queue, state(100))
+        before = (self.tmp / "ciwatch.txt.intake").read_text()
+        killed = mock.patch("os.replace", side_effect=OSError("killed"))
+        with killed, self.assertRaises(OSError):
+            ci_watch._save(self.queue, state(200))
+        self.assertEqual((self.tmp / "ciwatch.txt.intake").read_text(), before)
 
     def test_answers_per_pass_are_capped(self) -> None:
         items = [message(101 + n, f"ciwatch 7 {SHA}") for n in range(ci_watch.INTAKE_PER_PASS + 5)]
@@ -462,18 +642,48 @@ class IntakeTest(unittest.TestCase):
         self.intake(items, start=None)
         self.assertEqual(len(self.said), ci_watch.INTAKE_PER_PASS + 5)
 
+    def test_pages_per_pass_are_capped_and_the_next_pass_goes_on(self) -> None:
+        # Route: every page was read before the answer cap applied.
+        items = [message(101, f"ciwatch 7 {SHA}")]
+        self.intake(items, gaps=ci_watch.PAGES_PER_PASS + 2)
+        assert self.messages is not None
+        self.assertEqual(len(self.messages.calls), ci_watch.PAGES_PER_PASS)
+        self.assertEqual(self.said, [])
+        self.intake(items, start=None, gaps=ci_watch.PAGES_PER_PASS + 2)
+        self.assertEqual(self.messages.calls[0], (100, str(ci_watch.PAGES_PER_PASS)))
+        self.assertEqual(len(self.said), 1)
+        self.assertIsNone(self.saved()["resume"])
+
     def test_maity_messages_is_read_only(self) -> None:
         # `maity messages` acknowledges nothing and moves no cursor (its --help says so); the
         # watcher only ever calls it with --json, --after/--limit/--cursor, nothing that writes.
         with mock.patch("subprocess.run") as sub:
             sub.return_value.returncode = 0
-            sub.return_value.stdout = '{"items": [], "next_cursor": null}'
-            ci_watch.maity_messages(100)
-            ci_watch.maity_messages(None)
+            sub.return_value.stdout = '{"items": [], "next_cursor": "c1"}'
+            self.assertEqual(ci_watch.maity_messages(100, None), ([], "c1"))
+            ci_watch.maity_messages(None, "c1")
         for call in sub.call_args_list:
             argv = call.args[0]
             self.assertEqual(argv[:3], ["maity", "messages", "--json"])
             self.assertTrue(set(argv[3::2]) <= {"--after", "--limit", "--cursor"}, argv)
+
+    def test_gh_get_maps_only_a_404_to_not_found(self) -> None:
+        with mock.patch("subprocess.run") as sub:
+            sub.return_value.returncode = 1
+            sub.return_value.stderr = "gh: Not Found (HTTP 404)"
+            with self.assertRaises(ci_watch.NotFound):
+                ci_watch.gh_get(f"repos/{REPO}/pulls/7")
+            sub.return_value.stderr = "gh: Bad Gateway (HTTP 502)"
+            with self.assertRaises(ci_watch.Transient):
+                ci_watch.gh_get(f"repos/{REPO}/pulls/7")
+
+    def test_other_programs_output_is_logged_without_control_characters(self) -> None:
+        with mock.patch("subprocess.run") as sub:
+            sub.return_value.returncode = 1
+            sub.return_value.stderr = "boom\x1b[2J\nnext"
+            with self.assertRaises(ci_watch.Transient) as caught:
+                ci_watch.maity_messages(100, None)
+        self.assertEqual(str(caught.exception), "maity messages: boom?[2J?next")
 
     def test_run_refuses_an_inbox_with_an_instance(self) -> None:
         err = io.StringIO()

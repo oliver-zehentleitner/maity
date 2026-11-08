@@ -25,12 +25,25 @@ whole text is `ciwatch <pr> <full head sha>`:
 
 The author is the message's sender as the hub records it (`from#from_instance`), never an
 address in the text. The pull request must be open with that SHA as its head; then the line is
-added (a newer head replaces an older one, as with `add`). The sender gets one answer per such
-message, added or why not; any other message is left alone and gets no answer, and the
-watcher's own messages are never read as intake, so it cannot answer itself. The last message
-read is kept in `<queue>.seq`; a first start begins after the newest message and never takes
-older ones. Reading messages moves no read mark of the identity (`maity messages` acknowledges
-nothing), so a `maity wait` of the same identity still gets every message.
+added (a newer head replaces an older one, as with `add`). The number has at most nine digits.
+Any other message is left alone and gets no answer, and the watcher's own messages are never
+read as intake, so it never answers itself.
+
+Each request is decided once and answered (added, or why not), with `(request <seq>)` at the end.
+The decision, the answer and the last message read are saved in `<queue>.intake` before the
+answer is said. An answer whose `maity say` failed is said again only after a later pass read
+the messages to the end without finding it there (a `say` whose response got lost did post
+it), and given up after five failures, logged; then the request gets no answer. A request
+whose GitHub check fails five passes in a row is answered so and passed over. A pass reads at
+most five pages and answers at most 50 requests; the next pass goes on from there. A first
+start begins after the newest message, past empty pages, and never takes older ones. Reading
+messages moves no read mark of the identity (`maity messages` acknowledges nothing), so a
+`maity wait` of the same identity still gets every message. But every read is a hub call, and
+every hub call is presence (docs/api.md §2.4): each pass marks the instance of the
+`MAITY_STATE_DIR` online and renews the leases of the claims it holds. Until the watcher has an
+identity of its own, that instance's claims do not run out while the watcher runs, even if its
+session is stuck; run it under an instance that holds no claims where that matters. A message
+whose sender is no member id gets no answer (logged).
 
 What the intake does not check: that the sender wrote the pull request. Anyone who can message
 the watcher can have any open head watched, and the result goes to them.
@@ -62,7 +75,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 REPO = "oliver-zehentleitner/maity"
 WORKFLOW = ".github/workflows/ci.yml"
@@ -71,9 +84,16 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _PR = re.compile(r"^[1-9][0-9]*$")
 # A Maity address: a handle or member id, `#`, an instance. No `/`, so never a path.
 _AUTHOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*#[A-Za-z0-9]+$")
-_INTAKE = re.compile(r"^ciwatch ([1-9][0-9]*) ([0-9a-f]{40})$")
-# At most this many intake messages per pass; the rest wait for the next pass.
+_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# The pull request number is bounded, so a message can never make `int()` fail.
+_INTAKE = re.compile(r"^ciwatch ([1-9][0-9]{0,8}) ([0-9a-f]{40})$")
+# Per pass: at most this many answers and this many pages of messages; the rest waits for the
+# next pass, which goes on where this one stopped.
 INTAKE_PER_PASS = 50
+PAGES_PER_PASS = 5
+# A request whose GitHub check fails this many passes in a row is answered and passed over;
+# an answer whose `maity say` fails this many times is given up (and logged).
+TRIES = 5
 _FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
 
 
@@ -172,8 +192,6 @@ def _drop(queue: Path, entry: Entry) -> None:
 
 Gh = Callable[[str], object]
 Say = Callable[[str, str], None]
-# Messages after a seq, oldest first; None for the newest seq there is.
-Messages = Callable[[int | None], list[dict[str, object]]]
 
 
 def check(entry: Entry, gh: Gh, repo: str = REPO) -> str | None:
@@ -255,12 +273,13 @@ def run_pass(queue: Path, gh: Gh, say: Say, repo: str = REPO, log: TextIO = sys.
     return done
 
 
-def _cursor(queue: Path) -> Path:
-    return queue.with_name(queue.name + ".seq")
-
-
 def _member(address: object) -> str:
     return str(address or "").split("#", 1)[0]
+
+
+def _clean(text: str) -> str:
+    """Another program's output for one log line: control characters shown as `?`."""
+    return "".join(c if c.isprintable() else "?" for c in text.strip()[:200])
 
 
 def admit(pr: int, sha: str, gh: Gh, repo: str = REPO) -> str | None:
@@ -280,6 +299,113 @@ def admit(pr: int, sha: str, gh: Gh, repo: str = REPO) -> str | None:
     return None
 
 
+Page = tuple[list[dict[str, object]], str | None]
+# (after, cursor) -> (items, next cursor): after a seq, oldest first; None for newest first.
+Messages = Callable[[int | None, str | None], Page]
+
+
+def _intake_file(queue: Path) -> Path:
+    return queue.with_name(queue.name + ".intake")
+
+
+def _load(queue: Path) -> dict[str, Any] | None:
+    try:
+        state = json.loads(_intake_file(queue).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except ValueError as bad:
+        raise Transient(f"{_intake_file(queue)}: not JSON; fix or remove it") from bad
+    if not isinstance(state, dict) or not isinstance(state.get("after"), int):
+        raise Transient(f"{_intake_file(queue)}: no `after`; fix or remove it")
+    state.setdefault("pass", 0)
+    state.setdefault("resume", None)
+    state.setdefault("tries", {})
+    state.setdefault("outbox", [])
+    return state
+
+
+def _save(queue: Path, state: dict[str, Any]) -> None:
+    path = _intake_file(queue)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _seq(item: dict[str, object]) -> int:
+    seq = item.get("seq")
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        raise Transient("maity messages: a message without a seq")
+    return seq
+
+
+def _newest(messages: Messages) -> int:
+    """The newest message's seq, following continuations past empty pages; 0 for none."""
+    cursor: str | None = None
+    for _ in range(PAGES_PER_PASS):
+        items, cursor = messages(None, cursor)
+        if items:
+            return max(_seq(item) for item in items)
+        if not cursor:
+            return 0
+    raise Transient("intake: no newest message within the read budget")
+
+
+def _send(
+    queue: Path, state: dict[str, Any], answer: dict[str, Any], say: Say, log: TextIO
+) -> None:
+    """Says an answer from the outbox; it leaves the outbox once said or given up."""
+    try:
+        say(answer["to"], answer["text"])
+    except Transient as trouble:
+        answer["failed"] = state["pass"]
+        answer["tries"] = answer.get("tries", 0) + 1
+        if answer["tries"] >= TRIES:
+            state["outbox"].remove(answer)
+            print(f"ci_watch: intake: gave up answering {answer['to']}: {trouble}", file=log)
+        else:
+            print(f"ci_watch: intake: {trouble}; answer tried again", file=log)
+    else:
+        state["outbox"].remove(answer)
+    _save(queue, state)
+
+
+def _decide(
+    item: dict[str, object],
+    match: re.Match[str],
+    seq: int,
+    state: dict[str, Any],
+    queue: Path,
+    gh: Gh,
+    repo: str,
+) -> tuple[str, str, Entry | None] | None:
+    """(to, answer, entry to add) for one request, or None when the sender is no member id to
+    answer; a GitHub failure raises Transient until it has failed TRIES passes in a row, then
+    the request is answered and passed over."""
+    sender = str(item.get("from") or "")
+    if not _MEMBER.match(sender):
+        return None
+    instance = item.get("from_instance")
+    author = f"{sender}#{instance}"
+    pr, sha = int(match[1]), match[2]
+    tag = f" (request {seq})"
+    if not instance:
+        return sender, f"ciwatch: #{pr} not added: the message has no sender instance.{tag}", None
+    if not _AUTHOR.match(author):
+        return sender, f"ciwatch: #{pr} not added: the sender instance is not valid.{tag}", None
+    try:
+        why = admit(pr, sha, gh, repo)
+    except Transient:
+        tries = state["tries"][str(seq)] = state["tries"].get(str(seq), 0) + 1
+        if tries < TRIES:
+            _save(queue, state)
+            raise
+        why = f"GitHub did not answer {tries} times; send it again"
+    if why is None:
+        text = f"ciwatch: #{pr} {sha} added; the result comes when CI is done.{tag}"
+        return author, text, Entry(pr, sha, author)
+    return author, f"ciwatch: #{pr} {sha} not added: {why}.{tag}", None
+
+
 def intake_pass(
     queue: Path,
     inbox: str,
@@ -289,72 +415,100 @@ def intake_pass(
     repo: str = REPO,
     log: TextIO = sys.stderr,
 ) -> int:
-    """Takes `ciwatch <pr> <sha>` messages to `inbox` into the queue; returns how many."""
-    cursor = _cursor(queue)
-    try:
-        after = int(cursor.read_text(encoding="utf-8").strip())
-    except FileNotFoundError:
-        newest = messages(None)
-        seq = int(str(newest[0]["seq"])) if newest else 0
-        cursor.write_text(f"{seq}\n", encoding="utf-8")
+    """Takes `ciwatch <pr> <sha>` messages to `inbox` into the queue; returns how many.
+
+    Each request is decided once: the queue line, the answer (in the outbox) and the seq read
+    are saved before the answer is said, so a failed or lost `say` never decides it again. An
+    answer whose `say` failed is said again only after a later pass has read the messages to
+    the end without finding it, since a `say` whose response was lost did post it."""
+    state = _load(queue)
+    if state is None:
+        seq = _newest(messages)
+        _save(queue, {"after": seq, "pass": 0, "resume": None, "tries": {}, "outbox": []})
         print(f"ci_watch: intake starts after message {seq}", file=log)
         return 0
-    taken = 0
-    answered = 0
-    for item in messages(after):
-        seq = int(str(item["seq"]))
-        sender = str(item.get("from") or "")
-        match = _INTAKE.match(str(item.get("body") or "").strip())
-        if _member(item.get("to")) == inbox and sender != inbox and match:
+    state["pass"] += 1
+    for answer in state["outbox"]:
+        if answer.get("failed") is None:  # decided by an earlier pass that stopped before say
+            answer["failed"] = state["pass"] - 1
+    _save(queue, state)
+    if state["resume"]:
+        start, cursor = state["resume"]
+    else:
+        start, cursor = state["after"], None
+    taken = answered = 0
+    stopped = at_end = False
+    for _ in range(PAGES_PER_PASS):
+        items, following = messages(start, cursor)
+        for item in items:
+            seq = _seq(item)
+            if seq <= state["after"]:
+                continue
+            body = str(item.get("body") or "").strip()
+            sender = str(item.get("from") or "")
+            if sender == inbox:
+                # Our own message: an answer whose `say` failed may have been posted after all.
+                for answer in state["outbox"]:
+                    if answer["text"] == body and _member(item.get("to")) == _member(answer["to"]):
+                        state["outbox"].remove(answer)
+                        break
+            elif _member(item.get("to")) == inbox and (match := _INTAKE.match(body)):
+                if answered >= INTAKE_PER_PASS:
+                    stopped = True
+                    break
+                decided = _decide(item, match, seq, state, queue, gh, repo)
+                if decided is None:
+                    print(f"ci_watch: intake: message {seq} has no sender to answer", file=log)
+                    state["after"] = seq
+                    _save(queue, state)
+                    continue
+                to, text, entry = decided
+                if entry is not None:
+                    add(queue, entry)
+                    print(f"ci_watch: added #{entry.pr} {entry.sha} for {entry.author}", file=log)
+                    taken += 1
+                answer = {"seq": seq, "to": to, "text": text, "failed": None}
+                state["outbox"].append(answer)
+                state["tries"].pop(str(seq), None)
+                state["after"] = seq
+                _save(queue, state)
+                _send(queue, state, answer, say, log)
+                answered += 1
+                continue
+            state["after"] = seq
+            _save(queue, state)
+        if stopped or not following:
+            at_end = not stopped
+            break
+        cursor = following
+    state["resume"] = None if stopped or at_end else [start, cursor]
+    _save(queue, state)
+    if at_end:
+        for answer in [a for a in state["outbox"] if a["failed"] < state["pass"]]:
             if answered >= INTAKE_PER_PASS:
                 break
-            instance = item.get("from_instance")
-            author = f"{sender}#{instance}"
-            pr, sha = int(match[1]), match[2]
-            if not instance or not _AUTHOR.match(author):
-                say(sender, f"ciwatch: #{pr} not added: the message has no sender instance")
-            else:
-                why = admit(pr, sha, gh, repo)
-                if why is None:
-                    add(queue, Entry(pr, sha, author))
-                    say(author, f"ciwatch: #{pr} {sha} added; the result comes when CI is done.")
-                    print(f"ci_watch: added #{pr} {sha} for {author}", file=log)
-                    taken += 1
-                else:
-                    say(author, f"ciwatch: #{pr} {sha} not added: {why}.")
+            _send(queue, state, answer, say, log)
             answered += 1
-        # Written after each message, so a failure above retries exactly this one.
-        cursor.write_text(f"{seq}\n", encoding="utf-8")
     return taken
 
 
-def maity_messages(after: int | None) -> list[dict[str, object]]:
-    """`maity messages --json`: after a seq, oldest first, every page; or the newest one."""
-    base = ["maity", "messages", "--json"]
-    if after is None:
-        return _maity_page([*base, "--limit", "1"])["items"]
-    items: list[dict[str, object]] = []
-    page = _maity_page([*base, "--after", str(after), "--limit", "200"])
-    items.extend(page["items"])
-    while page.get("next_cursor"):
-        page = _maity_page(
-            [*base, "--after", str(after), "--limit", "200", "--cursor", str(page["next_cursor"])]
-        )
-        items.extend(page["items"])
-    return items
-
-
-def _maity_page(argv: list[str]) -> dict[str, list[dict[str, object]]]:
+def maity_messages(after: int | None, cursor: str | None) -> Page:
+    """One page of `maity messages --json`: after a seq, oldest first; or newest first."""
+    argv = ["maity", "messages", "--json"]
+    argv += ["--limit", "1"] if after is None else ["--after", str(after), "--limit", "200"]
+    if cursor:
+        argv += ["--cursor", cursor]
     done = subprocess.run(argv, capture_output=True, text=True, check=False)
     if done.returncode != 0:
-        raise Transient(f"maity messages: {done.stderr.strip()[:200]}")
+        raise Transient(f"maity messages: {_clean(done.stderr)}")
     try:
         data = json.loads(done.stdout)
     except ValueError as bad:
         raise Transient("maity messages: not JSON") from bad
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         raise Transient("maity messages: no items")
-    return data
+    following = data.get("next_cursor")
+    return data["items"], str(following) if following else None
 
 
 def gh_get(path: str) -> object:
@@ -368,7 +522,7 @@ def gh_get(path: str) -> object:
     if done.returncode != 0:
         if "HTTP 404" in done.stderr:
             raise NotFound(path)
-        raise Transient(f"gh api {path.split('?')[0]}: {done.stderr.strip()[:200]}")
+        raise Transient(f"gh api {path.split('?')[0]}: {_clean(done.stderr)}")
     try:
         return json.loads(done.stdout)
     except ValueError as bad:
@@ -384,7 +538,7 @@ def maity_say(author: str, text: str) -> None:
         check=False,
     )
     if done.returncode != 0:
-        raise Transient(f"maity say: {done.stderr.strip()[:200]}")
+        raise Transient(f"maity say: {_clean(done.stderr)}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -419,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not os.environ.get("MAITY_STATE_DIR"):
             raise Refused("run: set MAITY_STATE_DIR to the identity the reports go out under")
-        if args.inbox is not None and not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", args.inbox):
+        if args.inbox is not None and not _MEMBER.match(args.inbox):
             raise Refused("--inbox: give a member id, without `#instance`")
         while True:
             if args.inbox:
