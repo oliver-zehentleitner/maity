@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import fakehub
 import pytest
@@ -74,3 +75,31 @@ def test_the_standing_of_an_author_is_in_the_line() -> None:
     assert line(member_id="agt-a") == "#7 message"  # an older hub sends none
     assert line(trust="member", via={"member_id": "agt-b"}) == "#7 message (through a bridge)"
     assert line(kind="human", id="hum-a", handle="anna") == "#7 message (no member)"
+
+
+def test_an_unread_nudge_names_the_chat_and_the_command() -> None:
+    payload: dict[str, Any] = {
+        "conversation": {"id": "cnv-7", "kind": "group", "title": "Release go/no-go"},
+        "unread": 3,
+        "oldest_seq": 80,
+        "newest_seq": 88,
+    }
+    event: dict[str, Any] = {
+        "seq": 90,
+        "kind": "chat_unread",
+        "actor": None,
+        "subject": {"type": "conversation", "id": "cnv-7"},
+        "payload": payload,
+    }
+    assert cli._event_line(event) == (
+        '#90 chat_unread: 3 unread in "Release go/no-go": maity chat cnv-7'
+    )
+    untitled = {**event, "payload": {**payload, "conversation": {"id": "cnv-7"}}}
+    assert cli._event_line(untitled) == "#90 chat_unread: 3 unread in cnv-7: maity chat cnv-7"
+    # A title is the humans' text: an escape sequence cannot reach the terminal through it
+    # (`onboarding.inline` escapes control, bidi and tag characters; a tab it keeps, by design).
+    hostile = {
+        **event,
+        "payload": {**payload, "conversation": {"id": "cnv-7", "title": "a\x1b[2Jb"}},
+    }
+    assert "\x1b" not in cli._event_line(hostile)
