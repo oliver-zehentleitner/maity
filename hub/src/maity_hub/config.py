@@ -581,6 +581,11 @@ def parse_cli_install(value: str) -> str:
 
 
 _LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE)
+# The whole value as it is returned: `https://`, a host name or an IPv4 address or a bracketed
+# IPv6 address (no zone), an optional port, an optional `/`. Nothing else can reach the line.
+_JOIN_URL = re.compile(
+    r"https://(?:\[(?P<v6>[0-9a-f:.]+)\]|(?P<name>[a-z0-9.-]+))(?::[0-9]{1,5})?/?", re.IGNORECASE
+)
 
 
 def _dns_name_or_address(host: str) -> bool:
@@ -592,6 +597,19 @@ def _dns_name_or_address(host: str) -> bool:
         pass
     labels = host.removesuffix(".").split(".")
     return len(host) <= 253 and all(_LABEL.fullmatch(label) for label in labels)
+
+
+def _join_host_ok(value: str) -> bool:
+    """`value` is `_JOIN_URL` whole, and its host a host name, an IPv4 or an IPv6 address."""
+    found = _JOIN_URL.fullmatch(value)
+    if found is None:
+        return False
+    if found["v6"] is not None:
+        try:
+            return ipaddress.ip_address(found["v6"]).version == 6
+        except ValueError:
+            return False
+    return _dns_name_or_address(found["name"])
 
 
 def parse_join_url(value: str, public_url: str) -> str | None:
@@ -615,8 +633,10 @@ def parse_join_url(value: str, public_url: str) -> str | None:
         or parts.fragment
     ):
         raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
-    if not _dns_name_or_address(parts.hostname):
-        # The host goes into a shell line unquoted (`join_line`): no shell punctuation.
+    # The value goes into a shell line unquoted (`join_line`), so the check is on the exact
+    # string returned, not on what `urlsplit` makes of it: it drops tabs and line breaks
+    # before it parses, and an IPv6 zone (`%eth0…`) is free text.
+    if not _join_host_ok(value):
         raise ConfigError(
             "MAITY_JOIN_URL's host must be a host name (letters, digits and hyphens per label)"
             f" or an IP address, got {value!r}"

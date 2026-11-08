@@ -90,12 +90,20 @@ def test_a_join_url_is_normalised() -> None:
         "https://join-.example",
         "https://join..example",
         "https://" + "a" * 64 + ".example",
+        "https://[fe80::1%eth0$(printf PROBE)]",
+        "https://[fe80::1%25eth0]",
+        "https://join.example\tprintf",
+        "https://join.example/\nprintf PROBE",
+        "https://join.exa\rmple",
+        "https://bücher.example",
+        "https://[192.0.2.7]",
+        "https://join.example//",
     ],
 )
 def test_a_join_host_that_is_no_dns_name_or_address_stops_the_hub(value: str) -> None:
     """The host goes into a shell line unquoted (`join_line`): letters, digits and hyphens per
     label, or an IP address, so no shell punctuation can reach it (nyh5 at #1236)."""
-    with pytest.raises(ConfigError, match="MAITY_JOIN_URL.s host must be a host name"):
+    with pytest.raises(ConfigError, match="MAITY_JOIN_URL"):
         parse_join_url(value, PUBLIC)
 
 
@@ -108,6 +116,8 @@ def test_a_join_host_that_is_no_dns_name_or_address_stops_the_hub(value: str) ->
         "https://join.example:8443",
         "https://192.0.2.7",
         "https://[2001:db8::7]",
+        "https://[2001:db8::7]:8443",
+        "HTTPS://join.example",
     ],
 )
 def test_a_join_host_that_is_a_dns_name_or_an_address_is_taken(value: str) -> None:
