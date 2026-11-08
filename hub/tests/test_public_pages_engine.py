@@ -193,6 +193,28 @@ def test_render_all_renders_what_exists_and_deletes_the_rest(
     assert set(rows(migrated)) == {"/a", "/c"}
 
 
+def test_render_all_keeps_a_page_whose_target_became_public_during_the_pass(
+    migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A target that turns public after the pass read its targets, its page committed by
+    `on_change` meanwhile, keeps that page: the cleanup deletes only what is not public when
+    it runs, not what was missing from the pass's own list."""
+    config = hub(settings)
+    shown.targets["a"] = ("A", True, clock.now())
+    original = public_pages.refresh
+
+    def refresh(conn: Connection, hub: Settings, kind: str, target_id: str, **kw: Any) -> Any:
+        found = original(conn, hub, kind, target_id, **kw)
+        if target_id == "a":  # meanwhile another request makes "n" public and commits it
+            shown.targets["n"] = ("N", True, clock.now())
+            original(conn, hub, kind, "n")
+        return found
+
+    monkeypatch.setattr(public_pages, "refresh", refresh)
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+
+
 def test_startup_renders_every_page_again_before_any_is_served(
     migrated: Engine, settings: Settings, shown: Shown
 ) -> None:

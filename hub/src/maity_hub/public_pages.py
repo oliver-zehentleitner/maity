@@ -416,7 +416,9 @@ def render_all(
                     select(t.public_page.c.target_id).where(t.public_page.c.kind == kind.name)
                 ).scalars()
             )
-            for target_id in stored - set(ids):
+            # The targets as they are now, not the pass's own list: one that turned public
+            # meanwhile has its page from `on_change`, which this must not delete.
+            for target_id in stored - set(kind.targets(conn)):
                 remove(conn, kind.name, target_id)
     if skipped:
         with engine.begin() as conn:
