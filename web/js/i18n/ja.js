@@ -663,7 +663,7 @@ window.MAITY_I18N["ja"] = {
   "cardpanel.notes.edit.conflict": "保存されませんでした: その間にノートが変更されました。現在の内容は上に表示されています。あなたのテキストは入力欄に残っています。置き換えるには、もう一度保存してください。",
   "cardpanel.notes.edit.conflict_removed": "保存されませんでした: その間にノートが取り除かれました。あなたのテキストは残っていません。",
   "cardpanel.notes.edit.field": "ノート",
-  "cardpanel.notes.edit.hint": "新しいテキストが古いテキストをすべての場所で置き換えます。残るのは「(名前) が編集」という表示と、あなたの理由だけです。",
+  "cardpanel.notes.edit.hint": "新しいテキストが古いテキストをすべての場所で置き換えます。残るのは、誰がいつ編集したかの表示と、理由を書いた場合はその理由だけです。",
   "cardpanel.notes.edit.label_of": "{who} の {when} のノートを編集",
   "cardpanel.notes.edit.not_saved": "保存されませんでした: ",
   "cardpanel.notes.edit.now": "現在のノートの内容:",
