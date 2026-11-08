@@ -565,6 +565,7 @@ window.Maity = window.Maity || {};
     // What the open list lacks is read on its own: the answered ones when Show asks for all,
     // a linked request that is not open by its id (§7, GET …/requests/{id}).
     let closedRead = ctx.scope !== "project";
+    let closedReading = null;
     const addClosed = (more) => {
       const have = new Set(items.map((r) => r.id));
       more.forEach((r) => { if (!have.has(r.id)) items.push(r); });
@@ -763,9 +764,12 @@ window.Maity = window.Maity || {};
         showAll = false;
         if (ui.show === "all" && !closedRead) {
           listStatus.busy(M.t("inbox.answered_loading"));
+          // One read per view: all → open → all while it runs waits for the same one; a failed one
+          // is let go, so the next choice of all asks again.
+          closedReading = closedReading || closedOf(ctx).then((more) => { addClosed(more); closedRead = true; },
+            (err) => { closedReading = null; throw err; });
           try {
-            addClosed(await closedOf(ctx));
-            closedRead = true;
+            await closedReading;
             listStatus.done();
           } catch (err) {
             listStatus.fail(M.t("inbox.answered_failed"), err);

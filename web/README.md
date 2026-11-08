@@ -1888,7 +1888,7 @@ Personal, linking into nothing), so it shows exactly what its tab counts
 (`docs/api.md` §18.2). The history of answered and closed requests is the
 **Show** filter. A project's inbox reads its open requests alone
 (`status=open`); **Show** → all reads the answered and withdrawn ones then,
-once per view (`status=answered,withdrawn`), and a link to a request that
+once per view (`status=answered,withdrawn`; choosing all again while it runs waits for that read, a failed one is asked again), and a link to a request that
 is not open reads that one request (`GET …/requests/{id}`), so the first
 drawing does not grow with the history. Unread activity is on the bell (its latest items, unread
 ones in bold with a dot, **Mark all read**), conversations on the **Chat**

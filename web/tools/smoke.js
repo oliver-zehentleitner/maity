@@ -822,6 +822,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No open requests."), "inbox empty");
   // The inbox reads its open requests first; Show → all reads the answered and withdrawn ones,
   // once per view (tsk-y8gkq1kvt63c: the history no longer slows the first drawing).
+  // A slow history read is shared: all → open → all while it runs asks once (review of #1519); a
+  // failed one is let go, and the next all asks again.
+  const ohGet = win.Maity.api.getAll, ohReads = [];
+  let ohRelease = null, ohFail = false;
+  win.Maity.api.getAll = (p, ...r) => {
+    if (!/\/projects\/maintainer\/maity\/requests\?status=answered,withdrawn$/.test(p)) return ohGet(p, ...r);
+    ohReads.push(p);
+    if (ohFail) return Promise.reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable"));
+    return new Promise((resolve) => { ohRelease = () => resolve(ohGet(p, ...r)); });
+  };
+  await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const ohShow = (v) => { byId("inbox-show").value = v; byId("inbox-show").dispatch("change"); };
+  ohShow("all"); await tick(); ohShow("open"); await tick(); ohShow("all"); for (let k = 0; k < 4; k++) await tick();
+  const ohHeld = ohReads.length;
+  ohRelease(); for (let k = 0; k < 6; k++) await tick();
+  ohShow("open"); await tick(); ohShow("all"); for (let k = 0; k < 4; k++) await tick();
+  expect(ohHeld === 1 && ohReads.length === 1 && main.querySelectorAll(".entry").length === 8,
+    "inbox: all, open, all while the history is read asks it once, and draws it when it comes " + JSON.stringify([ohHeld, ohReads.length]));
+  ohShow("open"); await tick();
+  ohReads.length = 0; ohFail = true;
+  await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  ohShow("all"); for (let k = 0; k < 4; k++) await tick();
+  const ohFailed = text(main).includes("could not be read");
+  ohFail = false;
+  ohShow("open"); await tick(); ohShow("all"); for (let k = 0; k < 4; k++) await tick();
+  ohRelease(); for (let k = 0; k < 6; k++) await tick();
+  expect(ohFailed && ohReads.length === 2 && main.querySelectorAll(".entry").length === 8,
+    "inbox: a failed history read is said, and the next all asks again " + JSON.stringify([ohFailed, ohReads.length]));
+  ohShow("open"); await tick();
+  win.Maity.api.getAll = ohGet;
   const obGet = win.Maity.api.getAll, obReads = [];
   win.Maity.api.getAll = (p, ...r) => { if (/\/projects\/maintainer\/maity\/requests\?/.test(p)) obReads.push(p.split("?")[1]); return obGet(p, ...r); };
   await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
