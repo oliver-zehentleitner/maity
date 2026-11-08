@@ -3802,9 +3802,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
   await go("#/maintainer/maity/chat");
-  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.textContent === "Message the project");
+  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.getAttribute("aria-label") === "Message the project");
   expect(msgLink && msgLink.getAttribute("href") === "#/maintainer/maity/message"
     && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the Chat tab, no tab");
+  // tsk-qgy2tb3w3x93: both actions are icons in the heading's row; their text is the name and the tooltip, nothing shown.
+  const gcIcons = main.querySelector(".chat-list-pane .toolbar").querySelectorAll("a.icon-button");
+  expect(gcIcons.length === 2 && gcIcons.map((a) => a.getAttribute("aria-label")).join("|") === "New group chat|Message the project"
+    && gcIcons.every((a) => a.getAttribute("title") === a.getAttribute("aria-label") && a.textContent.trim() === ""
+      && a.querySelector("svg") && a.querySelector("svg").getAttribute("aria-hidden") === "true"
+      && a.querySelector("svg path").getAttribute("fill-rule") === "evenodd"),
+    "chat list: New group chat and Message the project are icon links named by their text, with it as the tooltip");
   const msgPosts = [];
   const mPost0 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };

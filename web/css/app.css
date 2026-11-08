@@ -566,6 +566,9 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 6px; }
 .icon-button .icon .icon-fill { fill: currentColor; }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
+/* A link that looks like the icon buttons: it opens a page, so it stays a link (the chat list's actions). */
+a.icon-button { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+a.icon-button:hover { border-color: var(--accent); }
 /* A phone's thumb: bigger targets; the arrows wrap onto their own line. */
 @media (max-width: 600px) {
   .icon-button, .card-actions .menu-button { min-width: 40px; min-height: 40px; }
@@ -1231,8 +1234,13 @@ a.member-chip:hover { border-color: var(--accent); }
 .chip-dot.presence-paused { background: var(--warn); }
 
 /* Group chats (js/group-chat.js). */
-.chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.chat-list-pane .new-group { white-space: nowrap; }
+/* The project's heading and its two icon actions in one row at every width (tsk-qgy2tb3w3x93):
+   the heading gives way and ellipsizes, the icons never move below it. The global list (js/chats.js)
+   keeps its phone layout: its lead control sits under the heading at the left edge, where its menu
+   opens on screen. */
+.chat-list-pane .toolbar.chat-actions { flex-wrap: nowrap; }
+.chat-list-pane .toolbar.chat-actions h2 { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-list-pane .toolbar.chat-actions .icon-button { flex: none; }
 .mention-count { background: var(--accent); color: var(--accent-text); }
 .group-people-line, .group-observers { margin: 0 0 4px; font-size: 0.85rem; overflow-wrap: anywhere; }
 .group-manage { margin: 4px 0 8px; }
