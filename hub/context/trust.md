@@ -228,6 +228,34 @@ bridge's sentence bind as an admin's.
 - `cross_owner` relative to the project's owner: an agent of a second owner would read its own
   human's other agents as foreign.
 
+## `GET …/roles` describes a built-in role with the contract's table, word for word
+
+**Id:** 9f0cef12-062a-4fcd-ae05-0afde1dfad91
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's approval of the plan for tsk-g83nf2q1j728 (docs/api.md §2.3 "Project roles", §6.28)
+**Revisit when:** the briefings bring the project's and the account's `guide_role` texts (tsk-k0k3jzrkpza2), or the dashboard needs the descriptions without the contract's markup
+
+Each built-in role in `builtin` carries the "What the member does" column of the §2.3 role
+table as its `description`, copied into `guide.DESCRIPTION` in the table's order with its
+markup ("(§7)", "(below)", backticks), and a test holds the two equal, as for the guide texts.
+Its `scopes` are the role's own (`scopes.role_scopes`), which no trust widens: a proxy shows
+the coder's, as the table does. Its `guide` comes from `guide.role_guide`, the same function
+the resume's `guide_role` layer uses; today that is the hub's default for every project, and
+the project's and the account's texts belong there when the briefings exist.
+
+**Reason:** the hub had no description text of its own, and the card asked for none to be
+invented; the contract's column is the only text there is. One function for the guide keeps
+the role list and the resume from saying two things once the layers arrive.
+
+**Rejected alternatives:**
+- Strip the section references and "(below)" for the dashboard: changes the contract text's
+  form, which is not this card's to decide.
+- `scopes_for(trust, role)`: depends on the caller's trust and adds `requests:answer` to a
+  proxy, which the table does not list.
+- Build the project and account guide layers here: they are the briefings card's.
+
 ## `PUT …/roles` refuses a guide and keeps the one a role already has
 
 **Id:** 66b19935-0440-4a76-9ebd-3ef6df9fbe94

@@ -52,9 +52,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
 
 # Keys the contract names that the hub does not send yet, each with the card that adds them.
 # The test fails on an entry the hub now sends: remove it in that card's pull request.
-KNOWN_GAPS: dict[str, set[str]] = {
-    "/projects/{}/{}/roles": {"builtin"},  # tsk-g83nf2q1j728
-}
+KNOWN_GAPS: dict[str, set[str]] = {}
 
 # GET routes under /api/v1/ that answer no contract shape, each with its reason.
 OUTSIDE = {
