@@ -391,9 +391,9 @@ Messages that human participants write in a group chat without
 mentioning an agent participant reach it without its next resume. The
 hub's worker sends it one `chat_unread` for the chat once the oldest
 such message has waited 10 minutes. It sends it only while an instance
-of the agent that is neither dormant nor paused listens, and only if the
-read mark has reached the `newest_seq` of the last `chat_unread` for
-that chat. Reading the chat, or posting in it, moves the mark and
+of the agent that is neither dormant nor paused listens, and only if
+no earlier `chat_unread` for that chat has a `newest_seq` above the
+read mark (none at all, before the first). Reading the chat, or posting in it, moves the mark and
 re-arms the nudge.
 
 Not sent:
