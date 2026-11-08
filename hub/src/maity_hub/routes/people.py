@@ -253,6 +253,7 @@ def get_person(handle: str, request: Request, caller: AnyCaller) -> JSONResponse
 def add_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
     me = _caller(caller)
     mark = None
+    contacts.lock_rows(engine_of(request), me, handle)
     try:
         with engine_of(request).begin() as conn:
             contact_id = contacts.target(conn, me, handle, active=True)
@@ -273,6 +274,7 @@ def add_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
 @router.delete("/people/{handle}/contact")
 def remove_contact(handle: str, request: Request, caller: AnyCaller) -> Response:
     me = _caller(caller)
+    contacts.lock_rows(engine_of(request), me, handle)
     with engine_of(request).begin() as conn:
         contacts.remove(conn, me, contacts.target(conn, me, handle, active=False))
     return Response(status_code=204)

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, delete, insert, or_, select
+from sqlalchemy import Connection, Engine, delete, insert, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, handles, write_guard
@@ -25,6 +25,23 @@ ADDED = Limiter(PER_DAY, DAY, name="contacts.ADDED")  # new contacts per human
 
 CONTACTS = "contacts"  # whom the human has added: who may contact them
 CONTACT_OF = "contact_of"  # who has the human as a contact: whom they may contact
+
+
+def lock_rows(engine: Engine, me: str, handle: str) -> None:
+    """Make the `account_lock` rows of the caller and of the person `handle` names, in a
+    transaction of their own that commits before the change's (#1532 review, delta 1).
+
+    `write_guard` makes a missing row lazily, inside the transaction that first locks it. Two
+    people adding each other for the first time would then each insert their own row and wait
+    for the other's uncommitted insert: a deadlock. Made here first, in the order of their ids
+    and committed, the rows exist when the change's transaction takes them shared, and shared
+    locks on existing rows do not wait for each other. Exempt from the guard: this transaction
+    changes nothing of an account, and the guard's own row would come first, out of order."""
+    with engine.begin() as conn:
+        write_guard.exempt(conn)
+        human_id = handles.human_id_of(conn, handle)
+        for each in sorted({me} if human_id is None else {me, human_id}):
+            write_guard.ensure_row(conn, each)
 
 
 def target(conn: Connection, me: str, handle: str, *, active: bool) -> str:

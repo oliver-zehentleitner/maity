@@ -4,12 +4,13 @@ export and the account deletion."""
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, select, update
+from sqlalchemy import Engine, delete, func, select, update
 
-from maity_hub import account_deletion, clock, contacts
+from maity_hub import account_deletion, clock, contacts, write_guard
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from tests import factory, flow
@@ -348,3 +349,44 @@ def test_a_stranger_gets_one_answer_for_every_name_that_is_not_an_active_person(
         }
         assert len(set(map(str, answers.values()))) == 1, answers
         assert answers["nobody-here"][0] == 404
+
+
+def test_two_people_adding_each_other_first_both_succeed(
+    anna: flow.Human, ben: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Neither has an `account_lock` row yet. Each `PUT` holds its caller's lock and then
+    reaches for the other's at the same moment: both get theirs, nobody deadlocks (#1532
+    review, delta 1)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("a race needs two writers: PostgreSQL or MariaDB (CI)")
+    with migrated.begin() as conn:
+        conn.execute(delete(t.account_lock).where(t.account_lock.c.human_id.in_([anna.id, ben.id])))
+    meet = threading.Barrier(2, timeout=10)
+    first = {anna.id, ben.id}  # each caller's first hold is its change's transaction
+    guard = threading.Lock()
+    hold = write_guard.hold
+
+    def held(conn: Any, human_id: str) -> None:
+        hold(conn, human_id)
+        with guard:
+            waits = human_id in first
+            first.discard(human_id)
+        if waits:
+            meet.wait()  # both hold their own lock; now each reaches for the other's
+
+    monkeypatch.setattr(write_guard, "hold", held)
+    answers: dict[str, int] = {}
+
+    def adds(who: flow.Human, other: str) -> None:
+        answers[who.handle] = put(who, other).status_code
+
+    workers = [
+        threading.Thread(target=adds, args=(anna, "ben")),
+        threading.Thread(target=adds, args=(ben, "anna")),
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(30)
+    assert answers == {"anna": 204, "ben": 204}
+    assert _rows(migrated) == 2
