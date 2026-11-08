@@ -243,3 +243,29 @@ directory left to debug from.
 **Rejected alternative:** leave the default `all` and delete `/tmp/pytest-of-*`
 from the workflow only. The copies still exist for the whole suite, which is
 the disk the measurement found, and a local run keeps them too.
+
+## `test_public_why` starts no public-pages worker: the renders it reads come from the app's start and from `touch`
+
+**Id:** 2be5f10f-49f7-4dae-80c4-bf72205aa584
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tb5a42f4r5dj, pull request #1453 (b2ec5b31) and its review; the fixture comment in `hub/tests/test_public_why.py` (`world`)
+**Revisit when:** a test of that file needs the worker's own re-render, or `public_pages.configure` also reaches a running worker
+
+The `world` fixture patches `public_pages.Worker.start` to a no-op. A worker
+renders with the settings its app started with, and these tests change them
+through `public_pages.configure` alone; a worker's start-up render, late on a
+loaded runner, wrote the Why page back as the old settings showed it, and the
+test read that page (flaky, reproduced in #1453).
+
+**Reason:** what the tests check is the page as the current settings render it,
+and that render comes from the app's start and from `touch`; the worker adds
+only a second, late writer with stale settings.
+
+**Rejected alternatives:**
+- Updating `Worker.hub` after `configure`: a test-only path into the worker's
+  state, and still a race with a render already under way.
+- Waiting for the worker before reading: the late render can start after the wait.
+- Marking the test `xfail`, or retrying it: both hide a real failure; the card
+  ruled them out.
