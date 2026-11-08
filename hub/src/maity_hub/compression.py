@@ -70,23 +70,34 @@ def already_compressed(media_type: str) -> bool:
     return not {media_type, media_type.partition("/")[0] + "/*"}.isdisjoint(ALREADY_COMPRESSED)
 
 
+# A weight as RFC 9110 §12.4.2 writes it: 0 to 1, at most three decimals.
+_QVALUE = re.compile(r"0(?:\.\d{0,3})?|1(?:\.0{0,3})?")
+
+
 def accepts_gzip(accept_encoding: str) -> bool:
-    """Whether `Accept-Encoding` takes gzip: `gzip` or `*` with a weight above 0."""
+    """Whether `Accept-Encoding` takes gzip (RFC 9110 §12.5.3): an entry for `gzip` decides
+    wherever it stands, `*` only when gzip is not named; a weight above 0 accepts. A weight
+    outside the grammar (`q=2`, `q=inf`, `q=x`) accepts nothing."""
+    named: float | None = None
+    wildcard: float | None = None
     for part in accept_encoding.split(","):
-        name, _, params = part.partition(";")
-        if name.strip().lower() not in ("gzip", "*"):
+        name, *params = (piece.strip() for piece in part.split(";"))
+        coding = name.lower()
+        if coding not in ("gzip", "*"):
             continue
         weight = 1.0
-        for param in params.split(";"):
+        for param in params:
             key, _, value = param.partition("=")
             if key.strip().lower() == "q":
-                try:
-                    weight = float(value.strip())
-                except ValueError:
-                    weight = 0.0
-        if weight > 0:
-            return True
-    return False
+                value = value.strip()
+                # An invalid weight counts as 0: the entry refuses, it never accepts.
+                weight = float(value) if _QVALUE.fullmatch(value) else 0.0
+        if coding == "gzip":
+            named = weight if named is None else max(named, weight)
+        else:
+            wildcard = weight if wildcard is None else max(wildcard, weight)
+    chosen = named if named is not None else wildcard
+    return chosen is not None and chosen > 0
 
 
 class Compression:

@@ -259,8 +259,38 @@ def test_the_middleware_leaves_the_dashboards_files_to_assetfiles() -> None:
     assert not compression.compressed("GET", "/assets/js/app.js")
     assert compression.compressed("GET", "/assets/landing/landing.css")
     assert compression.compressed("GET", "/api/v1/health")
-    assert compression.accepts_gzip("br, gzip;q=0.5") and compression.accepts_gzip("*")
-    assert not compression.accepts_gzip("gzip;q=0") and not compression.accepts_gzip("identity")
+    for accepted in ("gzip", "br, gzip;q=0.5", "*", "GZIP ; Q=1.000", "gzip;q=0, gzip;q=1"):
+        assert compression.accepts_gzip(accepted), accepted
+    # An explicit refusal wins over `*` wherever it stands (RFC 9110 §12.5.3); a weight
+    # outside the grammar accepts nothing.
+    for refused in (
+        "gzip;q=0",
+        "identity",
+        "",
+        "gzip;q=0, *",
+        "*;q=1, gzip;q=0",
+        "*;q=0",
+        "gzip;q=2",
+        "gzip;q=inf",
+        "gzip;q=NaN",
+        "gzip;q=-1",
+        "gzip;q=0.0001",
+        "gzip;q=bogus",
+    ):
+        assert not compression.accepts_gzip(refused), refused
+
+
+def test_a_refused_gzip_is_not_sent_even_beside_a_wildcard(
+    client: TestClient, web_dir: Path
+) -> None:
+    content = _css(web_dir)
+    for header in ("gzip;q=0, *", "*;q=1, gzip;q=0", "gzip;q=2"):
+        response = client.get("/assets/css/app.css", headers={"Accept-Encoding": header})
+        assert response.status_code == 200 and response.text == content, header
+        assert "content-encoding" not in response.headers, header
+        assert not response.headers["etag"].endswith('-gzip"'), header
+    wanted = client.get("/assets/css/app.css", headers={"Accept-Encoding": "br;q=1, *;q=0.5"})
+    assert wanted.headers["content-encoding"] == "gzip"
 
 
 def test_only_the_built_files_leave_no_store(client: TestClient, web_dir: Path) -> None:
