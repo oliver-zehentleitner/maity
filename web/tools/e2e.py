@@ -1113,59 +1113,65 @@ def scenario(run: Run, page: Page) -> None:
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
-    page.set_viewport_size({"width": 390, "height": 844})
-    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    # The text beside the logo is hidden from sight only: still in the page for a screen reader.
-    expect(page.locator("header .bar > .project")).to_have_count(1)
-    box = page.locator("header .bar > .project").bounding_box()
-    assert box and box["width"] <= 1 and box["height"] <= 1, f"the header's text beside the logo shows at 390 px: {box}"
-    # Each view through its tab: the tab row scrolls sideways on its own, so
-    # every tab has to stay reachable there.
-    tabs = (
-        ("inbox", "Inbox"),
-        ("board", "Board"),
-        ("overview", "Overview"),
-        ("members", "Members"),
-        ("agents", "Agents"),
-    )
-    # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
-    if view_tab(page, "Why").count():
-        tabs += (("why", "Why"),)
-    # Runners has no tab of its own any more (the maintainer, 2026-10-31): Settings links it.
-    expect(view_tab(page, "Runners")).to_have_count(0)
-    for view, tab in tabs:
-        view_tab(page, tab).click()
-        expect(page.locator(f"main section.view-{view}")).to_be_visible()
-        if view == "inbox":
-            expect(page.locator("li.entry.current")).to_contain_text("Phone check?")
-        expect(page.locator("main .send-status.failed, main .error, main .page-failed")).to_have_count(0)
+    # 360 px as well, where a wrap shows whatever the fonts (tsk-et029v5k73f1); the a11y pass once.
+    for phone, tall in ((390, 844), (360, 780)):
+        suffix = "" if phone == 390 else f"-{phone}"
+        page.set_viewport_size({"width": phone, "height": tall})
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        # The text beside the logo is hidden from sight only: still in the page for a screen reader.
+        expect(page.locator("header .bar > .project")).to_have_count(1)
+        box = page.locator("header .bar > .project").bounding_box()
+        assert box and box["width"] <= 1 and box["height"] <= 1, f"the header's text beside the logo shows at {phone} px: {box}"
+        # Each view through its tab: the tab row scrolls sideways on its own, so
+        # every tab has to stay reachable there.
+        tabs = (
+            ("inbox", "Inbox"),
+            ("board", "Board"),
+            ("overview", "Overview"),
+            ("members", "Members"),
+            ("agents", "Agents"),
+        )
+        # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
+        if view_tab(page, "Why").count():
+            tabs += (("why", "Why"),)
+        # Runners has no tab of its own any more (the maintainer, 2026-10-31): Settings links it.
+        expect(view_tab(page, "Runners")).to_have_count(0)
+        for view, tab in tabs:
+            view_tab(page, tab).click()
+            expect(page.locator(f"main section.view-{view}")).to_be_visible()
+            if view == "inbox":
+                expect(page.locator("li.entry.current")).to_contain_text("Phone check?")
+            expect(page.locator("main .send-status.failed, main .error, main .page-failed")).to_have_count(0)
+            width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+            assert width[0] <= width[1], f"/owner/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
+            # The views row is wider than the phone; it shows a fade where more tabs are.
+            cue = page.locator("nav.views").get_attribute("class") or ""
+            assert "more-after" in cue or "more-before" in cue, f"{view}: no scroll cue ({cue!r})"
+            # The current tab and project chip are scrolled into their rows.
+            hidden = [cls for cls, shown in page.evaluate(CURRENT_SHOWN_JS) if not shown]
+            assert not hidden, f"{view}: the current entry of nav.{hidden} is scrolled out of view"
+            # Revoke keeps its label on one line: one line box for its text.
+            lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
+            assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
+            run.shot(page, f"phone-{view}{suffix}")
+            run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
+        # The create form: its preset select has long option labels.
+        page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
+        expect(page.locator("main section.view-new")).to_be_visible()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
-        assert width[0] <= width[1], f"/owner/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
-        # The views row is wider than 390 px; it shows a fade where more tabs are.
-        cue = page.locator("nav.views").get_attribute("class") or ""
-        assert "more-after" in cue or "more-before" in cue, f"{view}: no scroll cue ({cue!r})"
-        # The current tab and project chip are scrolled into their rows.
-        hidden = [cls for cls, shown in page.evaluate(CURRENT_SHOWN_JS) if not shown]
-        assert not hidden, f"{view}: the current entry of nav.{hidden} is scrolled out of view"
-        # Revoke keeps its label on one line: one line box for its text.
-        lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
-        assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
-        run.shot(page, f"phone-{view}")
-        run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
-    # The create form: its preset select has long option labels.
-    page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
-    expect(page.locator("main section.view-new")).to_be_visible()
-    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
-    assert width[0] <= width[1], f"/new is {width[0]} px wide at {width[1]} px"
-    run.shot(page, "phone-new")
-    run.a11y(page, "create a project")
-    # The Runners view: the pairing form and its long install line; reached from the gear menu.
-    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
-    page.get_by_role("menuitem", name="Runners", exact=True).click()
-    expect(page.locator("main section.view-runners")).to_be_visible()
-    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
-    assert width[0] <= width[1], f"/runners is {width[0]} px wide at {width[1]} px"
-    run.shot(page, "phone-runners")
+        assert width[0] <= width[1], f"/new is {width[0]} px wide at {width[1]} px"
+        run.shot(page, f"phone-new{suffix}")
+        if phone == 390:
+            run.a11y(page, "create a project")
+            page.set_viewport_size({"width": phone, "height": tall})  # a11y ends at 1280x900; Runners is measured at phone width
+        # The Runners view: the pairing form and its long install line; reached from the gear menu.
+        page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+        page.get_by_role("menuitem", name="Runners", exact=True).click()
+        expect(page.locator("main section.view-runners")).to_be_visible()
+        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert width[0] <= width[1], f"/runners is {width[0]} px wide at {width[1]} px"
+        run.shot(page, f"phone-runners{suffix}")
+    page.set_viewport_size({"width": 1280, "height": 900})  # where the a11y pass above left the steps below before 360 px was added
     no_problems(run, "phone width")
 
     users_step(run, page)
@@ -1315,7 +1321,7 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         assert sw <= iw, f"{where}: the page is {sw} px wide in a {iw} px window"
 
     try:
-        for width, height, scheme in ((1280, 900, "light"), (2560, 1200, "dark"), (390, 844, "light"), (390, 844, "dark")):
+        for width, height, scheme in ((1280, 900, "light"), (2560, 1200, "dark"), (390, 844, "light"), (390, 844, "dark"), (360, 780, "light")):
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
             where = f"{width} px {scheme}"
@@ -1335,8 +1341,8 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
                 ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.clientWidth, e.scrollWidth])"
             )
             assert not wider, f"the inbox at {where}: text wider than its box {wider}"
-            if width == 390:
-                run.shot(page, f"inbox-long-line-{scheme}")
+            if width < 1280:
+                run.shot(page, f"inbox-long-line-{scheme}" + ("" if width == 390 else f"-{width}"))
 
             page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
             note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
@@ -1476,11 +1482,13 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     expect(panel.locator("#card-panel-title")).to_be_focused()
     expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
     run.a11y(page, "board, a card's panel")
-    page.set_viewport_size({"width": 390, "height": 844})
-    box = panel.bounding_box()
-    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
-    assert box and box["width"] >= 300 and width[0] <= width[1], f"the card's panel at 390 px: {box}, page {width}"
-    run.shot(page, "card-panel-phone")
+    # 360 px as well, where a wrap shows whatever the fonts (tsk-et029v5k73f1).
+    for phone_width, phone_height in ((390, 844), (360, 780)):
+        page.set_viewport_size({"width": phone_width, "height": phone_height})
+        box = panel.bounding_box()
+        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert box and box["width"] >= 300 and width[0] <= width[1], f"the card's panel at {phone_width} px: {box}, page {width}"
+        run.shot(page, "card-panel-phone" + ("" if phone_width == 390 else f"-{phone_width}"))
     panel.locator("#card-panel-title").press("Escape")
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/board$"))
     expect(panel).to_have_count(0)
@@ -1802,6 +1810,10 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page).to_have_url(re.compile(r"/chats$"))
     expect(page.locator(".chat-list-pane")).to_be_visible()
     fits("the global chat list at 390 px")
+    # 360 px as well, where a wrap shows whatever the fonts (tsk-et029v5k73f1).
+    page.set_viewport_size({"width": 360, "height": 780})
+    expect(page.locator(".chat-list-pane")).to_be_visible()
+    fits("the global chat list at 360 px")
     page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "global chat")
     # Back where the chat step left the page: the project's chat with the agent.
@@ -2467,15 +2479,17 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     expect(question).to_have_count(0)
     expect(create).to_be_enabled()
     # A project's full name may be one long word: at phone width the panel's line wraps it.
-    page.set_viewport_size({"width": 390, "height": 844})
+    # 360 px as well, where a wrap shows whatever the fonts (tsk-et029v5k73f1).
     long_slug = "p" * 63
-    widths = panel.locator(".join-project").evaluate(
-        "(el, label) => { const was = el.textContent; el.textContent = label;"
-        " const w = [document.documentElement.scrollWidth, document.documentElement.clientWidth];"
-        " el.textContent = was; return w; }",
-        f"Joins into the project {long_slug} ({OWNER}/{long_slug})",
-    )
-    assert widths[0] <= widths[1], f"a 63-character project name widens the page at 390px: {widths}"
+    for phone_width, phone_height in ((390, 844), (360, 780)):
+        page.set_viewport_size({"width": phone_width, "height": phone_height})
+        widths = panel.locator(".join-project").evaluate(
+            "(el, label) => { const was = el.textContent; el.textContent = label;"
+            " const w = [document.documentElement.scrollWidth, document.documentElement.clientWidth];"
+            " el.textContent = was; return w; }",
+            f"Joins into the project {long_slug} ({OWNER}/{long_slug})",
+        )
+        assert widths[0] <= widths[1], f"a 63-character project name widens the page at {phone_width}px: {widths}"
     page.set_viewport_size({"width": 1280, "height": 900})
     page.locator("#join-agent").select_option("")
     page.locator("#join-handle").fill("e2e-mail-agent")
@@ -2651,14 +2665,16 @@ def fixture_views(run: Run, browser) -> None:
         expect(page.locator("main .why-main")).not_to_be_empty()
         run.shot(page, "fixtures-why-last-good")
         errors.clear()
-        # The view at phone width: nothing wider than the screen.
-        page.set_viewport_size({"width": 390, "height": 844})
-        page.goto(f"{index}#/maintainer/maity/why")
-        expect(page.locator("main .why-main")).not_to_be_empty()
-        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
-        assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
-        assert not errors, errors
-        run.shot(page, "fixtures-why-phone")
+        # The view at phone width: nothing wider than the screen. 360 px as well, where a wrap shows
+        # whatever the fonts (tsk-et029v5k73f1).
+        for phone, tall in ((390, 844), (360, 780)):
+            page.set_viewport_size({"width": phone, "height": tall})
+            page.goto(f"{index}#/maintainer/maity/why")
+            expect(page.locator("main .why-main")).not_to_be_empty()
+            width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+            assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
+            assert not errors, errors
+            run.shot(page, "fixtures-why-phone" + ("" if phone == 390 else f"-{phone}"))
     finally:
         context.close()
 
@@ -2715,13 +2731,13 @@ PATHS_MEASURE = """() => {
 
 def paths_views(run: Run, browser) -> None:
     """The Organisation tab's Paths face (tsk-j9ktmj7e4fxq) in fixture mode, every state the layout
-    has: 2560, 1280 and 390 px wide; with and without the sign-in banner; the fixture team and a
+    has: 2560, 1280, 390 and 360 px wide; with and without the sign-in banner; the fixture team and a
     team shaped like Maity's (26 members, 13 coders under one lead, one role of its own) folded
     and opened; the reporting lines on and off. Nothing overlaps, leaves the canvas or the window, no name is wider
     than its box, and the panel stands under the drawing."""
     run.step("fixtures: the Paths face fits at every width, with or without the banner, folded and opened")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+    for width, height in ((2560, 1200), (1280, 900), (390, 844), (360, 780)):
         context = browser.new_context(viewport={"width": width, "height": height})
         page = context.new_page()
         errors: list[str] = []
@@ -2986,16 +3002,16 @@ SESSIONS_FIXTURE = """(() => { let f; Object.defineProperty(window, "MAITY_FIXTU
 
 def notification_sessions_layout(run: Run, browser) -> None:
     """The Notifications page's Current sessions box and the bell's pinned block (tsk-0baaez2895sb),
-    in fixture mode, at 1280 x 900 and 390 x 844: the box with the tab's own session alone, with the
+    in fixture mode, at 1280 x 900, 390 x 844 and 360 x 780: the box with the tab's own session alone, with the
     fixtures' three active ones (the mail sign-in banner on, and removed) and with ten (five shown,
     the rest counted; long browser and system names); the bell opened and closed again, with two
     unread security alerts pinned (one with a long title) and with none. Every element of the box's
     lines and of the pinned rows is measured (LINES_MEASURE), the page never wider than the window,
     the banner never over the box. The page folds nothing else here: the bell's panel is its one
     fold."""
-    run.step("fixtures: Current sessions and the bell's pinned block at 1280 and 390 px, banner on and off")
+    run.step("fixtures: Current sessions and the bell's pinned block at 1280, 390 and 360 px, banner on and off")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((1280, 900), (390, 844)):
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
         for sessions, alerts in (("one", False), ("all", True), ("many", True), ("many", False)):
             context = browser.new_context(viewport={"width": width, "height": height})
             context.add_init_script(SESSIONS_FIXTURE % json.dumps({"sessions": sessions, "alerts": alerts}))
@@ -3156,14 +3172,15 @@ SWITCH_HOLD = """() => {
 
 
 def switch_busy_layout(run: Run, browser) -> None:
-    """A page switch while the next view loads (tsk-hn2wa8a7e2eq) in fixture mode: at 1280x900 and
-    390x844, light and dark, the sign-in banner on and off, and with reduced motion. The bar stands
+    """A page switch while the next view loads (tsk-hn2wa8a7e2eq) in fixture mode: at 1280x900,
+    390x844 and 360x780, light and dark, the sign-in banner on and off; with reduced motion at 1280 (light, banner)
+    and 390 (dark, no banner) only. The bar stands
     in main's top padding, 3 px, under the header and above the banner or the view, and moves
     nothing; the view being left is dimmed and busy; nothing overflows sideways; all of it is gone
     once the next view stands."""
-    run.step("fixtures: a page switch's bar and dimmed view at 1280 and 390 px, light and dark, banner on and off, reduced motion")
+    run.step("fixtures: a page switch's bar and dimmed view at 1280, 390 and 360 px, light and dark, banner on and off, reduced motion")
     index = (WEB / "index.html").as_uri()
-    cases = [(w, h, scheme, banner, False) for (w, h) in ((1280, 900), (390, 844))
+    cases = [(w, h, scheme, banner, False) for (w, h) in ((1280, 900), (390, 844), (360, 780))
              for scheme in ("light", "dark") for banner in (True, False)]  # fmt: skip
     cases += [(1280, 900, "light", True, True), (390, 844, "dark", False, True)]
     for width, height, scheme, banner, reduced in cases:
@@ -3224,13 +3241,13 @@ JOUR_FIXE_FIXTURE = """(() => { try { localStorage.setItem("maity.theme", %s); }
 
 def jour_fixe_settings_layout(run: Run, browser) -> None:
     """The jour fixe series' settings at the top of the jour fixe page (tsk-3526xb7mqg9r) in fixture
-    mode, every state the layout has, at 1280 x 900 and 390 x 844, light and dark, with the sign-in
+    mode, every state the layout has, at 1280 x 900, 390 x 844 and 360 x 780, light and dark, with the sign-in
     banner and without: for a keeper the link in Project settings, the section folded, opened and
     with the form for a new series (LINES_MEASURE on each); for a member who keeps no series the
     page without the section."""
     run.step("fixtures: the jour fixe series' settings folded, opened and with the form, keeper and not, light and dark, banner on and off")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((1280, 900), (390, 844)):
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
         for scheme in ("light", "dark"):
             for keeper in (True, False):
                 context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
@@ -3294,13 +3311,13 @@ def jour_fixe_settings_layout(run: Run, browser) -> None:
 
 def account_tabs_layout(run: Run, browser) -> None:
     """The account's tabs (tsk-3banvfzv3nvs) in fixture mode, every state the layout has: each tab
-    and each of Security's own at 2560, 1280 and 390 px, with the sign-in banner and without
+    and each of Security's own at 2560, 1280, 390 and 360 px, with the sign-in banner and without
     (TABS_MEASURE on every row and tab); switching by a click (the address, the marked tab, the
     page's top, the history); the profile menu, folded and opened, naming the tabs; and every
     address before the tabs leading to its tab, its heading focused, in place of it in the history."""
-    run.step("fixtures: the account's tabs at 2560, 1280 and 390 px, banner on and off, switched, the old addresses led on")
+    run.step("fixtures: the account's tabs at 2560, 1280, 390 and 360 px, banner on and off, switched, the old addresses led on")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((2560, 1200), (1280, 900), (390, 844)):
+    for width, height in ((2560, 1200), (1280, 900), (390, 844), (360, 780)):
         context = browser.new_context(viewport={"width": width, "height": height})
         page = context.new_page()
         errors: list[str] = []
@@ -3420,14 +3437,14 @@ PROFILE_LINK_MEASURE = """() => {
 
 def profile_public_link_layout(run: Run, browser) -> None:
     """The account's Profile tab (tsk-4e17b8xnp8eq) in fixture mode: "View public page" right under
-    the name and handle (`dl.facts`), never under the public-profile form. At 1280 x 900 and
-    390 x 844, light and dark, with the sign-in banner and without, and with the page served and not
+    the name and handle (`dl.facts`), never under the public-profile form. At 1280 x 900,
+    390 x 844 and 360 x 780, light and dark, with the sign-in banner and without, and with the page served and not
     (`page_served: false` from GET /people/{handle}): the link is the facts' next sibling and outside
     the form, a gap of at most 16 px under the facts while served, `display: none` while not; the
     facts and the link measured by LINES_MEASURE, the page never wider than the window."""
-    run.step("fixtures: View public page under the name and handle at 1280 and 390 px, light and dark, banner on and off, served and not")
+    run.step("fixtures: View public page under the name and handle at 1280, 390 and 360 px, light and dark, banner on and off, served and not")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((1280, 900), (390, 844)):
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
         for scheme in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme)
             context.add_init_script(f"try {{ localStorage.setItem('maity.theme', '{scheme}'); }} catch (e) {{}}")
@@ -4154,14 +4171,16 @@ def notifications_step(run: Run, page: Page) -> None:
     lead = 1 if "lead-button" in order[0] else 0
     assert (len(order) == 5 + lead and "chat-button" in order[lead] and "add" in order[1 + lead]
             and "bell-box" in order[3 + lead] and "profile" in order[4 + lead]), f"header order: {order}"
-    page.set_viewport_size({"width": 390, "height": 844})
     # One row with the logo: every shown button's vertical middle within the others' height and the
     # logo's (a pixel of alignment is no wrap). The Lead is hidden there; the Chats page carries it
-    # (the maintainer, tsk-m9ew7v609fq0).
-    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *, header .bar .brand')).filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
-    middles = [(top + bottom) / 2 for top, bottom in boxes]
-    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's buttons wrap under the logo at 390 px: {boxes}"
-    assert page.evaluate("!Array.from(document.querySelectorAll('header .me > *')).some((e) => e.offsetParent && /lead-button/.test(e.className))"), "the Lead is hidden in the header at 390 px"
+    # (the maintainer, tsk-m9ew7v609fq0). 360 px as well, where a wrap shows whatever the fonts
+    # (tsk-et029v5k73f1).
+    for phone_width, phone_height in ((390, 844), (360, 780)):
+        page.set_viewport_size({"width": phone_width, "height": phone_height})
+        boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *, header .bar .brand')).filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
+        middles = [(top + bottom) / 2 for top, bottom in boxes]
+        assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's buttons wrap under the logo at {phone_width} px: {boxes}"
+        assert page.evaluate("!Array.from(document.querySelectorAll('header .me > *')).some((e) => e.offsetParent && /lead-button/.test(e.className))"), f"the Lead is hidden in the header at {phone_width} px"
     page.set_viewport_size({"width": 1280, "height": 900})
     run.step("chats: the Chat button opens every chat across the projects")
     page.locator("header a.chat-button").click()
@@ -4183,20 +4202,21 @@ def notifications_step(run: Run, page: Page) -> None:
     try:
         page.reload()
         expect(page.locator("header .me .lead-button")).to_be_visible()
-        page.set_viewport_size({"width": 390, "height": 844})
-        expect(page.locator("header .me .lead-button")).to_be_hidden()
-        expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
-        # Several leads are a menu; under the heading at the left edge it opens from that edge, on
-        # screen (e5kk at #1271). Drawn with a second lead beside the real one.
-        box = page.evaluate("""() => new Promise((ok) => {
-          const ctx = document.getElementById('header').chatCtx; const t = ctx.chatFound.list[0];
-          const two = { list: [t, { ...t, member: { ...t.member, id: t.member.id + '-2', display_name: 'Second lead' } }], multiProject: false };
-          const slot = document.querySelector('main .chats-lead');
-          const before = slot.firstChild; slot.replaceChildren(window.Maity.leadChat.leadControl(ctx, two));
-          slot.querySelector('button').click();
-          setTimeout(() => { const r = slot.querySelector('.menu').getBoundingClientRect(); slot.replaceChildren(before); ok([r.left, r.right, innerWidth]); }, 100);
-        })""")
-        assert box[0] >= 0 and box[1] <= box[2], f"the Chats page's lead menu leaves the screen at 390 px: {box}"
+        for phone_width, phone_height in ((390, 844), (360, 780)):  # 360 px as well (tsk-et029v5k73f1)
+            page.set_viewport_size({"width": phone_width, "height": phone_height})
+            expect(page.locator("header .me .lead-button")).to_be_hidden()
+            expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
+            # Several leads are a menu; under the heading at the left edge it opens from that edge, on
+            # screen (e5kk at #1271). Drawn with a second lead beside the real one.
+            box = page.evaluate("""() => new Promise((ok) => {
+              const ctx = document.getElementById('header').chatCtx; const t = ctx.chatFound.list[0];
+              const two = { list: [t, { ...t, member: { ...t.member, id: t.member.id + '-2', display_name: 'Second lead' } }], multiProject: false };
+              const slot = document.querySelector('main .chats-lead');
+              const before = slot.firstChild; slot.replaceChildren(window.Maity.leadChat.leadControl(ctx, two));
+              slot.querySelector('button').click();
+              setTimeout(() => { const r = slot.querySelector('.menu').getBoundingClientRect(); slot.replaceChildren(before); ok([r.left, r.right, innerWidth]); }, 100);
+            })""")
+            assert box[0] >= 0 and box[1] <= box[2], f"the Chats page's lead menu leaves the screen at {phone_width} px: {box}"
         page.set_viewport_size({"width": 1280, "height": 900})
         expect(page.locator("main .chats-lead .lead-button")).to_be_hidden()
     finally:
@@ -4536,6 +4556,14 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     run.shots += 1
     print(f"   screenshot {run.shots:02d}-phone-release-editor.png", flush=True)
     run.a11y(page, "board, typed-PR editor open")
+    # 360 px as well, where a wrap shows whatever the fonts (tsk-et029v5k73f1).
+    page.set_viewport_size({"width": 360, "height": 780})
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"the open editor is {width[0]} px wide at {width[1]} px"
+    card.scroll_into_view_if_needed()
+    page.screenshot(path=str(run.artifacts / f"{run.shots + 1:02d}-phone-release-editor-360.png"))
+    run.shots += 1
+    print(f"   screenshot {run.shots:02d}-phone-release-editor-360.png", flush=True)
     card.get_by_role("button", name="Cancel", exact=True).click()
     page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "release edited")

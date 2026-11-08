@@ -288,4 +288,95 @@ expect(pseudo_run.pieces_of("Keep it; @agent-d sorts `x` the tabs.") >= {"Keep i
        "pseudo: a fixture's text comes apart where a page splits it")
 expect(len(pseudo_run.routes_of_smoke()) > 50, "pseudo: the routes come from the smoke test")
 
+# A failure is one sentence with {reason} (tsk-0zbms0wwqhmm): no English text ends in ": ", and
+# what statusLine().fail() is handed has the placeholder; a text filled into it need not.
+SENTENCES = {
+    "s.not_saved": "Not saved: {reason}",
+    "s.prefix": "Not saved: ",
+    "s.plural": {"one": "{count} left: {reason}", "other": "{count} left: "},
+    "s.what": "{what} failed: {reason}",
+    "s.busy": "Linking",
+}
+
+
+def found_by(run):
+    check.findings.clear()
+    run()
+    out = list(check.findings)
+    check.findings.clear()
+    return out
+
+
+said = found_by(lambda: check.check_prefixes(SENTENCES))
+expect(len(said) == 2 and "'s.plural'" in said[0] and "'s.prefix'" in said[1],
+       "a text or a plural form that ends in \": \" is a prefix " + repr(said))
+
+
+def fail_findings(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return found_by(lambda: check.check_fail_sentences("js/x.js", src, code, SENTENCES))
+
+
+expect(fail_findings('status.fail(M.t("s.not_saved"), err);') == [], "fail() with a sentence that has {reason}")
+expect(len(fail_findings('status.fail(M.t("s.prefix"), err);')) == 1, "fail() with a text without {reason}")
+expect(len(fail_findings('status.fail(ok ? M.t("s.not_saved") : M.t("s.prefix"), err);')) == 1,
+       "fail() with a ternary, one branch without {reason}")
+expect(fail_findings('status.fail(M.t("s.what", { what: M.t("s.busy") }), err);') == [],
+       "a text filled into the sentence is not the sentence")
+expect(len(fail_findings('status.fail(M.t("s.plural", { count: 2 }), err);')) == 1,
+       "a plural sentence needs {reason} in each form")
+expect(fail_findings('status.fail("", err); note(M.t("s.prefix"), err);') == [], "only fail()'s first argument is the sentence")
+expect(fail_findings('status.fail(M.t("s.not_saved"), { message: M.t("s.prefix") });') == [],
+       "a text in the error, fail()'s second argument, is the reason, not the sentence")
+expect(fail_findings('status.fail(M.t("s.not_saved"), M.t("s.prefix"));') == [],
+       "the first argument ends at its comma")
+
+expect(fail_findings('status.fail((reason) => M.t("s.what", { what: name, reason }), err);') == [],
+       "fail() with a sentence filled once, as a function of the reason")
+expect(len(fail_findings('status.fail((reason) => M.t("s.prefix", { reason }), err);')) == 1,
+       "a function's text is held to {reason} too")
+
+
+def shown_findings(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return found_by(lambda: check.check_unfilled_placeholders("js/x.js", src, code, SENTENCES))
+
+
+for src, what in [
+    ('h("li", null, M.t("s.not_saved"), err.message);', "an element's child, the reason beside it (memory.js, #1498)"),
+    ('append(box, M.t("s.not_saved"));', "appended"),
+    ('const s = M.t("s.not_saved") + err.message;', "joined with + after"),
+    ('const s = "x" + M.t("s.not_saved");', "joined with + before"),
+    ('el.textContent = M.t("s.not_saved");', "written to textContent"),
+    ('h("p", null, M.t("s.what", { what: "x" }));', "one value given, {reason} not"),
+    ('h("p", null, M.t("s.what", { what: reason }));', "reason only as a value, not as a name (fmzu, #1498 delta 1)"),
+    ('h("p", null, M.t("s.what", { what: "reason:" }));', "reason only inside a string"),
+]:
+    expect(len(shown_findings(src)) == 1, "shown unfilled: " + what)
+for src, what in [
+    ('h("li", null, M.t("s.not_saved", { reason: err.message }));', "filled with a value"),
+    ('h("li", null, M.t("s.what", { what, reason }));', "filled by shorthand"),
+    ('h("li", null, M.t("s.what", { "what": x, "reason": y }));', "filled with quoted names"),
+    ('h("li", null, M.t("s.what", { what: f(a, b), reason: g({ c: 1 }) }));', "values with calls and objects inside"),
+    ('h("li", null, M.t("s.what", { ...rest }));', "a spread is not read"),
+    ('status.fail(M.t("s.not_saved"), err);', "left for fail() to fill"),
+    ('act(M.t("s.busy"), M.t("s.not_saved"), call);', "handed to a helper that fails with it"),
+    ('save(body, { notSaved: M.t("s.not_saved") });', "a helper's words"),
+    ('h("p", null, M.t("s.what", values));', "values from a variable are not read"),
+    ('h("p", null, M.t("s.busy"));', "a text without placeholders"),
+]:
+    expect(shown_findings(src) == [], "not shown unfilled: " + what)
+
+# The rules above are called directly; make check runs them only through check_i18n, so each
+# must be called there too (ppge, #1498 R1).
+import ast
+import inspect
+import textwrap
+wired = {n.func.id for n in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(check.check_i18n))))
+         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+for rule in ("check_prefixes", "check_fail_sentences", "check_unfilled_placeholders"):
+    expect(rule in wired, "make check runs " + rule)
+
 raise SystemExit(1 if failures else 0)

@@ -207,7 +207,7 @@ window.Maity = window.Maity || {};
       if (left.length) {
         // What the hub left, and why (§18.3), stays in the open panel.
         await after(null);
-        status.fail(M.t("bell.skipped", { count: left.length }), {
+        status.fail((reason) => M.t("bell.skipped", { count: left.length, reason }), {
           message: left.map((x) => {
             const found = pinned.find((y) => y.id === x.id);
             return (found ? found.title : x.id) + ": " + skippedWhy(x.reason);

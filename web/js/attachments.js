@@ -181,7 +181,7 @@ window.Maity = window.Maity || {};
           status.done();
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
-          status.fail(M.t("attach.not_attached_named", { name: p.name }), said(err, file.size));
+          status.fail((reason) => M.t("attach.not_attached_named", { name: p.name, reason }), said(err, file.size));
           // Off on the hub: the chooser goes, the line above says why.
           if (isOff(err)) { offer(false); el.hidden = false; draw(); break; }
           // Over the pending cap: show what waits, so it can be sent or removed.

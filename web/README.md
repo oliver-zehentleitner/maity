@@ -1488,7 +1488,17 @@ without one the choice on `/register` or `?lang=`, then the browser's
 a string literal at `M.t`, and on any view whose prose string literals
 grow past `tools/strings-baseline.json`: new text goes into the catalog,
 old text moves over view by view (`make fixtures` then lowers the
-baseline; nothing raises it but an edit to the file).
+baseline; nothing raises it but an edit to the file). A failure is a whole
+sentence with `{reason}` (`Maity.reasonIn`, `status.fail`): `make check` also
+fails on an English text that ends in ": ", on a key given to `status.fail`
+without `{reason}`, and on a text shown with a placeholder unfilled (put into
+`h`/`append`, joined with `+`, written to `textContent`): a placeholder counts as
+filled only by a property of its name in the values' object literal; values from a
+variable or a spread are not read, nor a text kept in a variable. A failure with other
+values goes to `status.fail` as `(reason) => Maity.t(key, { name, reason })`, filled
+once. `tools/reason_sentences.py` turned the old prefixes into such sentences; it
+runs again after a catalog comes in from main and changes only what lacks the
+placeholder.
 
 A translation is `i18n/<lang>.json`, one of the ten languages of
 `docs/api.md` §16.7. `make check` fails on a key English does not have,
@@ -1709,7 +1719,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     here.";
 16. **Why**: the e2e project has no repository, so the view says it
     needs one (the hub's `ktw_not_configured`);
-17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
+17. at phone width (390 px, and again at 360 px) the inbox, overview, board, members, agents and (where offered) Why
     views, each reached through its tab (there is no Runners tab: the project's Runners are linked from its Settings),
     and the instance's Runners view from the gear menu load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
