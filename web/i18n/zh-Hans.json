@@ -4546,6 +4546,7 @@
   "users.column.admin": "管理员",
   "users.column.agents": "智能体",
   "users.column.created": "创建时间",
+  "users.column.email": "电子邮件",
   "users.column.last_seen": "最后出现",
   "users.column.last_signin": "最后登录",
   "users.column.name": "名称",
@@ -4557,6 +4558,10 @@
   "users.count_more": {
     "other": "{count}+ 个账户"
   },
+  "users.email.copied": "已复制",
+  "users.email.copy": "复制",
+  "users.email.copy_failed": "复制失败",
+  "users.email.copy_label": "复制 {name} 的电子邮件地址",
   "users.filter.active": "活跃",
   "users.filter.all": "所有账户",
   "users.filter.disabled": "已停用",
@@ -4590,7 +4595,7 @@
   "users.reset.sent": "发给 {name} 的邮件已在发送途中；其链接在 {when} 前有效。",
   "users.reset.title": "重置 {name} 的双因素登录",
   "users.reset.what": "重置某人的双因素登录",
-  "users.search": "按用户名或名称搜索",
+  "users.search": "按用户名、名称或电子邮件搜索",
   "users.show": "显示",
   "users.state.active": "活跃",
   "users.state.disabled": "已停用",

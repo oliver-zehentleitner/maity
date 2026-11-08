@@ -1607,11 +1607,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
     "users: the admin's own row, its counts");
+  const emailOf = (row) => row.querySelectorAll("td").find((td) => td.attrs["data-label"] === "Email");
+  expect(text(emailOf(meRow)).includes("maintainer@example.org") && emailOf(meRow).querySelectorAll("button").length === 1
+    && text(emailOf(userRows().find((tr) => text(tr).includes("Guest Reviewer")))) === "—",
+    "users: the sign-in address with a copy button, a dash without one");
   const opsRow = userRows().find((tr) => text(tr).includes("Ops on call"));
   expect(opsRow.className === "disabled" && text(opsRow).includes("disabled") && text(userRows()[0]).includes("never"), "users: a disabled account, a never-signed-in one");
   const uq = byId("users-q"); uq.value = "OPS"; uq.dispatch("input");
   await new Promise((r) => setTimeout(r, 350)); await tick();
   expect(JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: search by handle or name, case-insensitive");
+  uq.value = "OPS@EXAMPLE"; uq.dispatch("input");
+  await new Promise((r) => setTimeout(r, 350)); await tick();
+  expect(JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: search by the email address, case-insensitive");
   uq.value = ""; const ud = byId("users-disabled"); ud.value = "false"; ud.dispatch("change"); await tick(); await tick();
   expect(JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer"]), "users: only active accounts");
   // Paged by the hub's cursor: Load more appends.
