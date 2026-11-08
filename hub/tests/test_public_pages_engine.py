@@ -3,7 +3,9 @@ sitemap and `robots.txt`. A kind of page of the test's own stands in for the rea
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
+from concurrent.futures import Future
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -15,6 +17,7 @@ from maity_hub import clock, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.routes import seo
+from tests.concurrency import Step, finished, waiting
 from tests.conftest import ClientFactory
 
 NOTE = "note"
@@ -212,6 +215,91 @@ def test_render_all_keeps_a_page_whose_target_became_public_during_the_pass(
 
     monkeypatch.setattr(public_pages, "refresh", refresh)
     public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+
+
+def test_render_all_keeps_a_page_whose_target_went_off_and_on_during_the_cleanup(
+    migrated: Engine, settings: Settings, shown: Shown
+) -> None:
+    """The interleaving of the #1509 review (fmzu, PostgreSQL under READ COMMITTED): the
+    cleanup read "n"'s page, then the targets while "n" was switched off, and "n" was switched
+    on again and rendered before the delete. The candidate is decided again under its lock,
+    so the page of a target that is public then stays."""
+    config = hub(settings)
+    shown.targets["a"] = ("A", True, clock.now())
+    shown.targets["n"] = ("N", True, clock.now())
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+    kind = public_pages.KINDS[NOTE]
+    calls = 0
+
+    def targets(conn: Connection) -> list[str]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # the cleanup's first read: "n" is off right now
+            listed = [i for i in sorted(shown.targets) if i != "n"]
+            # ... and on again, its page rendered and committed, before the delete
+            public_pages.refresh(conn, config, NOTE, "n")
+            return listed
+        return sorted(shown.targets)
+
+    # Straight into the registry: the `shown` fixture restores it, and a monkeypatch undone
+    # after that fixture would put the test kind back for the tests that follow.
+    public_pages.KINDS[NOTE] = replace(kind, targets=targets)
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+
+
+def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction(
+    migrated: Engine, settings: Settings, shown: Shown
+) -> None:
+    """The same interleaving with two real transactions (PostgreSQL, READ COMMITTED): "n" is
+    rendered and committed by another connection after the cleanup's first read of the
+    targets, so the cleanup keeps its page; and a render that comes while the cleanup holds
+    "n"'s lock waits for it, so it cannot fall between the second read and the delete."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("SQLite writes one transaction at a time; the window is PostgreSQL's")
+    config = hub(settings)
+    shown.targets["a"] = ("A", True, clock.now())
+    shown.targets["n"] = ("N", True, clock.now())
+    public_pages.render_all(migrated, config)
+    kind = public_pages.KINDS[NOTE]
+    calls = 0
+    late: list[Step] = []
+
+    def render_n() -> None:
+        with migrated.begin() as other:
+            public_pages.refresh(other, config, NOTE, "n", fresh=True)
+
+    def targets(conn: Connection) -> list[str]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # off at this read, then on again and rendered by another request
+            render_n()
+            return [i for i in sorted(shown.targets) if i != "n"]
+        if calls == 3:  # the cleanup holds "n"'s lock: another render of "n" waits for it
+            started, future = threading.Event(), Future[None]()
+
+            def step() -> None:
+                started.set()
+                try:
+                    render_n()
+                    future.set_result(None)
+                except BaseException as error:
+                    future.set_exception(error)
+
+            threading.Thread(target=step, daemon=True).start()
+            late.append(Step(future, started, conn))
+            assert waiting(late[0])
+        return sorted(shown.targets)
+
+    # Straight into the registry: the `shown` fixture restores it, and a monkeypatch undone
+    # after that fixture would put the test kind back for the tests that follow.
+    public_pages.KINDS[NOTE] = replace(kind, targets=targets)
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+    assert len(late) == 1, "the cleanup read the targets again under the lock"
+    finished(late[0])
     assert set(rows(migrated)) == {"/a", "/n"}
 
 
