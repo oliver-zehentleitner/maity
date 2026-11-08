@@ -18837,6 +18837,14 @@ the year is the maintainer's order of 2026-11-05):
   which says how to report one privately, never as a public issue (the
   maintainer's addition of 2026-11-04).
 
+**At phone width**, a viewport at most 600 CSS pixels wide, the line is
+only its first part: the icon, `Maity` and the year. The separators and
+the other three parts are not shown. The maintainer's request of
+2026-11-08 is "on every page (global), only 'maity 2026'": the full line
+wrapped over three rows on a phone. From 601 pixels on, all four parts
+show as above. This holds on every page with the line, the dashboard's
+and the hub's own.
+
 Every link is absolute and the same on every instance. The Maity link
 names maity.team, not the instance's own host: the maintainer's page
 exists only there, and a relative `/oliver-zehentleitner` would be a dead
@@ -18915,9 +18923,10 @@ without the frame (a failed `GET /site/chrome`, a model without header
 or footer, a maintenance window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
-fixed, so it takes no room on a phone. Small and muted. At phone width it
-stays one line where it fits and wraps between its parts where a
-language is longer, never scrolling sideways.
+fixed, so it takes no room on a phone. Small and muted. Wider than phone
+width it stays one line where it fits and wraps between its parts where a
+language is longer; at phone width it is only its first part (above).
+Never scrolling sideways.
 
 **Beyond the decision.** The card leaves these open, and the contract
 settles them: the line is centred, the year's icon is decorative, the
