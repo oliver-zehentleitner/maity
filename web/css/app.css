@@ -450,11 +450,16 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .entry {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
 }
 
-.entry.current { border-color: var(--accent); }
-.entry.done { opacity: 0.75; }
+/* The open entry: an accent edge and its head on the accent's soft ground. */
+.entry.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.entry.current .entry-head { background: var(--accent-soft); border-radius: calc(var(--r-card) - 1px) calc(var(--r-card) - 1px) 0 0; }
+/* An answered entry: quieter by its title and no shadow, not by opacity, so every text keeps AA. */
+.entry.done { box-shadow: none; }
+.entry.done .entry-head .title { color: var(--muted); }
 .entry.empty, .empty { padding: 16px; color: var(--muted); list-style: none; }
 .first-hint { max-width: 40rem; margin: 6px 0 12px; font-size: 0.88rem; color: var(--muted); }
 
@@ -467,11 +472,11 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
   text-align: left;
   background: none;
   border: 0;
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  border-radius: calc(var(--r-card) - 1px);
+  padding: var(--s3) var(--s4);
 }
 
-.entry-head .title { font-weight: 600; flex: 1 1 16rem; }
+.entry-head .title { font-weight: 600; font-size: 0.94rem; line-height: 1.35; flex: 1 1 16rem; }
 
 /* Agent-written tokens (paths, hashes, URLs) can be long and unbroken. */
 .entry-head .title, .entry-body, .card, .profile, .msg, .org-node, .joins li { overflow-wrap: anywhere; min-width: 0; }
@@ -485,7 +490,10 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
 .entries-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .entry-group { margin: 6px 0 0; }
-.entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.entry-group h3 { margin: 0 0 var(--s2); font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--s2); }
+.entry-group h3 .count { border: 0; background: var(--surface-2); color: var(--muted); font-family: var(--font); letter-spacing: 0; }
+/* The inbox's Sort and Show as pills, like the board's filter. */
+.view-inbox .toolbar select { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 .members-filter { margin: 4px 0 8px; }
 .members-filter label.check { display: inline-flex; align-items: center; gap: 6px; }
@@ -494,8 +502,21 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .prio-normal { color: var(--normal); }
 .prio-low { color: var(--low); }
 .kind { color: var(--muted); font-weight: 400; }
+/* In an entry's head: the priority on its state's soft ground, the kind neutral; no outlines. */
+.entry-head .prio, .entry-head .kind { border: 0; }
+/* Urgent is the one filled pill: the high colour as its ground. */
+.entry-head .prio-urgent { background: var(--high); color: var(--bg); }
+.entry-head .prio-high { background: var(--bad-soft); }
+.entry-head .prio-normal { background: var(--warn-soft); }
+.entry-head .prio-low, .entry-head .kind { background: var(--surface-2); }
+.entry.current .entry-head .prio-low, .entry.current .entry-head .kind { background: var(--surface); }
 
-.entry-body { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.entry-body { padding: 0 var(--s4) var(--s4); border-top: 1px solid var(--border); }
+.entry-body .facts { grid-template-columns: minmax(6rem, max-content) 1fr; column-gap: var(--s4); }
+.entry-body .facts dt { font-size: 0.88rem; }
+/* The options it sees: rows with a rule at their start. */
+.entry-body .options { list-style: none; padding: 0; display: grid; gap: var(--s2); }
+.entry-body .options > li { border-inline-start: 3px solid var(--border); padding: 2px 0 2px var(--s3); }
 .request-action code { overflow-wrap: anywhere; }
 .request-action mark.hidden-char { background: var(--surface-2); color: var(--bad); border: 1px solid currentColor; border-radius: 3px; padding: 0 2px; }
 .request-action-body { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 8px; border-radius: 4px; font-family: var(--mono); font-size: 0.85rem; }
@@ -506,7 +527,13 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .replies { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 /* A row of buttons: at the right edge, secondary ones before the primary one. */
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
-.reply { min-width: 5rem; }
+.reply { min-width: 5rem; border-radius: var(--r-pill); }
+/* An answer one can press has an edge of 3:1 or more (--field); a disabled one keeps the base look. */
+.reply:not(:disabled) { border-color: var(--field); }
+/* Send, once there are words to send, is the main button; Later and Talk stay quiet. */
+.reply.send:not(:disabled) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.reply.send:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 80%, var(--text)); border-color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.reply.later, .reply.talk { background: transparent; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
 
@@ -1227,7 +1254,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .profiles { grid-template-columns: 1fr; }
   .facts { grid-template-columns: 1fr; }
   .facts dt { margin-top: 4px; }
-  .reply { flex: 1 1 100%; }
+  /* The answers two by two, a thumb's size; Send across the whole row. */
+  .replies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reply { min-height: 40px; min-width: 0; }
+  .reply.send, .reply:only-child { grid-column: 1 / -1; }
 }
 
 /* Pictures on the account (docs/api.md §6.10). */
