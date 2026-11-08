@@ -834,6 +834,32 @@ missing commit.
 - Refusing when the commit is missing: the card separates this case from a bad quote.
 - Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
 
+## `say --review-file` refuses a quote longer than the hub takes, with or without a clone
+
+**Id:** ade7dd9d-eea1-48e5-9715-dc3a67cfbbb1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-sv4ec6httxw1; the hub's `QUOTE_MAX` in `hub/src/maity_hub/reviews.py` and docs/api.md §8.4 ("`path` and `quote` 1–300 characters"); the lead's confirmation of 300, 2026-11-08
+**Revisit when:** the hub's limit on a quote changes (the two tests that read it fail first), or the hub starts to count something other than characters
+
+A reviewer learnt the limit from the hub's refusal, after writing the whole review. `citecheck`
+now names each quote longer than `QUOTE_MAX` (300 characters, counted with `len()` as the hub
+counts them, not bytes) with its length, as one more bad cite: the send is refused, exit 1,
+before any request. So the whole check, cites and text, runs before the recipient's lookup
+(`_address`), which asks the hub about a handle or a member id; a refused review asks the hub
+nothing (the first version checked after that lookup, R1 of #1504). The length needs no repository, so it is checked even where the clone or
+the commit is missing and the rest of the cites go unchecked. A cite that is too long and also
+not at its line gets both lines, so one round of fixing covers both.
+
+The card named 120 characters; that is the hub's `SUBJECT_MAX`, the review's subject. The CLI
+keeps its own copy of the number rather than importing the hub, which it does not ship with; two
+tests read `reviews.py` and the contract's sentence from the repository and hold the copy to them.
+
+**Rejected alternatives:**
+- Importing the limit from the hub package: the CLI is installed without it.
+- Leaving the length to the hub: that is the refusal the card is about.
+
 ## `say --review-file` also checks the message's text, in its own module beside the cites
 
 **Id:** 62290599-4d75-40bd-a407-2591ee6712a3
