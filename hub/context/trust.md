@@ -227,3 +227,28 @@ bridge's sentence bind as an admin's.
   the busiest table, and it shows a removed author at full weight.
 - `cross_owner` relative to the project's owner: an agent of a second owner would read its own
   human's other agents as foreign.
+
+## `PUT …/roles` refuses a guide and keeps the one a role already has
+
+**Id:** 66b19935-0440-4a76-9ebd-3ef6df9fbe94
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's approval of the plan for tsk-m15sg396s947 (docs/api.md §2.3 "Project roles", §6.28)
+**Revisit when:** the briefings take the project roles' guides over (tsk-k0k3jzrkpza2)
+
+A `guide` in any entry of a `PUT …/roles` is `invalid` with `custom[].guide: "moved"`,
+unindexed as the contract names it, next to any other field's error. A role that stays
+under its name keeps the `guide` and `guide_by` it has stored, a new role gets none, and a
+removed role takes its guide along; the resume and `GET …/roles` still show a stored guide.
+
+**Reason:** the contract moved the guides to the briefings, but those routes do not exist
+yet, so nothing else writes a project role's guide. Rebuilding the list from the body alone
+would erase every stored guide on the next `PUT`, a change of stored data the card ruled out.
+
+**Rejected alternatives:**
+- Drop the stored guides with the next `PUT`: loses texts admins wrote, before there is a
+  place to write them again.
+- Keep accepting `guide` until the briefings exist: the contract already refuses it, and no
+  client in the repository sends one.
+- Move the stored guides into the briefings now: there are no briefings to move them to.

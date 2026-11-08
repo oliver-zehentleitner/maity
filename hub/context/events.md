@@ -577,3 +577,54 @@ or a missed event. A lease renewed before the next pass is never reported (the m
 grain). The pass filters closed cards in its query, but no index serves that filter, so the
 database scans every card with a holder, closed ones included, each minute; not measured, and no
 index added (a partial index on open cards is not portable to MariaDB).
+
+## The unread nudge scans each stay incrementally in process memory; exactness against a concurrent redaction is not promised
+
+**Id:** 56357b6b-ff4b-40a2-b9d9-e1a073db80fc
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race and its later go for the one-statement check, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
+**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, a chat sees `SCAN_BUDGET` or more new human messages a minute, or another route by which a redaction stays counted turns up
+**See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
+
+The minute pass keeps, per agent stay in an open group chat, how far that stay's unread
+messages have been read and the counted ones' number, first and last (`_Scan`), in this
+process's memory and nowhere else. Each call reads only rows after the last one read, at most
+`SCAN_BUDGET` (2000) per stay, in batches of `SCAN_BATCH` (500), selecting only seq, time and the
+mentions projected from the payload. The nudge goes out only once a read reached its bound, so
+its counts cover every message up to it. A moved read mark or a changed count of redacted
+messages in the range starts the read over; entries of stays that ended are dropped each pass.
+
+What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
+per stay and call), while the one-row aggregates go over the stay's unread range in the database
+each minute, a cost that grows with unread history; every unread human message without a
+mention leads to one nudge once the read has caught up. Each call moves the read's bound up to
+the newest message and reads at most `SCAN_BUDGET` rows, and a read finishes only on a short
+batch: while `SCAN_BUDGET` or more new human messages arrive in the chat between passes it may
+never finish; with fewer, each pass gains on the backlog until a call reaches the end. A
+redaction committed before a pass starts is left out. Bounded
+database work and a catch-up that holds under any arrival rate are P3s for the hub roll-up. Beyond that, the check of the range already read, the bound and the
+redaction count for an extension come from one statement (`_counts`, one snapshot even under
+READ COMMITTED), taken before the rows under the bound; the call under the project lock compares
+again, and a redaction takes the same lock. That closes the two routes the review found (a
+redaction during a first read, and one while an earlier read's bound grows), each tested on
+PostgreSQL. Exactness against a concurrent redaction is still not promised: the lead set that
+boundary, since the nudge only wakes the agent, which then reads the chat, and the chat shows a
+redacted message only as its tombstone (`docs/api.md` §8.5), never its body. Another route, should one turn up, is a P3 for the hub roll-up.
+
+**Reason:** an offline agent's growing backlog, and a backlog that all mentions the agent and
+so never leads to a nudge, were each read in full every minute (the first reviews); reading
+only what came since, within a budget, removes that without a table or a migration. A restart,
+or the worker moving to another replica, costs one fresh read per stay. Further rounds on the
+race would have held the PR back for a count the agent does not rely on.
+
+**Rejected alternatives:**
+- Excluding the mentions in SQL, with JSON queries per dialect, so one aggregate gives the exact
+  counts: a SQLite and a PostgreSQL branch for the first read only.
+- A row limit with counts exact up to the bound: the contract would have to weaken its counts.
+- Storing the scan in a table: a migration for state that one fresh read rebuilds.
+- Taking the extension's count in a second statement after the check: a redaction committing
+  between the two was adopted into the new count while its message stayed counted (review of
+  #1490, delta 3).
