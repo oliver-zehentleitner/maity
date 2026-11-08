@@ -596,8 +596,10 @@ the last run left it: one more run with `--apply` cleans it, or the bucket's pre
 upload past its 24 hours that the sweep has not removed yet still has its row and is copied;
 once the hub's sweep has expired the row, the object has no row and goes like any other. After each put one HEAD
 compares the size and the metadata the put wrote, not the bytes: reading every object back would
-double the traffic. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
-file the pod cannot read (`lost+found` on an ext4 volume) counts as failed, and the copy goes on.
+double the traffic. Each file is read whole, at most `FILE_CAP` like an upload. A folder no
+project has (`lost+found` on an ext4 volume) is left alone before its keys are read, as the sweep
+does, and named in the log: counted as failed, it ended every clean run with exit 1. A project's
+folder or a file the pod cannot read counts as failed, and the copy goes on.
 There is no copy back: after the switch, uploads exist only in the bucket. The chart renders the bucket's settings whenever a bucket is set, also with `local`, so the
 command finds them in the pod before the switch, and the claim may stay mounted under `s3` for the
 second run.

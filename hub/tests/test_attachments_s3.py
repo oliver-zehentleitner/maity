@@ -450,6 +450,40 @@ def test_an_unreadable_folder_on_the_volume_fails_alone(
     assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 1}
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a folder without permissions")
+def test_a_folder_no_project_has_is_left_alone_not_failed(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    """`lost+found` on an ext4 volume is no project's: like the sweep, the copy leaves it alone
+    before reading its keys, so a clean run ends with 0 (c47w at #1299)."""
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    (tmp_path / "lost+found").mkdir(mode=0o000)
+    try:
+        done = attachment_store.copy_local_to_s3(
+            source,
+            S3Store(config),
+            apply=True,
+            live=lambda project: {"att-1"} if project == "prj-1" else None,
+        )
+    finally:
+        (tmp_path / "lost+found").chmod(0o700)
+    assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
+
+
+def test_the_live_attachments_of_a_folder_no_project_has_are_none(
+    make_client: ClientFactory, migrated: Engine, tmp_path: Path
+) -> None:
+    from maity_hub import cli
+
+    owner = flow.human(lambda **kw: make_client(attachment_dir=tmp_path, **kw), migrated)
+    flow.project(owner, "maity")
+    kept = put(owner, "a.txt", b"one").json()["id"]
+    (folder,) = [p.parent for p in tmp_path.glob(f"*/{kept}")]
+    assert cli._live_attachments(migrated, folder.name) == {kept}
+    assert cli._live_attachments(migrated, "lost+found") is None
+
+
 def test_a_blob_without_the_hubs_digest_is_copied_again(
     config: AttachmentS3, tmp_path: Path
 ) -> None:

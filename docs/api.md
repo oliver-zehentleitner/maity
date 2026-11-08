@@ -4859,13 +4859,19 @@ a control character or an invisible format character that hides or turns text
 marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
 The hub stores each item trimmed and serves it so. A field the object does not know is
-`invalid` as everywhere (`extra_forbidden`). A change bumps
-`rules_version` with `rules_changed` (§6.9) as well as the
-`project_updated` above. One `PATCH` bumps once, whatever rules inputs
+`invalid` as everywhere (`extra_forbidden`). A change of the lines the
+rules add bumps `rules_version` with `rules_changed` (§6.9) as well as
+the `project_updated` above. A value that adds no line
+(`subagent_per_card: false`, an empty `checklist`, a role with neither)
+reads as every rule off, like an absent key: it is stored as given and
+named in `project_updated`, but moves no `rules_version` and writes no
+`rules_changed`. One `PATCH` bumps once, whatever rules inputs
 it changes: a `PATCH` that changes `role_rules` together with
 `rules_markdown` or another input writes one `rules_changed`, whose
 `reason` is the `PATCH`'s own when it gives one, else
-`"settings.role_rules"` when `role_rules` is among the changes. When the
+`"settings.role_rules"` when `role_rules` changed the lines the rules
+add (a value without effect alongside another input leaves the reason
+out). When the
 same `PATCH` changes the state or the policy, its `state_changed` or
 `policy_changed` marks the new version and no `rules_changed` is written;
 one that changes both writes both events, carrying the same
@@ -7431,7 +7437,9 @@ switching between `"self"` and `"supervised"` bumps nothing: the duty
 line differs per caller, like the brief for trust and role. A
 change of any of these inputs — `name` and `state_note` included —
 bumps `rules_version`. `rules_version`
-increments on every change of any input. Every bump is marked by an
+increments on every change of any input. A `role_rules` value that adds
+no line (§6.1) is no change of an input here: the rules text is the
+same. Every bump is marked by an
 event written under the project lock — `state_changed` or `policy_changed`
 when the change has one, `member_updated` for a member's trust, role or areas,
 otherwise `rules_changed` — and the hub keeps that event's `seq` as the

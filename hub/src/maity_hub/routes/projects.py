@@ -198,6 +198,16 @@ def _checklist_error(role: str, items: list[str]) -> str | None:
     return None
 
 
+def _effective_role_rules(stored: dict[str, Any] | None) -> dict[str, Any]:
+    """The rules `settings.role_rules` adds, without the values that add none (`false`, `[]`,
+    a role with nothing on): equal when the generated rules text is (§6.9)."""
+    effective = {
+        role: {field: value for field, value in entry.items() if value}
+        for role, entry in (stored or {}).items()
+    }
+    return {role: entry for role, entry in effective.items() if entry}
+
+
 def _announced_role_rules(stored: dict[str, Any] | None) -> dict[str, Any] | None:
     """`settings.role_rules` as `project_updated` names it: each checklist as `true`, since
     the log never keeps a project's free text (§6.1, §8)."""
@@ -987,6 +997,7 @@ def patch_project(
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
+        role_rules_moved = False  # the role rules changed the generated rules, not only storage
         bumped = False  # one PATCH moves `rules_version` once (§6.1)
         settings_changed: dict[str, Any] = {}
         restricted_before: set[int] | None = None
@@ -1070,7 +1081,10 @@ def patch_project(
                 elif key == "role_rules":
                     if merged.get(key) != dumped[key]:
                         settings_changed["settings.role_rules"] = _announced_role_rules(dumped[key])
-                        rules_inputs_changed = True
+                    # Only a change of what the rules say moves `rules_version`: `false` and
+                    # `[]` read as every rule off, like an absent key (§6.1).
+                    if _effective_role_rules(merged.get(key)) != _effective_role_rules(dumped[key]):
+                        rules_inputs_changed = role_rules_moved = True
                 elif key != "onboarding" and merged.get(key) != dumped[key]:
                     settings_changed[f"settings.{key}"] = (
                         True
@@ -1285,12 +1299,13 @@ def patch_project(
                 rules_inputs_changed = True
         # The name, a note without a state change, the owner's text, the Keep the Why line
         # and the role rules are rules inputs without an event of their own: one
-        # rules_changed, whose reason names the role rules when the PATCH gives none (§6.1).
+        # rules_changed, whose reason names the role rules when the PATCH gives none and they
+        # changed the rules (§6.1); a value without effect leaves the bump to another input.
         # A state_changed or policy_changed of the same PATCH already marks the new version.
         if rules_inputs_changed and not bumped:
             if body.reason:
                 payload = {"reason": body.reason}
-            elif "settings.role_rules" in settings_changed:
+            elif role_rules_moved:
                 payload = {"reason": "settings.role_rules"}
             else:
                 payload = {}
