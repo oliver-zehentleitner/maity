@@ -261,6 +261,19 @@ def transfer(
     values: dict[str, Any] = {"status": "transferred", "outcome": outcome, "closed_at": now}
     if override is not None:
         values["override"] = override
+    receiver_role = conn.execute(
+        select(t.membership.c.role).where(t.membership.c.id == row.to_member)
+    ).scalar()
+    if receiver_role == "expert":
+        # An expert takes no cards (§2.3 "The expert"): the takeover ends without a move,
+        # as when the card left `from` some other way (below).
+        conn.execute(
+            update(t.takeover)
+            .where(t.takeover.c.id == row.id, t.takeover.c.status.in_(OPEN))
+            .values(status="cancelled", outcome={**outcome, "how": "cancelled"}, closed_at=now)
+        )
+        _closed(conn, load(conn, row.id), actor)
+        return False
     closed = conn.execute(
         update(t.takeover)
         .where(t.takeover.c.id == row.id, t.takeover.c.status.in_(OPEN))

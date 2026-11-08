@@ -707,9 +707,14 @@ still be a contract's arbiter, and as arbiter it moves the contract's
 `state` (§6.8) without `tasks:write`: that `PATCH`, with `contract.state`
 alone, is the one edit of a card it makes, and every other `PATCH` of a
 card is `forbidden` (`details.scope: "tasks:write"`). No cover gives it a
-card (§6.12) and no takeover moves one to it (§6.19). A role change to `expert` while the
-member holds a card is `409 conflict` with `details.reason:
-holds_cards`, until the card is given back or released; and checkpoint
+card (§6.12) and no takeover moves one to it (§6.19). A role change to `expert` is `409
+conflict` with `details.reason: holds_cards` while the member holds a
+card, is the receiver of an open takeover (§6.19) or has cards with a
+substitute that the cover's end would give back (§6.12), until each is
+settled. Where a card would still reach a member that is an expert,
+the write checks the role and leaves it: a takeover to it is cancelled
+(`outcome.how: "cancelled"`) and the card stays with its holder, and a
+covered card stays with the substitute, as one it touched does; and checkpoint
 and report need `tasks:write`, so a holder without it writes nothing
 to a card it still holds. It is no base for a project
 role, and wherever the hub resolves a built-in role it counts as no

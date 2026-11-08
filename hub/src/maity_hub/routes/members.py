@@ -445,6 +445,28 @@ def change_of(mine: Membership, caller: Caller, *, line: bool = False) -> Change
     )
 
 
+def _cards_on_the_way(conn: Connection, target: Any) -> bool:
+    """Whether the member holds a card, is the receiver of an open takeover (§6.19) or has
+    cards out with a substitute that a cover's end gives back to it (§6.12)."""
+    from maity_hub import takeovers
+
+    if conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first():
+        return True
+    if conn.execute(
+        select(t.takeover.c.id)
+        .where(t.takeover.c.to_member == target.id, t.takeover.c.status.in_(takeovers.OPEN))
+        .limit(1)
+    ).first():
+        return True
+    principal = str(target.agent_id or target.human_id)
+    covers = conn.execute(
+        select(t.card.c.cover).where(
+            t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None)
+        )
+    ).scalars()
+    return any((cover or {}).get("for") == principal for cover in covers)
+
+
 def apply_patch(
     conn: Connection,
     change: Change,
@@ -462,15 +484,14 @@ def apply_patch(
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
         changed["line_consent"] = True
-    if (
-        changed.get("role") == "expert"
-        and conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first()
-    ):
-        # An expert takes no cards (§2.3 "The expert"): the cards it holds go back first.
+    if changed.get("role") == "expert" and _cards_on_the_way(conn, target):
+        # An expert takes no cards (§2.3 "The expert"): what it holds, what an open takeover
+        # would move to it and what a cover would give back to it are settled first.
         raise ApiError(
             409,
             "conflict",
-            "the member still holds cards; they go back before the role is expert",
+            "the member holds cards or has cards on the way to it; settle them before the "
+            "role is expert",
             {"reason": "holds_cards"},
         )
     old = {k: getattr(target, k) for k in changed}

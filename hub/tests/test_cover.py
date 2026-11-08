@@ -717,3 +717,49 @@ def test_a_security_team_covers_for_the_role_it_is_built_on(
             )
             order = [m.agent_id for m in cover.cover_order(conn, project, row)]
         assert order == sorted(expected, key=lambda agent_id: handles[agent_id])
+
+
+def test_a_covered_member_becomes_an_expert_only_after_its_cards_are_settled(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert": a cover's end would give the cards back to the member, so the
+    role change waits until no substitute holds a card for it."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    [started] = events(migrated, "cover_started")
+    assert started.payload["tasks"] == [card["id"]]
+    changed = owner.patch(f"/projects/maintainer/maity/members/{covered.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+
+
+def test_a_covered_claim_does_not_go_back_to_a_member_that_became_an_expert(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert": the return checks the member's role when it writes; written past
+    the API here, as the role change itself waits for the cover to end."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == covered.id)
+            .values(role="expert", role_base="expert")
+        )
+    now[0] += timedelta(minutes=30)
+    covered.resume()
+    [ended] = events(migrated, "cover_ended")
+    assert ended.payload["kept"] == [card["id"]] and ended.payload["returned"] == []
+    assert card_of(owner, card["id"])["claim"]["holder"] == sub.id

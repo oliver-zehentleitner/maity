@@ -301,6 +301,8 @@ def _move_card(
     since: str,
     actor: Actor | None,
 ) -> None:
+    if sub.role == "expert":
+        return  # an expert takes no cards (§2.3 "The expert"); `cover_order` skips it too
     cover = {
         "for": _principal(covered),
         "by": _principal(sub),
@@ -423,7 +425,8 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if cover.get("touched") or card.status in CLOSED:
+        if cover.get("touched") or card.status in CLOSED or row.role == "expert":
+            # An expert takes no cards back (§2.3 "The expert"): the substitute keeps it.
             kept.append(card.id)
         else:
             returned.append(card.id)

@@ -74,6 +74,7 @@ def test_no_card_is_assigned_to_an_expert(owner: flow.Human, expert: flow.Agent)
     card = _card(owner).json()["id"]
     _invalid(owner.post(f"{PROJECT}/tasks/{card}/assign", {"assignee": expert.id}), "assignee")
     _invalid(owner.post(f"{PROJECT}/tasks/{card}/claim", {"holder": expert.id}), "holder")
+    _invalid(owner.patch(f"{PROJECT}/tasks/{card}", {"assigned_to": expert.id}), "assigned_to")
 
 
 def test_area_routing_skips_an_expert(owner: flow.Human, expert: flow.Agent) -> None:
@@ -166,3 +167,42 @@ def test_no_takeover_moves_a_card_to_an_expert(
         f"{PROJECT}/tasks/{card}/takeover", {"reason": "silent for hours", "to": expert.id}
     )
     _invalid(refused, "to")
+
+
+def test_the_receiver_of_an_open_takeover_does_not_become_an_expert(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """§2.3 "The expert", §6.19: an open takeover would move the card to its receiver."""
+    holder = flow.agent(make_client, owner)
+    receiver = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    assert holder.post(f"{PROJECT}/tasks/{card}/claim", {}).status_code == 200
+    opened = receiver.post(f"{PROJECT}/tasks/{card}/takeover", {"reason": "silent for hours"})
+    assert opened.status_code == 201, opened.text
+    changed = owner.patch(f"{PROJECT}/members/{receiver.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+
+
+def test_a_takeover_to_a_member_that_became_an_expert_moves_nothing(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§2.3 "The expert", §6.19: the transfer checks the receiver's role when it writes;
+    written past the API here, as the role change itself waits for the takeover."""
+    holder = flow.agent(make_client, owner)
+    receiver = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    assert holder.post(f"{PROJECT}/tasks/{card}/claim", {}).status_code == 200
+    opened = receiver.post(f"{PROJECT}/tasks/{card}/takeover", {"reason": "silent for hours"})
+    assert opened.status_code == 201, opened.text
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == receiver.id)
+            .values(role="expert", role_base="expert")
+        )
+    holder.post(f"{PROJECT}/takeovers/{opened.json()['id']}/respond", {"accept": True})
+    taken = owner.get(f"{PROJECT}/takeovers/{opened.json()['id']}").json()
+    assert taken["status"] == "cancelled"
+    held = owner.get(f"{PROJECT}/tasks/{card}").json()
+    assert held["claim"]["holder"] == holder.id and held["assigned_to"] != receiver.id
