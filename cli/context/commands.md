@@ -759,7 +759,9 @@ read more.
 
 `say`, `ask`, `note add`, `report --summary` and `checkpoint -m`/`--next` take
 `-` for standard input (one per command) or a file flag (`--body-file`,
-`--summary-file`, `--last-file`, `--next-file`). The text is resolved
+`--summary-file`, `--last-file`, `--next-file`). `memory add` and `jourfixe post`
+take `-` for standard input and have no file flag; `jourfixe answer --file` and
+`task restricted set --file` read a file or, with `-`, standard input. The text is resolved
 in `main` before the command runs, so every command checks it the same
 way. A text and its file together, a second `-`, or a missing required
 text is a usage error before anything is sent. Standard input loses its
@@ -1650,3 +1652,27 @@ contract change to the contract owner before it is written.
 **Rejected alternative:** subcommands that wrap `/me/cross-chats`. They
 would name a surface the contract does not have, and the resume would
 then have to point at that command instead of the GET §13 writes.
+
+## `wait` resolves `--for` and its cursor inside the loop's retry, with no retry of its own for that
+
+**Id:** 96cc7cd1-59b7-4df2-9b62-7db73bf107d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of #1207 (spq4), relayed after #1265 and collected on the CLI roll-up card tsk-v0m0wbkm3d7j (note nte-79rd9hdj0nwq); `cli/src/maity/cli.py` `cmd_wait` (the `try` around `_wait_cursor` and the poll), `tests/test_wait_retry.py::test_wait_for_a_handle_sleeps_a_window_out_while_resolving_it`
+**Revisit when:** resolving `--for` needs a call whose failure must not be retried like a poll, or `wait` gets a second loop
+
+`maity wait` resolves what it reads with, the served agent of `--for` (a handle looked up through
+the member list) and the cursor kept for it, on the first pass of its poll loop, inside the same
+`try` as the poll. A maintenance window, a 5xx, a 429 or a lost connection while resolving is
+therefore handled exactly as during a poll: slept out or retried with the same backoff, never past
+`--timeout`, and the resolution is tried again on the next pass while the cursor is still unset.
+
+**Reason:** the resolution is one more hub call at the start of the same wait; the loop already
+knows how to wait out every failure a hub call can have. Doing it inside that loop keeps one
+place that decides how `wait` behaves when the hub is away.
+
+**Rejected alternative:** a retry just for resolving `--for` before the loop: a second set of rules
+for the same failures (backoff, maintenance, the deadline) that could drift from the poll's, for a
+call that runs once per wait.
+
