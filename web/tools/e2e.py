@@ -1097,6 +1097,7 @@ def scenario(run: Run, page: Page) -> None:
     project_tabs_step(run, page)
     invitations_step(run, page)
     agents_page_step(run, page)
+    handle_hints_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
@@ -5462,6 +5463,85 @@ def agents_page_step(run: Run, page: Page) -> None:
     expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()
     run.a11y(page, "agents page, a row opened")
     no_problems(run, "agents page")
+
+
+# The handle hints that stand in the page (tsk-srzrkf2parzt): each one's lines (its height over its
+# line height) and whether it runs wider than itself; hidden ones are not counted.
+HANDLE_HINTS = """() => Array.from(document.querySelectorAll("p.handle-explain")).filter((p) => p.offsetParent !== null).map((p) => {
+  const s = getComputedStyle(p), lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
+  const owner = document.querySelector('[aria-describedby~="' + p.id + '"]');
+  return { field: owner ? owner.id : null, lines: Math.round(p.getBoundingClientRect().height / lh), wide: p.scrollWidth > p.clientWidth + 1 };
+})"""
+
+
+def handle_hints_step(run: Run, page: Page) -> None:
+    """Every field that asks for a handle explains the word (tsk-srzrkf2parzt): one sentence the field
+    names in its aria-describedby, at most two lines at 390 and 360 px, light and dark. The seven fields:
+    your own handle, an agent's when it is added, renamed or joined, an organisation's when it is
+    created or renamed (here with a handle of the full 31 characters), and the person invited to one."""
+    run.step("handle hints: every handle field explains the word, at most two lines on a phone")
+    org = "e2e-hints-organisation-handle-x"
+    assert len(org) == 31, org
+    page.goto(f"{run.base}/account/orgs")
+    page.locator("#org-new-handle").fill(org)
+    page.locator("#org-new-name").fill("E2E Hints Organisation")
+    page.get_by_role("button", name="Create the organisation", exact=True).click()
+    expect(page.locator("#org-handle")).to_have_value(org)
+
+    def measured(where: str) -> list[dict]:
+        hints = page.evaluate(HANDLE_HINTS)
+        for x in hints:
+            assert x["field"], f"{where}: a handle hint no field names: {hints}"
+            assert x["lines"] <= 2 and not x["wide"], f"{where}: {x}"
+        return hints
+
+    try:
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            for width in (390, 360):
+                page.set_viewport_size({"width": width, "height": 900})
+                at = f"{width} px {scheme}"
+                seen: set[str] = set()
+                page.goto(f"{run.base}/account")
+                expect(page.locator(".handle-editor p.handle-explain")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"account, {at}")}
+                page.goto(f"{run.base}/account/orgs")
+                expect(page.locator("#org-new-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"new organisation, {at}")}
+                page.goto(f"{run.base}/account/orgs/{org}")
+                expect(page.locator("#org-invite-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"organisation, {at}")}
+                page.goto(f"{run.base}/agents")
+                page.get_by_role("button", name="+ Add an agent", exact=True).click()
+                expect(page.locator("#agent-new-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"new agent, {at}")}
+                page.goto(f"{run.base}/agents")
+                row = page.locator("tr.agent-row", has_text="E2E Agent").first
+                row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+                page.locator("tr.agent-manage").first.locator("details.agent-settings summary").click()
+                expect(page.locator("tr.agent-manage").first.locator("p.handle-explain").first).to_be_visible()
+                seen |= {x["field"] for x in measured(f"agent settings, {at}")}
+                page.goto(f"{run.base}/agents")
+                page.get_by_role("button", name="Join an agent", exact=True).click()
+                page.locator("#join-agent").select_option("")
+                expect(page.locator("#join-handle")).to_be_visible()
+                seen |= {x["field"] for x in measured(f"join an agent, {at}")}
+                fields = {f for f in seen if f}
+                kinds = {
+                    "own": any(re.fullmatch(r"handle-[a-z0-9]{1,8}", f) for f in fields),
+                    "agent-new": "agent-new-handle" in fields,
+                    "agent-edit": any(f.startswith("agent-handle-") for f in fields),
+                    "join": "join-handle" in fields,
+                    "org-new": "org-new-handle" in fields,
+                    "org-rename": "org-handle" in fields,
+                    "org-invite": "org-invite-handle" in fields,
+                }
+                assert all(kinds.values()), f"handle hints at {at}: {kinds} from {sorted(fields)}"
+                print(f"   handle hints: 7 kinds, each at most two lines at {at}")
+    finally:
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    no_problems(run, "handle hints")
 
 
 def invitations_step(run: Run, page: Page) -> None:
