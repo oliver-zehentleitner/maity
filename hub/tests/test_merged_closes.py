@@ -250,7 +250,8 @@ def test_a_mismatched_merge_triggers_nothing(
 def _blocked(agent: flow.Agent, owner: flow.Human, card_id: str) -> str:
     """The holder waits on a request (§7): the card goes to `blocked`."""
     asked = agent.post(
-        f"{BASE}/requests", {"class": "decision", "title": "Which?", "task_id": card_id}
+        f"{BASE}/requests",
+        {"class": "decision", "title": "Which?", "task_id": card_id, "while_open": "wait"},
     )
     assert asked.status_code == 201, asked.text
     assert _card(owner, card_id)["status"] == "blocked"
