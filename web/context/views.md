@@ -1708,7 +1708,8 @@ section needs them only to know whether a placement's credential was
 revoked, which decides whether **Restart with a new join** is offered. It
 now reads the placements first and asks for the credentials of one's own
 agents that have a placement, once each; a placement that appears later
-asks for its agent then.
+asks for its agent then. It listens for placement events before its first
+read, and reads the list again once it stands if one came meanwhile.
 
 **Reason:** on the measured project those reads were the page's slowest
 part, and most of them served nothing: few agents have a placement.

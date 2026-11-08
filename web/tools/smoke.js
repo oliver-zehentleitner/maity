@@ -4407,6 +4407,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   plFeed = [{ seq: 30001, kind: "placement_reported", at: "2026-10-22T14:10:00Z", actor: { kind: "runner", id: "rnr-0002" }, payload: { placement_id: "plc-0001", state: "running" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(plReads === plBefore + 1, "placements: a placement event reads the list again");
+  // Events while the section still reads (review of #1533): a placement created and one updated while the
+  // credentials are read are in the section once it stands.
+  {
+    const suGetAll = win.Maity.api.getAll;
+    let suFree = null, suChanged = false;
+    win.Maity.api.getAll = (p) => {
+      if (/\/members\/[^/]+\/credentials$/.test(p) && !suChanged) return new Promise((res, rej) => { const was = suFree; suFree = () => { if (was) was(); suGetAll(p).then(res, rej); }; });
+      if (p === "/projects/maintainer/maity/placements" && suChanged) {
+        return suGetAll(p).then((r) => {
+          const first = r.items.find((x) => x.id === "plc-0001");
+          return { items: r.items.map((x) => (x.id === "plc-0001" ? Object.assign({}, x, { desired: "stopped" }) : x)).concat([Object.assign({}, first, { id: "plc-0099" })]), next_cursor: null };
+        });
+      }
+      return suGetAll(p);
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+    const suHeld = !!suFree && !plBox();
+    suChanged = true;
+    plFeed = [{ seq: 30002, kind: "placement_created", at: "2026-10-22T14:11:00Z", actor: { kind: "member", member_id: "hum-maintainer" }, payload: { placement_id: "plc-0099" } },
+      { seq: 30003, kind: "placement_updated", at: "2026-10-22T14:11:30Z", actor: { kind: "member", member_id: "hum-maintainer" }, payload: { placement_id: "plc-0001" } }];
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    if (suFree) suFree(); for (let k = 0; k < 10; k++) await tick();
+    win.Maity.api.getAll = suGetAll;
+    expect(suHeld && plBox() && !!plRow("plc-0099") && plFacts("plc-0001").includes("Wantedstopped"),
+      "placements: a placement created and one updated while the section still reads are shown once it stands "
+      + JSON.stringify([suHeld, !!plBox(), plBox() && plBox().querySelectorAll("li.placement").map((li) => li.attrs["data-placement"])]));
+  }
   // A runner listed for a project one administers but owned by someone else gives no rights over it.
   const plRunner = (owner) => Promise.resolve({ items: [{ id: "rnr-0002", name: "home-laptop", owner_id: owner }], next_cursor: null });
   win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")

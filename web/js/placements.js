@@ -226,6 +226,15 @@ window.Maity = window.Maity || {};
       return reading;
     }
 
+    // Listening before the first read (review of #1533): the project's feed hands an event to the
+    // listeners there are when it comes, so one that comes while the placements or their credentials
+    // are read would be lost. It is kept, and the list read again once the section stands.
+    let loaded = false;
+    let missed = false;
+    ctx.onEvents((events) => {
+      if (!events.some((e) => EVENTS.test(e.kind))) return;
+      if (loaded) reread(); else missed = true;
+    });
     try {
       items = (await M.api.getAll(ctx.base + "/placements")).items;
     } catch (err) {
@@ -234,7 +243,8 @@ window.Maity = window.Maity || {};
     }
     await credentialsFor(items);
     draw();
-    ctx.onEvents((events) => { if (events.some((e) => EVENTS.test(e.kind))) reread(); });
+    loaded = true;
+    if (missed) reread();
     append(box, h("h3", { id: "placements-title" }, M.t("placements.title")),
       h("p", { class: "muted" }, M.t("placements.hint")),
       list, status.el);
