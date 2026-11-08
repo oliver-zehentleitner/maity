@@ -585,8 +585,8 @@ index added (a partial index on open cards is not portable to MariaDB).
 **Type:** constraint
 **Status:** active
 **Evidence:** inferred
-**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race and its later go for the one-statement check, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
-**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, a chat sees `SCAN_BUDGET` or more new human messages a minute, or another route by which a redaction stays counted turns up
+**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race and its later go for the one-statement check, the same day; the team lead's card tsk-tgh0st6p2zag (bounded database work and catch-up, the P3s left by #1490) and its go, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
+**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, a path redacts a project event without writing `event_redacted` in the same transaction, or another route by which a redaction stays counted turns up
 **See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
 
 The minute pass keeps, per agent stay in an open group chat, how far that stay's unread
@@ -596,6 +596,22 @@ process's memory and nowhere else. Each call reads only rows after the last one 
 mentions projected from the payload. The nudge goes out only once a read reached its bound, so
 its counts cover every message up to it. A moved read mark or a changed count of redacted
 messages in the range starts the read over; entries of stays that ended are dropped each pass.
+
+**Updated 2026-11-08 (tsk-tgh0st6p2zag):** the two limits below that were left as P3s are
+closed, and the paragraph after this one describes the state before. The database work of a
+pass is now bounded per stay and call by the budget, not by the unread history: at most
+`SCAN_BUDGET` message rows, at most `SCAN_BUDGET` of the project's `event_redacted` rows, and
+one-row index reads (the read mark, the open cycle, the chat's newest seq, the project's newest
+redaction); the aggregates `_counts` and `_oldest_human` are gone, and the delay is checked on
+the oldest counted message the read found. A redaction is found through the `event_redacted`
+event every redaction path writes in the same transaction: a read keeps a cursor on the
+project's redaction events, and one that names a message of this chat inside the range already
+read starts it over. A read's bound grows only once a call has reached it, and the call under
+the project lock only confirms the range the pass found due, so a read covers a fixed range and
+finishes at any arrival rate; the messages that came meanwhile are the next bound. Both are
+tested, the first by counting the event rows a pass touches on PostgreSQL (`EXPLAIN ANALYZE`):
+as many at 400 unread messages as at 10, where the aggregates touched 20 and 800. Who gets a
+nudge, when, and its payload are unchanged, as is the boundary on concurrent redactions.
 
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database
@@ -628,3 +644,8 @@ race would have held the PR back for a count the agent does not rely on.
 - Taking the extension's count in a second statement after the check: a redaction committing
   between the two was adopted into the new count while its message stayed counted (review of
   #1490, delta 3).
+- Keeping the one-statement aggregates for the redaction check and the delay (tsk-tgh0st6p2zag):
+  exact, but their cost grows with the unread history on every pass; the redaction events give
+  the same check over redactions only.
+- Moving the bound to the newest message on every call (tsk-tgh0st6p2zag): with the budget or
+  more new messages a pass, the read never finished and the nudge never came.
