@@ -1450,8 +1450,8 @@ window.MAITY_FIXTURES = {
   "maity/contract.json": {
     "docs/api.md": {
       "ref": "0e5f7a1c3b9d2e4f6a8b0c1d3e5f7a9b1c3d5e7f",
-      "size": 783,
-      "text": "# The Maity API contract\n\nThe REST contract hub, CLI and dashboard build against. Read with care.\n\n## 6 Cards and their states\n\nCards are the board's unit of work. Each card has a status and a holder.\u000bIt has a title,\fa body,\u001ca label,\u001dnotes,\u001elinks,a history and a place on the board.\n\n### 6.4 Creating a card\n\n`POST /projects/{owner}/{slug}/tasks` creates a card.\n\n```\n## 9 Not a heading: inside a fence\n```\n\n#### 6.4.1 Labels\n\n- `fix`\n- `feature`\n- `chore`\n\n### 6.8 Contracts\n\nThe contract text stays in the repository; the hub reads it on request.\n\n## 8. Events\n\nEvery change is an event, read with `GET …/events`.\n\n## Notes on reading this file\n\nA heading without a number anchors by its position.\n\n## 8 Events again\n\nA number two headings share anchors neither by number.\n",
+      "size": 836,
+      "text": "# The Maity API contract\n\nThe REST contract hub, CLI and dashboard build against. Read with care.\n\n## 6 Cards and their states\n\nCards are the board's unit of work. Each card has a status and a holder.\u000bIt has a title,\fit has a body,\u001cit has a label,\u001dit carries its notes,\u001eit carries its links,it keeps a history and a place on the board.\n\n### 6.4 Creating a card\n\n`POST /projects/{owner}/{slug}/tasks` creates a card.\n\n```\n## 9 Not a heading: inside a fence\n```\n\n#### 6.4.1 Labels\n\n- `fix`\n- `feature`\n- `chore`\n\n### 6.8 Contracts\n\nThe contract text stays in the repository; the hub reads it on request.\n\n## 8. Events\n\nEvery change is an event, read with `GET …/events`.\n\n## Notes on reading this file\n\nA heading without a number anchors by its position.\n\n## 8 Events again\n\nA number two headings share anchors neither by number.\n",
       "toc": [
         {
           "anchor": "s-6",
