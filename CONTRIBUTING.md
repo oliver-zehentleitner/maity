@@ -63,6 +63,26 @@ not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetc
 them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
 blocked, as in Claude Code's cloud sessions.
 
+## The coverage check before a MERGE-READY
+
+Before you report a pull request as ready to merge, check that its green
+`ci-ok` run saw every `main` commit on its files:
+
+```sh
+tools/coverage.sh <pr>
+```
+
+CI tests the pull request merged with `main` as `main` was when the run
+started. The check reads that `main` from the run's checkout log, then lists
+the `main` commits since the merge base that change one of the pull
+request's files and are not in it. Exit 0 means there are none. Exit 1
+names them: merge `origin/main` into the branch and push for a new run (a
+re-run tests the old merge again). Exit 2 means the check could not run,
+including when `ci-ok` is not green yet or the pull request is stacked on
+another branch; it never ends in 0 then. It needs bash 4 or newer and `gh`,
+and it only reads: GitHub over REST and a `git fetch` of `origin main` and
+the pull request's head.
+
 ## The guard tests before a review request
 
 Run `tools/guards.sh` before you ask for a review (`HUB_PYTHON=` a Python

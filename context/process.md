@@ -1793,6 +1793,58 @@ server, count as minor (the coordinator's scope for #1475).
 - `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
   up and a program whose exit status still has to be read at every call; bash alone has neither.
 
+## The coverage check before a MERGE-READY reads the main the ci-ok run tested from its checkout log
+
+**Id:** e48eb4a5-27b3-4e6f-b1f1-127b4e5a79d1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-z539g0je0rfk, from the jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, adopted by the maintainer as req-cem2fmhpg425); the exit 2 for a ci-ok that is not green is the coordinating agent's; `tools/coverage.sh`, `tools/test_coverage.py`, `CONTRIBUTING.md` ("The coverage check before a MERGE-READY")
+**Revisit when:** GitHub's run object names the merge commit or the base it tested, actions/checkout changes its `HEAD is now at` line, or ci.yml stops testing `refs/pull/N/merge`
+
+`tools/coverage.sh <pr>` answers one question for an open pull request based on `main`: does the
+`main` that its newest green `ci-ok` run tested contain every `main` commit, since the merge base,
+that changes one of the pull request's files? It picks the run as the CI watcher does (the newest
+`pull_request` run of `ci.yml` for exactly the head and branch, `ci-ok` of that attempt), reads the
+tested `main` from the line `HEAD is now at <sha> Merge <head> into <main>` that actions/checkout
+writes in a job's log, and requires that `<head>` is the pull request's head and `<main>` is on
+`origin/main`. The pull request's files are `git diff --no-renames --name-only <merge base> <head>`,
+the commits `git rev-list --no-merges --full-history origin/main ^<merge base> -- <files>`, and each is
+covered when `git merge-base --is-ancestor` puts it in the tested `main`. Exit 0 when all are, 1 when
+any is not (each named with its files), 2 when the check could not run: a closed, merged or stacked
+pull request, a head that differs between GitHub and the fetch, no run, a run not completed, a
+`ci-ok` that is not green or missing, a log that is gone or names no merge or another head, a tested
+`main` not on `origin/main`, and every failed `gh` or `git` call it needs. It only reads.
+
+**Reason:**
+- A pull request's run tests `refs/pull/N/merge`, the merge with `main` as it was when the run
+  started. A `main` commit on the same files that lands later is in neither the run nor the review.
+  `git merge-tree --write-tree` of today's `main` with the head prints a tree id and exit 0 for a
+  clean merge, which says nothing about what the run saw; the check prints it for information only.
+  The jour fixe of 2026-11-08 asked for one command after authors had checked it by hand (#1448).
+- The run object has no field for the tested merge or base: its `head_sha` is the pull request's head
+  and `pull_requests` can be empty. The checkout log is the only record GitHub keeps of it (run
+  42478321216 of #1493: `Merge 45ad8a8d… into 8062dfb7…`). Logs expire with GitHub's retention, so a
+  missing log stops the check instead of guessing.
+- The head in the log line must be the pull request's head: a log of another merge would answer for
+  another commit.
+- A `ci-ok` that is not green is exit 2, not 1: there is no tested run to compare with, and 1 says
+  "merge `main` and push", which would not help a red run.
+- `--no-renames` counts a rename under both names, as in the overlap check, so a `main` edit of a file
+  the pull request renames is found.
+- Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
+  (`LC_ALL=C`), so the locale changes nothing; a test runs it under German and English.
+
+**Rejected alternatives:**
+- Compare the run's start time with the commits' dates: commit dates are the author's, not when
+  `main` got them, and a merge can bring old commits.
+- Take the base from the pull request's `base.sha`: it is a field of the pull request, not of the run,
+  and GitHub does not document it as the `main` a given run's merge was built from.
+- Exit 1 for every `main` commit since the merge base, without the run: a pull request whose run
+  already tested the newer `main` would be sent to merge `main` again for nothing.
+- Handle stacked pull requests: their run tests a merge into the lower branch, whose own coverage is
+  another question; the check says so and stops.
+
 ## One shared CI watcher reads the pull request's own newest ci run, never the commit's checks
 
 **Id:** 67edbcd8-634f-42c8-9a22-107dbe246bef
