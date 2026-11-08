@@ -1909,7 +1909,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const box = text(card("build-box"));
   expect(box.includes("hosts build-1, build-2") && box.includes("host build-2: 0 of 2 agents running · unreachable since")
     && box.includes("Each agent on build-1 runs as its own user") && box.includes("in its OS sandbox")
-    && box.includes("every new agent waits for approval on that machine") && box.includes("Not allowed in any project yet"),
+    && box.includes(". Every new agent waits for approval on that machine.") && box.includes("Not allowed in any project yet"),
     "runners: an ssh runner: hosts, an unreachable one, own users, local approval");
   const cluster = text(card("cluster"));
   expect(cluster.includes("revoked") && cluster.includes("pods in maity-agents") && cluster.includes("pi 0.9.1 · without a command allowlist: its pod is the only boundary")
@@ -3347,12 +3347,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ofBoss = null;
   // A human who is a member here is named; one outside who is not the agent's owner is the
   // owner of a boss of another owner, whose edge request the hub answers with for a cross-owner
-  // `reports_to` on its own (hub/src/maity_hub/cross_owner.py).
-  ofTo = "human:hum-maintainer";
+  // `reports_to` on its own (hub/src/maity_hub/cross_owner.py). The hub sends the field consent to
+  // the agent's owner (foreign_agent.py), so here Reviewer is the agent of Anna, a second human
+  // member (tsk-gsk31zvpfv02, nte-ex7rzjwc57t3 / nte-193nry0z6pkx).
+  const ofAnna = { id: "hum-anna", kind: "human", display_name: "Anna", handle: "anna", trust: "member", role: "coder" };
+  const ofGetAnna = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => ofGetAnna(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r
+    : { items: r.items.map((x) => (x.id === "agt-r" ? Object.assign({}, x, { owner_id: "hum-anna" }) : x)).concat(r.items.some((x) => x.id === "hum-anna") ? [] : [ofAnna]), next_cursor: null }));
+  ofTo = "human:hum-anna";
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members");
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
   eSel("role").value = "coder"; eSel("role").dispatch("change");
   await submitEdit();
-  expect(text(main).includes("Not changed yet: waiting for Maintainer's consent (req-c010, Change reviewer in Maity)."),
-    "members: a consent of a human who is a member here names them " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  expect(text(main).includes("Not changed yet: waiting for Anna's consent (req-c010, Change reviewer in Maity)."),
+    "members: a consent of a human who is a member here, the agent's owner, names them " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  win.Maity.api.getAll = ofGetAnna;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members");
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
   // An agent of a third owner chosen alone as the boss: the hub asks that owner first and
   // answers with that edge request.
   ofTo = "human:hum-third";
@@ -4282,6 +4293,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "errors: a refusal whose reason has no words keeps the reason in brackets; without a reason the bare sentence");
     expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
       "errors: without a translation, or for a code unknown here, the hub's English");
+    i18n.language = was;
+    delete win.MAITY_I18N.de;
+  }
+  // A failure is one sentence per language (tsk-0zbms0wwqhmm): the reason stands where the catalog's
+  // sentence puts it, not after a prefix; "" is the reason alone; the labels are sentences too.
+  {
+    const i18n = win.Maity.i18n;
+    const st = win.Maity.statusLine();
+    st.fail(win.Maity.t("notify.not_saved"), { message: "boom" });
+    expect(st.el.textContent === "Not saved: boom" && st.el.className === "send-status failed", "reason: English reads as before " + st.el.textContent);
+    st.fail("", { message: "alone" });
+    expect(st.el.textContent === "alone", "reason: an empty sentence is the reason alone");
+    st.fail("Not saved:", { message: " later" });
+    expect(st.el.textContent === "Not saved: later", "reason: a sentence without {reason} keeps the reason after it " + st.el.textContent);
+    st.fail(win.Maity.t("notify.not_saved"), { message: "" });
+    expect(st.el.textContent === "Not saved: ", "reason: an empty reason leaves the sentence " + JSON.stringify(st.el.textContent));
+    st.fail((reason) => win.Maity.t("attach.not_attached_named", { name: "{reason}.txt", reason }), { message: "upload failed" });
+    expect(st.el.textContent === "Not attached: {reason}.txt: upload failed",
+      "reason: a sentence with other values is filled once, a value reading {reason} stays as it is " + st.el.textContent);
+    win.MAITY_I18N.de = { "notify.not_saved": "Wegen {reason} nicht gespeichert.", "prefs.diff.added": "Neu ({line}) hinzugefügt",
+      "board.release.not_ready": "{reasons} — darum nicht bereit", "inbox.label.project": "{entry} (aus {name})" };
+    const was = i18n.language;
+    i18n.language = "de";
+    st.fail(win.Maity.t("notify.not_saved"), { message: "Zeitüberschreitung" });
+    expect(st.el.textContent === "Wegen Zeitüberschreitung nicht gespeichert.", "reason: a language puts the reason in the middle " + st.el.textContent);
+    expect(win.Maity.reasonIn("A {reason} and {reason}", "x") === "A x and x" && win.Maity.reasonIn("$& {reason}", "$1") === "$& $1",
+      "reason: every placeholder filled, the reason's text taken as it is");
+    const added = win.Maity.tn("prefs.diff.added", { line: "L" }), notReady = win.Maity.tn("board.release.not_ready", { reasons: "R" }),
+      label = win.Maity.tn("inbox.label.project", { name: "Maity", entry: "E" });
+    expect(JSON.stringify([added, notReady, label]) === JSON.stringify([["Neu (", "L", ") hinzugefügt"], ["R", " — darum nicht bereit"], ["E", " (aus ", "Maity", ")"]]),
+      "reason: the labels are sentences with their element where the language puts it " + JSON.stringify([added, notReady, label]));
     i18n.language = was;
     delete win.MAITY_I18N.de;
   }
@@ -5941,8 +5983,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-su2"); byId("join-display").value = "Agent SU2";
   suForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   expect(text(main).includes("No join created: you have no admin rights in this project (members:admin)"),
-    "join step-up: a bare members:admin refusal names the missing right " + JSON.stringify(text(main).slice(0, 0)));
+    "join step-up: a bare members:admin refusal names the missing right");
   win.Maity.api.post = hcPost;
+  // A verify answered after its question was cancelled leaves the next question in the same slot
+  // standing (tsk-gsk31zvpfv02, nte-qerctxq43kk3): the late answer settles nothing and closes nothing.
+  {
+    const slot = win.Maity.dom.h("div", { hidden: true });
+    const post0 = win.Maity.api.post, get0 = win.Maity.api.get;
+    let held = null;
+    win.Maity.api.post = (p, b) => (p === "/auth/second-factor/verify" ? new Promise((res) => { held = res; }) : post0(p, b));
+    win.Maity.api.get = (p) => (p === "/auth/second-factor" ? Promise.resolve({ via: "totp" }) : get0(p));
+    let calls = 0;
+    const call = () => (++calls % 2 ? Promise.reject(new win.Maity.api.ApiError("x", 403, "/x", "forbidden", { reason: "step_up_required" })) : Promise.resolve("ok"));
+    const first = win.Maity.stepUp.run(call, slot, "First").catch((e) => e.code);
+    for (let k = 0; k < 4; k++) await tick();
+    slot.querySelector("input").value = "123456"; slot.querySelector("form.step-up").dispatch("submit"); for (let k = 0; k < 2; k++) await tick();
+    btn(slot, "Cancel").click(); for (let k = 0; k < 2; k++) await tick();
+    const firstSaid = await first;
+    calls = 0;
+    const second = win.Maity.stepUp.run(call, slot, "Second").then(() => "ok", (e) => e.code);
+    for (let k = 0; k < 4; k++) await tick();
+    const secondOpen = !!slot.querySelector("form.step-up") && text(slot).includes("Second");
+    held({}); for (let k = 0; k < 4; k++) await tick();
+    const stillOpen = !!slot.querySelector("form.step-up") && !slot.hidden && text(slot).includes("Second");
+    win.Maity.stepUp.cancel(slot);
+    // Where the late answer took the slot, nothing can end the second question any more: "pending".
+    const secondSaid = await Promise.race([second, new Promise((r) => setTimeout(() => r("pending"), 50))]);
+    win.Maity.api.post = post0; win.Maity.api.get = get0;
+    expect(firstSaid === "cancelled" && secondOpen && stillOpen && secondSaid === "cancelled",
+      "step-up: a verify answered after Cancel leaves the next question in the slot open "
+      + JSON.stringify([firstSaid, secondOpen, stillOpen, secondSaid]));
+  }
   await go("#/maintainer/maity/inbox");
   await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
@@ -8008,6 +8079,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = frGet;
   expect(JSON.stringify(frRootWait) === "[true,0,1]" && frFoot() && !productLine.querySelectorAll("a").length,
     "frame: the sign-in drawn again at the root keeps the frame meanwhile, no product line " + JSON.stringify(frRootWait));
+  // An answer that arrives after the frame was left draws nothing (tsk-gsk31zvpfv02, nte-xyv1ww8rdevz 2 /
+  // nte-gmnk9wjtaar2 2): the sign-in asks, the invitation leaves the frame, then the answer comes.
+  const frLateHeld = [];
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frLateHeld.push(r)) : frGet(p));
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frLateAsked = frLateHeld.length;
+  await go("#/invite/tok-late"); for (let k = 0; k < 6; k++) await tick();
+  frLateHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = frGet;
+  const frLate = [frLateAsked, !!frHead(), !!frFoot(), header.hidden, frOn()];
+  expect(JSON.stringify(frLate) === "[1,false,false,false,false]",
+    "frame: a chrome answer that arrives after the frame was left draws no header or footer, the app's bar stays " + JSON.stringify(frLate));
   head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
   await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   frLangs.length = 0; frLangsWere.forEach((t) => frLangs.push(t));
@@ -8039,6 +8122,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The mail's second step in a browser without the session it was sent for (§2.8.8).
   const frStepStood = await frFromDoor("#/sign-in/second-factor/email?token=elsewhere");
   expect(frStepStood && frLeft() && !byId("login-email"), "frame: the mail's second step without a session leaves it, the product line back");
+  // A session read that succeeds leaves the frame before anything is drawn (tsk-gsk31zvpfv02,
+  // nte-gmnk9wjtaar2 3): here a session that owes the second factor, whose step is drawn outside it.
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frSfStood = !!frFoot();
+  win.Maity.api.get = (p) => (p === "/auth/session"
+    ? Promise.resolve({ second_factor: "required", via: "totp", session_id: "ses-frame", csrf_token: "c", expires_at: "2026-10-21T14:00:00Z" }) : frGet(p));
+  await go("#/all"); for (let k = 0; k < 8; k++) await tick();
+  const frSfLeft = frLeft() && !byId("login-email");
+  win.Maity.api.get = frGet;
+  expect(frSfStood && frSfLeft, "frame: a session read that succeeds leaves it, here for the second factor's step " + frSfStood + frSfLeft);
   // A running maintenance window: the full page instead of the sign-in, outside the frame (§16.12).
   await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   const frMtStood = !!frFoot();
@@ -9707,8 +9800,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [{ id: "stub", available: false, reason: "odd" }], projects: [], repositories: [] } }))
         .includes("a test tool is not available (odd)")
       && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: ["a/b"], repositories: [], require_local_approval: true } }))
-        .includes("allows the projects a/b and the repositories none; every new agent waits for approval on that machine."),
-    "runners: presence, targets with one or more agents, an unknown reason and what the configuration allows, from the catalog");
+        .includes("Its configuration allows the projects a/b. Its configuration allows no repository. Every new agent waits for approval on that machine.")
+      && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: [], repositories: ["o/r"] } }))
+        .includes("Its configuration allows no project. Its configuration allows the repositories o/r.")
+      && !/approval|\bnone\b/.test(text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: [], repositories: ["o/r"] } }))),
+    "runners: presence, targets with one or more agents, an unknown reason and what the configuration allows, from the catalog, an empty list in a sentence of its own");
   }
   win.Maity.api.get = tkGet;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
@@ -11195,6 +11291,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(mmSoul()).includes("No soul written yet"), "memory: an agent without a soul says so");
     byId("soul-" + mmSid).value = "Small pull requests."; mmSoul().querySelector("form.soul-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
     expect(text(mmSoul()).includes("Version 1") && text(mmSoul()).includes("Saved."), "memory: saving makes a version");
+    // A failed read of the earlier versions is one sentence, the reason at its {reason} (#1498).
+    win.Maity.api.get = (p, o) => (/\/versions$/.test(p) ? Promise.reject(new Error("boom")) : mmGet(p, o));
+    const mmEarlier = mmSoul().querySelector("details.soul-earlier");
+    mmEarlier.open = true; mmEarlier.dispatch("toggle"); for (let k = 0; k < 4; k++) await tick();
+    const mmFailed = mmEarlier.querySelector("li.send-status");
+    expect(mmFailed && text(mmFailed) === "The memory could not be read: boom",
+      "memory: a failed read of the earlier versions says its reason in the sentence " + (mmFailed && text(mmFailed)));
+    win.Maity.api.get = mmGet;
     // A guest: no form, no Delete.
     win.Maity.api.get = (p, o) => (p === "/me" ? mmGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "guest"; }); return x; }) : mmGet(p, o));
     await go("#/all"); await go("#/maintainer/maity/memory"); for (let k = 0; k < 6; k++) await tick();
@@ -11956,6 +12060,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const nfRequest = !nfPage() && !!byId("login-email");
   expect(nfBoard && nfInbox && nfRequest, "not found: a dashboard route (a project's board without a public page, /inbox, a request from a mail) keeps the sign-in "
     + nfBoard + nfInbox + nfRequest);
+  // Only the hub's "no page" makes it "not found" (tsk-gsk31zvpfv02, nte-106dxy82wsbx): a read that
+  // failed otherwise (a 503, a dropped connection) keeps the sign-in, which is still a way on.
+  const nfGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/public/pages/flaky-handle" ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable")) : nfGet(p));
+  await go("#/flaky-handle"); for (let k = 0; k < 6; k++) await tick();
+  const nfFlaky = !nfPage() && !!byId("login-email");
+  win.Maity.api.get = nfGet;
+  expect(nfFlaky, "not found: a public page whose read failed with 503 keeps the sign-in, not \"not found\"");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   viSignedOut = false;
   win.Maity.api.get = viChromeGet;
@@ -12426,6 +12538,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mnLink = () => header.querySelectorAll(".mention-note a").find((a) => a.textContent === "1 unread mention");
   expect(mnLink() && mnLink().getAttribute("href") === "#/notifications?kind=mention&project=maintainer%2Fmaity",
     "mention count: beside the tabs, a link to the project's mentions on /notifications");
+  // A counts read while one stays in the project fills the line again (tsk-gsk31zvpfv02, nte-eh3zh053w5ew):
+  // a second mention changes its number, none takes it away, and it comes back with the next one.
+  const mnSet = (n) => { mnCount = n; };
+  let mnCount = 1;
+  const mnRound = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0"
+    ? mnRound(p).then((a) => Object.assign({}, a, { by_project: Object.assign({}, a.by_project, { "maintainer/maity": { member: true, inbox: 0, chat: 0, mention: mnCount, total: mnCount } }) }))
+    : mnRound(p));
+  const mnNote = () => header.querySelector(".mention-note");
+  mnSet(2); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  const mnTwo = [mnNote() && !mnNote().hidden, mnNote() ? text(mnNote()) : null];
+  mnSet(0); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  const mnNone = [mnNote() ? !!mnNote().hidden : null, mnNote() ? mnNote().querySelectorAll("a").length : null];
+  mnSet(1); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  const mnBack = !!mnLink();
+  win.Maity.api.get = mnRound;
+  expect(JSON.stringify(mnTwo) === JSON.stringify([true, "2 unread mentions"]) && JSON.stringify(mnNone) === "[true,0]" && mnBack,
+    "mention count: a counts read in the project changes the line's number, takes it away at none and brings it back "
+    + JSON.stringify([mnTwo, mnNone, mnBack]));
   await go("#/notifications?kind=mention&project=maintainer%2Fmaity"); for (let k = 0; k < 6; k++) await tick();
   const mnList = mnGets.filter((p) => p.startsWith("/me/notifications?limit=50"));
   expect(mnList.length && mnList[mnList.length - 1].includes("&kind=mention") && mnList[mnList.length - 1].includes("&project=maintainer%2Fmaity"),

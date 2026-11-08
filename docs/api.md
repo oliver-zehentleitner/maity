@@ -4858,6 +4858,10 @@ a control character or an invisible format character that hides or turns text
 (Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
 marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
+Only those four categories are checked: a character outside them that shows
+nothing (a Hangul filler such as U+3164, the Braille blank U+2800, the combining
+grapheme joiner U+034F) counts as text, so an item made only of such characters is
+stored, not refused as `empty_item`.
 The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change of the lines the
 rules add bumps `rules_version` with `rules_changed` (§6.9) as well as
@@ -10717,7 +10721,7 @@ the public reads the texts as they reach each agent, on its page.
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
 | `action` | `null`, or `{method, path, query, body, body_sha256, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`), `path` (the API path below `/api/v1`, which may end in a resource id), `query` (the exact query string, or `null`) and `body` (the exact JSON text the call will send, at most 48 KiB, or `null`; `invalid` with `details.fields["action.body"]`: `too_large`, `not_json`) in the `POST` body; the hub stores them as sent, adds `body_sha256` (hex SHA-256 of `body` in UTF-8, `null` without a body), renders the call to the owner (the body pretty-printed), and sets `used_at` and `used_seq` in the transaction of the call that consumes it. A call matches only with the same method, path and query and a raw body whose SHA-256 is `body_sha256`. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call. On a closed personal request `task` is a snapshot taken when the hub closed it, not a live view, so a non-member owner does not follow the card after the outcome |
-| `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
+| `while_open` | `wait` or `proceed_provisionally`; absent, `wait` for a `consent`, which must be `wait`, and `proceed_provisionally` for every other class |
 | `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "avatar_url", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
 | `status` | `open`, `answered`, `withdrawn`. There is no deferred state: an unanswered request stays open; the inbox may push an entry down its list locally |
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
@@ -10727,7 +10731,7 @@ the public reads the texts as they reach each agent, on its page.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
+| `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` (given, or a `consent`'s default) and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status; any other question leaves the card as it is |
 | `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see; a member id lists what is addressed to that member and to any of its instances, an instance address `<member>#<id>` only what is addressed to exactly that instance); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller, or asked by them as an agent's owner, in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | an addressee of a cross-owner `reports_to` request who is not a member reads it under `/requests/{id}` instead (§6.2) |
@@ -11033,7 +11037,7 @@ learns its content.
 | `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
-| `chat_unread` (§9.2; not built yet, tsk-xemkg9x1kwt8) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
+| `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
@@ -11199,7 +11203,7 @@ Two sets per reader, because reading and waking are different things:
   its participation has `wake: all` (not built, §9.2) — and never by `conversation_created` or
   `conversation_updated`; what a human wrote there without mentioning it
   reaches it later, at most once per read cycle, as `chat_unread`
-  (§9.2, "The unread nudge", not built yet); a human participant is woken by every message
+  (§9.2, "The unread nudge"); a human participant is woken by every message
   of the others. A cross-project group chat (§9.5) wakes an
   agent the same way and no other: only a message that mentions it,
   once, and never by the chat being created or changed. The admin see-all extension, the owner's view of a group
@@ -12608,9 +12612,8 @@ The conversation view:
   the design is `wake: all` per agent participation (not built, above), which
   wakes on human messages only and so cannot loop. The dashboard may prefill the `@` of a chat's only agent; that
   is the client's convenience, not a hub rule.
-- **The unread nudge** (not built yet, tsk-xemkg9x1kwt8: until the hub
-  ships it, an agent is woken in a group chat by a mention only). What a
-  human writes without a mention does not stay unseen until the agent's next resume. The hub's worker, in its
+- **The unread nudge.** What a human writes without a mention does not
+  stay unseen until the agent's next resume. The hub's worker, in its
   pass every minute (§5.3), emits `chat_unread` (§8.2) for an agent
   participant of a group chat when all of these hold:
   - the chat holds *counted* messages: written by a human participant
@@ -12635,10 +12638,19 @@ The conversation view:
   in the chat. The next counted message then starts a new cycle, again
   after the delay. The nudge's own `seq` plays no part: the event is
   written after the messages it counts, so reading exactly those leaves
-  the read mark below it, while a later message read or posted carries
-  it past. The event wakes the agent by its `wake` rule
+  the read mark below it, while a message written after the nudge, read
+  or posted, carries it past. The event wakes the agent by its `wake` rule
   (§6.18). A `wait` that returns it, or a resume, does not move the read
   mark, as for a mention.
+
+  Exactness: the counts leave out every message redacted before the hub's
+  pass starts. Exactness against a redaction that commits while a pass
+  runs is not promised: the nudge is a wake-up hint, and reading the chat
+  shows a redacted message only as its tombstone (§8.5), never its body.
+  The hub reads at most a budget of messages (2000) per stay and call,
+  moving the read's end up to the newest message each time: while that
+  many or more new human messages arrive in a chat between passes, the
+  nudge may not come; with fewer, the read catches up and the nudge comes.
 
   Bounded on purpose:
   - one wake per agent and chat per read cycle, never sooner than the delay
@@ -12855,14 +12867,13 @@ answer. Before it answers it reads what it missed with `maity chat <id>`
 readable and counts as unread, and never ends a `wait` — except a human
 participant's message where the agent's `wake` is `all` (not built, §9.2).
 What humans wrote there unread for the nudge delay ends one `wait` as
-`chat_unread`, once per read cycle (§9.2, "The unread nudge", not built
-yet): the agent reads the chat with `maity chat <id>` and answers if it
+`chat_unread`, once per read cycle (§9.2, "The unread nudge"): the agent reads the chat with `maity chat <id>` and answers if it
 is addressed or concerned; nothing obliges it to answer.
 
 The generated rules (§6.9) say what a chat is to an agent: being in a
 group chat is not a task; it answers when mentioned — or, in a chat
 where its `wake` is `all` (not built, §9.2), when a human writes — reads
-a chat a `chat_unread` names (not built yet, §9.2) and answers there only what concerns it,
+a chat a `chat_unread` names (§9.2) and answers there only what concerns it,
 and otherwise reads when it resumes (a change of these rules bumps the rules version,
 §6.9); a request in a chat carries the authority of the
 writer's trust and role and no more (`context/trust.md`), so a go that needs
@@ -14492,7 +14503,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. It then checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first names each quote longer than that with its length, also without a clone, and reads each cite at `head` in the local clone; it refuses the send, exit 1, when a quote is too long, not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Last it checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends, unless a quote is too long. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |

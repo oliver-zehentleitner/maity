@@ -163,8 +163,9 @@ def test_remove_drops_an_agents_motif_and_the_hold_refuses_a_new_one(
 
 @contextmanager
 def reset_waiting(migrated: Engine, agent_id: str, report_id: str) -> Iterator[Any]:
-    """A `remove` of the agent's profile in progress, as `_reset_profile` and the hold it
-    writes leave it: the picture's lock held, the hold written, nothing committed yet.
+    """A `remove` of the agent's profile in progress, as `moderation.apply` leaves it after
+    `_reset_profile` and its own insert of the hold, in the same transaction: the picture's
+    lock held, the hold written, nothing committed yet.
     Yields a function that runs a change in the other transaction and then commits the
     reset (PostgreSQL, MariaDB)."""
     from maity_hub import avatars, clock

@@ -336,7 +336,14 @@ make format     # black and ruff --fix
 
 The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
-plain `pytest` runs one process. To run them against a server database, point
+plain `pytest` runs one process. On the machine the project's agents share, do not
+run the full suite: run the test files a change affects, with at most two workers,
+and leave the full suite to CI (`CONTRIBUTING.md`, "PostgreSQL runs and a shared
+machine", has the rule and its reason). A few files may run as `make test PYTEST_ARGS="-n 2 tests/test_board.py"`;
+a heavier run goes in a run slot,
+`../tools/run_slot.sh make test PYTEST_ARGS="-n auto tests/test_board.py"`, where
+`-n auto` starts two (`CONTRIBUTING.md`, "PostgreSQL runs and a shared machine").
+To run them against a server database, point
 `MAITY_TEST_DATABASE_URL` at an empty database the suite may create and drop
 tables in. It is the suite's alone and disposable: the suite empties it before
 every test, and on PostgreSQL a session of the same role that still holds a lock

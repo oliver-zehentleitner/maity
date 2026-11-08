@@ -1309,6 +1309,8 @@ def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
     body["priority"] = args.priority
     if args.task:
         body["task_id"] = args.task
+    if args.wait:
+        body["while_open"] = "wait"  # absent, the hub takes the class's default (§7)
     if args.action is not None:
         body["action"] = _action(args.action, args.action_body)
     elif args.action_body is not None:
@@ -2060,6 +2062,35 @@ def cmd_say(args: argparse.Namespace) -> int:
     except argparse.ArgumentTypeError as exc:
         raise UsageError(str(exc)) from None
     text = _say_body(args.body, attach)
+    # The review is checked in the clone before any request, the recipient's lookup included:
+    # a refused review asks nothing of the hub.
+    if review is not None:
+        cites = citecheck.check(Path.cwd(), review)
+        names = (
+            textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
+        )
+        if cites.bad or names:
+            if cites.bad:
+                # One cite may have two lines (too long, and not on its line): count the cites.
+                cited = len({line.split(" ", 1)[0] for line in cites.bad})
+                _err(
+                    f"not sent: {cited} cite(s) do not stand at the review's head "
+                    "or are longer than the hub takes (§8.4)"
+                )
+            if names:
+                _err(
+                    f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
+                    "write a missing or proposed name without backticks, a command under `## Ran`, "
+                    "and a proposed wording, an output, a mutation or a removed text next to its "
+                    "line in backticks, not in quotes"
+                )
+            for line in [*cites.bad, *names]:
+                _err(line)
+            return EXIT_ERROR
+        if cites.unchecked and cites.top is None:
+            _err(f"cites and text not checked: {cites.unchecked}")
+        elif cites.unchecked:
+            _err(f"cites not checked: {cites.unchecked}")
     session = Session()
     if to != "human" and (args.type is not None or session.data.get("owner_id") != to):
         to = _address(session, to, chat_hint=True)  # handles and aliases (§6.24)
@@ -2086,27 +2117,6 @@ def cmd_say(args: argparse.Namespace) -> int:
     if args.task is not None:
         body["task_id"] = args.task
     if review is not None:
-        cites = citecheck.check(Path.cwd(), review)
-        names = (
-            textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
-        )
-        if cites.bad or names:
-            if cites.bad:
-                _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
-            if names:
-                _err(
-                    f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
-                    "write a missing or proposed name without backticks, a command under `## Ran`, "
-                    "and a proposed wording, an output, a mutation or a removed text next to its "
-                    "line in backticks, not in quotes"
-                )
-            for line in [*cites.bad, *names]:
-                _err(line)
-            return EXIT_ERROR
-        if cites.unchecked and cites.top is None:
-            _err(f"cites and text not checked: {cites.unchecked}")
-        elif cites.unchecked:
-            _err(f"cites not checked: {cites.unchecked}")
         body["review"] = review  # as given: the hub checks it and names each bad path
     return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
 
@@ -4395,7 +4405,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--tried", help="what you tried before asking")
     p.add_argument("--priority", choices=PRIORITIES, default="normal", help="default: normal")
-    p.add_argument("--task", type=_id, help="the task id the request belongs to")
+    p.add_argument(
+        "--task",
+        type=_id,
+        help="the task id the request belongs to; the card you hold stays as it is, unless "
+        "you --wait or ask for consent",
+    )
+    p.add_argument(
+        "--wait",
+        action="store_true",
+        help="you stop working until the answer: sends while_open wait, which blocks the card "
+        "you hold with --task until the request is answered or withdrawn",
+    )
     p.add_argument(
         "--action",
         metavar='"METHOD PATH[?QUERY]"',

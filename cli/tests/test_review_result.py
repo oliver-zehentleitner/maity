@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ from pathlib import Path
 import fakehub
 import pytest
 
-from maity import citecheck, cli, state
+from maity import citecheck, cli, proc, state
 
 P = "/api/v1/projects/oliver/maity"
 REVIEW = {
@@ -29,8 +30,8 @@ def events(fake: fakehub.FakeHub) -> None:
     fake.routes[("POST", f"{P}/events")] = lambda s: (201, {"seq": 7})
 
 
-def _say(*extra: str) -> list[str]:
-    return ["say", "agt-a", "--type", "review_result", *extra]
+def _say(*extra: str, to: str = "agt-a") -> list[str]:
+    return ["say", to, "--type", "review_result", *extra]
 
 
 def test_the_review_is_sent_as_given_from_a_file(
@@ -339,3 +340,128 @@ def test_a_quote_with_umlauts_stands_under_a_c_locale(tmp_path: Path) -> None:
     }
     done = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, check=False)
     assert done.returncode == 0
+
+
+REPO = Path(citecheck.__file__).resolve().parents[3]
+
+
+@pytest.mark.parametrize("to", ["agt-a", "some-agent", "agt-a#x1"])  # member id, handle, instance
+@pytest.mark.parametrize(
+    ("quote", "named"),
+    [
+        ("x" * 300, None),
+        ("ä" * 300, None),  # characters, not bytes: 600 bytes in UTF-8
+        ("日" * 300, None),
+        ("x" * 301, "the quote has 301 characters, the hub takes at most 300"),
+        ("日" * 301, "the quote has 301 characters, the hub takes at most 300"),
+    ],
+)
+def test_a_quote_longer_than_the_hub_takes_refuses_the_send(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    quote: str,
+    named: str | None,
+    to: str,
+) -> None:
+    _commit("b.txt", f"first\n{quote}\n")
+    path = _review_at(
+        tmp_path,
+        {"path": "b.txt", "line": 1, "quote": "first"},
+        {"path": "b.txt", "line": 2, "quote": quote},
+    )
+    before = len(fake.signed())
+    if named is None:  # sent; to the member id, which the test hub knows
+        assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_OK
+        assert fake.signed()[-1].json()["review"]["cites"][1]["quote"] == quote
+        return
+    assert cli.main(_say("Approve.", "--review-file", path, to=to)) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "not sent: 1 cite(s)" in err
+    assert f"review.cites.1 b.txt:2: {named}" in err
+    assert fake.signed()[before:] == []  # not even the recipient's lookup
+
+
+def test_a_long_quote_is_refused_without_a_clone(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    review = {**REVIEW, "cites": [{"path": "a.txt", "quote": "x" * 301}]}
+    (tmp_path / "review.json").write_text(json.dumps(review))
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.chdir(elsewhere)
+    before = len(fake.signed())
+    assert (
+        cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_ERROR
+    )
+    assert "review.cites.0 a.txt: the quote has 301 characters" in capsys.readouterr().err
+    assert fake.signed()[before:] == []  # not even the recipient's lookup
+
+
+def test_the_quote_limit_is_the_hubs() -> None:
+    hub = (REPO / "hub" / "src" / "maity_hub" / "reviews.py").read_text(encoding="utf-8")
+    found = re.findall(r"^QUOTE_MAX = (\d+)$", hub, re.MULTILINE)
+    assert found == [str(citecheck.QUOTE_MAX)]
+
+
+def test_the_quote_limit_is_the_contracts() -> None:
+    api = (REPO / "docs" / "api.md").read_text(encoding="utf-8")
+    found = re.findall(r"`path` and `quote` 1–(\d+) characters", api)
+    assert found == [str(citecheck.QUOTE_MAX)]
+
+
+def test_a_long_quote_is_named_when_the_commit_is_missing(joined: Path) -> None:
+    _commit("b.txt", "first\n")
+    review = {**REVIEW, "cites": [{"path": "b.txt", "quote": "x" * 301}]}  # REVIEW's head: absent
+    result = citecheck.check(Path.cwd(), review)
+    assert result.bad == [
+        "review.cites.0 b.txt: the quote has 301 characters, the hub takes at most 300"
+    ]
+    assert result.unchecked is not None and "is not in this clone" in result.unchecked
+
+
+def test_a_long_quote_is_named_when_git_fails(
+    joined: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _commit("b.txt", "first\n")
+    path = _review_at(tmp_path, {"path": "b.txt", "line": 1, "quote": "x" * 301})
+    review = json.loads(Path(path).read_text())
+    calls = []
+
+    def run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if len(calls) > 1:  # the clone is found, then git stops answering
+            raise proc.ToolError("git did not answer")
+        return real(argv, cwd)
+
+    real = proc.run
+    monkeypatch.setattr(proc, "run", run)
+    result = citecheck.check(Path.cwd(), review)
+    assert result.bad == [
+        "review.cites.0 b.txt:1: the quote has 301 characters, the hub takes at most 300"
+    ]
+    assert result.unchecked == "git did not answer"
+
+
+def test_a_cite_with_two_problems_counts_once(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _commit("b.txt", "first\n" + "x" * 301 + "\n")
+    path = _review_at(tmp_path, {"path": "b.txt", "line": 1, "quote": "x" * 301})  # line 2, really
+    assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "not sent: 1 cite(s)" in err
+    assert err.count("review.cites.0 b.txt:1: ") == 2  # too long, and on line 2

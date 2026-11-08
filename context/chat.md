@@ -384,9 +384,6 @@ keeps busy chats from crowding the packet.
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-11-08
 **See:** chat.md#an-agent-participant-can-be-woken-by-every-human-message-in-a-group-chat-wake-all-opt-in-per-chat — bbb35462-3880-423a-932e-de46cc440fcb — as of 2026-11-08
 
-**Not built yet:** the contract (`docs/api.md` §9.2) is ahead of the
-hub, which follows in the next pull request of tsk-xemkg9x1kwt8.
-
 Messages that human participants write in a group chat without
 mentioning an agent participant reach it without its next resume. The
 hub's worker sends it one `chat_unread` for the chat once the oldest

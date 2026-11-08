@@ -698,8 +698,9 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
-    if row.kind == "cross_chat_mention":
-        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5).
+    if row.kind in ("cross_chat_mention", "chat_unread"):
+        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);
+        # the unread nudge names a group chat's title, which the see-all does not read (§9.2).
         return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True

@@ -4398,10 +4398,12 @@ window.Maity = window.Maity || {};
           // A project role counts by its base, as project_roles.base_of resolves it (§2.3).
           const custom = (project(m[1], path).roles || []).find((r) => r.name === body.role);
           const base = custom ? custom.base : HUB_ROLES.includes(body.role) ? body.role : null;
-          if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
-          if (!MEMBER_ROLES.includes(base)) {
+          // In the hub's order (routes/members.py): a known role beyond the member rule first, then a
+          // role the project does not have; the two exclude each other, so only the order is matched.
+          if (base !== null && !MEMBER_ROLES.includes(base)) {
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
+          if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
           target.role = body.role;
           target.role_base = base;
           return target;

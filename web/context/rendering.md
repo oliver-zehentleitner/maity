@@ -967,9 +967,27 @@ chat is found again by its participants, never by its title; its
 maker may rename it (§9.2). Rejected: a chat without a title (the
 hub allows one), named from its participants when read: every list
 that shows the chat would need that naming, and the participants alone
-do not say what the chat is for. Still put together from
-pieces: a status line's prefix and its reason ("Not saved: " + the
-hub's words, `status.fail`), for a later part of stage 2.
+do not say what the chat is for. A failure is one
+sentence with `{reason}` where the hub's words go ("Not saved:
+{reason}"): `status.fail(sentence, err)` fills it through
+`M.reasonIn`, so a language may put the reason first or in the middle.
+Text before an element (an inbox entry's label, a diff line's "added:",
+the list of what blocks a release) has its own placeholder (`{entry}`,
+`{line}`, `{reasons}`) filled with that element by `M.tn`. A failure
+with other values is handed over as a function of the reason,
+`(reason) => M.t(key, { name, reason })`, so its text is filled once:
+a value that reads "{reason}" (a file's name) stays as it is. A failure
+shown outside a status line is filled where it is shown
+(`M.t(key, { reason })`). `make check` fails on an English text that
+ends in ": ", on a key handed to `status.fail` without `{reason}`, and
+on a text put into an element, joined with `+` or written to
+`textContent` with a placeholder left unfilled, a placeholder counting
+as filled only where the values' object literal has a property of that
+name. It does not read values from a variable or a spread, nor follow a
+text kept in a variable (tsk-0zbms0wwqhmm, #1498). Rejected: the
+reason glued after the sentence in code, which fixed its place for
+every language; filling `{reason}` in the finished text for every
+failure, which filled it again inside a value.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code
