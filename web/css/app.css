@@ -1699,6 +1699,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .board-body.has-panel > .columns { flex: 1 1 auto; min-width: 0; }
 .card-panel { flex: 0 0 min(30rem, 42%); position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 12px 16px; }
+/* The panel's ground, --surface-2, takes the light --warn at only 4.26:1, so the panel has its own:
+   4.79:1 there (WCAG AA), the same amber. Both ways to dark give the panel :root's dark --warn back. */
+.card-panel { --warn: #8f6000; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card-panel { --warn: inherit; } }
+:root[data-theme="dark"] .card-panel { --warn: inherit; }
 /* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
 @media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
