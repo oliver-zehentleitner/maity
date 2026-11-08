@@ -119,6 +119,24 @@ verified.
   in its first push, the route to the fixtures and one smoke case per
   caller path. Its review request names the caller paths the smoke covers.
 
+## Local test environment
+
+Everything runs on your own machine; there is no shared test system.
+
+- **Hub:** in `hub/`, `make install` into a venv of its own, then `make check`, which
+  runs the whole suite with one worker per core; on a shared machine `make lint
+  typecheck` and the affected test files instead (below). The tests run on SQLite by
+  default, one file per test (`hub/README.md`, "Develop").
+- **Hub on PostgreSQL:** `scripts/with_postgres.sh pytest -n 2 <test files>` from
+  `hub/`; it starts a local server and gives the run a database of its own. Without a
+  system PostgreSQL, the `pgserver` package brings the server (`hub/README.md`).
+- **CLI:** in `cli/`, `make dev`, then `make check`. The tests need neither a
+  database nor a running hub: they talk to a hub on loopback in the test itself
+  (`cli/tests/fakehub.py`).
+- **A shared machine:** at most two workers per run, heavy runs in a slot
+  (`tools/run_slot.sh`), and only the test files a change affects, never the full hub
+  suite; the next section has the rules.
+
 ## PostgreSQL runs and a shared machine
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the
