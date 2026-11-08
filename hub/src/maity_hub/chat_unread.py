@@ -6,10 +6,12 @@ it once, later: the worker's minute pass emits `chat_unread` for the agent when 
 redacted, mentioning neither the agent nor one of its instances), the oldest of them is
 `DELAY` old, an instance of the agent that is neither dormant nor paused listens, and no
 `chat_unread` for that chat lies above the read mark. Reading the chat moves the mark and so
-re-arms it; a `wait` or a resume delivering the nudge moves nothing.
+re-arms it once the mark reaches the nudge's `newest_seq`; a `wait` or a resume delivering the
+nudge moves nothing.
 
 Nothing is stored for it: the read mark (`conversation_read`, else the stay's `window_after`)
-and the event table (an earlier `chat_unread`, found by its subject) say all the cycle needs.
+and the event table (an earlier `chat_unread`, found by its subject, and its `newest_seq`) say
+all the cycle needs.
 Agents' messages never count, so two agents cannot wake each other through it; humans are
 never addressed, every message of the others wakes them already. Not for a jour fixe round's
 thread (`hub_thread`), a closed chat, a direct conversation or a cross-project chat (§9.5),
@@ -130,26 +132,32 @@ def _counted(conn: Connection, stay: Any, after: int) -> list[Any]:
     ]
 
 
-def _nudged_since(conn: Connection, stay: Any, after: int) -> bool:
-    """Whether a `chat_unread` for this agent and chat lies above `after`."""
+def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
+    """Whether a `chat_unread` for this agent and chat counted a message above its read mark:
+    the read cycle it opened is still open (§9.2). Its own seq is no measure: the nudge is
+    written after the messages it counts, and the mark is a message's seq, so it never
+    reaches the nudge. Every such nudge has a seq above the mark, which narrows the read."""
     e = t.event.c
-    audiences = conn.execute(
-        select(e.audience).where(
+    rows = conn.execute(
+        select(e.audience, e.payload).where(
             e.project_id == stay.project_id,
             e.subject_type == "conversation",
             e.subject_id == stay.conversation_id,
             e.kind == KIND,
-            e.seq > after,
+            e.seq > mark,
         )
-    ).scalars()
+    )
     token = f"member:{stay.agent_id}"
-    return any(token in (audience or []) for audience in audiences)
+    return any(
+        token in (row.audience or []) and int((row.payload or {}).get("newest_seq") or 0) > mark
+        for row in rows
+    )
 
 
 def due(conn: Connection, stay: Any) -> dict[str, Any] | None:
     """The nudge's payload when one is due for this stay now, else None."""
     mark = _mark(conn, stay)
-    if _nudged_since(conn, stay, mark):
+    if _cycle_open(conn, stay, mark):
         return None
     counted = _counted(conn, stay, mark)
     if not counted or counted[0].at > clock.now() - DELAY:
