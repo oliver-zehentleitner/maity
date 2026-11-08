@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -55,9 +56,10 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-# One run's network time in all, and one attempt's: urlopen's timeout counts per connection
+# One run's network time in all, and one socket wait's: urlopen's timeout counts per connection
 # attempt and per read, so on a machine where IPv6 never connects a 60 s timeout per address
-# made --verify take minutes and look like a hang (web P3 roll-up, tsk-gsk31zvpfv02).
+# made --verify take minutes and look like a hang (web P3 roll-up, tsk-gsk31zvpfv02). The
+# deadline is a hard one (within(), below); the per-wait cap keeps an abandoned fetch short.
 DEADLINE_SECONDS = 120
 ATTEMPT_SECONDS = 15
 _deadline = None
@@ -74,40 +76,40 @@ def remaining():
     return left
 
 
-def read_within(r):
-    """The body, read one receive at a time (read1): before each receive the run's deadline is
-    checked and the socket's timeout lowered to the time that is left, so a peer that trickles
-    bytes just inside the per-attempt timeout cannot carry the run past the deadline (#1497
-    review). What the deadline does not bound: the DNS lookup, and the connect, TLS handshake,
-    headers and redirects inside urlopen, which each wait at most ATTEMPT_SECONDS per gap."""
-    sock = getattr(getattr(getattr(r, "fp", None), "raw", None), "_sock", None)
-    chunks, size = [], 0
-    while size <= MAX_BYTES:
-        left = remaining()
-        if sock is not None:
-            sock.settimeout(min(ATTEMPT_SECONDS, left))
+def within(url):
+    """GET url, refused once the run's deadline passes, whatever the fetch is doing then: the
+    DNS lookup, a connect, the TLS handshake, headers, redirects, chunk framing or the body. The
+    fetch runs in a worker thread, which is abandoned (it is a daemon) when the deadline comes
+    first (#1497 review). Each socket wait inside it is capped at ATTEMPT_SECONDS as well."""
+    left = remaining()
+    result = {}
+
+    def work():
         try:
-            chunk = r.read1(min(65536, MAX_BYTES + 1 - size))
-        except TimeoutError:
-            remaining()
-            raise
-        if not chunk:
-            break
-        chunks.append(chunk)
-        size += len(chunk)
-    return b"".join(chunks)
+            with urllib.request.urlopen(url, timeout=ATTEMPT_SECONDS) as r:
+                result["data"] = r.read(MAX_BYTES + 1)
+        except BaseException as e:  # handed to the caller's thread below
+            result["error"] = e
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    worker.join(left)
+    if worker.is_alive():
+        raise Refused("network: no answer within %g s in all: %s" % (DEADLINE_SECONDS, url))
+    if "error" in result:
+        e = result["error"]
+        if isinstance(e, (urllib.error.URLError, OSError)):
+            # A refused or timed-out connection, a TLS failure, an HTTP error status: one line,
+            # no traceback (HTTPError and URLError are OSErrors; reason is the cause where known).
+            raise Refused("network: %s: %s" % (url, getattr(e, "reason", None) or e))
+        raise e
+    return result["data"]
 
 
 def fetch(url):
     if not url.startswith("https://"):
         raise Refused("not an https address: %s" % url)
-    try:
-        with urllib.request.urlopen(url, timeout=min(ATTEMPT_SECONDS, remaining())) as r:
-            data = read_within(r)
-    except (urllib.error.URLError, OSError) as e:
-        # A refused or timed-out connection, a TLS failure, an HTTP error status: one line, no
-        # traceback (HTTPError and URLError are OSErrors; reason is the cause where there is one).
-        raise Refused("network: %s: %s" % (url, getattr(e, "reason", None) or e))
+    data = within(url)
     if len(data) > MAX_BYTES:
         raise Refused("larger than %d bytes: %s" % (MAX_BYTES, url))
     return data
