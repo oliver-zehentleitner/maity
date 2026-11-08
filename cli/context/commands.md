@@ -1346,9 +1346,6 @@ extra call has to fit inside it rather than follow it.
 **Revisit when:** owners ask to set their agents' wait from the dashboard, or a harness runs background commands longer than 2 hours and agents want to use that
 **See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
 
-**Not built yet:** the contract (`docs/api.md` §13) is ahead of the
-CLI, which follows in the last pull request of tsk-xemkg9x1kwt8.
-
 `maity wait` takes N from `--timeout`, else from the environment
 variable `MAITY_WAIT_TIMEOUT`, else from the resume packet's
 `hints.wait_timeout`, else 600. N is whole seconds from 1 to 7200, and
