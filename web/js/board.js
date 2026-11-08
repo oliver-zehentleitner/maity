@@ -13,6 +13,8 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
+  // The open column groups the board reads side by side; the closed one, with its window, after them.
+  const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
   // The overview counts closed cards over the same window (js/overview.js).
   M.boardWindowDays = CLOSED_WINDOW_DAYS;
 
@@ -666,8 +668,19 @@ window.Maity = window.Maity || {};
     ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const listPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
-    let items = (await M.api.getAll(listPath)).items;
+    // The cards in column groups read side by side, each following its own pages, instead of one
+    // list of every status paged one after the other (tsk-d61rvjm6gteh: six pages in a row on a
+    // project of 1,135 cards). The closed window applies to the closed group alone. Each column is
+    // ordered by the board itself (byOrder), so the groups may answer in any order; a card that moved
+    // between two reads is kept once. The statuses are the contract's seven (§6.4).
+    const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g)
+      .concat([ctx.base + "/tasks?status=done,cancelled&closed_after=" + encodeURIComponent(since)]);
+    const readList = async () => {
+      const parts = await Promise.all(listPaths.map((path) => M.api.getAll(path)));
+      const seen = new Set();
+      return parts.flatMap((r) => r.items).filter((t) => (seen.has(t.id) ? false : seen.add(t.id)));
+    };
+    let items = await readList();
     let boardItems = items;
     let searchVersion = 0;
     let hubResults = false;
@@ -717,7 +730,7 @@ window.Maity = window.Maity || {};
     }
 
     async function reload(focusKey, inPanel) {
-      boardItems = (await M.api.getAll(listPath)).items;
+      boardItems = await readList();
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();

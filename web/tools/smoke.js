@@ -4436,6 +4436,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
   await go("#/maintainer/maity/inbox");
 
+  // The board reads its column groups side by side, each with its own pages, the closed window on the closed
+  // group alone (tsk-d61rvjm6gteh); answered in any order, each column holds what one status=all read gives it.
+  {
+    const bgAll = win.Maity.api.getAll, bgHeld = [];
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=")
+      ? new Promise((res, rej) => { bgHeld.push({ p, go: () => bgAll(p).then(res, rej) }); }) : bgAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const bgStarted = bgHeld.map((x) => decodeURIComponent(x.p.split("?")[1]));
+    const bgDrawnEarly = !!main.querySelector(".columns article.card");
+    bgHeld.slice().reverse().forEach((x) => x.go()); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.getAll = bgAll;
+    const closedAt = (bgStarted.find((q) => q.startsWith("status=done,cancelled&closed_after=")) || "").split("closed_after=")[1];
+    const all = (await bgAll("/projects/maintainer/maity/tasks?status=all&closed_after=" + encodeURIComponent(closedAt || ""))).items;
+    const shownIds = new Set(all.map((t) => t.id));
+    const bgWant = {}, bgGot = {};
+    main.querySelectorAll("section.column").forEach((col) => {
+      const st = col.getAttribute("data-status");
+      if (!st) return;
+      bgGot[st] = col.querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+      bgWant[st] = all.filter((t) => t.status === st && !(t.parent && shownIds.has(t.parent))).sort(win.Maity.boardEdit.byOrder).map((t) => t.id);
+    });
+    expect(JSON.stringify(bgStarted.map((q) => q.split("&")[0])) === JSON.stringify(["status=proposed", "status=open", "status=in_progress", "status=blocked,review", "status=done,cancelled"])
+      && bgStarted.filter((q) => q.includes("closed_after=")).length === 1 && !!closedAt && !bgDrawnEarly,
+      "board: the column groups are asked side by side, the closed window on the closed group alone " + JSON.stringify(bgStarted));
+    expect(Object.keys(bgWant).length === 7 && JSON.stringify(bgGot) === JSON.stringify(bgWant),
+      "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
+  }
+
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
   const cfLs = win.localStorage;

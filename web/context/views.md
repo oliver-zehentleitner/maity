@@ -1693,6 +1693,41 @@ project's feed (the card allowed it): still one more long-poll per tab,
 and the list of the other projects would still need the stream. Polling
 the lists every few seconds: more reads than the stream for slower news.
 
+## The board reads its column groups side by side
+
+**Id:** 145f0bf3-3024-414a-8026-19dad1960ff7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: six serial pages of 200 for 1,135 cards, 1.37 s, 2.8 s with gaps); the plan on tsk-d61rvjm6gteh (PR B), approved by the coordinator the same day
+**Revisit when:** the contract gains a card status, the hub serves a larger page or the whole board in one answer, or the board reads only the open columns at first
+
+The board asked for every card of its window in one list (`status=all`
+with `closed_after`), page after page, each page waiting for the one
+before. It now asks five groups at once: `proposed`, `open`,
+`in_progress`, `blocked,review`, and `done,cancelled` with the closed
+window. Each group follows its own pages. The board orders every column
+itself, so the groups may answer in any order; a card that moved between
+two reads is kept once. The reload after a write reads the same groups; the
+hub search still asks one list over every status (`status=all&q=`).
+
+**Reason:** the pages were the board's longest wait, and nothing in one
+page depends on another. Side by side, the wait is the longest group,
+not the sum.
+
+**Rejected alternatives:**
+- A larger `limit`: fewer pages, but a contract change, which this card's
+  boundary excludes.
+- The open columns first and the closed window after them: the board
+  would draw twice, and its closed columns and counts would change under
+  the reader.
+- One request per status: seven instead of five, for groups (`blocked`,
+  `review`; `done`, `cancelled`) that are small next to the rest.
+
+The group lists name the contract's seven statuses (§6.4). A status the
+contract adds would not be read until the board names it; the board's
+column for an unknown status stays for a hub that sends one anyway.
+
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
 **Id:** f1e41ebd-42a8-484b-b260-f69ee036a00c

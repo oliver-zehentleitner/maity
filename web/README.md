@@ -338,7 +338,8 @@ too.
    version it became and whether it was edited.
 2. **Board** (`/<owner>/<slug>/board`; `/<owner>/<slug>/tasks/<id>` opens that
    card, below): cards by status (`proposed` to
-   `cancelled`, closed ones of the last 14 days), with claim holder,
+   `cancelled`, closed ones of the last 14 days; read as five column
+   groups side by side, each following its own pages), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report — a code report's why (§6.23) as a link to its entry's
    file at the reported head on the forge with the entry's id beside it,
