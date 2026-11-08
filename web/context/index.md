@@ -34,7 +34,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## E
 
 ## F
-- [fixtures.md](fixtures.md) — fixture mode only on file://: JSON in the API's shapes, a committed bundle, no switch on an http(s) origin; their answers compared with recorded hub answers
+- [fixtures.md](fixtures.md) — fixture mode only on file://: JSON in the API's shapes, a committed bundle, no switch on an http(s) origin; their answers compared with recorded hub answers; a web change adding a hub route or a non-admin caller path brings the fixture route and a smoke case per caller path in its first push
 
 ## G
 
