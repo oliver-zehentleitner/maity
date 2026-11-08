@@ -51,12 +51,15 @@ SCAN_BUDGET = 2000
 @dataclass
 class _Scan:
     """What one stay's unread messages have shown so far: read up to `scanned_to`, from
-    `mark`, and the counted ones' number, first and last. `redacted` is how many human
-    messages in (mark, scanned_to] were redacted when it was read last, so a later redaction
-    there is seen and the range read again."""
+    `mark`, and the counted ones' number, first and last. `upto` is the high-water mark the
+    read is bounded by, and `redacted` how many human messages in (mark, upto] were redacted
+    when that bound was set, before any row under it was read. A redaction committed after
+    that moment changes the count over the same range, which starts the read over; one
+    committed before it is already left out of the rows read (review of #1490, delta 2)."""
 
     mark: int
     scanned_to: int
+    upto: int = 0
     redacted: int = 0
     count: int = 0
     oldest_seq: int | None = None
@@ -177,19 +180,36 @@ def _oldest_human(conn: Connection, stay: Any, after: int) -> Any:
     ).scalar()
 
 
-def _rows_after(conn: Connection, stay: Any, after: int, limit: int) -> list[Any]:
-    """Up to `limit` human messages after `after`, oldest first: seq, time and the mentions
-    alone, never the body (a JSON projection)."""
+def _rows_after(conn: Connection, stay: Any, after: int, upto: int, limit: int) -> list[Any]:
+    """Up to `limit` human messages in (after, upto], oldest first: seq, time and the
+    mentions alone, never the body (a JSON projection)."""
     e = t.event.c
     return list(
         conn.execute(
             select(e.seq, e.at, e.payload["mentions"].label("mentions"))
             .select_from(_humans_from())
-            .where(_humans_after(stay, after))
+            .where(_humans_after(stay, after), e.seq <= upto)
             .order_by(e.seq)
             .limit(limit)
         )
     )
+
+
+def _newest_human(conn: Connection, stay: Any, after: int) -> int | None:
+    """The newest human message's seq after `after`, redacted or not: an aggregate."""
+    e, m = t.event.c, t.membership.c
+    found = conn.execute(
+        select(func.max(e.seq))
+        .select_from(_humans_from())
+        .where(
+            e.project_id == stay.project_id,
+            e.conversation_id == stay.conversation_id,
+            e.kind == "message",
+            e.seq > after,
+            m.human_id.is_not(None),
+        )
+    ).scalar()
+    return None if found is None else int(found)
 
 
 def _mentions(row: Any, agent_id: str) -> bool:
@@ -202,27 +222,34 @@ def _mentions(row: Any, agent_id: str) -> bool:
 
 def _scanned(conn: Connection, stay: Any, mark: int) -> _Scan | None:
     """The stay's counted messages after `mark`, read on from where the last pass stopped:
-    their number, first and last, or None while the read has not reached the end (it goes on
-    next pass). Each pass reads at most SCAN_BUDGET rows of this stay, and only those after
+    their number, first and last, or None while the read has not reached its bound (it goes
+    on next pass). Each pass reads at most SCAN_BUDGET rows of this stay, and only those after
     the last one read, so a backlog that never leads to a nudge (all of it mentions the agent)
     is not read again each minute (review of #1490). A moved mark, or a redaction inside the
-    range read, starts the read over."""
+    bounded range, starts the read over.
+
+    The order makes the redaction check sound under concurrent writes: the bound and its
+    redaction count are taken first, the rows under the bound after. The check under the
+    project lock (`check`) compares that count again, and a redaction takes the same lock,
+    so none can fall between that comparison and the write."""
     key = (stay.membership_id, stay.conversation_id)
     with _SCANS_LOCK:
         scan = _SCANS.get(key)
     if (
         scan is None
         or scan.mark != mark
-        or (
-            scan.scanned_to > mark
-            and _redacted_in(conn, stay, mark, scan.scanned_to) != scan.redacted
-        )
+        or (scan.upto > mark and _redacted_in(conn, stay, mark, scan.upto) != scan.redacted)
     ):
-        scan = _Scan(mark=mark, scanned_to=mark)
+        scan = _Scan(mark=mark, scanned_to=mark, upto=mark)
+    newest = _newest_human(conn, stay, mark)
+    if newest is not None and newest > scan.upto:
+        # The new bound and its redaction count, before any row under it is read.
+        scan.redacted = _redacted_in(conn, stay, mark, newest)
+        scan.upto = newest
     budget, complete = SCAN_BUDGET, False
     while budget > 0:
         limit = min(SCAN_BATCH, budget)
-        rows = _rows_after(conn, stay, scan.scanned_to, limit)
+        rows = _rows_after(conn, stay, scan.scanned_to, scan.upto, limit)
         for row in rows:
             if not _mentions(row, stay.agent_id):
                 scan.count += 1
@@ -234,8 +261,6 @@ def _scanned(conn: Connection, stay: Any, mark: int) -> _Scan | None:
         if len(rows) < limit:
             complete = True
             break
-    if scan.scanned_to > mark:
-        scan.redacted = _redacted_in(conn, stay, mark, scan.scanned_to)
     with _SCANS_LOCK:
         _SCANS[key] = scan
     return scan if complete else None
@@ -268,8 +293,9 @@ def due(
     come first, so that what needs no nudge reads no message: whether the agent listens
     (`listens` keeps the answer per membership for one pass), the open cycle, and the oldest
     human message's age by an aggregate. Only a stay that passes all three reads its
-    messages' mentions, and then only those it has not read before (`_scanned`), so no row is
-    read twice while the mark stands (review of #1490)."""
+    messages' mentions, and then only those it has not read before (`_scanned`): a row is read
+    again only when the mark moves, a redaction falls inside the range read, or the process
+    restarts (review of #1490)."""
     listening_now = None if listens is None else listens.get(stay.membership_id)
     if listening_now is None:
         listening_now = _listening(conn, stay.membership_id)

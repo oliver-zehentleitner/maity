@@ -570,8 +570,8 @@ class _RowCount:
         self.rows = 0
         real = chat_unread._rows_after
 
-        def counted(conn: Any, stay: Any, after: int, limit: int) -> list[Any]:
-            found = real(conn, stay, after, limit)
+        def counted(conn: Any, stay: Any, after: int, upto: int, limit: int) -> list[Any]:
+            found = real(conn, stay, after, upto, limit)
             self.rows += len(found)
             return found
 
@@ -694,3 +694,36 @@ def test_the_worker_runs_the_nudge_when_the_not_listening_sweep_fails(
     finally:
         worker.stop()
     assert len(r.nudges(first)) == 1
+
+
+def test_a_redaction_between_the_read_and_the_write_is_not_counted(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1490, delta 2: a redaction committed after the rows were read must not end
+    up in the nudge. The check under the lock sees the redaction count over the bounded
+    range moved and reads it again."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        # SQLite lets no other connection commit while the read pass holds its read lock,
+        # so the race cannot happen there; it is PostgreSQL's READ COMMITTED that allows it.
+        pytest.skip("a concurrent commit during the read needs PostgreSQL")
+    first, second = r.agents
+    gone = r.say(r.owner, "taken back")
+    kept = r.say(r.owner, "stays")
+    r.read(second)
+    r.at(11)
+    real = chat_unread._rows_after
+    done: list[bool] = []
+
+    def rows_then_redact(conn: Any, stay: Any, after: int, upto: int, limit: int) -> list[Any]:
+        found = real(conn, stay, after, upto, limit)
+        if found and not done:  # the first read of the pass, outside the lock
+            done.append(True)
+            with r.engine.begin() as other:  # committed by another writer meanwhile
+                other.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+        return found
+
+    monkeypatch.setattr(chat_unread, "_rows_after", rows_then_redact)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
