@@ -16,6 +16,7 @@ from dataclasses import replace
 from fastapi import FastAPI
 from sqlalchemy.engine import make_url
 
+from maity_hub import attachment_store
 from maity_hub.config import Settings
 from maity_hub.db import SHARED_POOL_SIZE
 
@@ -40,7 +41,11 @@ def refusal(settings: Settings) -> str | None:
             f"{name}={value} needs PostgreSQL: on {backend} the processes would not share "
             f"wake-ups, nonces and limits; set {name}=1"
         )
-    if settings.replicas > 1 and settings.attachment_store == "local" and settings.attachment_dir:
+    if (
+        settings.replicas > 1
+        and attachment_store.configured(settings)
+        and not attachment_store.shared(settings)
+    ):
         return (
             f"MAITY_REPLICAS={settings.replicas} with a local attachment directory: each pod "
             "would see only its own files; store attachments on S3, or run one replica"

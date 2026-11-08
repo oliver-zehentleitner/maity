@@ -50,6 +50,14 @@ fetched or kept. Each agent's node lists its live instances as links to
 their Sessions on the member's page, the target an instance has everywhere
 else; a dormant one says so beside its link.
 
+The Agents page's Organisation tab (`agents/organisation`, the maintainer,
+2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
+in the project alone, under oneself: a boss or an area owner of someone
+else's places none of them, and an own agent that reports to someone
+else's shows that as a stub with the boss's handle, as text, and nothing
+more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
+ringed. Built from the same member list, so no second tree and no hub field.
+
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
 changes, while a computed one shows exactly what the policy acts on.
@@ -5248,3 +5256,30 @@ is listed, so the wording says exactly that.
   if wanted.
 - Reading every project of an organisation before a promotion: one request per project for one
   confirmation, and its owners are not always admins in each of them.
+
+## An agent's motif is chosen beside its picture, named with the hub's English label
+
+**Id:** d5f1e318-5368-4516-9d10-06a2194aaafd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-q155psrk6tzz, step 3 (the dashboard's part of the hub's motifs, 1c51a4c6); docs/api.md §6.10, "An agent's motif" (the dashboard shows its catalogue's `avatar.motif.<name>` where it has one)
+**Revisit when:** the catalog gets the motifs' names in other languages, or the set grows past what one list can show
+**See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-07
+
+The owner chooses an agent's motif in the same picture editor as the upload, on the agent's card on
+Agents and in its Manage row on Members, with `PATCH /agents/{id}` (`avatar_motif`, `null` to clear
+it). It is one list of `GET /avatars/motifs`, its themes as groups headed by the catalog's
+`avatar.motif.theme.<theme>`, plus a preview of the chosen motif from its public address with the
+hub's `alt`. A motif is named with the hub's own `label`. The catalog holds no
+`avatar.motif.<name>` yet, so the names stay English in every language, as the contract allows.
+
+**Reason:** the catalog's keys must be literals in the code (`make check` reads them there), so
+naming 36 motifs would mean a table of 36 keys in the view, kept in step with the hub's set by
+hand. The hub's label is always there, current with the set it serves, and the theme headings are
+two fixed words.
+
+**Rejected alternatives:**
+- A grid of all motifs as pictures, chosen by a click: every opened card would load 36 images at
+  once, and the choice would need its own keyboard handling, which a `<select>` already has.
+- Catalog keys for every motif now: a table that falls out of step with each new motif in the set.

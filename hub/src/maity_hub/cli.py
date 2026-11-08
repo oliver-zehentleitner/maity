@@ -209,9 +209,12 @@ def _clean_bucket(engine: Any, target: attachment_store.S3Store, *, apply: bool)
     return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
 
 
-def _live_attachments(engine: Any, project: str) -> set[str]:
-    """The attachments of a project that have a row and are not deleted, for the copy."""
+def _live_attachments(engine: Any, project: str) -> set[str] | None:
+    """The attachments of a project that have a row and are not deleted, for the copy; None
+    for a folder no project has."""
     with engine.connect() as conn:
+        if conn.execute(select(t.project.c.id).where(t.project.c.id == project)).first() is None:
+            return None
         rows = conn.execute(
             select(t.attachment.c.id).where(
                 t.attachment.c.project_id == project, t.attachment.c.deleted_at.is_(None)

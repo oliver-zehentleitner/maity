@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -147,6 +147,26 @@ def test_quiet_hours_hold_everything_but_security(
     at(hours=3)
     run(migrated)
     assert len(notifications(migrated)) == 1  # sent when they end
+
+
+def test_quiet_hours_do_not_hold_a_second_factor_mail(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """A second-factor change is a takeover under way: mailed at once, inside quiet hours too
+    (§18.4 "At once, whatever the mode")."""
+    from maity_hub.notifications import records
+
+    owner, _ = setup(make_client, migrated)
+    now = clock.now()
+    window = {"from": (now - timedelta(hours=1)).strftime("%H:%M"),
+              "to": (now + timedelta(hours=2)).strftime("%H:%M")}  # fmt: skip
+    owner.patch(S, {"email": {"quiet_hours": window}})
+    with migrated.begin() as conn:
+        records.write(conn, owner.id, "second_factor_changed", {"change": "enabled"})
+    at(minutes=1)
+    run(migrated)
+    sent = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    assert "[Maity] Two-factor sign-in changed" in [r.subject for r in sent]
 
 
 def test_sign_in_alerts_follow_the_security_switch(
@@ -641,6 +661,37 @@ def test_weekly_items_wait_for_their_day_and_hour(
     assert len(notifications(migrated)) == 1  # the next one waits a week
 
 
+@pytest.mark.parametrize("mode", ["daily", "weekly"])
+def test_a_digest_whose_hour_the_clocks_skip_goes_once(
+    make_client: ClientFactory, migrated: Engine, mode: str
+) -> None:
+    """`daily_at` 02:30 in Vienna on 2027-03-28 does not exist: the clocks go from 02:00 to
+    03:00. The day's moment is compared as an instant (01:30 UTC), not as a wall time, so a
+    pass at 03:10 and one at 03:31 do not both send it (spq4 at #1209)."""
+    moment = datetime(2027, 3, 27, 12, 0, tzinfo=UTC)  # Saturday
+    clock.set_source(lambda: moment)
+    owner, agent = setup(make_client, migrated)
+    owner.patch(
+        S,
+        {
+            "email": {
+                "timezone": "Europe/Vienna",
+                "daily_at": "02:30",
+                "weekly_on": "sun",
+                "kinds": {"chat": {"mode": mode}},
+            }
+        },
+    )
+    run(migrated)  # starts the clocks
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "one"})
+    clock.set_source(lambda: datetime(2027, 3, 28, 1, 10, tzinfo=UTC))  # 03:10 summer time
+    run(migrated)
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "two"})
+    clock.set_source(lambda: datetime(2027, 3, 28, 1, 31, tzinfo=UTC))  # 03:31
+    run(migrated)
+    assert len(notifications(migrated)) == 1
+
+
 def test_a_sign_in_alert_in_a_digest_travels_with_it(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
@@ -655,6 +706,6 @@ def test_a_sign_in_alert_in_a_digest_travels_with_it(
     at(minutes=55)
     run(migrated)
     [digest] = notifications(migrated)
-    assert "/account/" in digest.body or "session" in digest.body.lower()
+    assert "New sign-in:" in digest.body  # the sign-in itself, not a link every digest has
     waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
     assert waiting == []  # no mail of its own: it went in the digest
