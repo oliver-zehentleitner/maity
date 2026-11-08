@@ -5295,7 +5295,10 @@ two fixed words.
 
 `render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
 instead of after it, and handles the answers in the old order: the window first, then the session.
-`GET /me` still waits for the session's answer.
+`GET /me` still waits for the session's answer. The invitation and registration pages read the
+session themselves, so the drawing starts no early read for them, and only the newest session read
+sets the language: an older answer, a 401 above all, that came back after it switched a newer
+session's language back (review of #1524).
 
 **Reason:** two round trips in a row before the session was known. The answers stay in their order
 because each one decides whether the next matters (a running window, no session, a session that
