@@ -704,3 +704,32 @@ def test_a_source_becomes_known_only_once_the_second_step_is_done(
     assert done.status_code == 200, done.text
     with migrated.begin() as conn:
         assert known_sources.known(conn, human.id, source) is True
+
+
+def test_a_parked_enrolment_session_signs_out_during_a_maintenance_window(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """Signing out stays open in a running window (§16.12) for a session held at enrolment
+    too, not only for a full one: the way out of a session on a shared computer."""
+    from maity_hub import maintenance
+
+    admin, parked = parked_enrolment(make_client, migrated, moment)
+    with migrated.begin() as conn:
+        maintenance.put(
+            conn,
+            moment.at - timedelta(minutes=1),
+            moment.at + timedelta(minutes=30),
+            "DB",
+            admin.id,
+        )
+    maintenance.forget()
+    try:
+        assert make_client().get("/api/v1/auth/pages/sign_up").status_code == 503  # running
+        session = parked.get("/api/v1/auth/session")
+        assert session.status_code == 200, session.text
+        csrf = session.json()["csrf_token"]
+        out = parked.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf})
+        assert out.status_code == 200, out.text
+        assert parked.get("/api/v1/auth/session").status_code == 401
+    finally:
+        maintenance.forget()

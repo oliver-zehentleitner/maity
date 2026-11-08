@@ -133,10 +133,28 @@ def at_a_terminal(env: dict[str, str], command: str, typed: bytes) -> tuple[int,
             os.write(terminal, typed)
             sent = True
     else:  # the deadline passed: a hung script must not hang the run with it
-        os.kill(pid, signal.SIGKILL)
+        return _ended(pid, terminal), seen
     os.close(terminal)
     _, status = os.waitpid(pid, 0)
     return os.waitstatus_to_exitcode(status), seen
+
+
+def _ended(pid: int, terminal: int, grace: float = 5.0) -> int:
+    """SIGTERM first, so the script's trap stops its server; SIGKILL only after `grace`. To the
+    whole group: at a terminal the script waits for its command, so a signal to it alone ends
+    nothing while the command hangs."""
+    os.killpg(pid, signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            os.close(terminal)
+            return os.waitstatus_to_exitcode(status)
+        time.sleep(0.05)
+    os.killpg(pid, signal.SIGKILL)
+    os.close(terminal)
+    _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status)
 
 
 def test_at_a_terminal_the_command_can_read(run: dict[str, str]) -> None:
@@ -148,6 +166,24 @@ def test_at_a_terminal_the_command_can_read(run: dict[str, str]) -> None:
 def test_at_a_terminal_ctrl_c_ends_the_command_and_cleans_up(run: dict[str, str]) -> None:
     status, _ = at_a_terminal(run, "echo up; while :; do sleep 0.05; done", b"\x03")
     assert status != 0
+    assert len(calls(run, "stop")) == 1
+
+
+def test_a_hung_run_is_ended_with_sigterm_so_its_server_is_stopped(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """Past the deadline the run gets SIGTERM first: the script's trap stops the server it
+    started. A SIGKILL alone would leave that server running (xyfr at #1482). The signal waits
+    for the command itself: the script sets its trap only after the server is up."""
+    ready = tmp_path / "ready"
+    pid, terminal = pty.fork()
+    if pid == 0:
+        command = f"touch {ready}; while :; do sleep 0.05; done"
+        os.execve(str(SCRIPT), [str(SCRIPT), "sh", "-c", command], run)
+    while not ready.exists():
+        assert os.waitpid(pid, os.WNOHANG) == (0, 0)
+        time.sleep(0.05)
+    _ended(pid, terminal)
     assert len(calls(run, "stop")) == 1
 
 
