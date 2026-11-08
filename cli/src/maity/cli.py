@@ -2092,7 +2092,10 @@ def cmd_say(args: argparse.Namespace) -> int:
         )
         if cites.bad or names:
             if cites.bad:
-                _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
+                _err(
+                    f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head "
+                    "or are longer than the hub takes (§8.4)"
+                )
             if names:
                 _err(
                     f"not sent: {len(names)} name(s) in the text are not there (§8.4); "

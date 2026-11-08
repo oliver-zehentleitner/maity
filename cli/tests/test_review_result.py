@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -339,3 +340,77 @@ def test_a_quote_with_umlauts_stands_under_a_c_locale(tmp_path: Path) -> None:
     }
     done = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, check=False)
     assert done.returncode == 0
+
+
+REPO = Path(citecheck.__file__).resolve().parents[3]
+
+
+@pytest.mark.parametrize(
+    ("quote", "named"),
+    [
+        ("x" * 300, None),
+        ("ä" * 300, None),  # characters, not bytes: 600 bytes in UTF-8
+        ("日" * 300, None),
+        ("x" * 301, "the quote has 301 characters, the hub takes at most 300"),
+        ("日" * 301, "the quote has 301 characters, the hub takes at most 300"),
+    ],
+)
+def test_a_quote_longer_than_the_hub_takes_refuses_the_send(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    quote: str,
+    named: str | None,
+) -> None:
+    _commit("b.txt", f"first\n{quote}\n")
+    path = _review_at(
+        tmp_path,
+        {"path": "b.txt", "line": 1, "quote": "first"},
+        {"path": "b.txt", "line": 2, "quote": quote},
+    )
+    before = len(fake.signed())
+    if named is None:
+        assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_OK
+        return
+    assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "not sent: 1 cite(s)" in err
+    assert f"review.cites.1 b.txt:2: {named}" in err
+    assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
+
+
+def test_a_long_quote_is_refused_without_a_clone(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    review = {**REVIEW, "cites": [{"path": "a.txt", "quote": "x" * 301}]}
+    (tmp_path / "review.json").write_text(json.dumps(review))
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.chdir(elsewhere)
+    before = len(fake.signed())
+    assert (
+        cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_ERROR
+    )
+    assert "review.cites.0 a.txt: the quote has 301 characters" in capsys.readouterr().err
+    assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
+
+
+def test_the_quote_limit_is_the_hubs() -> None:
+    hub = (REPO / "hub" / "src" / "maity_hub" / "reviews.py").read_text(encoding="utf-8")
+    found = re.findall(r"^QUOTE_MAX = (\d+)$", hub, re.MULTILINE)
+    assert found == [str(citecheck.QUOTE_MAX)]
+
+
+def test_the_quote_limit_is_the_contracts() -> None:
+    api = (REPO / "docs" / "api.md").read_text(encoding="utf-8")
+    found = re.findall(r"`path` and `quote` 1–(\d+) characters", api)
+    assert found == [str(citecheck.QUOTE_MAX)]
