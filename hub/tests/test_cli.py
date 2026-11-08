@@ -35,6 +35,23 @@ def test_migrate_then_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert Path("maity-hub.db").is_file()
 
 
+def test_a_migrate_that_gives_up_says_where_the_schema_stays(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    import maity_hub.cli
+
+    def deadlocked(_engine: object) -> None:
+        raise OperationalError("ALTER TABLE", {}, Exception("deadlock detected"))
+
+    monkeypatch.setattr(maity_hub.cli, "migrate", deadlocked)
+    assert main(["migrate"]) == 1
+    err = capsys.readouterr().err.splitlines()
+    assert err[0] == f"maity-hub: schema stays at empty, head {head()} not reached"
+    assert err[1].endswith(": deadlock detected")
+
+
 @pytest.mark.wheel
 def test_the_installed_entry_point_answers() -> None:
     """The console script the package declares is on the path and starts the hub's CLI."""
