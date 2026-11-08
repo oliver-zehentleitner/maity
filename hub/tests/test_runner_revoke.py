@@ -241,6 +241,18 @@ def test_a_stop_after_a_keep_still_stops_the_agents(setup: Setup) -> None:
     assert refused.json()["error"]["details"]["stop"] == [first["id"]]
 
 
+def test_removing_with_stop_after_a_keep_answers_the_stop(setup: Setup) -> None:
+    """A key revoked under `keep`, then `DELETE` with `agents: stop`: the answer is what the
+    removal did, not the earlier revocation's `keep` (§15.3; c47w at #1317)."""
+    first = running(setup)
+    assert revoke(setup).json()["on_runner_revoke"][0]["rule"] == "keep"
+    answer = remove(setup, agents="stop")
+    assert answer.status_code == 200, answer.text
+    expected = [{"project": "maintainer/maity", "rule": "stop", "stopped": [first["id"]]}]
+    assert answer.json()["on_runner_revoke"] == expected
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+
+
 def _announced(s: Setup) -> list[Any]:
     with s.engine.connect() as conn:
         return list(
