@@ -450,12 +450,13 @@ moment.
 ## The Board, Members and Organisation are a second kind of page that follows the cards at once
 
 **Id:** 6b0e2f4a-7d51-4c38-9a6e-3f1c8d5b2e97
-2026-11-09: the Members view is named Team (req-77az2zs017fe); its path stays /members.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("The public views of a project"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** the Board's card events become a cost the busiest projects notice, or a view shows a count
+
+2026-11-09: the Members view is named Team (req-77az2zs017fe); its path stays /members.
 
 `public_project_views` registers the kind `project_views`, one target per public project and three pages
 (`/board`, `/members`, `/organisation`). The kind `project` lists it as a dependent, so everything that
