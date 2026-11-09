@@ -7,6 +7,6 @@
   neutral pill; the facts with a wider
   label column, the options as rows with a rule; answer buttons as pills, Send filled in the
   accent once it can send, Later and Talk quiet; group headings in the display face with the
-  count as a pill; Sort and Show as pills in a project's inbox (not on /all). On a phone the
+  count as a pill; Sort and Show as pills in a project's inbox. On a phone the
   answers sit two by two at 40 px,
   Send across the row.
