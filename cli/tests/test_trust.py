@@ -15,10 +15,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import posix
 
 from maity.runner import trust
 
 KEY = trust.KEY
+# The runner refuses on Windows (`maity runner`: "run it inside WSL"), and its hosts are POSIX.
+runner_host = pytest.mark.skipif(sys.platform == "win32", reason="the runner runs on POSIX hosts")
 
 
 def _config(home: Path, data: Any, name: str = ".claude.json") -> Path:
@@ -35,6 +38,7 @@ def _clone(tmp_path: Path) -> Path:
     return clone
 
 
+@posix  # the mode
 def test_record_adds_the_clones_entry_and_changes_nothing_else(tmp_path: Path) -> None:
     home, clone = tmp_path / "h", _clone(tmp_path)
     other = {"hasTrustDialogAccepted": False, "allowedTools": ["Bash(ls)"]}
@@ -74,6 +78,7 @@ def test_record_writes_nothing_when_the_clone_is_trusted_already(tmp_path: Path)
     assert path.stat().st_mtime == 1
 
 
+@posix  # the mode
 def test_record_creates_the_file_when_claude_code_never_ran(tmp_path: Path) -> None:
     home, clone = tmp_path / "h", _clone(tmp_path)
     home.mkdir()
@@ -236,6 +241,7 @@ class _Remote:
         return subprocess.CompletedProcess(argv, self.returncode, "", self.stderr)
 
 
+@runner_host
 def test_an_ssh_host_records_it_with_its_own_maity(tmp_path: Path) -> None:
     from maity.runner import adapters
 
@@ -260,6 +266,7 @@ def test_a_host_that_cannot_record_it_fails_the_start(tmp_path: Path) -> None:
         adapters.trust_clone(_context(tmp_path / "b", _Remote(1)))
 
 
+@runner_host
 def test_maity_runner_trust_runs_the_module(tmp_path: Path) -> None:
     """What an ssh host runs: `maity runner trust HOME CLONE`."""
     home, clone = tmp_path / "h", _clone(tmp_path)
