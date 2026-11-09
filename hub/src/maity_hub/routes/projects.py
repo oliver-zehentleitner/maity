@@ -701,9 +701,10 @@ def _view(
     """The project as `GET` answers it. A route that has the caller's membership passes it as
     `mine`, so that the view does not resolve the project and the membership again for the
     storage figures and the restricted setting (tsk-6srccd2r1h62); without it, the view
-    reads it once and both use that read, also when the caller has none. Both fields follow
-    the membership as that one read saw it, not a change committed after it
-    (hub/context/persistence.md, "A project read decides what the caller sees")."""
+    reads it once and both use that read, also when the caller has none. Their `project:admin`
+    checks follow the membership as that one read saw it, not a role change committed after
+    it; whether the caller is in the restricted set is still read live (`restricted.resolve`)
+    (hub/context/persistence.md, "A project read decides the caller's role checks")."""
     if isinstance(mine, _Unread):
         mine = _reader(conn, project, request)
     shown = images.views(conn, [project.id])[project.id]
