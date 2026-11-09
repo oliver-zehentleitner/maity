@@ -1714,14 +1714,26 @@ all five have answered, the board reads the cards changed since the reads
 began (`status=all` with the window and `order=updated`, newest first, a
 page of 50, further pages only while every card on one is that new), and
 each replaces or adds its card. The start is taken on the hub's clock with
-a minute's margin. What is guaranteed: every card that did not change
-during the reads is shown as its group read it, and every card that did
-is shown once, as that last read has it. A change after that last read is
-the board's usual news, offered as a reload. The reload after a write reads
-the same way; the hub search still asks one list over every status
-(`status=all&q=`). The cost is bounded: at most four more requests than
-one list for the same cards (one per group that holds a page or less),
-plus the read of changed cards, with at most five in flight at once.
+a minute's margin. That read pages by an `updated_at` keyset, and a card
+changed again between two of its pages moves ahead of the cursor. So a
+pass that followed a cursor is followed by another from the first page,
+taking every card at least as new as the newest the pass before saw; a
+pass of one page has no gap and ends the reading. After three passes that
+all paged, one list of every status in the window (`status=all` with the
+window) is read instead and replaces the cards. What is guaranteed: every
+card that did not change during the reads is shown as its group read it,
+and every card that did is shown once, as the last pass has it. Only a
+board changing faster than three passes can read it falls back to the one
+list, with the gaps between that list's own pages that the board always
+had. A change after the last read is the board's usual news, offered as a
+reload. The reload after a write reads the same way; the hub search still
+asks one list over every status (`status=all&q=`). The cost is bounded: at
+most four more requests than one list for the same cards (one per group
+that holds a page or less), plus the changed-cards read: one page when
+fewer than 50 cards changed during the reads, and at most three passes,
+with at most five requests in flight at once. The wait is the longest
+group plus that read's pages, one after the other, not the sum of every
+page.
 
 **Reason:** the pages were the board's longest wait, and nothing in one
 page depends on another. Side by side, the wait is the longest group,
@@ -1741,6 +1753,10 @@ not the sum.
   read depends on no audience.
 - One list again whenever the board fits a page: the first page decides,
   so every larger board waits for it before its groups start.
+- Falling back to the one list whenever the changed-cards read pages: more
+  than 50 cards changed during the reads is rare, and when it happens the
+  first page read again finds what moved ahead of the cursor for one more
+  request instead of a whole list.
 
 The group lists name the contract's seven statuses (§6.4). A status the
 contract adds would not be read until the board names it; the board's

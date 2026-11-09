@@ -4492,6 +4492,51 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "open" });
   }
 
+  // The changed-cards read pages by an updated_at keyset (review of #1536, delta 1): the target missed by both
+  // groups, 50 cards changed after it fill the first page, and before the second page it is changed again,
+  // which moves it ahead of the cursor. The pass after a paged pass reads the first page again and finds it.
+  // The reconcile read is served here as the hub pages it (updated_at desc, then id desc; after = the last row).
+  {
+    const kpAll = win.Maity.api.getAll, kpGet = win.Maity.api.get, kpHeld = [];
+    const kpNow = Date.now();
+    const kpIso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const kpBase = (await kpGet("/projects/maintainer/maity/tasks/tsk-0006"));
+    const kpFillers = Array.from({ length: 50 }, (_, i) => Object.assign({}, kpBase, { id: "tsk-k" + String(100 + i), title: "Filler " + i,
+      status: "done", closed_at: kpIso(kpNow - 20000), parent: null, depends_on: [], related: [], updated_at: kpIso(kpNow - 30000 + i * 100) }));
+    let kpFirstAt = kpIso(kpNow - 45000), kpSecond = false, kpPages = [];
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=") && !p.includes("order=")
+      ? new Promise((res, rej) => { kpHeld.push({ p, go: () => kpAll(p).then(res, rej) }); }) : kpAll(p));
+    win.Maity.api.get = async (p) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return kpGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      const cursor = q.get("cursor");
+      if (cursor && !kpSecond) { kpSecond = true; await kpGet("/projects/maintainer/maity/tasks/tsk-0006"); await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { title: "Moved twice" }); kpFirstAt = null; }
+      const real = (await kpGet("/projects/maintainer/maity/tasks?status=all")).items.map((t) => (t.id === "tsk-0006" && kpFirstAt ? Object.assign({}, t, { updated_at: kpFirstAt }) : t));
+      const rows = real.concat(kpFillers).sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0) || (a.id < b.id ? 1 : -1));
+      let from = rows;
+      if (cursor) {
+        const [at, id] = cursor.split("|");
+        from = rows.filter((t) => (Date.parse(t.updated_at) || 0) < Number(at) || ((Date.parse(t.updated_at) || 0) === Number(at) && t.id < id));
+      }
+      const limit = Number(q.get("limit")) || 50;
+      const items = from.slice(0, limit);
+      const last = items[items.length - 1];
+      kpPages.push(items.length);
+      return { items, next_cursor: from.length > limit ? (Date.parse(last.updated_at) || 0) + "|" + last.id : null };
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const kpGroup = (g) => kpHeld.find((x) => x.p.includes("status=" + g + "&") || x.p.endsWith("status=" + g));
+    kpGroup("proposed").go(); for (let k = 0; k < 2; k++) await tick();
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "proposed" });
+    kpHeld.filter((x) => x !== kpGroup("proposed")).forEach((x) => x.go()); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.getAll = kpAll; win.Maity.api.get = kpGet;
+    const kpCopies = main.querySelectorAll("article.card").filter((a) => a.attrs["data-card"] === "tsk-0006").length;
+    expect(kpSecond && kpPages.length >= 3 && kpCopies === 1,
+      "board: a card changed again between two pages of the changed-cards read is still on the board once " + JSON.stringify([kpSecond, kpPages, kpCopies]));
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "open", title: kpBase.title });
+    await go("#/maintainer/maity/inbox");
+  }
+
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
   const cfLs = win.localStorage;
