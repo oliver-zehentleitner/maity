@@ -645,3 +645,36 @@ have, so `AssetFileResponse` compares the ETag alone.
   in `shell_document`, the `url()` references inside the CSS would stay
   `no-cache` anyway, and it is a contract change of its own. A
   follow-up once this card's numbers are measured.
+
+## On the hub's own pages too, the product line at phone width is its first part, by a rule inside the hashed block
+
+**Id:** 7328169a-086f-458a-8d7e-e8b6faa4dd10
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
+**Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
+**See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
+
+The hub draws the product line on the join page, the `503` maintenance
+page and the registration link page (`product_line.html`). Each of its
+four parts is a `span.product-part` and each separator a
+`span.product-sep`, the classes the dashboard uses. At
+`max-width: 600px` a rule hides the separators and every part after the
+first, so the line is the mark, `Maity` and the year, as on the
+dashboard. The rule is part of `STYLE`, the block that the join and
+`503` pages carry in `<head>` and their policy allows by its hash
+(`style-src 'sha256-…'`). The hash is computed from `STYLE`, so it covers
+the rule; the registration link page takes `STYLE` into its own sheet.
+
+**Reason:** §16.13 holds the line's phone form for every page that
+shows it. These pages have no other stylesheet they may load, and a
+second block would need a second hash in every policy. Inside the one
+block the rule needs neither. Hiding the parts with CSS keeps one
+markup for every width, as the dashboard does.
+
+**Rejected alternatives:**
+- A shorter line rendered for phones: the hub does not know the width;
+  it would take a user-agent guess.
+- A second `<style>` block for the media rule: one more hash in each
+  strict page's policy, for no gain.
