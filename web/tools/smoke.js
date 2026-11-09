@@ -2873,8 +2873,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pic = AV({ id: "agt-a" }, 28);
   expect(pic.tagName === "SVG" && pic.attrs["aria-hidden"] === "true" && pic.attrs.width === "28" && pic.style["--avatar-h"] === "340"
     && pic.querySelectorAll("rect").length === 16, "avatars: an SVG of nodes, decorative, its hue as a custom property");
-  expect(AV({ id: "agt-a", avatar_url: "https://evil.example/x.png" }).tagName === "SVG", "avatars: a picture the page may not load falls back to the generated one");
-  expect(AV({ id: "agt-a", avatar_url: "/api/v1/projects/maintainer/maity/logo?v=1" }).tagName === "IMG", "avatars: a picture the page may load wins");
+  const evil = AV({ id: "agt-a", avatar_url: "https://evil.example/x.png" });
+  expect(evil.tagName === "SVG" && !AV.picture(evil), "avatars: a picture the page may not load is never loaded; the generated one stays");
+  const logoPic = AV({ id: "agt-a", avatar_url: "/api/v1/projects/maintainer/maity/logo?v=1" });
+  expect(logoPic.tagName === "SVG" && AV.picture(logoPic) && AV.picture(logoPic).attrs.src === "/api/v1/projects/maintainer/maity/logo?v=1",
+    "avatars: the generated picture first, a picture the page may load is loaded as given (no size on a logo)");
+  expect(AV.sized("/api/v1/avatars/agt-a?v=abc", 16) === "/api/v1/avatars/agt-a?v=abc&s=32"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc", 48) === "/api/v1/avatars/agt-a?v=abc&s=64"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc", 200) === "/api/v1/avatars/agt-a?v=abc&s=256"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc", 999) === "/api/v1/avatars/agt-a?v=abc&s=256"
+    && AV.sized("/api/v1/avatars/public/0123456789abcdef0123456789abcdef", 24) === "/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=32"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc&s=64", 16) === "/api/v1/avatars/agt-a?v=abc&s=64",
+    "avatars: the smallest size the hub serves that covers the shown size (§6.10, Sizes)");
+  expect(win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=64") && win.Maity.dom.isOwnImage("/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=128")
+    && !win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=48") && !win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=64&x=1"),
+    "avatars: a sized avatar address is the hub's own image; any other size or parameter is not");
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const avA = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === "agt-a");
   expect(avA && avA.querySelector("svg") && avA.querySelector("svg").style["--avatar-h"] === "340", "avatars: in the agent's row on Members");
@@ -8145,11 +8158,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let foreign = null;
   try { win.Maity.dom.h("img", { src: "https://evil.example/api/v1/avatars/agt-a?v=1" }); } catch (err) { foreign = err; }
   const avBox = document.createElement("div");
-  const avImg = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 24);
-  avBox.appendChild(avImg);
-  const loaded = avBox.querySelector("img");
-  avImg.dispatch("error");
-  expect(foreign && loaded && avBox.querySelector("svg") && !avBox.querySelector("img"), "picture: only the hub's avatar path loads; a failed load shows the generated picture");
+  const avShown = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 24);
+  avBox.appendChild(avShown);
+  const avLoading = win.Maity.avatar.picture(avShown);
+  const drawnFirst = avBox.querySelector("svg") && !avBox.querySelector("img");
+  avLoading.dispatch("load");
+  expect(foreign && drawnFirst && avLoading.attrs.src === "/api/v1/avatars/agt-a?v=abc&s=32" && avBox.querySelector("img") === avLoading && !avBox.querySelector("svg"),
+    "picture: the generated picture at once, then the hub's avatar at the shown size in its place once loaded; another origin never");
+  const avBox2 = document.createElement("div");
+  const avShown2 = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 64);
+  avBox2.appendChild(avShown2);
+  const avFailing = win.Maity.avatar.picture(avShown2);
+  avFailing.dispatch("error");
+  expect(avFailing.attrs.src === "/api/v1/avatars/agt-a?v=abc&s=64" && avBox2.querySelector("svg") === avShown2 && !avBox2.querySelector("img") && !win.Maity.avatar.picture(avShown2),
+    "picture: an avatar that does not load leaves the generated picture");
 
   // sign out, sign in
   profileButton().click(); await tick();

@@ -1,9 +1,9 @@
-// A member's picture. Where the member carries an avatar URL the page may
-// show (later: a forge or an upload, contract pending), that one; else a
-// generated identicon: a 5×5 mirrored pattern and a hue, both from the
-// member id alone, so every client draws the same picture for the same
-// member. Built as SVG nodes, never from markup. Decorative: the name is
-// always written next to it.
+// A member's picture. A generated identicon first: a 5×5 mirrored pattern
+// and a hue, both from the member id alone, so every client draws the same
+// picture for the same member. Where the member carries an avatar URL the
+// page may show (§6.10), that picture replaces it once it has loaded. Built
+// as SVG nodes, never from markup. Decorative: the name is always written
+// next to it.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -54,22 +54,74 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  // member: { id, avatar_url? }. A URL the page refuses (h() allows only
-  // the hub's own images), and an image that does not load (a 404 once the
-  // access is gone, §6.10), fall back to the identicon.
+  // The side to ask the hub for (§6.10, Sizes): the smallest of its sizes that covers the
+  // shown size on this screen (at most twice the CSS pixels). Only the hub's avatar
+  // addresses take `s`; a logo or banner is loaded as it is given.
+  const SIDES = [32, 64, 128, 256];
+  function sized(url, px) {
+    if (!/^\/api\/v1\/avatars\//.test(url) || /[?&]s=/.test(url)) return url;
+    const ratio = Math.min(Math.max(Number(window.devicePixelRatio) || 1, 1), 2);
+    const side = SIDES.find((s) => s >= px * ratio) || 256;
+    return url + (url.includes("?") ? "&" : "?") + "s=" + side;
+  }
+
+  // Load the picture once its place is near the screen: a page with many avatars (the
+  // board) never waits for the ones nobody sees. Without IntersectionObserver, at once.
+  // A place that was on the page and left it before it was seen is let go at the next
+  // avatar drawn, so a view drawn again and again keeps no old places observed.
+  const waiting = new Map(); // placeholder -> start
+  const placed = new WeakSet(); // placeholders the observer has seen on the page
+  let observer = null;
+  function whenSeen(el, start) {
+    if (typeof window.IntersectionObserver !== "function") { start(); return; }
+    if (!observer) {
+      observer = new window.IntersectionObserver((entries) => entries.forEach((e) => {
+        if (e.target.isConnected !== false) placed.add(e.target);
+        if (!e.isIntersecting || !waiting.has(e.target)) return;
+        const go = waiting.get(e.target);
+        waiting.delete(e.target);
+        observer.unobserve(e.target);
+        go();
+      }), { rootMargin: "200px" });
+    }
+    waiting.forEach((_, old) => {
+      if (placed.has(old) && old.isConnected === false) { waiting.delete(old); observer.unobserve(old); }
+    });
+    waiting.set(el, start);
+    observer.observe(el);
+  }
+
+  // The picture for a placeholder that is still waiting for it (smoke tests only).
+  const pending = new WeakMap();
+
+  // member: { id, avatar_url? }. The generated picture is shown at once; where the member
+  // carries a picture the page may load (h() allows only the hub's own images), it is loaded
+  // at the size shown and takes the generated one's place once it has arrived. One that
+  // does not load (a 404 once the access is gone, §6.10) leaves the generated one.
   M.avatar = function (member, size) {
     const px = size || 24;
-    if (member && member.avatar_url) {
+    const shown = identicon(member && member.id ? member.id : "?", px);
+    const url = member && member.avatar_url ? sized(member.avatar_url, px) : null;
+    if (!url || !M.dom.isOwnImage(url)) return shown;
+    const start = () => {
+      let img;
       try {
-        const img = M.dom.h("img", { class: "avatar-img", src: member.avatar_url, alt: "", width: String(px), height: String(px) });
-        img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(identicon(member.id || "?", px), img); });
-        return img;
+        img = M.dom.h("img", { class: "avatar-img", alt: "", width: String(px), height: String(px), decoding: "async", src: url });
       } catch (refused) {
-        // not an image the page may load: the generated one instead
+        return; // not an image the page may load: the generated one stays
       }
-    }
-    return identicon(member && member.id ? member.id : "?", px);
+      pending.set(shown, img);
+      img.addEventListener("load", () => {
+        pending.delete(shown);
+        if (shown.parentNode) shown.parentNode.replaceChild(img, shown);
+      });
+      img.addEventListener("error", () => pending.delete(shown));
+    };
+    whenSeen(shown, start);
+    return shown;
   };
+  M.avatar.picture = (placeholder) => pending.get(placeholder) || null;
+  M.avatar.sized = sized;
   M.avatar.cells = cells;
   M.avatar.hueOf = hueOf;
 })(window.Maity);
