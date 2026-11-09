@@ -1149,10 +1149,24 @@ def mark_delivered(conn: Connection, rows: list[Any], reader: str) -> None:
         ).scalars()
     )
     now = clock.now()
-    for seq in seqs:
-        if seq not in known:
-            try:
-                with conn.begin_nested():
-                    conn.execute(insert(t.message_delivery).values(seq=seq, delivered_at=now))
-            except IntegrityError:
-                pass  # another read delivered it a moment earlier: the first time stands
+    missing = [seq for seq in seqs if seq not in known]
+    if not missing:
+        return
+    try:  # the page's first deliveries in one statement: one INSERT with many VALUES rows,
+        # not a list of parameters, which sqlite3 and psycopg run as one INSERT per row
+        # (PyMySQL would fold such a list itself; this form needs no driver to do that)
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.message_delivery).values(
+                    [{"seq": seq, "delivered_at": now} for seq in missing]
+                )
+            )
+        return
+    except IntegrityError:
+        pass  # another read delivered one of them a moment earlier: each on its own
+    for seq in missing:
+        try:
+            with conn.begin_nested():
+                conn.execute(insert(t.message_delivery).values(seq=seq, delivered_at=now))
+        except IntegrityError:
+            pass  # another read delivered it a moment earlier: the first time stands

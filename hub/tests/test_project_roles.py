@@ -95,6 +95,8 @@ def test_a_stored_guide_stays_with_its_role_and_a_new_role_has_none(
         ([{"name": "legal", "base": "proxy"}], {"custom[0].base": "unknown"}),
         ([{"name": "legal", "base": "manager"}], {"custom[0].base": "unknown"}),
         ([{"name": "legal", "base": "purple-team"}], {"custom[0].base": "unknown"}),
+        ([{"name": "expert", "base": "coder"}], {"custom[0].name": "reserved"}),
+        ([{"name": "legal", "base": "expert"}], {"custom[0].base": "unknown"}),
         ([LEGAL, LEGAL], {"custom[1].name": "duplicate"}),
         ([{**LEGAL, "guide": "You check"}], {"custom[].guide": "moved"}),
         ([LEGAL, {**LEGAL, "name": "law", "guide": ""}], {"custom[].guide": "moved"}),

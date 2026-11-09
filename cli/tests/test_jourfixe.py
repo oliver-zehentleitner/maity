@@ -609,6 +609,20 @@ def test_a_start_that_cannot_open_names_why_and_exits_1(
     assert f"no round started: {code}, {says}; nothing recorded" in err
 
 
+@pytest.mark.parametrize("code", [[], {"a": 1}, 409])
+def test_a_start_refused_with_a_code_that_is_no_string_exits_1(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], code: Any
+) -> None:
+    """A proxy's answer: `exc.code in START_REFUSALS` raised TypeError for an unhashable
+    code (#1565 R1, 4hv7). It is the normal failure with the message now."""
+    fake.routes[("POST", f"{SERIES_PATH}/rounds")] = lambda seen: (
+        409,
+        {"error": {"code": code, "message": "m"}},
+    )
+    assert cli.main(["jourfixe", "start", SERIES, "--reason", "now"]) == cli.EXIT_ERROR
+    assert capsys.readouterr().err.rstrip().endswith(": m")
+
+
 def test_moderators_shows_the_series_moderators(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

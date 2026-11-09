@@ -934,6 +934,11 @@ maity runner serve            # in the foreground; as a service: `maity runner u
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
 ```
 
+`status` shows each placement's state as the supervisor last recorded
+it. For a placement that is `starting` or `running` it adds the line to
+attach to its session (`attach` in `--json`), the same text the hub
+shows as its session hint.
+
 With `[backend] kind = "local"` the service supervises the agents itself.
 Every five seconds it compares the placements with the sessions of its
 own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
@@ -975,15 +980,31 @@ and runs `maity join --join-file - --no-resume` in the clone. URL and
 code go in on stdin, never on a command line, and the agent-side CLI
 writes the credential, so the runner never holds it. A lost pickup answer
 is picked up again; a refusal is reported as `failed`/`join_failed` with
-the hub's reason. Harnesses run with the narrowest grant the runner can give them, and the
+the hub's error code, such as `instance_quota`, or for `forbidden` its
+reason when that has the code form, such as `member_agents_max`,
+otherwise `forbidden`. `maity runner serve` prints one
+line to stderr for each new state of a placement, with its reason and
+detail. Harnesses run with the narrowest grant the runner can give them, and the
 project's own harness configuration is never loaded:
 
 - **Claude Code** gets `--setting-sources user`, a settings file written
   by the runner outside the clone (`maity`, `git`, the repository's
   `allow` list, file tools inside the clone only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
-  configuration. Where bubblewrap and socat are on the agents' `PATH`,
-  its OS sandbox is switched on strictly. It refuses to start without the
+  configuration. Before an `interactive` start the runner marks the
+  clone as trusted in the agents' Claude Code configuration
+  (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
+  Code's own saves take; see `cli/context/runner.md` for the one case in
+  which a concurrent write can be lost), so the
+  first start in a fresh clone does not wait at the folder-trust
+  question; a start whose entry cannot be written fails with the cause in
+  the log. The entry stays after the placement ends, and an unrestricted
+  `claude` started later in that clone also finds it: it asks nothing and
+  loads the clone's project hooks and MCP configuration (a Claude Code
+  configuration directory per placement would avoid that). This is a
+  known limit: do not start your own `claude` in a runner workspace. Where
+  bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
+  switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
   repository's `network` list. Sandboxed commands cannot read the

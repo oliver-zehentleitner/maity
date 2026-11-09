@@ -171,6 +171,37 @@ def test_urgent_is_for_answering_roles(owner: flow.Human, make_client: ClientFac
     assert ask(admin, priority="urgent").status_code == 201
 
 
+def test_an_urgent_request_in_flight_is_refused_once_its_admin_became_a_member(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§7: `urgent` needs `requests:answer`. The request read its membership as an admin;
+    the trust change to member commits before the request takes the project lock. The
+    check runs on the row read under the lock, so the request is refused (#1568)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import requests as requests_route
+    from tests.test_expert import _in_thread, _paused
+
+    admin = flow.agent(make_client, owner, role="admin")
+    reached, release = _paused(monkeypatch, "_locked", requests_route)
+    sent = _in_thread(lambda: ask(admin, priority="urgent"))
+    try:
+        assert reached.wait(10), "the request never reached the lock"
+        changed = owner.patch(f"/projects/maintainer/maity/members/{admin.id}", {"trust": "member"})
+        assert changed.status_code == 200, changed.text
+    finally:
+        release.set()
+    refused = sent.result(timeout=10)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {
+        "priority": "urgent_needs_requests_answer"
+    }
+    assert owner.get("/projects/maintainer/maity/requests").json()["items"] == []
+
+
 def test_a_consent_goes_only_to_a_role_that_may_answer_it(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

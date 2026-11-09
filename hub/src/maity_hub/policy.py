@@ -89,8 +89,9 @@ KEPT_ON_PRESET = (
 DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
 
 # What an owner from outside may let an agent do (§6.1 `outside_roles`, §6.2): the built-in
-# roles that work, and project roles on them. Whatever else a list names is `invalid`.
-OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team")
+# roles that work, and project roles on them, and the expert, which only answers (§2.3) and
+# is no base. Whatever else a list names is `invalid`.
+OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team", "expert")
 OUTSIDE_DEFAULT = ["coder"]
 
 

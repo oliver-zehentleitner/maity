@@ -54,9 +54,13 @@ The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
 in the project alone, under oneself: a boss or an area owner of someone
 else's places none of them, and an own agent that reports to someone
-else's shows that as a stub with the boss's handle, as text, and nothing
-more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
-ringed. Built from the same member list, so no second tree and no hub field.
+else's shows that as a stub with the boss's handle, as text (the
+qualified `owner/handle` where another member shares the short one,
+`M.dom.handleOf`, docs/api.md §6.3), and nothing more of the other side:
+no name, no link to its page, no tooltip. Where the member list gives no
+handle, the stub is the neutral sentence "reports to someone who is not
+yours", never an id or a name. Its instances are dots in their presence's
+colour, the lead ringed. Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
@@ -778,16 +782,21 @@ Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
 with its id, without opening it, the row marked read in place (its
 button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
-off while nothing it marks is unread, with a line that sign-in and
-address alerts stay unread. **Mark read** is not offered on one of the
+off while nothing it marks is unread. It leaves every security alert
+unread, whatever the session, with the line "Mark all read leaves
+security alerts unread: mark each one read on its own."
+(`waiting.mark_all.hint`). **Mark read** is not offered on one of the
 open matters of §18.3 — `registration_pending`, `mail_disabled`,
 `agents_not_listening`, told by their targets
 (`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
-— which read as read once the matter is closed, nor on a sign-in or
-address alert unless this session may confirm it (`M.sessions.mayConfirm`,
-§2.6.5): the hub skips such an id without saying so, and a button that
-does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item. Until 2026-11-04 a fourth
+— which read as read once the matter is closed, nor on a security
+alert this session may not mark (`M.sessions.mayMark`, as the bell
+does): an address change only from a confirmed session older than it,
+every other security alert from any session (§18.3). A sign-in is no
+item; the box above the list shows the sessions (§2.6.5). An id the hub
+leaves unread anyway is answered as `skipped` (§18.3), which the page
+says, its row staying unread. The sessions are read for that only when
+the page shows an unread security item. Until 2026-11-04 a fourth
 matter, `report_open` (target `report`), stood among them; a new report
 is now the instance admin's personal request instead (entry
 f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
@@ -1329,6 +1338,65 @@ humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
 
+## An agent is started on a runner from Agents' Where they run, on one's own live runners only
+
+**Id:** 7baa75e7-2cf3-4cb5-ae41-93e04cdb71d9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
+**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
+**See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
+
+Where they run, on the project's Agents, has **Start an agent on a runner**
+for a human with members:admin. It offers the runners attached here
+(`GET …/runners`) that the human owns, whose credential is live and which
+offer the project's repository: one of the runner's advertised
+`repositories` matches the repository's URL without `https://`, with the
+hub's rule (`check_repository` in `hub/src/maity_hub/placements.py`,
+Python's `fnmatch.fnmatchcase`; `fnmatch` in `web/js/placements.js` is its
+port, a `[…]` set read as Python 3.12's `fnmatch.translate` reads it, so a
+reversed range such as `[z-a]` matches nothing, `[!z-a]` any one character,
+and neither throws and hides the runner's other patterns; the name is read by
+Unicode character, as Python reads it, so `?` takes a character beyond U+FFFF
+whole (an advertised pattern is printable ASCII, `Name` in
+`hub/src/maity_hub/routes/runner.py`; the port reads any pattern the same
+way); and a `*` is matched by going back only to the last `*`,
+not by one RegExp over the pattern, so many stars against a long name take
+time in proportion to the two lengths, not seconds). With none, the section says so and links the project's Runners; with
+attached runners of which none offers the repository, it says that and
+names the repository; a project without a repository offers no form and
+says a runner needs one. The agent is one
+of the human's own agents here without an active placement, or a new
+profile with the join panel's fields (trust, role, reports to, areas,
+briefing). Where, tool, mode and model come from what the chosen runner
+last advertised: reachable targets, installed tools for that target, the
+tool's modes with its default chosen, its models or the runner's default.
+Without a tool, Start is disabled. The call is one `POST …/placements`. A
+refusal shows the hub's message, code and named fields, and the new
+placement is listed by reading the list again. The route asks for no
+second factor, so the call is not wrapped in `M.stepUp.run`.
+
+**Reason:** the placements are already shown and steered here, so the
+form sits beside them. Offering only what the hub accepts keeps the
+choices few: someone else's runner is `forbidden`, a revoked one
+`runner_revoked`, an agent placed already `placement_exists`, a tool
+that is not advertised `harness_not_offered`, and a runner that does not
+offer the project's repository, or a project without one,
+`repository_not_offered` (the last added by tsk-wn6qp27090qy, after a
+re-check of the merged form found such runners offered).
+
+**Rejected alternative:** the form on the instance-level Runners page:
+there the project would be one more choice, and the placements are not
+shown there. Free text for the tool and the model: the runner advertises
+the lists, and a typo would only be refused by the hub (a tool it does not
+know as `invalid`, a model the runner does not offer as
+`harness_not_offered`, `_check_spec` in `hub/src/maity_hub/routes/placements.py`).
+Listing every attached runner and letting the hub refuse: a choice that
+can only fail. Listing a runner that does not offer the repository as
+unavailable instead of leaving it out: the other runners the hub would
+refuse are left out too, and with none left the section says why.
+
 ## Project settings are the project's last tab, not a panel from the gear menu
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
@@ -1522,10 +1590,12 @@ writer's draft of that note, so a redraw of the list must not throw it away.
 **Evidence:** inferred
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-09
 
 The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
-User (`/invite`), for humans only. `/invite` lists the projects where the
+User (`/invite`), for humans only; Runner and Project were added later
+(4ff40142). `/invite` lists the projects where the
 human adds members. The one chosen (`?project=`, as Members' Invite user
 links it) shows the invitation form and its list. The other projects
 show their lists without a form. Members has two blue buttons at the top,
@@ -1670,7 +1740,9 @@ review with an open child would hide nothing, the common case.
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads its conversations once a burst has settled (0.4 s): in one
+then reads its conversations once a burst has settled (0.4 s), but only
+for an answer with a chat or mention item in it, or one that moved the
+chat counts (since 2026-11-08, c5a75e7f): in one
 read across projects (`GET /me/conversations`, §9.3; until 2026-10-30
 each project's list on a hub without it, e1699490). The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
@@ -1692,6 +1764,81 @@ incident's pattern, N long-polls per tab. Only the open conversation's
 project's feed (the card allowed it): still one more long-poll per tab,
 and the list of the other projects would still need the stream. Polling
 the lists every few seconds: more reads than the stream for slower news.
+
+## Reading again only what changed: a card opened on the board, a stream answer without a chat
+
+**Id:** c5a75e7f-8c0e-443a-a7b3-874044713f60
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, item 7, 2026-11-08: the members read about every 0.6 s beside an opened card, `/me/conversations` every 0.4–3 s); the plan on tsk-d61rvjm6gteh, approved by the coordinator the same day; reproduced in the fixture hub
+**Revisit when:** the board reads its cards per column or keeps them across renders, or the hub offers a per-user chat stream
+**See:** https://github.com/oliver-zehentleitner/maity — 254c3ddf-d7be-4e70-ad71-384a6eb3d36b — as of 2026-11-08
+**See:** https://github.com/oliver-zehentleitner/maity — dc0a02f8-c657-406a-8f63-f260b588e7e8 — as of 2026-11-08
+
+Opening a card on the board changes the address, and every change of the
+address was a full drawing: the whole card list again (six pages of 200 in
+a project of 1,135 cards), the roles, the event head, the counts, and
+behind it the session, `/me`, the project and its members. Clicking
+through cards read the members once a card. Now the board follows a card
+opened or closed on itself (`ctx.followRoute`, as `/chats` does): it swaps
+the panel, and only the panel reads (the roles, the card's notes and
+history, and where they apply its watched updates and restricted text);
+closing it reads nothing. A hub answer to an edit made there is written
+into every copy of the card the board holds, matched by its id, so the
+next card opened or closed draws it as it is now, and an answer that comes
+after another card was opened changes its own card only. A card the filters hide, or one outside the board's window, is still
+drawn afresh: that drawing shows it whatever the filters say, as a link
+from elsewhere always did.
+
+The global chat read every project's chats and the open conversation again
+on every answer of the notifications stream. That stream answers for every
+item in every project (a request, a sign-in, a long-poll that only timed
+out), and the counts were read every 15 seconds too, which also nudged
+it. Now it reads only for an answer with a chat or mention item in it, or
+one that moved the chat counts. Everything else waits for the 30-second
+round, which was there already.
+
+**Reason:** each of these reads costs a round trip and hub statements for
+data that did not change. On the measured hub they added up to the
+repeated reads beside every opened card and in the chat.
+
+**Rejected alternatives:**
+- Keeping the board's list in `kept`, as the project and its members are
+  for a switch: a list of a thousand cards held across views, and stale
+  after any move made elsewhere; the event feed already offers a reload.
+- Slowing the chat's nudge (a longer settle time): fewer reads per burst,
+  but still a full round for an answer that is about no chat at all.
+- Dropping the stream nudge and keeping only the 30-second round: a new
+  chat message would wait up to 30 seconds in the open conversation.
+
+## The Agents page reads credentials only for its own agents that are placed
+
+**Id:** a71aebc3-1d25-4e28-90ce-f96f8c716c02
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: 27 credential lists at once, queuing from 95 to 568 ms); the plan on tsk-d61rvjm6gteh (PR C), approved by the coordinator the same day
+**Revisit when:** the placements list carries whether its credential was revoked, or the member list carries the credentials
+
+A project's Agents page read the credentials of every agent of one's own
+in it, at once, before the "Where they run" section could draw. That
+section needs them only to know whether a placement's credential was
+revoked, which decides whether **Restart with a new join** is offered. It
+now reads the placements first and asks for the credentials of one's own
+agents that have a placement, once each; a placement that appears later
+asks for its agent then. It listens for placement events before its first
+read, and reads the list again once it stands if one came meanwhile.
+
+**Reason:** on the measured project those reads were the page's slowest
+part, and most of them served nothing: few agents have a placement.
+
+**Rejected alternatives:**
+- The credentials read when a row is expanded: the rejoin choice stands in
+  the placement row as it is drawn, so the read would only move.
+- The revoked state in the placements or member list: one read less, but a
+  contract change, which this card's boundary excludes.
 
 ## The board reads its column groups side by side
 
@@ -2820,6 +2967,8 @@ reporting line that is not there.
 **Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); the maintainer's request relayed by the coordinator on the card tsk-ttywzxsaj1ht, 2026-10-31 (Agents right after Members, Jour fixe between Why and Settings); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
 
+2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
 member and a **Chat** per entry (one's own agent: its direct chat;
@@ -3278,6 +3427,46 @@ used to say to sign in again.
 sensitive call: needless right after a sign-in, and wrong for a
 passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
+
+
+## Every route that asks for the factor is called through M.stepUp.run, held by a list the hub test and the check share
+
+**Id:** 4dc6b1f0-bd9d-4110-a961-41e830af134e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6dk86ej9s0fq (the owner, 2026-11-09: pairing a runner on /runners showed only "This needs your second factor first."; the lead's scope: the fix, an audit of every route that calls `require_step_up`, a guard, the fixture refusing); hub/src/maity_hub (the routes), docs/api.md §2.8.4; the guard's form is the implementer's, as the card left it
+**See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-09
+**Revisit when:** the hub publishes which routes ask (in its OpenAPI, say), or the dashboard's calls go through typed per-route functions
+
+`tools/step-up-routes.json` lists the hub's routes that ask for the factor (method and path under the API prefix; `body` where the hub asks only for one field, `when` where it asks only in some cases). Three readers keep it true:
+- `hub/tests/test_step_up_routes.py` reads the hub's source: every route whose handler reaches `second_factor.require_step_up`, directly, in a lambda it hands on, or through the hub's own functions it calls. Each call is resolved through the module's imports, so the gate imported under another name, or called by a module's name or its full dotted path, counts the same. A function handed around under another variable or taken by `getattr` is not followed. The two sets must be equal.
+- `tools/check.py` fails on a call `M.api.<verb>(path, …)` in `js/` whose path it reads as one of those routes and that does not go through `M.stepUp.run`. It is a reading of the text, not of the program. It recognises exactly the forms below; any other form is not checked and can pass.
+  - **Path:** the parts of a `+` chain that are a string literal; `ctx.base`; a name, read from the last `const name =` or `let name =` before the call anywhere in the file (not by blocks); a call of such a name bound to an arrow, whose body is read; or `a ? b : c` and `a || b` of those; three deep. Any other part stands for any run of characters, slashes too (`M.api.projectPath` gives several segments). A path with no part read is left alone.
+  - **Names in a body and of a named arrow (form 2 below):** a name is bound only by a declaration `const name =` or `let name =`. The check walks out from the call through the `{…}` blocks around it to the nearest block that declares the name, and takes there the last such declaration before the call, else the first. Its value is the text after `=` up to its `;` or the end of its block. Nothing else binds a name for the check, in a path either: not a later declarator after a comma (`const a = 1, name = …`), a parameter, a destructuring, `var`, a function declaration or a reassignment.
+  - **Body:** for a route that asks only for one field, the call's body is read with the value of every name in it, three deep. The field counts where its key stands as a word in that text, so a key behind a variable counts.
+  - **Asking first**, in exactly these four forms; in 2 to 4 the arrow's body is the call itself (`=> M.api.…(…)`, in parentheses or not), not a block:
+    1. Inside the function expression that is the whole of `M.stepUp.run`'s first argument; not one called or bound right there.
+    2. In an arrow `const name = (…) =>` or `let name = x =>`, not `async`, where an `M.stepUp.run(name, …)` in the file resolves, by the blocks around it, to this declaration. This shows the binding is handed to the question once, not that every call of it goes through it.
+    3. In an arrow that is a property `key: (…) =>`, not `async`, where every `.key` read in the file (`x.key`, `x[i].key`) is `M.stepUp.run`'s first argument, no `{ … key … } =` destructures it, no `["key"]` reads it, and the file makes no call through brackets (`…](`).
+    4. As an argument of a local function (`function f(…) {` or `const f = (…) => {`) whose parameter in that place is handed to `M.stepUp.run` as its first argument in its body. `f` is found as follows, and only so: the check walks out from the call through the `{…}` blocks around it to the nearest block that declares `f` by a function declaration (a `function`, also `async` or `export`, where a statement starts: at the top or after `;`, `{` or `}`), a `const` or a `let`. There it takes the last function declaration of that block, wherever the call stands; if the block has none, the last `const` or `let` before the call, else the first. Where that declaration is not such a helper, the call does not ask. Any other binding form is not resolved and can pass, for example a named function expression's own name, a parameter, `var`, an import or an assignment.
+  - A call made to work out `M.stepUp.run`'s arguments, or in another of its arguments, is sent before anything is asked, and does not count.
+  - `tools/test_step_up_check.py` holds those readings, some through the whole check on a file of its own (tsk-4zrnkb3gh6mq, after xyfr's post-merge re-check of #1547 found that a name given to `M.stepUp.run` anywhere in the file had counted, and 4hch's review of #1566 the reads and names the first fix still missed).
+- The same check keeps `js/api.js`'s `STEP_UP_ROUTES` equal to the list. With `window.MAITY_FIXTURE_STEP_UP` set (to `Date.now()`, so that a code given earlier in the run does not count), the fixture hub refuses them with `step_up_required` until a code is verified.
+
+A reject of a held address change is never asked by the hub, but it is sent through the question like the approve: the hub's reading includes it, and asking only after a refusal costs nothing there.
+
+Known limits, each a way a new guarded call could go unseen (tsk-4zrnkb3gh6mq records them rather than closing them):
+- The hub test finds routes declared as `@router.<method>("<path>")` on a module-level function with a local `APIRouter`. A route added with `add_api_route` (as `routes/project_images.py` adds its image routes), a class method, or a router built inside a function (as `app.py` builds the one for `/languages` and `/health`) adds nothing to its set; none of those files reaches `require_step_up` today.
+- `tools/check.py` follows only the forms listed above. Any other way to write a binding, a path or a hand-over is not checked and can pass: a parameter of the same name, a reassignment, an alias that keeps the arrow, a direct call beside the wrapped one, a function passed under another name, a value stored and read in another file.
+- The fixture asks for the factor on any `email.address` in `PATCH /me/notification-settings`; the hub asks only when a verified or disabled address changes (`_change_address` in `hub/src/maity_hub/notifications/preferences.py`). Wider than the hub, it never lets through what the hub refuses.
+
+**Reason:** the runner pairing, the mail settings, the password, the address change and its approval, and the answer that moves a project were each written without the helper, and nothing failed until a person met the refusal. A list read from the hub and a check over every call catches the next one when it is written. A test drives only the flows someone thought of.
+
+**Rejected alternatives:**
+- The fixture refusing, with smoke and e2e to catch a missing question: it finds only what a test drives, and none of the eight calls had such a test.
+- A hub contract test against routes named in docs/api.md: §2.8.4 names the calls in prose, not as a list a test reads, and the step-up is decided in the hub's code, which the source reading follows.
+- Every `M.api` write through `M.stepUp.run`: each form would need a slot for a question the hub never asks.
 
 
 ## The second step of a sign-in is a page of its own for both ways; the mail's link is posted from the page
@@ -3860,6 +4049,8 @@ taken, and the rule for what holds is the contract's. The icons as
 **Supersedes:** d7ee1073-1752-4134-9e51-878c5c28f2c2
 **Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
 
+2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+
 The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
 **Swarm** (`overview/swarm`) and **Project** (`overview/project`), as
 links with the shown one marked. Summary is what needs the reader and
@@ -4091,11 +4282,11 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged
-**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than three items, or a drop learns a right-to-left order
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects)
+**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
-The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is the first item of the header's "+" menu (Project, then Agent and User), which is named "Add a project, an agent or a person". The empty state's Create a project stays.
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
 
 While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
 
@@ -5082,7 +5273,8 @@ on every change of a confirmed address.
 
 **Id:** 444115c8-aaaf-408e-a16c-571aa48f69cf
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 44009d6f-ff99-4f8a-b51e-cb9531702422
 **Evidence:** inferred
 **Source:** docs/api.md §18.4 "Defaults and what was saved", the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02
 **Revisit when:** the hub can reset a kind to its default
@@ -5104,6 +5296,37 @@ would see it changed.
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
 
+## When mail goes out: the page sends only what changed; the time zone is set under Settings, the browser's only offered
+
+**Id:** 44009d6f-ff99-4f8a-b51e-cb9531702422
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4; the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02; the owner's decision on the account time zone (message seq 94723) and the approved plan on card tsk-j8s6n725a06r, 2026-11-08
+**See:** views.md#when-mail-goes-out-the-page-sends-only-what-changed-the-browsers-zone-only-offered — 444115c8-aaaf-408e-a16c-571aa48f69cf — as of 2026-11-08
+**Revisit when:** the hub can reset a kind to its default
+
+The modes and times on `/account/notifications` are compared with the hub's merged answer, and
+the `PATCH` names only what differs: in `email.kinds` only the kinds that changed, each with only
+its changed part (`mode` or `content`). The time zone is no longer a field there: it is the
+account's, chosen in Account → Settings, and the mail page names it with a link there, or says
+the mails follow UTC while none is set. In Settings the browser's zone is offered first, as a
+button and at the top of the list, but the page never sets it unasked.
+
+**Reason:** the hub stores only what the human set, and a kind it was sent counts as set even if
+the value is unchanged; sending the whole form would pin every kind at today's default (unchanged
+from the earlier entry). The zone now decides every time the dashboard shows as well as when
+digests and quiet hours fall, so it belongs with the language under Settings, not under mail
+(the owner's decision, confirmed); a browser on a trip should still not move it.
+
+**Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
+Setting the browser's zone while the account has none: the dashboard already shows times in it
+then, and storing it would turn a guess into a choice the human never made. Keeping a second zone
+field on the mail page: two places for one value.
+
+**Known limit:** a mode changed and later set back to the default stays set; the contract has no
+reset.
+
 ## The frame's stylesheets are switched on only where the sign-in or registration stands signed out, its header and footer beside the app's
 
 **Id:** e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0
@@ -5115,7 +5338,8 @@ reset.
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
-`GET /site/chrome` in the page's language. While the page stands, the hub's
+`GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
+and take the frame's language from its answer. While the page stands, the hub's
 `/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
@@ -5174,6 +5398,30 @@ than clearing the session on that 401 here was lotse#wtwy's decision (message se
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
 
+The frame's mark (`home()` in `js/site-chrome.js`) is the hub's SVG without its style attributes;
+it keeps the class `mark`, and its colours come from `public-pages.css` (`.site-header .mark
+rect`, …), because the dashboard's policy is `default-src 'self'` with no inline style. **Rejected:** the
+style attributes as the hub inlines them (web-e2e failed on them at `cc402ec1`), classes in
+`app.css` (a second copy of the hub's design, reverted in `7b63d015`), and an `<img>` (it cannot
+take the header's theme tokens). Source: the author's notes on #1287, round 2 (card
+tsk-gsk31zvpfv02).
+
+The footer's languages (`language()`) are this page's own path and query with `lang` set,
+written through `M.route.href`, and a click chooses the language (as the page's picker does) and
+draws the page again at that address. **Rejected:** a bare `?lang=`, which under the shell's
+`<base href="/assets/">` resolves to `/assets/` (a 404) and loses a sign-in's `next`; a page load
+to `/?lang=`, which leaves the sign-in. Source: the same notes on #1287.
+
+Under 960 px, a pitch panel that has none of the pitch's parts (subline, points, note) is hidden
+(`hub/src/maity_hub/landing_assets/public-pages.css`, the narrow-screen rule), so a phone gets no
+empty dark band. Every key of §16.7.4 is optional, so a panel with only a note or only points
+stays. The title is the form's heading, not a part of the panel. A new part that `pitch()` draws
+must be added to that rule. **Rejected:** hiding on subline and points only (it hid a note-only
+pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second source of truth);
+keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
+one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
+notes on #1287, round 3 (card tsk-gsk31zvpfv02).
+
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
 **Id:** 71dc43d7-fef5-4123-83de-841dcc06c2bd
@@ -5224,7 +5472,7 @@ the hub answers with.
 
 The project's Why tab is Keep the Why's own dashboard views, mounted by `js/ktw-host.js` from the vendored library: the overview, graph, timeline, thoughts, family, topics, entries and search, at paths below `/<owner>/<slug>/why`. The library reads through a provider over the hub's §11.5 reads, moves through the dashboard's paths (`js/route.js`), keeps its settings in the browser and takes Maity's colours through its `--ktw-*` tokens. Its scripts and stylesheet are loaded on the first visit to Why, in the manifest's order (checked by `make check`), and stay for the page's life. Its own UI words are English and the mounts carry `translate="no"`: an interim step until the library takes words from its host; entry text is the repository's data either way. The digest view the tab showed before (the hub's §11.3 summary per member) remains on All projects → Why. What the old view did for a failed read stays: when the hub cannot read the export, its last good read is shown with the reason, and Read again drops what the page holds and reads anew. A link from data is used only when plain https, as for every link from data (rendering.md), in two places: the export's link fields (the project's and the config's canonical, dashboard-state, a git remote and the repository it forks, a See or superseded_by into another repository) are checked before the library sees them, and every `href` the library writes into the mounts, entry text included, is checked again as `dom.h` checks Maity's own (a path of the dashboard or plain https); a `ref` place reads nothing for a repository in the address that is not plain https. Since 0.11.44 the library writes a route's `centre` as `centre/public/<canonical>/<root>/<place>`; the host's router drops an empty path segment, so it never reads a repository's root back from that form with certainty. An entry at another repository of the family is therefore written by the host as its own place `at/<uuid>/<canonical>[/<root>]`, which reads that repository's export (at that root) through the family and draws the entry with the library's pages over a scene of that export; `routeOf` also takes the library's `centre/public/…` form when a link arrives from elsewhere (a segment after the canonical is the root unless it names a place of the library's grammar, so a root named like a place, `graph` say, reads as that place: a known limit of links from elsewhere, never of `at/`), and any other place at another repository is the family page. A `ref` place the library resolves goes on to that place, replacing the ref in the history. The repository in the address must be plain https and the root a relative directory, or nothing is read.
 
-Since keep-the-why-dashboard 0.11.44 the library takes contrast tokens: text on its accent is `--ktw-on-accent` over `--ktw-accent-fill`, and accent-coloured text (links, counts, the type pill) is `--ktw-accent-text`. `css/app.css` maps the first pair to Maity's own `--accent-text` on `--accent` (5.32 to 1 light, 6.0 to 1 dark) and drops the eight overrides that wrote `--accent-text` over the library's literal `#fff`; they were a workaround until such a token existed. `--ktw-accent-text` is not `--accent` itself but `--accent` a fifth of the way to `--text`, as `--ktw-warn` already is: plain `--accent` is 4.11 to 1 light and 3.98 to 1 dark on the type pill's 18% accent tint, under AA, while the mix is 4.84 to 1 at least on `--bg`, `--surface` and that tint over either, in both themes. Mapping `--ktw-accent-text` to Maity's `--accent-text` was rejected: in Maity that name is the text *on* the accent (white in light, near-black in dark), not accent-coloured text, so links would turn white or black. `--ktw-status-active-text` is `--ok`, as `--ktw-status-active` is. Likewise, controls the library labels only by `title` (the timeline's playhead and speed) get an `aria-label` from that title in the host, where `sweep` holds its links, and a later title refreshes the name the host set, while a name the page sets afterwards is kept when it differs from the host's (one equal to it cannot be told from the host's and follows the title); dropping axe's `label-title-only` rule for the mounts was rejected, as it would hide the next unlabelled control too.
+Since keep-the-why-dashboard 0.11.44 the library takes contrast tokens: text on its accent is `--ktw-on-accent` over `--ktw-accent-fill`, and accent-coloured text (links, counts, the type pill) is `--ktw-accent-text`. `css/app.css` maps the first pair to Maity's own `--accent-text` on `--accent` (5.32 to 1 light, 6.0 to 1 dark) and drops the eight overrides that wrote `--accent-text` over the library's literal `#fff`; they were a workaround until such a token existed. `--ktw-accent-text` is not `--accent` itself but `--accent` a fifth of the way to `--text`, as `--ktw-warn` already is: plain `--accent` is 4.11 to 1 light and 3.98 to 1 dark on the type pill's 18% accent tint, under AA, while the mix is 4.84 to 1 at least on `--bg`, `--surface` and that tint over either, in both themes. Mapping `--ktw-accent-text` to Maity's `--accent-text` was rejected: in Maity that name is the text *on* the accent (white in light, near-black in dark), not accent-coloured text, so links would turn white or black. `--ktw-status-active-text` is `--ok`, as `--ktw-status-active` is. Since 0.11.45 each of the library's state colours has a `-text` twin for its words (`--ktw-ok-text`, `--ktw-warn-text`, `--ktw-status-open-text` and eight more); the colour keeps drawing borders, dots and the graph. Upstream draws those words on the pills' solid `--ktw-surface2`, and on the surface and the page, never on a tint, so `css/app.css` maps them to Maity's text-on-plain-ground values: the state colour itself where it passes there (`--ok`, `--bad`, `--muted`), else the colour a fifth of the way to `--text` (`--ktw-warn`, `--ktw-accent-text`, `--ktw-accent2`). Plain `--accent` was rejected for the open and info text: it is 4.53 to 1 on dark `--surface-2`, too close to the line. The lowest pair is `--ok` on light `--surface-2`, 5.00 to 1. `--ktw-fg3-line`, the library's faint lines and marks, is `--muted` like `--ktw-fg3`, so nothing shifts; `--seat` was rejected, at 2.5 to 1 it is under the 3 to 1 a mark needs. Likewise, controls the library labels only by `title` (the timeline's playhead and speed) get an `aria-label` from that title in the host, where `sweep` holds its links, and a later title refreshes the name the host set, while a name the page sets afterwards is kept when it differs from the host's (one equal to it cannot be told from the host's and follows the title); dropping axe's `label-title-only` rule for the mounts was rejected, as it would hide the next unlabelled control too.
 
 **Known limits:** what the page has read of a project stays for the page's life, per project and per signed-in reader; a newer export shows after Read again or a reload. The library's own words are English until it takes them from its host. A link in the library's `centre/public/…` form to a repository whose root is named like a place of the library's grammar reads as that place.
 
@@ -5447,3 +5695,86 @@ reads closed requests nobody asked to see and needs a second read for the
 open ones it cut off; reading the answered ones in the background after the
 first drawing, which spends the same reads on every visit. Both are
 inferred, the card did not discuss them.
+
+## The boot reads the window and the session together; /me still after the session
+
+**Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
+**Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
+
+`render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
+instead of after it, and handles the answers in the old order: the window first, then the session.
+`GET /me` still waits for the session's answer. The invitation and registration pages read the
+session themselves, so the drawing starts no early read for them, and only the newest session read
+sets the language: an older answer, a 401 above all, that came back after it switched a newer
+session's language back (review of #1524).
+
+**Reason:** two round trips in a row before the session was known. The answers stay in their order
+because each one decides whether the next matters (a running window, no session, a session that
+owes the second factor). The window is cached for a minute, so later drawings mostly save nothing;
+the first load saves one round trip.
+
+**Rejected alternatives:** /me early as well (the card's first plan), gated by the hub's readable
+session cookie and quiet towards the page. It fails by design for a session that still owes the
+second factor (403) and for a cookie that outlived its session (401), which e2e's check for failed
+answers reported; allowing those would have meant a harness exception that could hide a real
+failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
+and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
+outside `M.api`: a second client with its own error handling.
+
+## A handle field's hint is a sentence of fixed words, with no handle or address filled in
+
+**Id:** e9c2136d-efa9-4222-b013-6042a56ec86c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-srzrkf2parzt (the owner's decision req-3wdzdcvcbf7s: every field that asks for a handle explains the word); the ChatGPT reviewer's P2 in the review of #1488 (seq 91149) and the Grok reviewer's P3 (seq 91705); web/js/handles.js `explain`; e2e `handle_hints_step`
+**Revisit when:** a hint has to name the reader's own handle or address, or the phone widths the e2e step measures change
+
+Under every field that asks for a handle, `M.handles.explain(kind, input)`
+adds one sentence of fixed words for its kind (your own, an agent's, an
+organisation's, the person invited), which the field names in its
+`aria-describedby`. Nothing is filled in: no handle, no host, no example
+address. e2e `handle_hints_step` measures all seven kinds of field at 390
+and 360 px, light and dark: at most two lines, no overflow.
+
+**Reason:** the first version filled in the instance's host and the
+reader's handle as an example (`maity.team/<handle>`). On the English
+Account page that took three lines at 360 px, and a 31-character handle
+three lines at 390 px, against the card's two lines on a phone. Fixed
+words keep every hint's length known whatever the handle or the host.
+
+**Rejected alternatives:** a filled-in example cut to a length, which
+still varies with the host and reads oddly when cut; a filled-in example
+only on wide screens, which gives two texts to keep true. The example
+`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+about the reader's own agent or organisation.
+
+## A message's seq is drawn with its "#" from the stylesheet, so a copy takes the number alone
+
+**Id:** 10d6fda7-c01c-4087-80e5-3c0a8ea4253c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0aadqqwe8jvt and #1311 (the seq beside each chat message); the Grok reviewer's P3 on #1311 (seq 66303), collected on card tsk-gsk31zvpfv02; the code comment in web/js/chat.js at `msg-seq`; web/css/app.css (`.msg-seq::before`)
+**Revisit when:** a seq becomes a link in the chat, or the number is to be read out with a word
+
+Each chat message shows its seq beside its time as `#4202`. The span holds the number alone
+(`.msg-seq`); the `#` is drawn by the stylesheet (`.msg-seq::before { content: "#"; }`), so it is
+no part of a selection.
+
+**Reason:** agents cite a message by its seq ("seq 54246", card tsk-0aadqqwe8jvt), so a copy of
+the visible text should give the number they need, without the sign. The code comment says so;
+the rejected alternatives below are inferred, nobody stated them.
+
+**Rejected alternatives:** `#` as text in the span, which a copy takes along; a word such as
+"seq", which the dashboard's other texts do not use for it; a link, as the join panel's
+"message #seq", since a chat message has no address of its own to link to.
+
+**Known gap:** a screen reader can hear "· #4202" (the stylesheet's `#` is read out too) with no
+word for what the number is, and the list
+is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
+reports nothing).

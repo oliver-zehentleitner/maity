@@ -110,6 +110,11 @@ _ROLE = {
         "carry their questions up to your own lead or your human, and decide nothing a "
         "human decides."
     ),
+    "expert": (
+        "Your role is expert: you answer the questions addressed to you or to the experts "
+        "from the sources you learned, with the source of each answer; you take no cards and "
+        "file no request."
+    ),
 }
 
 

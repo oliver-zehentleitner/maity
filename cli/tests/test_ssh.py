@@ -425,8 +425,10 @@ def real_host(tmp_path: Path, port: int, key: Path, known: Path) -> Ssh:
 def test_a_real_host_is_reached_and_every_word_arrives_as_it_is(
     tmp_path: Path, real_sshd: Any
 ) -> None:
+    import pwd  # POSIX only, as sshd is; HOME is the isolated one (conftest._isolate)
+
     host = real_host(tmp_path, *real_sshd)
-    assert host.home() == Path(os.path.expanduser("~"))
+    assert host.home() == Path(pwd.getpwuid(os.getuid()).pw_dir)
     words = ["a b", "$(id)", "x;y", "'q'"]
     done = host.run(["printf", "%s\n", *words])
     assert done.returncode == 0 and done.stdout.splitlines() == words

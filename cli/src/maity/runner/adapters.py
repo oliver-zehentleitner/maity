@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, proc
-from . import config, stub
+from . import config, stub, trust
 from .asuser import AsUser
 
 START_PROMPT = (
@@ -82,6 +82,7 @@ class Context:
     private: tuple[Path, ...] = ()  # never readable from the sandbox: runner state, secrets
     workspaces: Path | None = None  # the root of every clone, for sandboxes that can carve
     as_user: AsUser = AsUser()  # who the agents run as (§7.6)
+    agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,27 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     return settings
 
 
+def trust_clone(ctx: Context) -> None:
+    """Record the clone as trusted for the agents' Claude Code (trust.py): without it, its
+    first interactive start in a fresh clone waits at the folder-trust question and the agent
+    never comes online. The owner's placement is the trust decision; only this clone's entry
+    changes. Run where the agents are, as their user. A failure fails the start: a session
+    waiting at the question would pass for `running`."""
+    home = ctx.as_user.home()
+    if ctx.as_user.direct:
+        trust.record(home, ctx.clone)
+        return
+    done = ctx.as_user.run(
+        [*ctx.as_user.runner_module("trust"), str(home), str(ctx.clone)],
+        env={"PATH": ctx.agent_path} if ctx.agent_path and not ctx.as_user.here else None,
+    )
+    if done.returncode != 0:
+        raise trust.TrustError(
+            f"cannot record Claude Code's folder trust for {ctx.clone}: "
+            f"{done.stderr.strip()[:200] or f'exit {done.returncode}'}"
+        )
+
+
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
@@ -202,14 +224,18 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         "--setting-sources", "user",  # the project's .claude/ is not loaded, hooks included
         "--settings", str(settings),
         "--permission-mode", "dontAsk",
-        "--strict-mcp-config", "--mcp-config", str(mcp),
+        # `=`: `--mcp-config` takes several values, and in interactive mode the start
+        # prompt comes next, which Claude Code would read as a second configuration file.
+        "--strict-mcp-config", f"--mcp-config={mcp}",
     ]  # fmt: skip
     model = ctx.placement.get("model")
     if model:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
+        trust_clone(ctx)
         return Launch([*base, START_PROMPT], env)
-    # Headless: no background command may hold a run open past its turn (§6.2).
+    # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
+    # No background command may hold a run open past its turn (§6.2).
     quiet = {**env, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
     return _supervised(
         ctx,

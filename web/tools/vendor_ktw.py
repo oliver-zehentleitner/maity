@@ -21,6 +21,7 @@ Python standard library only.
 """
 
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -102,9 +103,10 @@ def within(url):
         raise Refused("network: no answer within %g s in all: %s" % (DEADLINE_SECONDS, url))
     if "error" in result:
         e = result["error"]
-        if isinstance(e, (urllib.error.URLError, OSError)):
-            # A refused or timed-out connection, a TLS failure, an HTTP error status: one line,
-            # no traceback (HTTPError and URLError are OSErrors; reason is the cause where known).
+        if isinstance(e, (urllib.error.URLError, OSError, http.client.HTTPException)):
+            # A refused or timed-out connection, a TLS failure, an HTTP error status, a body cut
+            # short (IncompleteRead, an HTTPException): one line, no traceback (HTTPError and
+            # URLError are OSErrors; reason is the cause where known).
             raise Refused("network: %s: %s" % (url, getattr(e, "reason", None) or e))
         raise e
     return result["data"]
@@ -119,11 +121,20 @@ def fetch(url):
     return data
 
 
+def fetch_json(url):
+    """fetch, read as JSON: a body that is not JSON (an error page, a cut answer) is refused in
+    one line, as a network failure is (#1497 review)."""
+    try:
+        return json.loads(fetch(url))
+    except ValueError as e:
+        raise Refused("not JSON: %s: %s" % (url, e))
+
+
 def release(version):
     """The wheel's address and sha256 for a version, from PyPI."""
     if not VERSION.match(version):
         raise Refused("not a release version: %r" % version)
-    info = json.loads(fetch("https://pypi.org/pypi/%s/%s/json" % (PACKAGE, version)))
+    info = fetch_json("https://pypi.org/pypi/%s/%s/json" % (PACKAGE, version))
     wheels = [u for u in info["urls"] if u.get("packagetype") == "bdist_wheel"]
     if len(wheels) != 1:
         raise Refused("%s %s has %d wheels, expected one" % (PACKAGE, version, len(wheels)))
@@ -134,7 +145,7 @@ def release(version):
 
 
 def latest():
-    info = json.loads(fetch("https://pypi.org/pypi/%s/json" % PACKAGE))
+    info = fetch_json("https://pypi.org/pypi/%s/json" % PACKAGE)
     return info["info"]["version"]
 
 

@@ -205,8 +205,17 @@ idempotency.LOADERS["task"] = load_task
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    """The caller's membership with the project row as read under the project lock."""
-    return replace(mine, project=lock_project(conn, mine.project.id))
+    """The caller's membership with the project row and its own row as read under the
+    project lock. A role change takes the same lock (`members._check_no_cards_for_expert`),
+    so a scope checked on what this returns holds until the write commits (§2.3 "The
+    expert"); one checked before it may be stale."""
+    project = lock_project(conn, mine.project.id)
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
+    ).first()
+    if row is None:  # the membership ended meanwhile
+        raise not_found()
+    return replace(mine, project=project, row=row)
 
 
 def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
@@ -218,15 +227,20 @@ def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -
     return membership_id
 
 
-def _target_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
-    """`_member_id` for a member a card names as its assignee or arbiter: never a guest,
-    which is no target (§2.3 "Guest")."""
+def _target_id(
+    conn: Connection, mine: Membership, principal: str, field: str, *, arbiter: bool = False
+) -> int:
+    """`_member_id` for a member a card names as its assignee, holder or arbiter: never a
+    guest, which is no target (§2.3 "Guest"), and never an expert as the one who works the
+    card, since it takes no cards (§2.3 "The expert"); an expert may arbitrate."""
     try:
         row = member_row(conn, mine.project.id, principal)
     except ApiError:
         raise invalid({field: "not_a_member"}) from None
     if row.trust == "guest":
         raise invalid({field: "guest"}, "a guest is never a target")
+    if row.role == "expert" and not arbiter:
+        raise invalid({field: "expert"}, "an expert takes no cards")
     membership_id: int = row.id
     return membership_id
 
@@ -349,7 +363,7 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
     if arbiter != policy_arbiter:
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
     if arbiter != "trust:admin":
-        _target_id(conn, mine, arbiter, "contract.arbiter")
+        _target_id(conn, mine, arbiter, "contract.arbiter", arbiter=True)
     watchers = list(dict.fromkeys(body.watchers))
     for watcher in watchers:
         _member_id(conn, mine, watcher, "contract.watchers")
@@ -849,6 +863,7 @@ def create_card(
     _check_label(body.label)
     _check_area(body.area)
     mine = _locked(conn, mine)
+    mine.require("tasks:write")  # again, on the row read under the lock
     _check_needs(mine.project, body.needs)
     state = _require_open_project(mine, body.reason)
     _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
@@ -992,8 +1007,14 @@ def patch_task(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("tasks:write")
+        # An arbiter without `tasks:write`, an expert, still moves its contract's state
+        # (§2.3 "The expert", §6.8); every other edit needs the scope, checked first.
+        if given != {"contract"}:
+            mine.require("tasks:write")
+        mine.require("project:read")
         mine = _locked(conn, mine)
+        if given != {"contract"}:
+            mine.require("tasks:write")  # again, on the row read under the lock
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
@@ -1025,6 +1046,8 @@ def patch_task(
             and card.kind == "contract"
             and _is_arbiter(conn, mine, card.contract or {})
         )
+        if not arbiter_move:
+            mine.require("tasks:write")
         # And the release fields are any releaser's, holder or not (§6.7).
         release_edit = (
             given == {"release"} and card.kind == "release" and mine.may("releases:write")
@@ -1351,6 +1374,9 @@ def claim(
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
         mine = _locked(conn, mine)
+        # Again on the row read under the lock: a role change to expert that committed
+        # since the first read leaves no `tasks:write` (§2.3 "The expert").
+        mine.require("tasks:write")
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
@@ -1862,6 +1888,9 @@ def _leads_within_team(mine: Membership, card: Any, assignee: str) -> bool:
 
 
 def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:
+    # The holder's writes are work: a member whose role took `tasks:write` away, an expert,
+    # neither checkpoints nor reports (§2.3 "The expert").
+    mine.require("tasks:write")
     card = _project_card(conn, mine, card_id)
     if cards.sibling_holds(mine, card):
         raise _not_holder(card)
@@ -1928,6 +1957,8 @@ def report(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
+        # First: an expert reports nothing, also on a card that is done or cancelled (§6.4).
+        mine.require("tasks:write")
         _check_why(body, mine.project)
         card = _project_card(conn, mine, card_id)
         already_done = card.status == "done"

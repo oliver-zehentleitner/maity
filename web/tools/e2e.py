@@ -877,7 +877,7 @@ def scenario(run: Run, page: Page) -> None:
     )
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
     agents = page.locator("main .members-agents")
     expect(agents).to_contain_text("@e2e-agent")
@@ -1005,7 +1005,7 @@ def scenario(run: Run, page: Page) -> None:
     run.step("a second project, the same agent joins it and asks")
     # A new project is in the "+" menu; the row of tabs has none (tsk-hp9gq9rmrdq2).
     expect(page.locator("nav.switcher a[href='/new']")).to_have_count(0)
-    page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+    page.locator("header").get_by_role("button", name="Add an agent, a person, a runner or a project", exact=True).click()
     page.get_by_role("menuitem", name="Project", exact=True).click()
     create_project(run, page, "E2E Beta", "e2e-beta")
     url, code = join_line(run, page, "e2e-beta", None)
@@ -1133,7 +1133,7 @@ def scenario(run: Run, page: Page) -> None:
             ("inbox", "Inbox"),
             ("board", "Board"),
             ("overview", "Overview"),
-            ("members", "Members"),
+            ("members", "Team"),
             ("agents", "Agents"),
         )
         # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
@@ -1161,7 +1161,7 @@ def scenario(run: Run, page: Page) -> None:
             run.shot(page, f"phone-{view}{suffix}")
             run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
         # The create form: its preset select has long option labels.
-        page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+        page.locator("header").get_by_role("button", name="Add an agent, a person, a runner or a project", exact=True).click()
         page.get_by_role("menuitem", name="Project", exact=True).click()
         expect(page.locator("main section.view-new")).to_be_visible()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
@@ -1845,7 +1845,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     # The pause is in the agent's row on Members (tsk-7v2snhk002ak), once.
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     agents = page.locator("main .members-agents")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     form = agents.locator("form.member-pause")
@@ -1956,7 +1956,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
     run.shot(page, "review-absence")
     run.a11y(page, "header in review with absence")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/organisation$"))
     expect(page.locator("main .org-tree")).to_be_visible()
@@ -2265,13 +2265,15 @@ def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
 def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     """A session from before the enrolment has not given the factor, so the page must ask.
     Returns the secret and the last step the hub took, for the sign-in that follows."""
-    run.step("second hub: enrol TOTP; an older session's export asks for the code")
+    run.step("second hub: enrol TOTP; an older session's export and runner pairing ask for the code")
     older_context, older = sign_in(run, browser)
+    # A third session from before the enrolment pairs a runner: Oliver's case (tsk-6dk86ej9s0fq).
+    pairing_context, pairing = sign_in(run, browser)
     context, page = sign_in(run, browser)
     started = page.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
     secret = started["secret"]
     step = int(time.time() // 30)
-    page.evaluate(
+    enrolled = page.evaluate(
         """(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""",
         totp_code(secret, step),
     )
@@ -2294,11 +2296,26 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
         older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
     expect(older.locator(".data-export")).to_contain_text("Your export was saved.")
+    # Pairing a runner mints a credential (§2.8.4): the page asks, a recovery code answers, the line comes.
+    pairing.goto(run.base + "/runners")
+    pairing.locator("#pair-name").fill("e2e-step-up")
+    pairing.get_by_role("button", name="Create the pairing line", exact=True).click()
+    asked = pairing.locator("form.step-up")
+    expect(asked).to_contain_text("Pairing a runner needs your second factor")
+    expect(pairing.locator(".pair-steps")).to_have_count(0)
+    run.shot(pairing, "second-hub-step-up-runner")
+    pairing.locator("#step-up-step_up_required").fill(enrolled["recovery_codes"][0])
+    asked.get_by_role("button", name="Confirm", exact=True).click()
+    expect(pairing.locator(".pair-steps")).to_contain_text("maity runner pair")
+    expect(pairing.locator("form.step-up")).to_have_count(0)
+    pairing_context.close()
     # What the question answers: the first refusal and the wrong code, both expected here.
     run.problems = [
         p
         for p in run.problems
-        if "/me/export answered 403" not in p and "/second-factor/verify answered 403" not in p
+        if "/me/export answered 403" not in p
+        and "/second-factor/verify answered 403" not in p
+        and "/runners/enrollments answered 403" not in p
     ]
     no_problems(run, "step-up with TOTP")
     older_context.close()
@@ -4272,9 +4289,84 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
     expect(card).to_contain_text("It has not reported what it can do yet")
     run.shot(page, "project-runners")
     run.a11y(page, "project runners")
+    start_on_runner_form(run, page, name)
+    page.goto(f"{run.base}/owner/e2e-alpha/runners")
+    expect(card).to_contain_text("no agent running here")
     detach()
     expect(view).to_contain_text("No runner is allowed in this project yet.")
     no_problems(run, "project runners")
+
+
+def start_on_runner_form(run: Run, page: Page, name: str) -> None:
+    """Agents → Start an agent on a runner (docs/api.md §15.6, tsk-dsp6htj4c686) against the hub:
+    E2E Alpha has no repository, so no runner can start an agent in it and no form is offered
+    (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
+    the runner's with it among its repositories: the paired runner allowed here is offered; it has
+    not reported what it can do, so there is no tool to choose and nothing to send."""
+    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    page.goto(f"{run.base}/owner/e2e-alpha/agents")
+    section = page.locator("main section.placements")
+    expect(section.locator(".placement-new-none")).to_have_text(
+        "A runner starts an agent in a clone of the project's repository, and this project has none.")
+    open_form = section.get_by_role("button", name="Start an agent on a runner", exact=True)
+    expect(open_form).to_have_count(0)
+    project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
+    runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
+
+    def with_repository(route) -> None:
+        body = route.fetch().json()
+        body["repository"] = {"url": "https://github.com/owner/e2e-alpha", "default_branch": "main", "required_check": None,
+                              "forge": "github", "probe_configured": False, "probe_via": None, "owner_confirmed": False, "confirmed_by": None}
+        route.fulfill(json=body)
+
+    def offering_it(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            item["runner"]["capabilities"] = {**(item["runner"].get("capabilities") or {}), "repositories": ["github.com/owner/*"]}
+        route.fulfill(json=body)
+
+    page.route(project_read, with_repository)
+    page.route(runners_read, offering_it)
+    try:
+        start_on_runner_open(run, page, name, section, open_form)
+    finally:
+        page.unroute(project_read, with_repository)
+        page.unroute(runners_read, offering_it)
+    no_problems(run, "start on a runner")
+
+
+def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:
+    """The form opened over the answers start_on_runner_form gives the project's and runners' reads."""
+    page.reload()
+    expect(open_form).to_be_visible()
+    open_form.click()
+    form = section.locator("form.placement-new")
+    expect(form).to_be_visible()
+    runner_options = form.locator("#placement-new-runner option")
+    expect(runner_options).to_have_count(1)
+    expect(runner_options.first).to_contain_text(name + " · offline")
+    expect(form.locator("#placement-new-tool option")).to_have_count(0)
+    expect(form).to_contain_text("The runner offers no tool there that is installed.")
+    expect(form.get_by_role("button", name="Start on the runner", exact=True)).to_be_disabled()
+    run.shot(page, "placements-start-form")
+    run.a11y(page, "placements, start on a runner")
+    # The browser's own constraint validation (review of #1558): a handle the pattern refuses,
+    # typed for a new profile, stops counting once one of one's agents here is chosen instead.
+    form.locator("#placement-new-handle").fill("INVALID")
+    assert not page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "an invalid new handle passes validation"
+    agents = form.locator("#placement-new-agent option")
+    assert agents.count() >= 2, f"no agent of one's own offered: {agents.all_text_contents()}"
+    form.locator("#placement-new-agent").select_option(index=1)
+    expect(form.locator("fieldset.placement-new-profile")).to_be_hidden()
+    assert page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "a hidden new-profile handle still blocks the form"
+    # On a phone the open form stays within the page's width (review of #1558: 451 px at 390).
+    page.set_viewport_size({"width": 390, "height": 844})
+    widths = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+    assert widths[0] <= widths[1], f"the form widens the page on a phone: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    form.get_by_role("button", name="Cancel", exact=True).click()
+    expect(form).to_have_count(0)
+    expect(open_form).to_be_focused()
 
 
 def notifications_step(run: Run, page: Page) -> None:
@@ -4558,7 +4650,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     )
     agents_fleet_step(run, page, agent_id)
     join_reports_to_step(run, page, agent_id)
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
     expect(over).to_have_text(f"Takes over from @e2e-agent; the hand-over is in {card_id}.")
     expect(over.get_by_role("link", name=card_id)).to_have_attribute(
@@ -5921,7 +6013,7 @@ def members_step(run: Run, page: Page) -> None:
     """Members (docs/api.md §6.2): humans and agents; the owner changes an agent's role and back."""
     run.step("members: the owner and the agent in two tables; an agent's role changed and back")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
     # Two tables, humans first; the levels by trust are the Organisation tree's (the maintainer, 2026-11-01).
     table = page.locator("table.members")
@@ -5960,7 +6052,7 @@ def members_step(run: Run, page: Page) -> None:
     expect(head.locator(".member-pill", has_text="agent of")).to_have_count(1)
     expect(page.locator("nav.member-tabs a")).to_have_count(4)
     head.get_by_role("button", name="Actions for E2E Agent").click()
-    expect(head.get_by_role("menuitem", name="Manage on Members")).to_be_visible()
+    expect(head.get_by_role("menuitem", name="Manage on Team")).to_be_visible()
     page.keyboard.press("Escape")
     run.a11y(page, "member page")
     page.locator("nav.member-tabs").get_by_role("link", name="Sessions & credentials").click()
@@ -6000,7 +6092,7 @@ def members_step(run: Run, page: Page) -> None:
     run.shot(page, "organisation-paths")
     page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
     expect(page.locator("main .org-tree")).to_be_visible()
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.
     table.get_by_role("button", name="Manage Owner").click()
     owner_manage = page.locator("tr.member-manage")

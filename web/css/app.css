@@ -171,6 +171,27 @@
   --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
   --ktw-status-superseded: var(--muted);
+  /* the library's state text (0.11.45): each state colour above still draws borders, dots and
+     the graph; its -text twin draws the words, on the pills' solid --ktw-surface2 and on
+     --ktw-surface and --ktw-bg, never on a tint. So they take Maity's text-on-plain-ground
+     values: the state colour where it passes there, else its mix a fifth of the way to --text
+     (--accent is 4.53:1 dark on --surface-2). Lowest pair 5.00:1 (--ok on light --surface-2),
+     every other one higher in both themes (WCAG AA). */
+  --ktw-ok-text: var(--ok);
+  --ktw-confirmed-text: var(--ok);
+  --ktw-warn-text: var(--ktw-warn);
+  --ktw-inferred-text: var(--ktw-warn);
+  --ktw-bad-text: var(--bad);
+  --ktw-unknown-text: var(--muted);
+  --ktw-info-text: var(--ktw-accent-text);
+  --ktw-status-needs-review-text: var(--ktw-warn);
+  --ktw-status-open-text: var(--ktw-accent-text);
+  --ktw-status-pending-confirmation-text: var(--ktw-accent2);
+  --ktw-status-superseded-text: var(--muted);
+  /* the library's faint lines and marks (0.11.45: grid, rules, a superseded card's grey); the
+     faint text stays --ktw-fg3. Both were --muted before, so nothing shifts; --seat would be
+     2.5:1, under the 3:1 a mark needs (WCAG 1.4.11) */
+  --ktw-fg3-line: var(--muted);
   --ktw-radius: var(--radius);
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
@@ -492,8 +513,8 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .entry-group { margin: 6px 0 0; }
 .entry-group h3 { margin: 0 0 var(--s2); font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--s2); }
 .entry-group h3 .count { border: 0; background: var(--surface-2); color: var(--muted); font-family: var(--font); letter-spacing: 0; }
-/* The inbox's Sort and Show as pills, like the board's filter. */
-.view-inbox .toolbar select { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
+/* The inbox's own menus as pills, like the board's filter: Sort and Show in a project, Sort and Project on /all. */
+.toolbar :is(#inbox-sort, #inbox-show, #inbox-project) { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 .members-filter { margin: 4px 0 8px; }
 .members-filter label.check { display: inline-flex; align-items: center; gap: 6px; }
@@ -852,6 +873,34 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .members tr.member-manage { margin: -8px 0 8px; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
+}
+/* Team (the members view) and Agents in the refreshed look (design refresh step 6): the table
+   as a panel, quiet head cells, rows with room and a hover ground, Chat and Manage as pills, the
+   runner cards as cards. Styling only: the selectors the checks use stay as they are. */
+:is(.view-members, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
+:is(.view-members, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-card); box-shadow: var(--shadow); }
+:is(.view-members, .view-agents) .members th, :is(.view-members, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
+:is(.view-members, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); padding-block: var(--s2); }
+:is(.view-members, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
+/* A light hover ground, so the warn text in a row keeps AA on it (4.6:1 light, 6.2:1 dark). */
+:is(.view-members, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-members, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
+:is(.view-members, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
+  border: 1px solid var(--field); background: transparent; padding: 4px 12px; }
+/* The open Manage row (members: .member-manage, Agents: .agent-manage) on the same light ground as the hover. */
+:is(.view-members, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-members, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
+.view-agents .profile { border-radius: var(--r-card); }
+/* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
+.placement button:not(:disabled):not(.primary) { border-color: var(--field); }
+@media (max-width: 600px) {
+  .view-members .table-wrap { background: none; border: 0; box-shadow: none; }
+  :is(.view-members, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
+  :is(.view-members, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
+  :is(.view-members, .view-agents) .members tr.member:hover > * { background: none; }
+  :is(.view-members, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
 }
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
@@ -1642,12 +1691,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* Where the agents run (js/placements.js, §15.5–§15.7): one row per
    placement under the agents' grid; stacked on a phone. */
-.placements { margin-top: 24px; display: grid; gap: 8px; }
+.placements { margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .placement-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.placement { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
-.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.placement { border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--s3) var(--s4); display: grid; gap: 6px; min-width: 0;
+  background: var(--surface); box-shadow: var(--shadow); }
+.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 600; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
+   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
+.placement-new select, .placement-new input { max-width: 100%; }
+.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
@@ -1659,7 +1713,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A runner command in a box that scrolls, with Copy beside it. */
 .placement-hints { display: grid; gap: 4px; }
 .placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
-.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
+.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--r-field); background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
@@ -1959,6 +2013,30 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-picture-none.size-20 { width: 20px; height: 20px; }
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+
+/* The person or organisation view in the refreshed look (design refresh step 4): the head as a
+   panel with a round picture, the name in the display face, links and the public page as pills,
+   the projects and members as rows. As on the public page mocks; no field more, none less. */
+/* A profile reads as one column, not a band across a wide screen. */
+.view-person { max-width: 46rem; }
+.view-person .person-head { gap: var(--s4); padding: var(--s4); margin-bottom: var(--s4);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); }
+.view-person .person-head > .avatar-img, .view-person .person-head > .person-picture-none { width: 80px; height: 80px; border-radius: 50%; }
+.view-person .person-name { font: 700 1.6rem/1.15 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.view-person a.button-link { display: inline-block; border-radius: var(--r-pill); border-color: var(--field); padding: 6px 14px; }
+.view-person .person-bio { font-size: 1.05rem; line-height: 1.6; max-width: 62ch; }
+.view-person .person-links { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0; }
+.view-person .person-links li { padding: 4px 12px; border: 1px solid var(--field); border-radius: var(--r-pill); font-size: 0.9rem; }
+.view-person h3 { font: 700 1.1rem/1.2 var(--display); letter-spacing: -0.01em; margin: var(--s5) 0 var(--s2); }
+.view-person .person-projects, .view-person .person-members { gap: 2px; }
+.view-person .person-projects li, .view-person .person-members li { padding: var(--s2); border-radius: var(--r-field); }
+.view-person .person-projects li:hover, .view-person .person-members li:hover { background: var(--surface-2); }
+.view-person .person-projects a { font-weight: 600; }
+.view-person .person-members .avatar-img, .view-person .person-members .person-picture-none { width: 28px; height: 28px; border-radius: 50%; }
+@media (max-width: 600px) {
+  .view-person .person-head { flex-wrap: wrap; }
+  .view-person .person-head > .avatar-img, .view-person .person-head > .person-picture-none { width: 64px; height: 64px; }
+}
 
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
