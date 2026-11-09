@@ -2873,8 +2873,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pic = AV({ id: "agt-a" }, 28);
   expect(pic.tagName === "SVG" && pic.attrs["aria-hidden"] === "true" && pic.attrs.width === "28" && pic.style["--avatar-h"] === "340"
     && pic.querySelectorAll("rect").length === 16, "avatars: an SVG of nodes, decorative, its hue as a custom property");
-  expect(AV({ id: "agt-a", avatar_url: "https://evil.example/x.png" }).tagName === "SVG", "avatars: a picture the page may not load falls back to the generated one");
-  expect(AV({ id: "agt-a", avatar_url: "/api/v1/projects/maintainer/maity/logo?v=1" }).tagName === "IMG", "avatars: a picture the page may load wins");
+  const evil = AV({ id: "agt-a", avatar_url: "https://evil.example/x.png" });
+  expect(evil.tagName === "SVG" && !AV.picture(evil), "avatars: a picture the page may not load is never loaded; the generated one stays");
+  const logoPic = AV({ id: "agt-a", avatar_url: "/api/v1/projects/maintainer/maity/logo?v=1" });
+  expect(logoPic.tagName === "SVG" && AV.picture(logoPic) && AV.picture(logoPic).attrs.src === "/api/v1/projects/maintainer/maity/logo?v=1",
+    "avatars: the generated picture first, a picture the page may load is loaded as given (no size on a logo)");
+  expect(AV.sized("/api/v1/avatars/agt-a?v=abc", 16) === "/api/v1/avatars/agt-a?v=abc&s=32"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc", 48) === "/api/v1/avatars/agt-a?v=abc&s=64"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc", 200) === "/api/v1/avatars/agt-a?v=abc&s=256"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc", 999) === "/api/v1/avatars/agt-a?v=abc&s=256"
+    && AV.sized("/api/v1/avatars/public/0123456789abcdef0123456789abcdef", 24) === "/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=32"
+    && AV.sized("/api/v1/avatars/agt-a?v=abc&s=64", 16) === "/api/v1/avatars/agt-a?v=abc&s=64",
+    "avatars: the smallest size the hub serves that covers the shown size (§6.10, Sizes)");
+  expect(["32", "64", "128", "256"].every((side) => win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=" + side)
+      && win.Maity.dom.isOwnImage("/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=" + side))
+    && !win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=48") && !win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=64&x=1"),
+    "avatars: a sized avatar address is the hub's own image; any other size or parameter is not");
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const avA = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === "agt-a");
   expect(avA && avA.querySelector("svg") && avA.querySelector("svg").style["--avatar-h"] === "340", "avatars: in the agent's row on Members");
@@ -8218,11 +8232,70 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let foreign = null;
   try { win.Maity.dom.h("img", { src: "https://evil.example/api/v1/avatars/agt-a?v=1" }); } catch (err) { foreign = err; }
   const avBox = document.createElement("div");
-  const avImg = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 24);
-  avBox.appendChild(avImg);
-  const loaded = avBox.querySelector("img");
-  avImg.dispatch("error");
-  expect(foreign && loaded && avBox.querySelector("svg") && !avBox.querySelector("img"), "picture: only the hub's avatar path loads; a failed load shows the generated picture");
+  const avShown = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 24);
+  avBox.appendChild(avShown);
+  const avLoading = win.Maity.avatar.picture(avShown);
+  const drawnFirst = avBox.querySelector("svg") && !avBox.querySelector("img");
+  avLoading.dispatch("load");
+  expect(foreign && drawnFirst && avLoading.attrs.src === "/api/v1/avatars/agt-a?v=abc&s=32" && avBox.querySelector("img") === avLoading && !avBox.querySelector("svg"),
+    "picture: the generated picture at once, then the hub's avatar at the shown size in its place once loaded; another origin never");
+  const avBox2 = document.createElement("div");
+  const avShown2 = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 64);
+  avBox2.appendChild(avShown2);
+  const avFailing = win.Maity.avatar.picture(avShown2);
+  avFailing.dispatch("error");
+  expect(avFailing.attrs.src === "/api/v1/avatars/agt-a?v=abc&s=64" && avBox2.querySelector("svg") === avShown2 && !avBox2.querySelector("img") && !win.Maity.avatar.picture(avShown2),
+    "picture: an avatar that does not load leaves the generated picture");
+  // Near the screen only; the observer holds only placeholders on the page (#1541 R1), and one
+  // mounted late is still watched (#1541 delta 1): a fake IntersectionObserver that says when a
+  // target is seen, and the fake DOM's `isConnected`. `sweep` is what a change of the page runs.
+  const ioLive = new Set();
+  let ioSee = null;
+  win.WeakRef = WeakRef;
+  win.IntersectionObserver = class {
+    constructor(cb) { ioSee = (el) => cb([{ target: el, isIntersecting: true }]); }
+    observe(el) { ioLive.add(el); }
+    unobserve(el) { ioLive.delete(el); }
+  };
+  Object.defineProperty(Node_.prototype, "isConnected", { configurable: true,
+    get() { for (let n = this; n; n = n.parentNode) if (n === body) return true; return false; } });
+  const AVL = win.Maity.avatar;
+  const ioBox = document.createElement("div");
+  body.appendChild(ioBox);
+  const ioUrl = { id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" };
+  const ioSeen = AVL(ioUrl, 24);
+  const ioAway = AVL(ioUrl, 24);
+  const offFirst = !ioLive.has(ioSeen) && !ioLive.has(ioAway);
+  ioBox.appendChild(ioSeen); ioBox.appendChild(ioAway);
+  AVL.sweep();
+  const notYet = !AVL.picture(ioSeen) && ioLive.has(ioSeen) && ioLive.has(ioAway);
+  ioSee(ioSeen);
+  expect(offFirst && notYet && AVL.picture(ioSeen) && !ioLive.has(ioSeen) && !AVL.picture(ioAway),
+    "picture: a placeholder is observed once it is on the page; its picture loads once it is seen, one off the screen waits");
+  // Twenty placeholders appended and removed before the observer ever ran (a view drawn twice at
+  // once), one never mounted, and one taken off the page: none is observed after the next sweep.
+  const ioGone = [];
+  for (let k = 0; k < 20; k++) { const g = AVL(ioUrl, 24); ioBox.appendChild(g); ioBox.removeChild(g); ioGone.push(g); }
+  const ioNever = AVL(ioUrl, 24);
+  ioBox.removeChild(ioAway);
+  AVL.sweep();
+  expect(ioGone.every((g) => !ioLive.has(g)) && !ioLive.has(ioNever) && !ioLive.has(ioAway) && AVL.watched() === 0,
+    "picture: placeholders that are not on the page are not observed, whether the observer saw them or not");
+  // A view built long before it is mounted (the board waits for a card's own read), and one put
+  // back on the page: both are watched once they are on the page, and their pictures load.
+  for (let k = 0; k < 3; k++) AVL.sweep();
+  ioBox.appendChild(ioNever); ioBox.appendChild(ioAway);
+  AVL.sweep();
+  const lateWatched = ioLive.has(ioNever) && ioLive.has(ioAway);
+  ioSee(ioNever);
+  expect(lateWatched && AVL.picture(ioNever) && !ioLive.has(ioNever),
+    "picture: a placeholder mounted late, or put back, is observed and loads its picture once seen");
+  body.removeChild(ioBox);
+  AVL.sweep();
+  expect(AVL.watched() === 0 && ioLive.size === 0, "picture: nothing stays observed once every placeholder has left the page");
+  delete Node_.prototype.isConnected;
+  delete win.IntersectionObserver;
+  delete win.WeakRef;
 
   // sign out, sign in
   profileButton().click(); await tick();
