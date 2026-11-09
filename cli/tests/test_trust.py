@@ -258,3 +258,102 @@ def test_maity_runner_trust_runs_the_module(tmp_path: Path) -> None:
     assert json.loads((home / ".claude.json").read_text()) == {
         "projects": {str(clone): {KEY: True}}
     }
+
+
+@pytest.mark.parametrize("kind", ["file", "full directory"])
+def test_a_stale_lock_that_cannot_be_removed_fails_at_once(tmp_path: Path, kind: str) -> None:
+    """A regular file at the lock path, or a lock directory with something in it, is no lock
+    a holder renews and none `rmdir` removes: the start fails with the cause instead of
+    waiting forever (#1560 R1)."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    path = _config(home, {})
+    lock = Path(f"{path}.lock")
+    if kind == "file":
+        lock.write_text("")
+    else:
+        lock.mkdir()
+        (lock / "left").write_text("")
+    old = time.time() - trust.STALE_SECONDS - 5
+    os.utime(lock, (old, old))
+    with pytest.raises(trust.TrustError, match="stale and cannot be removed"):
+        trust.record(home, clone, sleep=lambda _: pytest.fail("waited"))
+    assert json.loads(path.read_text()) == {}
+
+
+def test_a_lock_path_held_by_a_fresh_file_fails_at_the_deadline(tmp_path: Path) -> None:
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    path = _config(home, {})
+    Path(f"{path}.lock").write_text("")
+    clock = iter(range(0, 100))
+    with pytest.raises(trust.TrustError, match="held by another process"):
+        trust.record(home, clone, now=lambda: float(next(clock)), sleep=lambda _: None)
+
+
+def _slow_fsync(monkeypatch: pytest.MonkeyPatch, seconds: float, then: Any = None) -> None:
+    real = os.fsync
+    done = [False]
+
+    def slow(fd: int) -> None:
+        real(fd)
+        if not done[0]:
+            done[0] = True
+            time.sleep(seconds)
+            if then is not None:
+                then()
+
+    monkeypatch.setattr(os, "fsync", slow)
+
+
+def test_a_slow_holder_keeps_its_lock_and_no_write_is_lost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The holder renews the lock's mtime while it writes, so another writer does not take
+    it over as stale and waits instead; both entries are in the file (#1560 R1: without the
+    renewal the second writer took the lock and the first replaced its entry)."""
+    import threading
+
+    # raising=False: the counter-check runs this against a module without renewal
+    monkeypatch.setattr(trust, "STALE_SECONDS", 0.3)
+    monkeypatch.setattr(trust, "RENEW_SECONDS", 0.05, raising=False)
+    home = tmp_path / "h"
+    first, second = _clone(tmp_path), tmp_path / "other"
+    second.mkdir()
+    path = _config(home, {"projects": {}})
+    _slow_fsync(monkeypatch, 1.0)  # the first writer's fsync, past three stale periods
+    results: dict[str, Any] = {}
+    writer = threading.Thread(target=lambda: results.update(a=trust.record(home, first)))
+    writer.start()
+    deadline = time.monotonic() + 5
+    while not Path(f"{path}.lock").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert trust.record(home, second) is True
+    writer.join(5)
+    assert results == {"a": True}
+    assert set(json.loads(path.read_text())["projects"]) == {
+        os.path.realpath(first),
+        os.path.realpath(second),
+    }
+
+
+def test_a_holder_whose_lock_was_taken_over_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another process took the lock while this one wrote (removed it and made its own): the
+    replace does not happen, the call fails, and the other process's lock stays."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    path = _config(home, {"projects": {"/b": {KEY: True}}})
+    lock = Path(f"{path}.lock")
+
+    def taken_over() -> None:
+        lock.rmdir()
+        lock.mkdir()
+        os.utime(lock, (1, 1))
+
+    _slow_fsync(monkeypatch, 0, taken_over)
+    with pytest.raises(trust.TrustError, match="lost .* to another process"):
+        trust.record(home, clone)
+    assert json.loads(path.read_text()) == {"projects": {"/b": {KEY: True}}}
+    assert lock.is_dir()  # the other process's: never removed by this one
+    assert [p.name for p in home.iterdir() if p.name.startswith(".claude.json.")] == [
+        ".claude.json.lock"
+    ]  # no temporary file left

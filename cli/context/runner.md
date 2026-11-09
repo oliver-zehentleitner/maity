@@ -951,13 +951,19 @@ the agents' side.
 Before an `interactive` Claude Code session starts, the runner sets
 `projects[<the clone's real path>].hasTrustDialogAccepted: true` in the
 agents' Claude Code configuration: `~/.claude/.config.json` when that is
-a non-empty file, otherwise `~/.claude.json`. It holds `<file>.lock`,
-the directory Claude Code's own saves take, so a running session neither
-loses the entry nor has its write lost. Nothing else in the file
-changes. In the `agent_user` and `ssh` layouts the runner's own module
+a non-empty file, or an empty one while `~/.claude.json` is missing,
+otherwise `~/.claude.json`. It writes under `<file>.lock`, the directory
+Claude Code's own saves take, the way proper-lockfile takes it: by
+`mkdir`, with the lock's mtime renewed while it is held, and a lock not
+renewed for 10 s removed as stale. Right before it replaces the file it
+checks that the mtime is still its own. A runner that lost the lock
+writes nothing and fails, so neither the entry nor a session's own write
+is lost. Nothing else in the file changes, and nothing is put inside the
+lock directory, which must stay removable with `rmdir`. In the `agent_user` and `ssh` layouts the runner's own module
 (`maity.runner.trust`) does this on the agents' side, as for the limit
-file. When the entry cannot be written, the start fails with the cause
-in the log. `supervised` sets nothing: headless (`-p`), Claude Code asks
+file. When the entry cannot be written (a file that is not a JSON
+object, a lock held past 15 s, a stale lock that cannot be removed, a
+lost lock, a failed write), the start fails with the cause in the log. `supervised` sets nothing: headless (`-p`), Claude Code asks
 for no trust and records none.
 
 **Reason:** the placement is the owner's trust decision, made before the
@@ -977,6 +983,10 @@ that fails with a cause is better than that.
   is not read for a clone, and it would trust every later clone too.
 - Writing the file without the lock: a session saving at the same time
   could drop the entry, or lose its own change.
+- A token file inside the lock directory to mark the owner: a runner
+  that died while holding it would leave a directory `rmdir` cannot
+  remove, and Claude Code's saves would then never get the lock again.
+  The renewed mtime is how proper-lockfile itself tells its own lock.
 - Starting anyway when the entry cannot be written: the session waits at
   the question and passes for `running`, the failure this fixes.
 

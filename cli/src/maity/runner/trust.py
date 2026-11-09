@@ -11,14 +11,22 @@ its global configuration file. Checked against Claude Code 2.1.319:
   runner's sessions start without it.
 - The key is the clone's real path: Claude Code looks up its working directory, which the
   kernel gives resolved.
-- Claude Code saves the file holding the directory `<file>.lock` (taken with `mkdir`, given up
-  as stale after 10 s), and re-reads and merges `projects` under it. This module takes the same
-  lock, so a running session neither loses this entry nor has its own write lost.
+- Claude Code saves the file holding the directory `<file>.lock` (proper-lockfile: taken with
+  `mkdir`, its mtime renewed every 5 s, given up as stale after 10 s without renewal), and
+  re-reads and merges `projects` under it. This module takes the same lock the same way: it
+  renews the mtime while it holds the lock and, right before it replaces the file, checks that
+  the mtime is still the one it set. A holder that lost the lock (it was taken over as stale, or
+  removed) writes nothing and fails, so neither this entry nor a session's own write is lost.
+  Nothing is put inside the lock: a directory left behind must stay removable with `rmdir`, as
+  proper-lockfile removes a stale one.
 
 Nothing else in the file changes: no other project, no other key of this one. A file that is
-not a JSON object is left as it is. The runner runs this in its own process when the agents
-are its own user; through sudo or on an ssh host it starts this module there (`python -I -m
-maity.runner.trust HOME CLONE`, `maity runner trust HOME CLONE`).
+not a JSON object is left as it is. Every failure (such a file, a lock held past WAIT_SECONDS, a
+stale lock that cannot be removed, a lost lock, a write that fails) raises TrustError.
+
+The runner runs this in its own process when the agents are its own user; through sudo or on an
+ssh host it starts this module there (`python -I -m maity.runner.trust HOME CLONE`, `maity
+runner trust HOME CLONE`).
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -34,6 +43,7 @@ from typing import Any
 
 KEY = "hasTrustDialogAccepted"
 STALE_SECONDS = 10.0  # proper-lockfile's default, which Claude Code's config lock keeps
+RENEW_SECONDS = STALE_SECONDS / 2  # proper-lockfile's `update`
 WAIT_SECONDS = 15.0
 
 
@@ -54,6 +64,9 @@ def config_file(home: Path) -> Path:
 
 
 def _lock(path: Path, now: Callable[[], float], sleep: Callable[[float], None]) -> Path:
+    """Take `<path>.lock` by `mkdir`. A lock whose mtime is older than STALE_SECONDS is left
+    from a holder that is gone and is removed; one that cannot be (a regular file, a directory
+    with something in it) fails at once. Every wait honours the deadline."""
     lock = Path(f"{path}.lock")
     deadline = now() + WAIT_SECONDS
     while True:
@@ -61,15 +74,80 @@ def _lock(path: Path, now: Callable[[], float], sleep: Callable[[float], None]) 
             lock.mkdir()
             return lock
         except FileExistsError:
-            try:
-                if time.time() - lock.stat().st_mtime > STALE_SECONDS:
-                    lock.rmdir()  # a holder refreshes it every 5 s; this one is gone
-                    continue
-            except OSError:
-                continue  # given up in between
+            pass
+        except OSError as exc:
+            raise TrustError(f"cannot take {lock}: {exc.strerror}") from None
+        try:
+            stale = time.time() - lock.stat().st_mtime > STALE_SECONDS
+            if stale:
+                lock.rmdir()
+        except FileNotFoundError:
+            stale = False  # given up in between: wait as for a held lock, then try again
+        except OSError as exc:
+            raise TrustError(f"{lock} is stale and cannot be removed: {exc.strerror}") from None
         if now() > deadline:
             raise TrustError(f"{lock} is held by another process")
-        sleep(0.1)
+        if not stale:
+            sleep(0.1)
+
+
+class _Lease:
+    """The lock while this process holds it: its mtime renewed every RENEW_SECONDS by a thread,
+    as proper-lockfile does, so another process never takes it over as stale while the write
+    is slow. Ownership is that mtime: a lock taken over (removed and made again by another
+    process) or removed carries another, or none."""
+
+    def __init__(self, lock: Path) -> None:
+        self.lock = lock
+        self.mutex = threading.Lock()
+        self.lost = False
+        self.mark = self._touch()
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._renew, daemon=True, name="maity-trust-lock")
+        self.thread.start()
+
+    def _touch(self) -> int:
+        stamp = time.time_ns()
+        os.utime(self.lock, ns=(stamp, stamp))
+        return os.stat(self.lock).st_mtime_ns
+
+    def _owned(self) -> bool:
+        try:
+            return os.stat(self.lock).st_mtime_ns == self.mark
+        except OSError:
+            return False
+
+    def _renew(self) -> None:
+        while not self.stop.wait(RENEW_SECONDS):
+            with self.mutex:
+                if self.lost or not self._owned():
+                    self.lost = True
+                    return
+                try:
+                    self.mark = self._touch()
+                except OSError:
+                    self.lost = True
+                    return
+
+    def commit(self, write: Callable[[], None]) -> None:
+        """`write` while the lock is still this process's, and the renewal cannot run between
+        the check and the write; TrustError when it is not."""
+        with self.mutex:
+            if self.lost or not self._owned():
+                self.lost = True
+                raise TrustError(f"lost {self.lock} to another process; nothing written")
+            write()
+
+    def release(self) -> None:
+        """Remove the lock, only while it is still this process's."""
+        self.stop.set()
+        self.thread.join()
+        with self.mutex:
+            if not self.lost and self._owned():
+                try:
+                    self.lock.rmdir()
+                except OSError:
+                    pass
 
 
 def record(
@@ -82,7 +160,7 @@ def record(
     already was. Raises TrustError when the file cannot be read as a JSON object or written."""
     path = config_file(home)
     key = os.path.realpath(clone)
-    lock = _lock(path, now, sleep)
+    lease = _Lease(_lock(path, now, sleep))
     try:
         try:
             text = path.read_text(encoding="utf-8")
@@ -108,16 +186,13 @@ def record(
                 fh.flush()
                 os.fsync(fh.fileno())
             os.chmod(temp, mode)
-            os.replace(temp, target)
+            lease.commit(lambda: os.replace(temp, target))
         except BaseException:
             Path(temp).unlink(missing_ok=True)
             raise
         return True
     finally:
-        try:
-            lock.rmdir()
-        except OSError:
-            pass
+        lease.release()
 
 
 def main(args: Sequence[str] | None = None) -> int:
