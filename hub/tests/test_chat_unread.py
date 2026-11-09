@@ -1086,9 +1086,53 @@ def test_a_nudge_another_process_wrote_is_seen_under_the_lock(
         return real_check(engine, conversation_id, membership_id)
 
     monkeypatch.setattr(chat_unread, "check", other_worker_first)
+    for k in range(2):  # more about the chat above the old bound, below the other's nudge
+        renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": f"renamed again {k}"})
+        assert renamed.status_code == 200, renamed.text
+    r.read(second)
     r.at(13)
     chat_unread.sweep(r.engine)  # finishes the reads; the other process wrote first
     assert written and written[0], "the other process wrote no nudge"
     [nudge] = r.nudges(first)
     assert int(nudge.seq) == int(written[0])
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, said[0])
+
+
+@pytest.mark.parametrize("order", ["here_first", "there_first"])
+def test_nudges_in_another_chat_do_not_hold_this_chats_nudge_back(
+    room: Room, monkeypatch: pytest.MonkeyPatch, order: str
+) -> None:
+    """Review of #1512, delta 3 (e5kk): the check under the lock read the project's nudges above
+    this chat's bound and counted a full batch as open, so once another chat of the project had
+    written SCAN_BUDGET nudges, this chat never got one. It reads this chat's events only.
+    `here_first` is 4hch's sequence (98184): the message here is the old one, the other chat's
+    two nudges come later, and the passes after them write nothing new."""
+    r = room
+    first, second = r.agents
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    said = r.say(r.owner, "and one here") if order == "here_first" else 0
+    r.read(second)
+    created = r.owner.post(
+        CHATS,
+        {"title": "Another chat", "participants": [r.guest.id, first.id, second.id]},
+    )
+    assert created.status_code == 201, created.text
+    other = created.json()["id"]
+    sent = r.owner.post(f"{CHATS}/{other}/messages", {"body": "over there"})
+    assert sent.status_code == 201, sent.text
+    if order == "there_first":
+        r.read(first)  # this chat holds nothing unread for the first agent yet
+    for minute in (11, 12, 13):  # a budget of 2: the other chat's reads take a few passes
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    there = [n for n in r.nudges() if n.subject_id == other]
+    assert len(there) == 2  # one per agent: a full batch of the project's nudges
+    if order == "there_first":
+        said = r.say(r.owner, "and one here")
+        r.read(second)
+    for minute in range(22, 30):
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    here = [n for n in r.nudges(first) if n.subject_id == r.chat]
+    assert [(n.payload["unread"], n.payload["oldest_seq"]) for n in here] == [(1, said)]

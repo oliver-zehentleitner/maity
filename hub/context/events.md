@@ -652,12 +652,22 @@ redactions.
 lease keeps a second worker out for cost, not for correctness (`hub/src/maity_hub/worker_runs.py`),
 so a second worker's nudge can lie above this process's bound. After a lagging check the call
 under the lock took no new bound and wrote a second nudge for the same messages (reproduced
-with two processes on PostgreSQL). The call under the lock now also reads the project's nudges
-above the bound, at most `SCAN_BUDGET` by the index (project_id, kind, seq), and counts the
-cycle open on one for this agent and chat, or on a full batch; tested with a real second
-process. And the exactness sentence said "between two of the hub's passes" where the code
+with two processes on PostgreSQL). The call under the lock now also reads the events above the
+bound, at most `SCAN_BUDGET` (as first written: the project's nudges, corrected in the next note),
+and counts the cycle open on a nudge for this agent and chat; tested with a real second process.
+And the exactness sentence said "between two of the hub's passes" where the code
 counts the redactions between two of the read's calls, which can be several passes apart
 while the open-cycle check is behind; it now says the hub's reads of the chat.
+
+**Updated 2026-11-09 (review of #1512, delta 3):** the re-check read the project's nudges above
+this chat's bound and counted a full batch as open; once other chats of the project had written
+`SCAN_BUDGET` nudges above it, this chat never got one again. It now reads this chat's subject
+events above the bound, newest first, at most `SCAN_BUDGET` by the subject index, and a full
+batch without a nudge for this agent does not hold the nudge back. A second process's nudge is
+committed just before this call takes the lock, so it is among the newest; a second nudge for the
+same messages would need `SCAN_BUDGET` events about the chat between the two, which is left
+open. Holding back on a full batch was rejected: a stream of title changes would then starve the
+nudge, the case the delta-1 note closed.
 
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database
