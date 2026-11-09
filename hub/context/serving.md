@@ -631,8 +631,8 @@ so a deploy reaches it at once: a changed file has a new ETag and comes
 back `200`; two pods with different files during a rolling update give
 different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
 alone never answers `304`, and a date `If-Range` never selects a range:
-Starlette compares it with `Last-Modified`, which these answers do not
-have, so `AssetFileResponse` compares the ETag alone.
+these answers have no `Last-Modified`, so `shell.byte_range` compares an
+`If-Range` with the ETag alone.
 
 **Rejected alternatives:**
 - Starlette's own ETag (an MD5 of the change time and size): an image
@@ -699,7 +699,7 @@ markup for every width, as the dashboard does.
 c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (maity-ops-team#q8q9's measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
 
 - `shell.versioned` adds `?v=<version>` to every `src`/`href` of the shell that names a file under `brand/`, `css/`, `js/` or `vendor/`. The version is the first 16 hex digits of the SHA-256 of the body sent, the same form `/assets/landing/` uses.
-- A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. It is sent from memory and whole, as the gzip form is.
+- A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. Like every file here, it is sent from the bytes kept in memory, and a range is cut from them.
 - The files a script loads later by a name it builds (i18n catalogs, Keep the Why's files, brand pictures) are listed in `<script type="application/json" id="maity-assets">`. `web/js/assets.js` (`M.assetQuery`) reads that block.
 - `AssetFiles` answers `public, max-age=31536000, immutable` only when the request's one `v` equals the version of the body this hub would send. Any other request gets c6768529's answer.
 - The middleware lets those four directories choose it (`DASHBOARD_FILES`), as it lets `/assets/landing/`.

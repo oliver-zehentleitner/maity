@@ -224,14 +224,25 @@ def test_a_range_is_selected_by_the_etag_alone(client: TestClient, web_dir: Path
         whole = client.get("/assets/css/app.css", headers={"If-Range": stale} | asked)
         assert whole.status_code == 200 and whole.text == content, stale
     assert client.get("/assets/css/app.css", headers=asked).status_code == 206
-    # A suffix range; a range past the end, two ranges or another unit get the whole body.
+    # A suffix range gets the tail. A range past the end, two ranges or another unit get the whole body.
     tail = client.get("/assets/css/app.css", headers={"Range": "bytes=-4"} | IDENTITY)
     assert tail.status_code == 206 and tail.text == content[-4:]
     assert (
         tail.headers["content-range"]
         == f"bytes {len(content) - 4}-{len(content) - 1}/{len(content)}"
     )
-    for ignored in (f"bytes={len(content)}-", "bytes=5-2", "bytes=0-1,4-5", "items=0-1", "bytes=-"):
+    huge = "9" * 4301
+    for ignored in (
+        f"bytes={len(content)}-",
+        "bytes=5-2",
+        "bytes=0-1,4-5",
+        "items=0-1",
+        "bytes=-",
+        # Too many digits for `int()`: also the whole body, not a 500.
+        f"bytes=0-{huge}",
+        f"bytes={huge}-",
+        f"bytes=-{huge}",
+    ):
         whole = client.get("/assets/css/app.css", headers={"Range": ignored} | IDENTITY)
         assert whole.status_code == 200 and whole.text == content, ignored
 

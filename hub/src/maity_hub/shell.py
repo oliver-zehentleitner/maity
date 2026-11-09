@@ -179,7 +179,9 @@ def asset_versions(web_dir: Path) -> dict[str, str]:
 
 
 # One range of bytes (`bytes=0-9`, `bytes=5-`, `bytes=-10`); any other `Range` gets the whole body.
-_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+# ASCII digits (RFC 9110 §14.1.2), at most 18, which no file here reaches: a longer number would
+# make `int()` fail (its 4300-digit limit) and the answer a 500, not the whole body.
+_RANGE = re.compile(r"bytes=([0-9]{0,18})-([0-9]{0,18})")
 
 
 def byte_range(request: Headers, etag: str, size: int) -> tuple[int, int] | None:
