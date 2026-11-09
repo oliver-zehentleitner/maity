@@ -944,7 +944,7 @@ the agents' side.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** tsk-2ekq5dsy8anz (the first live runner test, 2026-11-09: Claude Code 2.1.319 in a fresh clone waited at "Is this a project you created or one you trust?" and the agent never came online); the team lead's card; the key, file, lock and lookup checked against the installed 2.1.319 and by starting it with and without the entry
+**Source:** tsk-2ekq5dsy8anz (the first live runner test, 2026-11-09: Claude Code 2.1.319 in a fresh clone waited at "Is this a project you created or one you trust?" and the agent never came online); the team lead's card; the key, file, lock and lookup checked against the installed 2.1.319 and by starting it with and without the entry; the maintainer's decision req-bebf2krde3pp (2026-11-09) to accept the scope as a known limit
 **Revisit when:** Claude Code changes where or how it records an accepted trust dialog, gains a flag that trusts a folder for an interactive start, or the runner starts sessions with `CLAUDE_CODE_IGNORE_PERSISTED_TRUST` or `CLAUDE_CONFIG_DIR` set
 **See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-09
 
@@ -986,7 +986,9 @@ same clone asks no question, though, and loads the clone's
 wrote into the clone. In the `single` layout the file is the operator's
 own Claude Code configuration, chosen by the rule above. A Claude Code
 configuration directory per placement would avoid this (the rejected
-alternative below).
+alternative below). The maintainer accepted the scope as a known limit on
+2026-11-09, with one rule: do not start your own `claude` in a runner
+workspace.
 
 **Reason:** the placement is the owner's trust decision, made before the
 runner starts anything. Without the entry, every placement in a fresh

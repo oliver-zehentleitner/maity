@@ -1001,7 +1001,8 @@ project's own harness configuration is never loaded:
   the log. The entry stays after the placement ends, and an unrestricted
   `claude` started later in that clone also finds it: it asks nothing and
   loads the clone's project hooks and MCP configuration (a Claude Code
-  configuration directory per placement would avoid that). Where
+  configuration directory per placement would avoid that). This is a
+  known limit: do not start your own `claude` in a runner workspace. Where
   bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
   switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
