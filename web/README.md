@@ -1443,7 +1443,7 @@ does:
 | `GET /requests` (cross-project) | derived: the open requests of every project, each with `project` `{slug, full_name, name, state}` |
 | `GET`, `PATCH /projects/{owner}/{slug}` | `{slug}/project.json` |
 | `GET /projects/{owner}/{slug}/members`, `PATCH …/members/{id}` (`paused`) | `{slug}/members.json` |
-| `GET /projects/{owner}/{slug}/requests`, `POST …/requests/{id}/answer` | `{slug}/requests.json` |
+| `GET /projects/{owner}/{slug}/requests` (its `status` filter: one status, a comma list or `all`), `GET …/requests/{id}`, `POST …/requests/{id}/answer` | `{slug}/requests.json` |
 | `GET /projects/{owner}/{slug}/tasks` | `{slug}/tasks.json` |
 | `GET /projects/{owner}/{slug}/tasks/{id}/contract` | `{slug}/contracts.json`, keyed `path#section`; an entry with `error` answers that refusal, a place without one `not_found_in_file` |
 | `GET /projects/{owner}/{slug}/members/{id}/credentials`, `POST …/credentials/{id}/revoke` | `{slug}/credentials.json`, keyed by member |
@@ -1886,7 +1886,11 @@ projects and in each project. A project's inbox also lists the open
 personal requests about that project (`GET /requests`, labelled
 Personal, linking into nothing), so it shows exactly what its tab counts
 (`docs/api.md` §18.2). The history of answered and closed requests is the
-**Show** filter. Unread activity is on the bell (its latest items, unread
+**Show** filter. A project's inbox reads its open requests alone
+(`status=open`); **Show** → all reads the answered and withdrawn ones then,
+once per view (`status=answered,withdrawn`; choosing all again while it runs waits for that read, a failed one is asked again), and a link to a request that
+is not open reads that one request (`GET …/requests/{id}`), so the first
+drawing does not grow with the history. Unread activity is on the bell (its latest items, unread
 ones in bold with a dot, **Mark all read**), conversations on the **Chat**
 button, and every notification on **All notifications**
 (`/notifications`): paged by the hub's cursor, an unread one in bold with

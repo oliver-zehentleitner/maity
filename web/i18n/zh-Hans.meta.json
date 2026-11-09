@@ -17311,6 +17311,10 @@
     "en": "f042d43f915123c2",
     "text": "b409aeebdf93f266"
   },
+  "users.column.email": {
+    "en": "0b57e967ff55ce5d",
+    "text": "bb2590c2998260c6"
+  },
   "users.column.last_seen": {
     "en": "5298bd8551a3b021",
     "text": "cd03898821b3911c"
@@ -17338,6 +17342,22 @@
   "users.count_more": {
     "en": "f7c487ad12dc7397",
     "text": "40afcc7dfb568d68"
+  },
+  "users.email.copied": {
+    "en": "07e04484867c17d3",
+    "text": "94a13ba81cb4ae78"
+  },
+  "users.email.copy": {
+    "en": "4f60d1e142affa9c",
+    "text": "435f6d8be7552581"
+  },
+  "users.email.copy_failed": {
+    "en": "53e46b76a52f2a1c",
+    "text": "f75b48493dfe0687"
+  },
+  "users.email.copy_label": {
+    "en": "b588fab512939453",
+    "text": "3a6a67327055e98f"
   },
   "users.filter.active": {
     "en": "f030108f5a0822ae",
@@ -17472,8 +17492,8 @@
     "text": "db60a31715f0da57"
   },
   "users.search": {
-    "en": "646d675720642e54",
-    "text": "c74dba84617ea347"
+    "en": "8e4d7dfaac768018",
+    "text": "dd1b62855d71b988"
   },
   "users.show": {
     "en": "827e0c6ac9936b69",

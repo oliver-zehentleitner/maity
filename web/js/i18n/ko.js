@@ -4576,6 +4576,7 @@ window.MAITY_I18N["ko"] = {
   "users.column.admin": "관리자",
   "users.column.agents": "에이전트",
   "users.column.created": "생성",
+  "users.column.email": "이메일",
   "users.column.last_seen": "마지막 확인",
   "users.column.last_signin": "마지막 로그인",
   "users.column.name": "이름",
@@ -4587,6 +4588,10 @@ window.MAITY_I18N["ko"] = {
   "users.count_more": {
     "other": "계정 {count}개 이상"
   },
+  "users.email.copied": "복사됨",
+  "users.email.copy": "복사",
+  "users.email.copy_failed": "복사하지 못했어요",
+  "users.email.copy_label": "{name}의 이메일 주소 복사",
   "users.filter.active": "활성",
   "users.filter.all": "모든 계정",
   "users.filter.disabled": "비활성",
@@ -4620,7 +4625,7 @@ window.MAITY_I18N["ko"] = {
   "users.reset.sent": "{name}에게 메일을 발송했습니다. 링크는 {when}까지 유효합니다.",
   "users.reset.title": "{name}의 2단계 인증 초기화",
   "users.reset.what": "사람의 2단계 인증 초기화",
-  "users.search": "핸들 또는 이름으로 검색",
+  "users.search": "핸들, 이름 또는 이메일로 검색",
   "users.show": "보기",
   "users.state.active": "활성",
   "users.state.disabled": "비활성",

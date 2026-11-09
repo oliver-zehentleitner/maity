@@ -2683,7 +2683,7 @@ window.Maity = window.Maity || {};
       const d = query.get("disabled");
       if (d !== null && d !== "true" && d !== "false") fail(400, "invalid", "disabled is true or false", path, { fields: { disabled: "not_boolean" } });
       const all = fixtures()["admin-users.json"].items
-        .filter((u) => !q || (u.handle + "\n" + u.display_name).toLowerCase().includes(q.toLowerCase()))
+        .filter((u) => !q || (u.handle + "\n" + u.display_name + "\n" + (u.email || "")).toLowerCase().includes(q.toLowerCase()))
         .filter((u) => d === null || String(u.disabled) === d)
         .sort((a, b) => a.handle.localeCompare(b.handle));
       // §1.4: limit 1–200, the cursor one this list gave out.
@@ -3859,6 +3859,14 @@ window.Maity = window.Maity || {};
     ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path, query) => {
       const keep = statusFilter(query, "open");
       return { items: file(m[1], "requests.json", path).items.filter(keep), next_cursor: null };
+    }],
+    // §7: one request of the project by its id, whatever its status (the inbox's link to an
+    // answered one). The fixture caller reads every request of its projects, as one with
+    // requests:answer does on the hub; an id the project does not hold is not_found.
+    ["GET", /^\/projects\/([^/]+)\/requests\/([^/]+)$/, (m, body, path) => {
+      const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
+      if (!req) fail(404, "not_found", "Not found", path);
+      return req;
     }],
     ["POST", /^\/projects\/([^/]+)\/requests\/([^/]+)\/answer$/, (m, body, path) => {
       const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
