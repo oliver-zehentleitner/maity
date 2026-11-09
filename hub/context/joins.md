@@ -390,8 +390,9 @@ personal request. The kind `invitation` of §18.4 is the card's next PR.
 An invitation by handle answers like `PUT /people/{handle}/contact` (§6.29): any approved, active
 person qualifies, whether or not their profile shows the inviter anything; a deleted, pending or
 suspended account, a deleted organisation and an agent's bare handle are the `unknown` of a name
-nobody has; a live organisation is `not_a_person`. Every attempt counts against the project's
-twenty an hour before the handle is looked at.
+nobody has; a live organisation is `not_a_person`. Every request that passes the body's checks
+and the issuer's authority counts against the project's twenty an hour before the handle is looked
+at, so every handle lookup costs one; a body refused before (`with_address`) costs nothing.
 
 **Reason:** handles are public in the maintainer's contact design, so telling an active person from
 every other name is no secret; the card's "must not reveal whether an account exists beyond what

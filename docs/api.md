@@ -3699,9 +3699,11 @@ person, one project and one trust and role, it is used once, and it expires.
   nothing is created. As for a contact (§6.29), the person need not show
   the inviter anything: handles are public, so telling an active person
   from every other name is no secret, and nothing tells a deleted,
-  pending or suspended account from a name that is nobody's. Each
-  refused handle counts against the project's rate as an issued
-  invitation does (below). The invitation is bound to that account at
+  pending or suspended account from a name that is nobody's. A handle
+  refused here (`format`, `unknown`, `not_a_person`, `member`,
+  `invited`) counts against the project's rate as an issued invitation
+  does (below); a body refused before any lookup (`with_address` and the
+  other field checks) does not. The invitation is bound to that account at
   issue, and a rename keeps it. The issue takes the person's account
   lock before the project's, as every write of a human does (§2.9): it
   either commits before a deletion of that account, whose cleanup then
@@ -3826,8 +3828,10 @@ the address, the handle or the token. The ticker (§17) announces a new human me
 announces every join.
 
 **Limits and secrecy.** Twenty invitations per project per hour
-(`rate_limited`; every attempt counts, a refused handle too, before the
-handle is looked at), ten invitations by handle to one person in 24 hours
+(`rate_limited`; every request that passes the body's checks and the
+caller's authority counts, before the handle is looked at, so a refused
+handle costs one too; a body refused by those checks, `with_address`
+included, does not), ten invitations by handle to one person in 24 hours
 across the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
 under the join exchange's per-source limit. An unknown, used, expired
 or revoked token is one uniform `not_found` on the page and on accept,

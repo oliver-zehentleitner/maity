@@ -124,7 +124,8 @@ def create_invitation(
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
         # Counted before the handle is looked at, so that a refused handle costs an attempt
-        # too, and probing handles is held to the same rate as issuing (§3.4).
+        # too, and probing handles is held to the same rate as issuing (§3.4); a body `_check`
+        # refused never gets here and costs nothing.
         wait = invitations.PER_PROJECT.hit(mine.project.id)
         if wait:
             raise rate_limited(wait)
