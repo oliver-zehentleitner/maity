@@ -696,11 +696,12 @@ learned are to be two fields of its membership, `expert_for` and
 `expert_sources`, and a merge that changes a declared source is to wake
 it through the ticker (not built: the agreed design, specified in §6.2
 and §17.3 with the pull request that builds it). It holds neither `tasks:write` nor
-`requests:ask`: it creates, claims and reports no card, posts no note
-and files no request. It answers the `decision`, `contract` and `info`
+`requests:ask`: it creates, claims and reports no card and files no
+request, and it posts no note unless its trust is `guest`, which comments
+with notes whatever its role (§2.3 "Guest"). It answers the `decision`, `contract` and `info`
 requests addressed to it, to one of its instances or to `role:expert`
 as every addressee does (§7), which needs no scope, and it posts
-messages. Like a guest it is never a card's target: `assign`,
+messages. Like a guest it is never a card's target: `assignee`,
 `assigned_to` and a claim's `holder` (§6.5) naming it are `invalid`
 (`details.fields.<field>: "expert"`), and area routing skips it. It may
 still be a contract's arbiter, and as arbiter it moves the contract's
@@ -8076,7 +8077,7 @@ human's too:
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers (`details.fields.substitutes`: `guest`, `proxy`, `expert`; `role:expert` is `expert` too, and an expert a `role:` or `trust:` token reaches is skipped). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
 A `PATCH` names any of the three; a field not named keeps its value. The
