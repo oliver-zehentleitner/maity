@@ -347,7 +347,7 @@ def views(
         }
         if names is not None:
             view["name"] = f"{names[member.agent_id]}#{c.instance}"  # owner/handle#id (§6.3)
-        if details is True or (not isinstance(details, bool) and c.membership_id in details):
+        if _detailed(details, c.membership_id):
             view["credential_id"] = c.id
         view.update(
             {
@@ -385,9 +385,18 @@ def views(
             }
         )
         found[member.id].append(view)
-    if details:
-        _shared_workspaces(found, credentials, sessions)
+    # `shared_environment` goes with the details, to the same readers (§6.17).
+    shown = {m: views_ for m, views_ in found.items() if _detailed(details, m)}
+    if shown:
+        _shared_workspaces(shown, credentials, sessions)
     return found
+
+
+def _detailed(details: bool | Container[int], membership_id: int) -> bool:
+    """Whether the instance views of this membership carry the details."""
+    if isinstance(details, bool):
+        return details
+    return membership_id in details
 
 
 def _shared_workspaces(
