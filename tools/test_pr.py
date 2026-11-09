@@ -135,6 +135,15 @@ class PrTool(unittest.TestCase):
         self.assertIn("#7 https://github.com/acme/widget/pull/7", done.stdout)
         self.assertIn(self.head, done.stdout)
 
+    def test_the_body_is_sent_byte_for_byte(self) -> None:
+        # Line endings as written: what is checked is what is sent (review of #1507, delta 5).
+        raw = "## Summary\r\n\r\nWindows lines.\r\nOld Mac\rlines.\n"
+        self.body.write_bytes(raw.encode())
+        self.answers["POST repos/acme/widget/pulls"] = self.answer(7, self.head)
+        done = self.run_pr("open", "--title", "T", "--body-file", str(self.body))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(str(self.calls()[0]["stdin"]))["body"], raw)
+
     def test_open_as_draft_on_another_base(self) -> None:
         self.answers["POST repos/acme/widget/pulls"] = self.answer(8, self.head)
         done = self.run_pr(
@@ -204,7 +213,9 @@ class PrTool(unittest.TestCase):
             "[Claude-Session](https://example.com/a(b\\)c)): session",
             "[Co-Authored-By](https://example.com/a(b(c(d)))): Someone",
             "> **[Claude-Session](https://example.com/(a)(b))**: session",
-            # Any linked label is refused, whatever follows (review of #1507, delta 4).
+            # The label as an inline or a full or collapsed reference link's text is refused,
+            # whatever follows (review of #1507, delta 4); a shortcut reference link is not
+            # detected (the lead's scope).
             "[Co-Authored-By](<https://example.com/a(b>): someone",
             '[Co-Authored-By](https://example.com "("): someone',
             "[Co-Authored-By](\nhttps://example.com): someone",
