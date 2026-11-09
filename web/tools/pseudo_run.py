@@ -113,7 +113,7 @@ def unmarked(text: str, data: set[str], data_text: str = "") -> bool:
     """A text of the interface the catalog's marks did not reach. What is marked comes out
     first, so a word beside a marked one still counts; each piece of a line composed with
     `·` is judged by itself, a piece as it stands before the stops come off it; data and
-    what has no word are no text. Long pieces are data
+    what has no word are no text, nor is a list of data. Long pieces are data
     also inside a fixture's text, which markup splits into several nodes. An accent without
     a mark is a catalog text with its ends cut off."""
     if text.strip() in data or text.strip() in KEPT:
@@ -128,6 +128,11 @@ def unmarked(text: str, data: set[str], data_text: str = "") -> bool:
         if any(c in ACCENTED for c in piece):
             continue
         if piece in KEPT or piece in check.NOT_PROSE or (len(piece.split()) > 2 and " ".join(piece.split()) in data_text):
+            continue
+        # A list of data, as `M.fmt.list` joins it (an untitled chat named after its people):
+        # data, when every item is.
+        items = [x.strip() for x in piece.split(", ")]
+        if len(items) > 1 and all(x in data for x in items):
             continue
         return True
     return False
