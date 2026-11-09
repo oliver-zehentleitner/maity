@@ -30,6 +30,7 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     clock,
+    contacts,
     invitations,
     namespace,
     orgs,
@@ -557,6 +558,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.known_source).where(t.known_source.c.human_id == human_id))
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
+    contacts.forget(conn, human_id)  # both ways (§6.29)
     conn.execute(
         delete(t.conversation_meat_proxy).where(t.conversation_meat_proxy.c.human_id == human_id)
     )

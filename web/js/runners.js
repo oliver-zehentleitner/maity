@@ -223,6 +223,9 @@ window.Maity = window.Maity || {};
     const admin = new Set(ctx.projects.filter((p) => M.trust.governs(p)).map((p) => p.full_name));
     const adminProjects = (projects.items || []).filter((p) => admin.has(p.full_name));
     const status = M.statusLine();
+    // Pairing mints a credential (§2.8.4): the second factor is asked for here when the hub wants it.
+    const stepSlot = h("div", { class: "step-up-slot", hidden: true });
+    const pairCall = (body) => M.stepUp.run(() => M.api.post("/runners/enrollments", body), stepSlot, M.t("runners.pair.step_up"));
     const list = h("div", { class: "runners" });
     const pending = h("div", { class: "enrollments" });
     const panel = h("div", { class: "pair-panel" });
@@ -261,7 +264,8 @@ window.Maity = window.Maity || {};
         if (after) after(answer);
         await reload();
       } catch (err) {
-        status.fail(failed, err);
+        if (err && err.code === "cancelled") status.done();
+        else status.fail(failed, err);
       }
     }
 
@@ -299,7 +303,7 @@ window.Maity = window.Maity || {};
           rename,
           h("button", {
             type: "button",
-            onclick: () => act(M.t("runners.busy.repairing"), M.t("runners.failed.repairing"), () => M.api.post("/runners/enrollments", { runner_id: r.id }),
+            onclick: () => act(M.t("runners.busy.repairing"), M.t("runners.failed.repairing"), () => pairCall({ runner_id: r.id }),
               (e) => showPairing(e, null, { runner_id: r.id, name: r.name, expires_at: e.expires_at, credential: cred && cred.id })),
           }, M.t("runners.repair")),
           r.credential_state === "active"
@@ -359,7 +363,7 @@ window.Maity = window.Maity || {};
           if (!NAME.test(n)) { status.fail(M.t("runners.failed.no_line"), { message: M.t("runners.pair.name_rule", { rule: nameRule() }) }); name.focus(); return; }
           const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.full_name);
           const chosen = adminProjects.filter((p) => attach.includes(p.full_name));
-          const create = () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach });
+          const create = () => pairCall({ name: n, ttl_seconds: Number(ttl.value), attach });
           act(M.t("runners.busy.pairing"), M.t("runners.failed.pairing"), create,
             (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }));
         },
@@ -412,7 +416,7 @@ window.Maity = window.Maity || {};
 
     append(root, h("h2", null, M.t("runners.title")),
       h("p", { class: "muted" }, M.t("runners.intro")),
-      pairForm(), panel, status.el, pending, list);
+      pairForm(), panel, stepSlot, status.el, pending, list);
     drawRunners(runners.items);
     drawEnrollments(enrollments.items);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).

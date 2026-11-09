@@ -369,7 +369,7 @@ def test_pinned_shows_the_newest_fifty(
 def hold_at_enrolment(monkeypatch: pytest.MonkeyPatch) -> None:
     """From now on every full session of the human is held at enrolment, as when the policy
     came to ask for a second factor after its sign-in (§2.8.5)."""
-    monkeypatch.setattr(second_factor, "must_enrol", lambda *args: True)
+    monkeypatch.setattr(second_factor, "must_enrol", lambda *args, **kwargs: True)
 
 
 def test_records_without_an_item_take_no_place_in_pinned(

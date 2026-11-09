@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+import json
 import shutil
 import stat
 import subprocess
@@ -431,3 +433,28 @@ def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
     path.unlink()
     os.mkfifo(path)
     assert sup._limit_exit_code("plc-0003", sup.targets["local"]) is None  # nor a FIFO
+
+
+def test_the_agents_user_records_it_through_sudo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """As the agents' user, by the runner's own module (`python -I -m maity.runner.trust`),
+    in their home."""
+    from test_adapters import context
+    from test_trust import KEY
+
+    from maity.runner import adapters
+
+    skip_unless_maity_is_installed()
+    home = tmp_path / "agent-home"
+    home.mkdir()
+    monkeypatch.setattr(AsUser, "home", lambda self: home)
+    ctx = dataclasses.replace(context(tmp_path), as_user=AsUser("maity-agent"))
+    ctx.clone.mkdir(parents=True)
+    adapters.trust_clone(ctx)
+    assert "-u maity-agent -- " in fake_sudo.read_text()
+    assert "-I -m maity.runner.trust" in fake_sudo.read_text()
+    assert json.loads((home / ".claude.json").read_text())["projects"] == {
+        str(ctx.clone.resolve()): {KEY: True}
+    }
+    assert not (Path.home() / ".claude.json").exists()  # never the runner's own

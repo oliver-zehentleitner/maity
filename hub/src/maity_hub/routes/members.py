@@ -20,6 +20,7 @@ from maity_hub import (
     availability,
     bridges,
     briefings,
+    cards,
     clock,
     cross_owner,
     foreign_agent,
@@ -444,6 +445,68 @@ def change_of(mine: Membership, caller: Caller, *, line: bool = False) -> Change
     )
 
 
+def _cards_on_the_way(conn: Connection, target: Any) -> bool:
+    """Whether the member holds a card or is assigned an open one, is the receiver of an
+    open takeover (§6.19), has cards out with a substitute that a cover's end gives back to
+    it, or is the substitute of a running cover, to which area routing hands new cards
+    (§6.12, `cover.routed`)."""
+    from maity_hub import takeovers
+
+    if conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first():
+        return True
+    if conn.execute(
+        select(t.card.c.id)
+        .where(t.card.c.assigned_to == target.id, t.card.c.status.not_in(cards.CLOSED))
+        .limit(1)
+    ).first():
+        return True
+    if conn.execute(
+        select(t.membership.c.id)
+        .where(
+            t.membership.c.project_id == target.project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.cover_state == "covered",
+            t.membership.c.cover_by == target.id,
+        )
+        .limit(1)
+    ).first():
+        return True
+    if conn.execute(
+        select(t.takeover.c.id)
+        .where(t.takeover.c.to_member == target.id, t.takeover.c.status.in_(takeovers.OPEN))
+        .limit(1)
+    ).first():
+        return True
+    principal = str(target.agent_id or target.human_id)
+    covers = conn.execute(
+        select(t.card.c.cover).where(
+            t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None)
+        )
+    ).scalars()
+    return any((cover or {}).get("for") == principal for cover in covers)
+
+
+def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:
+    """An expert takes no cards (§2.3 "The expert"): what the member holds or is assigned,
+    what an open takeover would move to it, what a cover would give back to it and a cover
+    it runs as substitute are settled first.
+    Checked when the PATCH arrives and again when a deferred change is written, each time
+    under the project lock that every writer of `claim_holder`/`assigned_to` holds when it
+    reads the receiver (`tasks._locked`, `cover`, `takeovers.transfer`): a claim in flight
+    either commits first and is seen here, or waits and reads the new role."""
+    if role != "expert" or target.role == "expert":
+        return
+    lock_project(conn, target.project_id)
+    if _cards_on_the_way(conn, target):
+        raise ApiError(
+            409,
+            "conflict",
+            "the member holds cards or has cards on the way to it; settle them before the "
+            "role is expert",
+            {"reason": "holds_cards"},
+        )
+
+
 def apply_patch(
     conn: Connection,
     change: Change,
@@ -461,6 +524,7 @@ def apply_patch(
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
         changed["line_consent"] = True
+    _check_no_cards_for_expert(conn, target, changed.get("role"))
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
@@ -645,6 +709,8 @@ def patch_member(
                 admin_agents.check_instance_pause(held, mine.principal_id, pause[1] is None)
         if "reports_to" in given:
             cross_owner.check_may_supersede(conn, mine, target.id)
+        # Before any consent request: a go could not write it while cards are on the way.
+        _check_no_cards_for_expert(conn, target, values.get("role"))
         if line_lead and line.needs_consent(mine.project, target, values, pause):
             # The whole PATCH waits for a human's go, as under ᵃ (§2.3 "The manager").
             request_id = line.propose(
