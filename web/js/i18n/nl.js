@@ -2427,8 +2427,6 @@ window.MAITY_I18N["nl"] = {
   "mail.test.title": "Testverzending",
   "mail.time.invalid": "Een tijd als UU:MM, van 00:00 tot 23:59.",
   "mail.timezone": "Tijdzone",
-  "mail.timezone.empty": "Voer een tijdzone in, zoals Europe/Vienna.",
-  "mail.timezone.hint": "De overzichten en de stille uren volgen haar.",
   "mail.timezone.unknown": "De hub kent deze tijdzone niet. Gebruik een naam zoals Europe/Vienna.",
   "mail.timezone.use": "{zone} gebruiken",
   "mail.title": "E-mailinstellingen",

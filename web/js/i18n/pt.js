@@ -2427,8 +2427,6 @@ window.MAITY_I18N["pt"] = {
   "mail.test.title": "Envio de teste",
   "mail.time.invalid": "Um horário como HH:MM, de 00:00 a 23:59.",
   "mail.timezone": "Fuso horário",
-  "mail.timezone.empty": "Informe um fuso horário, como Europe/Vienna.",
-  "mail.timezone.hint": "Os resumos e as horas de silêncio seguem ele.",
   "mail.timezone.unknown": "O hub não conhece este fuso horário. Use um nome como Europe/Vienna.",
   "mail.timezone.use": "Usar {zone}",
   "mail.title": "Configurações de e-mail",

@@ -322,6 +322,8 @@ window.Maity = window.Maity || {};
       if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
     });
     data.server_time = nowIso();
+    // §5.1: the account's time zone is §18.4's one value, read here as well.
+    if (data.member.kind === "human") data.member.timezone = fixtures()["notifications.json"].settings.email.timezone;
     // §5.1, §16.12: the window, upcoming or running, for every caller.
     data.maintenance = maintenanceView(false);
     // A renamed project: its directory stays, its slug is the project's now (§6.25).
@@ -2372,7 +2374,7 @@ window.Maity = window.Maity || {};
         });
         if ("daily_at" in e && !hhmm.test(String(e.daily_at))) fields["email.daily_at"] = "invalid";
         if ("weekly_on" in e && !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(e.weekly_on)) fields["email.weekly_on"] = "invalid";
-        if ("timezone" in e && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
+        if ("timezone" in e && e.timezone !== null && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
         if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
         if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
         if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
@@ -5382,7 +5384,24 @@ window.Maity = window.Maity || {};
   let sessionBlocked = false;
   const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
+  // §5.1: every absolute time is shown in the account's zone, or the browser's without one. A GET
+  // /me answer sets it only when it passed the session check (an answer of an ended session is
+  // refused before this) and no change of the zone was saved while it was on its way; a saved
+  // change of the settings sets it from their answer.
+  let zoneSaves = 0;
   function request(method, path, body, raw, signal) {
+    const saves = zoneSaves;
+    const answer = requestOnce(method, path, body, raw, signal);
+    const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
+    if (method === "GET" && path === "/me") {
+      return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
+    }
+    if (method === "PATCH" && path === "/me/notification-settings") {
+      return answer.then((s) => { if (s && s.email && "timezone" in s.email) { zoneSaves += 1; setZone(s.email.timezone); } return s; });
+    }
+    return answer;
+  }
+  function requestOnce(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     if (method !== "GET" && M.onWrite) M.onWrite();
@@ -5457,6 +5476,8 @@ window.Maity = window.Maity || {};
       sessionCsrf = null;
       lastSession = null;
       M.sessionEpoch = (M.sessionEpoch || 0) + 1;
+      // The next person in this tab sees times in the browser's zone until their own /me.
+      if (M.i18n && M.i18n.setZone) M.i18n.setZone(null);
     },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),
