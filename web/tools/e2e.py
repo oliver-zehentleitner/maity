@@ -4300,6 +4300,20 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(form.get_by_role("button", name="Start on the runner", exact=True)).to_be_disabled()
     run.shot(page, "placements-start-form")
     run.a11y(page, "placements, start on a runner")
+    # The browser's own constraint validation (review of #1558): a handle the pattern refuses,
+    # typed for a new profile, stops counting once one of one's agents here is chosen instead.
+    form.locator("#placement-new-handle").fill("INVALID")
+    assert not page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "an invalid new handle passes validation"
+    agents = form.locator("#placement-new-agent option")
+    assert agents.count() >= 2, f"no agent of one's own offered: {agents.all_text_contents()}"
+    form.locator("#placement-new-agent").select_option(index=1)
+    expect(form.locator("fieldset.placement-new-profile")).to_be_hidden()
+    assert page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "a hidden new-profile handle still blocks the form"
+    # On a phone the open form stays within the page's width (review of #1558: 451 px at 390).
+    page.set_viewport_size({"width": 390, "height": 844})
+    widths = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+    assert widths[0] <= widths[1], f"the form widens the page on a phone: {widths}"
+    page.set_viewport_size({"width": 1280, "height": 900})
     form.get_by_role("button", name="Cancel", exact=True).click()
     expect(form).to_have_count(0)
     expect(open_form).to_be_focused()

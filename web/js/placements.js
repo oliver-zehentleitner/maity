@@ -180,7 +180,10 @@ window.Maity = window.Maity || {};
     const needsReason = ["plan", "review"].includes(ctx.project.state);
     const reason = h("textarea", { id: id("reason"), rows: "2", required: needsReason || null });
     const followAgent = () => {
+      // Hidden and disabled together: a disabled fieldset's controls are not validated, so a
+      // handle typed before an existing agent was chosen cannot block the submit unseen.
       fresh.hidden = !!agent.value;
+      fresh.disabled = !!agent.value;
       const m = own.find((x) => x.id === agent.value);
       clone.setAttribute("placeholder", m ? m.handle : handle.value.trim() || M.t("placements.new.clone_placeholder"));
     };
@@ -422,12 +425,15 @@ window.Maity = window.Maity || {};
         const placed = new Set(items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
         const f = startForm(ctx, runners, placed, {
           cancel: () => close(true),
+          // Only the form that sent it closes: one cancelled while its POST ran and opened anew
+          // keeps its draft and the focus; the placement made is listed and said all the same.
           made: async (made) => {
-            close(false);
+            const mine = f.form.parentNode === slot;
+            if (mine) close(false);
             await reread();
             append(clear(status.el), h("span", { class: "ok" }, M.t("placements.new.done",
               { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })));
-            status.el.focus();
+            if (mine) status.el.focus();
           },
         });
         append(clear(slot), f.form);

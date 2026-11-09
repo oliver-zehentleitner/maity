@@ -1846,7 +1846,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // profile, and what the runner advertises. The two placements made here are listed further down.
   const srMade = [];
   const srPost = win.Maity.api.post;
-  win.Maity.api.post = (p, b) => { if (p === "/projects/maintainer/maity/placements") srMade.push(b); return srPost(p, b); };
+  // srHold: the next POST waits for srRelease(), as a slow hub would.
+  let srHold = false, srRelease = null;
+  win.Maity.api.post = (p, b) => {
+    if (p !== "/projects/maintainer/maity/placements") return srPost(p, b);
+    srMade.push(b);
+    if (!srHold) return srPost(p, b);
+    srHold = false;
+    return new Promise((r) => { srRelease = r; }).then(() => srPost(p, b));
+  };
   const srBox = () => main.querySelector("section.placements");
   const srOpen = () => srBox().querySelector("button.placement-new-open");
   const srForm = () => srBox().querySelector("form.placement-new");
@@ -1872,6 +1880,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("placement-new-mode").value = "supervised"; byId("placement-new-model").value = "sonnet";
   expect(srBox().querySelector(".placement-new-profile").hidden && byId("placement-new-clone").getAttribute("placeholder") === "agent-a",
     "placements: an agent already here needs no profile fields; its clone defaults to its handle");
+  // Disabled as well as hidden (review of #1558): a hidden control the browser still validates
+  // would block the submit with nothing to correct. A new profile enables it again.
+  const srFresh = () => srBox().querySelector(".placement-new-profile");
+  const srDisabled = [srFresh().disabled];
+  byId("placement-new-agent").value = ""; byId("placement-new-agent").dispatch("change"); srDisabled.push(srFresh().disabled);
+  byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change"); srDisabled.push(srFresh().disabled);
+  expect(JSON.stringify(srDisabled) === "[true,false,true]", "placements: the new profile's fields are disabled while an agent already here is chosen " + JSON.stringify(srDisabled));
   srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
   expect(srMade.length === 1 && JSON.stringify(srMade[0]) === JSON.stringify({ agent: { id: "agt-a" }, runner: "rnr-0002", target: "local", harness: "claude-code", mode: "supervised", model: "sonnet" })
     && srBox().querySelectorAll("li.placement").length === 5 && !srForm() && !srOpen().hidden
@@ -1885,7 +1900,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: a refusal is the hub's message, code and field, and the form stays " + (srForm() && text(srForm().querySelector(".send-status"))));
   byId("placement-new-handle").value = "agent-f"; byId("placement-new-name").value = "Agent F"; byId("placement-new-areas").value = "web/, docs/";
   byId("placement-new-briefing").value = "You own the runner form."; byId("placement-new-clone").value = "agent-f-web"; byId("placement-new-branch").value = "main";
-  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  // A slow POST, the form cancelled and opened anew, a draft begun (review of #1558): the first
+  // request's answer lists the placement and says so, and leaves the new form, its draft and the focus.
+  const srCancel = () => srForm().querySelectorAll("button").find((b) => text(b) === "Cancel");
+  srHold = true;
+  srForm().requestSubmit(); for (let k = 0; k < 4; k++) await tick();
+  srProto.focus = function () { document.activeElement = this; };
+  srCancel().click(); await tick();
+  srOpen().click(); await tick();
+  byId("placement-new-handle").value = "draft-x";
+  srRelease(); for (let k = 0; k < 8; k++) await tick();
+  expect(srForm() && byId("placement-new-handle").value === "draft-x" && byId("placement-new-agent") === document.activeElement
+    && text(srBox()).includes("Agent F is placed on home-laptop."),
+    "placements: a POST answered after its form was cancelled leaves the form opened since, with its draft and the focus");
+  srCancel().click(); await tick();
+  srProto.focus = srFocus;
   expect(srMade.length === 3 && JSON.stringify(srMade[2]) === JSON.stringify({ agent: { handle: "agent-f", display_name: "Agent F" }, trust: "member", role: "coder",
     reports_to: "hum-maintainer", areas: ["web/", "docs/"], capabilities: [], briefing: "You own the runner form.", runner: "rnr-0002", target: null,
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })

@@ -2702,8 +2702,9 @@ window.Maity = window.Maity || {};
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
-    // their agents by id, or a new profile (§15.6). The checks the hub makes, in its order; the
-    // placement waits for the runner (reported null) and needs no consent (their own action).
+    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
+    // the placement quota, the repository's offer or the spec's other validations (review of
+    // #1558). The placement waits for the runner (reported null) and needs no consent.
     ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       const prj = project(m[1], path);
       const caller = me().member;
