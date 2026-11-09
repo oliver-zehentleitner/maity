@@ -1528,20 +1528,36 @@ def declaration_of(code, blocks, name, at):
     return nearest_in_scope(blocks, [d.start(1) for d in re.finditer(r"\b(?:const|let)\s+(" + re.escape(name) + r")\s*=", code)], at)
 
 
-def nearest_in_scope(blocks, positions, at):
+def nearest_in_scope(blocks, positions, at, hoisted=()):
     """Of the declarations whose names stand at positions, the one seen at position at: walking out
-    from the block around at, the first block that declares it, there the last before at, else the
-    first (a function declaration is seen in its whole block); None where none is."""
+    from the block around at, the first block that declares it. There a `const` or `let` is the
+    last before at, else the first; a function declaration (its position in hoisted) is the last
+    in that block wherever the call stands, as JS hoists it. None where none is."""
     found = [(pos, innermost_block(blocks, pos)) for pos in positions]
     block = innermost_block(blocks, at)
     while True:
         here = [pos for pos, b in found if b == block]
         if here:
+            functions = [pos for pos in here if pos in hoisted]
+            if functions:
+                return max(functions)
             before = [pos for pos in here if pos < at]
             return max(before) if before else min(here)
         if block is None:
             return None
         block = innermost_block(blocks, block[0])
+
+
+def is_function_declaration(code, at):
+    """Whether the `function` keyword at position at begins a declaration, which binds its name in
+    the block around it, and not a function expression, whose name is bound only inside its own
+    body: a declaration stands where a statement starts, after `;`, `{`, `}` or at the top."""
+    head = code[:at].rstrip()
+    if head.endswith("async"):
+        head = head[:-5].rstrip()
+    if head.endswith("export"):
+        head = head[:-6].rstrip()
+    return head == "" or head[-1] in ";{}"
 
 
 def asks_first(code, at, src=None):
@@ -1584,13 +1600,21 @@ def asks_first(code, at, src=None):
         return bool(reads) and all(at_ in handed for at_ in reads) and not (unpacked or bracketed or computed)
     fn = callee_of(code, m.start())
     if fn:
-        # The helper is the binding of that name seen at the call, by the blocks around it, not
-        # the first definition of the name in the file (4hv7 at #1566). Any `function`, `const` or
-        # `let` of the name counts for scope; only a helper of this form can hand the call on.
+        # The helper is the declaration of that name nearest the call in the blocks around it
+        # (nearest_in_scope: the last function declaration of that block, else the last `const` or
+        # `let` before the call), not the first definition in the file (4hv7 at #1566). Only a
+        # helper of this form can hand the call on; other binding forms are not resolved.
         name = re.escape(fn)
-        starts = {(x.start(1) if x.group(1) else x.start(2)): x.start() for x in re.finditer(
-            r"\bfunction\s+(" + name + r")\s*\(|\b(?:const|let)\s+(" + name + r")\s*=", code)}
-        seen = nearest_in_scope(brace_blocks(code), list(starts), m.start())
+        # A named function expression (`const x = function act() {…}`) binds its name only
+        # inside its own body, so it is no candidate; function declarations are hoisted (4hv7).
+        starts, hoisted = {}, set()
+        for x in re.finditer(r"\bfunction\s+(" + name + r")\s*\(|\b(?:const|let)\s+(" + name + r")\s*=", code):
+            if x.group(1):
+                if not is_function_declaration(code, x.start()):
+                    continue
+                hoisted.add(x.start(1))
+            starts[x.start(1) if x.group(1) else x.start(2)] = x.start()
+        seen = nearest_in_scope(brace_blocks(code), list(starts), m.start(), hoisted)
         helper = re.compile(r"(?:function\s+" + name + r"\s*\(([^)]*)\)|(?:const|let)\s+" + name
                             + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{")
         d = helper.match(code, starts[seen]) if seen is not None else None

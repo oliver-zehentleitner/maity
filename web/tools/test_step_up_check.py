@@ -206,7 +206,7 @@ got = scan("shadow.js", 'const patch = { address: "a@b.c" };\nfunction other(){ 
            'M.api.patch("/me/notification-settings", { email: patch });')
 expect(len(got) == 1, "make check: the body's name is the binding around the call, not another function's of the same name " + repr(got))
 
-# 4hv7 at #1566, delta 2: a hand-over helper is the binding in scope at the call, not the first of its name.
+# 4hv7 at #1566, delta 2: a hand-over helper is the declaration nearest the call by blocks, not the first of its name.
 got = scan("helpers.js", 'function one(){ const act = async (busy, fn) => { await M.stepUp.run(fn, ask); }; act("x", () => M.api.get("/me")); }\n'
            'function two(){ const act = async (busy, fn) => { await fn(); }; act("x", () => M.api.post("/runners/enrollments", b)); }')
 expect(len(got) == 1 and "POST /runners/enrollments" in got[0], "make check: two sibling helpers named act, the one that calls fn itself is a finding " + repr(got))
@@ -221,6 +221,29 @@ expect(asks, "a helper declared around the call's function, seen from inside it,
 pattern, asks = first_call('const act = async (busy, fn) => { await M.stepUp.run(fn, ask); };\n'
                            'function go(){ const act = other; act("x", () => M.api.post("/runners/enrollments", b)); }')
 expect(not asks, "a nearer binding of the helper's name that is no helper does not ask")
+
+# 4hv7 at #1566, delta 3: a named function expression binds its name only inside itself; a function
+# declaration is hoisted, so of two in one block the last counts, wherever the call stands.
+got = scan("expr.js", 'function two(){ const act = async (busy, fn) => { await fn(); };\n'
+           '  const x = function act(busy, fn) { return M.stepUp.run(fn, ask); };\n'
+           '  act("x", () => M.api.post("/runners/enrollments", b)); }')
+expect(len(got) == 1, "make check: a named function expression's name is not the helper in scope " + repr(got))
+
+got = scan("expr3.js", 'function go() {\n  function act(fn) { return fn(); }\n  const other = function act(fn) { return M.stepUp.run(fn, slot); };\n'
+           '  act(() => M.api.post("/runners/enrollments", b));\n}\ngo();')
+expect(len(got) == 1, "make check: 4hv7's case, a declared unwrapping act beside a wrapping named expression act, is a finding " + repr(got))
+
+got = scan("expr2.js", 'const x = function act(busy, fn) { return M.stepUp.run(fn, ask); };\n'
+           'act("x", () => M.api.post("/runners/enrollments", b));')
+expect(len(got) == 1, "make check: a named function expression alone binds no helper around it " + repr(got))
+
+got = scan("hoist.js", 'function two(){ function act(busy, fn) { return M.stepUp.run(fn, ask); }\n'
+           '  act("x", () => M.api.post("/runners/enrollments", b));\n  function act(busy, fn) { return fn(); } }')
+expect(len(got) == 1, "make check: of two function declarations in one block the last counts, after the call too " + repr(got))
+
+pattern, asks = first_call('function two(){ function act(busy, fn) { return fn(); }\n'
+                           '  act("x", () => M.api.post("/runners/enrollments", b));\n  function act(busy, fn) { return M.stepUp.run(fn, ask); } }')
+expect(asks, "the last of two function declarations, wrapping, asks for a call before it")
 
 print("%d failure(s)" % failures)
 sys.exit(1 if failures else 0)
