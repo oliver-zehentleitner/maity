@@ -1478,7 +1478,9 @@ def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_
         conn.execute(insert(t.invitation).values(id="inv-link", token_hash="4", **common))
     downgrade(engine, _before(engine, "20261109200000_invite_by_handle"))
     with engine.connect() as conn:
-        rows = dict(conn.execute(text("SELECT id, revoked_at FROM invitation ORDER BY id")).all())
+        rows: dict[str, Any] = dict(
+            conn.execute(text("SELECT id, revoked_at FROM invitation ORDER BY id")).all()
+        )
     assert rows["inv-open"] is not None
     assert str(rows["inv-declined"])[:16] == declined_at.strftime("%Y-%m-%d %H:%M")
     assert rows["inv-used"] is None and rows["inv-link"] is None
