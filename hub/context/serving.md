@@ -593,7 +593,8 @@ same size for more CPU.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the owner's decision req-s246xb6k1mpp (option A, 2026-11-08), the card tsk-pcw785rhymyg and its plan note nte-smnd4dr3gw6y; docs/api.md §1, §16.11
-**Revisit when:** a file under `/assets/` carries anything per user or private, or the shell names its files by digest (versioned names, below)
+**Revisit when:** a file under `/assets/` carries anything per user or private
+**See:** serving.md#the-shell-names-the-dashboards-files-by-version-and-that-request-is-cached-for-good — d427747e-e7f1-4226-a624-5284f8d61103 — as of 2026-11-09
 
 `shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
 `js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
@@ -612,11 +613,15 @@ it with `Content-Encoding: gzip`. Such a file's answers, the `304`s
 included, say `Vary: Accept-Encoding`. The compression middleware leaves
 these four directories alone (`compression.OWN_ENCODING`); it still
 compresses the rest of `/assets/` and `/api/v1/` as 5cfd29b6 says. A
-`Range` on the stored form is honoured with an `If-Range` that names its
-ETag; a date or another tag gets the whole file. The gzip form is sent
-whole. The file is read, hashed and gzipped in `lookup_path`, which
-Starlette runs in a worker thread, and kept per process for its path
-while its change time and size stay the same.
+`Range` of one span on the stored form is honoured with an `If-Range` that
+names its ETag; a date or another tag, several spans or a span past the
+end get the whole file. The gzip form is sent whole. The file is read,
+hashed and gzipped in `lookup_path`, which Starlette runs in a worker
+thread, and kept per process for its path while its change time and size
+stay the same. Every answer, a range included, is sent from those bytes,
+never from the file read again, so its ETag always names the body that
+goes with it (review of #1543: a file replaced between the check and the
+send went out under the old tag).
 
 **Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
 dashboard's static files may be cached"): the files hold no private
@@ -644,7 +649,9 @@ have, so `AssetFileResponse` compares the ETag alone.
   the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite
   in `shell_document`, the `url()` references inside the CSS would stay
   `no-cache` anyway, and it is a contract change of its own. A
-  follow-up once this card's numbers are measured.
+  follow-up once this card's numbers are measured; built since as
+  d427747e, which keeps this answer for every request that does not name
+  the current version.
 
 ## On the hub's own pages too, the product line at phone width is its first part, by a rule inside the hashed block
 
@@ -698,7 +705,7 @@ c6768529 left one revalidation per file: after #1518, a warm load of a signed-in
 
 **Reason:**
 - A deploy changes the shell, which is `no-cache`, and with it the name of every file that changed. So a browser can keep the others without asking.
-- The version is compared with the body itself, never taken on trust from the request. So during a rolling update (helm `maxSurge 1`, `maxUnavailable 0`), a shell from one pod asking another pod for a version it does not have gets that pod's file `no-cache`, and is never pinned under the wrong name. The same holds for a stale link, or a file changed on a running hub.
+- The version is compared with the body itself, never taken on trust from the request. So during a rolling update (helm `maxSurge 1`, `maxUnavailable 0`), a shell from one pod asking another pod for a version it does not have gets that pod's file `no-cache`, and is never pinned under the wrong name. The same holds for a stale link, or a file changed on a running hub: an answer is always the bytes its version was taken from, read once per process (c6768529), never the file opened again after the check (review of #1543).
 - A load that crosses the two pods may run old and new files together once, as it could before; the next use revalidates.
 - A query instead of a new file name leaves every relative URL as it is: `i18n.js` builds `i18n/<tag>.js` from its own address. Fixture mode (`file://`) keeps the plain names, and no build step is needed.
 - The data block is not run, so the shell's CSP (`default-src 'self'`) stays as it is.

@@ -224,6 +224,16 @@ def test_a_range_is_selected_by_the_etag_alone(client: TestClient, web_dir: Path
         whole = client.get("/assets/css/app.css", headers={"If-Range": stale} | asked)
         assert whole.status_code == 200 and whole.text == content, stale
     assert client.get("/assets/css/app.css", headers=asked).status_code == 206
+    # A suffix range; a range past the end, two ranges or another unit get the whole body.
+    tail = client.get("/assets/css/app.css", headers={"Range": "bytes=-4"} | IDENTITY)
+    assert tail.status_code == 206 and tail.text == content[-4:]
+    assert (
+        tail.headers["content-range"]
+        == f"bytes {len(content) - 4}-{len(content) - 1}/{len(content)}"
+    )
+    for ignored in (f"bytes={len(content)}-", "bytes=5-2", "bytes=0-1,4-5", "items=0-1", "bytes=-"):
+        whole = client.get("/assets/css/app.css", headers={"Range": ignored} | IDENTITY)
+        assert whole.status_code == 200 and whole.text == content, ignored
 
 
 def test_a_small_file_has_one_form(client: TestClient, web_dir: Path) -> None:
@@ -338,6 +348,37 @@ def test_a_pod_with_other_files_answers_another_version_revalidated(
     target.write_text("// old")
     behind = client.get(f"/assets/js/app.js?v={new}")
     assert behind.text == "// old" and behind.headers["cache-control"] == "no-cache"
+
+
+def test_an_immutable_answer_is_always_the_body_its_version_names(
+    client: TestClient, web_dir: Path
+) -> None:
+    # Review of #1543 (fmzu): the digest checked and the bytes sent are one snapshot.
+    from maity_hub import shell
+
+    target = web_dir / "js" / "app.js"
+    target.parent.mkdir()
+    target.write_bytes(b"// one")
+    old = _version_in_shell(client)
+    # 1. Six other bytes with the same time and size: the process keeps its snapshot, and an
+    # answer under the old version is that snapshot, never the bytes now on disk.
+    stamp = target.stat().st_mtime_ns
+    target.write_bytes(b"// two")
+    os.utime(target, ns=(stamp, stamp))
+    kept = client.get(f"/assets/js/app.js?v={old}", headers=IDENTITY)
+    assert kept.headers["cache-control"] == IMMUTABLE
+    assert hashlib.sha256(kept.content).hexdigest()[:16] == old and kept.content == b"// one"
+    # A range is of the same bytes.
+    part = client.get(f"/assets/js/app.js?v={old}", headers={"Range": "bytes=3-5"} | IDENTITY)
+    assert part.status_code == 206 and part.content == b"one"
+    # 2. The file replaced after the answer was chosen, before its body is sent.
+    files = shell.AssetFiles(directory=web_dir)
+    full_path, found = files.lookup_path("js/app.js")
+    assert found is not None
+    scope = {"type": "http", "method": "GET", "query_string": f"v={old}".encode(), "headers": []}
+    answer = files.file_response(full_path, found, scope)
+    target.write_bytes(b"// three, longer")
+    assert answer.headers["cache-control"] == IMMUTABLE and answer.body == b"// one"
 
 
 def test_a_stylesheet_names_its_fonts_and_pictures_under_their_versions(

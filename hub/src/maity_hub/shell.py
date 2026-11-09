@@ -25,7 +25,6 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, QueryParams
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse
 from starlette.routing import BaseRoute, Match
 from starlette.staticfiles import NotModifiedResponse
 from starlette.types import Receive, Scope, Send
@@ -58,18 +57,20 @@ _CSS_URL = re.compile(r"""url\(\s*(?P<q>["']?)(?P<ref>[^"')\s]+)(?P=q)\s*\)""")
 
 @dataclass(frozen=True)
 class AssetForm:
-    """What a dashboard file is served as: its content's strong ETag and version and, for a
-    compressible file of `compression.MINIMUM_SIZE` and more, its gzip form with an ETag of its
-    own. A stylesheet is served as `body`, its `url()`s carrying the versions in `refs`."""
+    """What a dashboard file is served as: the bytes read once (`data`; a stylesheet with its
+    `url()`s carrying the versions in `refs`), their strong ETag and version and, for a
+    compressible file of `compression.MINIMUM_SIZE` and more, their gzip form with an ETag of its
+    own. Every answer is sent from these bytes, never from the file again, so an ETag and a
+    version always name exactly the body that goes with them."""
 
     mtime_ns: int
     size: int
     media_type: str
+    data: bytes
     etag: str
     version: str
     gzipped: bytes | None
     gzip_etag: str | None
-    body: bytes | None = None
     refs: tuple[tuple[str, str], ...] = ()
 
 
@@ -139,13 +140,9 @@ def asset_form(full_path: str, stat_result: os.stat_result, root: str) -> AssetF
     with open(full_path, "rb") as file:
         data = file.read()
     media_type = guess_type(full_path)[0] or "text/plain"
-    body: bytes | None = None
     refs: tuple[tuple[str, str], ...] = ()
     if media_type == "text/css":
-        rewritten, refs = _versioned_css(root, full_path, data.decode("utf-8"))
-        # Sent from memory, and whole, as the gzip form, only when a `url()` changed.
-        if rewritten != data:
-            body = data = rewritten
+        data, refs = _versioned_css(root, full_path, data.decode("utf-8"))
     digest = hashlib.sha256(data).hexdigest()
     gzipped = None
     if len(data) >= compression.MINIMUM_SIZE and not compression.already_compressed(media_type):
@@ -154,11 +151,11 @@ def asset_form(full_path: str, stat_result: os.stat_result, root: str) -> AssetF
         mtime_ns=stat_result.st_mtime_ns,
         size=stat_result.st_size,
         media_type=media_type,
+        data=data,
         etag=f'"{digest[:32]}"',
         version=digest[:VERSION_DIGITS],
         gzipped=gzipped,
         gzip_etag=None if gzipped is None else f'"{digest[:32]}-gzip"',
-        body=body,
         refs=refs,
     )
     _FORMS[full_path] = form
@@ -181,12 +178,30 @@ def asset_versions(web_dir: Path) -> dict[str, str]:
     return found
 
 
-class AssetFileResponse(FileResponse):
-    """A dashboard file as it is stored. It has no `Last-Modified`, so an `If-Range` is
-    compared with the ETag alone, and a date never selects a range."""
+# One range of bytes (`bytes=0-9`, `bytes=5-`, `bytes=-10`); any other `Range` gets the whole body.
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
-    def _should_use_range(self, http_if_range: str) -> bool:
-        return not http_if_range.startswith("W/") and http_if_range == self.headers["etag"]
+
+def byte_range(request: Headers, etag: str, size: int) -> tuple[int, int] | None:
+    """The one range of the stored form a request asks for, first and last byte, or None for the
+    whole body. There is no `Last-Modified`, so an `If-Range` is compared with the ETag alone: a
+    date, a weak or another tag gets the whole body. A range that is not one satisfiable span
+    is ignored, as RFC 9110 §14.2 lets a server do, and the whole body is sent."""
+    asked = request.get("range")
+    if not asked:
+        return None
+    if_range = request.get("if-range")
+    if if_range is not None and (if_range.startswith("W/") or if_range != etag):
+        return None
+    found = _RANGE.fullmatch(asked.strip())
+    if found is None or not (found[1] or found[2]):
+        return None
+    if found[1]:
+        first = int(found[1])
+        last = min(int(found[2]), size - 1) if found[2] else size - 1
+    else:
+        first, last = max(size - int(found[2]), 0), size - 1
+    return (first, last) if first <= last else None
 
 
 class AssetFiles(StaticFiles):
@@ -241,19 +256,20 @@ class AssetFiles(StaticFiles):
             response = Response(
                 form.gzipped, status_code=status_code, media_type=form.media_type, headers=headers
             )
-        elif form.body is not None:
-            headers["ETag"] = form.etag
-            response = Response(
-                form.body, status_code=status_code, media_type=form.media_type, headers=headers
-            )
         else:
-            headers["ETag"] = form.etag
-            response = AssetFileResponse(
-                full_path, status_code=status_code, stat_result=stat_result, headers=headers
+            # The bytes the ETag and the version were taken from, never the file read again: a
+            # file replaced meanwhile can not go out under them (review of #1543). No
+            # Last-Modified, so `If-Modified-Since` never answers 304. A range is of these bytes.
+            headers |= {"ETag": form.etag, "Accept-Ranges": "bytes"}
+            span = byte_range(request, form.etag, len(form.data))
+            body = form.data
+            if span is not None and status_code == 200:
+                first, last = span
+                headers["Content-Range"] = f"bytes {first}-{last}/{len(form.data)}"
+                body, status_code = form.data[first : last + 1], 206
+            response = Response(
+                body, status_code=status_code, media_type=form.media_type, headers=headers
             )
-            # Only the content decides: no Last-Modified, so `If-Modified-Since` never answers
-            # 304 and a date `If-Range` never selects a range.
-            del response.headers["last-modified"]
         if self.is_not_modified(response.headers, request):
             return NotModifiedResponse(response.headers)
         return response
