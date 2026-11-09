@@ -1005,7 +1005,7 @@ def scenario(run: Run, page: Page) -> None:
     run.step("a second project, the same agent joins it and asks")
     # A new project is in the "+" menu; the row of tabs has none (tsk-hp9gq9rmrdq2).
     expect(page.locator("nav.switcher a[href='/new']")).to_have_count(0)
-    page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+    page.locator("header").get_by_role("button", name="Add an agent, a person, a runner or a project", exact=True).click()
     page.get_by_role("menuitem", name="Project", exact=True).click()
     create_project(run, page, "E2E Beta", "e2e-beta")
     url, code = join_line(run, page, "e2e-beta", None)
@@ -1161,7 +1161,7 @@ def scenario(run: Run, page: Page) -> None:
             run.shot(page, f"phone-{view}{suffix}")
             run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
         # The create form: its preset select has long option labels.
-        page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+        page.locator("header").get_by_role("button", name="Add an agent, a person, a runner or a project", exact=True).click()
         page.get_by_role("menuitem", name="Project", exact=True).click()
         expect(page.locator("main section.view-new")).to_be_visible()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")

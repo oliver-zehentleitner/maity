@@ -10480,12 +10480,16 @@
     "text": "aa7e6ee1e235416d"
   },
   "menu.add.label": {
-    "en": "f6a991eb7a84e22b",
-    "text": "092a5f0279914d3b"
+    "en": "6bf76f0ed4b00e1b",
+    "text": "bc0776b0f031b13c"
   },
   "menu.add.project": {
     "en": "6c6b7df3070f112f",
     "text": "6c6b7df3070f112f"
+  },
+  "menu.add.runner": {
+    "en": "e98aef21e99228bc",
+    "text": "e98aef21e99228bc"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",

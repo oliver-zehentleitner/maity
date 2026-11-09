@@ -10488,12 +10488,16 @@
     "text": "efd0461a0aa8254d"
   },
   "menu.add.label": {
-    "en": "f6a991eb7a84e22b",
-    "text": "0e48710cb08b103c"
+    "en": "6bf76f0ed4b00e1b",
+    "text": "122ac68f6be24cd3"
   },
   "menu.add.project": {
     "en": "6c6b7df3070f112f",
     "text": "767d91928a39dc24"
+  },
+  "menu.add.runner": {
+    "en": "e98aef21e99228bc",
+    "text": "76e7a6832a509178"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
