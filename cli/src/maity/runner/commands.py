@@ -17,7 +17,18 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, limitread, loop, operate, serve, stub, supervisor, targets
+from . import (
+    capabilities,
+    config,
+    limitread,
+    loop,
+    operate,
+    serve,
+    stub,
+    supervisor,
+    targets,
+    trust,
+)
 from .asuser import RUNNER, AsUser
 
 STATE_FILE = serve.RUNNER_FILE
@@ -549,13 +560,30 @@ def cmd_status(args: argparse.Namespace) -> int:
         state.load_state(cfg.state_dir, name=serve.STATUS_FILE) if cfg.state_dir.is_dir() else {}
     )
     running = _alive(current.get("pid"))
+    # The supervisor's own record of each placement: its state and, while one runs, the
+    # line to attach to its session (the agents keep running without the service).
+    actual = (
+        state.load_state(cfg.state_dir, name=supervisor.ACTUAL_FILE)
+        if cfg.state_dir.is_dir()
+        else {}
+    )
+    placements = []
+    for placement in current.get("placements") or []:
+        if not isinstance(placement, dict):
+            continue
+        rec = actual.get(str(placement.get("id")))
+        rec = rec if isinstance(rec, dict) else {}
+        live = rec.get("state") in ("starting", "running")
+        hint = rec.get("session_hint") if live else None
+        placements.append({**placement, "state": rec.get("state"),
+                           "attach": hint if isinstance(hint, str) else None})  # fmt: skip
     view: dict[str, Any] = {
         "hub": paired.get("hub"),
         "runner_id": paired.get("runner_id"),
         "service": "running" if running else "not running",
         "connected": bool(current.get("connected")) and running,
         **{k: current.get(k) for k in ("session_id", "error", "retry_at", "updated_at")},
-        "placements": current.get("placements") or [],
+        "placements": placements,
     }
     if args.json:
         print(json.dumps(view, indent=2))
@@ -568,12 +596,14 @@ def cmd_status(args: argparse.Namespace) -> int:
         retry = f"; next try {show(view['retry_at'])}" if view["retry_at"] and running else ""
         print(f"last     {show(view['error'])}{retry}")
     for placement in view["placements"]:
-        if isinstance(placement, dict):
-            print(
-                f"placement {show(placement.get('id'))}  {show(placement.get('project'))}  "
-                f"generation {show(placement.get('generation'))}  "
-                f"desired {show(placement.get('desired'))}"
-            )
+        print(
+            f"placement {show(placement.get('id'))}  {show(placement.get('project'))}  "
+            f"generation {show(placement.get('generation'))}  "
+            f"desired {show(placement.get('desired'))}  "
+            f"state {show(placement.get('state') or '-')}"
+        )
+        if placement["attach"]:
+            print(f"  attach   {show(placement['attach'])}")
     return 0
 
 
@@ -622,6 +652,11 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = rsub.add_parser("limitread")
     r.add_argument("path")
     r.set_defaults(handler=lambda a: limitread.main([a.path]))
+    # Internal too: Claude Code's folder trust for a clone, recorded on the agents' side (trust).
+    r = rsub.add_parser("trust")
+    r.add_argument("home")
+    r.add_argument("clone")
+    r.set_defaults(handler=lambda a: trust.main([a.home, a.clone]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)

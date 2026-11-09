@@ -20,10 +20,11 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, and_, select, update
 
-from maity_hub import availability, clock
+from maity_hub import availability, clock, timing
 from maity_hub import tables as t
+from maity_hub.admin import instance_admin_id_query
 from maity_hub.auth import credentials, nonces
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
@@ -101,6 +102,11 @@ class Caller:
     runner_id: str | None = None
     bridge: Bridged | None = None  # a bridge calling as this agent (`Maity-For`, §2.3)
     on_request: OnRequest | None = None  # a proxy's go for this call, signed (§2.3)
+    # A cookie call's session row and account status as authentication read them, after
+    # its presence writes locked both rows, so that the second-factor gate and the pending
+    # check do not read them again on every call (tsk-6srccd2r1h62).
+    session_row: Any = field(default=None, compare=False, repr=False)
+    account_status: str | None = field(default=None, compare=False)
 
     @property
     def principal_id(self) -> str:
@@ -198,27 +204,56 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
-    row = conn.execute(select(t.human_session).where(t.human_session.c.id_hash == id_hash)).first()
-    if row is None or row.ended_at is not None or not session_alive(row, now):
+    # The presence writes come first, and only on a live session: they take the row locks of
+    # the session and its human, in the order they always did. The one read after them then
+    # sees what the gate's and the pending check's own reads used to see after these writes,
+    # under READ COMMITTED too (#1540 review), and it runs once instead of three times
+    # (tsk-6srccd2r1h62). A refusal below rolls the writes back with the transaction.
+    owner = (
+        select(t.human_session.c.human_id)
+        .where(t.human_session.c.id_hash == id_hash)
+        .scalar_subquery()
+    )
+    touched = conn.execute(
+        update(t.human_session)
+        .where(
+            t.human_session.c.id_hash == id_hash,
+            t.human_session.c.ended_at.is_(None),
+            # session_alive(): before its end and within the idle time
+            t.human_session.c.expires_at > now,
+            t.human_session.c.last_seen_at > now - SESSION_IDLE,
+        )
+        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
+    )
+    if touched.rowcount != 1:
         raise unauthenticated("the session has ended or expired")
-    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == row.human_id))
-    if deleted.scalar() is not None:  # a deleted account calls nothing (§2.9)
+    conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
+        .values(last_seen_at=now)
+    )
+    # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
+    # read rather than one more on every cookie call, as a join that finds the human only
+    # when it is the earliest account.
+    admin = t.human.alias("instance_admin")
+    row = conn.execute(
+        select(
+            t.human_session,
+            t.human.c.deleted_at.label("human_deleted_at"),
+            t.human.c.account_status.label("human_account_status"),
+            admin.c.id.is_not(None).label("human_is_instance_admin"),
+        )
+        .join(t.human, t.human.c.id == t.human_session.c.human_id)
+        .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
+        .where(t.human_session.c.id_hash == id_hash)
+    ).one()
+    if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
     if facts.method in UNSAFE_METHODS:
         token = facts.headers.get(CSRF_HEADER, "")
         if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
             raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
-    conn.execute(
-        update(t.human_session)
-        .where(t.human_session.c.id_hash == id_hash)
-        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
-    )
-    conn.execute(update(t.human).where(t.human.c.id == row.human_id).values(last_seen_at=now))
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.human_id == row.human_id, t.membership.c.removed_at.is_(None))
-        .values(last_seen_at=now)
-    )
     if renew:
         # A human holder works in the dashboard; its calls renew its leases too (§6.5). Only
         # the memberships that hold an open claim have a lease to renew: reading the rest
@@ -240,7 +275,15 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
                 # A limit's hold is never shortened by a renewal (§6.12).
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
-    return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
+    timing.admit(row.human_is_instance_admin)
+    return Caller(
+        kind="human",
+        via="cookie",
+        human_id=row.human_id,
+        human_session=id_hash,
+        session_row=row,
+        account_status=row.human_account_status,
+    )
 
 
 def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:

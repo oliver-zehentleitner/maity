@@ -226,9 +226,7 @@ window.Maity = window.Maity || {};
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
   function releasedDay(project) {
-    const d = new Date(project.released_at);
-    return Number.isNaN(d.getTime()) ? project.released_at
-      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return M.fmt.date(project.released_at);
   }
   // The selected project's two places one goes to often, beside its state
   // (the maintainer, tsk-n161gf6h8feb): its repository, with its forge's
@@ -797,8 +795,9 @@ window.Maity = window.Maity || {};
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
-          const when = new Date(until.value);
-          if (!until.value || Number.isNaN(when.getTime())) { until.focus(); return; }
+          // The field holds the account's time zone, the one the absence is shown in (§5.1).
+          const when = M.fmt.fromWall(until.value);
+          if (!when) { until.focus(); return; }
           if (!scope.value.trim()) { scope.focus(); return; }
           save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
         },
@@ -1647,17 +1646,19 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // "+": a new project, or bring someone in, an agent or a person (the maintainer, 2026-10-31):
-    // the create form, the agents page with its join, the invitations page. Humans only.
+    // "+": bring someone in, an agent or a person, pair a runner, or a new project (the maintainer,
+    // 2026-10-31; the order and the runner, tsk-45fhe2yrwzb7): the agents page with its join, the
+    // invitations page, the runners page with its pairing form, the create form. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
       face: M.icons.plus(18),
       items: () => [
-        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
-        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+        { label: M.t("menu.add.runner"), href: "/runners", current: ctx.scope === "runners" },
+        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
+        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
       ],
     }) : null;
     // The human: their picture, the account, signing out.
@@ -2166,6 +2167,17 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
+    // one after the other. Their answers are handled in the old order, the window first. /me still
+    // waits for the session: asked before it, /me fails by design for a session that owes the
+    // second factor and for a session cookie that outlived its session.
+    // Not for the invitation and registration pages, which read the session themselves (review
+    // of #1524): an early read there was one more, and its late answer could still set a language.
+    let first = null;
+    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    const early = reuse || ownRead ? null : M.api.get("/auth/session");
+    if (early) early.catch(() => {});
     await M.maintenance.fresh();
     if (seq !== renderSeq) return;
     try {
@@ -2175,7 +2187,7 @@ window.Maity = window.Maity || {};
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
-        session = reuse ? reuse.session : await M.api.get("/auth/session");
+        session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }

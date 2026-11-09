@@ -98,6 +98,53 @@ CSSOM instead of a `style` attribute keeps working under a strict CSP.
 attribute — blocked by a strict CSP and parsed as markup-adjacent text. A
 picture from a third-party avatar service — it would send member ids out.
 
+## An avatar shows the generated picture at once and loads the hub's picture only near the screen, at the size shown
+
+**Id:** 4db0d863-545e-46bb-b031-b5c9bbbfacb8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's plan for the avatar card (tsk-vvyqmk9vwg8e), 2026-11-09; a local reproduction of a board's burst of avatar reads against a hub on PostgreSQL, 2026-11-09
+**Revisit when:** the hub serves a board's avatars without queueing (one read for all of them, or a picture inside the list's answer), or browsers lazy-load images that are not yet on the page
+**See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-11-09
+
+`M.avatar` returns the identicon every time. When the member carries an
+`avatar_url` the page may load, it loads that picture once the identicon
+is within 200 px of the screen (IntersectionObserver; without one, at
+once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
+128, 256) that covers the shown size on this screen, with the device pixel
+ratio capped at 2. The loaded image takes the identicon's place with the
+same size and class rules. A picture that does not load leaves the
+identicon. A logo or banner is loaded as given, without a size. `h()`
+allows the sized address and no other parameter. The observer watches
+only placeholders that are on the page. One that is not (built before its
+view is mounted, or taken off the page) is held only through a `WeakRef`,
+and is watched again once it is on the page: a sweep runs after every
+change of the page (a MutationObserver, once per frame) and at every
+avatar drawn. A view that is thrown away keeps nothing alive, and one that
+is mounted late still gets its pictures.
+
+**Reason:** a board draws about 35 avatars, and the hub answered them one
+after another in effect (about 380 ms in the browser for 52 ms in the
+hub). Until then the page showed empty boxes and laid out late. With the
+identicon first, nothing waits for the pictures. Loading only near the
+screen leaves the reads of long lists to the rows someone scrolls to. The
+size cuts the bytes: a 16 px avatar fetched 256 px.
+
+**Rejected alternative:** `<img loading="lazy">` in place of the
+identicon. The browser leaves it empty until the picture arrives, and a
+detached image is never lazy-loaded, so the identicon could not stay in
+its place. A wrapper holding both the identicon and the image: the CSS
+rules for avatars (clipping on cards, overlap in a row of avatars) select
+`.avatar-svg` and `.avatar-img` directly, and a wrapper would break them.
+Letting a placeholder go only once the observer had seen it on the page:
+a view drawn twice before the observer's first callback left its first
+placeholders observed for good. Letting go of every placeholder still off
+the page 10 s after it was drawn: a view mounted later than that (the
+board waits for a card's own read before it is mounted) kept the generated
+pictures for good (both from the review of #1541).
+
+
 ## Chat messages are Markdown drawn as DOM nodes by a small renderer of our own, never an HTML-producing library
 
 **Id:** 854c8122-770c-4c80-be9f-0ce9c90c0d2e
@@ -1216,7 +1263,9 @@ An imprint is `운영자 정보` everywhere, the word the hub's footer had first
 terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
 `users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
 a profile are 합니다 like those on deleting the account. A particle after a placeholder whose value may end in a vowel
-or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과)`).
+or a consonant gives both forms (`이(가)`, `(으)로`, `은(는)`, `와(과)`). The copula has no such pair: `(이)에요` reads as
+`에요` after a vowel, where `예요` is right, so no copula follows such a placeholder; the sentence takes a colon or is
+rephrased (`{name}의 역할이 바뀌었어요: {role}`).
 A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
 page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
 switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
@@ -1355,3 +1404,39 @@ of on `.md`: the same, for every view that shows written text.
 Wrapping code lines (`white-space: pre-wrap` in `.md-code`): a shell
 line or a path broken across lines reads as several, and the block's
 scrolling stays as it was.
+
+## Every absolute time is formatted in the account's time zone by one helper, and in the browser's while none is set
+
+**Id:** 89d0260c-1827-40a7-b67d-84c91568772a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision that a human sets their time zone in Account → Settings and sees times in it (message seq 94723), the approved plan on card tsk-j8s6n725a06r, 2026-11-08; docs/api.md §5.1; `js/i18n.js` (`when`, `M.fmt.day`, `toWall`, `fromWall`)
+**See:** https://github.com/oliver-zehentleitner/maity — c9d8b583-94c6-4599-90a6-325e1c03c984 — as of 2026-11-08
+**Revisit when:** the dashboard shows a time that is not an instant (a date without a time, a wall time of a schedule), or the hub starts rendering times itself
+
+`M.fmt` formats every absolute time with `timeZone` set to the account's zone, which `M.api`
+takes from each `GET /me` (`member.timezone`) that passed the session check and set out after the
+last saved change of the zone, and from the settings `PATCH` that saves it; while that is `null`,
+or a name the browser's Intl does not know, it is the browser's zone. A session that ends
+(signing out, expiry, a 401 on the newest session check of the current session) drops it, so the next person in the tab does
+not see the last account's zone. The places that worked on the browser's local clock
+(`getDate`, `toDateString`, `toLocaleDateString`) go through the same helper: chat's day
+separators compare `M.fmt.day`, the maintenance banner's "same day" test too, and the
+`datetime-local` fields (the instance admin's maintenance window, the owner's absence) read and
+write the account's zone with `M.fmt.toWall` / `fromWall`
+(a time a clock change skips moves forward by the gap's length, so 02:30 in a one-hour gap is
+03:30; one it repeats is the first). Relative
+times ("5 min ago") do not use the zone. Timestamps in the API stay UTC.
+
+**Reason:** the owner decided that every time shown follows the zone the human set (confirmed).
+One helper is the only way that stays true: a view that formats on its own would show the
+browser's zone beside the account's, and a datetime-local field in the browser's zone would let
+an admin enter a window in another zone than the one it is then shown in. Taking the zone from
+`/me` costs no request, since every page reads it before the first view.
+
+**Rejected alternatives:** reading `GET /me/notification-settings` at load: a second request on
+every page for one value `/me` can carry. Rendering times on the hub: the contract keeps UTC in the
+API and leaves display to the dashboard. Keeping the browser's local clock for day boundaries
+while formatting in the account's zone: a message at 23:50 in the account's zone could then sit
+under the next day's separator.

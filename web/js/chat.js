@@ -381,14 +381,12 @@ window.Maity = window.Maity || {};
   const GROUP_MS = 5 * 60 * 1000;
   // The history is read to its end in pages of this size (the hub's maximum).
   const HISTORY_PAGE = 200;
-  const dayOf = (iso) => { const d = new Date(iso); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
+  // Days in the account's time zone (docs/api.md §5.1): a separator falls at its midnight.
+  const dayOf = (iso) => M.fmt.day(iso);
   function dayLabel(iso, now) {
-    const d = new Date(iso);
-    const today = new Date(now);
-    const yesterday = new Date(now - 86400000);
-    if (dayOf(iso) === dayOf(today.toISOString())) return M.t("chat.day.today");
-    if (dayOf(iso) === dayOf(yesterday.toISOString())) return M.t("chat.day.yesterday");
-    return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    if (dayOf(iso) === dayOf(new Date(now))) return M.t("chat.day.today");
+    if (dayOf(iso) === dayOf(new Date(now - 86400000))) return M.t("chat.day.yesterday");
+    return M.fmt.when(iso, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   }
 
   // The history as it is drawn: day separators, groups, and once the line

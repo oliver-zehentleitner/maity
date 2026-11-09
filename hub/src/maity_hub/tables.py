@@ -1993,6 +1993,21 @@ conversation_pin = Table(
     **MYSQL_TABLE,
 )
 
+# A human's contacts (docs/api.md §6.29): `human_id` lets `contact_id` contact them, one way.
+# Private to the two; deleted with either account, in both exports.
+contact = Table(
+    "contact",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("contact_id", "human.id", nullable=False),
+    Column("since", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "contact_id"),
+    Index("ix_contact_human", "human_id", "since"),  # /me/contacts, newest first
+    Index("ix_contact_contact", "contact_id", "since"),
+    CheckConstraint("human_id <> contact_id", name="not_self"),
+    **MYSQL_TABLE,
+)
+
 # A human's own choice of the meat-proxy mode for one conversation, direct or group (docs/api.md
 # §9.3, "Meat proxy per chat"); no row follows the profile. The id of a direct conversation is
 # the agent's, the same in every project the agent is in, so the project is part of the key and
