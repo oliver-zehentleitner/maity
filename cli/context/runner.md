@@ -984,9 +984,8 @@ runner's). An unrestricted `claude` that someone starts later in the
 same clone asks no question, though, and loads the clone's
 `.claude/settings.json` hooks and `.mcp.json`, including ones an agent
 wrote into the clone. In the `single` layout the file is the operator's
-own `~/.claude.json`. This scope is accepted and the runner gets no
-further mechanics around trust (#1560 post-merge re-check, the team
-lead and the project lead).
+own `~/.claude.json`. A Claude Code configuration directory per
+placement would avoid this (the rejected alternative below).
 
 **Reason:** the placement is the owner's trust decision, made before the
 runner starts anything. Without the entry, every placement in a fresh
