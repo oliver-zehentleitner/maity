@@ -872,6 +872,7 @@ window.MAITY_FIXTURES = {
         "created_at": "2026-10-21T07:45:00Z",
         "disabled": false,
         "display_name": "Maintainer",
+        "email": "maintainer@example.org",
         "handle": "maintainer",
         "id": "hum-maintainer",
         "instance_admin": true,
@@ -884,6 +885,7 @@ window.MAITY_FIXTURES = {
         "created_at": "2026-10-22T09:00:00Z",
         "disabled": false,
         "display_name": "Guest Reviewer",
+        "email": null,
         "handle": "guest",
         "id": "hum-guest",
         "instance_admin": false,
@@ -896,6 +898,7 @@ window.MAITY_FIXTURES = {
         "created_at": "2026-10-21T12:00:00Z",
         "disabled": true,
         "display_name": "Ops on call",
+        "email": "ops@example.org",
         "handle": "ops",
         "id": "hum-ops",
         "instance_admin": false,
@@ -1450,8 +1453,8 @@ window.MAITY_FIXTURES = {
   "maity/contract.json": {
     "docs/api.md": {
       "ref": "0e5f7a1c3b9d2e4f6a8b0c1d3e5f7a9b1c3d5e7f",
-      "size": 697,
-      "text": "# The Maity API contract\n\nThe REST contract hub, CLI and dashboard build against. Read with care.\n\n## 6 Cards and their states\n\nCards are the board's unit of work. Each card has a status and a holder.\n\n### 6.4 Creating a card\n\n`POST /projects/{owner}/{slug}/tasks` creates a card.\n\n```\n## 9 Not a heading: inside a fence\n```\n\n#### 6.4.1 Labels\n\n- `fix`\n- `feature`\n- `chore`\n\n### 6.8 Contracts\n\nThe contract text stays in the repository; the hub reads it on request.\n\n## 8. Events\n\nEvery change is an event, read with `GET …/events`.\n\n## Notes on reading this file\n\nA heading without a number anchors by its position.\n\n## 8 Events again\n\nA number two headings share anchors neither by number.\n",
+      "size": 836,
+      "text": "# The Maity API contract\n\nThe REST contract hub, CLI and dashboard build against. Read with care.\n\n## 6 Cards and their states\n\nCards are the board's unit of work. Each card has a status and a holder.\u000bIt has a title,\fit has a body,\u001cit has a label,\u001dit carries its notes,\u001eit carries its links,it keeps a history and a place on the board.\n\n### 6.4 Creating a card\n\n`POST /projects/{owner}/{slug}/tasks` creates a card.\n\n```\n## 9 Not a heading: inside a fence\n```\n\n#### 6.4.1 Labels\n\n- `fix`\n- `feature`\n- `chore`\n\n### 6.8 Contracts\n\nThe contract text stays in the repository; the hub reads it on request.\n\n## 8. Events\n\nEvery change is an event, read with `GET …/events`.\n\n## Notes on reading this file\n\nA heading without a number anchors by its position.\n\n## 8 Events again\n\nA number two headings share anchors neither by number.\n",
       "toc": [
         {
           "anchor": "s-6",
@@ -1463,42 +1466,42 @@ window.MAITY_FIXTURES = {
         {
           "anchor": "s-6.4",
           "level": 3,
-          "line": 10,
+          "line": 17,
           "number": "6.4",
           "title": "Creating a card"
         },
         {
           "anchor": "s-6.4.1",
           "level": 4,
-          "line": 18,
+          "line": 25,
           "number": "6.4.1",
           "title": "Labels"
         },
         {
           "anchor": "s-6.8",
           "level": 3,
-          "line": 24,
+          "line": 31,
           "number": "6.8",
           "title": "Contracts"
         },
         {
           "anchor": "h-4",
           "level": 2,
-          "line": 28,
+          "line": 35,
           "number": "8",
           "title": "Events"
         },
         {
           "anchor": "h-5",
           "level": 2,
-          "line": 32,
+          "line": 39,
           "number": null,
           "title": "Notes on reading this file"
         },
         {
           "anchor": "h-6",
           "level": 2,
-          "line": 36,
+          "line": 43,
           "number": "8",
           "title": "Events again"
         }

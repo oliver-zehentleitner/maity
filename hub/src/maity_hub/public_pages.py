@@ -416,8 +416,22 @@ def render_all(
                     select(t.public_page.c.target_id).where(t.public_page.c.kind == kind.name)
                 ).scalars()
             )
-            for target_id in stored - set(ids):
-                remove(conn, kind.name, target_id)
+            # The targets as they are now, not the pass's own list: one that turned public
+            # meanwhile has its page from `on_change`, which this must not delete.
+            gone = stored - set(kind.targets(conn))
+        # Each candidate is decided again under the lock `refresh` and `touch` take, in a
+        # transaction of its own that holds no other lock: on PostgreSQL a target can be
+        # switched off and on again between the reads above (READ COMMITTED), its new page
+        # rendered after the commit. A render that held the lock has committed when this reads
+        # again; one that waits for it renders after this delete. One lock at a time, because a
+        # writer may take several targets' locks in an order of its own across its transaction
+        # (an organisation's suspension touches its projects one after the other, each with its
+        # cards), and a batch held here could close a cycle with it.
+        for target_id in sorted(gone):
+            with engine.begin() as conn:
+                xact_lock(conn, f"public_page:{kind.name}:{target_id}")
+                if target_id not in set(kind.targets(conn)):
+                    remove(conn, kind.name, target_id)
     if skipped:
         with engine.begin() as conn:
             for kind_name, target_id in skipped:

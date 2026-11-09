@@ -1327,7 +1327,8 @@ window.Maity = window.Maity || {};
         draggable: M.tabs.managed(ctx) ? "true" : null,
         title: M.tabs.managed(ctx) ? M.t("tabs.move_hint") : null,
         ondragstart: (e) => dragTab.start(e, p.id),
-        ondragover: (e) => dragTab.over(e),
+        ondragover: (e) => dragTab.over(e, p.id),
+        ondragleave: (e) => dragTab.unmark(e.currentTarget),
         ondrop: (e) => dragTab.drop(ctx, e, p.id),
         ondragend: () => dragTab.end(),
         onkeydown: (e) => moveTabByKey(ctx, e, p),
@@ -1335,17 +1336,20 @@ window.Maity = window.Maity || {};
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
-      pill(p))),
+      pill(p))));
     // Runners belong to the person, not to a project (the maintainer's
-    // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
-    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, M.t("header.new_project")));
+    // wish, tsk-cb6myw32def0): they are in the gear menu, not this row. A new
+    // project is in the "+" menu, so the tabs menu stands right after the tabs (tsk-hp9gq9rmrdq2).
   }
 
   // Dragging a tab onto another puts it there: before the tab dropped on,
   // or after it when dropped on its second half. The id travels in the drag
   // itself and here, for a drag that carries no data (the smoke test's).
+  // While it is dragged, a line at the tab under it shows that place, by the
+  // same half (the maintainer, tsk-hp9gq9rmrdq2).
   const dragTab = {
     id: null,
+    marked: null,
     start(e, id) {
       dragTab.id = id;
       if (e.dataTransfer) {
@@ -1353,23 +1357,43 @@ window.Maity = window.Maity || {};
         try { e.dataTransfer.setData("text/plain", id); } catch (err) { /* the id is kept here too */ }
       }
     },
-    over(e) {
+    // Past the middle of the tab under the pointer: on its second half.
+    pastMiddle(e) {
+      const box = e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
+      return !!(box && box.width && typeof e.clientX === "number" && e.clientX > box.left + box.width / 2);
+    },
+    // The line on one tab, before or after it, and on no other; none on the dragged tab itself.
+    mark(el, side) {
+      if (dragTab.marked !== el) dragTab.unmark(dragTab.marked);
+      if (!el || !el.classList) return;
+      el.classList.toggle("drop-before", side === "before");
+      el.classList.toggle("drop-after", side === "after");
+      dragTab.marked = side ? el : null;
+    },
+    unmark(el) {
+      if (!el || !el.classList) return;
+      el.classList.toggle("drop-before", false);
+      el.classList.toggle("drop-after", false);
+      if (dragTab.marked === el) dragTab.marked = null;
+    },
+    over(e, targetId) {
       if (!dragTab.id) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      dragTab.mark(e.currentTarget, targetId === dragTab.id ? null : dragTab.pastMiddle(e) ? "after" : "before");
     },
     drop(ctx, e, targetId) {
       const id = dragTab.id;
       dragTab.id = null;
+      dragTab.unmark(dragTab.marked);
       if (!id || id === targetId) return;
       e.preventDefault();
-      const box = e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
-      const after = box && box.width && typeof e.clientX === "number" && e.clientX > box.left + box.width / 2;
+      const after = dragTab.pastMiddle(e);
       const order = M.tabs.open(ctx).map((p) => p.id);
       const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
       if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
     },
-    end() { dragTab.id = null; },
+    end() { dragTab.id = null; dragTab.unmark(dragTab.marked); },
   };
 
   // The keyboard's way, and the one without a drag (WCAG 2.5.7): Alt+Shift
@@ -1623,13 +1647,15 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // "+": bring someone in, an agent or a person (the maintainer, 2026-10-31):
-    // the agents page with its join, the invitations page. Humans only.
+    // "+": a new project, or bring someone in, an agent or a person (the maintainer, 2026-10-31):
+    // the create form, the agents page with its join, the invitations page. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
       face: M.icons.plus(18),
       items: () => [
+        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
+        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
       ],
@@ -2140,6 +2166,17 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
+    // one after the other. Their answers are handled in the old order, the window first. /me still
+    // waits for the session: asked before it, /me fails by design for a session that owes the
+    // second factor and for a session cookie that outlived its session.
+    // Not for the invitation and registration pages, which read the session themselves (review
+    // of #1524): an early read there was one more, and its late answer could still set a language.
+    let first = null;
+    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    const early = reuse || ownRead ? null : M.api.get("/auth/session");
+    if (early) early.catch(() => {});
     await M.maintenance.fresh();
     if (seq !== renderSeq) return;
     try {
@@ -2149,7 +2186,7 @@ window.Maity = window.Maity || {};
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
-        session = reuse ? reuse.session : await M.api.get("/auth/session");
+        session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
@@ -2167,15 +2204,17 @@ window.Maity = window.Maity || {};
           }
           // A public page of this address, read-only (§16.9); otherwise the login.
           // A frame of the sign-in drawn before stays until the page is known, then goes.
-          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) {
+          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+          if (shown) {
             if (seq === renderSeq) M.siteChrome.leave();
             return;
           }
           // The hub's own page in <main> stands when its data could not be read. A dashboard
           // route asks for the sign-in; an address that shows a visitor nothing says so
-          // (js/not-found.js), with the sign-in one link away.
+          // (js/not-found.js), with the sign-in one link away, but only where the hub said it
+          // has no page: a read that failed otherwise (null) keeps the sign-in.
           if (seq === renderSeq && !hubPage) {
-            if (M.notFound && showsVisitorNothing(where)) {
+            if (M.notFound && shown === false && showsVisitorNothing(where)) {
               M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
             } else renderLogin(main);
           }

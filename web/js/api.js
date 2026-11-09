@@ -2681,7 +2681,7 @@ window.Maity = window.Maity || {};
       const d = query.get("disabled");
       if (d !== null && d !== "true" && d !== "false") fail(400, "invalid", "disabled is true or false", path, { fields: { disabled: "not_boolean" } });
       const all = fixtures()["admin-users.json"].items
-        .filter((u) => !q || (u.handle + "\n" + u.display_name).toLowerCase().includes(q.toLowerCase()))
+        .filter((u) => !q || (u.handle + "\n" + u.display_name + "\n" + (u.email || "")).toLowerCase().includes(q.toLowerCase()))
         .filter((u) => d === null || String(u.disabled) === d)
         .sort((a, b) => a.handle.localeCompare(b.handle));
       // §1.4: limit 1–200, the cursor one this list gave out.
@@ -3858,6 +3858,14 @@ window.Maity = window.Maity || {};
       const keep = statusFilter(query, "open");
       return { items: file(m[1], "requests.json", path).items.filter(keep), next_cursor: null };
     }],
+    // §7: one request of the project by its id, whatever its status (the inbox's link to an
+    // answered one). The fixture caller reads every request of its projects, as one with
+    // requests:answer does on the hub; an id the project does not hold is not_found.
+    ["GET", /^\/projects\/([^/]+)\/requests\/([^/]+)$/, (m, body, path) => {
+      const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
+      if (!req) fail(404, "not_found", "Not found", path);
+      return req;
+    }],
     ["POST", /^\/projects\/([^/]+)\/requests\/([^/]+)\/answer$/, (m, body, path) => {
       const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
       if (!req) fail(404, "not_found", "Not found", path);
@@ -4398,10 +4406,12 @@ window.Maity = window.Maity || {};
           // A project role counts by its base, as project_roles.base_of resolves it (§2.3).
           const custom = (project(m[1], path).roles || []).find((r) => r.name === body.role);
           const base = custom ? custom.base : HUB_ROLES.includes(body.role) ? body.role : null;
-          if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
-          if (!MEMBER_ROLES.includes(base)) {
+          // In the hub's order (routes/members.py): a known role beyond the member rule first, then a
+          // role the project does not have; the two exclude each other, so only the order is matched.
+          if (base !== null && !MEMBER_ROLES.includes(base)) {
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
+          if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
           target.role = body.role;
           target.role_base = base;
           return target;
@@ -5140,7 +5150,10 @@ window.Maity = window.Maity || {};
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
-    return loadFixtures().then(() => {
+    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path) (smoke);
+    // unset, nothing waits for it.
+    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
+    return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
       let path = asked;
       // §16.12: while a window runs the hub refuses nearly everything, before it asks who calls.
       const running = maintenanceView(false);
@@ -5176,6 +5189,8 @@ window.Maity = window.Maity || {};
   // The session as GET /auth/session last answered it (§2.6, its join_url among it),
   // kept for a view that needs it again; cleared when the session ends.
   let lastSession = null;
+  // How many session reads were started: only the newest sets the language (request, below).
+  let sessionReads = 0;
 
   function csrfToken() {
     for (const part of document.cookie.split(";")) {
@@ -5264,6 +5279,11 @@ window.Maity = window.Maity || {};
       ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
       : fromApi(method, path, body, raw, signal)).catch(told);
     if (path === "/auth/session") {
+      // Only the newest session read of this session sets the language (review of #1524): an
+      // older answer that comes back after it, a 401 above all, would switch a newer session's
+      // language back.
+      const asked = ++sessionReads;
+      const newest = () => asked === sessionReads && epoch === (M.sessionEpoch || 0);
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         sessionCsrf = s.csrf_token || null;
@@ -5271,9 +5291,9 @@ window.Maity = window.Maity || {};
         sessionBlocked = false;
         // Signed in: the account's interface_language, or without one the browser's (never the
         // frame, which is for visitors only: js/i18n.js).
-        return M.i18n.follow(s.member && s.member.interface_language, true).then(() => s);
+        return newest() ? M.i18n.follow(s.member && s.member.interface_language, true).then(() => s) : s;
       }, (err) => {
-        if (err && err.status === 401) return M.i18n.follow(null).then(() => { throw err; });
+        if (err && err.status === 401 && newest()) return M.i18n.follow(null).then(() => { throw err; });
         throw err;
       });
     }

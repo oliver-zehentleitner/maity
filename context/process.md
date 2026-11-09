@@ -1150,25 +1150,74 @@ interim of one morning, while one vendor was out of quota.
   reviewers are back, and a third vendor's view is wanted on every pull
   request.
 
+## Fixes after a review are pushed as one bundle once the round's reviews are in; an exception only on the lead's word
+
+**Id:** cbfbec23-8ed4-4c5b-b552-271b3ef32962
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r8, adopted by the maintainer as req-tz2hgtmfkd42); card tsk-2ehaantapkj2; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; the three-vendor rule in this file (c73e26c4); `CONTRIBUTING.md` ("During a review and in a stack")
+**Revisit when:** the number of reviews per round changes, or the lead's exceptions become the rule
+
+The jour fixe adopted "Nachbesserungen gebündelt pushen, nachdem beide Reviews da sind" (push the fixes as
+one bundle after both reviews are in), with "Ausnahme nur auf Wort des Leads, wie bei #1256" (an exception
+only on the lead's word, as with #1256). "Both" was written while two reviewer vendors reviewed; since the
+three-vendor rule of the same jour fixe (c73e26c4, above), it means all reviews of the round.
+
+**Reason:** not recorded with the decision beyond its exception.
+
+**Alternatives:** none recorded.
+
+## A stacked pull request takes main in by a merge after the lower one is squash-merged, not by a rebase
+
+**Id:** c6288a7b-5cfe-4e7e-a08f-aeabc413bf7c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** owner request req-8m0ja218geax, adopted by the maintainer on 2026-11-03 (not a jour fixe proposal), its text verbatim in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; `CONTRIBUTING.md` ("During a review and in a stack")
+**Revisit when:** pull requests are merged other than by squash
+
+The maintainer adopted "Gestapelte PRs nach dem Squash des unteren: main hineinmergen statt rebasen?" (stacked
+pull requests after the lower one's squash: merge main in instead of rebasing?), with its proposal "immer der
+Merge-Weg, festgehalten in `context/process.md`" (always the merge way, recorded in `context/process.md`).
+
+**Reason:** "Manchmal baut ein PR auf einem anderen auf (etwa #1278 auf #1276). Wir mergen per Squash, der
+untere PR landet als ein neuer Commit auf main. Der obere enthält aber noch dessen alte Einzelcommits." (Sometimes
+one pull request builds on another, for instance #1278 on #1276. We merge by squash, so the lower one lands on
+main as one new commit, but the upper one still holds its old single commits.) "Rebase (eigene Commits neu auf
+main setzen) ging heute einmal schief und brauchte einen zweiten Anlauf. Ein Merge von main in den oberen PR funktioniert ohne das; beim Merge auf main wird ohnehin gesquasht,
+die Historie bleibt sauber." (A rebase, putting one's own commits anew on main, went wrong once that day and
+needed a second attempt. A merge of main into the upper pull request works without that; the merge to main is
+squashed anyway, so the history stays clean.)
+
+**Rejected alternatives:**
+- "jeder Coder wählt selbst" (each coder chooses), the request's reject option.
+- A rebase: the reason above.
+
 ## The review lead's team hands out every review
 
 **Id:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Type:** decision
 **Status:** active
 **Evidence:** unknown
-**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04; the review order's form, member and instance, from the jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r7, adopted by the maintainer as req-3hp7vjqa4yvz), card tsk-wer0fdvfmdss; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb
 **Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
 
 A coder sends a review request, with the base and head SHAs in full, to
-the review lead and to nobody else. The review lead's team picks the
+the review lead and to nobody else. A review order names the reviewer by
+member and instance (`handle#instance`) and gives the base and the new
+head in full; the jour fixe adopted it as "Review-Aufträge nennen Mitglied
+und Instanz, Basis- und neuen Head voll" (review orders name member and
+instance, the base and the new head in full), with the reason "Spart
+Nachsenden und Verwechslungen" (it saves resending and mix-ups). The review lead's team picks the
 reviewer of each vendor, orders the reviews and delta reviews, checks
 the results, and collects the minor findings (P3) for the area's
 collection card. Merges, deploys and cards stay with the lead.
 
-The rule itself is confirmed by these sources; its reason is not, so
-the entry's Evidence is the weaker grade.
+The rule itself is confirmed by these sources; a reason is recorded only
+for the order's form, so the entry's Evidence is the weaker grade.
 
-**Reason:** unknown — not recorded with the rule.
+**Reason:** for the form of a review order, the jour fixe's (above); for the rest of the rule, unknown — not recorded with it.
 
 **Alternatives:** none recorded. Before 2026-11-02 the coordinator
 gave the order of the reviews (8ba32bfa, for a returning reviewer); why
@@ -1250,6 +1299,24 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
+
+**Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r3, adopted by the maintainer as req-gec2x1vgxrpx); card tsk-kr6f8w50r0cb; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on that card
+**Revisit when:** a limit is set, or the job timeouts above end hangs early enough on their own
+
+The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit fester Frist" (the right to
+cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
+open. The job timeouts above (97f338fd) stay.
+
+**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
+depends on a human; the approval has to come from Oliver).
+
+**Alternatives:** none recorded.
 
 ## hub-postgresql prints every thread's stack when a test runs longer than 300 seconds
 
@@ -1523,8 +1590,8 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405
-**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
+**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405; ktw-lint from card tsk-nb0f9gq7qyrb (same round), its boundary and the refusal on another linter version set by the coordinating agent on the plan, 2026-11-08
+**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, CI's ktw-lint job changes its paths, flags or how its version is pinned, or most contributors no longer push from a shared machine
 
 `tools/hooks/pre-push` runs `tools/pre_push.py` once a clone sets `git config core.hooksPath tools/hooks`
 (CONTRIBUTING.md). For each of `hub/` and `cli/` that the pushed commits touch, it runs CI's own `make lint
@@ -1533,6 +1600,21 @@ the hashed lock. Before that it compares black, ruff and mypy there with the pin
 stops on a difference: the point is the same result as CI, and a local environment drifts (on the machine where the
 hook was written, ruff was 0.17.3 against the lock's 0.17.1). It checks the working tree, so it also stops when
 HEAD is not the pushed commit or a touched package has uncommitted changes.
+
+It also runs `ktw-lint <path>` for every Keep the Why project the push touches, the paths of CI's ktw-lint
+matrix (`.`, `hub`, `cli`, `web`; a file outside the three packages belongs to the root), without `--strict`, as
+that job does (card tsk-nb0f9gq7qyrb, the same jour fixe, which asked for ktw-lint too). A change to a project's
+`context/` or `.keep-the-why` also lints its family: a child's the root, the root's every child, since CI checks a
+family link on both ends. The `ktw-lint` it runs (PATH, or `MAITY_HOOK_KTW_LINT`) must answer `--version` with
+the version of the `# lint-vX` comment on the action's pin in `.github/workflows/ktw-lint.yml` as the pushed
+commit has it (an uncommitted edit of the workflow chooses nothing; review R1 of #1508), which
+`tools/ktw_pin.py` already holds to the context schema; otherwise the hook refuses before any check, naming
+both versions and `pipx install --force keep-the-why-lint==X`. It installs nothing and asks no network: the
+version comes from the file. A push that touches only `web/` or the root's files needs no hub environment. Its
+working-tree check covers each linted project's `context/` and `.keep-the-why`. The pushed files are listed
+without rename detection (`--no-renames`), so a file moved out of a package or project counts for the one it
+left too, which can break by losing it (review R1 of #1508: a moved `hub/context/index.md` left hub's ktw-lint
+unrun).
 
 **Rejected alternatives:**
 - A hook that is on for everyone (installed by a setup step, or a check in CI that it is set): the card asked for
@@ -1547,6 +1629,12 @@ HEAD is not the pushed commit or a touched package has uncommitted changes.
 - The pushed commit checked out into a temporary tree instead of the working tree: mypy needs the environment the
   hub's editable install points at, which is the working tree; checking there and stopping when it differs from
   the push is simpler and says so.
+- keep-the-why-lint in the hub's dev lock: a second pin of the linter beside the workflow's, and the hub's
+  environment would be needed to lint `web/` or the root alone.
+- `ktw-lint` for all four projects on every push: a push would be refused for a break in a project it did not
+  change.
+- Installing the pinned ktw-lint when the version differs: the hook would change the machine and need the
+  network; it says what to install instead.
 - The CLI's tools from the CLI's own environment: `cli/requirements/dev.txt` is compiled with the hub's dev lock as
   constraints, so its black, ruff and mypy are the versions the hook already compares with; a second environment
   per contributor would check the same versions. (When the hook was written the `cli` CI job installed its dev
@@ -2092,3 +2180,91 @@ down.
 - Setting the boundary during the review, as before: the extra rounds above.
 - A card template file with the field: the project keeps no card template; cards are written with
   `maity task create` and a free-text body, so the convention lives where the body is described.
+
+## The rules adopted at the jour fixes of 2026-11-03 to 2026-11-07 are written in CONTRIBUTING.md, one line each
+
+**Id:** 06438e59-d797-452c-969d-cbc3e1771f61
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe rounds jfx-8yj7akxm6hzj (2026-11-03), jfx-c3rg3cv17c48 (2026-11-04), jfx-269b897etn83 (2026-11-05), jfx-nerr4n29p2ce (2026-11-06) and jfx-08m18215rp8c (2026-11-07); the adopted proposals in the bodies of the cards named below; the lead's announcements of them; card tsk-cqzz7bs7kfj5, from the maintainer's request of 2026-11-08 to shrink the open list
+**Revisit when:** layered briefings (§6.28) carry role rules, so the rules can move where each role reads them; or a rule here is changed by a later jour fixe
+
+The adopted rules were written nowhere shared: only in the lead's announcements and in the agents' own notes.
+`CONTRIBUTING.md` ("Rules from the jour fixe") now holds them as one sentence each with its card, grouped by who
+acts. Not all of them are in force: seven lines are marked *not yet in force* (the six of
+card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), three *exception to an older entry, open*,
+and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
+
+- Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
+- Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
+  be closed (`invalid_transition`), two messages each.
+- One open pull request with a new migration (tsk-xqcney05e5fz): three in parallel, one re-chained twice with a
+  full round each time.
+- A UI layout pull request's e2e variants (tsk-e4dk3hs41vfz): a review round for missing variants.
+- The merge order agreed before stacking in shared web files (tsk-qymtmpkp43jq): a stack merged `main` several times.
+- Every path listed for a "never" finding (tsk-cnbwt37d4sdb): three rounds for one rule, one parser fixed at a time.
+- A push go covers a further `main` merge with an empty remerge-diff (tsk-z0rs3xqp1awv): a new go for nothing new.
+- A limit or timing promise names the line that enforces it (tsk-fdk4ksxedcxv): four text deltas on one pull request.
+- Allowlist grammars and no pipes in deleting `sh` checks (tsk-1yedmz1pp0a5): two extra rounds and a new P1.
+- The VERDICT line (tsk-h76gy9qxk0vj): a verdict had to be asked for. The card's form also names the base, so
+  delta rounds cannot be mixed up; the announcement asks for the head only (the open entry below).
+- The fixed scope from round 3 (tsk-g4fn0hqctbzg): a pull request grew over nine rounds.
+- A reviewer's stop announced, and the outage's state in a fixed place coders read (tsk-fgg8365e3n6z,
+  tsk-sgt89h1dj54b): nobody knew why or until when a reviewer was gone, and coders asked one by one.
+- One message per Grok result (tsk-73k2kkd3dkc4): each result came three times, each copy waking the readers.
+- Review orders acknowledged, results also to the review lead (tsk-8f1bfeh621tp): five orders lost unnoticed.
+- merge-tree against `main` in every delta order (tsk-pm9jryrf7nqv): a head ordered as clean was not.
+- The forge account's push access checked at a join (tsk-ecqtqj7dyg35): a coder got a card and could not open
+  a pull request.
+- The lead forwards review requests while the review lead is away (tsk-z3j36sy534ww): one night all reviewers
+  were free and nobody handed out reviews.
+- The maintainer decides per pull request after a vendor team is out for two hours (tsk-x8ctwgw2cmwc): about
+  ten finished pull requests stood while one vendor was offline.
+- His decision on the status card (tsk-g3entm5r2rez): authors asked one by one what happens to their pull
+  request during the outage.
+- A second review request during the outage (tsk-rkp7pvkshta2): an author with a finished next pull request
+  could not ask for a review, one request at a time.
+- A stack merged from the bottom, and the merge order named at MERGE-READY (tsk-7pnhaxkr6xnh, tsk-d1r3rm9nbnpg):
+  the longer `main` moves between steps, the larger each merge; three pull requests needed two `main` merges and
+  full CI each after approval.
+- The tester note's form and its `Live:` line (tsk-r554j0njyj2t, tsk-vw1837722z82): imprecise notes checked
+  again, and notes saying "undeployed".
+- A tester's stop announced, claims to the stand-in, and the other instance taking the queue
+  (tsk-mw1hdjyvv2tb, tsk-tx7vd6jtvrp8): a tester went offline holding claims, and notes waited while the other
+  instance was idle.
+- SQL for production tried on the shared local PostgreSQL first (tsk-79zsgnfv07pv): a script's first run was
+  on production.
+
+**Rejected alternatives:** for each rule, the reject option of its proposal, as it stands in the card's body
+(mostly: keep the practice as it was).
+
+## Some adopted rules contradict or go beyond what main already says; which version holds is open
+
+**Id:** 7b93c3fc-f483-43ae-8c75-c3c8e53134e3
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** card tsk-cqzz7bs7kfj5, whose boundary keeps main's version and names the conflict; the cards named
+below and the lead's announcement of the VERDICT rule (2026-11-04)
+**See:** process.md#fixes-after-a-review-are-pushed-as-one-bundle-once-the-rounds-reviews-are-in-an-exception-only-on-the-leads-word — cbfbec23-8ed4-4c5b-b552-271b3ef32962 — as of 2026-11-08
+**Revisit when:** the maintainer or a jour fixe decides one of these conflicts
+
+- tsk-g3p686ckd25v (jour fixe of 2026-11-07) lets an author push bundled fixes without a go when all three
+  vendors answered the head, no review lead has listened for over an hour, and every open finding is undisputed
+  and opens no new code path. `CONTRIBUTING.md` and cbfbec23-8ed4-4c5b-b552-271b3ef32962 allow an exception
+  only on the lead's word. Not written into `CONTRIBUTING.md`.
+- tsk-x61m2sv7va7b also says a card is not reported again after a later push. `docs/agents.md` says to report
+  again whenever the pull request is updated. Only the part both agree on is written.
+- tsk-h76gy9qxk0vj's body adopts `VERDICT APPROVE|CHANGES <base>..<head>`; the lead's announcement of the rule
+  asks for the full head SHA only. `CONTRIBUTING.md` writes the head-only line and marks the base form as not yet
+  in force.
+- tsk-z3j36sy534ww lets the lead forward review requests while the review lead is away;
+  eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0 gives every request and its distribution to the review lead's team alone.
+  tsk-rkp7pvkshta2's second request is a review request like any other; the card does not say who orders it
+  from the two vendors there.
+- tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
+  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e requires all three approvals before any merge.
+
+These three outage rules were announced as in force and are written in `CONTRIBUTING.md`, marked as exceptions
+to an older entry; the older entries are not changed. Which version holds, here and in the first two, is open.
