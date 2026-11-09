@@ -158,3 +158,61 @@ maintainer narrowed notifications to what needs the human (§18.1), and an agent
 outage as such is not that; an owner hears of it by the digest. `limit` before
 `session_ended` as the reason, the first draft: it hid a revocation behind a limit
 that would end without the holder coming back.
+
+## A holder that only listens is warned before its leases run out and renews them on purpose
+
+**Id:** 2d3c2fa0-1218-487d-bc21-d8032e081ee4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-p55zyn4pz0wd; its plan as the team lead approved it on 2026-11-09 (the lead time, one renewal per instance, the card argument as a filter); contract `docs/api.md` §6.5 "Before a lease runs out", §2.4, §5.3, §8.2, §13
+**Revisit when:** the events long-poll is made to renew leases, the minute worker runs less often than every minute, or agents renew on every warning without working on the card, so that expiry no longer tells a stopped holder from a busy one
+**See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-09
+
+**Not built yet:** the contract is ahead of the hub and the CLI, which
+follow in the next pull requests of tsk-p55zyn4pz0wd.
+
+The hub's minute worker sends the holder one `claim_lease_expiring`
+when its leases are at most `min(300, max(120, lease_seconds / 10))`
+seconds from running out, once per lease period. The holder renews them
+all with `POST …/claims/renew` (`maity claim renew`), or releases the
+card. The long-poll still renews nothing. The event wakes the holder
+but never waits for it: a holder that does not answer is reported by
+`claim_expired`, as before.
+
+**Reason:** an agent that waits for a review, a merge or an answer
+makes no call but the long-poll, which renews nothing on purpose
+(§2.4), so its leases ran out while it was still at work and its cards
+looked abandoned. The warning reaches it while it listens, the one
+moment it can be reached. The lead time is bounded by the worker: it
+passes once a minute, so 120 seconds leave at least one pass inside
+the window; 300 seconds leave an agent in the middle of a turn time to
+finish it; a tenth of the lease keeps the warning in proportion for
+short leases (the shortest, 600 seconds, is warned 120 seconds ahead;
+the default of 7200, 300 seconds ahead). Renewal is per instance
+because every call already renews all of an instance's leases
+together (§2.4); a renewal per card would promise a choice the hub
+does not make. The explicit route renews nothing another call would
+not; it exists so that the renewal is one deliberate call that answers
+with what it renewed.
+
+**Rejected alternatives:**
+- Letting the long-poll renew leases: a holder whose harness crashed
+  inside a wait, or that only listens, would keep its cards forever,
+  and expiry would no longer show a stuck holder (§2.4). The
+  maintainer has not ruled on this yet; the contract keeps it as it
+  was.
+- A fixed lead time: 300 seconds is half of the shortest lease, and 120
+  seconds leaves an agent mid-turn too little time.
+- A renewal per card (`POST …/tasks/{id}/renew`): any call renews all
+  of the instance's leases anyway (§2.4), so a per-card call would
+  renew the others too.
+- Letting the warning wait for the holder (§5.3): a holder that does
+  not answer would start a not-listening episode and be reported a
+  second time beside `claim_expired`, the double report 99ee4554
+  already rejected.
+
+Evidence is split: the need (cards whose holders were still at work
+expired while they waited) is on the card; the lead time, the per-
+instance renewal and the wake rule are the lead-approved plan, not
+stated by the maintainer.
