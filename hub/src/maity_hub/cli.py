@@ -482,7 +482,20 @@ def _migrate(settings: Settings) -> int:
                 EXIT_FAILURE,
             )
         before = current_revision(engine)
-        migrate(engine)
+        try:
+            migrate(engine)
+        except SQLAlchemyError:
+            # Where the run left the schema, after the last attempt (db.migrate): on PostgreSQL
+            # the chain is one transaction and this is `before`; MariaDB commits per step.
+            try:
+                now = current_revision(engine) or "empty"
+            except SQLAlchemyError:
+                now = "unknown"
+            print(
+                f"maity-hub: schema stays at {now}, head {head_revision(engine)} not reached",
+                file=sys.stderr,
+            )
+            raise
         print(f"maity-hub: schema {before or 'empty'} -> {head_revision(engine)}")
     except SQLAlchemyError as error:
         return _database_error(settings, error)

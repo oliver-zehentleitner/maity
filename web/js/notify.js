@@ -335,7 +335,9 @@ window.Maity = window.Maity || {};
   let restartWanted = false;
   const watchers = new Set();
   const shown = new Set();
-  const changed = () => watchers.forEach((fn) => fn());
+  // items: what a long-poll answer brought (§18.2), for a watcher that only cares for some kinds;
+  // none from a counts read.
+  const changed = (items) => watchers.forEach((fn) => fn(items));
   const wanted = () => browserConfig || watchers.size;
 
   // The waiting view and browser pop-ups share one request, even while a
@@ -394,7 +396,7 @@ window.Maity = window.Maity || {};
         if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);
         // Refresh the snapshot, including removals/read flags; never insert a
         // long-poll item into a request form or assume its count is complete.
-        changed();
+        changed(items);
         const config = browserConfig;
         if (config && !loop.reset) items.forEach((x) => {
           const b = config.settings.browser;

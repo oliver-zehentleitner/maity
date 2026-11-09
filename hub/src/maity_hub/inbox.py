@@ -36,6 +36,14 @@ class Addressee:
     instance: str | None = None  # member: the one instance addressed, as written (§7)
 
     def text(self, conn: Connection) -> str:
+        if self.kind in ("owner", "profile_owner", "human", "role"):
+            return self.shown(None)
+        from maity_hub.views import principal_id
+
+        return self.shown(principal_id(conn, self.member))
+
+    def shown(self, member: str | None) -> str:
+        """`text` with the member id already read (`member`), for a page read in a batch."""
         if self.kind == "owner":
             return "owner"
         if self.kind == "profile_owner":
@@ -44,9 +52,6 @@ class Addressee:
             return f"human:{self.human}"
         if self.kind == "role":
             return str(self.role)
-        from maity_hub.views import principal_id
-
-        member = principal_id(conn, self.member)
         assert member is not None
         return f"{member}#{self.instance}" if self.instance else member
 
