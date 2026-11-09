@@ -4628,7 +4628,7 @@ A refusal `second_factor_enrolment_required` draws the setup through `render()`;
 **Evidence:** inferred
 **Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
 
-Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
 
 **Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
 
@@ -5341,3 +5341,34 @@ two fixed words.
 - A grid of all motifs as pictures, chosen by a click: every opened card would load 36 images at
   once, and the choice would need its own keyboard handling, which a `<select>` already has.
 - Catalog keys for every motif now: a table that falls out of step with each new motif in the set.
+
+## A project's inbox reads its open requests first; the answered ones only when asked for
+
+**Id:** 874d4952-a257-4cd1-ac51-34b410b0a9a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y8gkq1kvt63c (the owner's request: the inbox took 7 s on prod); the measurement and plan on tsk-fxjtwmkc4md5 (notes nte-dpe78x619re6, nte-n1rj7s15xw3f: 4.6 s of the 7 s were three serial pages of the full request history); web/js/inbox.js `load`, `closedOf`
+**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-08
+**Revisit when:** the hub's request list gets a page size or an order that makes the full history cheap, or the inbox shows the answered ones by default
+
+A project's inbox asks its list with `status=open`. **Show** → all reads the
+answered and withdrawn requests then (`status=answered,withdrawn`, §7),
+once per view, and draws again. Choosing all again while that read runs
+waits for it; a failed one is let go, so the next choice asks again. One
+that answers after the view was left draws nothing and leaves the shared
+selection to the view that stands; so does every read on the way in. A link to a request that is not open
+(`/<owner>/<slug>/inbox/<id>`) reads that one request (`GET …/requests/{id}`)
+and shows it among the answered, as before. The cross-project inbox always
+showed the open ones alone and reads as it did.
+
+**Reason:** the inbox read `status=all`, every request the project ever had,
+page after page, before it drew anything; what it shows by default is the
+open ones. Reading those alone keeps the first drawing's cost flat as the
+history grows.
+
+**Rejected alternatives:** a smaller page of the full history, which still
+reads closed requests nobody asked to see and needs a second read for the
+open ones it cut off; reading the answered ones in the background after the
+first drawing, which spends the same reads on every visit. Both are
+inferred, the card did not discuss them.
