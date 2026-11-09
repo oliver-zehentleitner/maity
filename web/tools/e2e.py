@@ -2265,13 +2265,15 @@ def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
 def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     """A session from before the enrolment has not given the factor, so the page must ask.
     Returns the secret and the last step the hub took, for the sign-in that follows."""
-    run.step("second hub: enrol TOTP; an older session's export asks for the code")
+    run.step("second hub: enrol TOTP; an older session's export and runner pairing ask for the code")
     older_context, older = sign_in(run, browser)
+    # A third session from before the enrolment pairs a runner: Oliver's case (tsk-6dk86ej9s0fq).
+    pairing_context, pairing = sign_in(run, browser)
     context, page = sign_in(run, browser)
     started = page.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
     secret = started["secret"]
     step = int(time.time() // 30)
-    page.evaluate(
+    enrolled = page.evaluate(
         """(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""",
         totp_code(secret, step),
     )
@@ -2294,11 +2296,26 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
         older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
     expect(older.locator(".data-export")).to_contain_text("Your export was saved.")
+    # Pairing a runner mints a credential (§2.8.4): the page asks, a recovery code answers, the line comes.
+    pairing.goto(run.base + "/runners")
+    pairing.locator("#pair-name").fill("e2e-step-up")
+    pairing.get_by_role("button", name="Create the pairing line", exact=True).click()
+    asked = pairing.locator("form.step-up")
+    expect(asked).to_contain_text("Pairing a runner needs your second factor")
+    expect(pairing.locator(".pair-steps")).to_have_count(0)
+    run.shot(pairing, "second-hub-step-up-runner")
+    pairing.locator("#step-up-step_up_required").fill(enrolled["recovery_codes"][0])
+    asked.get_by_role("button", name="Confirm", exact=True).click()
+    expect(pairing.locator(".pair-steps")).to_contain_text("maity runner pair")
+    expect(pairing.locator("form.step-up")).to_have_count(0)
+    pairing_context.close()
     # What the question answers: the first refusal and the wrong code, both expected here.
     run.problems = [
         p
         for p in run.problems
-        if "/me/export answered 403" not in p and "/second-factor/verify answered 403" not in p
+        if "/me/export answered 403" not in p
+        and "/second-factor/verify answered 403" not in p
+        and "/runners/enrollments answered 403" not in p
     ]
     no_problems(run, "step-up with TOTP")
     older_context.close()

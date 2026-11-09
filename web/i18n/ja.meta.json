@@ -5131,6 +5131,10 @@
     "en": "cdb117d168490189",
     "text": "47dc9fa58efe4e17"
   },
+  "inbox.answer.step_up": {
+    "en": "bdc39d53e1ef6f10",
+    "text": "3f93f9c08a125f74"
+  },
   "inbox.answered": {
     "en": "049cffe6ef41ab76",
     "text": "d748f5889480cf2b"
@@ -8739,6 +8743,10 @@
     "en": "a106906d97c532af",
     "text": "fcd7e1f09ea49942"
   },
+  "mail.address.step_up": {
+    "en": "a2943f0589f11781",
+    "text": "962941408db9a6c7"
+  },
   "mail.address.title": {
     "en": "2c30b8cd5f5975cc",
     "text": "42f242673090b7a3"
@@ -9030,6 +9038,10 @@
   "mail.source.env": {
     "en": "3eb8b9f3938d33b1",
     "text": "59acd595a4d4e2d5"
+  },
+  "mail.step_up": {
+    "en": "1708364713bc2c72",
+    "text": "cd8823d74c9db82a"
   },
   "mail.test.failed": {
     "en": "bbdb8218753742c6",
@@ -12251,6 +12263,10 @@
     "en": "bfdb2503b0f2e951",
     "text": "2d69007968ff892c"
   },
+  "password.step_up": {
+    "en": "0f020d2322b3859c",
+    "text": "a0574e86832a13ff"
+  },
   "password.submit": {
     "en": "22d7685ba44f1925",
     "text": "4bd3518eb31ecd3e"
@@ -15163,6 +15179,10 @@
     "en": "1fc9d7b62256de1d",
     "text": "7d35da9689d10462"
   },
+  "runners.pair.step_up": {
+    "en": "374c59e514baf630",
+    "text": "b65d73fa947e97f7"
+  },
   "runners.pair.submit": {
     "en": "0470cf0110a75885",
     "text": "f6ad19b3183e705b"
@@ -15506,6 +15526,10 @@
   "sessions.address.remove": {
     "en": "082b2167012b5396",
     "text": "130a5f48d8deb479"
+  },
+  "sessions.address.step_up": {
+    "en": "7f558795bfa99ca4",
+    "text": "7f8d3814b1a40e47"
   },
   "sessions.address.title": {
     "en": "7d355e98c581cedd",

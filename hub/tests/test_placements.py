@@ -857,3 +857,22 @@ def test_a_new_profile_cannot_have_a_handle_that_speaks_for_the_hub(setup: Setup
     refused = place(setup, agent={"handle": "hub", "display_name": "Looks official"})
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"]["fields"] == {"handle": "reserved"}
+
+
+@pytest.mark.parametrize("caller", ["runner_owner", "proposing_agent"])
+def test_an_existing_member_of_another_owner_is_not_yours(
+    setup: Setup, make_client: ClientFactory, caller: str
+) -> None:
+    # §15.6: with `{"id"}` the calling human owns the profile, and an agent with
+    # `agents:propose` names only a profile its own human owns; otherwise `not_yours` and no
+    # placement. Another human's agent, a member of the project, on the owner's runner.
+    other = flow.human(make_client, setup.engine, "someone")
+    with setup.engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    theirs = factory.agent(setup.engine, project_id, other.id)
+    who = setup.owner if caller == "runner_owner" else admin_agent(make_client, setup)
+    response = place(setup, who, agent={"id": theirs.agent_id}, reason="theirs")
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
+    with setup.engine.connect() as conn:
+        assert conn.execute(select(t.placement.c.id)).first() is None
