@@ -12640,8 +12640,10 @@ The conversation view:
   mark, as for a mention.
 
   Exactness: the counts leave out every message redacted before the hub's
-  pass starts. Exactness against a redaction that commits while a pass
-  runs is not promised: the nudge is a wake-up hint, and reading the chat
+  pass starts, unless the project wrote 2000 or more redactions between
+  two of the hub's passes while the chat was being read; those may then
+  stay counted, as may a redaction that commits while a pass runs.
+  Exactness against those is not promised: the nudge is a wake-up hint, and reading the chat
   shows a redacted message only as its tombstone (§8.5), never its body.
   The hub reads at most a budget of messages (2000) per stay and call,
   moving the read's end up to the newest message only once the read has
