@@ -40,12 +40,26 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
     settings = Path(argv[argv.index("--settings") + 1])
     assert settings.parent == ctx.agent_dir  # the runner's, outside the clone
-    assert json.loads(Path(argv[argv.index("--mcp-config") + 1]).read_text()) == {"mcpServers": {}}
+    mcp = [a for a in argv if a.startswith("--mcp-config")]
+    assert len(mcp) == 1 and mcp[0].startswith("--mcp-config=")
+    assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
+
+
+def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
+    tmp_path: Path,
+) -> None:
+    """Claude Code's `--mcp-config` takes several values. Given as a separate argument, the
+    start prompt right after it (no `--model` between) was read as a second configuration file,
+    and Claude Code exited 1 at once (2.1.319, the first runner test)."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
+    argv = adapters.launch(ctx).argv
+    assert argv[-1] == adapters.START_PROMPT and "--model" not in argv
+    assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
 def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) -> None:

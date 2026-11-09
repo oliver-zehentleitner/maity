@@ -1,7 +1,7 @@
 ### Changed
 
-- web: the row of project tabs has no "+ New project" tab any more; New project is the first item of
-  the header's "+" menu, and the tabs menu stands right after the last tab (tsk-hp9gq9rmrdq2).
+- web: the row of project tabs has no "+ New project" tab any more; New project is an item of the
+  header's "+" menu, and the tabs menu stands right after the last tab (tsk-hp9gq9rmrdq2).
 
 ### Added
 

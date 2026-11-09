@@ -171,6 +171,27 @@
   --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
   --ktw-status-superseded: var(--muted);
+  /* the library's state text (0.11.45): each state colour above still draws borders, dots and
+     the graph; its -text twin draws the words, on the pills' solid --ktw-surface2 and on
+     --ktw-surface and --ktw-bg, never on a tint. So they take Maity's text-on-plain-ground
+     values: the state colour where it passes there, else its mix a fifth of the way to --text
+     (--accent is 4.53:1 dark on --surface-2). Lowest pair 5.00:1 (--ok on light --surface-2),
+     every other one higher in both themes (WCAG AA). */
+  --ktw-ok-text: var(--ok);
+  --ktw-confirmed-text: var(--ok);
+  --ktw-warn-text: var(--ktw-warn);
+  --ktw-inferred-text: var(--ktw-warn);
+  --ktw-bad-text: var(--bad);
+  --ktw-unknown-text: var(--muted);
+  --ktw-info-text: var(--ktw-accent-text);
+  --ktw-status-needs-review-text: var(--ktw-warn);
+  --ktw-status-open-text: var(--ktw-accent-text);
+  --ktw-status-pending-confirmation-text: var(--ktw-accent2);
+  --ktw-status-superseded-text: var(--muted);
+  /* the library's faint lines and marks (0.11.45: grid, rules, a superseded card's grey); the
+     faint text stays --ktw-fg3. Both were --muted before, so nothing shifts; --seat would be
+     2.5:1, under the 3:1 a mark needs (WCAG 1.4.11) */
+  --ktw-fg3-line: var(--muted);
   --ktw-radius: var(--radius);
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
