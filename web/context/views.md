@@ -1362,7 +1362,9 @@ that is not advertised `harness_not_offered`.
 **Rejected alternative:** the form on the instance-level Runners page:
 there the project would be one more choice, and the placements are not
 shown there. Free text for the tool and the model: the runner advertises
-the lists, and a typo would only come back as `harness_not_offered`.
+the lists, and a typo would only be refused by the hub (a tool it does not
+know as `invalid`, a model the runner does not offer as
+`harness_not_offered`, `_check_spec` in `hub/src/maity_hub/routes/placements.py`).
 Listing every attached runner and letting the hub refuse: a choice that
 can only fail.
 
