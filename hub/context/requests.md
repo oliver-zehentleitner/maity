@@ -59,7 +59,7 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08; re-checked by the lead on 2026-11-09 after its second trigger fired, which 47e9ac62 now answers
+**Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08; re-checked by the project lead in Maity message seq 100432, 2026-11-09, after its second trigger fired, which 47e9ac62 now answers
 **See:** requests.md#only-a-wait-filed-under-the-current-claim-keeps-its-card-blocked — 47e9ac62-d08b-4f23-a664-5aa31c8b553a — as of 2026-11-09
 **Revisit when:** a request needs to block a card without the asker holding it
 
