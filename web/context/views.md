@@ -3255,6 +3255,31 @@ passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
 
 
+## Every route that asks for the factor is called through M.stepUp.run, held by a list the hub test and the check share
+
+**Id:** 4dc6b1f0-bd9d-4110-a961-41e830af134e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6dk86ej9s0fq (the owner, 2026-11-09: pairing a runner on /runners showed only "This needs your second factor first."; the lead's scope: the fix, an audit of every route that calls `require_step_up`, a guard, the fixture refusing); hub/src/maity_hub (the routes), docs/api.md §2.8.4; the guard's form is the implementer's, as the card left it
+**See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-09
+**Revisit when:** the hub publishes which routes ask (in its OpenAPI, say), or the dashboard's calls go through typed per-route functions
+
+`tools/step-up-routes.json` lists the hub's routes that ask for the factor (method and path under the API prefix; `body` where the hub asks only for one field, `when` where it asks only in some cases). Three readers keep it true:
+- `hub/tests/test_step_up_routes.py` reads the hub's source: every route whose handler reaches `second_factor.require_step_up`, directly, in a lambda it hands on, or through the hub's own functions it calls. Each call is resolved through the module's imports, so the gate imported under another name, or called by a module's name or its full dotted path, counts the same. A function handed around under another variable or taken by `getattr` is not followed. The two sets must be equal.
+- `tools/check.py` fails on a call `M.api.<verb>(path, …)` in `js/` whose path it reads as one of those routes and that does not go through `M.stepUp.run`. It reads string literals, `ctx.base`, a name's `const`, a helper arrow and both sides of a choice; what it cannot read it leaves alone. A call counts as asking first inside the function given as `M.stepUp.run`'s first argument (the argument is that function expression and nothing more, not one called or bound right there), as an arrow handed to it by name or as a `call:` property, or as the argument of a local function that hands that parameter to it as the first argument. A call made to work out `M.stepUp.run`'s arguments is sent before anything is asked, and does not count. `tools/test_step_up_check.py` holds those readings.
+- The same check keeps `js/api.js`'s `STEP_UP_ROUTES` equal to the list. With `window.MAITY_FIXTURE_STEP_UP` set (to `Date.now()`, so that a code given earlier in the run does not count), the fixture hub refuses them with `step_up_required` until a code is verified.
+
+A reject of a held address change is never asked by the hub, but it is sent through the question like the approve: the hub's reading includes it, and asking only after a refusal costs nothing there.
+
+**Reason:** the runner pairing, the mail settings, the password, the address change and its approval, and the answer that moves a project were each written without the helper, and nothing failed until a person met the refusal. A list read from the hub and a check over every call catches the next one when it is written. A test drives only the flows someone thought of.
+
+**Rejected alternatives:**
+- The fixture refusing, with smoke and e2e to catch a missing question: it finds only what a test drives, and none of the eight calls had such a test.
+- A hub contract test against routes named in docs/api.md: §2.8.4 names the calls in prose, not as a list a test reads, and the step-up is decided in the hub's code, which the source reading follows.
+- Every `M.api` write through `M.stepUp.run`: each form would need a slot for a question the hub never asks.
+
+
 ## The second step of a sign-in is a page of its own for both ways; the mail's link is posted from the page
 
 **Id:** 4fdf4cc1-e916-44d7-9064-5b07989b0d06
