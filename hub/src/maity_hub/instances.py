@@ -9,7 +9,7 @@ the team.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Container, Iterable, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -305,23 +305,25 @@ def views(
     members: Iterable[Any],
     handles: dict[str, str],
     *,
-    details: bool = False,
+    details: bool | Container[int] = False,
     names: dict[str, str] | None = None,
+    projects: dict[str, Any] | None = None,
 ) -> dict[int, list[dict[str, Any]]]:
     """Per agent membership its active instances as the instance view (§6.17), oldest
-    first. `details` adds `credential_id`, for the agent's owner and `members:admin`;
-    `names` (agent id -> global name, §6.3) adds the instance's `name`."""
+    first. `details` adds `credential_id`, for the agent's owner and `members:admin`: for
+    every membership, or for the membership ids it holds; `names` (agent id -> global
+    name, §6.3) adds the instance's `name`. `projects` (id -> row) is the caller's read of
+    the members' projects, when it has made it."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     rows = {m.id: m for m in members if m.agent_id is not None}
     if not rows:
         return {}
-    projects = {
-        p.id: p
-        for p in conn.execute(
-            select(t.project).where(t.project.c.id.in_({m.project_id for m in rows.values()}))
-        )
-    }
+    wanted = {m.project_id for m in rows.values()}
+    if projects is None or not wanted <= projects.keys():
+        projects = {
+            p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(wanted)))
+        }
     credentials = conn.execute(
         select(t.credential)
         .where(t.credential.c.membership_id.in_(list(rows)), t.credential.c.revoked_at.is_(None))
@@ -345,7 +347,7 @@ def views(
         }
         if names is not None:
             view["name"] = f"{names[member.agent_id]}#{c.instance}"  # owner/handle#id (§6.3)
-        if details:
+        if details is True or (not isinstance(details, bool) and c.membership_id in details):
             view["credential_id"] = c.id
         view.update(
             {
