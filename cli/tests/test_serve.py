@@ -321,7 +321,10 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     capsys.readouterr()
     assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
     view = json.loads(capsys.readouterr().out)
-    assert view["runner_id"] == "rnr-0002" and view["placements"] == [{**PLACEMENT, "agent": None}]
+    # No supervisor record yet: the stub placement was not started in this run.
+    assert view["runner_id"] == "rnr-0002" and view["placements"] == [
+        {**PLACEMENT, "agent": None, "state": None, "attach": None}
+    ]
 
 
 def test_serve_refuses_to_start_without_a_credential(
