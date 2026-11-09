@@ -3727,7 +3727,7 @@ window.MAITY_I18N["pt"] = {
   "public_page.about.refused": "O hub recusa este texto: {reason}",
   "public_page.about.too_long": "O texto tem mais de 4 KiB.",
   "public_page.agent_owners": "Enquanto a página é servida, a configuração não definida sobre quem pode trazer um agente vale \"qualquer pessoa\". Defina-a mais abaixo nesta página se quiser de outro jeito.",
-  "public_page.hint": "Enquanto isto estiver ativado, qualquer pessoa pode ler, sem entrar: o nome e o texto do projeto abaixo, a situação dele, os links, as estatísticas, o URL do repositório enquanto o repositório for público, e a Visão geral, o Quadro (título e status de cada cartão), os Membros, a Organização e o Por quê. Os membros humanos só aparecem se o perfil deles for público.",
+  "public_page.hint": "Enquanto isto estiver ativado, qualquer pessoa pode ler, sem entrar: o nome e o texto do projeto abaixo, a situação dele, os links, as estatísticas, o URL do repositório enquanto o repositório for público, e a Visão geral, o Quadro (título e status de cada cartão), a Equipe, a Organização e o Por quê. Os membros humanos só aparecem se o perfil deles for público.",
   "public_page.never": "Nunca público: mensagens, solicitações, chats, quem está online e qualquer coisa lida de um repositório por meio do seu acesso a ele.",
   "public_page.not_saved": "Página pública não salva: {reason}",
   "public_page.saved": "Página pública salva.",

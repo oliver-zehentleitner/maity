@@ -3707,7 +3707,7 @@
   "public_page.about.refused": "The hub refuses this text: {reason}",
   "public_page.about.too_long": "The text is longer than 4 KiB.",
   "public_page.agent_owners": "While the page is served, the unset setting on who may bring an agent reads \"anyone\". Set it further down this page if you want it otherwise.",
-  "public_page.hint": "While this is on, anyone can read without signing in: the project's name and text below, its state, its links, its statistics, the repository URL while the repository is public, and its Overview, Board (each card's title and status), Members, Organisation and Why. Human members appear only if their own profile is public.",
+  "public_page.hint": "While this is on, anyone can read without signing in: the project's name and text below, its state, its links, its statistics, the repository URL while the repository is public, and its Overview, Board (each card's title and status), Team, Organisation and Why. Human members appear only if their own profile is public.",
   "public_page.never": "Never public: messages, requests, chats, who is online, and anything read from a repository through your access to it.",
   "public_page.not_saved": "Public page not saved: {reason}",
   "public_page.saved": "Public page saved.",

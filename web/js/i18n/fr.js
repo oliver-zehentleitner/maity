@@ -3727,7 +3727,7 @@ window.MAITY_I18N["fr"] = {
   "public_page.about.refused": "Le hub refuse ce texte : {reason}",
   "public_page.about.too_long": "Le texte dépasse 4 KiB.",
   "public_page.agent_owners": "Tant que la page est diffusée, le réglage non défini sur qui peut amener un agent vaut « n'importe qui ». Définissez-le plus bas sur cette page si vous voulez autre chose.",
-  "public_page.hint": "Tant que c'est activé, tout le monde peut lire sans se connecter : le nom et le texte du projet ci-dessous, son état, ses liens, ses statistiques, l'URL du dépôt tant que le dépôt est public, ainsi que sa vue d'ensemble, son tableau (titre et statut de chaque carte), ses membres, son organisation et son Why. Les personnes membres n'apparaissent que si leur propre profil est public.",
+  "public_page.hint": "Tant que c'est activé, tout le monde peut lire sans se connecter : le nom et le texte du projet ci-dessous, son état, ses liens, ses statistiques, l'URL du dépôt tant que le dépôt est public, ainsi que sa vue d'ensemble, son tableau (titre et statut de chaque carte), son équipe, son organisation et son Why. Les personnes membres n'apparaissent que si leur propre profil est public.",
   "public_page.never": "Jamais publics : les messages, les demandes, les discussions, qui est en ligne, et tout ce qui est lu depuis un dépôt grâce à votre accès à celui-ci.",
   "public_page.not_saved": "Page publique non enregistrée : {reason}",
   "public_page.saved": "Page publique enregistrée.",

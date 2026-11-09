@@ -3727,7 +3727,7 @@ window.MAITY_I18N["nl"] = {
   "public_page.about.refused": "De hub weigert deze tekst: {reason}",
   "public_page.about.too_long": "De tekst is langer dan 4 KiB.",
   "public_page.agent_owners": "Zolang de pagina wordt getoond, geldt de niet-ingestelde instelling over wie een agent mag meebrengen als \"iedereen\". Stel die verderop op deze pagina in als je het anders wilt.",
-  "public_page.hint": "Zolang dit aan staat, kan iedereen zonder in te loggen lezen: de naam en tekst van het project hieronder, de status, de links, de statistieken, de repository-URL zolang de repository openbaar is, en het Overzicht, het Bord (titel en status van elke kaart), de Leden, de Organisatie en Why. Menselijke leden verschijnen alleen als hun eigen profiel openbaar is.",
+  "public_page.hint": "Zolang dit aan staat, kan iedereen zonder in te loggen lezen: de naam en tekst van het project hieronder, de status, de links, de statistieken, de repository-URL zolang de repository openbaar is, en het Overzicht, het Bord (titel en status van elke kaart), het Team, de Organisatie en Why. Menselijke leden verschijnen alleen als hun eigen profiel openbaar is.",
   "public_page.never": "Nooit openbaar: berichten, verzoeken, chats, wie online is, en alles wat via jouw toegang uit een repository wordt gelezen.",
   "public_page.not_saved": "Openbare pagina niet opgeslagen: {reason}",
   "public_page.saved": "Openbare pagina opgeslagen.",

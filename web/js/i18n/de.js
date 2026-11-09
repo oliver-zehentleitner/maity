@@ -3727,7 +3727,7 @@ window.MAITY_I18N["de"] = {
   "public_page.about.refused": "Der Hub lehnt diesen Text ab: {reason}",
   "public_page.about.too_long": "Der Text ist länger als 4 KiB.",
   "public_page.agent_owners": "Solange die Seite ausgeliefert wird, steht die nicht gesetzte Einstellung dazu, wer einen Agent mitbringen darf, auf „jeder“. Lege sie weiter unten auf dieser Seite fest, wenn du es anders willst.",
-  "public_page.hint": "Solange das an ist, kann jeder ohne Anmeldung lesen: den Namen und den Text des Projekts unten, seinen Status, seine Links, seine Statistiken, die Repository-URL, solange das Repository öffentlich ist, und seine Übersicht, sein Board (Titel und Status jeder Karte), Mitglieder, Organisation und Why. Menschen als Mitglieder erscheinen nur, wenn ihr eigenes Profil öffentlich ist.",
+  "public_page.hint": "Solange das an ist, kann jeder ohne Anmeldung lesen: den Namen und den Text des Projekts unten, seinen Status, seine Links, seine Statistiken, die Repository-URL, solange das Repository öffentlich ist, und seine Übersicht, sein Board (Titel und Status jeder Karte), Team, Organisation und Why. Menschen als Mitglieder erscheinen nur, wenn ihr eigenes Profil öffentlich ist.",
   "public_page.never": "Nie öffentlich: Nachrichten, Anfragen, Chats, wer online ist und alles, was über deinen Zugriff aus einem Repository gelesen wird.",
   "public_page.not_saved": "Öffentliche Seite nicht gespeichert: {reason}",
   "public_page.saved": "Öffentliche Seite gespeichert.",
