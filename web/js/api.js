@@ -2701,6 +2701,60 @@ window.Maity = window.Maity || {};
       project(m[1], path);
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
     }],
+    // A human with members:admin places an agent on a runner of their own attached here: one of
+    // their agents by id, or a new profile (§15.6). The checks the hub makes, in its order; the
+    // placement waits for the runner (reported null) and needs no consent (their own action).
+    ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
+      const prj = project(m[1], path);
+      const caller = me().member;
+      if (caller.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path);
+      const r = runnersFile().items.find((x) => x.id === body.runner && !x.removed_at);
+      if (!r || !activeAttachments(m[1]).some((a) => a.runner_id === r.id)) fail(409, "runner_not_attached", "the runner is not attached here", path);
+      if (r.owner_id !== caller.id) fail(403, "forbidden", "only the runner's owner places agents on it", path);
+      if (["plan", "review"].includes(prj.state) && !body.reason) fail(400, "invalid", "the project is in " + prj.state + ": say why", path, { fields: { reason: "required" } });
+      if (prj.state === "archived") fail(409, "project_closed", "the project is closed", path);
+      if (r.credential_state !== "active") fail(409, "runner_revoked", "the runner has no live credential", path);
+      const live = placementsOf(m[1]).filter((x) => x.active);
+      const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
+      let agent;
+      if (body.agent && body.agent.id) {
+        const a = members.find((x) => x.id === body.agent.id && !x.removed_at);
+        if (!a || a.kind !== "agent") fail(400, "invalid", "not an agent of this project", path, { fields: { "agent.id": "not_a_member" } });
+        if (a.owner_id !== caller.id) fail(400, "invalid", "name one of your own agents", path, { fields: { "agent.id": "not_yours" } });
+        if (live.some((x) => x.agent.id === a.id)) fail(409, "placement_exists", "an active placement holds this", path);
+        agent = { id: a.id, handle: a.handle, display_name: a.display_name, avatar_url: null };
+      } else {
+        const handle = body.agent && body.agent.handle, name = body.agent && body.agent.display_name;
+        if (!handle || !name) fail(400, "invalid", "name an agent by id, or give handle and name", path, { fields: { agent: "id_or_handle" } });
+        if (members.some((x) => x.handle === handle) || fixtures()["agents.json"].items.some((x) => x.handle === handle)) {
+          fail(400, "invalid", "you already have an agent with this handle", path, { fields: { handle: "taken" } });
+        }
+        if (live.some((x) => !x.agent.id && x.agent.handle === handle)) fail(409, "placement_exists", "an active placement holds this", path);
+        agent = { id: null, handle, display_name: name, avatar_url: null };
+      }
+      const clone = (body.workspace && body.workspace.clone) || agent.handle;
+      if (live.some((x) => x.runner.id === r.id && x.workspace.clone === clone)) fail(409, "placement_exists", "an active placement holds this", path);
+      const c = r.capabilities || {};
+      const tool = (c.harnesses || []).find((x) => x.id === body.harness && x.available !== false && (!body.target || (x.targets || []).includes(body.target)));
+      const mode = body.mode || (tool && tool.default_mode);
+      if (!tool || !(tool.modes || []).includes(mode) || (body.model && !(tool.models || []).includes(body.model))
+        || (body.target && !(c.targets || []).some((t) => t.name === body.target))) {
+        fail(409, "harness_not_offered", "not in the runner's advertised capabilities", path, { offered: c.harnesses || [] });
+      }
+      const at = nowIso();
+      const made = {
+        id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
+        runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
+        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
+        desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
+        approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
+        session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
+        created_by: caller.id, proposed_by: null, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
+      };
+      made.logs_hint = "maity runner logs " + made.id;
+      placementsOf(m[1]).push(made);
+      return made;
+    }],
     ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
       const p = placementFor(m[1], m[2], path);
       if (!["running", "stopped"].includes(body.desired)) fail(400, "invalid", "desired is running or stopped", path, { fields: { desired: "unknown" } });

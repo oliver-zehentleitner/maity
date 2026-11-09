@@ -1329,6 +1329,43 @@ humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
 
+## An agent is started on a runner from Agents' Where they run, on one's own live runners only
+
+**Id:** 7baa75e7-2cf3-4cb5-ae41-93e04cdb71d9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
+**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
+**See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
+
+Where they run, on the project's Agents, has **Start an agent on a runner**
+for a human with members:admin. It offers the runners attached here
+(`GET …/runners`) that the human owns and whose credential is live. With
+none, the section says so and links the project's Runners. The agent is one
+of the human's own agents here without an active placement, or a new
+profile with the join panel's fields (trust, role, reports to, areas,
+briefing). Where, tool, mode and model come from what the chosen runner
+last advertised: reachable targets, installed tools for that target, the
+tool's modes with its default chosen, its models or the runner's default.
+Without a tool, Start is disabled. The call is one `POST …/placements`. A
+refusal shows the hub's message, code and named fields, and the new
+placement is listed by reading the list again. The route asks for no
+second factor, so the call is not wrapped in `M.stepUp.run`.
+
+**Reason:** the placements are already shown and steered here, so the
+form sits beside them. Offering only what the hub accepts keeps the
+choices few: someone else's runner is `forbidden`, a revoked one
+`runner_revoked`, an agent placed already `placement_exists`, and a tool
+that is not advertised `harness_not_offered`.
+
+**Rejected alternative:** the form on the instance-level Runners page:
+there the project would be one more choice, and the placements are not
+shown there. Free text for the tool and the model: the runner advertises
+the lists, and a typo would only come back as `harness_not_offered`.
+Listing every attached runner and letting the hub refuse: a choice that
+can only fail.
+
 ## Project settings are the project's last tab, not a panel from the gear menu
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218

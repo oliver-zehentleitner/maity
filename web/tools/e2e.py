@@ -4272,9 +4272,38 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
     expect(card).to_contain_text("It has not reported what it can do yet")
     run.shot(page, "project-runners")
     run.a11y(page, "project runners")
+    start_on_runner_form(run, page, name)
+    page.goto(f"{run.base}/owner/e2e-alpha/runners")
+    expect(card).to_contain_text("no agent running here")
     detach()
     expect(view).to_contain_text("No runner is allowed in this project yet.")
     no_problems(run, "project runners")
+
+
+def start_on_runner_form(run: Run, page: Page, name: str) -> None:
+    """Agents → Start an agent on a runner (docs/api.md §15.6, tsk-dsp6htj4c686) against the hub:
+    the paired runner allowed here is offered, as the hub lists it; it has not reported what it can
+    do, so there is no tool to choose and nothing to send."""
+    run.step("placements: the paired runner allowed here is offered to start an agent on, no tool yet")
+    page.goto(f"{run.base}/owner/e2e-alpha/agents")
+    section = page.locator("main section.placements")
+    open_form = section.get_by_role("button", name="Start an agent on a runner", exact=True)
+    expect(open_form).to_be_visible()
+    open_form.click()
+    form = section.locator("form.placement-new")
+    expect(form).to_be_visible()
+    runner_options = form.locator("#placement-new-runner option")
+    expect(runner_options).to_have_count(1)
+    expect(runner_options.first).to_contain_text(name + " · offline")
+    expect(form.locator("#placement-new-tool option")).to_have_count(0)
+    expect(form).to_contain_text("The runner offers no tool there that is installed.")
+    expect(form.get_by_role("button", name="Start on the runner", exact=True)).to_be_disabled()
+    run.shot(page, "placements-start-form")
+    run.a11y(page, "placements, start on a runner")
+    form.get_by_role("button", name="Cancel", exact=True).click()
+    expect(form).to_have_count(0)
+    expect(open_form).to_be_focused()
+    no_problems(run, "start on a runner")
 
 
 def notifications_step(run: Run, page: Page) -> None:
