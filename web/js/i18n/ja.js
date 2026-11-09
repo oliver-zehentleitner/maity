@@ -3937,7 +3937,7 @@ window.MAITY_I18N["ja"] = {
   "restricted.widen.cards": {
     "other": "現在、制限付きテキストのあるカードは {count} 件です。"
   },
-  "restricted.widen.cards_unknown": "以前メンバーが開放されていた間に書かれたテキストも保存されたままで、それも読めるようになります。",
+  "restricted.widen.cards_unknown": "以前制限付きアクセスが開放されていた間に書かれたテキストも保存されたままで、それも読めるようになります。",
   "restricted.widen.future": "後からこのプロジェクトに参加するメンバーも全員、読めるようになります。",
   "restricted.widen.go": "保存して読めるようにする",
   "restricted.widen.newly": "次のメンバーは、これまでに書かれたものも含めて、プロジェクトのすべての制限付きテキストを読み書きするようになります:",
