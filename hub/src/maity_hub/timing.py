@@ -20,10 +20,9 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Connection, Engine, event
+from sqlalchemy import Engine, event
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub.admin import is_instance_admin
 from maity_hub.request_stats import route_of
 
 API = "/api/v1/"
@@ -66,12 +65,13 @@ def install(*engines: Engine | None) -> None:
             event.listen(engine, "after_cursor_execute", _after)
 
 
-def admit(conn: Connection, human_id: str) -> None:
-    """Called once the caller is a human signed in by cookie: the answer carries the header
-    only if that human is the instance admin. Outside the API (no tally) it reads nothing."""
+def admit(instance_admin: bool) -> None:
+    """Called once the caller is a human signed in by cookie, with whether that human is the
+    instance admin (read in the sign-in's own statement): only then does the answer carry the
+    header. Outside the API (no tally) it does nothing."""
     tally = _TALLY.get()
     if tally is not None:
-        tally.shown = is_instance_admin(conn, human_id)
+        tally.shown = bool(instance_admin)
 
 
 def header(tally: Tally, total: float) -> bytes:

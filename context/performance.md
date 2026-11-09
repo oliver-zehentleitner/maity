@@ -75,11 +75,15 @@ now be picked up later without measuring again from scratch.
 **Source:** card tsk-239r9cwxje6w and its plan note, approved by the lead, 2026-11-08; the audience narrowed and the log line added on the lead's word, 2026-11-09, after a review of pull request #1542 measured the leak below
 **Revisit when:** a measurement needs the header for an account that is not the instance admin, or the header must name more than counts and durations
 
-Every answer under `/api/v1/` to the instance admin's signed-in session (the account
-`maity_hub.admin.is_instance_admin` names, by cookie) carries
-`Server-Timing: db;dur=<ms>, sql;desc="n=<count>", total;dur=<ms>`, on any status. No other
-caller gets it: not another human, not an agent, not a token, not a visitor. A measurement
-on prod therefore runs signed in as the instance admin; a test account sees no header.
+Every API answer whose cookie sign-in admits the instance admin (the earliest account,
+`maity_hub.admin.instance_admin_id`) carries
+`Server-Timing: db;dur=<ms>, sql;desc="n=<count>", total;dur=<ms>`, on any status, a
+second-factor refusal included. A route that signs nobody in (the health probe, the help)
+and an unknown route carry none. No other caller gets it: not another human, not an agent,
+not a token, not a visitor. A measurement on prod therefore runs signed in as the instance
+admin; a test account sees no header. Whether the caller is the instance admin is a column
+of the sign-in's own read of the session and the account, so it costs no statement of its
+own.
 Every API request also writes the same numbers to the hub's log (`maity_hub.timing`:
 `route=<pattern> status=<code> sql=<count> db_ms=<ms> total_ms=<ms> pid=<worker>`), which
 only the operators read: the route's pattern, never the path, so the line adds no handle or
