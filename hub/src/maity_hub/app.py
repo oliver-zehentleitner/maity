@@ -57,6 +57,7 @@ from maity_hub import (
     shared_budget,
     shared_counts,
     takeovers,
+    timing,
     wakeups,
     write_guard,
 )
@@ -514,6 +515,9 @@ def create_app(
     # Inside HubMiddleware, so its request line and stats count the compressed answer's time.
     app.add_middleware(Compression)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
+    # Outermost: an answer's statements and time, the hub's own checks included.
+    timing.install(engine, shared_engine)
+    app.add_middleware(timing.ServerTiming)
     if settings.allow_plain_http:
         log.warning(
             "MAITY_ALLOW_PLAIN_HTTP is set: bearer credentials and cookies travel over plain "
