@@ -591,13 +591,13 @@ remove it.
 **Evidence:** confirmed
 **Source:** the measurement on tsk-6srccd2r1h62 (step 1, local PostgreSQL), the lead's decision on its PR 4
 **See:** events.md — 483be046-dbf5-4c2f-a9d4-cc18dfb09469 — as of 2026-11-09
-**Revisit when:** the `maity_hub.timing` lines of a prod sign-in or session list show the sweep's database time
+**Revisit when:** the `maity_hub.timing` line of a prod password login or session list shows a `db_ms` worth a look; the line is the request's total over all its statements, so the sweep's share needs a statement-level measurement on prod data (EXPLAIN ANALYZE of the sweep) before an index is built
 **as of:** 2026-11-09
 
 `auth/sessions.forget_expired_addresses` is one UPDATE over the sessions of every human on the
 instance: `ended_at IS NULL`, past `expires_at` or idle past `SESSION_IDLE`, with an address or a
-source still set. It runs on every sign-in (`routes/auth.py`) and every session list
-(`sessions.listing`). It has no `human_id` filter, so no index on the human serves it. Run
+source still set. It runs on every password login (`POST /auth/login`, `routes/auth.py`) and
+every session list (`sessions.listing`); the device-code and mail sign-ins do not call it. It has no `human_id` filter, so no index on the human serves it. Run
 through EXPLAIN with `enable_seqscan=off` on local PostgreSQL, it was the one statement of the four
 measured routes with no index path: a scan that grows with all sessions on the instance. No index
 was added.
