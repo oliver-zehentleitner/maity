@@ -492,8 +492,7 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .entry-group { margin: 6px 0 0; }
 .entry-group h3 { margin: 0 0 var(--s2); font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--s2); }
 .entry-group h3 .count { border: 0; background: var(--surface-2); color: var(--muted); font-family: var(--font); letter-spacing: 0; }
-/* The inbox's Sort and Show as pills, like the board's filter. */
-/* The inbox's own menus, in a project and on /all alike. */
+/* The inbox's own menus as pills, like the board's filter: Sort and Show in a project, Sort and Project on /all. */
 .toolbar :is(#inbox-sort, #inbox-show, #inbox-project) { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 .members-filter { margin: 4px 0 8px; }
