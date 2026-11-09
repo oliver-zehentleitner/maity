@@ -4,17 +4,26 @@ calls and each call into database and the rest without access to the server's lo
 
 A context variable holds the tally of the request being answered. The engines' cursor events
 add to it; outside a request (a worker, a migration) there is none and they add nothing.
-Only counts and durations: no route, no statement, no id."""
+Only counts and durations: no route, no statement, no id. And only to the instance
+admin's own signed-in session, and for every API request in the hub's log, which only the
+operators read (`maity_hub.timing`: route pattern, status, count and durations, never the
+path, so the line adds no handle or id). A count or a duration on anyone else's answer could tell
+them about data they cannot see (a person's agents in a private project add statements to
+the same empty answer)."""
 
 from __future__ import annotations
 
 import contextvars
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Engine, event
+from sqlalchemy import Connection, Engine, event
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from maity_hub.admin import is_instance_admin
+from maity_hub.request_stats import route_of
 
 API = "/api/v1/"
 
@@ -23,10 +32,12 @@ API = "/api/v1/"
 class Tally:
     statements: int = 0
     db: float = 0.0  # seconds spent in statements
+    shown: bool = False  # the caller is the instance admin's signed-in session
 
 
 _TALLY: contextvars.ContextVar[Tally | None] = contextvars.ContextVar("timing", default=None)
 _STARTED = "maity_timing_started"
+log = logging.getLogger("maity_hub.timing")
 
 
 def _before(conn: Any, cursor: Any, statement: Any, params: Any, context: Any, many: bool) -> None:
@@ -53,6 +64,14 @@ def install(*engines: Engine | None) -> None:
             event.listen(engine, "after_cursor_execute", _after)
 
 
+def admit(conn: Connection, human_id: str) -> None:
+    """Called once the caller is a human signed in by cookie: the answer carries the header
+    only if that human is the instance admin. Outside the API (no tally) it reads nothing."""
+    tally = _TALLY.get()
+    if tally is not None:
+        tally.shown = is_instance_admin(conn, human_id)
+
+
 def header(tally: Tally, total: float) -> bytes:
     """`db;dur=<ms>, sql;desc="n=<count>", total;dur=<ms>`."""
     return (
@@ -65,9 +84,8 @@ class ServerTiming:
     """Outermost, so the hub's own checks before a route count too. The values are those
     at the start of the answer: a long poll's wait counts in `total`, never in `db`.
 
-    Only a success or a redirect carries the header. A refusal does not: how many
-    statements a 403 or a 404 took could tell a project or an account that exists from
-    one that does not."""
+    Only the instance admin's signed-in session gets the header (`admit`), on any status;
+    an agent, a token, a stranger and a visitor never do."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -81,9 +99,20 @@ class ServerTiming:
         began = time.perf_counter()
 
         async def timed(message: Message) -> None:
-            if message["type"] == "http.response.start" and message["status"] < 400:
-                value = header(tally, time.perf_counter() - began)
-                message = {**message, "headers": [*message["headers"], (b"server-timing", value)]}
+            if message["type"] == "http.response.start":
+                total = time.perf_counter() - began
+                log.info(
+                    "route=%s status=%s sql=%d db_ms=%.1f total_ms=%.1f",
+                    route_of(scope),
+                    message["status"],
+                    tally.statements,
+                    tally.db * 1000,
+                    total * 1000,
+                )
+                if tally.shown:
+                    value = header(tally, total)
+                    headers = [*message["headers"], (b"server-timing", value)]
+                    message = {**message, "headers": headers}
             await send(message)
 
         try:

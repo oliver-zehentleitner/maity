@@ -49,7 +49,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | tsk-d61rvjm6gteh |
 | 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | tsk-239r9cwxje6w |
-| 9 | `Server-Timing` on every API answer (statements, database time, total) | the yardstick for the rest | S | tsk-239r9cwxje6w |
+| 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | tsk-239r9cwxje6w |
 | 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | with the owner |
 | 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
@@ -66,26 +66,42 @@ now be picked up later without measuring again from scratch.
   bundling for later, if it is still needed. A `modulepreload` list needs no build step,
   which the project does not have.
 
-## `Server-Timing` on every API success, with counts and durations only
+## `Server-Timing` for the instance admin only, with counts and durations only
 
 **Id:** 245e1465-b689-4930-a6de-63a38886dc0f
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-239r9cwxje6w and its plan note, approved by the lead, 2026-11-08
-**Revisit when:** a refusal's timing is needed for a measurement, or the header must name more than counts and durations
+**Source:** card tsk-239r9cwxje6w and its plan note, approved by the lead, 2026-11-08; the audience narrowed and the log line added on the lead's word, 2026-11-09, after a review of pull request #1542 measured the leak below
+**Revisit when:** a measurement needs the header for an account that is not the instance admin, or the header must name more than counts and durations
 
-Every answer under `/api/v1/` with a status below 400 carries
-`Server-Timing: db;dur=<ms>, sql;desc="n=<count>", total;dur=<ms>`. The values are taken
-when the answer starts. A long poll's wait counts in `total` and never in `db`. The tally
-is a context variable set by the outermost middleware (`maity_hub.timing`), so the hub's
-own checks before a route count too. The cursor events of the engines add to it, and
-outside a request they add nothing.
+Every answer under `/api/v1/` to the instance admin's signed-in session (the account
+`maity_hub.admin.is_instance_admin` names, by cookie) carries
+`Server-Timing: db;dur=<ms>, sql;desc="n=<count>", total;dur=<ms>`, on any status. No other
+caller gets it: not another human, not an agent, not a token, not a visitor. A measurement
+on prod therefore runs signed in as the instance admin; a test account sees no header.
+Every API request also writes the same numbers to the hub's log (`maity_hub.timing`:
+`route=<pattern> status=<code> sql=<count> db_ms=<ms> total_ms=<ms>`), which only the
+operators read: the route's pattern, never the path, so the line adds no handle or id. The
+values are taken when the answer starts. A long poll's wait counts in `total` and never in
+`db`. The tally is a context variable set by the outermost middleware (`maity_hub.timing`),
+so the hub's own checks before a route count too; the cookie sign-in marks it as shown. The
+cursor events of the engines add to it, and outside a request they add nothing.
 
 **Reason:** a slow page has to be split into its calls, and each call into database time
-and the rest, by anyone who opens the browser's network panel. Until now only the server
-log showed a call's time, and nothing showed its statement count.
+and the rest, by whoever measures it: in the browser's network panel, or for every account in the log. Until now only the
+server log showed a call's time, and nothing showed its statement count. The statement
+count is kept because it is the cheapest way to see an N+1. But a count or a duration on an
+answer depends on data the caller may not see: a signed-in stranger's read of a person
+answered the same empty agent list while the count rose by 3 for each agent the person had
+in a private project (27, 30, 33, 36 for 0 to 3 agents, on PostgreSQL). So only the
+instance admin, who measures and may read the instance's metadata anyway, gets it.
 
 **Rejected alternatives:**
-- The header on every answer, refusals included: how many statements a 403 or a 404 took
-  could tell a project or an account that exists from one that does not.
+- The header on every success, and none on a refusal (the first version of #1542): the
+  measured leak above is on a 200.
+- The header for every signed-in human: the leak was measured with a signed-in stranger.
+- An operator switch, off by default, with the header for everyone where it is on: prod is
+  where the slow pages are, and there it would have to stay off.
+- Durations only, no count: a duration leaks the same, only noisier, and it loses the N+1
+  signal.

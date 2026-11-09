@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import availability, clock
+from maity_hub import availability, clock, timing
 from maity_hub import tables as t
 from maity_hub.auth import credentials, nonces
 from maity_hub.cards import open_claims
@@ -240,6 +240,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
                 # A limit's hold is never shortened by a renewal (§6.12).
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
+    timing.admit(conn, row.human_id)
     return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
 
 
