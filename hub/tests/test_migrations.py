@@ -1315,7 +1315,13 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         members = {
             row.agent_id: (row.subagents, row.subagents_language, row.subagents_by)
             for row in conn.execute(
-                select(t.membership).where(t.membership.c.agent_id.is_not(None))
+                # Named columns: a later migration adds more, which this revision lacks.
+                select(
+                    t.membership.c.agent_id,
+                    t.membership.c.subagents,
+                    t.membership.c.subagents_language,
+                    t.membership.c.subagents_by,
+                ).where(t.membership.c.agent_id.is_not(None))
             )
         }
         joins = {

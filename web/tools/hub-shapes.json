@@ -710,6 +710,10 @@
       },
       "cross_owner": "boolean",
       "display_name": "string",
+      "expert_for": "null",
+      "expert_sources": {
+       "array": null
+      },
       "handle": "string",
       "handover": "null",
       "harness": "string",
@@ -1703,6 +1707,10 @@
    },
    "cross_owner": "boolean",
    "display_name": "string",
+   "expert_for": "null",
+   "expert_sources": {
+    "array": null
+   },
    "handle": "string",
    "handover": "null",
    "harness": "null",

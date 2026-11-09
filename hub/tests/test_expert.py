@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 PROJECT = "/projects/maintainer/maity"
@@ -393,3 +393,94 @@ def test_a_takeover_in_flight_to_its_caller_opens_none_once_the_caller_became_an
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
     assert owner.get(f"{PROJECT}/takeovers").json()["items"] == []
+
+
+# --- an expert's fields (§2.3 "The expert", §6.2) -------------------------------------------
+
+
+def _fields(who: Any, member_id: str, **body: Any) -> Any:
+    return who.patch(f"{PROJECT}/members/{member_id}", body)
+
+
+def test_the_owner_names_what_its_expert_answers_about_and_from_which_sources(
+    owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§6.2: `expert_for` and `expert_sources` on the membership, shown in the member view,
+    and `null` clears them."""
+    changed = _fields(
+        owner,
+        expert.id,
+        expert_for="  The API contract,\n its sections  ",
+        expert_sources=["docs/api.md", "context/", "docs/api.md"],
+    )
+    assert changed.status_code == 200, changed.text
+    view = changed.json()
+    assert view["expert_for"] == "The API contract, its sections"  # plain text, one line
+    assert view["expert_sources"] == ["docs/api.md", "context/"]
+    listed = owner.get(f"{PROJECT}/members").json()["items"]
+    [shown] = [m for m in listed if m["id"] == expert.id]
+    assert (shown["expert_for"], shown["expert_sources"]) == (
+        "The API contract, its sections",
+        ["docs/api.md", "context/"],
+    )
+    cleared = _fields(owner, expert.id, expert_for=None, expert_sources=None)
+    assert cleared.status_code == 200, cleared.text
+    assert (cleared.json()["expert_for"], cleared.json()["expert_sources"]) == (None, [])
+
+
+def test_only_an_expert_has_the_fields_and_a_role_change_away_clears_them(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§6.2: the fields belong to the role."""
+    coder = flow.agent(make_client, owner)
+    refused = _fields(owner, coder.id, expert_for="The API")
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"expert_for": "expert_only"}
+    assert (
+        _fields(owner, expert.id, expert_for="The API", expert_sources=["docs/"]).status_code == 200
+    )
+    moved = owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "coder"})
+    assert moved.status_code == 200, moved.text
+    assert (moved.json()["expert_for"], moved.json()["expert_sources"]) == (None, [])
+    back = owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "expert"})
+    assert (back.json()["expert_for"], back.json()["expert_sources"]) == (None, [])
+
+
+def test_who_sets_an_experts_fields(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent, migrated: Engine
+) -> None:
+    """§6.2: a human who owns the agent or holds `members:admin`, the fields alone; an
+    agent never."""
+    assert expert.patch(f"{PROJECT}/members/{expert.id}", {"expert_for": "x"}).status_code == 403
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    member = flow.human(make_client, migrated, "colleague")
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    admin = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    assert _fields(admin, expert.id, expert_for="The API").status_code == 200
+    refused = _fields(member, expert.id, expert_for="The API")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+    mixed = _fields(owner, expert.id, expert_for="The API", areas=["docs/"])
+    assert mixed.status_code == 400, mixed.text
+    assert mixed.json()["error"]["details"]["fields"] == {"expert_for": "alone"}
+
+
+@pytest.mark.parametrize(
+    ("body", "field", "code"),
+    [
+        ({"expert_sources": ["../etc"]}, "expert_sources", "invalid_path"),
+        ({"expert_sources": ["docs/a b"]}, "expert_sources", "invalid_path"),
+        ({"expert_sources": [f"d{n}/" for n in range(21)]}, "expert_sources", None),
+        ({"expert_for": "x" * 121}, "expert_for", None),
+    ],
+)
+def test_an_experts_fields_are_bounded(
+    owner: flow.Human, expert: flow.Agent, body: dict[str, Any], field: str, code: str | None
+) -> None:
+    """§6.2: at most 120 characters and 20 sources, each a repository path."""
+    refused = _fields(owner, expert.id, **body)
+    assert refused.status_code == 400, refused.text
+    fields = refused.json()["error"]["details"]["fields"]
+    assert field in fields and (code is None or fields[field] == code)

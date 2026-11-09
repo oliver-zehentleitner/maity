@@ -66,6 +66,9 @@ CAPABILITIES = ("tag",)
 # A repository path; nothing that could leave a code span in the join page.
 AREA = re.compile(r"[A-Za-z0-9._/-]{1,255}")
 REVOKED_LISTED = timedelta(days=30)
+EXPERT_FOR_MAX = 120  # characters (§6.2)
+EXPERT_SOURCES_MAX = 20
+EXPERT_FIELDS = frozenset({"expert_for", "expert_sources"})
 
 
 class PausedIn(Strict):
@@ -90,6 +93,10 @@ class MemberPatch(Strict):
     # The owner's instruction to work in subagents and its language (§3.1, §6.2).
     subagents: bool | None = None
     subagents_language: str | None = Field(default=None, max_length=16)
+    # An expert's fields (§2.3 "The expert", §6.2): what it answers about and the path
+    # prefixes it learned; `null` clears one.
+    expert_for: str | None = Field(default=None, max_length=EXPERT_FOR_MAX)
+    expert_sources: list[str] | None = Field(default=None, max_length=EXPERT_SOURCES_MAX)
     availability_policy: AvailabilityPolicyIn | None = None
     trust: str | None = None
     role: str | None = None
@@ -122,6 +129,8 @@ class MemberPatch(Strict):
         "availability_policy",
         "briefing",
         "instance",
+        "expert_for",
+        "expert_sources",
         mode="before",
     )
     @classmethod
@@ -520,6 +529,9 @@ def apply_patch(
     """Write a membership change and announce it; `pause` is (given, reason), for one
     agent instance when `instance` names it. Returns the changed columns with their old
     values, for `member_changed_by_agent`."""
+    if values.get("role", "expert") != "expert" and target.role == "expert":
+        # The fields belong to the role: a change away from it clears them (§6.2).
+        values = {**values, "expert_for": None, "expert_sources": None}
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
@@ -636,6 +648,8 @@ def patch_member(
             return _owner_preferences(conn, caller, slug, member_id, body, given)
         if given & {"subagents", "subagents_language"}:
             return _subagents(conn, caller, slug, member_id, body, given)
+        if given & EXPERT_FIELDS:
+            return _expert_fields(conn, caller, slug, member_id, body, given)
         if "dormant" in given:
             return _dormant(conn, caller, slug, member_id, body, given)
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
@@ -1002,6 +1016,41 @@ def _owner_preferences(
         return idempotency.Outcome(204, None, None, {})
     view = member_view(conn, row, briefing=reader.may("members:admin"))
     return idempotency.Outcome(200, "member_team", str(row.id), view)
+
+
+def _expert_fields(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """An expert's `expert_for` and `expert_sources` (§2.3 "The expert", §6.2): set on their
+    own, by a human member who owns the agent profile or holds `members:admin`, and only on
+    a member whose role is `expert`. They name what the expert answers about; no consent
+    waits for them, as they give the member no right."""
+    if caller.kind != "human":
+        raise humans_only("only a human sets an expert's fields")
+    if not given <= EXPERT_FIELDS:
+        raise invalid({key: "alone" for key in sorted(given & EXPERT_FIELDS)}, "set them alone")
+    mine = membership(conn, caller, slug)
+    target = member_row(conn, mine.project.id, member_id)
+    if not instances.owns_agent(conn, caller, target):
+        mine.require("members:admin")
+    # Under the project lock a role change takes too: the role read here is the one written.
+    lock_project(conn, mine.project.id)
+    target = member_row(conn, mine.project.id, member_id)
+    if target.role != "expert":
+        raise invalid(
+            {key: "expert_only" for key in sorted(given)}, "only an expert has these fields"
+        )
+    values: dict[str, Any] = {}
+    if "expert_for" in given:
+        text = " ".join((body.expert_for or "").split())  # plain text, one line
+        values["expert_for"] = text or None
+    if "expert_sources" in given:
+        sources = body.expert_sources or []
+        if any(not AREA.fullmatch(p) or p.startswith("..") or "/../" in f"/{p}/" for p in sources):
+            raise invalid({"expert_sources": "invalid_path"}, "a source is a repository path")
+        values["expert_sources"] = list(dict.fromkeys(sources)) or None
+    apply_patch(conn, change_of(mine, caller), target, values, (False, None))
+    return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
 
 def _subagents(

@@ -2962,7 +2962,7 @@ window.Maity = window.Maity || {};
       const empty = { items: [], next_cursor: null };
       data[body.slug + "/project.json"] = created;
       data[body.slug + "/members.json"] = { items: [Object.assign({}, owner, {
-        trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [], last_seen_at: nowIso(),
+        trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [], expert_for: null, expert_sources: [], last_seen_at: nowIso(),
         presence: "online", paused: null, joined_at: nowIso(),
       })], next_cursor: null };
       ["requests", "tasks", "joins"].forEach((name) => { data[body.slug + "/" + name + ".json"] = Object.assign({}, empty); });
