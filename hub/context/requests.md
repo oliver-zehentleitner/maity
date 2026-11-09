@@ -110,7 +110,9 @@ taken over while blocked keeps the previous holder's blocker until an answer or 
 runs `_unblock`, as before this change.
 
 **Reason:** every change of holder (claim, the expired claim's move to the assignee, a
-takeover) sets `claim_since`, a renewal does not, and a release clears the block. So the
+takeover, a cover's move to the substitute and its return) sets `claim_since`, a renewal
+does not, and a release clears the block. The two cover moves did not set it before this
+change and now do, so a card's `claim.since` is the start of its current holder. So the
 claim's start separates the waits of this claim from the earlier ones, up to the exact tie
 above. No column and no migration are needed.
 

@@ -8148,8 +8148,8 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
   the first entry that is `available`, not itself covered, and may take
   that item (below); a human substitute takes items as an agent does.
   Claims move, they are not dropped: holder and `claim.session_id`
-  change, the lease restarts at `policy.lease_seconds`, checkpoint and
-  branch stay on the card. An assignment moves `assigned_to`. A request
+  change, `claim.since` becomes the move, the lease restarts at
+  `policy.lease_seconds`, checkpoint and branch stay on the card. An assignment moves `assigned_to`. A request
   keeps its `to` and gains `cover`; the substitute reads it, finds it in
   its inbox and answers it as the addressee would (§7), recorded with
   `on_behalf_of` = the covered member. Each moved card and request
@@ -8207,8 +8207,8 @@ ping-pong. Touched means: for a card, the substitute claimed it,
 checkpointed, reported or changed its status after the move (a claim
 that only moved with the cover does not count); for a request, it
 answered it. Everything else returns to the member, with `cover`
-cleared: a held card goes back to the member as holder with the lease
-restarted, an assignment back to `assigned_to` = the member, an open
+cleared: a held card goes back to the member as holder, `claim.since`
+the return and the lease restarted, an assignment back to `assigned_to` = the member, an open
 request simply loses `cover`. `cover_ended` lists the first as `kept`
 and the rest as `returned`. While a cover runs, area routing sends a new
 card for the member to its substitute, with `cover` set; area routing is

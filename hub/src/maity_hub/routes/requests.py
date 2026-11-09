@@ -1210,8 +1210,8 @@ def _status_moved(conn: Connection, card_id: str | None, actor: Any) -> None:
 
 def _unblock(conn: Connection, row: Any) -> str | None:
     """After `row` was answered or withdrawn: the card stays blocked while any other
-    waiting request of its holder on it, filed under the current claim, is open, naming the
-    oldest; when none is left, the remembered status comes back (§7). Returns the card whose
+    waiting request of its holder on it, filed at or after the current claim's start
+    (`claim_since`), is open, naming the oldest; when none is left, the remembered status comes back (§7). Returns the card whose
     status moved, for `_status_moved` after the caller's event."""
     if row.task_id is None:
         return None
@@ -1222,7 +1222,8 @@ def _unblock(conn: Connection, row: Any) -> str | None:
     # Only the waits filed at or after this claim's start count: one filed while the card was
     # unheld blocked nothing, one from an earlier claim lost its block at the release. The cut
     # is a timestamp, so a wait at the claim's very instant still counts. Every change of
-    # holder sets `claim_since`, a renewal does not; a claim without it counts every wait.
+    # holder sets `claim_since` (a claim, the expired claim's move, a takeover, a cover's move
+    # and its return), a renewal does not; a claim without it counts every wait.
     since = [] if card.claim_since is None else [t.request.c.created_at >= card.claim_since]
     still_waiting = conn.execute(
         select(t.request.c.id)
