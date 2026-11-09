@@ -460,24 +460,66 @@ window.Maity = window.Maity || {};
   // The repository as a runner names it, and the hub's match of it against a runner's advertised
   // patterns (`check_repository` in hub/src/maity_hub/placements.py: the URL without `https://`
   // and trailing slashes, Python's `fnmatch.fnmatchcase`: `*` and `?` across `/` too, `[…]` and
-  // `[!…]` a set, case kept).
+  // `[!…]` a set, case kept). A set is read as Python 3.12's `fnmatch.translate` reads it: split
+  // at the hyphens that make ranges, a reversed range dropped, so `[z-a]` matches nothing and
+  // `[!z-a]` any one character, never a pattern JS cannot compile.
   const repositoryName = (url) => url.replace(/^https:\/\//, "").replace(/\/+$/, "");
+  const inSet = (s) => s.replace(/[\\\]\[^-]/g, "\\$&");
+  function charSet(pattern, i, j) {
+    let chunks;
+    if (!pattern.slice(i, j).includes("-")) chunks = [pattern.slice(i, j)];
+    else {
+      chunks = [];
+      let k = pattern[i] === "!" ? i + 2 : i + 1;
+      for (;;) {
+        k = pattern.indexOf("-", k);
+        if (k < 0 || k >= j) break;
+        chunks.push(pattern.slice(i, k));
+        i = k + 1;
+        k = k + 3;
+      }
+      const chunk = pattern.slice(i, j);
+      if (chunk) chunks.push(chunk);
+      else chunks[chunks.length - 1] += "-";
+      for (let k = chunks.length - 1; k > 0; k--) {
+        if (chunks[k - 1].slice(-1) > chunks[k][0]) {
+          chunks[k - 1] = chunks[k - 1].slice(0, -1) + chunks[k].slice(1);
+          chunks.splice(k, 1);
+        }
+      }
+    }
+    const stuff = chunks.join("-");
+    if (!stuff) return "(?!)";
+    if (stuff === "!") return "[\\s\\S]";
+    const not = stuff[0] === "!";
+    if (not) chunks[0] = chunks[0].slice(1);
+    return "[" + (not ? "^" : "") + chunks.map(inSet).join("-") + "]";
+  }
   function fnmatch(name, pattern) {
     let re = "";
-    for (let i = 0; i < pattern.length; i++) {
-      const c = pattern[i];
+    const n = pattern.length;
+    let i = 0;
+    while (i < n) {
+      const c = pattern[i++];
       if (c === "*") re += "[\\s\\S]*";
       else if (c === "?") re += "[\\s\\S]";
       else if (c === "[") {
-        const end = pattern.indexOf("]", i + (pattern[i + 1] === "!" ? 2 : 1) + 1);
-        if (end < 0) { re += "\\["; continue; }
-        const set = pattern.slice(i + 1, end);
-        const not = set[0] === "!";
-        re += "[" + (not ? "^" : "") + (not ? set.slice(1) : set).replace(/[\\\]^]/g, "\\$&") + "]";
-        i = end;
+        let j = i;
+        if (j < n && pattern[j] === "!") j++;
+        if (j < n && pattern[j] === "]") j++;
+        while (j < n && pattern[j] !== "]") j++;
+        if (j >= n) re += "\\[";
+        else {
+          re += charSet(pattern, i, j);
+          i = j + 1;
+        }
       } else re += c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
     }
-    return new RegExp("^(?:" + re + ")$").test(name);
+    try {
+      return new RegExp("^(?:" + re + ")$").test(name);
+    } catch (e) {
+      return false; // one pattern this port cannot read hides neither the others nor the section
+    }
   }
 
   M.placements = { section, fnmatch };

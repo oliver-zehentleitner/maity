@@ -1939,6 +1939,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: a runner whose repositories miss the project's (another owner, another case) is not offered, one whose pattern matches is "
     + JSON.stringify(srOpts("placement-new-runner")));
   srCancel().click(); await tick();
+  // A reversed range in a set, as Python's fnmatch reads it (4hv7 at #1567): `[z-a]` matches nothing,
+  // `[!z-a]` any one character, and neither hides a later pattern or another runner.
+  const srFn = win.Maity.placements.fnmatch;
+  const srFnCases = [["github.com/[z-a]/*", false], ["github.com/[!z-a]/*", true], ["github.com/o/*", true]].map(([pattern, want]) => {
+    let got; try { got = srFn("github.com/o/repo", pattern); } catch (e) { got = String(e); }
+    return [pattern, want, got];
+  });
+  expect(srFnCases.every(([, want, got]) => got === want), "placements: a reversed range matches as the hub's fnmatch does, never a throw " + JSON.stringify(srFnCases));
+  win.Maity.api.getAll = srRepos([["github.com/[z-a]/*"], ["github.com/[z-a]/*", "github.com/o/*"], ["github.com/[!z-a]/*"]]);
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: { ...x.repository, url: "https://github.com/o/repo" } })) : srGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  if (srBox() && srOpen()) { srOpen().click(); await tick(); }
+  expect(srBox() && srForm() && JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-1", "box-2"]),
+    "placements: a pattern with a reversed range is no match and hides neither the runner's next pattern nor another runner "
+    + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
+  if (srBox() && srForm()) { srCancel().click(); await tick(); }
+  win.Maity.api.get = srGet;
   win.Maity.api.getAll = srRepos([["github.com/someone-else/*"], []]);
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
   const srNoRepo = () => srBox().querySelector(".placement-new-none");

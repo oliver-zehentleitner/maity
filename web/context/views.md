@@ -1346,7 +1346,9 @@ offer the project's repository: one of the runner's advertised
 `repositories` matches the repository's URL without `https://`, with the
 hub's rule (`check_repository` in `hub/src/maity_hub/placements.py`,
 Python's `fnmatch.fnmatchcase`; `fnmatch` in `web/js/placements.js` is its
-port). With none, the section says so and links the project's Runners; with
+port, a `[…]` set read as Python 3.12's `fnmatch.translate` reads it, so a
+reversed range such as `[z-a]` matches nothing, `[!z-a]` any one character,
+and neither throws and hides the runner's other patterns). With none, the section says so and links the project's Runners; with
 attached runners of which none offers the repository, it says that and
 names the repository; a project without a repository offers no form and
 says a runner needs one. The agent is one
