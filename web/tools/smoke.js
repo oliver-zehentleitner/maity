@@ -1957,14 +1957,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   if (srBox() && srForm()) { srCancel().click(); await tick(); }
   win.Maity.api.get = srGet;
   // Many stars against a long name stay quick, as on the hub (4hv7 at #1567, delta 2; vuur's input):
-  // a backtracking RegExp took about 5 s for k = 8 and about 107 s for k = 10. k = 10 and the largest
-  // accepted pattern (k = 31, 63 characters) run only once k = 8 is quick, so an old matcher fails here
-  // instead of holding the run.
+  // a backtracking RegExp took about 5 s for k = 8 and about 107 s for k = 10. The larger cases run
+  // only once k = 8 is quick, so an old matcher fails here instead of holding the run. The last is the
+  // hub's limits (routes/runner.py, routes/projects.py): 200 advertised patterns of up to 200
+  // characters each, and a URL of up to 255, so a name of 247 after `https://`.
   const srTimed = (k) => { const t = Date.now(); const got = srFn("a".repeat(50), "*a".repeat(k) + "b"); return [k, got, Date.now() - t]; };
   const srStars = [srTimed(8)];
-  if (srStars[0][2] < 50) srStars.push(srTimed(10), srTimed(31));
-  expect(srStars.length === 3 && srStars.every(([, got, ms]) => got === false && ms < 50),
-    "placements: a pattern of many stars against a long name is matched at once " + JSON.stringify(srStars));
+  if (srStars[0][2] < 50) {
+    srStars.push(srTimed(10), srTimed(31));
+    const t = Date.now();
+    const got = Array.from({ length: 200 }, () => "*a".repeat(99) + "b").some((p) => srFn("a".repeat(247), p));
+    srStars.push(["200 x 199 against 247", got, Date.now() - t]);
+  }
+  expect(srStars.length === 4 && srStars.every(([, got, ms], i) => got === false && ms < (i === 3 ? 250 : 50)),
+    "placements: a pattern of many stars against a long name is matched at once, up to the hub's limits " + JSON.stringify(srStars));
   // By Unicode character, as Python's fnmatch counts (4hv7 at #1567, delta 1): a repository the hub
   // stores as https://github.com/o/\u{1F600} is one character after the owner, not two halves.
   const srEmoji = "github.com/o/\u{1F600}";

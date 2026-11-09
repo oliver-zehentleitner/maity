@@ -462,9 +462,9 @@ window.Maity = window.Maity || {};
   // and trailing slashes, Python's `fnmatch.fnmatchcase`: `*` and `?` across `/` too, `[…]` and
   // `[!…]` a set, case kept). A set is read as Python 3.12's `fnmatch.translate` reads it: split
   // at the hyphens that make ranges, a reversed range dropped, so `[z-a]` matches nothing and
-  // `[!z-a]` any one character, never a set JS cannot compile. Pattern and name are read by
-  // Unicode code point, as Python counts characters: `?` takes a character beyond U+FFFF whole,
-  // not half of it.
+  // `[!z-a]` any one character, never a set JS cannot compile. The name is read by Unicode code
+  // point, as Python counts characters: `?` takes a character beyond U+FFFF whole, not half of it.
+  // An advertised pattern is printable ASCII on the hub; the port reads any pattern the same way.
   const repositoryName = (url) => url.replace(/^https:\/\//, "").replace(/\/+$/, "");
   const inSet = (s) => s.replace(/[\\\]\[^-]/g, "\\$&");
   function charSet(pattern, i, j) {

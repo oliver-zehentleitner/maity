@@ -1348,9 +1348,11 @@ hub's rule (`check_repository` in `hub/src/maity_hub/placements.py`,
 Python's `fnmatch.fnmatchcase`; `fnmatch` in `web/js/placements.js` is its
 port, a `[…]` set read as Python 3.12's `fnmatch.translate` reads it, so a
 reversed range such as `[z-a]` matches nothing, `[!z-a]` any one character,
-and neither throws and hides the runner's other patterns; pattern and name are
-read by Unicode character, as Python reads them, so `?` takes a character
-beyond U+FFFF whole; and a `*` is matched by going back only to the last `*`,
+and neither throws and hides the runner's other patterns; the name is read by
+Unicode character, as Python reads it, so `?` takes a character beyond U+FFFF
+whole (an advertised pattern is printable ASCII, `Name` in
+`hub/src/maity_hub/routes/runner.py`; the port reads any pattern the same
+way); and a `*` is matched by going back only to the last `*`,
 not by one RegExp over the pattern, so many stars against a long name take
 time in proportion to the two lengths, not seconds). With none, the section says so and links the project's Runners; with
 attached runners of which none offers the repository, it says that and
