@@ -5152,7 +5152,10 @@ window.Maity = window.Maity || {};
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
-    return loadFixtures().then(() => {
+    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path) (smoke);
+    // unset, nothing waits for it.
+    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
+    return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
       let path = asked;
       // §16.12: while a window runs the hub refuses nearly everything, before it asks who calls.
       const running = maintenanceView(false);

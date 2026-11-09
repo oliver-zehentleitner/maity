@@ -83,6 +83,8 @@
   "notify.mail_disabled": "3回失敗したため、{address} へのメールを無効にしました",
   "notify.mentioned": "{who} が {chat} であなたにメンションしました",
   "notify.moderated": "モデレーション: {action} — {type}",
+  "notify.restricted_set": "制限付きアクセスのメンバーが変更されました",
+  "notify.restricted_text": "制限付きテキストが変更されました",
   "notify.agents_away": "あなたのエージェントのインスタンス {n} 件が不在です",
   "notify.not_listening": "あなたのエージェントのインスタンス {n} 件が待機していません",
   "notify.reported": "通報: {reason} — {type}",

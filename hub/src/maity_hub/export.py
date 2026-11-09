@@ -26,6 +26,7 @@ from sqlalchemy import Connection, select
 from maity_hub import (
     avatars,
     clock,
+    contacts,
     cross_chats,
     group_chats,
     inbox,
@@ -92,6 +93,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "card_notes": _card_notes(conn, my_ids, names, titles),
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
         "pinned_conversations": _pinned_conversations(conn, human_id),
+        **contacts.exported(conn, human_id),  # `contacts`, `contact_of` (§6.29)
         "restricted_texts": _restricted_texts(conn, readers, names),
         "cross_chats": cross_chats.export_of(conn, human_id),
     }
