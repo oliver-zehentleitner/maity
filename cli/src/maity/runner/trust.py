@@ -29,8 +29,10 @@ Nothing else in the file changes, no other project and no other key of this one,
 that boundary. A file that is not UTF-8 text holding a JSON object, or whose text cannot be
 written back as UTF-8 (an escaped lone surrogate), is left as it is. Every failure (such a
 file, a lock held past WAIT_SECONDS, a stale lock that cannot be removed, a lost lock, a read
-or write that fails), whatever its exception type, raises TrustError with the cause: `record`
-converts every Exception; only KeyboardInterrupt and SystemExit pass through.
+or write that fails), whatever its type as long as it is an Exception, raises TrustError with
+the cause: `record` converts every Exception. A BaseException outside Exception
+(KeyboardInterrupt, SystemExit, GeneratorExit, a BaseExceptionGroup holding one) passes through
+unchanged, after the same cleanup.
 
 The runner runs this in its own process when the agents are its own user; through sudo or on an
 ssh host it starts this module there (`python -I -m maity.runner.trust HOME CLONE`, `maity
@@ -175,7 +177,8 @@ def record(
     """Mark `clone` trusted in the Claude Code configuration under `home`; False when it
     already was. Raises TrustError, with the cause, whenever it cannot: every Exception from
     the file choice, the lock, the read, the JSON or the write becomes one, so the promise in
-    the module docstring holds by construction. KeyboardInterrupt and SystemExit pass."""
+    the module docstring holds by construction. A BaseException outside Exception (such as
+    KeyboardInterrupt or SystemExit) passes through unchanged."""
     try:
         return _record(home, clone, now, sleep)
     except TrustError:
