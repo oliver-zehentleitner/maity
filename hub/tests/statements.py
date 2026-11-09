@@ -24,7 +24,9 @@ def count_statements(engine: Engine, call: Any) -> int:
 
 def count_executions(engine: Engine, call: Any) -> int:
     """Like `count_statements`, but a list of parameters (`executemany`) counts once per row,
-    as the database runs it: one INSERT with many VALUES rows counts once."""
+    as sqlite3 and psycopg run it: one INSERT with many VALUES rows counts once. A driver that
+    folds an INSERT's parameter list into one statement (PyMySQL) runs fewer than this counts;
+    the rule is the conservative one, so a regression to a parameter list fails the test."""
     seen = [0]
 
     def counted(

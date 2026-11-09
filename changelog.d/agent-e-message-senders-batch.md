@@ -1,4 +1,5 @@
 ### Changed
 
-- hub: a page of a chat's messages reads its senders in one statement, and records the
-  first deliveries of the page in one statement, instead of one of each per message.
+- hub: a page of a chat's messages reads its senders in one statement instead of one per
+  message, and records the page's first deliveries in one multi-row INSERT; on SQLite and
+  PostgreSQL that was one INSERT per message before (PyMySQL already folded them).

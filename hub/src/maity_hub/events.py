@@ -1153,7 +1153,8 @@ def mark_delivered(conn: Connection, rows: list[Any], reader: str) -> None:
     if not missing:
         return
     try:  # the page's first deliveries in one statement: one INSERT with many VALUES rows,
-        # not a list of parameters, which the driver would send as one INSERT per row
+        # not a list of parameters, which sqlite3 and psycopg run as one INSERT per row
+        # (PyMySQL would fold such a list itself; this form needs no driver to do that)
         with conn.begin_nested():
             conn.execute(
                 insert(t.message_delivery).values(

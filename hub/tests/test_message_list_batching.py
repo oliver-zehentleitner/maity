@@ -1,7 +1,8 @@
 """A page of a chat's messages costs the same statements for 3 messages as for 30: the
 senders are read for the whole page at once (`message_views`), and the first deliveries are
-written in one INSERT (`events.mark_delivered`), not one per message. Counted as the
-database runs them, so a list of parameters (one INSERT per row) would count per row."""
+written in one INSERT (`events.mark_delivered`), not one per message. Counted per row for a
+list of parameters, as sqlite3 and psycopg run it (`count_executions`), so a regression to
+one fails here."""
 
 from __future__ import annotations
 
