@@ -1399,3 +1399,32 @@ def test_avatar_size_draws_every_agents_generated_picture(engine: Engine) -> Non
     tables = inspect(engine)
     assert "avatar_size" not in tables.get_table_names()
     assert "avatar_motif" not in {c["name"] for c in tables.get_columns("agent_profile")}
+
+
+def test_the_expert_migration_stops_on_a_project_role_named_expert(engine: Engine) -> None:
+    """20261108230000: the built-in role `expert` takes the name (§2.3 "The expert"); the
+    upgrade names each project that still has a project role `expert` and stops, and runs
+    once the role is gone."""
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human = factory.human(engine, "a")
+    shop = factory.project(engine, "shop", owner_id=human)
+    factory.project(engine, "docs", owner_id=human)
+    before = _before(engine, "20261108230000_expert_role")
+    downgrade(engine, before)
+    role = {"name": "expert", "base": "coder", "description": "", "guide": "", "guide_by": None}
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == shop).values(roles=[role]))
+    with pytest.raises(Exception, match=f"project role named `expert`: {human}/shop\\. Move"):
+        migrate(engine)
+    assert current_revision(engine) == before
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == shop).values(roles=[{**role, "name": "x"}])
+        )
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)

@@ -72,7 +72,11 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     seen: set[int] = set()
     shown = []
     for member in order:
-        if member.trust == "guest" or member.role == "proxy" or member.isolated_since is not None:
+        if (
+            member.trust == "guest"
+            or member.role in ("proxy", "expert")  # an expert takes no cards (§2.3)
+            or member.isolated_since is not None
+        ):
             continue  # never a substitute, whatever the policy said when it was set
         if member.id != row.id and member.id not in seen:
             seen.add(member.id)
@@ -297,6 +301,8 @@ def _move_card(
     since: str,
     actor: Actor | None,
 ) -> None:
+    if sub.role == "expert":
+        return  # an expert takes no cards (§2.3 "The expert"); `cover_order` skips it too
     cover = {
         "for": _principal(covered),
         "by": _principal(sub),
@@ -419,7 +425,8 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if cover.get("touched") or card.status in CLOSED:
+        if cover.get("touched") or card.status in CLOSED or row.role == "expert":
+            # An expert takes no cards back (§2.3 "The expert"): the substitute keeps it.
             kept.append(card.id)
         else:
             returned.append(card.id)
@@ -505,6 +512,10 @@ def routed(conn: Connection, membership_id: int | None) -> tuple[int | None, dic
     if row.cover_state != "covered" or row.cover_by is None:
         return membership_id, None
     sub = conn.execute(select(t.membership).where(t.membership.c.id == row.cover_by)).one()
+    if sub.role == "expert":
+        # An expert takes no cards (§2.3 "The expert"); the role change waits while the cover
+        # runs, so this is a backstop: the card goes to the covered member, as without cover.
+        return membership_id, None
     return sub.id, {
         "for": _principal(row),
         "by": _principal(sub),
