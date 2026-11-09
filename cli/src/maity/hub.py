@@ -54,11 +54,12 @@ ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")  # fullmatch only: `$` would ta
 
 def error_code(exc: HubError) -> str | None:
     """What a machine line says for a refusal: the hub's code and, for `forbidden`, its
-    `details.reason`; `network` when the hub was not reached; None when neither holds."""
+    `details.reason`; `network` when the hub was not reached; None when neither holds. A
+    `code` that is no string (a proxy's `{"error": {"code": 409}}`) holds no code either."""
     if exc.code is None:
         unreached = exc.status is None and str(exc).startswith("cannot reach ")
         return "network" if unreached else None
-    if not ERROR_CODE.fullmatch(exc.code):
+    if not isinstance(exc.code, str) or not ERROR_CODE.fullmatch(exc.code):
         return None
     reason = exc.details.get("reason")
     if exc.code == "forbidden" and isinstance(reason, str) and ERROR_CODE.fullmatch(reason):

@@ -264,6 +264,11 @@ def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
     fake.join_error = (409, None, {}, f"x\nmaity-error {nonce}: dummysecret")
     assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
     assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
+    # A code that is no string (a proxy's answer): the message and exit 1, no traceback.
+    fake.join_error = (409, 409, {}, "m")
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[-2:] == ["maity: join: 409: m", f"maity-error {nonce}: -"]
     # A usage error exits through argparse: the line still comes last.
     with pytest.raises(SystemExit):
         cli.main(["join", url, "--no-such-option"])

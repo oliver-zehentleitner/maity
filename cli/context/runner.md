@@ -976,6 +976,18 @@ replace a write another process made after taking the lock over. That
 newer write is then lost. If it was another clone's trust entry, that
 agent meets the trust question again on its next start.
 
+The entry is Claude Code's own trust record, so it outlives the
+placement and is not limited to the runner's session. The runner never
+removes it. The runner's own session loads no project configuration
+either way (`--setting-sources user`, an MCP configuration of the
+runner's). An unrestricted `claude` that someone starts later in the
+same clone asks no question, though, and loads the clone's
+`.claude/settings.json` hooks and `.mcp.json`, including ones an agent
+wrote into the clone. In the `single` layout the file is the operator's
+own `~/.claude.json`. This scope is accepted and the runner gets no
+further mechanics around trust (#1560 post-merge re-check, the team
+lead and the project lead).
+
 **Reason:** the placement is the owner's trust decision, made before the
 runner starts anything. Without the entry, every placement in a fresh
 clone sat at the question while the runner reported `running`. A start
@@ -987,7 +999,9 @@ that fails with a cause is better than that.
 - A Claude Code configuration directory per placement
   (`CLAUDE_CONFIG_DIR`, as Codex gets its own home): the operator's
   login and the session history live there, so it is a larger change
-  than the trust record the card asks for.
+  than the trust record the card asks for. It is also the alternative
+  that would keep the trust inside the placement: an unrestricted
+  `claude` in the clone would still ask.
 - One entry for the workspaces root: in 2.1.319 the lookup walks up from
   the working directory only as far as the git root, so a parent entry
   is not read for a clone, and it would trust every later clone too.
