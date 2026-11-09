@@ -48,8 +48,8 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | tsk-d61rvjm6gteh |
 | 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | tsk-d61rvjm6gteh |
 | 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
-| 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | tsk-239r9cwxje6w |
-| 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | tsk-239r9cwxje6w |
+| 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
+| 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
 | 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | with the owner |
 | 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
