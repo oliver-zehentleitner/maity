@@ -105,7 +105,9 @@ block the release ended. The request itself stays open. A claim without `claim_s
 counts every wait, as before.
 
 Two limits remain. The cut is a timestamp, not the claim's identity, so a wait filed at the
-very instant the claim began still counts: only a frozen clock produces that tie. And a card
+very instant the claim began still counts: two writes with exactly equal stored timestamps
+cannot be told apart by this cut. The hub's clock does not promise distinct instants, and a
+frozen test clock reproduces the tie at will. And a card
 taken over while blocked keeps the previous holder's blocker until an answer or withdrawal
 runs `_unblock`, as before this change.
 
@@ -120,7 +122,7 @@ above. No column and no migration are needed.
 - A stored marker on the request ("this one blocked the card", or the claim it was filed
   under): it would also settle the exact tie, but needs a new column, a migration and a slot
   in the migration order; 3d44b07f had already turned down a stored `block` field for that
-  cost, and the tie needs a frozen clock.
+  cost, and the tie needs two writes at exactly the same stored instant.
 - `>` instead of `>=`: it would drop a real wait filed at the claim's very instant, the other
   side of the same tie.
 - Blocking the card at the claim when its claimer has an open wait: that changes what a claim
