@@ -1000,3 +1000,37 @@ running hub expects and the next attempt starts clean. The lock timeout keeps a 
 
 **Known limit:** MariaDB commits per step and gets no retry here, since an attempt from the start
 would redo committed DDL (see "On MariaDB a migration run commits per step").
+
+## A project read decides what the caller sees on the membership the route read at its start
+
+**Id:** 5ee62252-a45b-4dd3-86fb-d494950ce096
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the project lead's decision on #1548 (tsk-6srccd2r1h62); a PostgreSQL READ COMMITTED
+probe in its review; `hub/tests/test_project_read_statements.py`
+**Revisit when:** a field of the project view is to follow a membership change that commits while
+the view is built, or the read moves to a transaction that locks the membership
+
+`GET /projects/{owner}/{slug}` reads the caller's membership once, for the `project:read` check, and
+the view (`routes/projects._view`) decides the attachment figures (`project:admin`) and the
+restricted setting's members (`restricted.served`) on that same membership. Under READ COMMITTED
+each of the three reads used to see what had committed at its own moment, so a demotion or removal
+committing while the view was built could hide the admin fields though the read itself had passed
+on the old role, or a promotion show them. Now the whole answer follows the membership as it stood
+when the route read it: field visibility is decided by the caller's membership as read at the
+start of the request. A route that builds the view without it (create, patch, the idempotent
+replay) has `_view` read it once, and both fields use that read, a missing membership included.
+
+**Reason:** one read instead of three is 8 of a project read's 25 statements (25 → 17 on
+PostgreSQL). The answer then matches one moment of the caller's standing: the old reads could mix
+two, the check passed on one role and the fields shown on the next. A change that commits a moment
+later is seen by the next request, as it was for any change committing after the last read.
+
+**Rejected alternatives:**
+- Reading the membership again for each field: it keeps the old timing of each field and costs the
+  two reads this saves, for a window of milliseconds in which the request has already passed on the
+  old role.
+- Locking the membership (`FOR SHARE`) for the read: a read route would make a demotion or removal
+  wait behind it, and SQLite has no row locks to match.

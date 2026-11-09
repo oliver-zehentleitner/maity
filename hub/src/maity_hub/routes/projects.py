@@ -665,13 +665,24 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
+class _Unread:
+    """The caller's membership in the project, not read yet (`_reader` reads it)."""
+
+
+_UNREAD = _Unread()
+
+
 def _stored(
-    conn: Connection, project: Any, request: Request, mine: Membership | None = None
+    conn: Connection,
+    project: Any,
+    request: Request,
+    mine: Membership | None | _Unread = _UNREAD,
 ) -> dict[str, int | None] | None:
     """The project's attachment bytes against its limit `max_attachment_storage_per_project`
     (`quota`, None under `unlimited`), for a caller with `project:admin` in it (§8.7); anyone
-    else gets None. `mine` is the caller's membership when the route has read it already."""
-    if mine is None:
+    else gets None. `mine` is the caller's membership (None: none) when the route has read it
+    already."""
+    if isinstance(mine, _Unread):
         mine = _reader(conn, project, request)
     if mine is None or not mine.may("project:admin"):
         return None
@@ -682,13 +693,18 @@ def _stored(
 
 
 def _view(
-    conn: Connection, project: Any, request: Request, mine: Membership | None = None
+    conn: Connection,
+    project: Any,
+    request: Request,
+    mine: Membership | None | _Unread = _UNREAD,
 ) -> dict[str, Any]:
     """The project as `GET` answers it. A route that has the caller's membership passes it as
     `mine`, so that the view does not resolve the project and the membership again for the
-    storage figures and the restricted setting (tsk-6srccd2r1h62); without it, each reads
-    the caller's membership itself."""
-    if mine is None:
+    storage figures and the restricted setting (tsk-6srccd2r1h62); without it, the view
+    reads it once and both use that read, also when the caller has none. Both fields follow
+    the membership as that one read saw it, not a change committed after it
+    (hub/context/persistence.md, "A project read decides what the caller sees")."""
+    if isinstance(mine, _Unread):
         mine = _reader(conn, project, request)
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
@@ -725,13 +741,13 @@ def _serve_restricted(
     project: Any,
     request: Request,
     view: dict[str, Any],
-    mine: Membership | None = None,
+    mine: Membership | None | _Unread = _UNREAD,
 ) -> dict[str, Any]:
     """`settings.restricted_access` per reader (§6.1 "Reading the setting"): `null` without
     the key, `{mode, members, included, cards_with_text}` to a human with `project:admin` and
     to a member in the set, `{mode, included}` to every other."""
     view["settings"]["restricted_access"] = restricted.served(
-        conn, project, mine if mine is not None else _reader(conn, project, request)
+        conn, project, _reader(conn, project, request) if isinstance(mine, _Unread) else mine
     )
     return view
 
