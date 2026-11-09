@@ -2057,7 +2057,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("form.pair-form")).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("pair-name").getAttribute("aria-describedby") === "pair-name-rule",
     "runners: the name's rule is said up front");
   byId("pair-name").value = "new-laptop";
-  main.querySelector("form.pair-form").dispatch("submit"); await tick(); await tick(); await tick();
+  // Pairing mints a credential (§2.8.4): the fixture hub refuses until the factor is given, and the
+  // page asks for it before it shows the line (tsk-6dk86ej9s0fq).
+  win.MAITY_FIXTURE_STEP_UP = Date.now();
+  main.querySelector("form.pair-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("step-up-step_up_required") && text(main).includes("Pairing a runner needs your second factor") && !main.querySelector(".pair-steps"),
+    "runners: pairing asks for the second factor, the line waits");
+  byId("step-up-step_up_required").value = "123456"; main.querySelector("form.step-up").dispatch("submit");
+  for (let k = 0; k < 8; k++) await tick();
+  win.MAITY_FIXTURE_STEP_UP = false;
+  expect(!byId("step-up-step_up_required") && rWrites.filter((w) => w[1] === "/runners/enrollments").length === 2,
+    "runners: the code given, the pairing is asked for again");
   expect(JSON.stringify(rWrites[0]) === JSON.stringify(["POST", "/runners/enrollments", { name: "new-laptop", ttl_seconds: 900, attach: ["maintainer/maity", "maintainer/sample"] }]),
     "runners: pairing asks for an enrollment that allows the chosen projects");
   const steps = main.querySelector(".pair-steps");

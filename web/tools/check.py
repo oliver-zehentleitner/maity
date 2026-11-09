@@ -53,6 +53,7 @@ What is checked:
 - all text files: no tabs, no trailing whitespace, final newline.
 """
 
+import glob
 import hashlib
 import importlib.util
 import html.parser
@@ -1351,6 +1352,156 @@ def check_fixture_shapes(node, write, notes):
             f.write(json.dumps(kept, indent=1, sort_keys=True) + "\n")
 
 
+# ---- step-up ---------------------------------------------------------------------------------
+
+STEP_UP_LIST = os.path.join(ROOT, "tools", "step-up-routes.json")
+API_VERBS = {"get": "GET", "post": "POST", "patch": "PATCH", "put": "PUT", "del": "DELETE"}
+
+
+def split_plus(expr):
+    """The operands of a string concatenation, split at its top-level "+"."""
+    parts, depth, cur = [], 0, ""
+    for c in expr:
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if c == "+" and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += c
+    parts.append(cur)
+    return [p.strip() for p in parts]
+
+
+def initializer(src, code, name, before):
+    """The text a name was last given before position before: `const name = <this>;`."""
+    last = None
+    for m in re.finditer(r"\b(?:const|let)\s+" + re.escape(name) + r"\s*=\s*", code[:before]):
+        last = m
+    if not last:
+        return None
+    depth, end = 0, len(code)
+    for i in range(last.end(), len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if depth < 0 or (depth == 0 and c == ";"):
+            end = i
+            break
+    return src[last.end():end].strip()
+
+
+def path_pattern(src, code, expr, at, depth=0):
+    """A regular expression for the paths a call's first argument builds, or None where no part of it
+    can be read here: string literals, `ctx.base`, a name's own `const`, a helper arrow's body, both
+    sides of a `?:` or `||`. What cannot be read stands for one path segment or part of one."""
+    expr = expr.strip()
+    if expr.startswith("(") and expr.endswith(")") and call_end(expr, 1) == len(expr) - 1:
+        expr = expr[1:-1]
+    out, known = "", False
+    for part in split_plus(expr):
+        sub = None
+        if re.fullmatch(r"\"[^\"]*\"|'[^']*'", part):
+            sub = re.escape(part[1:-1])
+        elif part == "ctx.base":
+            sub = "/projects/[^/]+/[^/]+"
+        elif depth < 3 and re.fullmatch(r"[A-Za-z_$][\w$]*\(.*\)", part, re.S):
+            init = initializer(src, code, part[:part.index("(")], at) or ""
+            arrow = re.match(r"(?:async\s*)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*", init)
+            sub = path_pattern(src, code, init[arrow.end():], at, depth + 1) if arrow else None
+        elif depth < 3 and re.fullmatch(r"[A-Za-z_$][\w$]*", part):
+            init = initializer(src, code, part, at)
+            sub = path_pattern(src, code, init, at, depth + 1) if init else None
+        elif depth < 3 and "?" in part:
+            m = re.fullmatch(r"(.+?)\?(.+):(.+)", part, re.S)
+            alts = [path_pattern(src, code, x, at, depth + 1) for x in m.group(2, 3)] if m else [None]
+            sub = "(?:" + "|".join(alts) + ")" if all(a is not None for a in alts) else None
+        elif depth < 3 and "||" in part:
+            alts = [path_pattern(src, code, x, at, depth + 1) for x in part.split("||")]
+            sub = "(?:" + "|".join(a if a is not None else "[^/]*" for a in alts) + ")" if any(alts) else None
+        if sub is None:
+            out += "[^/]*"
+        else:
+            out += sub
+            known = True
+    return out if known else None
+
+
+def asks_first(code, at):
+    """Whether the call at position at goes through M.stepUp.run: inside its first argument, or
+    an arrow that is handed to it by name, as a `call:` property, or through a local function that
+    hands its parameter to it (security.js's act)."""
+    for s in re.finditer(r"\bM\.stepUp\.run\(", code):
+        if s.end() <= at <= call_end(code, s.end()):
+            return True
+    m = re.search(r"(\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\(?\s*$", code[:at])
+    if not m:
+        return False
+    head = code[:m.start()]
+    named = re.search(r"\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*$", head)
+    if named and re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(named.group(1)) + r"\s*,", code):
+        return True
+    prop = re.search(r"\b([A-Za-z_$][\w$]*)\s*:\s*$", head)
+    if prop and re.search(r"\bM\.stepUp\.run\([^,()]*\." + re.escape(prop.group(1)) + r"\s*,", code):
+        return True
+    fn = callee_of(code, m.start())
+    if fn:
+        d = re.search(r"(?:function\s+" + re.escape(fn) + r"\s*\(([^)]*)\)|\b(?:const|let)\s+" + re.escape(fn)
+                      + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{", code)
+        if d:
+            body = code[d.end():call_end(code, d.end())]
+            params = [x.strip() for x in (d.group(1) or d.group(2) or "").split(",") if x.strip()]
+            if any(re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(q) + r"\s*,", body) for q in params):
+                return True
+    return False
+
+
+def check_step_up():
+    """Every dashboard call to a route that asks for the second factor (tools/step-up-routes.json,
+    docs/api.md §2.8.4) goes through M.stepUp.run, so the page asks instead of showing the bare
+    refusal (tsk-6dk86ej9s0fq); and js/api.js's fixture list is that list."""
+    try:
+        listed = json.loads(read(STEP_UP_LIST))["routes"]
+    except (OSError, ValueError, KeyError) as err:
+        finding(STEP_UP_LIST, 1, "unreadable: %s" % err)
+        return
+    routes = [(e["route"].split(" ", 1)[0], e["route"].split(" ", 1)[1], e.get("body")) for e in listed]
+    api = os.path.join(ROOT, "js", "api.js")
+    block = re.search(r"const STEP_UP_ROUTES = \[(.*?)\];", read(api), re.S)
+    fixture = re.findall(r"\"([^\"]+)\"", block.group(1)) if block else []
+    if sorted(fixture) != sorted(e["route"] for e in listed):
+        finding(api, 1, "STEP_UP_ROUTES differs from tools/step-up-routes.json")
+    for path in sorted(glob.glob(os.path.join(ROOT, "js", "*.js"))):
+        if os.path.basename(path) in ("api.js", "step-up.js"):
+            continue
+        src = read(path)
+        code, error = strip_js(src)
+        if error:
+            continue
+        for m in re.finditer(r"\bM\.api\.(get|post|patch|put|del)\(", code):
+            begin, end = first_argument(code, m.end())
+            pattern = path_pattern(src, code, src[begin:end], m.start())
+            if pattern is None:
+                continue
+            verb = API_VERBS[m.group(1)]
+            hits = [(p, key) for v, p, key in routes if v == verb and re.fullmatch(pattern, re.sub(r"\{[^}]*\}", "x", p))]
+            if not hits:
+                continue
+            if len(hits) == 1 and hits[0][1]:
+                body = src[end + 1:call_end(code, m.end())]
+                if re.fullmatch(r"\s*[A-Za-z_$][\w$]*\s*", body):
+                    body = initializer(src, code, body.strip(), m.start()) or ""
+                if not re.search(r"\b" + re.escape(hits[0][1]) + r"\b", body):
+                    continue
+            if not asks_first(code, m.start()):
+                finding(path, code.count("\n", 0, m.start()) + 1,
+                        "%s %s asks for the second factor: send it through M.stepUp.run" % (verb, hits[0][0]))
+
+
 def main(argv):
     if "--missing" in argv:
         at = argv.index("--missing") + 1
@@ -1374,6 +1525,7 @@ def main(argv):
     check_css()
     check_vendor()
     check_whitespace()
+    check_step_up()
     for f in findings:
         print(f)
     if not node:
