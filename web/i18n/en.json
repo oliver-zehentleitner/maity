@@ -2342,8 +2342,8 @@
   "mail.sign_in_link.hint": "Turning it off voids a link that was already sent.",
   "mail.time.invalid": "A time as HH:MM, from 00:00 to 23:59.",
   "mail.timezone": "Time zone",
-  "mail.timezone.empty": "Enter a time zone, such as Europe/Vienna.",
-  "mail.timezone.hint": "The digests and quiet hours follow it.",
+  "mail.timezone.elsewhere": "The digests and quiet hours follow your time zone, {zone}, which you set under {link}.",
+  "mail.timezone.none": "No time zone is set, so the digests and quiet hours follow UTC. Set yours under {link}.",
   "mail.timezone.unknown": "The hub does not know this time zone. Use a name such as Europe/Vienna.",
   "mail.timezone.use": "Use {zone}",
   "mail.weekly_on": "Weekly digest on",
@@ -5235,5 +5235,12 @@
   "mine.start_tab.label": "Open as a tab at start",
   "mine.start_tab.hint": "Applies in a browser with no tabs of its own yet, such as a first sign-in on a new device. Which tabs a browser has open stays in that browser.",
   "mine.start_tab.saved_on": "Saved: this project opens as a tab at start.",
-  "mine.start_tab.saved_off": "Saved: this project no longer opens as a tab at start."
+  "mine.start_tab.saved_off": "Saved: this project no longer opens as a tab at start.",
+  "zone.clear": "Use none",
+  "zone.failed": "Time zone not saved: {reason}",
+  "zone.hint": "Every time on the dashboard is shown in it; the digests and quiet hours of your mails follow it too.",
+  "zone.label": "Show times in",
+  "zone.save": "Save time zone",
+  "zone.saved": "Time zone saved.",
+  "zone.unset": "None set: times are shown in this browser's time zone, {zone}."
 }

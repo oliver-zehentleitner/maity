@@ -2379,8 +2379,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.test.title": "测试发送",
   "mail.time.invalid": "时间格式为 HH:MM，从 00:00 到 23:59。",
   "mail.timezone": "时区",
-  "mail.timezone.empty": "请输入时区，例如 Europe/Vienna。",
-  "mail.timezone.hint": "摘要和免打扰时段按此时区计算。",
   "mail.timezone.unknown": "hub 不认识这个时区。请使用 Europe/Vienna 这样的名称。",
   "mail.timezone.use": "使用 {zone}",
   "mail.title": "邮件设置",

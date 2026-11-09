@@ -242,12 +242,58 @@ window.Maity = window.Maity || {};
     return new Intl.NumberFormat(i18n.locale, options).format(n);
   }
 
-  // A date and time, a date, or a time; `value` an ISO string or a Date.
-  // An unreadable value is returned as given.
+  // The zone every absolute time is shown in (docs/api.md §5.1, tsk-j8s6n725a06r): the account's
+  // `timezone` from GET /me, or the browser's while the account has none. A name this browser
+  // does not know counts as none. Relative times ("5 min ago") do not use it.
+  let accountZone = null;
+  const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (err) { return "UTC"; } };
+  const knownZone = (name) => {
+    try { new Intl.DateTimeFormat("en", { timeZone: name }); return true; } catch (err) { return false; }
+  };
+  const zone = () => accountZone || browserZone();
+
+  const asDate = (value) => (value instanceof Date ? value : new Date(value));
+  // A date and time, a date, or a time in the zone; `value` an ISO string or a Date. An option
+  // `timeZone` of the caller's own wins. An unreadable value is returned as given.
   function when(value, options) {
-    const d = value instanceof Date ? value : new Date(value);
+    const d = asDate(value);
     if (Number.isNaN(d.getTime())) return String(value);
-    return new Intl.DateTimeFormat(i18n.locale, options).format(d);
+    return new Intl.DateTimeFormat(i18n.locale, Object.assign({ timeZone: zone() }, options)).format(d);
+  }
+  // The wall clock of a moment in the zone, as numbers; null for an unreadable value.
+  function wall(value) {
+    const d = asDate(value);
+    if (Number.isNaN(d.getTime())) return null;
+    const parts = {};
+    new Intl.DateTimeFormat("en-US", { timeZone: zone(), hourCycle: "h23", year: "numeric", month: "numeric",
+      day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" })
+      .formatToParts(d).forEach((p) => { if (p.type !== "literal") parts[p.type] = Number(p.value); });
+    return { year: parts.year, month: parts.month, day: parts.day, hour: parts.hour % 24, minute: parts.minute, second: parts.second };
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  // The day of a moment in the zone, "YYYY-MM-DD": two moments are on one day when it is the same.
+  function day(value) {
+    const w = wall(value);
+    return w ? w.year + "-" + pad(w.month) + "-" + pad(w.day) : null;
+  }
+  // A moment as a datetime-local field's value ("YYYY-MM-DDTHH:MM") in the zone.
+  function toWall(value) {
+    const w = wall(value);
+    return w ? day(value) + "T" + pad(w.hour) + ":" + pad(w.minute) : "";
+  }
+  // The moment a datetime-local value names in the zone, as a Date; null when unreadable. A time
+  // a clock change skips moves forward by the gap's length (02:30 in a one-hour gap is 03:30); one
+  // it repeats reads as the first.
+  function fromWall(text) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(text || ""));
+    if (!m) return null;
+    const wanted = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    const offset = (t) => { const w = wall(new Date(t)); return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second) - t; };
+    // The zone's offsets a day before and after cover both sides of any clock change.
+    const candidates = [wanted - 86400000, wanted, wanted + 86400000].map((t) => wanted - offset(t));
+    const asked = String(text).slice(0, 16);
+    const exact = candidates.filter((t) => toWall(new Date(t)) === asked);
+    return new Date(exact.length ? Math.min(...exact) : Math.max(...candidates));
   }
 
   M.t = t;
@@ -269,6 +315,9 @@ window.Maity = window.Maity || {};
     date: (value) => when(value, { year: "numeric", month: "short", day: "numeric" }),
     time: (value) => when(value, { hour: "2-digit", minute: "2-digit" }),
     when,
+    day,
+    toWall,
+    fromWall,
   };
   i18n.available = available;
   i18n.explicit = personChoice;
@@ -286,8 +335,9 @@ window.Maity = window.Maity || {};
   i18n.frameWait = 1500;
   // The account's interface language, or null. Signed in without one (`signedIn`, the session
   // read answered 200): the browser's rule, as docs/api.md §6.2 says, and no frame read. Signed
-  // out (the 401): the visitor's language, the frame read first.
+  // out (the 401): the visitor's language, the frame read first, and no account's time zone.
   i18n.follow = (tag, signedIn) => {
+    if (!signedIn) accountZone = null;
     const own = closest(tag);
     account = !!own || !!signedIn;
     if (own) return use(own);
@@ -320,5 +370,11 @@ window.Maity = window.Maity || {};
     const en = catalogs.en || {};
     return Object.hasOwn(en, key) ? en[key] : undefined;
   };
+  // The account's time zone (GET /me's `member.timezone`), or null for the browser's.
+  i18n.setZone = (name) => { accountZone = typeof name === "string" && name && knownZone(name) ? name : null; };
+  i18n.zone = zone;
+  i18n.accountZone = () => accountZone;
+  i18n.browserZone = browserZone;
+  i18n.knownZone = knownZone;
   M.i18n = i18n;
 })(window.Maity);

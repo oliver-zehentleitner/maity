@@ -2297,8 +2297,6 @@
   "mail.sign_in_link.hint": "끄면 이미 보낸 링크가 무효가 됩니다.",
   "mail.time.invalid": "00:00부터 23:59까지 HH:MM 형식의 시각이어야 해요.",
   "mail.timezone": "시간대",
-  "mail.timezone.empty": "Europe/Vienna 같은 시간대를 입력하세요.",
-  "mail.timezone.hint": "요약 메일과 방해 금지 시간은 이 시간대를 따라요.",
   "mail.timezone.unknown": "허브가 모르는 시간대예요. Europe/Vienna 같은 이름을 쓰세요.",
   "mail.timezone.use": "{zone} 사용",
   "mail.weekly_on": "주간 요약 요일",

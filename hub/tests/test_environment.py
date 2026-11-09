@@ -225,3 +225,26 @@ def test_a_redaction_is_as_hidden_from_agents_as_what_it_redacts(
     assert tombstones == []  # see-all does not reach it (§8.5)
     owners = owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     assert [e["payload"]["seq"] for e in owners if e["kind"] == "event_redacted"] == [event.seq]
+
+
+def test_a_member_sees_the_sharing_of_their_own_agent_only(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # #1562 review: in the member list, a plain human member who owns an agent gets the
+    # details (`credential_id`, `shared_environment`) for that agent's instances only, not for
+    # another owner's agent beside it (§6.17).
+    theirs = flow.agent(make_client, owner)
+    resume(theirs, HOME, WORK)
+    member = flow.human(make_client, migrated, "someone")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    own = factory.agent(migrated, project_id, member.id)
+    listed = member.get("/projects/maintainer/maity/members")
+    assert listed.status_code == 200, listed.text
+    instances = {v["id"]: v.get("instances", []) for v in listed.json()["items"]}
+    assert instances[theirs.id] and instances[own.agent_id]
+    assert all(
+        "shared_environment" not in i and "credential_id" not in i for i in instances[theirs.id]
+    )
+    assert all("shared_environment" in i and "credential_id" in i for i in instances[own.agent_id])
