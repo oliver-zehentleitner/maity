@@ -1,14 +1,17 @@
 """The app shell and the dashboard's files (docs/api.md §16.11).
 
 Every path the hub does not answer itself is `index.html`, the shell; the dashboard's scripts,
-stylesheets and brand files are served under `/assets/`. `shell_response` is also what `/`
-answers to a visitor with a session or while the landing page is off (§16.7).
+stylesheets and brand files are served under `/assets/`. The shell names each of them with
+`?v=<version>`, the digest of the body the hub sends, and a request carrying that version may be
+cached for good (hub/context/serving.md). `shell_response` is also what `/` answers to a visitor
+with a session or while the landing page is off (§16.7).
 """
 
 from __future__ import annotations
 
 import gzip
 import hashlib
+import json
 import os
 import re
 import stat
@@ -20,7 +23,7 @@ from pathlib import Path
 from fastapi import Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, QueryParams
 from starlette.exceptions import HTTPException
 from starlette.responses import FileResponse
 from starlette.routing import BaseRoute, Match
@@ -42,43 +45,108 @@ SHELL_HEADERS = {
 
 
 # A dashboard file is revalidated on every use (docs/api.md §1, §16.11; req-s246xb6k1mpp): it
-# holds no data, and a deploy must reach a browser at once.
+# holds no data, and a deploy must reach a browser at once. Asked for under its version, the
+# digest of the very body sent, it may be kept for good: a deploy changes the shell, and with it
+# the version of every file that changed (hub/context/serving.md).
 ASSET_CACHE = "no-cache"
+ASSET_IMMUTABLE = "public, max-age=31536000, immutable"
+# A version is this many hex digits of the body's SHA-256, as `/assets/landing/` writes it.
+VERSION_DIGITS = 16
+# `url(...)` in a stylesheet: quoted or not, as the dashboard's stylesheets write them.
+_CSS_URL = re.compile(r"""url\(\s*(?P<q>["']?)(?P<ref>[^"')\s]+)(?P=q)\s*\)""")
 
 
 @dataclass(frozen=True)
 class AssetForm:
-    """What a dashboard file is served as: its content's strong ETag and, for a compressible
-    file of `compression.MINIMUM_SIZE` and more, its gzip form with an ETag of its own."""
+    """What a dashboard file is served as: its content's strong ETag and version and, for a
+    compressible file of `compression.MINIMUM_SIZE` and more, its gzip form with an ETag of its
+    own. A stylesheet is served as `body`, its `url()`s carrying the versions in `refs`."""
 
     mtime_ns: int
     size: int
     media_type: str
     etag: str
+    version: str
     gzipped: bytes | None
     gzip_etag: str | None
+    body: bytes | None = None
+    refs: tuple[tuple[str, str], ...] = ()
 
 
-# A file's forms by its path, kept while its change time and size stay the same.
+# A file's forms by its path, kept while its change time and size stay the same, and for a
+# stylesheet while every file it names keeps its version.
 _FORMS: dict[str, AssetForm] = {}
 
 
-def asset_form(full_path: str, stat_result: os.stat_result) -> AssetForm:
+def _asset_path(root: str, full_path: str) -> str | None:
+    """`full_path` as a path under `/assets/` (`css/fonts/x.woff2`), or None when it is not a
+    dashboard file there: outside `root`, outside `ASSET_DIRS`, a dotfile, not a regular file."""
+    relative = os.path.relpath(full_path, root)
+    parts = relative.split(os.sep)
+    if parts[0] in (os.curdir, os.pardir) or len(parts) < 2 or parts[0] not in ASSET_DIRS:
+        return None
+    if any(part.startswith(".") for part in parts) or not os.path.isfile(full_path):
+        return None
+    return "/".join(parts)
+
+
+def _versioned_css(
+    root: str, full_path: str, text: str
+) -> tuple[bytes, tuple[tuple[str, str], ...]]:
+    """A stylesheet with `?v=<version>` on every `url()` that names a dashboard file beside it
+    (fonts, brand pictures): the stylesheet's own version then changes with theirs. Anything
+    else (an absolute or `data:` address, a query, another stylesheet) stays as written."""
+    refs: dict[str, str] = {}
+
+    def versioned(found: re.Match[str]) -> str:
+        ref = found["ref"]
+        if ref.startswith("/") or ":" in ref or "?" in ref or "#" in ref or ref.endswith(".css"):
+            return found[0]
+        target = os.path.normpath(os.path.join(os.path.dirname(full_path), ref))
+        if _asset_path(root, target) is None:
+            return found[0]
+        version = asset_form(target, os.stat(target), root).version
+        refs[target] = version
+        return f"url({found['q']}{ref}?v={version}{found['q']})"
+
+    return _CSS_URL.sub(versioned, text).encode(), tuple(sorted(refs.items()))
+
+
+def _refs_current(known: AssetForm, root: str) -> bool:
+    for target, version in known.refs:
+        try:
+            if asset_form(target, os.stat(target), root).version != version:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def asset_form(full_path: str, stat_result: os.stat_result, root: str) -> AssetForm:
     """The ETag comes from the file's content, not from its time and size as Starlette's: an
     image built with normalised file times could otherwise keep an old ETag for a changed file
     of the same size. Read once per file and process, again when its change time or size
     moves. The gzip form is made here too, at the middleware's level and with no time in its
-    header, so the same content always gives the same bytes and the same ETag."""
+    header, so the same content always gives the same bytes and the same ETag. The version is
+    taken from the body as sent, so a stylesheet's from its versioned `url()`s."""
     known = _FORMS.get(full_path)
-    if known is not None and (known.mtime_ns, known.size) == (
-        stat_result.st_mtime_ns,
-        stat_result.st_size,
+    if (
+        known is not None
+        and (known.mtime_ns, known.size) == (stat_result.st_mtime_ns, stat_result.st_size)
+        and _refs_current(known, root)
     ):
         return known
     with open(full_path, "rb") as file:
         data = file.read()
-    digest = hashlib.sha256(data).hexdigest()[:32]
     media_type = guess_type(full_path)[0] or "text/plain"
+    body: bytes | None = None
+    refs: tuple[tuple[str, str], ...] = ()
+    if media_type == "text/css":
+        rewritten, refs = _versioned_css(root, full_path, data.decode("utf-8"))
+        # Sent from memory, and whole, as the gzip form, only when a `url()` changed.
+        if rewritten != data:
+            body = data = rewritten
+    digest = hashlib.sha256(data).hexdigest()
     gzipped = None
     if len(data) >= compression.MINIMUM_SIZE and not compression.already_compressed(media_type):
         gzipped = gzip.compress(data, compresslevel=compression.LEVEL, mtime=0)
@@ -86,12 +154,31 @@ def asset_form(full_path: str, stat_result: os.stat_result) -> AssetForm:
         mtime_ns=stat_result.st_mtime_ns,
         size=stat_result.st_size,
         media_type=media_type,
-        etag=f'"{digest}"',
+        etag=f'"{digest[:32]}"',
+        version=digest[:VERSION_DIGITS],
         gzipped=gzipped,
-        gzip_etag=None if gzipped is None else f'"{digest}-gzip"',
+        gzip_etag=None if gzipped is None else f'"{digest[:32]}-gzip"',
+        body=body,
+        refs=refs,
     )
     _FORMS[full_path] = form
     return form
+
+
+def asset_versions(web_dir: Path) -> dict[str, str]:
+    """Every dashboard file's version by its path under `/assets/` (`js/app.js`). Each file is
+    read once per process (`asset_form`); later calls only look at change times and sizes."""
+    root = os.path.realpath(web_dir)
+    found: dict[str, str] = {}
+    for top in sorted(ASSET_DIRS):
+        for here, dirs, files in os.walk(os.path.join(root, top)):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for name in sorted(files):
+                full_path = os.path.join(here, name)
+                path = _asset_path(root, full_path)
+                if path is not None:
+                    found[path] = asset_form(full_path, os.stat(full_path), root).version
+    return found
 
 
 class AssetFileResponse(FileResponse):
@@ -114,12 +201,16 @@ class AssetFiles(StaticFiles):
             raise HTTPException(status_code=404)
         return await super().get_response(path, scope)
 
+    @property
+    def root(self) -> str:
+        return os.path.realpath(os.fspath(self.directory or "."))
+
     def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
         # Starlette runs this in a worker thread: the file is read, hashed and gzipped here,
         # not on the event loop.
         full_path, stat_result = super().lookup_path(path)
         if stat_result is not None and stat.S_ISREG(stat_result.st_mode):
-            asset_form(full_path, stat_result)
+            asset_form(full_path, stat_result, self.root)
         return full_path, stat_result
 
     def file_response(
@@ -129,9 +220,14 @@ class AssetFiles(StaticFiles):
         scope: Scope,
         status_code: int = 200,
     ) -> Response:
-        form = asset_form(os.fspath(full_path), stat_result)
+        form = asset_form(os.fspath(full_path), stat_result, self.root)
         request = Headers(scope=scope)
-        headers = {"Cache-Control": ASSET_CACHE}
+        # For good only under the version of the body this hub sends: another version (a
+        # shell from a pod with other files, a stale link) or none gets the current file,
+        # revalidated (hub/context/serving.md).
+        asked = QueryParams(scope.get("query_string", b"")).getlist("v")
+        current = asked == [form.version]
+        headers = {"Cache-Control": ASSET_IMMUTABLE if current else ASSET_CACHE}
         response: Response
         if form.gzipped is not None:
             # Which form is sent depends on Accept-Encoding: every answer says so, a 304 too.
@@ -144,6 +240,11 @@ class AssetFiles(StaticFiles):
             headers |= {"ETag": form.gzip_etag, "Content-Encoding": "gzip"}
             response = Response(
                 form.gzipped, status_code=status_code, media_type=form.media_type, headers=headers
+            )
+        elif form.body is not None:
+            headers["ETag"] = form.etag
+            response = Response(
+                form.body, status_code=status_code, media_type=form.media_type, headers=headers
             )
         else:
             headers["ETag"] = form.etag
@@ -177,6 +278,38 @@ def shell_document(page: bytes, public_url: str) -> bytes:
     if opened is None:
         return page
     return page[: opened.end()] + BASE + page[opened.end() :]
+
+
+# A file of the dashboard the shell names (`src="js/app.js"`, `href="css/app.css"`).
+_ASSET_REF = re.compile(rb'(\s(?:src|href)=")((?:brand|css|js|vendor)/[^"?#]+)(")')
+_HEAD_END = re.compile(rb"</head>", re.IGNORECASE)
+# The files a script asks for later, by a name it builds (an i18n catalog, Keep the Why's files, a
+# brand picture): the shell lists their versions in a data block, `M.assetQuery` reads it.
+LATER = ("brand/", "js/i18n/", "vendor/")
+VERSIONS_ID = "maity-assets"
+
+
+def versioned(page: bytes, web_dir: Path) -> bytes:
+    """The shell with `?v=<version>` on every file of the dashboard it names, and the versions
+    of the files a script loads later in `<script type="application/json" id="maity-assets">`,
+    a data block that is never run, so the CSP stays as it is (§16.11). A name without a file
+    stays as written."""
+    versions = asset_versions(web_dir)
+
+    def named(found: re.Match[bytes]) -> bytes:
+        version = versions.get(found[2].decode("utf-8", "replace"))
+        if version is None:
+            return found[0]
+        return found[1] + found[2] + b"?v=" + version.encode() + found[3]
+
+    page = _ASSET_REF.sub(named, page)
+    later = {path: version for path, version in versions.items() if path.startswith(LATER)}
+    data = json.dumps(later, sort_keys=True, separators=(",", ":")).replace("<", "\\u003c")
+    block = f'<script type="application/json" id="{VERSIONS_ID}">{data}</script>'.encode()
+    closed = _HEAD_END.search(page)
+    if closed is None:
+        return page
+    return page[: closed.start()] + block + page[closed.start() :]
 
 
 _PAGE = re.compile(
@@ -232,7 +365,7 @@ class ShellRoute(BaseRoute):
 
     def _inside_shell(self, body: str) -> bytes | None:
         shell = shell_document((self.web_dir / "index.html").read_bytes(), self.public_url)
-        return page_in_shell(shell, body)
+        return page_in_shell(versioned(shell, self.web_dir), body)
 
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
         if scope["type"] != "http" or paths.is_hub_path(scope.get("path", "")):
@@ -260,7 +393,7 @@ class ShellRoute(BaseRoute):
 def shell_response(web_dir: Path, public_url: str) -> Response:
     """`index.html` as the shell: `200`, `no-cache`, `noindex` (§16.11)."""
     return Response(
-        shell_document((web_dir / "index.html").read_bytes(), public_url),
+        versioned(shell_document((web_dir / "index.html").read_bytes(), public_url), web_dir),
         media_type="text/html",
         headers=SHELL_HEADERS,
     )

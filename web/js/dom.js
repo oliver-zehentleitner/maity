@@ -63,8 +63,14 @@ window.Maity = window.Maity || {};
   // A relative file of the dashboard (brand/…) is local. No anchor and no
   // bare query: under the shell's <base href="/assets/"> (§16.11) they would
   // lead into /assets/. A route is a path (js/route.js), never a fragment.
+  // A file of the dashboard's own, by its relative name, as the shell names it under its version
+  // (`?v=` and 16 hex digits, js/assets.js) or without one; nothing else after the name.
   function isLocalRef(value) {
-    return typeof value === "string" && /^[a-z0-9_-]+\/[a-z0-9_./-]+$/i.test(value) && !/^[a-z]+:/i.test(value);
+    if (typeof value !== "string") return false;
+    const cut = value.indexOf("?");
+    const name = cut < 0 ? value : value.slice(0, cut);
+    if (cut >= 0 && !/^\?v=[0-9a-f]{16}$/.test(value.slice(cut))) return false;
+    return /^[a-z0-9_-]+\/[a-z0-9_./-]+$/i.test(name) && !/^[a-z]+:/i.test(name);
   }
 
   // An image the page itself points at: a project's logo or banner on the
