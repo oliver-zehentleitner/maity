@@ -59,14 +59,19 @@ def policy_errors(
         if entry.startswith(("role:", "trust:")):
             if not token_known(entry, custom):
                 errors["availability_policy.substitutes"] = "unknown_role"
+            elif entry == "role:expert":  # an expert takes no cards (§2.3 "The expert")
+                errors["availability_policy.substitutes"] = "expert"
             continue
         if entry == (target.agent_id or target.human_id):
             errors["availability_policy.substitutes"] = "self"
             continue
         try:
-            member_row(conn, project_id, entry)
+            found = member_row(conn, project_id, entry)
         except ApiError:
             errors["availability_policy.substitutes"] = "not_a_member"
+            continue
+        if found.role == "expert":
+            errors["availability_policy.substitutes"] = "expert"
     if policy["on_unavailable"] == "substitute" and not policy["substitutes"]:
         errors.setdefault("availability_policy.substitutes", "required")
     return errors
