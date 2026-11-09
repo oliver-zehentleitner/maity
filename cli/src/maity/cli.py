@@ -5518,7 +5518,30 @@ def _utf8_streams() -> None:
             stream.reconfigure(encoding="utf-8", errors=errors)
 
 
+# The code a failed command's machine line names (`hub.error_code`), set where it is caught.
+_FAILED_CODE: list[str | None] = [None]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    """The command, and under `MAITY_ERROR_LINE=<nonce>` its machine line after every failure,
+    written last: `maity-error <nonce>: <code>`, or `-` when no code applies."""
+    nonce = os.environ.get(hub.ERROR_LINE_ENV) or ""
+    if not hub.ERROR_LINE_NONCE.fullmatch(nonce):
+        return _main(argv)
+    _FAILED_CODE[0] = None
+    code = 1
+    try:
+        code = _main(argv)
+    except SystemExit as exc:  # argparse: its message is printed already
+        code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        raise
+    finally:
+        if code != 0:
+            print(f"maity-error {nonce}: {_FAILED_CODE[0] or '-'}", file=sys.stderr, flush=True)
+    return code
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
     if _restricted_argv(sys.argv[1:] if argv is None else argv):
@@ -5561,15 +5584,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         CommandError,
         OSError,
     ) as exc:
+        if isinstance(exc, hub.HubError):
+            _FAILED_CODE[0] = hub.error_code(exc)
         until = hub.maintenance_until(exc) if isinstance(exc, hub.HubError) else None
         if until is not None:
             _err(f"Maintenance until {until} UTC, try again then")
             return EXIT_MAINTENANCE
         _err(_explain(exc))
-        if isinstance(exc, hub.HubError) and os.environ.get(hub.ERROR_LINE_ENV) == "1":
-            line = hub.error_line(exc)
-            if line is not None:
-                print(line, file=sys.stderr)
         return EXIT_ISOLATED if _isolated(exc) is not None else EXIT_ERROR
     except config.ConfigError as exc:
         for problem in exc.problems:

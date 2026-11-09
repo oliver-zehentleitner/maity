@@ -15349,11 +15349,14 @@ after, not even a line break. That includes a code the list names for
 another reason. A refusal the runner does not know yet thus still names
 its reason instead of becoming `null`. Any other value is `invalid` there
 too. The runner takes the code from the pickup's error answer, its `code`
-or, for `forbidden`, its `details.reason`. For the join, it reads the one
-line `maity join` writes last for that purpose (`maity-error: <code>`,
-under `MAITY_ERROR_LINE=1`), built from the same fields. It never takes
-the code from an error's message, which can hold the join URL and with it
-the token. A pickup's `404` is the placement, gone since it was read, and
+or, for `forbidden`, its `details.reason`. For the join, it gives `maity
+join` a random value of its own in `MAITY_ERROR_LINE`. A failed `maity`
+command then writes `maity-error <that value>: <code>` as its last line,
+or `-` when the error has no code in this form. A crash ends with its
+traceback instead, and the detail is then `null`. The line is built from
+the same fields, and the runner reads only that line with its own value.
+An error's message can hold the join URL and with it the token, but it
+cannot know the value, so no message text becomes the detail. A pickup's `404` is the placement, gone since it was read, and
 carries no detail.
 
 **A rate limit is not a crash.** When the supervised loop sees the

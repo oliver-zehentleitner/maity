@@ -98,8 +98,8 @@ class FakeHub:
     join_handle: str = "agent-b"  # the handle the join page (§3.2) names
     join_page_status: int = 0  # an error status for the join page, 0 for the page
     join_instance: str | None = "wqe2"  # Maity-Instance answered by the join exchange
-    # (status, code, details) the join exchange answers instead of a credential
-    join_error: tuple[int, str, dict[str, Any]] | None = None
+    # (status, code, details[, message]) the join exchange answers instead of a credential
+    join_error: tuple[Any, ...] | None = None
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -122,13 +122,20 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", str(len(data)))
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
-            if status >= 400 and isinstance(payload, dict):
+            if status >= 400 and isinstance(payload, dict) and payload["error"]["code"]:
                 self.send_header("Maity-Error", payload["error"]["code"])
             self.end_headers()
             self.wfile.write(data)
 
-        def _error(self, status: int, code: str, details: dict[str, Any] | None = None) -> None:
-            self._send(status, {"error": {"code": code, "message": code, "details": details or {}}})
+        def _error(
+            self,
+            status: int,
+            code: str | None,
+            details: dict[str, Any] | None = None,
+            message: str | None = None,
+        ) -> None:
+            error = {"code": code, "message": message or code, "details": details or {}}
+            self._send(status, {"error": error})
 
         def _verify(self, seen: Seen) -> bool:
             auth = seen.headers.get("authorization", "")

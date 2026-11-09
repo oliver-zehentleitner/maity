@@ -318,9 +318,13 @@ join token's `not_found`.
 the runner's list, so the operator and the lead saw `null` and no cause.
 Any new refusal of a join would do the same until both lists were changed
 and the runner was released. The code form keeps the rule that a detail
-is never free text. The runner reads the join's code only from the
-`maity-error:` line the child CLI builds from the error's code fields,
-never from its message, which can name the URL and the join code.
+is never free text. For the join, the runner gives the child CLI a
+random value of its own. It reads the code only from the child's last
+line, `maity-error <value>: <code>`, which the CLI writes after every
+failure it handles, built from the error's code fields, or `-` without
+one. A crash ends with its traceback, and the detail is `null`. No
+message carries the value, so none can pass for that line, even one
+that names the URL and the join code.
 
 **Rejected alternatives:**
 - Adding the three codes to the closed list: the next new join refusal
@@ -330,4 +334,7 @@ never from its message, which can name the URL and the join code.
   with it the token.
 - Searching the join's whole error output for a code: a message or a
   traceback can carry text in the code's form, so it would pass for one.
-  Only the dedicated last line, built from the code fields, is read.
+- A fixed marker line (`maity-error: <code>`) as the last line: a refusal
+  whose code is missing or not a code wrote no such line, so a message
+  ending in a forged marker came last. The random value per call closes
+  that, and the line comes after every failure the CLI handles.

@@ -19,6 +19,7 @@ import json
 import os
 import random
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -40,8 +41,10 @@ PICKUP_RETRY = 15.0
 JOIN_TIMEOUT = 120.0
 # `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.
 DETAIL_CODE = hub.ERROR_CODE  # fullmatch only
-# The child's last stderr line under MAITY_ERROR_LINE=1 (hub.error_line), and nothing else.
-_ERROR_LINE = re.compile(r"maity-error: ([a-z][a-z0-9_]{0,63})(?: ([a-z][a-z0-9_]{0,63}))?")
+# The child's last stderr line under MAITY_ERROR_LINE=<nonce> (cli.main), and nothing else.
+_ERROR_LINE = re.compile(
+    r"maity-error ([0-9a-f]{32}): (?:-|([a-z][a-z0-9_]{0,63})(?: ([a-z][a-z0-9_]{0,63}))?)"
+)
 
 
 def join_detail(code: str | None, reason: Any = None) -> str | None:
@@ -67,8 +70,9 @@ def run_join(
 ) -> tuple[bool, str | None]:
     """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not:
     the hub's code, `network`, or None). The detail comes only from the child's last stderr
-    line, `maity-error: …` (`MAITY_ERROR_LINE=1`, built from the error's code fields), never
-    from its message or a traceback, so no text can pass for a code.
+    line, `maity-error <nonce>: …` with this call's own nonce (`MAITY_ERROR_LINE`), built from
+    the error's code fields: no message or traceback text knows the nonce, so none can pass for
+    a code.
 
     `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
     finds it without running git in a clone the agent can write (§5.3). Python runs isolated
@@ -77,15 +81,16 @@ def run_join(
     user, who then owns the credential; on an ssh host it is the host's own `maity`, found
     on the target's `agent_path`. Its output is never logged: an error names the join URL,
     and with it the token."""
+    nonce = secrets.token_hex(16)  # only this call's own machine line carries it
     if not as_user.direct:  # sudo and ssh start empty: pass only what the join needs
-        env = {state.STATE_DIR_ENV: str(place.credential.parent), hub.ERROR_LINE_ENV: "1"}
+        env = {state.STATE_DIR_ENV: str(place.credential.parent), hub.ERROR_LINE_ENV: nonce}
         if not as_user.here and agent_path:
             env["PATH"] = agent_path
         cwd = Path("/")
     else:
         env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
         env[state.STATE_DIR_ENV] = str(place.credential.parent)
-        env[hub.ERROR_LINE_ENV] = "1"
+        env[hub.ERROR_LINE_ENV] = nonce
     command = [
         *as_user.maity, "join", "--join-file", "-", "--no-resume", "--no-pointer",
         "--client", f"maity-runner/{__version__}",
@@ -102,11 +107,11 @@ def run_join(
         return True, None
     lines = done.stderr.splitlines()
     found = _ERROR_LINE.fullmatch(lines[-1]) if lines else None
-    if found is None:
+    if found is None or not secrets.compare_digest(found.group(1), nonce) or not found.group(2):
         return False, None
-    if found.group(1) == "network" and found.group(2) is None:
+    if found.group(2) == "network" and found.group(3) is None:
         return False, "network"
-    return False, join_detail(found.group(1), found.group(2))
+    return False, join_detail(found.group(2), found.group(3))
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
