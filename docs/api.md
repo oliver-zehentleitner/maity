@@ -18924,6 +18924,12 @@ wrapped over three rows on a phone. From 601 pixels on, all four parts
 show as above. This holds on every page with the line, the dashboard's
 and the hub's own.
 
+**Target size.** Every link of the line is at least 24 CSS pixels high,
+and each icon link (GitHub, Maity) is 24 pixels wide as well: the target
+size of WCAG 2.5.8, whatever stands on the row above or below it when
+the line wraps between its parts. A link never wraps inside itself. This
+too holds on the dashboard's pages and on the hub's own.
+
 Every link is absolute and the same on every instance. The Maity link
 names maity.team, not the instance's own host: the maintainer's page
 exists only there, and a relative `/oliver-zehentleitner` would be a dead
