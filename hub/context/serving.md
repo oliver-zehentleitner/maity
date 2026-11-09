@@ -685,7 +685,7 @@ markup for every width, as the dashboard does.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by lotse#wtwy, seq 96636), within the owner's caching decision req-s246xb6k1mpp (option A); docs/api.md §1, §16.11
+**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by lotse#wtwy, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
 **Revisit when:** a dashboard file is loaded by a name the shell neither writes nor lists, a file under `/assets/` carries anything per user, or the dashboard gets a build step that names its files itself
 
 c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (maity-ops-team#q8q9's measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
