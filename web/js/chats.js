@@ -175,9 +175,10 @@ window.Maity = window.Maity || {};
     };
     const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chats.conversations") },
       h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title")),
+        // The Lead first: on a phone it is the row's left edge, where its menu opens on screen.
         h("span", { class: "toolbar-actions" },
-          me.kind === "human" ? h("a", { class: "button small new-cross", href: "/chats/cross/new" }, M.t("chats.cross_new")) : null,
-          h("span", { class: "chats-lead" }))),
+          h("span", { class: "chats-lead" }),
+          me.kind === "human" ? h("a", { class: "button small new-cross", href: "/chats/cross/new" }, M.t("chats.cross_new")) : null)),
       h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, crossHead, crossFailed, crossUl, status.el);
     const shown = (open) => (open && open.slug && read[open.slug]) || { chats: [], groups: [], items: [] };

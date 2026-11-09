@@ -79,7 +79,7 @@ window.Maity = window.Maity || {};
     try {
       agents = await profiles(ctx);
     } catch (err) {
-      append(pane, back, heading, h("p", { class: "send-status failed" }, M.t("cross.new.failed") + err.message));
+      append(pane, back, heading, h("p", { class: "send-status failed" }, M.t("agents.project.read_failed", { reason: err.message })));
       return;
     }
     if (ctx.stale && ctx.stale()) return;
