@@ -4082,7 +4082,7 @@
   "runners.pair.start": "Inicie-o: {command}.",
   "runners.pair.submit": "Criar a linha de emparelhamento",
   "runners.pair.title": "Emparelhar um runner",
-  "runners.pair.step_up": "Parear um runner",
+  "runners.pair.step_up": "Emparelhar um runner",
   "runners.pair.ttl": "A linha de emparelhamento é válida por",
   "runners.pair.waiting": "Aguardando o emparelhamento do runner…",
   "runners.pair.where": "Na máquina que deve rodar os agentes, em um terminal dela (não em uma sessão de agente):",

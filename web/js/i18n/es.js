@@ -4102,7 +4102,7 @@ window.MAITY_I18N["es"] = {
   "runners.pair.name_rule": "el nombre: {rule}",
   "runners.pair.save": "Guarda esta configuración como {path}. Permite los proyectos que elegiste y sus repositorios, y una herramienta, Claude Code; cámbiala como quieras.",
   "runners.pair.start": "Inícialo: {command}.",
-  "runners.pair.step_up": "Vincular un runner",
+  "runners.pair.step_up": "Emparejar un runner",
   "runners.pair.submit": "Crear la línea de emparejamiento",
   "runners.pair.title": "Emparejar un runner",
   "runners.pair.ttl": "La línea de emparejamiento es válida durante",

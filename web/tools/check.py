@@ -1431,12 +1431,34 @@ def path_pattern(src, code, expr, at, depth=0):
     return out if known else None
 
 
+def argument_index(code, at):
+    """Which argument (0, 1, …) of the call whose argument list holds position at it is in."""
+    depth = index = 0
+    for i in range(at - 1, -1, -1):
+        c = code[i]
+        if c in ")]}":
+            depth += 1
+        elif c in "([{":
+            if depth == 0:
+                return index
+            depth -= 1
+        elif c == "," and depth == 0:
+            index += 1
+    return index
+
+
+FUNCTION_START = re.compile(r"\s*(?:async\b\s*)?(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
+
+
 def asks_first(code, at):
-    """Whether the call at position at goes through M.stepUp.run: inside its first argument, or
-    an arrow that is handed to it by name, as a `call:` property, or through a local function that
-    hands its parameter to it (security.js's act)."""
+    """Whether the call at position at goes through M.stepUp.run: inside the function given as its
+    first argument, or in an arrow that is handed to it by name, as a `call:` property, or through
+    a local function that hands that parameter on as its first argument (security.js's act). A call
+    made while M.stepUp.run's arguments are worked out, or in another argument, does not ask: it
+    is sent before anything is asked (review of #1547)."""
     for s in re.finditer(r"\bM\.stepUp\.run\(", code):
-        if s.end() <= at <= call_end(code, s.end()):
+        begin, end = first_argument(code, s.end())
+        if begin <= at < end and FUNCTION_START.match(code, begin):
             return True
     m = re.search(r"(\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\(?\s*$", code[:at])
     if not m:
@@ -1454,8 +1476,10 @@ def asks_first(code, at):
                       + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{", code)
         if d:
             body = code[d.end():call_end(code, d.end())]
-            params = [x.strip() for x in (d.group(1) or d.group(2) or "").split(",") if x.strip()]
-            if any(re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(q) + r"\s*,", body) for q in params):
+            params = [x.strip() for x in (d.group(1) or d.group(2) or "").split(",")]
+            index = argument_index(code, m.start())
+            q = params[index] if index < len(params) else ""
+            if q and re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(q) + r"\s*,", body):
                 return True
     return False
 

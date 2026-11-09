@@ -7026,6 +7026,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(pwPosts[0][1]) === JSON.stringify({ current: "initial-generated", new: "a long new password" })
     && text(main).includes("Password changed. Every other session of yours was signed out") && byId("password-current").value === "",
     "password: changed, the fields cleared, the other sessions named");
+  // A change is a sensitive call (§2.8.4): the question comes, and what was checked is what is sent again,
+  // a field edited while it waits included (review of #1547).
+  win.MAITY_FIXTURE_STEP_UP = Date.now();
+  // The same password again, so that the sign-ins below still hold.
+  byId("password-current").value = "a long new password"; byId("password-new").value = "a long new password"; byId("password-repeat").value = "a long new password";
+  pwSubmit(); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("step-up-step_up_required") && text(main).includes("Changing your password needs your second factor"), "password: the change asks for the second factor");
+  byId("password-new").value = "edited, never repeated";
+  byId("step-up-step_up_required").value = "123456"; main.querySelector("form.step-up").dispatch("submit");
+  for (let k = 0; k < 8; k++) await tick();
+  win.MAITY_FIXTURE_STEP_UP = false;
+  const pwAgain = pwPosts.filter((w) => w[0] === "/auth/password").slice(-2);
+  expect(pwAgain.length === 2 && pwAgain.every((w) => w[1].new === "a long new password") && text(main).includes("Password changed."),
+    "password: the code given, the checked password is sent again, not one edited meanwhile " + JSON.stringify(pwAgain.map((w) => w[1].new)));
   byId("password-current").value = "not the current one"; byId("password-new").value = "another long password"; byId("password-repeat").value = "another long password";
   pwSubmit(); await tick(); await tick();
   expect(text(byId("password-current-error")) === "This is not your current password." && byId("password-current").getAttribute("aria-invalid") === "true",

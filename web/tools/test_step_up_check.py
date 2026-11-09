@@ -61,6 +61,27 @@ expect(not asks, "a local function that calls it itself does not ask")
 pattern, asks = first_call('const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nawait M.stepUp.run(steps[i].call, slot);')
 expect(asks, "a call: property M.stepUp.run is given asks")
 
+pattern, asks = first_call('await M.stepUp.run(M.api.post("/auth/password", b), slot, what);')
+expect(not asks, "a call made to work out M.stepUp.run's first argument does not ask: it is sent first")
+
+pattern, asks = first_call('await M.stepUp.run(() => go(), M.api.post("/auth/password", b));')
+expect(not asks, "a call in another argument of M.stepUp.run does not ask")
+
+pattern, asks = first_call('await M.stepUp.run(async function () { return M.api.post("/auth/password", b); }, slot);')
+expect(asks, "inside a function expression given as the first argument it asks")
+
+pattern, asks = first_call(
+    'const act = async (busy, call, what) => { await what(); await M.stepUp.run(call, ask, what); };\n'
+    'act("…", () => M.api.del("/x"), () => M.api.del("/auth/second-factor"));'
+)
+expect(asks, "the arrow in the place of the parameter handed on asks")
+
+pattern, asks = first_call(
+    'const act = async (busy, call, what) => { await what(); await M.stepUp.run(call, ask); };\n'
+    'act("…", () => go(), () => M.api.del("/auth/second-factor"));'
+)
+expect(not asks, "an arrow in the place of a parameter that is not handed on does not ask")
+
 src = 'const MAIL = "/admin/settings/mail";\nM.api.patch(MAIL, body);'
 pattern, asks = first_call(src)
 expect(reaches(pattern, "/admin/settings/mail"), "a path held in a const is read")

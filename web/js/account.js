@@ -386,8 +386,10 @@ window.Maity = window.Maity || {};
         // first, so that it never meets the change (§2.1, §18.2).
         M.notify.halt();
         try {
-          await M.stepUp.run(() => M.api.post("/auth/password", { current: current.input.value, new: fresh.input.value }),
-            stepSlot, M.t("password.step_up"));
+          // The body checked above, kept: a field edited while the question waits is not sent
+          // unchecked when the call is made again (review of #1547).
+          const sent = { current: current.input.value, new: fresh.input.value };
+          await M.stepUp.run(() => M.api.post("/auth/password", sent), stepSlot, M.t("password.step_up"));
           all.forEach((f) => { f.input.value = ""; });
           status.done();
           append(status.el, h("span", { class: "ok" }, M.t("password.changed")));
