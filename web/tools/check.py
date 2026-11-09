@@ -1602,8 +1602,9 @@ def asks_first(code, at, src=None):
     if fn:
         # The helper is the declaration of that name nearest the call in the blocks around it
         # (nearest_in_scope: the last function declaration of that block, else the last `const` or
-        # `let` before the call), not the first definition in the file (4hv7 at #1566). Only a
-        # helper of this form can hand the call on; other binding forms are not resolved.
+        # `let` before the call, else the first), not the first definition in the file (4hv7 at
+        # #1566). Only a helper of this form can hand the call on; other binding forms are not
+        # resolved.
         name = re.escape(fn)
         # A named function expression (`const x = function act() {…}`) binds its name only
         # inside its own body, so it is no candidate; function declarations are hoisted (4hv7).
