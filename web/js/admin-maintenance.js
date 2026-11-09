@@ -27,19 +27,14 @@ window.Maity = window.Maity || {};
     return { message: Object.entries(errors).map(([field, reason]) => (Object.hasOwn(FIELDS, field) ? FIELDS[field]() : field) + ": "
       + (Object.hasOwn(REASONS, reason) ? REASONS[reason]() : reason)).join("; ") };
   }
-  // A datetime-local field holds the viewer's own time; the hub keeps UTC.
-  const pad = (n) => String(n).padStart(2, "0");
-  function toField(iso) {
-    const d = new Date(iso);
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
-  }
+  // A datetime-local field holds the time in the account's zone, the one the times are shown in
+  // (docs/api.md §5.1); the hub keeps UTC.
+  const toField = (iso) => M.fmt.toWall(iso);
   function fromField(value) {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString().replace(/\.\d{3}Z$/, "Z");
+    const d = M.fmt.fromWall(value);
+    return d ? d.toISOString().replace(/\.\d{3}Z$/, "Z") : null;
   }
-  function zone() {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (err) { return ""; }
-  }
+  const zone = () => M.i18n.zone();
 
   async function section(ctx, root) {
     const status = M.statusLine();

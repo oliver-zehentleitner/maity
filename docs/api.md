@@ -3816,7 +3816,7 @@ Scope: any authenticated caller.
 {
   "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "aliases": [], "display_name": "Maintainer",
               "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded",
-              "start_tabs": null },
+              "start_tabs": null, "timezone": "Europe/Vienna" },
   "projects": [
     { "id": "prj-7k2m9q", "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
@@ -3879,7 +3879,18 @@ is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
 human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`,
-`website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
+`website`, `social` and `links_visible` (§16.9), their own, always.
+
+**Time zone.** A human's `member` carries `timezone`: the account's
+time zone, an IANA name, or `null` until the human sets one. It is the
+value of §18.4 (`email.timezone`), read here so the dashboard needs no
+second request, and is set only there. The dashboard shows every
+absolute time in it, and in the browser's zone while it is `null`;
+relative times ("5 min ago") do not depend on it. Timestamps in the API
+stay UTC, and the hub renders no time for the dashboard. An agent's
+`member` has no `timezone`.
+
+The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -20383,8 +20394,15 @@ device; the browser's own permission is per browser and is not stored.
   (§5.2). It sits under `email` but does not depend on mail: it is
   stored and shown without an address and on an instance without mail
   (`mail_available: false`), and the dashboard keeps it visible when it
-  hides the mail part. `timezone` is an IANA name; the dashboard
-  proposes the browser's.
+  hides the mail part.
+- **`timezone`.** The account's time zone (default `null`, none set):
+  an IANA name, or `null` to go back to none; anything else is
+  `invalid` at `email.timezone`. Like `language`, it is the account's
+  one value: it sits under `email` but does not depend on mail, and the
+  dashboard sets it in Account → Settings, offering the browser's zone
+  first. The dashboard shows every absolute time in it (§5.1), in the
+  browser's zone while it is `null`. The digests, quiet hours and the
+  time in a mail (§18.5) follow it, and UTC while it is `null`.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
   `sign_in_link`), and `current_password` beside `email` when the
