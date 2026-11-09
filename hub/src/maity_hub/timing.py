@@ -57,7 +57,8 @@ def _after(conn: Any, cursor: Any, statement: Any, params: Any, context: Any, ma
 
 
 def install(*engines: Engine | None) -> None:
-    """The cursor events on each engine a request may use (the shared one may be absent)."""
+    """The cursor events on each engine a request may use: the pool's, the write guard's and
+    the health probe's own (the last two may be absent)."""
     for engine in engines:
         if engine is not None and not event.contains(engine, "before_cursor_execute", _before):
             event.listen(engine, "before_cursor_execute", _before)

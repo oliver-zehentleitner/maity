@@ -41,9 +41,9 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | # | Measure | Gain | Cost | Status, card |
 |---|---|---|---|---|
 | 1 | Caching: content-hashed files `immutable`, ETag/304 on avatars and reads | warm load without ~100 requests and their waves | M | in progress, tsk-pcw785rhymyg |
-| 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | proposed, with item 1 |
+| 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | tsk-vvyqmk9vwg8e |
 | 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | card to come |
-| 3 | A page of requests in one batch | inbox −~4 s | S | in review, tsk-fxjtwmkc4md5 |
+| 3 | A page of requests in one batch | inbox −~4 s | S | done, tsk-fxjtwmkc4md5 (#1515) |
 | 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | tsk-y8gkq1kvt63c |
 | 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | tsk-d61rvjm6gteh |
 | 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | tsk-d61rvjm6gteh |
@@ -86,7 +86,8 @@ operators read: the route's pattern, never the path, so the line adds no handle 
 values are taken when the answer starts. A long poll's wait counts in `total` and never in
 `db`. The tally is a context variable set by the outermost middleware (`maity_hub.timing`),
 so the hub's own checks before a route count too; the cookie sign-in marks it as shown. The
-cursor events of the engines add to it, and outside a request they add nothing.
+cursor events of the engines (the pool's, the write guard's and the health probe's own)
+add to it, and outside a request they add nothing.
 
 **Reason:** a slow page has to be split into its calls, and each call into database time
 and the rest, by whoever measures it: in the browser's network panel, or for every account in the log. Until now only the

@@ -46,6 +46,19 @@ def test_the_instance_admin_sees_each_answers_statements_and_time(
     assert "server-timing" not in admin.client.get("/").headers
 
 
+def test_the_health_probe_counts_its_own_engine(
+    make_client: ClientFactory, migrated: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The probe reads through its own engine, outside the pool on PostgreSQL and MariaDB;
+    its statements count in the log line too (it signs nobody in, so it has no header)."""
+    client = make_client()
+    with caplog.at_level(logging.INFO, logger="maity_hub.timing"):
+        assert client.get("/api/v1/health").status_code == 200
+    [line] = [r.getMessage() for r in caplog.records if r.name == "maity_hub.timing"]
+    found = re.search(r" sql=(\d+) ", line)
+    assert found and int(found[1]) > 0, line
+
+
 def test_nobody_else_learns_hidden_data_from_it(
     make_client: ClientFactory, migrated: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:

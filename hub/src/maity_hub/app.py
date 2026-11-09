@@ -516,7 +516,7 @@ def create_app(
     app.add_middleware(Compression)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
     # Outermost: an answer's statements and time, the hub's own checks included.
-    timing.install(engine, shared_engine)
+    timing.install(engine, shared_engine, health_engine)
     app.add_middleware(timing.ServerTiming)
     if settings.allow_plain_http:
         log.warning(
