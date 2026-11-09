@@ -42,6 +42,30 @@ class HubError(Exception):
         self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
 
 
+# `MAITY_ERROR_LINE=<nonce>`: a command that fails and handles it itself ends its stderr with
+# one line a program reads, `maity-error <nonce>: <code>[ <reason>]`, or `-` when there is no
+# code. The nonce comes from the caller and is in nothing the hub or a library writes, so no
+# message text can forge the line; its content is built from the error's code fields alone
+# (the runner's `join_failed` detail, §15.7).
+ERROR_LINE_ENV = "MAITY_ERROR_LINE"
+ERROR_LINE_NONCE = re.compile(r"[0-9a-f]{32}")
+ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")  # fullmatch only: `$` would take a final LF
+
+
+def error_code(exc: HubError) -> str | None:
+    """What a machine line says for a refusal: the hub's code and, for `forbidden`, its
+    `details.reason`; `network` when the hub was not reached; None when neither holds."""
+    if exc.code is None:
+        unreached = exc.status is None and str(exc).startswith("cannot reach ")
+        return "network" if unreached else None
+    if not ERROR_CODE.fullmatch(exc.code):
+        return None
+    reason = exc.details.get("reason")
+    if exc.code == "forbidden" and isinstance(reason, str) and ERROR_CODE.fullmatch(reason):
+        return f"forbidden {reason}"
+    return exc.code
+
+
 # A maintenance window (§16.12): `wait` and `runner serve` sleep `Retry-After` plus up to this
 # many random seconds, so the agents of a hub do not all come back in the same second.
 MAINTENANCE_JITTER = 60.0

@@ -375,7 +375,7 @@ document cannot be read, or a route fits, the original 404 stands.
 `maity link list` refuses a card without a `links` list instead of
 printing "no links". `maity chat cnv-…` says when the hub has no group
 chats, and the runner's pickup logs the missing route and fails with
-`join_failed`/`not_found`.
+`join_failed` and no detail (a pickup's 404 never carried `not_found`).
 
 **Reason:** both a hub without a route and a missing card answer 404 with
 `not_found`. An agent on an older hub then hunts a wrong id, or worse,

@@ -504,6 +504,19 @@ def test_an_older_generation_becomes_an_event_only(setup: Setup) -> None:
             {"detail": "not_with_reason"},
         ),
         ({"state": "running", "detail": "nonsense"}, {"detail": "unknown"}),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "Not A Code"},
+            {"detail": "unknown"},
+        ),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "instance_quota\n"},
+            {"detail": "unknown"},
+        ),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "a" * 64 + "\n"},
+            {"detail": "unknown"},
+        ),
+        ({"state": "failed", "reason": "clone_failed", "detail": "made_up"}, {"detail": "unknown"}),
     ],
 )
 def test_reported_codes_are_closed_lists(
@@ -511,6 +524,16 @@ def test_reported_codes_are_closed_lists(
 ) -> None:
     response = report(setup, placed(setup), 1, **body)
     assert (response.status_code, response.json()["error"]["details"]["fields"]) == (400, fields)
+
+
+@pytest.mark.parametrize(
+    "detail", ["instance_quota", "member_agents_max", "code_invalid", "origin_mismatch", "a" * 64]
+)
+def test_join_failed_takes_any_hub_error_code_as_its_detail(setup: Setup, detail: str) -> None:
+    body = placed(setup)
+    taken = report(setup, body, 1, state="failed", reason="join_failed", detail=detail)
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["detail"] == detail
 
 
 def test_since_is_clamped_to_hub_time(setup: Setup) -> None:

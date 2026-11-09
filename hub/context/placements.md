@@ -295,3 +295,52 @@ not follow until the agent has run again.
 
 The refiling to a new owner during an outage has no trigger: the hub has
 no transfer of a profile's owner yet.
+
+## `join_failed` takes any hub error code as its detail
+
+**Id:** b3e3875b-a834-4ad5-9641-fc19bac3ab92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-sx6wt2yjqzjx (the first runner test, 2026-11-09: a pickup refused with `instance_quota` reached the hub as `join_failed` with `detail: null`); the plan approved by the project lead on that card, 2026-11-09
+**Revisit when:** a join refusal's code could carry a value rather than name a rule, or the hub's error codes leave the form `[a-z][a-z0-9_]{0,63}` (whole value)
+
+§15.7's lists of reasons and details are closed. `join_failed` is the
+one exception. Its detail is the hub's own error code from the pickup or
+the join exchange; for a `403 forbidden` it is the `details.reason` when
+that has the code form, otherwise `forbidden`. The
+hub takes any value in the form of its error codes there (the whole value,
+no line break), also a code the list names for another reason. A pickup's `404`
+carries no detail. It can mean the placement is gone, or a hub or proxy
+without the route, and neither is the join token's `not_found`.
+
+**Reason:** the runner and the hub each kept a list of join codes.
+`instance_quota`, `member_join_limit` and `member_agents_max` were not on
+the runner's list, so the operator and the lead saw `null` and no cause.
+Any new refusal of a join would do the same until both lists were changed
+and the runner was released. The code form keeps the rule that a detail
+is never free text. For the join, the runner gives the child CLI a
+random value of its own for each call. It reads the code only from the
+child's last line, `maity-error <value>: <code>`, which the CLI writes
+after a failure it handles itself, built from the error's code fields,
+or `-` without one. Anything else fails closed with detail `null`: no
+such last line, one without this call's value, a crash (its traceback
+follows the line, so the line is not the last one), or an error output
+the child could not write. The value is a correlation value, not a secret: it stands in the
+command line under sudo or ssh. It keeps message text from passing for
+the line, because the hub and the libraries write their messages without
+knowing it, even a message that names the URL and the join code. A
+child older than this writes no line, so the detail is `null` with it.
+
+**Rejected alternatives:**
+- Adding the three codes to the closed list: the next new join refusal
+  would be `null` again, and each one would need a contract change, a hub
+  release and a runner release.
+- Free text from the join's error output: it can name the join URL and
+  with it the token.
+- Searching the join's whole error output for a code: a message or a
+  traceback can carry text in the code's form, so it would pass for one.
+- A fixed marker line (`maity-error: <code>`) as the last line: a refusal
+  whose code is missing or not a code wrote no such line, so a message
+  ending in a forged marker came last. The random value per call closes
+  that, and the line comes after a failure the CLI handles itself.
