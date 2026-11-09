@@ -9492,8 +9492,8 @@
     "text": "596d8269fea44bd0"
   },
   "memberpage.manage_members": {
-    "en": "c154013e996b1f4f",
-    "text": "5be746ed940d587b"
+    "en": "51734b6448550f6b",
+    "text": "48fa2ae1107ef7f9"
   },
   "memberpage.paused": {
     "en": "d2f88d9c865e0709",
@@ -9726,6 +9726,10 @@
   "members.filter.mine_none": {
     "en": "2f7a76878d6dadc5",
     "text": "d19c4b4ad4f25d7a"
+  },
+  "members.heading": {
+    "en": "6bbc51529519435c",
+    "text": "b1d1b55e67224b54"
   },
   "members.hint": {
     "en": "2681cebe50567b43",
@@ -10172,8 +10176,8 @@
     "text": "984972a658e5c46d"
   },
   "members.title": {
-    "en": "6bbc51529519435c",
-    "text": "b1d1b55e67224b54"
+    "en": "015c33c4ec95d38f",
+    "text": "015c33c4ec95d38f"
   },
   "members.unchanged": {
     "en": "47edb6b9c072e29c",
@@ -10884,8 +10888,8 @@
     "text": "39a360afa966a5aa"
   },
   "names.transfer.none": {
-    "en": "651e56eac756dce2",
-    "text": "b6668a66438c2165"
+    "en": "12233dc6d9546a70",
+    "text": "75932cae18f810bb"
   },
   "names.transfer.org_option": {
     "en": "ce9e978f9e065c3b",
@@ -10956,8 +10960,8 @@
     "text": "895626a06160d365"
   },
   "nav.members": {
-    "en": "6bbc51529519435c",
-    "text": "b1d1b55e67224b54"
+    "en": "015c33c4ec95d38f",
+    "text": "015c33c4ec95d38f"
   },
   "nav.members.changed": {
     "en": "77c54a93d0aed623",
@@ -13772,8 +13776,8 @@
     "text": "ded9df606b181105"
   },
   "public_page.hint": {
-    "en": "ca3a69f28da1fd6f",
-    "text": "9009ecaa3a2fc426"
+    "en": "421738fe1c909392",
+    "text": "ff6da1295143fc8c"
   },
   "public_page.never": {
     "en": "a1a33c2eb82b3c58",

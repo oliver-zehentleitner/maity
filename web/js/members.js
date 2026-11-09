@@ -995,7 +995,7 @@ window.Maity = window.Maity || {};
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
       ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
-    append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
+    append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.heading")),
       inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,

@@ -6,7 +6,7 @@
 // cards it holds, Chat where one may — and tabs: Activity, Cards, Briefing,
 // Sessions & credentials (Briefing only for an admin and the agent's owner, §6.2).
 // Every action stays where it is done (#643): the
-// Actions menu only leads there, Manage on Members for an admin, Manage on
+// Actions menu only leads there, Manage on Team for an admin, Manage on
 // Agents for the agent's owner.
 "use strict";
 

@@ -998,8 +998,13 @@ project's own harness configuration is never loaded:
   which a concurrent write can be lost), so the
   first start in a fresh clone does not wait at the folder-trust
   question; a start whose entry cannot be written fails with the cause in
-  the log. Where bubblewrap and socat are on the agents' `PATH`,
-  its OS sandbox is switched on strictly. It refuses to start without the
+  the log. The entry stays after the placement ends, and an unrestricted
+  `claude` started later in that clone also finds it: it asks nothing and
+  loads the clone's project hooks and MCP configuration (a Claude Code
+  configuration directory per placement would avoid that). This is a
+  known limit: do not start your own `claude` in a runner workspace. Where
+  bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
+  switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
   repository's `network` list. Sandboxed commands cannot read the
