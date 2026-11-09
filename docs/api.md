@@ -15296,7 +15296,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|---|
 | `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed`, `rate_limited` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
 | `reason` | `null` or a code from the table below | |
-| `detail` | `null` or a code from the detail list below | never free text; with `join_failed`, any code of the hub's errors |
+| `detail` | `null` or a code from the detail list below | never free text; with `join_failed`, any value in the form of an error code (below) |
 | `exit_code` | integer or `null` | the harness process's own code |
 | `observed_generation` | integer | the generation the report is about; a report for an older generation becomes an event and does not move `reported` |
 | `restarts` | integer | restarts in this generation |
@@ -15342,13 +15342,19 @@ placement as `reported`; the history is the `placement_reported` events.
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
-`join_failed`'s detail is the one exception. It takes any code in the form of
-the hub's error codes (`^[a-z][a-z0-9_]{0,63}$`), so that a refusal the
-runner does not know yet still names its reason instead of becoming
-`null`. Any other text is `invalid` there too. The runner takes the code
-from the pickup's answer or from the join's error line, and never the
-join URL or the code. A pickup's `404` is the placement, gone since it was
-read, and carries no detail.
+`join_failed`'s detail is the one exception. It takes any value in the
+form of the hub's error codes: 1 to 64 characters, a lowercase letter
+first and then lowercase letters, digits and `_`, with nothing before or
+after, not even a line break. That includes a code the list names for
+another reason. A refusal the runner does not know yet thus still names
+its reason instead of becoming `null`. Any other value is `invalid` there
+too. The runner takes the code from the pickup's error answer, its `code`
+or, for `forbidden`, its `details.reason`. For the join, it reads the one
+line `maity join` writes last for that purpose (`maity-error: <code>`,
+under `MAITY_ERROR_LINE=1`), built from the same fields. It never takes
+the code from an error's message, which can hold the join URL and with it
+the token. A pickup's `404` is the placement, gone since it was read, and
+carries no detail.
 
 **A rate limit is not a crash.** When the supervised loop sees the
 harness exit for its provider's limit, the runner reports `state:

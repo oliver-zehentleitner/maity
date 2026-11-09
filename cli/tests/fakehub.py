@@ -98,6 +98,8 @@ class FakeHub:
     join_handle: str = "agent-b"  # the handle the join page (§3.2) names
     join_page_status: int = 0  # an error status for the join page, 0 for the page
     join_instance: str | None = "wqe2"  # Maity-Instance answered by the join exchange
+    # (status, code, details) the join exchange answers instead of a credential
+    join_error: tuple[int, str, dict[str, Any]] | None = None
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -210,6 +212,8 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                     return self._error(404, "not_found")
                 if seen.json().get("code") != CODE:
                     return self._error(403, "code_invalid")
+                if hub.join_error is not None:
+                    return self._error(*hub.join_error)
                 hub.join_used = True
                 facts = {
                     "Maity-Credential-Id": CREDENTIAL_ID,

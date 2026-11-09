@@ -5566,6 +5566,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             _err(f"Maintenance until {until} UTC, try again then")
             return EXIT_MAINTENANCE
         _err(_explain(exc))
+        if isinstance(exc, hub.HubError) and os.environ.get(hub.ERROR_LINE_ENV) == "1":
+            line = hub.error_line(exc)
+            if line is not None:
+                print(line, file=sys.stderr)
         return EXIT_ISOLATED if _isolated(exc) is not None else EXIT_ERROR
     except config.ConfigError as exc:
         for problem in exc.problems:

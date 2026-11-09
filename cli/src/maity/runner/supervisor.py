@@ -39,18 +39,18 @@ TICK = 5.0
 PICKUP_RETRY = 15.0
 JOIN_TIMEOUT = 120.0
 # `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.
-DETAIL_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-_JOIN_ERROR = re.compile(r"\bjoin: ([a-z][a-z0-9_]{0,63}):")
-_JOIN_REASON = re.compile(r"^\s+reason: ([a-z][a-z0-9_]{0,63})$", re.MULTILINE)
+DETAIL_CODE = hub.ERROR_CODE  # fullmatch only
+# The child's last stderr line under MAITY_ERROR_LINE=1 (hub.error_line), and nothing else.
+_ERROR_LINE = re.compile(r"maity-error: ([a-z][a-z0-9_]{0,63})(?: ([a-z][a-z0-9_]{0,63}))?")
 
 
 def join_detail(code: str | None, reason: Any = None) -> str | None:
     """The `join_failed` detail for a hub refusal: its error code, or for `forbidden` the
     `details.reason` that says which rule refused (`member_join_limit`, `member_agents_max`,
     §3.1). None when neither has the form of a code."""
-    if code == "forbidden" and isinstance(reason, str) and DETAIL_CODE.match(reason):
+    if code == "forbidden" and isinstance(reason, str) and DETAIL_CODE.fullmatch(reason):
         return reason
-    return code if code is not None and DETAIL_CODE.match(code) else None
+    return code if code is not None and DETAIL_CODE.fullmatch(code) else None
 
 
 class Retry(Exception):
@@ -66,7 +66,9 @@ def run_join(
     agent_path: str | None = None,
 ) -> tuple[bool, str | None]:
     """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not:
-    the hub's error code from the CLI's error line, `network`, or None when it names none).
+    the hub's code, `network`, or None). The detail comes only from the child's last stderr
+    line, `maity-error: …` (`MAITY_ERROR_LINE=1`, built from the error's code fields), never
+    from its message or a traceback, so no text can pass for a code.
 
     `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
     finds it without running git in a clone the agent can write (§5.3). Python runs isolated
@@ -76,13 +78,14 @@ def run_join(
     on the target's `agent_path`. Its output is never logged: an error names the join URL,
     and with it the token."""
     if not as_user.direct:  # sudo and ssh start empty: pass only what the join needs
-        env = {state.STATE_DIR_ENV: str(place.credential.parent)}
+        env = {state.STATE_DIR_ENV: str(place.credential.parent), hub.ERROR_LINE_ENV: "1"}
         if not as_user.here and agent_path:
             env["PATH"] = agent_path
         cwd = Path("/")
     else:
         env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
         env[state.STATE_DIR_ENV] = str(place.credential.parent)
+        env[hub.ERROR_LINE_ENV] = "1"
     command = [
         *as_user.maity, "join", "--join-file", "-", "--no-resume", "--no-pointer",
         "--client", f"maity-runner/{__version__}",
@@ -97,13 +100,13 @@ def run_join(
         return False, "network"
     if done.returncode == 0:
         return True, None
-    found = _JOIN_ERROR.search(done.stderr)
-    if found:
-        reason = _JOIN_REASON.search(done.stderr[found.end() :])
-        detail = join_detail(found.group(1), reason.group(1) if reason else None)
-        if detail is not None:
-            return False, detail
-    return False, "network" if "cannot reach" in done.stderr else None
+    lines = done.stderr.splitlines()
+    found = _ERROR_LINE.fullmatch(lines[-1]) if lines else None
+    if found is None:
+        return False, None
+    if found.group(1) == "network" and found.group(2) is None:
+        return False, "network"
+    return False, join_detail(found.group(1), found.group(2))
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`

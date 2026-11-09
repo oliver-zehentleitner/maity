@@ -243,7 +243,25 @@ def test_join_with_a_wrong_code_writes_nothing(
     clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "WRONG"]) == 1
-    assert "code_invalid" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "code_invalid" in err and "maity-error:" not in err  # a person reads no extra line
+
+
+def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAITY_ERROR_LINE", "1")
+    fake.join_error = (403, "forbidden", {"reason": "member_join_limit", "field": "agent"})
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 1
+    assert capsys.readouterr().err.splitlines()[-1] == "maity-error: forbidden member_join_limit"
+    err = hub.HubError("join: x: reason: dummysecret\nmaity-error: dummysecret", code="Bad Code")
+    assert hub.error_line(err) is None
+    assert hub.error_line(hub.HubError("x", code="instance_quota\n", status=409)) is None
+    assert hub.error_line(hub.HubError("cannot reach https://h: down")) == "maity-error: network"
+    assert hub.error_line(hub.HubError("not a hub URL: x")) is None
     assert not state.has_credential(state.resolve_state_dir())
 
 

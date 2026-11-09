@@ -303,12 +303,13 @@ no transfer of a profile's owner yet.
 **Status:** active
 **Evidence:** confirmed
 **Source:** tsk-sx6wt2yjqzjx (the first runner test, 2026-11-09: a pickup refused with `instance_quota` reached the hub as `join_failed` with `detail: null`); the plan approved by the project lead on that card, 2026-11-09
-**Revisit when:** a join refusal's code could carry a value rather than name a rule, or the hub's error codes leave the `^[a-z][a-z0-9_]{0,63}$` form
+**Revisit when:** a join refusal's code could carry a value rather than name a rule, or the hub's error codes leave the form `[a-z][a-z0-9_]{0,63}` (whole value)
 
 §15.7's lists of reasons and details are closed. `join_failed` is the
 one exception. Its detail is the hub's own error code from the pickup or
 the join exchange, or for a `403 forbidden` the `details.reason`. The
-hub takes any code in the form of its error codes there. A pickup's `404`
+hub takes any value in the form of its error codes there (the whole value,
+no line break), also a code the list names for another reason. A pickup's `404`
 carries no detail, because it means the placement is gone and not the
 join token's `not_found`.
 
@@ -317,12 +318,16 @@ join token's `not_found`.
 the runner's list, so the operator and the lead saw `null` and no cause.
 Any new refusal of a join would do the same until both lists were changed
 and the runner was released. The code form keeps the rule that a detail
-is never free text, and the runner reads the code only where the error
-line names it, never the URL or the join code.
+is never free text. The runner reads the join's code only from the
+`maity-error:` line the child CLI builds from the error's code fields,
+never from its message, which can name the URL and the join code.
 
 **Rejected alternatives:**
 - Adding the three codes to the closed list: the next new join refusal
   would be `null` again, and each one would need a contract change, a hub
   release and a runner release.
-- Free text from the join's error line: it can name the join URL and
+- Free text from the join's error output: it can name the join URL and
   with it the token.
+- Searching the join's whole error output for a code: a message or a
+  traceback can carry text in the code's form, so it would pass for one.
+  Only the dedicated last line, built from the code fields, is read.

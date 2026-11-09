@@ -461,6 +461,8 @@ def _forbidden(reason: str) -> hub.HubError:
     [
         (_forbidden("member_agents_max"), "member_agents_max"),
         (_forbidden("Not A Code"), "forbidden"),
+        (_forbidden("member_agents_max\n"), "forbidden"),
+        (hub.HubError("lf", code="instance_quota\n", status=409), None),
         (hub.HubError("odd", code="Some Text", status=409), None),
     ],
 )
@@ -540,7 +542,9 @@ def test_run_join_keeps_url_and_code_off_the_command_line(
 
     def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         seen["argv"], seen["input"], seen["env"] = command, kwargs["input"], kwargs["env"]
-        return subprocess.CompletedProcess(command, 1, "", "maity: join: code_invalid: wrong\n")
+        return subprocess.CompletedProcess(
+            command, 1, "", "maity: join: code_invalid: wrong\nmaity-error: code_invalid\n"
+        )
 
     monkeypatch.setattr("maity.runner.supervisor.subprocess.run", fake_run)
     monkeypatch.setenv("MAITY_STATE_DIR", "/elsewhere")
@@ -551,19 +555,30 @@ def test_run_join_keeps_url_and_code_off_the_command_line(
     assert not any("SECRET-TOKEN" in a or "CODE-1234" in a for a in seen["argv"])
     assert seen["input"] == "https://h/j/SECRET-TOKEN\nCODE-1234\n"
     assert seen["env"]["MAITY_STATE_DIR"] == str(place.credential.parent)
+    assert seen["env"]["MAITY_ERROR_LINE"] == "1"
     assert "--no-resume" in seen["argv"] and "--join-file" in seen["argv"]
 
 
 @pytest.mark.parametrize(
     ("stderr", "detail"),
     [
-        ("maity: join: instance_quota: the team has 2 of 2 instances\n", "instance_quota"),
-        ("maity: join: forbidden: refused\n  reason: member_join_limit\n", "member_join_limit"),
-        ("maity: join: forbidden: refused\n", "forbidden"),
-        ("maity: cannot reach https://h/j/SECRET-TOKEN: timed out\n", "network"),
+        ("maity: join: instance_quota: 2 of 2\nmaity-error: instance_quota\n", "instance_quota"),
+        ("maity: join: forbidden: no\n  reason: member_join_limit\n"
+         "maity-error: forbidden member_join_limit\n", "member_join_limit"),
+        ("maity: join: forbidden: refused\nmaity-error: forbidden\n", "forbidden"),
+        ("maity: cannot reach https://h/j/SECRET-TOKEN: timed out\nmaity-error: network\n",
+         "network"),
+        # Only the last line, and only in its exact form: no message text passes for a code.
         ("Traceback (most recent call last):\n", None),
+        ("Traceback (most recent call last):\nValueError: cannot reach https://h/j/join: "
+         "dummysecret:\n", None),
+        ("maity: join: forbidden: refused\n  reason: dummysecret\n", None),
+        ("maity-error: instance_quota\nTraceback (most recent call last):\n", None),
+        ("maity: join: code_invalid: wrong\n", None),
+        ("maity-error: Not A Code\n", None),
+        ("maity-error: " + "a" * 65 + "\n", None),
     ],
-)
+)  # fmt: skip
 def test_run_join_reports_the_hubs_code_from_the_error_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stderr: str, detail: str | None
 ) -> None:
@@ -1242,6 +1257,30 @@ def test_the_clone_allows_only_https_and_ssh(
     assert command[:3] == ["git", "-c", "protocol.allow=never"]
     assert "protocol.https.allow=always" in command and "protocol.file.allow=always" not in command
     assert allowed == ["https:ssh"]  # GIT_ALLOW_PROTOCOL outranks the `-c` settings
+
+
+@pytest.mark.parametrize(
+    ("error", "detail"),
+    [
+        ((409, "instance_quota", {"max": 2}), "instance_quota"),
+        ((403, "forbidden", {"reason": "member_agents_max", "max": 3}), "member_agents_max"),
+        ((403, "forbidden", {"reason": "Not A Code"}), "forbidden"),
+    ],
+)
+def test_run_join_reads_the_real_clis_error_line(
+    tmp_path: Path, fake: Any, error: tuple[int, str, dict[str, Any]], detail: str
+) -> None:
+    """End to end: the child `maity join` writes `maity-error: …` from the hub's answer, and
+    the runner reads it; the hub's message text never becomes the detail."""
+    import fakehub
+
+    fake.join_error = error
+    clone = tmp_path / "clone"
+    (clone / ".git").mkdir(parents=True)
+    place = workspace.Workspace(clone, "maity", "clone")
+    url = f"{fake.url}/j/{fakehub.TOKEN}"
+    assert supervisor.run_join(place, url, fakehub.CODE, tmp_path) == (False, detail)
+    assert supervisor.run_join(place, url, "WRONG-CODE-0000", tmp_path) == (False, "code_invalid")
 
 
 def test_run_join_imports_nothing_from_the_clone(tmp_path: Path, fake: Any) -> None:
