@@ -529,8 +529,14 @@ def apply_patch(
     """Write a membership change and announce it; `pause` is (given, reason), for one
     agent instance when `instance` names it. Returns the changed columns with their old
     values, for `member_changed_by_agent`."""
-    if values.get("role", "expert") != "expert" and target.role == "expert":
-        # The fields belong to the role: a change away from it clears them (§6.2).
+    if "role" in values:
+        # The project lock the expert-field PATCH takes too (`_expert_fields`), and the row
+        # as it is now: a field written after this request read the member is cleared with
+        # the role, and a field PATCH waiting at the lock reads the new role (§6.2).
+        lock_project(conn, target.project_id)
+        target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    if values.get("role", "expert") != "expert":
+        # The fields belong to the role: any other role has none (§6.2).
         values = {**values, "expert_for": None, "expert_sources": None}
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     if line_consent and "reports_to" in values and not target.line_consent:

@@ -484,3 +484,78 @@ def test_an_experts_fields_are_bounded(
     assert refused.status_code == 400, refused.text
     fields = refused.json()["error"]["details"]["fields"]
     assert field in fields and (code is None or fields[field] == code)
+
+
+def test_a_field_write_in_flight_is_cleared_by_a_role_change_away_from_expert(
+    owner: flow.Human,
+    expert: flow.Agent,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§6.2: the fields exist only while the role is expert. The role change read the expert
+    with empty fields; a field PATCH commits before the change writes. The change takes the
+    project lock the field PATCH takes, reads the row again and clears what is there now,
+    instead of comparing against the empty fields it read first."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import members as members_route
+
+    reached, release = _paused(monkeypatch, "validate_assignment", members_route)
+    change = _in_thread(lambda: owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "coder"}))
+    try:
+        assert reached.wait(10), "the role change never reached its check"
+        written = _fields(owner, expert.id, expert_for="Racing name", expert_sources=["docs/"])
+        assert written.status_code == 200, written.text
+    finally:
+        release.set()
+    changed = change.result(timeout=10)
+    assert changed.status_code == 200, changed.text
+    view = owner.get(f"{PROJECT}/members/{expert.id}").json()
+    assert (view["role"], view["expert_for"], view["expert_sources"]) == ("coder", None, [])
+
+
+def test_a_field_write_waits_for_a_role_change_away_from_expert_and_then_refuses(
+    owner: flow.Human,
+    expert: flow.Agent,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other order: the role change has written and not committed. It holds the project
+    lock, so the field PATCH waits there, then reads the new role and writes nothing, in one
+    run."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from concurrent.futures import TimeoutError as Pending
+
+    from maity_hub.routes import members as members_route
+
+    runs: list[str] = []
+    real_fields = members_route._expert_fields
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        runs.append("fields")
+        return real_fields(*args, **kwargs)
+
+    monkeypatch.setattr(members_route, "_expert_fields", counted)
+    # Held after the change's write, before its commit: `member_view` runs after the UPDATE.
+    reached, release = _paused(monkeypatch, "member_view", members_route)
+    change = _in_thread(lambda: owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "coder"}))
+    field = None
+    try:
+        assert reached.wait(10), "the role change never wrote"
+        field = _in_thread(lambda: _fields(owner, expert.id, expert_for="Too late"))
+        with pytest.raises(Pending):
+            field.result(timeout=1)  # held at the project lock the change holds
+    finally:
+        release.set()
+    assert change.result(timeout=10).status_code == 200
+    assert field is not None
+    refused = field.result(timeout=10)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"expert_for": "expert_only"}
+    view = owner.get(f"{PROJECT}/members/{expert.id}").json()
+    assert (view["role"], view["expert_for"]) == ("coder", None)
+    # Once: without the shared lock the field write held the project lock and waited for the
+    # member's row, the change then waited for the project lock, and the database broke that
+    # deadlock by rolling the field write back for a retry.
+    assert runs == ["fields"]
