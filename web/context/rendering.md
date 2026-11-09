@@ -1263,7 +1263,9 @@ An imprint is `운영자 정보` everywhere, the word the hub's footer had first
 terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
 `users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
 a profile are 합니다 like those on deleting the account. A particle after a placeholder whose value may end in a vowel
-or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과)`).
+or a consonant gives both forms (`이(가)`, `(으)로`, `은(는)`, `와(과)`). The copula has no such pair: `(이)에요` reads as
+`에요` after a vowel, where `예요` is right, so no copula follows such a placeholder; the sentence takes a colon or is
+rephrased (`{name}의 역할이 바뀌었어요: {role}`).
 A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
 page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
 switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
