@@ -303,7 +303,8 @@ the stated reason holds, is what the reviewer's gate checks.
 The agent CLI goes to PyPI under the name `maity`, the name its
 command already has. A tag `cli-v<version>` starts the release; the
 workflow refuses to build unless the tag, `cli/pyproject.toml` and
-`__version__` name the same version, runs the CLI's checks, builds
+`__version__` name the same version, requires a green ci on the
+tagged commit (ea58fdd2-6e3f-45df-ae48-4ce6825cafde), builds
 and checks sdist and wheel, and uploads them from a job that proves its
 identity to PyPI with a short-lived token. Versions start as
 pre-releases (`0.1.0a1`) while Maity is before its beta.
@@ -337,9 +338,10 @@ What goes to PyPI is built only with `cli/requirements/release.txt`:
 by the uv that `hub/requirements/tools.txt` pins (`make lock`). The
 release workflow's `build` job installs that lock alone, with
 `--require-hashes`, into a fresh environment and builds without
-isolation (`make release-build`). The checks run in a separate `check`
-job with the unpinned dev tools; `publish` needs both and uploads only
-the `build` job's artifact. `[build-system]` names the same exact
+isolation (`make release-build`). A separate `check` job ran the
+checks with the dev tools; since 2026-11-09 it looks up ci's result
+instead (ea58fdd2-6e3f-45df-ae48-4ce6825cafde). `publish` needs both and
+uploads only the `build` job's artifact. `[build-system]` names the same exact
 `setuptools` as the lock, so a build from the sdist uses the backend
 the release was made with. The `cli` job of ci.yml runs `make
 lock-check` (lock recompiled without its hashes, all three pins compared)
@@ -371,6 +373,61 @@ pinned uv instead of a second tool.
   run in the environment the files come from.
 - Locking the dev tools too: they do not touch what is uploaded once
   the build is a job of its own; alternatives beyond that: unknown.
+
+## A release tag trusts ci's result on its commit instead of running the suites again
+
+**Id:** ea58fdd2-6e3f-45df-ae48-4ce6825cafde
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
+**See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
+**See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+
+The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
+`publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
+`tools/release_gate.py`, which reads the run list with the job's
+read-only token and lets the tag through only when:
+
+- the `ci` run of the push to main for the tagged commit ended with
+  `ci-ok` green (the CLI's `cli` and `cli-windows` jobs are in it);
+- for the hub and its image also: the newest hub-mariadb run that
+  actually ran the suite on a commit of main with the same files the
+  suite reads as the tag (the list `decide` compares; `git diff`) is
+  green. A run that skipped the suite counts for nothing.
+
+While those are still queued or running it waits, so a tag right after
+a merge works. Otherwise the job stops before `build`'s artifact is
+uploaded or the image is built, and says what is missing and what to do.
+`build`, with its proof of the files, is unchanged: it tests the
+product itself, not the code. A hand start of hub-mariadb now names its
+commit in its title (`hub-mariadb hand <sha>`, or `hand head`): its
+head_sha is the head of the ref it ran on, not the `sha` it tested, and
+the title is the only place the run list carries it.
+
+**Reason:** the tagged commit has already passed ci, PostgreSQL
+included; running the suite again on it only costs the release an hour
+and tests nothing new. What the rerun did guard was a tag on a commit
+that never passed, and the lookup guards exactly that, also for the
+image, which before went out from a `v*` tag with no tests at all.
+MariaDB is not in ci-ok and runs after main moves on, so its run is
+often on a later commit; a later commit counts only when the files the
+suite reads are the same, since a change there could be the very fix
+the tag lacks.
+
+**Rejected alternatives:**
+- Keeping the rerun: the cost above, for a result ci already has.
+- Any green hub-mariadb run on a later commit of main: it may have
+  passed only because of a fix in hub files the tag does not have.
+- Only a hub-mariadb run on exactly the tagged commit: an hour with
+  only web or docs merges skips the suite, and the release would need a
+  hand run for nothing.
+- Failing at once instead of waiting: a tag pushed after its merge
+  would always fail first and need a re-run of the job.
+- Counting old hand runs (`hub-mariadb hand`): the run list cannot say
+  which commit they tested.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
@@ -1388,13 +1445,13 @@ pull request and in `ci-ok`.
 **The clock is not enough (2026-11-01):** (Source: the coordinator's finding, 2026-11-01, that scheduled runs were skipped, visible in the run history of the workflow; the start from the last job of `ci.yml` was decided by the coordinator on 2026-11-02 in the review of the pull request that added it, after the first version with `workflow_run` was found to break the runner rule.) GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
 after the merge only one scheduled run happened (and not at the minute asked for). Every push to main therefore also
 starts the workflow, from the last job of `ci.yml` (`gh workflow run` with `trigger=ci`, a `workflow_dispatch` with the workflow's own token), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
-clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand`) tells them apart where the run list is read.
+clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand …`) tells them apart where the run list is read. Since 2026-11-09 a hand start names the commit it tests (`hub-mariadb hand <sha>`, or `hand head`), so a release can find it (ea58fdd2-6e3f-45df-ae48-4ce6825cafde).
 
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
 green run, and later red runs comment on it, so the change that broke it is found within the hour; a green automatic run
 closes it, but only when the green commit contains every commit the issue names as red (a hand run on a newer commit may have opened it). The next hour always runs again after a run that did not end green or while the issue is open, so a revert
 closes the issue and a failure outside the watched files is not skipped over. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
-(Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
+(Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy; for a release tag the release workflows read it themselves (ea58fdd2-6e3f-45df-ae48-4ce6825cafde).
 
 **Reason:** MariaDB is the self-hoster's database and the slowest suite; held in front of every merge it made main's
 runs queue for an hour and more while the code it checks changes rarely in ways that break only there (the migration
@@ -1729,13 +1786,13 @@ and `join-smoke` ran `pip install -e cli`.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `cli/requirements/dev.txt`, `cli/Makefile`, `.github/workflows/ci.yml` (`cli`, `cli-windows`), `.github/workflows/release-cli.yml` (`check`)
+**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `cli/requirements/dev.txt`, `cli/Makefile`, `.github/workflows/ci.yml` (`cli`, `cli-windows`)
 **Revisit when:** the CLI needs a tool the hub's dev lock pins to a version that does not support the CLI's oldest Python, the CLI gets runtime dependencies, or pip installs from a standard lock (`pylock.toml`) without uv
 
 `cli/requirements/dev.txt` holds the dev extra of `cli/pyproject.toml` with hashes, compiled universally for
 Python 3.11 (the CLI's oldest) with `hub/requirements/dev.txt` as constraints (`make -C cli lock`, checked by
-`make -C cli lock-check` beside the release lock). CI's `cli` and `cli-windows` jobs, the release workflow's
-check job and `make dev` install from it, then the CLI editable without build isolation. Before, they ran
+`make -C cli lock-check` beside the release lock). CI's `cli` and `cli-windows` jobs and
+`make dev` install from it (the release workflow's check job did too until 2026-11-09, ea58fdd2-6e3f-45df-ae48-4ce6825cafde), then the CLI editable without build isolation. Before, they ran
 `pip install -e '.[dev]'`, which resolved the newest ruff, black, mypy, pytest, build and wheel on every run.
 
 **Reason:**
