@@ -81,9 +81,10 @@ window.Maity = window.Maity || {};
   function isOwnImage(value) {
     if (typeof value !== "string") return false;
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
-    if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
+    // Either with one of the sizes the hub serves (§6.10, Sizes; avatar.js asks for them).
+    if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*(&s=(32|64|128|256))?$/.test(value)) return true;
     // A motif's public address (§6.10, "An agent's motif"): it names no account.
-    if (/^\/api\/v1\/avatars\/public\/[0-9a-f]{32}$/.test(value)) return true;
+    if (/^\/api\/v1\/avatars\/public\/[0-9a-f]{32}(\?s=(32|64|128|256))?$/.test(value)) return true;
     // A project's README badge, served by the hub at its root (§6.20).
     if (/^\/badge\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\.svg(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
     // Object URLs exist only for an upload in fixture mode, a page opened from file://.
