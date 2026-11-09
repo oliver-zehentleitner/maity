@@ -912,6 +912,7 @@ def _clone(engine: Engine, template: int, n: int) -> None:
                 f"INSERT INTO event ({listed}) SELECT {listed} FROM event WHERE seq = %(s)s",
                 {"s": template},
             )
+        conn.exec_driver_sql("ANALYZE event")
 
 
 @pytest.mark.parametrize("workload", ["mentions", "agents", "redacted", "nudges"])
@@ -1038,10 +1039,11 @@ for _ in range(5):  # its own caches, read from nothing: call until it writes
 def test_a_nudge_another_process_wrote_is_seen_under_the_lock(
     room: Room, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Review of #1512, delta 2 (4hch): this process's open-cycle check is behind (two title
-    changes filled its batch), so the call under the lock takes no new bound. A second worker
-    process, with its own caches, writes the nudge just before that call takes the lock. The
-    call must see it and write none: one nudge, not two counting the same messages."""
+    """Reviews of #1512, deltas 2 and 4 (4hch): a second worker process, with its own caches,
+    writes the nudge just before this process's call under the lock, and then three title
+    changes commit, more than a budget of 2. The call must see that nudge and write none: one
+    nudge, not two counting the same messages. Two title changes before make an open-cycle
+    check that reads the event log fall behind first, as in 4hch's reproduction."""
     r = room
     if r.engine.dialect.name != "postgresql":
         pytest.skip("a second process on the same database needs PostgreSQL")
@@ -1053,13 +1055,14 @@ def test_a_nudge_another_process_wrote_is_seen_under_the_lock(
     r.read(second)  # only the first agent's nudge is under test
     r.at(11)
     chat_unread.sweep(r.engine)  # reads two of the three
-    for k in range(2):
-        renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": f"renamed {k}"})
+
+    def rename(label: str) -> None:
+        renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": label})
         assert renamed.status_code == 200, renamed.text
+
+    for k in range(2):
+        rename(f"renamed {k}")
     r.read(second)
-    r.at(12)
-    chat_unread.sweep(r.engine)  # the open-cycle check takes a bound and falls behind
-    assert r.nudges(first) == []
     real_check = chat_unread.check
     moment = r.now + timedelta(minutes=13)
     written: list[str] = []
@@ -1083,15 +1086,15 @@ def test_a_nudge_another_process_wrote_is_seen_under_the_lock(
                 timeout=120,
             )
             written.append(done.stdout.strip())
+            for k in range(3):  # after the other's nudge, before this lock
+                rename(f"renamed again {k}")
         return real_check(engine, conversation_id, membership_id)
 
     monkeypatch.setattr(chat_unread, "check", other_worker_first)
-    for k in range(2):  # more about the chat above the old bound, below the other's nudge
-        renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": f"renamed again {k}"})
-        assert renamed.status_code == 200, renamed.text
-    r.read(second)
-    r.at(13)
-    chat_unread.sweep(r.engine)  # finishes the reads; the other process wrote first
+    for minute in (12, 13, 14):
+        r.read(second)
+        r.at(minute)
+        chat_unread.sweep(r.engine)
     assert written and written[0], "the other process wrote no nudge"
     [nudge] = r.nudges(first)
     assert int(nudge.seq) == int(written[0])
@@ -1136,3 +1139,39 @@ def test_nudges_in_another_chat_do_not_hold_this_chats_nudge_back(
         chat_unread.sweep(r.engine)
     here = [n for n in r.nudges(first) if n.subject_id == r.chat]
     assert [(n.payload["unread"], n.payload["oldest_seq"]) for n in here] == [(1, said)]
+
+
+def test_the_upgrade_fills_the_open_cycle_from_the_nudges_written(room: Room) -> None:
+    """Review of #1512, delta 4: the open cycle is stored per stay. The migration that adds the
+    column fills it from the nudges already written, so an open cycle survives the upgrade and
+    no second nudge follows it; stays without a nudge stay empty."""
+    from maity_hub.db import downgrade, migrate
+
+    r = room
+    first, second = r.agents
+    said = r.say(r.owner, "a question")
+    r.read(second)
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert nudge.payload["newest_seq"] == said
+
+    def stored() -> dict[str, Any]:
+        p, m = t.conversation_participant.c, t.membership.c
+        with r.engine.connect() as conn:
+            rows = conn.execute(
+                select(m.agent_id, p.unread_nudged_through)
+                .join(t.membership, m.id == p.membership_id)
+                .where(p.conversation_id == r.chat, m.agent_id.is_not(None))
+            )
+            return {row.agent_id: row.unread_nudged_through for row in rows}
+
+    before = stored()
+    assert before == {first.id: said, second.id: None}
+    downgrade(r.engine, "20261108230000_expert_role")
+    migrate(r.engine)
+    assert stored() == before
+    chat_unread.reset()
+    r.at(25)
+    chat_unread.sweep(r.engine)
+    assert len(r.nudges(first)) == 1  # the cycle is still open: no second nudge

@@ -9,12 +9,13 @@ redacted, mentioning neither the agent nor one of its instances), the oldest of 
 re-arms it once the mark reaches the nudge's `newest_seq`; a `wait` or a resume delivering the
 nudge moves nothing.
 
-Nothing is stored for it: the read mark (`conversation_read`, else the stay's `window_after`)
-and the event table (an earlier `chat_unread`, found by its subject, and its `newest_seq`) say
-all the cycle needs. The only thing kept between passes is in this process's memory: per stay,
-how far its unread messages have been read and their running counts (`_Scan`), so a pass reads
-only what came since, in bounded batches. Restarted, moved to another replica or reset, it reads
-the stay once more from its read mark.
+One thing is stored for it: per stay, the `newest_seq` of its last nudge
+(`conversation_participant.unread_nudged_through`), written with the nudge under the project
+lock; with the read mark (`conversation_read`, else the stay's `window_after`) it says whether
+the read cycle is open (review of #1512, delta 4). The rest is kept in this process's memory:
+per stay, how far its unread messages have been read and their running counts (`_Scan`), so a
+pass reads only what came since, in bounded batches. Restarted, moved to another replica or
+reset, it reads the stay once more from its read mark.
 Agents' messages never count, so two agents cannot wake each other through it; humans are
 never addressed, every message of the others wakes them already. Not for a jour fixe round's
 thread (`hub_thread`), a closed chat, a direct conversation or a cross-project chat (§9.5),
@@ -22,20 +23,18 @@ which are not rows of `conversation` here, or a paused or isolated membership.
 
 What holds (the lead's boundary for #1490 and tsk-tgh0st6p2zag; hub/context/events.md):
 - guaranteed: no message body is read. The database work of a pass is bounded per stay and
-  call by the budget, not by the unread history: at most SCAN_BUDGET of the chat's event rows,
+  call by the budget, not by the unread history (with the table statistics autovacuum keeps;
+  hub/context/events.md): at most SCAN_BUDGET of the chat's event rows,
   of any kind and author, for the messages (agents', redacted and other events cost the same
-  as human messages), at most SCAN_BUDGET of the project's `event_redacted` rows, at most
-  SCAN_BUDGET of the events whose subject is the chat for the open cycle (`_cycle_open`, read
-  on from where it stopped; under the lock up to SCAN_BUDGET more, the newest above its bound),
-  and one-row index reads (the read mark, the chat's newest seq,
-  the project's newest redaction). A pass makes one call outside the lock and, for a stay
+  as human messages), at most SCAN_BUDGET of the project's `event_redacted` rows, and one-row
+  index reads (the read mark, the chat's newest seq, the project's newest redaction); the open
+  cycle is read with the stay itself. A pass makes one call outside the lock and, for a stay
   whose nudge is due, one under it. Every unread human message without a mention leads to
   one nudge at any rate of new messages, redactions or events about the chat: a read's bound
-  grows only once a call has reached it and the redaction look has caught up, the look's
-  bound only once the look has reached it, and the open-cycle check's bound only once the
-  check has reached it, so none keeps the others from finishing. One nudge, also with a
-  second worker process: the call under the lock looks for its nudge among the chat's newest
-  events, so a second one needs SCAN_BUDGET events about the chat between the two. A
+  grows only once a call has reached it and the redaction look has caught up, and the look's
+  bound only once the look has reached it, so neither keeps the other from finishing. One
+  nudge per read cycle, also with a second worker process: the call under the lock reads the
+  stay's stored cycle again, which a nudge written by another process has already set. A
   redaction committed before a pass starts is left out of the nudge, unless the project wrote
   SCAN_BUDGET or more redactions since the read's previous call: then the look catches up
   over several calls, and those committed meanwhile are held to the concurrent case below
@@ -104,25 +103,7 @@ class _Scan:
     reached: bool = True
 
 
-@dataclass
-class _Cycle:
-    """What one stay has seen of its chat's `chat_unread` events (subject the conversation):
-    read up to `cursor`, from `start` (the read mark when it began), and the highest
-    `newest_seq` of those addressed to this agent (tsk-tgh0st6p2zag)."""
-
-    start: int
-    cursor: int
-    newest: int = 0
-    # The read's bound: the chat's newest subject event when the read had caught up; it grows
-    # only once the read reached it, so events arriving faster than the budget cannot keep the
-    # read from finishing (review of #1512, delta 1). `lagging` as for `_Scan`.
-    upto: int = 0
-    reached: bool = True
-    lagging: bool = False
-
-
 _SCANS: dict[tuple[int, str], _Scan] = {}
-_CYCLES: dict[tuple[int, str], _Cycle] = {}
 _SCANS_LOCK = threading.Lock()
 
 
@@ -130,7 +111,6 @@ def reset() -> None:
     """Forget every stay's scan: the next pass reads each one from its read mark again."""
     with _SCANS_LOCK:
         _SCANS.clear()
-        _CYCLES.clear()
 
 
 def _candidates(conn: Connection, conversation_id: str | None = None) -> list[Any]:
@@ -141,6 +121,8 @@ def _candidates(conn: Connection, conversation_id: str | None = None) -> list[An
         select(
             p.conversation_id,
             p.window_after,
+            p.id.label("participant_id"),
+            p.unread_nudged_through,
             p.membership_id,
             c.project_id,
             c.title,
@@ -392,89 +374,14 @@ def _scanned(conn: Connection, stay: Any, mark: int, extend: bool = True) -> _Sc
     return scan if complete and scan.redactions_reached else None
 
 
-def _cycle_open(conn: Connection, stay: Any, mark: int, extend: bool = True) -> bool:
+def _cycle_open(stay: Any, mark: int) -> bool:
     """Whether a `chat_unread` for this agent and chat counted a message above its read mark:
-    the read cycle it opened is still open (§9.2). Its own seq is no measure: the nudge is
-    written after the messages it counts, so reading exactly those leaves the mark below it.
-    A nudge whose `newest_seq` is above the mark has a seq above it too, so the read starts at
-    the mark. It goes on from where the last call stopped (`_Cycle`), over every event whose
-    subject is the chat, at most SCAN_BUDGET per call, and the recipient and kind are checked
-    here: the other agents' nudges are read once, not each minute (tsk-tgh0st6p2zag), apart
-    from the look under the lock at this chat's newest events above the bound (below).
-
-    The read goes up to a bound, the chat's newest subject event when the read had caught up,
-    and the bound grows only once the read reached it; until then the cycle counts as open, so
-    no nudge goes out on a partial read, and the read still finishes while `conversation_updated`
-    or other agents' nudges keep coming (review of #1512, delta 1). After a call outside the
-    lock that began behind (`lagging`), the call under the lock confirms without taking a new
-    bound, or it would fall behind again. What this process wrote lies below the next bound it
-    takes, but another process's nudge can lie above the bound of this cache; so the call under
-    the lock also reads this chat's subject events above the bound, newest first, at most
-    SCAN_BUDGET, and counts the cycle open on a nudge for this agent among them (review of
-    #1512, deltas 2 and 3). Index reads (project_id, subject_type, subject_id, seq): one row for the
-    bound, at most SCAN_BUDGET for the read."""
-    key = (stay.membership_id, stay.conversation_id)
-    with _SCANS_LOCK:
-        cycle = _CYCLES.get(key)
-    if cycle is None or mark < cycle.start:
-        cycle = _Cycle(start=mark, cursor=mark, upto=mark)
-    if extend:
-        cycle.lagging = not cycle.reached
-    e = t.event.c
-    subject = (
-        e.project_id == stay.project_id,
-        e.subject_type == "conversation",
-        e.subject_id == stay.conversation_id,
-    )
-    token = f"member:{stay.agent_id}"
-    if cycle.reached and (extend or not cycle.lagging):
-        newest = conn.execute(
-            select(e.seq).where(*subject).order_by(e.seq.desc()).limit(1)
-        ).scalar()
-        cycle.upto = max(cycle.cursor, int(newest or 0))
-        cycle.reached = cycle.upto == cycle.cursor
-    if not cycle.reached:
-        rows = list(
-            conn.execute(
-                select(e.seq, e.kind, e.audience, e.payload["newest_seq"].label("newest_seq"))
-                .where(*subject, e.seq > cycle.cursor, e.seq <= cycle.upto)
-                .order_by(e.seq)
-                .limit(SCAN_BUDGET)
-            )
-        )
-        for row in rows:
-            if row.kind == KIND and token in (row.audience or []):
-                cycle.newest = max(cycle.newest, int(row.newest_seq or 0))
-            cycle.cursor = int(row.seq)
-        if len(rows) < SCAN_BUDGET:
-            cycle.cursor = cycle.upto
-            cycle.reached = True
-    with _SCANS_LOCK:
-        _CYCLES[key] = cycle
-    if not cycle.reached or cycle.newest > mark:
-        return True
-    if extend:
-        return False
-    # Under the lock, before a nudge is written: another process (a second worker, its own
-    # caches) may have written one above what this cache has read (review of #1512, delta 2).
-    # Such a nudge was committed just before this call took the lock, so it is among the newest
-    # of this chat's subject events: those above the bound, newest first, at most SCAN_BUDGET
-    # by the same index (review of #1512, delta 3: this chat's, not the project's). A full batch
-    # without one does not hold the nudge back, or a stream of title changes would starve it;
-    # a second nudge then needs SCAN_BUDGET events about the chat between the other process's
-    # nudge and this lock.
-    above = list(
-        conn.execute(
-            select(e.kind, e.audience, e.payload["newest_seq"].label("newest_seq"))
-            .where(*subject, e.seq > cycle.upto)
-            .order_by(e.seq.desc())
-            .limit(SCAN_BUDGET)
-        )
-    )
-    return any(
-        row.kind == KIND and token in (row.audience or []) and int(row.newest_seq or 0) > mark
-        for row in above
-    )
+    the read cycle it opened is still open (§9.2). The stay keeps the `newest_seq` of its last
+    nudge (`unread_nudged_through`), written with the nudge under the project lock and read
+    with the stay, again under the lock before a nudge is written: exact across worker
+    processes, and no read of the event log at all (review of #1512, delta 4; the bounded reads
+    of the log before it could miss another worker's nudge or starve the nudge)."""
+    return int(stay.unread_nudged_through or 0) > mark
 
 
 def due(
@@ -496,7 +403,7 @@ def due(
     if not listening_now:
         return None
     mark = _mark(conn, stay)
-    if _cycle_open(conn, stay, mark, extend):
+    if _cycle_open(stay, mark):
         return None
     scan = _scanned(conn, stay, mark, extend)
     if scan is None or not scan.count or scan.oldest_at is None:
@@ -532,7 +439,7 @@ def check(engine: Engine, conversation_id: str, membership_id: int) -> int | Non
         payload = due(conn, stay, extend=False)
         if payload is None:
             return None
-        return emit(
+        seq = emit(
             conn,
             project_id,
             KIND,
@@ -540,6 +447,13 @@ def check(engine: Engine, conversation_id: str, membership_id: int) -> int | Non
             payload,
             subject=("conversation", conversation_id),
         )
+        # The open cycle, in the same transaction and under the same lock as the nudge.
+        conn.execute(
+            t.conversation_participant.update()
+            .where(t.conversation_participant.c.id == stay.participant_id)
+            .values(unread_nudged_through=payload["newest_seq"])
+        )
+        return seq
 
 
 def sweep(engine: Engine) -> list[int]:
@@ -551,9 +465,8 @@ def sweep(engine: Engine) -> list[int]:
         stays = _candidates(conn)
         keep = {(stay.membership_id, stay.conversation_id) for stay in stays}
         with _SCANS_LOCK:  # a stay that ended, or a chat that closed, needs no scan kept
-            for kept in (_SCANS, _CYCLES):
-                for key in [key for key in kept if key not in keep]:
-                    del kept[key]
+            for key in [key for key in _SCANS if key not in keep]:
+                del _SCANS[key]
         for stay in stays:
             try:
                 if due(conn, stay, listens) is not None:

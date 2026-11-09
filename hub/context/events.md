@@ -669,6 +669,22 @@ same messages would need `SCAN_BUDGET` events about the chat between the two, wh
 open. Holding back on a full batch was rejected: a stream of title changes would then starve the
 nudge, the case the delta-1 note closed.
 
+**Updated 2026-11-09 (review of #1512, delta 4):** that residual was real: with the production
+budget, 2000 title events between another worker's nudge and this lock pushed it out of the
+window and a second nudge counted the same messages (reproduced with two processes). The open
+cycle is now stored, the one exception to "nothing stored" above: per stay,
+`conversation_participant.unread_nudged_through` holds the `newest_seq` of its last nudge,
+written in the same transaction as the nudge under the project lock, and read with the stay by
+`_candidates`, again under the lock before a nudge is written. The cycle is open while the read
+mark is below it: exact across processes, one row the pass reads anyway, no read of the event
+log. The cursor, its bound, the `lagging` rule and the re-check of the delta-1 to delta-3 notes
+are gone with it, and their starvation cases with them. The migration
+(`20261109140000_nudged_through`) fills the column from the nudges already written. The
+EXPLAIN test now runs `ANALYZE` after cloning its backlog: without fresh statistics the planner
+walked the index (project_id, seq) back over other chats' events instead of the chat's index.
+The bound therefore assumes statistics as autovacuum keeps them on a live database; right after
+a bulk insert, before it runs, a pass can read more rows than the budget.
+
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database
 each minute, a cost that grows with unread history; every unread human message without a
@@ -696,7 +712,13 @@ race would have held the PR back for a count the agent does not rely on.
 - Excluding the mentions in SQL, with JSON queries per dialect, so one aggregate gives the exact
   counts: a SQLite and a PostgreSQL branch for the first read only.
 - A row limit with counts exact up to the bound: the contract would have to weaken its counts.
-- Storing the scan in a table: a migration for state that one fresh read rebuilds.
+- Storing the scan in a table: a migration for state that one fresh read rebuilds. (The open
+  read cycle is stored since the delta-4 note: unlike the scan, no bounded read rebuilds it
+  exactly across worker processes.)
+- Finding the open cycle in the event log with a bounded read (deltas 1 to 3 of #1512): a cursor
+  over the chat's subject events could be starved by title changes, a window over the newest
+  could miss a second worker's nudge behind enough of them, and a project-wide read could be
+  filled by other chats; the recipient sits in the audience JSON, which no index reaches.
 - Taking the extension's count in a second statement after the check: a redaction committing
   between the two was adopted into the new count while its message stayed counted (review of
   #1490, delta 3).

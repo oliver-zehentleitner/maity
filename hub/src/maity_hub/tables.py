@@ -1948,6 +1948,9 @@ conversation_participant = Table(
     _membership_ref("membership_id", nullable=False, index=True),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("window_after", BIG_ID, nullable=False),
+    # The `newest_seq` of the last `chat_unread` written for this stay (§9.2): its read cycle
+    # is open while the read mark is below it. Written with the nudge, under the project lock.
+    Column("unread_nudged_through", BIG_ID),
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
