@@ -12808,6 +12808,60 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
+  // The window and the session are read together (tsk-y8gkq1kvt63c): the session is asked while
+  // the window's read still waits, /me only once the session has answered, and the page draws.
+  {
+    const bpGet = win.Maity.api.get, bpFresh = win.Maity.maintenance.fresh, asked = [];
+    let freeWindow = null, freeSession = null;
+    win.Maity.maintenance.fresh = () => new Promise((res) => { freeWindow = () => bpFresh().then(res); });
+    win.Maity.api.get = (p, o) => {
+      if (p === "/auth/session" || p === "/me") asked.push(p);
+      if (p === "/auth/session" && !freeSession) return new Promise((res, rej) => { freeSession = () => bpGet(p, o).then(res, rej); });
+      return bpGet(p, o);
+    };
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const whileWindow = asked.slice();
+    freeWindow(); for (let k = 0; k < 4; k++) await tick();
+    const beforeSession = asked.slice();
+    freeSession(); for (let k = 0; k < 10; k++) await tick();
+    const drawn = !!main.querySelector("section.view-board");
+    win.Maity.api.get = bpGet; win.Maity.maintenance.fresh = bpFresh;
+    expect(JSON.stringify(whileWindow) === JSON.stringify(["/auth/session"]) && JSON.stringify(beforeSession) === JSON.stringify(["/auth/session"])
+      && asked.includes("/me") && drawn,
+      "boot: the session is asked while the window's read waits, /me after the session answers, and the page draws "
+      + JSON.stringify([whileWindow, beforeSession, asked, drawn]));
+  }
+
+  // The invitation and registration pages read the session themselves: the drawing asks it no second
+  // time before handing over (review of #1524). A late 401 of an older session read sets no language
+  // over a newer one.
+  {
+    const ssGet = win.Maity.api.get, ssAsked = [], ssAtPage = {};
+    const ssReg = win.Maity.register.page, ssInv = win.Maity.invite.page;
+    win.Maity.api.get = (p, o) => { if (p === "/auth/session") ssAsked.push(p); return ssGet(p, o); };
+    win.Maity.register.page = (...a) => { ssAtPage.register = ssAsked.length; return ssReg(...a); };
+    win.Maity.invite.page = (...a) => { ssAtPage.invite = ssAsked.length; return ssInv(...a); };
+    await go("#/register"); for (let k = 0; k < 8; k++) await tick();
+    ssAsked.length = 0;
+    await go("#/invite/inv-smoke-token"); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = ssGet; win.Maity.register.page = ssReg; win.Maity.invite.page = ssInv;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    expect(ssAtPage.register === 0 && ssAtPage.invite === 0,
+      "boot: the registration and invitation pages get the drawing with no session read of its own started " + JSON.stringify(ssAtPage));
+    const ssFollow = win.Maity.i18n.follow, ssFollows = [];
+    win.Maity.i18n.follow = (tag, signedIn) => { ssFollows.push(signedIn ? "signed in: " + (tag || "browser") : "visitor"); return Promise.resolve(); };
+    let ssLate = null;
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/auth/session" && !ssLate
+      ? new Promise((res, rej) => { ssLate = () => rej(new win.Maity.api.ApiError("Not signed in", 401, p, "unauthenticated")); }) : null);
+    const ssOlder = win.Maity.api.get("/auth/session").then(() => 200, (e) => e.status);
+    await win.Maity.api.get("/auth/session");
+    const ssBefore = ssFollows.slice();
+    ssLate(); const ssOldStatus = await ssOlder; for (let k = 0; k < 2; k++) await tick();
+    win.MAITY_FIXTURE_HOLD = null; win.Maity.i18n.follow = ssFollow;
+    expect(ssOldStatus === 401 && ssBefore.length === 1 && ssBefore[0] !== "visitor" && JSON.stringify(ssFollows) === JSON.stringify(ssBefore),
+      "boot: a late 401 of an older session read leaves the newer session's language " + JSON.stringify([ssOldStatus, ssFollows]));
+  }
+
   // Languages: project writes are human-admin only; personal language is not mail-gated.
   const languageGet = win.Maity.api.get;
   const languagePatch = win.Maity.api.patch;
