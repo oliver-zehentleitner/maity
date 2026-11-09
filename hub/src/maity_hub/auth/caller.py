@@ -20,10 +20,11 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, and_, select, update
 
-from maity_hub import availability, clock
+from maity_hub import availability, clock, timing
 from maity_hub import tables as t
+from maity_hub.admin import instance_admin_id_query
 from maity_hub.auth import credentials, nonces
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
@@ -232,13 +233,19 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
         .values(last_seen_at=now)
     )
+    # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
+    # read rather than one more on every cookie call, as a join that finds the human only
+    # when it is the earliest account.
+    admin = t.human.alias("instance_admin")
     row = conn.execute(
         select(
             t.human_session,
             t.human.c.deleted_at.label("human_deleted_at"),
             t.human.c.account_status.label("human_account_status"),
+            admin.c.id.is_not(None).label("human_is_instance_admin"),
         )
         .join(t.human, t.human.c.id == t.human_session.c.human_id)
+        .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
         .where(t.human_session.c.id_hash == id_hash)
     ).one()
     if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
@@ -268,6 +275,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
                 # A limit's hold is never shortened by a renewal (§6.12).
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
+    timing.admit(row.human_is_instance_admin)
     return Caller(
         kind="human",
         via="cookie",

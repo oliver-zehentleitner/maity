@@ -15296,7 +15296,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|---|
 | `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed`, `rate_limited` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
 | `reason` | `null` or a code from the table below | |
-| `detail` | `null` or a code from the detail list below | never free text |
+| `detail` | `null` or a code from the detail list below | never free text; with `join_failed`, any value in the form of an error code (below) |
 | `exit_code` | integer or `null` | the harness process's own code |
 | `observed_generation` | integer | the generation the report is about; a report for an older generation becomes an event and does not move `reported` |
 | `restarts` | integer | restarts in this generation |
@@ -15319,7 +15319,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `harness_missing` | `failed` | the binary or image is not there or does not run |
 | `clone_failed` | `failed` | `git clone` failed; `exit_code` from git |
 | `workspace_in_use` | `failed` | the clone path exists and is not recorded for this agent |
-| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code |
+| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code, for a `403 forbidden` its `details.reason` when that has the code form, otherwise `forbidden` (below) |
 | `crash_loop` | `failed` | the restart cap was reached |
 | `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
 | `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
@@ -15332,7 +15332,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|
 | `binary_not_found`, `version_failed` | `harness_missing` |
 | `credential_missing` | `join_failed`: a credential was expected (`credential_id` set) and the file is not there |
-| `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `pickup_not_allowed`, `pickup_used`, `network` | `join_failed` |
+| `network`, or the hub's error code: `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `instance_quota`, `pickup_not_allowed`, `pickup_used`, a `forbidden`'s reason such as `member_join_limit`, `member_agents_max` or `project_not_allowed` (§3.1, §6.3), and any other | `join_failed` |
 | `origin_mismatch`, `other_agent`, `workspace_unrecorded`, `locked_by_process` | `workspace_in_use` |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
@@ -15342,6 +15342,31 @@ placement as `reported`; the history is the `placement_reported` events.
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
+`join_failed`'s detail is the one exception. It takes any value in the
+form of the hub's error codes: 1 to 64 characters, a lowercase letter
+first and then lowercase letters, digits and `_`, with nothing before or
+after, not even a line break. That includes a code the list names for
+another reason. A refusal the runner does not know yet thus still names
+its reason instead of becoming `null`. Any other value is `invalid` there
+too. The runner takes the code from the pickup's error answer: its `code`,
+or for `forbidden` its `details.reason` when that has the code form,
+otherwise `forbidden`. For the join, it gives `maity join` a random value of its own for each call
+in `MAITY_ERROR_LINE`. A `maity` command that fails and handles the
+failure itself then writes `maity-error <that value>: <code>` as its last
+line. For a `forbidden` with a code-form reason it writes `forbidden
+<reason>`, otherwise just `forbidden`. It writes `-` when the error has
+no code in this form. The line is built from the same fields, and the
+runner reads only the last line, and only with its own value. Anything
+else fails closed with detail `null`: no line, a last line without that
+value or not in that form, a crash (its traceback follows the line, so
+the line is not the last one), or an error output the child could not
+write. The value is a
+correlation value, not a secret: under sudo or ssh it stands in the
+command line. It keeps the hub's or a library's message text, which can
+hold the join URL and with it the token, from passing for the line,
+because that text is written without knowing the value. A `maity` older
+than this writes no such line, so with it the detail is `null`. A
+pickup's `404` carries no detail.
 
 **A rate limit is not a crash.** When the supervised loop sees the
 harness exit for its provider's limit, the runner reports `state:

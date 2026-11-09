@@ -44,7 +44,7 @@ from maity_hub.routes.events import (
     remember_read,
     writer,
 )
-from maity_hub.views import principal_id, sees_chat_reasons, shape_deleted, ts
+from maity_hub.views import principal_id, principal_ids, sees_chat_reasons, shape_deleted, ts
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -173,6 +173,8 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
         if rows
         else {}
     )
+    # The senders of the page in one read, not one per message.
+    senders = principal_ids(conn, [r.actor_membership for r in rows])
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
     # A deleted account among the mentions is shown as one (§2.9).
@@ -186,7 +188,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "id": f"evt-{row.seq}",
             "seq": row.seq,
             "conversation_id": row.conversation_id,
-            "from": principal_id(conn, row.actor_membership),
+            "from": senders.get(row.actor_membership),
             "from_instance": (
                 None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
             ),

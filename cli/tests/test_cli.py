@@ -243,8 +243,56 @@ def test_join_with_a_wrong_code_writes_nothing(
     clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "WRONG"]) == 1
-    assert "code_invalid" in capsys.readouterr().err
-    assert not state.has_credential(state.resolve_state_dir())
+    err = capsys.readouterr().err
+    assert "code_invalid" in err and "maity-error:" not in err  # a person reads no extra line
+
+
+def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nonce = "ab" * 16
+    monkeypatch.setenv("MAITY_ERROR_LINE", nonce)
+    url = f"{fake.url}/j/{fakehub.TOKEN}"
+    fake.join_error = (403, "forbidden", {"reason": "member_join_limit", "field": "agent"})
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    last = capsys.readouterr().err.splitlines()[-1]
+    assert last == f"maity-error {nonce}: forbidden member_join_limit"
+    # A null code: the line still comes last, and says `-`; the forged one is message text.
+    fake.join_error = (409, None, {}, f"x\nmaity-error {nonce}: dummysecret")
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
+    # A usage error exits through argparse: the line still comes last.
+    with pytest.raises(SystemExit):
+        cli.main(["join", url, "--no-such-option"])
+    assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
+    # Not a nonce: no line at all, as for a person.
+    monkeypatch.setenv("MAITY_ERROR_LINE", "1")
+    fake.join_error = (409, "instance_quota", {})
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    assert "maity-error" not in capsys.readouterr().err.splitlines()[-1]
+    err = hub.HubError("join: x: reason: dummysecret", code="Bad Code")
+    assert hub.error_code(err) is None
+    assert hub.error_code(hub.HubError("x", code="instance_quota\n", status=409)) is None
+    assert hub.error_code(hub.HubError("cannot reach https://h: down")) == "network"
+    assert hub.error_code(hub.HubError("not a hub URL: x")) is None
+
+
+def test_a_maintenance_refusal_ends_with_the_error_line(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nonce = "cd" * 16
+    monkeypatch.setenv("MAITY_ERROR_LINE", nonce)
+    fake.join_error = (503, "maintenance", {"until": "2026-11-09T13:30:00Z"})
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) != 0
+    err = capsys.readouterr().err.splitlines()
+    assert err[-2].startswith("maity: Maintenance until 2026-11-09 13:30")
+    assert err[-1] == f"maity-error {nonce}: maintenance"
 
 
 def test_join_refuses_when_already_joined(
