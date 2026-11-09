@@ -42,7 +42,7 @@ class HubError(Exception):
         self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
 
 
-# `MAITY_ERROR_LINE=<nonce>`: a command that fails (and does not crash) ends its stderr with
+# `MAITY_ERROR_LINE=<nonce>`: a command that fails and handles it itself ends its stderr with
 # one line a program reads, `maity-error <nonce>: <code>[ <reason>]`, or `-` when there is no
 # code. The nonce comes from the caller and is in nothing the hub or a library writes, so no
 # message text can forge the line; its content is built from the error's code fields alone

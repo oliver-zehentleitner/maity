@@ -797,7 +797,7 @@ class Supervisor:
         except hub.HubError as exc:
             if exc.status is None or exc.status >= 500 or exc.status == 429:
                 raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
-            # A 404 is the placement, gone since it was read: not the join token's `not_found`.
+            # A 404 (the placement gone, or no such route) is not the join token's `not_found`.
             gone = exc.status == 404
             detail = None if gone else join_detail(exc.code, exc.details.get("reason"))
             raise workspace.Refused("join_failed", detail) from None

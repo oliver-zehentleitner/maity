@@ -15348,16 +15348,24 @@ first and then lowercase letters, digits and `_`, with nothing before or
 after, not even a line break. That includes a code the list names for
 another reason. A refusal the runner does not know yet thus still names
 its reason instead of becoming `null`. Any other value is `invalid` there
-too. The runner takes the code from the pickup's error answer, its `code`
-or, for `forbidden`, its `details.reason`. For the join, it gives `maity
-join` a random value of its own in `MAITY_ERROR_LINE`. A failed `maity`
-command then writes `maity-error <that value>: <code>` as its last line,
-or `-` when the error has no code in this form. A crash ends with its
-traceback instead, and the detail is then `null`. The line is built from
-the same fields, and the runner reads only that line with its own value.
-An error's message can hold the join URL and with it the token, but it
-cannot know the value, so no message text becomes the detail. A pickup's `404` is the placement, gone since it was read, and
-carries no detail.
+too. The runner takes the code from the pickup's error answer: its `code`,
+or for `forbidden` its `details.reason` when that has the code form. For
+the join, it gives `maity join` a random value of its own for each call
+in `MAITY_ERROR_LINE`. A `maity` command that fails and handles the
+failure itself then writes `maity-error <that value>: <code>` as its last
+line. For a `forbidden` with a code-form reason it writes `forbidden
+<reason>`, otherwise just `forbidden`. It writes `-` when the error has
+no code in this form. The line is built from the same fields, and the
+runner reads only the last line, and only with its own value. Anything
+else fails closed with detail `null`: no line, a last line without that
+value or not in that form, a crash, or an error output the child could
+not write. The value is a
+correlation value, not a secret: under sudo or ssh it stands in the
+command line. It keeps the hub's or a library's message text, which can
+hold the join URL and with it the token, from passing for the line,
+because that text is written without knowing the value. A `maity` older
+than this writes no such line, so with it the detail is `null`. A
+pickup's `404` carries no detail.
 
 **A rate limit is not a crash.** When the supervised loop sees the
 harness exit for its provider's limit, the runner reports `state:
