@@ -795,6 +795,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .card-table tbody th { font-weight: normal; }
 .card-table tr.disabled { color: var(--muted); }
 .user-name { font-weight: 600; }
+.user-email { overflow-wrap: anywhere; }
 .users-filter { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; margin-bottom: 12px; }
 .users-filter label { font-size: 0.85rem; color: var(--muted); flex-basis: 100%; margin-bottom: -4px; }
 .users-filter label + input, .users-filter label + select { flex: 0 1 18rem; }
