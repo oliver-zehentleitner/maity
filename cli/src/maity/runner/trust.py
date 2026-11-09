@@ -21,13 +21,14 @@ its global configuration file. Checked against Claude Code 2.1.319:
 - The lock is advisory, as proper-lockfile's is, and the check and the replace are two steps.
   A holder stopped between them for longer than the stale time (SIGSTOP, a suspended machine)
   can find its lock still its own, while another process has taken it over and written in the
-  meantime; its replace then drops that newer write. That is accepted: the agent whose entry
-  was dropped meets the trust question again on its next start, and nothing else is affected.
+  meantime; its replace then drops that newer write, whatever it changed. That is accepted:
+  if the dropped write was another clone's trust entry, that agent meets the trust question
+  again on its next start.
 
 Nothing else in the file changes, no other project and no other key of this one, apart from
-that boundary. A file that is not a JSON object is left as it is. Every failure (such a file, a
-lock held past WAIT_SECONDS, a stale lock that cannot be removed, a lost lock, a read or write
-that fails) raises TrustError with the cause.
+that boundary. A file that is not UTF-8 text holding a JSON object is left as it is. Every
+failure (such a file, a lock held past WAIT_SECONDS, a stale lock that cannot be removed, a
+lost lock, a read or write that fails) raises TrustError with the cause.
 
 The runner runs this in its own process when the agents are its own user; through sudo or on an
 ssh host it starts this module there (`python -I -m maity.runner.trust HOME CLONE`, `maity
@@ -198,6 +199,8 @@ def _write(path: Path, key: str, lease: _Lease) -> bool:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         text = "{}"
+    except UnicodeDecodeError:
+        raise TrustError(f"{path} is not UTF-8 text; left as it is") from None
     try:
         data: Any = json.loads(text)
     except ValueError:

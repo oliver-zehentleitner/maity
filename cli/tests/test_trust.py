@@ -390,3 +390,15 @@ def test_a_failing_write_is_a_trust_error_with_its_cause(
         trust.record(home, clone)
     assert json.loads(path.read_text()) == {"projects": {}}
     assert sorted(p.name for p in home.iterdir()) == [".claude.json"]  # no lock, no temp
+
+
+def test_a_file_that_is_not_utf8_is_a_trust_error_and_left_as_it_is(tmp_path: Path) -> None:
+    """A decode error is no OSError: it came out as a UnicodeDecodeError (#1560 R3)."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    home.mkdir()
+    path = home / ".claude.json"
+    path.write_bytes(b"\xff")
+    with pytest.raises(trust.TrustError, match="not UTF-8"):
+        trust.record(home, clone)
+    assert path.read_bytes() == b"\xff"
+    assert sorted(p.name for p in home.iterdir()) == [".claude.json"]
