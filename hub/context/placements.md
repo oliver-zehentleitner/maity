@@ -295,3 +295,34 @@ not follow until the agent has run again.
 
 The refiling to a new owner during an outage has no trigger: the hub has
 no transfer of a profile's owner yet.
+
+## `join_failed` takes any hub error code as its detail
+
+**Id:** b3e3875b-a834-4ad5-9641-fc19bac3ab92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-sx6wt2yjqzjx (the first runner test, 2026-11-09: a pickup refused with `instance_quota` reached the hub as `join_failed` with `detail: null`); the plan approved by the project lead on that card, 2026-11-09
+**Revisit when:** a join refusal's code could carry a value rather than name a rule, or the hub's error codes leave the `^[a-z][a-z0-9_]{0,63}$` form
+
+§15.7's lists of reasons and details are closed. `join_failed` is the
+one exception. Its detail is the hub's own error code from the pickup or
+the join exchange, or for a `403 forbidden` the `details.reason`. The
+hub takes any code in the form of its error codes there. A pickup's `404`
+carries no detail, because it means the placement is gone and not the
+join token's `not_found`.
+
+**Reason:** the runner and the hub each kept a list of join codes.
+`instance_quota`, `member_join_limit` and `member_agents_max` were not on
+the runner's list, so the operator and the lead saw `null` and no cause.
+Any new refusal of a join would do the same until both lists were changed
+and the runner was released. The code form keeps the rule that a detail
+is never free text, and the runner reads the code only where the error
+line names it, never the URL or the join code.
+
+**Rejected alternatives:**
+- Adding the three codes to the closed list: the next new join refusal
+  would be `null` again, and each one would need a contract change, a hub
+  release and a runner release.
+- Free text from the join's error line: it can name the join URL and
+  with it the token.

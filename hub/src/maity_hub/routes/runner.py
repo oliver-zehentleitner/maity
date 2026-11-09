@@ -363,6 +363,8 @@ def _check_codes(body: Status) -> None:
         errors["reason"] = "not_with_state"
     if body.detail is not None:
         rule = pl.DETAILS.get(body.detail)
+        if rule is None and body.reason == "join_failed" and pl.JOIN_DETAIL_CODE.match(body.detail):
+            rule = ("reason", "join_failed")  # any hub error code (§15.7)
         if rule is None:
             errors["detail"] = "unknown"
         elif (rule[0] == "reason" and body.reason != rule[1]) or (

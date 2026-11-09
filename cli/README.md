@@ -975,7 +975,10 @@ and runs `maity join --join-file - --no-resume` in the clone. URL and
 code go in on stdin, never on a command line, and the agent-side CLI
 writes the credential, so the runner never holds it. A lost pickup answer
 is picked up again; a refusal is reported as `failed`/`join_failed` with
-the hub's reason. Harnesses run with the narrowest grant the runner can give them, and the
+the hub's error code, or for `forbidden` the rule that refused, such as
+`instance_quota` or `member_agents_max`. `maity runner serve` prints one
+line to stderr for each new state of a placement, with its reason and
+detail. Harnesses run with the narrowest grant the runner can give them, and the
 project's own harness configuration is never loaded:
 
 - **Claude Code** gets `--setting-sources user`, a settings file written

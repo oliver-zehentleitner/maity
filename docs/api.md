@@ -15296,7 +15296,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|---|
 | `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed`, `rate_limited` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
 | `reason` | `null` or a code from the table below | |
-| `detail` | `null` or a code from the detail list below | never free text |
+| `detail` | `null` or a code from the detail list below | never free text; with `join_failed`, any code of the hub's errors |
 | `exit_code` | integer or `null` | the harness process's own code |
 | `observed_generation` | integer | the generation the report is about; a report for an older generation becomes an event and does not move `reported` |
 | `restarts` | integer | restarts in this generation |
@@ -15319,7 +15319,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `harness_missing` | `failed` | the binary or image is not there or does not run |
 | `clone_failed` | `failed` | `git clone` failed; `exit_code` from git |
 | `workspace_in_use` | `failed` | the clone path exists and is not recorded for this agent |
-| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code |
+| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code, for a `403 forbidden` its `details.reason` (below) |
 | `crash_loop` | `failed` | the restart cap was reached |
 | `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
 | `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
@@ -15332,7 +15332,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|
 | `binary_not_found`, `version_failed` | `harness_missing` |
 | `credential_missing` | `join_failed`: a credential was expected (`credential_id` set) and the file is not there |
-| `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `pickup_not_allowed`, `pickup_used`, `network` | `join_failed` |
+| `network`, or the hub's error code: `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `instance_quota`, `pickup_not_allowed`, `pickup_used`, a `forbidden`'s reason such as `member_join_limit`, `member_agents_max` or `project_not_allowed` (§3.1, §6.3), and any other | `join_failed` |
 | `origin_mismatch`, `other_agent`, `workspace_unrecorded`, `locked_by_process` | `workspace_in_use` |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
@@ -15342,6 +15342,13 @@ placement as `reported`; the history is the `placement_reported` events.
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
+`join_failed`'s detail is the one exception. It takes any code in the form of
+the hub's error codes (`^[a-z][a-z0-9_]{0,63}$`), so that a refusal the
+runner does not know yet still names its reason instead of becoming
+`null`. Any other text is `invalid` there too. The runner takes the code
+from the pickup's answer or from the join's error line, and never the
+join URL or the code. A pickup's `404` is the placement, gone since it was
+read, and carries no detail.
 
 **A rate limit is not a crash.** When the supervised loop sees the
 harness exit for its provider's limit, the runner reports `state:

@@ -428,6 +428,8 @@ def test_a_lost_pickup_answer_is_retried(world: Any, monkeypatch: pytest.MonkeyP
         (hub.HubError("used", code="pickup_used", status=409), (True, None), "pickup_used"),
         (hub.HubError("no", code="pickup_not_allowed", status=409), (True, None),
          "pickup_not_allowed"),
+        (hub.HubError("quota", code="instance_quota", status=409), (True, None),
+         "instance_quota"),
         (PICKUP, (False, "code_invalid"), "code_invalid"),
         (PICKUP, (False, None), None),
     ],
@@ -446,6 +448,52 @@ def test_a_join_that_fails_is_join_failed(
         "failed", "join_failed"
     )  # fmt: skip
     assert sup.records["plc-0003"].detail == detail
+
+
+def _forbidden(reason: str) -> hub.HubError:
+    err = hub.HubError("join: forbidden: no", code="forbidden", status=403)
+    err.details = {"reason": reason}
+    return err
+
+
+@pytest.mark.parametrize(
+    ("pickup", "detail"),
+    [
+        (_forbidden("member_agents_max"), "member_agents_max"),
+        (_forbidden("Not A Code"), "forbidden"),
+        (hub.HubError("odd", code="Some Text", status=409), None),
+    ],
+)
+def test_a_refused_pickup_reports_the_hubs_code_in_code_form(
+    world: Any, monkeypatch: pytest.MonkeyPatch, pickup: hub.HubError, detail: str | None
+) -> None:
+    sup, _, _, _, _ = world
+    sup.client = Pickups(pickup)
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert (sup.records["plc-0003"].reason, sup.records["plc-0003"].detail) == (
+        "join_failed", detail
+    )  # fmt: skip
+
+
+def test_serve_logs_each_new_state_of_a_placement_once(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    sup.client = Pickups(hub.HubError("quota", code="instance_quota", status=409))
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    assert lines == [
+        "plc-0003: starting (generation 1)",
+        "plc-0003: failed join_failed instance_quota (generation 1)",
+    ]
+    assert not any("AAAA-BBBB-CCCC" in line or "/j/tok" in line for line in logs)
 
 
 def test_a_pickup_not_found_fails_the_join_without_a_detail(
@@ -504,6 +552,29 @@ def test_run_join_keeps_url_and_code_off_the_command_line(
     assert seen["input"] == "https://h/j/SECRET-TOKEN\nCODE-1234\n"
     assert seen["env"]["MAITY_STATE_DIR"] == str(place.credential.parent)
     assert "--no-resume" in seen["argv"] and "--join-file" in seen["argv"]
+
+
+@pytest.mark.parametrize(
+    ("stderr", "detail"),
+    [
+        ("maity: join: instance_quota: the team has 2 of 2 instances\n", "instance_quota"),
+        ("maity: join: forbidden: refused\n  reason: member_join_limit\n", "member_join_limit"),
+        ("maity: join: forbidden: refused\n", "forbidden"),
+        ("maity: cannot reach https://h/j/SECRET-TOKEN: timed out\n", "network"),
+        ("Traceback (most recent call last):\n", None),
+    ],
+)
+def test_run_join_reports_the_hubs_code_from_the_error_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stderr: str, detail: str | None
+) -> None:
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 1, "", stderr)
+
+    monkeypatch.setattr("maity.runner.supervisor.subprocess.run", fake_run)
+    place = workspace.Workspace(tmp_path / "c", "maity", "c")
+    assert supervisor.run_join(place, "https://h/j/SECRET-TOKEN", "CODE-1234", tmp_path) == (
+        False, detail
+    )  # fmt: skip
 
 
 def test_run_join_against_a_hub(tmp_path: Path, fake: Any) -> None:

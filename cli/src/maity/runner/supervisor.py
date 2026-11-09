@@ -38,9 +38,19 @@ from .tmux import Session, Tmux, TmuxError, session_name
 TICK = 5.0
 PICKUP_RETRY = 15.0
 JOIN_TIMEOUT = 120.0
-PICKUP_DETAILS = ("pickup_not_allowed", "pickup_used")
-JOIN_DETAILS = ("code_invalid", "expired", "not_found", "rate_limited", "insecure_transport")
-_JOIN_ERROR = re.compile(r"\bjoin: ([a-z_]+):")
+# `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.
+DETAIL_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_JOIN_ERROR = re.compile(r"\bjoin: ([a-z][a-z0-9_]{0,63}):")
+_JOIN_REASON = re.compile(r"^\s+reason: ([a-z][a-z0-9_]{0,63})$", re.MULTILINE)
+
+
+def join_detail(code: str | None, reason: Any = None) -> str | None:
+    """The `join_failed` detail for a hub refusal: its error code, or for `forbidden` the
+    `details.reason` that says which rule refused (`member_join_limit`, `member_agents_max`,
+    §3.1). None when neither has the form of a code."""
+    if code == "forbidden" and isinstance(reason, str) and DETAIL_CODE.match(reason):
+        return reason
+    return code if code is not None and DETAIL_CODE.match(code) else None
 
 
 class Retry(Exception):
@@ -55,8 +65,8 @@ def run_join(
     as_user: AsUser = RUNNER,
     agent_path: str | None = None,
 ) -> tuple[bool, str | None]:
-    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not;
-    None when the CLI's error has no code in §15.7's list).
+    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not:
+    the hub's error code from the CLI's error line, `network`, or None when it names none).
 
     `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
     finds it without running git in a clone the agent can write (§5.3). Python runs isolated
@@ -88,8 +98,11 @@ def run_join(
     if done.returncode == 0:
         return True, None
     found = _JOIN_ERROR.search(done.stderr)
-    if found and found.group(1) in JOIN_DETAILS:
-        return False, found.group(1)
+    if found:
+        reason = _JOIN_REASON.search(done.stderr[found.end() :])
+        detail = join_detail(found.group(1), reason.group(1) if reason else None)
+        if detail is not None:
+            return False, detail
     return False, "network" if "cannot reach" in done.stderr else None
 
 
@@ -194,6 +207,14 @@ class Record:
 
 
 Log = Callable[[str], None]
+
+
+def changed(pid: str, rec: Record) -> str:
+    """The log line for a placement's new reported state: codes and numbers only, so no
+    URL, join code or credential can reach it."""
+    words = [w for w in (rec.state, rec.reason, rec.detail) if w]
+    restarts = f", restart {rec.restarts}" if rec.restarts else ""
+    return f"{pid}: {' '.join(words)} (generation {rec.generation}{restarts})"
 
 
 @dataclass
@@ -768,7 +789,9 @@ class Supervisor:
         except hub.HubError as exc:
             if exc.status is None or exc.status >= 500 or exc.status == 429:
                 raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
-            detail = exc.code if exc.code in PICKUP_DETAILS else None
+            # A 404 is the placement, gone since it was read: not the join token's `not_found`.
+            gone = exc.status == 404
+            detail = None if gone else join_detail(exc.code, exc.details.get("reason"))
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):
@@ -960,6 +983,7 @@ class Supervisor:
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     rec.pending = {"key": key, "body": self._body(rec)}
+                    self.log(changed(p["id"], rec))
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
         if not outgoing or self.client is None:
