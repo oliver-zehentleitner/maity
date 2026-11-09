@@ -31,6 +31,8 @@ PAGE = ('{ "items": [ ... ], "next_cursor": "..." }', {"items", "next_cursor"})
 # of docs/api.md; each key must be named after it, before the next heading.
 SHAPES: dict[str, tuple[str, set[str]]] = {
     "/me": ("### 5.1 `GET /me`", {"member", "projects", "maintenance", "server_time"}),
+    "/me/contact-of": PAGE,
+    "/me/contacts": PAGE,
     "/projects/{}/{}": (
         "### 6.1 Project",
         {
