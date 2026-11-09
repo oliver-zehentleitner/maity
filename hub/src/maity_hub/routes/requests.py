@@ -688,11 +688,12 @@ def create_request(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("requests:ask")
-        _validate(body, mine)
         mine = _locked(conn, mine)
         # Again on the row read under the lock: a role change to expert that committed
-        # since the first read leaves no `requests:ask` (§2.3 "The expert").
+        # since the first read leaves no `requests:ask` (§2.3 "The expert"), and the
+        # checks that read the trust or the role (`urgent`, `action`) see the same row.
         mine.require("requests:ask")
+        _validate(body, mine)
         on_behalf = None
         if body.on_behalf_of is not None and body.on_behalf_of != mine.principal_id:
             mine.require("requests:answer")

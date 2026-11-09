@@ -703,7 +703,9 @@ requests addressed to it, to one of its instances or to `role:expert`
 as every addressee does (§7), which needs no scope, and it posts
 messages. Like a guest it is never a card's target: `assignee`,
 `assigned_to` and a claim's `holder` (§6.5) naming it are `invalid`
-(`details.fields.<field>: "expert"`), and area routing skips it. It may
+(`details.fields.<field>: "expert"`; for an expert with trust `guest`
+the guest check comes first and the code is `guest`), and area routing
+skips it. It may
 still be a contract's arbiter, and as arbiter it moves the contract's
 `state` (§6.8) without `tasks:write`: that `PATCH`, with `contract.state`
 alone, is the one edit of a card it makes, and every other `PATCH` of a
