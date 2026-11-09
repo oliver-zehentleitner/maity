@@ -5,6 +5,8 @@ oldest such message, while one of its instances listens."""
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from datetime import timedelta
@@ -1011,3 +1013,82 @@ def test_events_about_the_chat_do_not_hold_the_cycle_open_and_no_nudge_comes_twi
         chat_unread.sweep(r.engine)
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, said)
+
+
+_OTHER_WORKER = """
+import sys
+from datetime import datetime
+from sqlalchemy import create_engine
+from maity_hub import chat_unread, clock
+url, conversation_id, membership_id, moment = sys.argv[1:5]
+at = datetime.fromisoformat(moment)
+clock.set_source(lambda: at)
+engine = create_engine(url)
+# The listening registry of the test hub lives in the first process's memory; that the agent
+# listens is not what this race is about, so the second worker sees it listening too.
+chat_unread._listening = lambda conn, membership_id: True
+for _ in range(5):  # its own caches, read from nothing: call until it writes
+    seq = chat_unread.check(engine, conversation_id, int(membership_id))
+    if seq is not None:
+        print(seq)
+        break
+"""
+
+
+def test_a_nudge_another_process_wrote_is_seen_under_the_lock(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1512, delta 2 (4hch): this process's open-cycle check is behind (two title
+    changes filled its batch), so the call under the lock takes no new bound. A second worker
+    process, with its own caches, writes the nudge just before that call takes the lock. The
+    call must see it and write none: one nudge, not two counting the same messages."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("a second process on the same database needs PostgreSQL")
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    said = [r.say(r.owner, f"line {k}") for k in range(3)]
+    r.read(second)  # only the first agent's nudge is under test
+    r.at(11)
+    chat_unread.sweep(r.engine)  # reads two of the three
+    for k in range(2):
+        renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": f"renamed {k}"})
+        assert renamed.status_code == 200, renamed.text
+    r.read(second)
+    r.at(12)
+    chat_unread.sweep(r.engine)  # the open-cycle check takes a bound and falls behind
+    assert r.nudges(first) == []
+    real_check = chat_unread.check
+    moment = r.now + timedelta(minutes=13)
+    written: list[str] = []
+
+    def other_worker_first(engine: Engine, conversation_id: str, membership_id: int) -> Any:
+        if not written:
+            url = engine.url.render_as_string(hide_password=False)
+            done = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _OTHER_WORKER,
+                    url,
+                    conversation_id,
+                    str(membership_id),
+                    moment.isoformat(),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=120,
+            )
+            written.append(done.stdout.strip())
+        return real_check(engine, conversation_id, membership_id)
+
+    monkeypatch.setattr(chat_unread, "check", other_worker_first)
+    r.at(13)
+    chat_unread.sweep(r.engine)  # finishes the reads; the other process wrote first
+    assert written and written[0], "the other process wrote no nudge"
+    [nudge] = r.nudges(first)
+    assert int(nudge.seq) == int(written[0])
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, said[0])

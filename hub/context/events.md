@@ -640,13 +640,24 @@ as open, so two title changes a pass (`conversation_updated` shares the chat as 
 other agents' nudges, held it open forever and no nudge came. It now has the same bound as the
 other reads: the chat's newest subject event when the check had caught up, growing only once
 the check reached it, with the cycle counted open while it is behind, and the `lagging` rule
-for the call under the lock. No nudge of this agent can lie above that bound, since it is
-written only after a call that reached its bound. And the contract's exactness sentence
+for the call under the lock. A nudge this process wrote lies below the next bound it takes;
+that held for one process only, as the next note says. And the contract's exactness sentence
 promised more than the code: after a call whose redaction look began behind, a redaction
 committed before the pass may stay counted. The sentence in `docs/api.md` §9.2 is narrowed to
 that, in the same separate commit as the budget sentence, so both go to the maintainer
 together; removing the exception instead would bring back the starvation under a stream of
 redactions.
+
+**Updated 2026-11-09 (review of #1512, delta 2):** the caches are per process, and the worker
+lease keeps a second worker out for cost, not for correctness (`hub/src/maity_hub/worker_runs.py`),
+so a second worker's nudge can lie above this process's bound. After a lagging check the call
+under the lock took no new bound and wrote a second nudge for the same messages (reproduced
+with two processes on PostgreSQL). The call under the lock now also reads the project's nudges
+above the bound, at most `SCAN_BUDGET` by the index (project_id, kind, seq), and counts the
+cycle open on one for this agent and chat, or on a full batch; tested with a real second
+process. And the exactness sentence said "between two of the hub's passes" where the code
+counts the redactions between two of the read's calls, which can be several passes apart
+while the open-cycle check is behind; it now says the hub's reads of the chat.
 
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database

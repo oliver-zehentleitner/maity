@@ -401,11 +401,13 @@ def _cycle_open(conn: Connection, stay: Any, mark: int, extend: bool = True) -> 
     The read goes up to a bound, the chat's newest subject event when the read had caught up,
     and the bound grows only once the read reached it; until then the cycle counts as open, so
     no nudge goes out on a partial read, and the read still finishes while `conversation_updated`
-    or other agents' nudges keep coming (review of #1512, delta 1). No nudge of this agent can
-    lie above the bound: it is written only after a call that reached its bound, and the next
-    call outside the lock takes a new one. After a call outside the lock that began behind
-    (`lagging`), the call under the lock confirms without taking a new bound, or it would fall
-    behind again. Index reads (project_id, subject_type, subject_id, seq): one row for the
+    or other agents' nudges keep coming (review of #1512, delta 1). After a call outside the
+    lock that began behind (`lagging`), the call under the lock confirms without taking a new
+    bound, or it would fall behind again. What this process wrote lies below the next bound it
+    takes, but another process's nudge can lie above the bound of this cache; so the call under
+    the lock also reads the project's nudges above the bound, at most SCAN_BUDGET, and counts
+    the cycle open on one for this agent and chat, or on a full batch (review of #1512,
+    delta 2). Index reads (project_id, subject_type, subject_id, seq): one row for the
     bound, at most SCAN_BUDGET for the read."""
     key = (stay.membership_id, stay.conversation_id)
     with _SCANS_LOCK:
@@ -420,6 +422,7 @@ def _cycle_open(conn: Connection, stay: Any, mark: int, extend: bool = True) -> 
         e.subject_type == "conversation",
         e.subject_id == stay.conversation_id,
     )
+    token = f"member:{stay.agent_id}"
     if cycle.reached and (extend or not cycle.lagging):
         newest = conn.execute(
             select(e.seq).where(*subject).order_by(e.seq.desc()).limit(1)
@@ -435,7 +438,6 @@ def _cycle_open(conn: Connection, stay: Any, mark: int, extend: bool = True) -> 
                 .limit(SCAN_BUDGET)
             )
         )
-        token = f"member:{stay.agent_id}"
         for row in rows:
             if row.kind == KIND and token in (row.audience or []):
                 cycle.newest = max(cycle.newest, int(row.newest_seq or 0))
@@ -445,7 +447,34 @@ def _cycle_open(conn: Connection, stay: Any, mark: int, extend: bool = True) -> 
             cycle.reached = True
     with _SCANS_LOCK:
         _CYCLES[key] = cycle
-    return not cycle.reached or cycle.newest > mark
+    if not cycle.reached or cycle.newest > mark:
+        return True
+    if extend:
+        return False
+    # Under the lock, before a nudge is written: another process (a second worker, its own
+    # caches) may have written one above what this cache has read (review of #1512, delta 2).
+    # The project's nudges above the bound, at most SCAN_BUDGET, by the index (project_id,
+    # kind, seq); more than that, and nothing is written now.
+    above = list(
+        conn.execute(
+            select(
+                e.subject_type,
+                e.subject_id,
+                e.audience,
+                e.payload["newest_seq"].label("newest_seq"),
+            )
+            .where(e.project_id == stay.project_id, e.kind == KIND, e.seq > cycle.upto)
+            .order_by(e.seq)
+            .limit(SCAN_BUDGET)
+        )
+    )
+    return len(above) == SCAN_BUDGET or any(
+        row.subject_type == "conversation"
+        and row.subject_id == stay.conversation_id
+        and token in (row.audience or [])
+        and int(row.newest_seq or 0) > mark
+        for row in above
+    )
 
 
 def due(
