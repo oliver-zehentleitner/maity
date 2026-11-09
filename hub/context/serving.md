@@ -632,7 +632,9 @@ back `200`; two pods with different files during a rolling update give
 different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
 alone never answers `304`, and a date `If-Range` never selects a range:
 these answers have no `Last-Modified`, so `shell.byte_range` compares an
-`If-Range` with the ETag alone.
+`If-Range` with the ETag alone. A matching `If-None-Match` is a `304`
+before any `Range` is read (RFC 9110 §13.2.2), and only a GET gets a
+range; a HEAD says the whole length and sends no body.
 
 **Rejected alternatives:**
 - Starlette's own ETag (an MD5 of the change time and size): an image

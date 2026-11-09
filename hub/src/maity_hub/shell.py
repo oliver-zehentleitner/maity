@@ -245,36 +245,41 @@ class AssetFiles(StaticFiles):
         asked = QueryParams(scope.get("query_string", b"")).getlist("v")
         current = asked == [form.version]
         headers = {"Cache-Control": ASSET_IMMUTABLE if current else ASSET_CACHE}
-        response: Response
         if form.gzipped is not None:
             # Which form is sent depends on Accept-Encoding: every answer says so, a 304 too.
             headers["Vary"] = "Accept-Encoding"
-        if (
+        gzip = (
             form.gzipped is not None
             and form.gzip_etag is not None
             and compression.accepts_gzip(request.get("accept-encoding", ""))
-        ):
+        )
+        body: bytes
+        if gzip:
+            assert form.gzipped is not None and form.gzip_etag is not None
             headers |= {"ETag": form.gzip_etag, "Content-Encoding": "gzip"}
-            response = Response(
-                form.gzipped, status_code=status_code, media_type=form.media_type, headers=headers
-            )
+            body = form.gzipped
         else:
             # The bytes the ETag and the version were taken from, never the file read again: a
             # file replaced meanwhile can not go out under them (review of #1543). No
             # Last-Modified, so `If-Modified-Since` never answers 304. A range is of these bytes.
             headers |= {"ETag": form.etag, "Accept-Ranges": "bytes"}
-            span = byte_range(request, form.etag, len(form.data))
             body = form.data
-            if span is not None and status_code == 200:
-                first, last = span
-                headers["Content-Range"] = f"bytes {first}-{last}/{len(form.data)}"
-                body, status_code = form.data[first : last + 1], 206
-            response = Response(
-                body, status_code=status_code, media_type=form.media_type, headers=headers
-            )
-        if self.is_not_modified(response.headers, request):
-            return NotModifiedResponse(response.headers)
-        return response
+        # The precondition before the range (RFC 9110 §13.2.2): a matching If-None-Match is a
+        # 304 whatever the Range header holds.
+        if self.is_not_modified(Headers(headers), request):
+            return NotModifiedResponse(Headers(headers))
+        method = scope.get("method", "GET")
+        # A range only on a GET (RFC 9110 §14.2), of the identity form.
+        span = byte_range(request, form.etag, len(body)) if not gzip and method == "GET" else None
+        if span is not None and status_code == 200:
+            first, last = span
+            headers["Content-Range"] = f"bytes {first}-{last}/{len(body)}"
+            body, status_code = body[first : last + 1], 206
+        if method == "HEAD":
+            # The length of what a GET would send, and no body handed to the server.
+            headers["Content-Length"] = str(len(body))
+            body = b""
+        return Response(body, status_code=status_code, media_type=form.media_type, headers=headers)
 
 
 # The dashboard's invitation page, `/invite/{token}` (§16.11): the token is in its path.

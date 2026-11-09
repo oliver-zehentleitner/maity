@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import re
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -224,7 +226,7 @@ def test_a_range_is_selected_by_the_etag_alone(client: TestClient, web_dir: Path
         whole = client.get("/assets/css/app.css", headers={"If-Range": stale} | asked)
         assert whole.status_code == 200 and whole.text == content, stale
     assert client.get("/assets/css/app.css", headers=asked).status_code == 206
-    # A suffix range gets the tail. A range past the end, two ranges or another unit get the whole body.
+    # A suffix range gets the tail; past the end, two ranges or another unit get the whole body.
     tail = client.get("/assets/css/app.css", headers={"Range": "bytes=-4"} | IDENTITY)
     assert tail.status_code == 206 and tail.text == content[-4:]
     assert (
@@ -245,6 +247,58 @@ def test_a_range_is_selected_by_the_etag_alone(client: TestClient, web_dir: Path
     ):
         whole = client.get("/assets/css/app.css", headers={"Range": ignored} | IDENTITY)
         assert whole.status_code == 200 and whole.text == content, ignored
+
+
+def test_a_matching_etag_is_a_304_before_any_range(client: TestClient, web_dir: Path) -> None:
+    """RFC 9110 §13.2.2: If-None-Match is evaluated before Range, a huge one included (review of
+    #1543, delta 1)."""
+    _css(web_dir)
+    etag = client.get("/assets/css/app.css", headers=IDENTITY).headers["etag"]
+    for asked in ("bytes=0-9", "bytes=0-" + "9" * 4301, "bytes=" + "9" * 4301 + "-"):
+        answer = client.get(
+            "/assets/css/app.css", headers={"If-None-Match": etag, "Range": asked} | IDENTITY
+        )
+        assert answer.status_code == 304, asked[:20]
+        assert answer.headers["etag"] == etag and "content-range" not in answer.headers
+
+
+def test_a_head_ignores_a_range_and_sends_no_body(client: TestClient, web_dir: Path) -> None:
+    """A range only on a GET (RFC 9110 §14.2); a HEAD says the whole length and hands the server
+    no body (review of #1543, delta 1)."""
+    content = _css(web_dir)
+    head = client.head("/assets/css/app.css", headers={"Range": "bytes=0-9"} | IDENTITY)
+    assert head.status_code == 200 and "content-range" not in head.headers
+    assert head.headers["content-length"] == str(len(content.encode()))
+    # What the app hands the server, below the test client, which drops a HEAD's body itself.
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "HEAD",
+        "scheme": "http",
+        "path": "/assets/css/app.css",
+        "raw_path": b"/assets/css/app.css",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"range", b"bytes=0-9"),
+            (b"accept-encoding", b"identity"),
+        ],
+        "client": ("127.0.0.1", 50000),
+        "server": ("testserver", 80),
+    }
+    asyncio.run(client.app(scope, receive, send))  # type: ignore[arg-type]
+    assert sent[0]["status"] == 200
+    assert b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body") == b""
 
 
 def test_a_small_file_has_one_form(client: TestClient, web_dir: Path) -> None:
