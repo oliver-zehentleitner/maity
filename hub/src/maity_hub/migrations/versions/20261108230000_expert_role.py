@@ -10,7 +10,7 @@ the new name, move the members, remove the old one) and runs the upgrade again. 
 migration changes no schema, so the downgrade does nothing.
 
 Revision ID: 20261108230000_expert_role
-Revises: 20261107160000_avatar_size
+Revises: 20261108200000_contacts
 Create Date: 2026-11-08
 """
 
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261108230000_expert_role"
-down_revision: str | None = "20261107160000_avatar_size"
+down_revision: str | None = "20261108200000_contacts"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
