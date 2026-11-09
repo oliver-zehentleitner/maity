@@ -4537,6 +4537,49 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/maity/inbox");
   }
 
+  // Tied updated_at (review of #1536, delta 2): 51 cards sharing the newest time in the window, nothing written
+  // during the reads. Every pass takes the ties again (the inclusive comparison recovers a card changed in that
+  // same second), so all three page and the board reads the one list instead; with 49 the second pass fits one page.
+  // (50 or more ties fall back: a full page of them still follows the cursor.)
+  for (const [tbCount, tbFallback] of [[51, 1], [50, 1], [49, 0]]) {
+    const tbAll = win.Maity.api.getAll, tbGet = win.Maity.api.get;
+    const tbIso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const tbAt = tbIso(Date.now() + 5000);
+    const tbBase = await tbGet("/projects/maintainer/maity/tasks/tsk-0003");
+    const tbTied = Array.from({ length: tbCount }, (_, i) => Object.assign({}, tbBase, { id: "tsk-t" + String(100 + i), title: "Tied " + i,
+      status: "done", parent: null, depends_on: [], related: [], updated_at: tbAt }));
+    const tbPages = [];
+    let tbLists = 0;
+    win.Maity.api.getAll = (p) => {
+      if (/^\/projects\/maintainer\/maity\/tasks\?status=all&closed_after=[^&]*$/.test(p)) tbLists += 1;
+      return tbAll(p);
+    };
+    win.Maity.api.get = async (p) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return tbGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      const cursor = q.get("cursor");
+      const rows = (await tbGet("/projects/maintainer/maity/tasks?status=all")).items.concat(tbTied)
+        .sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0) || (a.id < b.id ? 1 : -1));
+      let from = rows;
+      if (cursor) {
+        const [at, id] = cursor.split("|");
+        from = rows.filter((t) => (Date.parse(t.updated_at) || 0) < Number(at) || ((Date.parse(t.updated_at) || 0) === Number(at) && t.id < id));
+      }
+      const limit = Number(q.get("limit")) || 50;
+      const items = from.slice(0, limit);
+      const last = items[items.length - 1];
+      tbPages.push(items.length);
+      return { items, next_cursor: from.length > limit ? (Date.parse(last.updated_at) || 0) + "|" + last.id : null };
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.getAll = tbAll; win.Maity.api.get = tbGet;
+    const tbPasses = tbPages.filter((n, i) => i % 2 === 0).length;
+    expect(tbLists === tbFallback && (tbFallback ? tbPages.length === 6 && [0, 2, 4].every((i) => tbPages[i] === 50) : tbPages.length === 3),
+      "board: " + tbCount + " cards tied at the newest time in the window " + (tbFallback ? "make three passes page, then the one list is read" : "end the reading on the second pass, no list")
+      + " " + JSON.stringify([tbPages, tbLists, tbPasses]));
+  }
+  await go("#/maintainer/maity/inbox");
+
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
   const cfLs = win.localStorage;

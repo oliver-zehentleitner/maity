@@ -1710,30 +1710,37 @@ window. Each group follows its own pages. The board orders every column
 itself, so the groups may answer in any order. Five reads are not one
 snapshot: a card moved from a group not yet answered into one already
 answered would be in neither, and one moved the other way in both. So once
-all five have answered, the board reads the cards changed since the reads
-began (`status=all` with the window and `order=updated`, newest first, a
-page of 50, further pages only while every card on one is that new), and
-each replaces or adds its card. The start is taken on the hub's clock with
-a minute's margin. That read pages by an `updated_at` keyset, and a card
-changed again between two of its pages moves ahead of the cursor. So a
-pass that followed a cursor is followed by another from the first page,
-taking every card at least as new as the newest the pass before saw; a
-pass of one page has no gap and ends the reading. After three passes that
-all paged, one list of every status in the window (`status=all` with the
-window) is read instead and replaces the cards. What is guaranteed: every
-card that did not change during the reads is shown as its group read it,
-and every card that did is shown once, as the last pass has it. Only a
-board changing faster than three passes can read it falls back to the one
-list, with the gaps between that list's own pages that the board always
-had. A change after the last read is the board's usual news, offered as a
-reload. The reload after a write reads the same way; the hub search still
-asks one list over every status (`status=all&q=`). The cost is bounded: at
-most four more requests than one list for the same cards (one per group
-that holds a page or less), plus the changed-cards read: one page when
-fewer than 50 cards changed during the reads, and at most three passes,
-with at most five requests in flight at once. The wait is the longest
-group plus that read's pages, one after the other, not the sum of every
-page.
+all five have answered, the board reads the cards changed since a minute
+before the reads began (the start taken on the hub's clock, the minute a
+margin for its skew): `status=all` with the window and `order=updated`,
+newest first, pages of 50, until the first card older than that. Each card
+it returns replaces or adds its card. That read pages by an `updated_at`
+keyset, and a card changed again between two of its pages moves ahead of
+the cursor. So a pass that followed a cursor is followed by another from
+the first page, taking every card at least as new as the newest the pass
+before saw. The comparison includes that time itself: a card changed in
+the same second as the newest one is recovered too. A pass of one page has
+no gap and ends the reading. After three passes that each followed a
+cursor, one list of every status in the window (`status=all` with the
+window, all its pages) is read instead and replaces the cards.
+What is guaranteed: every card that did not change during the reads is
+shown as its group read it, and every card that did is shown once, as the
+last pass, or the one list, has it. The one list has the gaps between its
+own pages that the board always had. A change after the last read is the
+board's usual news, offered as a reload. The reload after a write reads the
+same way; the hub search still asks one list over every status
+(`status=all&q=`).
+When the board falls back to the one list: when cards keep changing while
+the passes read, and also with no change at all when 50 or more cards
+share the newest `updated_at` in the window (one change of many cards in
+the same second), since every pass then takes those ties again and pages.
+The cost is bounded: at most four more requests than one list for the same
+cards (one per group that holds a page or less), plus the changed-cards
+read: one page while fewer than 50 cards changed since a minute before
+the reads; otherwise one page per 50 of them in the first pass, one page
+per 50 cards at or after the newest time the pass before saw in each of up
+to two more, and where all three page, every page of the one list as well. At most five requests are in flight at once. The wait is the longest
+group plus those pages, one after the other, not the sum of every page.
 
 **Reason:** the pages were the board's longest wait, and nothing in one
 page depends on another. Side by side, the wait is the longest group,
