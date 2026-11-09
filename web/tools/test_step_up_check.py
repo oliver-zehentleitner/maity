@@ -28,7 +28,7 @@ def first_call(src):
     assert error is None, error
     m = re.search(r"\bM\.api\.(get|post|patch|put|del)\(", code)
     begin, end = check.first_argument(code, m.end())
-    return check.path_pattern(src, code, src[begin:end], m.start()), check.asks_first(code, m.start())
+    return check.path_pattern(src, code, src[begin:end], m.start()), check.asks_first(code, m.start(), src)
 
 
 def reaches(pattern, path):
@@ -189,6 +189,17 @@ expect(len(got) == 1 and "/me/notification-settings" in got[0], "make check: the
 
 got = scan("plain.js", 'M.api.patch("/me/notification-settings", { email: { muted: true } });')
 expect(got == [], "make check: a notification-settings write without the address is none " + repr(got))
+
+# 4hch at #1566: reads of a call: property the dotted scan does not see, and a body name shadowed elsewhere.
+pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\na["call"]();')
+expect(not asks, "a call: property also read by a string in brackets does not ask")
+
+pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\na[key]();')
+expect(not asks, "a call: property where a computed name is called does not ask")
+
+got = scan("shadow.js", 'const patch = { address: "a@b.c" };\nfunction other(){ const patch = { muted: true }; return patch; }\n'
+           'M.api.patch("/me/notification-settings", { email: patch });')
+expect(len(got) == 1, "make check: the body's name is the binding around the call, not another function's of the same name " + repr(got))
 
 print("%d failure(s)" % failures)
 sys.exit(1 if failures else 0)

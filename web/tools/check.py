@@ -1396,13 +1396,35 @@ def initializer(src, code, name, before):
 
 
 def body_text(src, code, body, at, depth=0):
-    """A call's body as written, with the `const` of every name in it put beside it, names in those
-    too, three deep: a key behind a variable (`{ email: patch }`) is read (xyfr at #1547)."""
+    """A call's body as written, with the value of every name in it put beside it, names in those
+    too, three deep: a key behind a variable (`{ email: patch }`) is read (xyfr at #1547). A name is
+    resolved by the blocks around the call (declaration_of), not by the last `const` of that name in
+    the file (4hch at #1566); a parameter or a reassignment is not followed."""
     if depth >= 3:
         return body
     names = set(re.findall(r"(?<![\w$.])[A-Za-z_$][\w$]*", body))
-    more = [initializer(src, code, name, at) for name in sorted(names)]
+    blocks = brace_blocks(code)
+    more = [bound_value(src, code, declaration_of(code, blocks, name, at)) for name in sorted(names)]
     return body + " " + " ".join(body_text(src, code, x, at, depth + 1) for x in more if x)
+
+
+def bound_value(src, code, name_at):
+    """The text after `=` of the `const`/`let` whose name stands at name_at, to its `;` or the end of
+    its block; None where name_at is None."""
+    if name_at is None:
+        return None
+    eq = code.find("=", name_at)
+    depth, end = 0, len(code)
+    for i in range(eq + 1, len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if depth < 0 or (depth == 0 and c == ";"):
+            end = i
+            break
+    return src[eq + 1:end].strip()
 
 
 def path_pattern(src, code, expr, at, depth=0):
@@ -1516,7 +1538,7 @@ def declaration_of(code, blocks, name, at):
         block = innermost_block(blocks, block[0])
 
 
-def asks_first(code, at):
+def asks_first(code, at, src=None):
     """Whether the call at position at goes through M.stepUp.run: inside the function given as its
     first argument (that function expression alone, see function_body), or in an arrow that is handed to it by name, as a `call:` property, or through
     a local function that hands that parameter on as its first argument (security.js's act). A call
@@ -1548,7 +1570,11 @@ def asks_first(code, at):
         handed = {r.end() - len(prop.group(1)) - 1 for r in re.finditer(
             r"\bM\.stepUp\.run\(\s*[A-Za-z_$][\w$]*(?:\[[^\[\]]*\]|\.[A-Za-z_$][\w$]*)*\." + key + r"(?=\s*,)", code)}
         unpacked = re.search(r"\{[^{}]*\b" + key + r"\b[^{}]*\}\s*=(?!=|>)", code)
-        return bool(reads) and all(at_ in handed for at_ in reads) and not unpacked
+        # A read by a string in brackets (`a["call"]`) or a call through a computed name (`a[k]()`)
+        # may be this property outside the question: not counted as asking (4hch at #1566).
+        bracketed = src is not None and re.search(r"\[\s*([\"'`])" + key + r"\1\s*\]", src)
+        computed = re.search(r"\[\s*[A-Za-z_$][\w$.]*\s*\]\s*\(", code)
+        return bool(reads) and all(at_ in handed for at_ in reads) and not (unpacked or bracketed or computed)
     fn = callee_of(code, m.start())
     if fn:
         d = re.search(r"(?:function\s+" + re.escape(fn) + r"\s*\(([^)]*)\)|\b(?:const|let)\s+" + re.escape(fn)
@@ -1598,7 +1624,7 @@ def check_step_up():
                 body = body_text(src, code, src[end + 1:call_end(code, m.end())], m.start())
                 if not re.search(r"\b" + re.escape(hits[0][1]) + r"\b", body):
                     continue
-            if not asks_first(code, m.start()):
+            if not asks_first(code, m.start(), src):
                 finding(path, code.count("\n", 0, m.start()) + 1,
                         "%s %s asks for the second factor: send it through M.stepUp.run" % (verb, hits[0][0]))
 
