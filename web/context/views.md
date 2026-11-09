@@ -54,9 +54,13 @@ The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
 in the project alone, under oneself: a boss or an area owner of someone
 else's places none of them, and an own agent that reports to someone
-else's shows that as a stub with the boss's handle, as text, and nothing
-more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
-ringed. Built from the same member list, so no second tree and no hub field.
+else's shows that as a stub with the boss's handle, as text (the
+qualified `owner/handle` where another member shares the short one,
+`M.dom.handleOf`, docs/api.md §6.3), and nothing more of the other side:
+no name, no link to its page, no tooltip. Where the member list gives no
+handle, the stub is the neutral sentence "reports to someone who is not
+yours", never an id or a name. Its instances are dots in their presence's
+colour, the lead ringed. Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
@@ -778,16 +782,21 @@ Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
 with its id, without opening it, the row marked read in place (its
 button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
-off while nothing it marks is unread, with a line that sign-in and
-address alerts stay unread. **Mark read** is not offered on one of the
+off while nothing it marks is unread. It leaves every security alert
+unread, whatever the session, with the line "Mark all read leaves
+security alerts unread: mark each one read on its own."
+(`waiting.mark_all.hint`). **Mark read** is not offered on one of the
 open matters of §18.3 — `registration_pending`, `mail_disabled`,
 `agents_not_listening`, told by their targets
 (`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
-— which read as read once the matter is closed, nor on a sign-in or
-address alert unless this session may confirm it (`M.sessions.mayConfirm`,
-§2.6.5): the hub skips such an id without saying so, and a button that
-does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item. Until 2026-11-04 a fourth
+— which read as read once the matter is closed, nor on a security
+alert this session may not mark (`M.sessions.mayMark`, as the bell
+does): an address change only from a confirmed session older than it,
+every other security alert from any session (§18.3). A sign-in is no
+item; the box above the list shows the sessions (§2.6.5). An id the hub
+leaves unread anyway is answered as `skipped` (§18.3), which the page
+says, its row staying unread. The sessions are read for that only when
+the page shows an unread security item. Until 2026-11-04 a fourth
 matter, `report_open` (target `report`), stood among them; a new report
 is now the instance admin's personal request instead (entry
 f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
@@ -5227,7 +5236,8 @@ reset.
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
-`GET /site/chrome` in the page's language. While the page stands, the hub's
+`GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
+and take the frame's language from its answer. While the page stands, the hub's
 `/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
@@ -5285,6 +5295,30 @@ than clearing the session on that 401 here was lotse#wtwy's decision (message se
 2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
+
+The frame's mark (`home()` in `js/site-chrome.js`) is the hub's SVG without its style attributes;
+it keeps the class `mark`, and its colours come from `public-pages.css` (`.site-header .mark
+rect`, …), because the dashboard's policy is `default-src 'self'` with no inline style. **Rejected:** the
+style attributes as the hub inlines them (web-e2e failed on them at `cc402ec1`), classes in
+`app.css` (a second copy of the hub's design, reverted in `7b63d015`), and an `<img>` (it cannot
+take the header's theme tokens). Source: the author's notes on #1287, round 2 (card
+tsk-gsk31zvpfv02).
+
+The footer's languages (`language()`) are this page's own path and query with `lang` set,
+written through `M.route.href`, and a click chooses the language (as the page's picker does) and
+draws the page again at that address. **Rejected:** a bare `?lang=`, which under the shell's
+`<base href="/assets/">` resolves to `/assets/` (a 404) and loses a sign-in's `next`; a page load
+to `/?lang=`, which leaves the sign-in. Source: the same notes on #1287.
+
+Under 960 px, a pitch panel that has none of the pitch's parts (subline, points, note) is hidden
+(`hub/src/maity_hub/landing_assets/public-pages.css`, the narrow-screen rule), so a phone gets no
+empty dark band. Every key of §16.7.4 is optional, so a panel with only a note or only points
+stays. The title is the form's heading, not a part of the panel. A new part that `pitch()` draws
+must be added to that rule. **Rejected:** hiding on subline and points only (it hid a note-only
+pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second source of truth);
+keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
+one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
+notes on #1287, round 3 (card tsk-gsk31zvpfv02).
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
@@ -5588,3 +5622,57 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## A handle field's hint is a sentence of fixed words, with no handle or address filled in
+
+**Id:** e9c2136d-efa9-4222-b013-6042a56ec86c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-srzrkf2parzt (the owner's decision req-3wdzdcvcbf7s: every field that asks for a handle explains the word); the ChatGPT reviewer's P2 in the review of #1488 (seq 91149) and the Grok reviewer's P3 (seq 91705); web/js/handles.js `explain`; e2e `handle_hints_step`
+**Revisit when:** a hint has to name the reader's own handle or address, or the phone widths the e2e step measures change
+
+Under every field that asks for a handle, `M.handles.explain(kind, input)`
+adds one sentence of fixed words for its kind (your own, an agent's, an
+organisation's, the person invited), which the field names in its
+`aria-describedby`. Nothing is filled in: no handle, no host, no example
+address. e2e `handle_hints_step` measures all seven kinds of field at 390
+and 360 px, light and dark: at most two lines, no overflow.
+
+**Reason:** the first version filled in the instance's host and the
+reader's handle as an example (`maity.team/<handle>`). On the English
+Account page that took three lines at 360 px, and a 31-character handle
+three lines at 390 px, against the card's two lines on a phone. Fixed
+words keep every hint's length known whatever the handle or the host.
+
+**Rejected alternatives:** a filled-in example cut to a length, which
+still varies with the host and reads oddly when cut; a filled-in example
+only on wide screens, which gives two texts to keep true. The example
+`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+about the reader's own agent or organisation.
+
+## A message's seq is drawn with its "#" from the stylesheet, so a copy takes the number alone
+
+**Id:** 10d6fda7-c01c-4087-80e5-3c0a8ea4253c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0aadqqwe8jvt and #1311 (the seq beside each chat message); the Grok reviewer's P3 on #1311 (seq 66303), collected on card tsk-gsk31zvpfv02; the code comment in web/js/chat.js at `msg-seq`; web/css/app.css (`.msg-seq::before`)
+**Revisit when:** a seq becomes a link in the chat, or the number is to be read out with a word
+
+Each chat message shows its seq beside its time as `#4202`. The span holds the number alone
+(`.msg-seq`); the `#` is drawn by the stylesheet (`.msg-seq::before { content: "#"; }`), so it is
+no part of a selection.
+
+**Reason:** agents cite a message by its seq ("seq 54246", card tsk-0aadqqwe8jvt), so a copy of
+the visible text should give the number they need, without the sign. The code comment says so;
+the rejected alternatives below are inferred, nobody stated them.
+
+**Rejected alternatives:** `#` as text in the span, which a copy takes along; a word such as
+"seq", which the dashboard's other texts do not use for it; a link, as the join panel's
+"message #seq", since a chat message has no address of its own to link to.
+
+**Known gap:** a screen reader can hear "· #4202" (the stylesheet's `#` is read out too) with no
+word for what the number is, and the list
+is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
+reports nothing).
