@@ -1015,7 +1015,16 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 @media (max-width: 720px) {
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .chat-layout.open .chat-list-pane, .chat-none { display: none; }
-  .chat-back { display: inline-block; margin-bottom: 8px; }
+  /* The back link's row is the chat head's top row; the full-screen button sits at its right
+     end, under the top bar's last entry, in a direct and a group chat (tsk-2a56j80p3p9h). The
+     button stays where js/chat.js puts it in the document, after the heading, for the keys. */
+  .chat-pane { position: relative; }
+  .chat-back { display: inline-flex; align-self: flex-start; align-items: center; min-height: 40px;
+    margin-bottom: 8px; margin-inline-end: 48px; }
+  .chat-pane .chat-full-toggle { position: absolute; top: 0; inset-inline-end: 0; }
+  html.chat-full .chat-pane.chat-full-pane .chat-full-toggle { top: 8px; inset-inline-end: 12px; }
+  /* The agent's session (`chat.session`) is a detail for a wide screen. */
+  .chat-pane .chat-session { display: none; }
 }
 
 /* Rows as tall as their message: in the open chat the list is given the pane's
@@ -1216,6 +1225,9 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { --main-pad: 12px; }
+  /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
+     take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
+  .switcher-row .switcher { flex: 1 1 0; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
