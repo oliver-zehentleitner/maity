@@ -8173,10 +8173,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   avFailing.dispatch("error");
   expect(avFailing.attrs.src === "/api/v1/avatars/agt-a?v=abc&s=64" && avBox2.querySelector("svg") === avShown2 && !avBox2.querySelector("img") && !win.Maity.avatar.picture(avShown2),
     "picture: an avatar that does not load leaves the generated picture");
-  // Near the screen only, and no placeholder kept observed once it is gone (#1541 R1): a fake
-  // IntersectionObserver that says when a target is seen, and the fake DOM's `isConnected`.
+  // Near the screen only; the observer holds only placeholders on the page (#1541 R1), and one
+  // mounted late is still watched (#1541 delta 1): a fake IntersectionObserver that says when a
+  // target is seen, and the fake DOM's `isConnected`. `sweep` is what a change of the page runs.
   const ioLive = new Set();
   let ioSee = null;
+  win.WeakRef = WeakRef;
   win.IntersectionObserver = class {
     constructor(cb) { ioSee = (el) => cb([{ target: el, isIntersecting: true }]); }
     observe(el) { ioLive.add(el); }
@@ -8184,34 +8186,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   };
   Object.defineProperty(Node_.prototype, "isConnected", { configurable: true,
     get() { for (let n = this; n; n = n.parentNode) if (n === body) return true; return false; } });
+  const AVL = win.Maity.avatar;
   const ioBox = document.createElement("div");
   body.appendChild(ioBox);
   const ioUrl = { id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" };
-  const ioSeen = win.Maity.avatar(ioUrl, 24);
-  ioBox.appendChild(ioSeen);
-  const ioAway = win.Maity.avatar(ioUrl, 24);
-  ioBox.appendChild(ioAway);
-  const notYet = !win.Maity.avatar.picture(ioSeen) && ioLive.has(ioSeen) && ioLive.has(ioAway);
+  const ioSeen = AVL(ioUrl, 24);
+  const ioAway = AVL(ioUrl, 24);
+  const offFirst = !ioLive.has(ioSeen) && !ioLive.has(ioAway);
+  ioBox.appendChild(ioSeen); ioBox.appendChild(ioAway);
+  AVL.sweep();
+  const notYet = !AVL.picture(ioSeen) && ioLive.has(ioSeen) && ioLive.has(ioAway);
   ioSee(ioSeen);
-  expect(notYet && win.Maity.avatar.picture(ioSeen) && !ioLive.has(ioSeen) && !win.Maity.avatar.picture(ioAway),
-    "picture: an avatar's picture loads only once its place is seen; one off the screen waits");
-  // Discarded before the observer ever saw them (a view drawn twice at once), and one put on
-  // the page late: let go only once they have been off the page for 10 s.
+  expect(offFirst && notYet && AVL.picture(ioSeen) && !ioLive.has(ioSeen) && !AVL.picture(ioAway),
+    "picture: a placeholder is observed once it is on the page; its picture loads once it is seen, one off the screen waits");
+  // Twenty placeholders appended and removed before the observer ever ran (a view drawn twice at
+  // once), one never mounted, and one taken off the page: none is observed after the next sweep.
   const ioGone = [];
-  for (let k = 0; k < 20; k++) { const g = win.Maity.avatar(ioUrl, 24); ioBox.appendChild(g); ioBox.removeChild(g); ioGone.push(g); }
-  const ioLate = win.Maity.avatar(ioUrl, 24);
-  win.Maity.avatar.sweep(Date.now() + 9000);
-  const keptWhileYoung = ioGone.every((g) => ioLive.has(g)) && ioLive.has(ioLate);
-  ioBox.appendChild(ioLate);
+  for (let k = 0; k < 20; k++) { const g = AVL(ioUrl, 24); ioBox.appendChild(g); ioBox.removeChild(g); ioGone.push(g); }
+  const ioNever = AVL(ioUrl, 24);
   ioBox.removeChild(ioAway);
-  win.Maity.avatar.sweep(Date.now() + 10001);
-  expect(keptWhileYoung && ioGone.every((g) => !ioLive.has(g)) && !ioLive.has(ioAway) && ioLive.has(ioLate),
-    "picture: placeholders off the page are let go after 10 s, seen by the observer or not; one on the page stays observed");
+  AVL.sweep();
+  expect(ioGone.every((g) => !ioLive.has(g)) && !ioLive.has(ioNever) && !ioLive.has(ioAway) && AVL.watched() === 0,
+    "picture: placeholders that are not on the page are not observed, whether the observer saw them or not");
+  // A view built long before it is mounted (the board waits for a card's own read), and one put
+  // back on the page: both are watched once they are on the page, and their pictures load.
+  for (let k = 0; k < 3; k++) AVL.sweep();
+  ioBox.appendChild(ioNever); ioBox.appendChild(ioAway);
+  AVL.sweep();
+  const lateWatched = ioLive.has(ioNever) && ioLive.has(ioAway);
+  ioSee(ioNever);
+  expect(lateWatched && AVL.picture(ioNever) && !ioLive.has(ioNever),
+    "picture: a placeholder mounted late, or put back, is observed and loads its picture once seen");
   body.removeChild(ioBox);
-  win.Maity.avatar.sweep(Date.now() + 10001);
-  expect(win.Maity.avatar.waiting() === 0 && ioLive.size === 0, "picture: nothing stays observed once every placeholder has left the page");
+  AVL.sweep();
+  expect(AVL.watched() === 0 && ioLive.size === 0, "picture: nothing stays observed once every placeholder has left the page");
   delete Node_.prototype.isConnected;
   delete win.IntersectionObserver;
+  delete win.WeakRef;
 
   // sign out, sign in
   profileButton().click(); await tick();

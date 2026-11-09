@@ -66,38 +66,57 @@ window.Maity = window.Maity || {};
   }
 
   // Load the picture once its place is near the screen: a page with many avatars (the
-  // board) never waits for the ones nobody sees. Without IntersectionObserver, at once.
-  // A placeholder that is not on the page 10 s after it was drawn is let go, whether or
-  // not the observer ever saw it: a view drawn again (and again) leaves none observed. A
-  // view that is put on the page later than that keeps the generated picture.
-  const UNPLACED_MS = 10000;
-  const waiting = new Map(); // placeholder -> { start, born }
+  // board) never waits for the ones nobody sees. Without IntersectionObserver or WeakRef,
+  // at once. The observer watches only placeholders that are on the page. One that is not
+  // (built before its view is mounted, or taken off the page) is held only weakly, so a view
+  // that is thrown away keeps nothing alive. It is watched (again) once it is on the page:
+  // `sweep` runs after every change of the page (MutationObserver, once per frame) and at
+  // every avatar drawn.
+  const starts = new WeakMap(); // placeholder -> start, until its picture is started
+  const offPage = new Set(); // WeakRefs of placeholders not on the page
+  const watched = new Set(); // placeholders on the page, observed
   let observer = null;
-  let sweepTimer = null;
-  function release(el) {
-    waiting.delete(el);
-    if (observer) observer.unobserve(el);
+  let swept = false;
+  function sweep() {
+    swept = false;
+    watched.forEach((el) => {
+      if (el.isConnected !== false) return;
+      watched.delete(el);
+      observer.unobserve(el);
+      offPage.add(new WeakRef(el));
+    });
+    offPage.forEach((ref) => {
+      const el = ref.deref();
+      if (!el || !starts.has(el)) { offPage.delete(ref); return; }
+      if (el.isConnected === false) return;
+      offPage.delete(ref);
+      watched.add(el);
+      observer.observe(el);
+    });
   }
-  function sweep(now) {
-    waiting.forEach((w, el) => { if (el.isConnected === false && now - w.born >= UNPLACED_MS) release(el); });
-    if (waiting.size && sweepTimer === null) {
-      sweepTimer = window.setTimeout(() => { sweepTimer = null; sweep(Date.now()); }, UNPLACED_MS);
-    }
+  function soon() {
+    if (swept) return;
+    swept = true;
+    (window.requestAnimationFrame || ((f) => window.setTimeout(f, 16)))(sweep);
   }
   function whenSeen(el, start) {
-    if (typeof window.IntersectionObserver !== "function") { start(); return; }
+    if (typeof window.IntersectionObserver !== "function" || typeof window.WeakRef !== "function") { start(); return; }
     if (!observer) {
       observer = new window.IntersectionObserver((entries) => entries.forEach((e) => {
-        const w = waiting.get(e.target);
-        if (!w || !e.isIntersecting) return;
-        release(e.target);
-        w.start();
+        const go = starts.get(e.target);
+        if (!go || !e.isIntersecting) return;
+        starts.delete(e.target);
+        watched.delete(e.target);
+        observer.unobserve(e.target);
+        go();
       }), { rootMargin: "200px" });
+      if (typeof window.MutationObserver === "function" && document.body) {
+        new window.MutationObserver(soon).observe(document.body, { childList: true, subtree: true });
+      }
     }
-    const now = Date.now();
-    waiting.set(el, { start, born: now });
-    observer.observe(el);
-    sweep(now);
+    starts.set(el, start);
+    offPage.add(new WeakRef(el));
+    soon();
   }
 
   // The picture for a placeholder that is still waiting for it (smoke tests only).
@@ -130,8 +149,9 @@ window.Maity = window.Maity || {};
     return shown;
   };
   M.avatar.picture = (placeholder) => pending.get(placeholder) || null;
-  // Smoke tests only: how many placeholders wait, and a sweep at a given time.
-  M.avatar.waiting = () => waiting.size;
+  // Smoke tests only: how many placeholders are watched or held off the page, and a sweep now.
+  M.avatar.watched = () => watched.size;
+  M.avatar.offPage = () => offPage.size;
   M.avatar.sweep = sweep;
   M.avatar.sized = sized;
   M.avatar.cells = cells;

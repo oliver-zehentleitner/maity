@@ -116,9 +116,13 @@ once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
 ratio capped at 2. The loaded image takes the identicon's place with the
 same size and class rules. A picture that does not load leaves the
 identicon. A logo or banner is loaded as given, without a size. `h()`
-allows the sized address and no other parameter. A placeholder that is not
-on the page 10 s after it was drawn stops being observed, whether or not
-the observer ever saw it, so views drawn again keep none observed.
+allows the sized address and no other parameter. The observer watches
+only placeholders that are on the page. One that is not (built before its
+view is mounted, or taken off the page) is held only through a `WeakRef`,
+and is watched again once it is on the page: a sweep runs after every
+change of the page (a MutationObserver, once per frame) and at every
+avatar drawn. A view that is thrown away keeps nothing alive, and one that
+is mounted late still gets its pictures.
 
 **Reason:** a board draws about 35 avatars, and the hub answered them one
 after another in effect (about 380 ms in the browser for 52 ms in the
@@ -135,7 +139,10 @@ rules for avatars (clipping on cards, overlap in a row of avatars) select
 `.avatar-svg` and `.avatar-img` directly, and a wrapper would break them.
 Letting a placeholder go only once the observer had seen it on the page:
 a view drawn twice before the observer's first callback left its first
-placeholders observed for good (review of #1541).
+placeholders observed for good. Letting go of every placeholder still off
+the page 10 s after it was drawn: a view mounted later than that (the
+board waits for a card's own read before it is mounted) kept the generated
+pictures for good (both from the review of #1541).
 
 
 ## Chat messages are Markdown drawn as DOM nodes by a small renderer of our own, never an HTML-producing library
