@@ -10608,12 +10608,16 @@
     "text": "aa7e6ee1e235416d"
   },
   "menu.add.label": {
-    "en": "f6a991eb7a84e22b",
-    "text": "bbb42e81aef16c60"
+    "en": "6bf76f0ed4b00e1b",
+    "text": "2e495b544ae7ac1c"
   },
   "menu.add.project": {
     "en": "6c6b7df3070f112f",
     "text": "eb7e2bb1ef648782"
+  },
+  "menu.add.runner": {
+    "en": "e98aef21e99228bc",
+    "text": "e98aef21e99228bc"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",

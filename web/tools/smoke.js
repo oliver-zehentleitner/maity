@@ -11127,12 +11127,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelector(".me").childNodes[3].querySelector(".settings-menu") && /bell-box/.test(meOrder[4])
     && header.querySelector(".me").childNodes[5].querySelector(".profile-menu") && header.querySelector(".me").childNodes.length === 6,
     "header: Chat, Lead, \"+\", the gear, Notifications, the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
-  // "+" offers an agent and a person: the agents page and the invitations page.
+  // "+" offers an agent, a person, a runner and a project, in that order (tsk-45fhe2yrwzb7).
   const addBtn = header.querySelector(".add-menu");
   addBtn.click(); await tick();
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
-  expect(addBtn.getAttribute("aria-label") === "Add a project, an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Project=#/new", "Agent=#/agents", "User=#/invite"]),
-    "header: the + menu leads to the create form, the agents page and the invitations page " + JSON.stringify(addItems));
+  expect(addBtn.getAttribute("aria-label") === "Add an agent, a person, a runner or a project"
+    && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite", "Runner=#/runners", "Project=#/new"]),
+    "header: the + menu leads to the agents page, the invitations page, the runners page and the create form " + JSON.stringify(addItems));
   // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
   expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
     "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));

@@ -10616,12 +10616,16 @@
     "text": "7ca84dc4f04aac65"
   },
   "menu.add.label": {
-    "en": "f6a991eb7a84e22b",
-    "text": "b9e3fc5fb53ca21d"
+    "en": "6bf76f0ed4b00e1b",
+    "text": "4477cad45ed69793"
   },
   "menu.add.project": {
     "en": "6c6b7df3070f112f",
     "text": "2c925658d1f8c37f"
+  },
+  "menu.add.runner": {
+    "en": "e98aef21e99228bc",
+    "text": "f1e0d8bbdd499626"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
