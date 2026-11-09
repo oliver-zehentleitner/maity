@@ -5,16 +5,17 @@ calls and each call into database and the rest without access to the server's lo
 A context variable holds the tally of the request being answered. The engines' cursor events
 add to it; outside a request (a worker, a migration) there is none and they add nothing.
 Only counts and durations: no route, no statement, no id. And only to the instance
-admin's own signed-in session, and for every API request in the hub's log, which only the
-operators read (`maity_hub.timing`: route pattern, status, count and durations, never the
-path, so the line adds no handle or id). A count or a duration on anyone else's answer could tell
-them about data they cannot see (a person's agents in a private project add statements to
-the same empty answer)."""
+admin's own signed-in session; for every API request, the same numbers go to the hub's log,
+which only the operators read (`maity_hub.timing`: route pattern, status, count, durations
+and the worker's pid, never the path, so the line adds no handle or id). A count or a
+duration on anyone else's answer could tell them about data they cannot see (a person's
+agents in a private project add statements to the same empty answer)."""
 
 from __future__ import annotations
 
 import contextvars
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -103,12 +104,13 @@ class ServerTiming:
             if message["type"] == "http.response.start":
                 total = time.perf_counter() - began
                 log.info(
-                    "route=%s status=%s sql=%d db_ms=%.1f total_ms=%.1f",
+                    "route=%s status=%s sql=%d db_ms=%.1f total_ms=%.1f pid=%d",
                     route_of(scope),
                     message["status"],
                     tally.statements,
                     tally.db * 1000,
                     total * 1000,
+                    os.getpid(),  # which worker, to tie a slow line to its process
                 )
                 if tally.shown:
                     value = header(tally, total)

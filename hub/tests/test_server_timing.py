@@ -5,6 +5,7 @@ anyone else and never outside the API."""
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Any
 
@@ -85,7 +86,8 @@ def test_nobody_else_learns_hidden_data_from_it(
         stranger.get("/people/pat")
     [line] = [r.getMessage() for r in caplog.records if r.name == "maity_hub.timing"]
     assert re.fullmatch(
-        r"route=/api/v1/people/\{handle\} status=200 sql=\d+ db_ms=\d+\.\d total_ms=\d+\.\d",
+        r"route=/api/v1/people/\{handle\} status=200 sql=\d+ db_ms=\d+\.\d total_ms=\d+\.\d"
+        rf" pid={os.getpid()}",
         line,
     ), line
     assert "server-timing" not in pat.get("/people/pat").headers

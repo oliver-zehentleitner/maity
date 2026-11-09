@@ -81,8 +81,9 @@ Every answer under `/api/v1/` to the instance admin's signed-in session (the acc
 caller gets it: not another human, not an agent, not a token, not a visitor. A measurement
 on prod therefore runs signed in as the instance admin; a test account sees no header.
 Every API request also writes the same numbers to the hub's log (`maity_hub.timing`:
-`route=<pattern> status=<code> sql=<count> db_ms=<ms> total_ms=<ms>`), which only the
-operators read: the route's pattern, never the path, so the line adds no handle or id. The
+`route=<pattern> status=<code> sql=<count> db_ms=<ms> total_ms=<ms> pid=<worker>`), which
+only the operators read: the route's pattern, never the path, so the line adds no handle or
+id; the pid ties a slow line to the worker that answered it. The
 values are taken when the answer starts. A long poll's wait counts in `total` and never in
 `db`. The tally is a context variable set by the outermost middleware (`maity_hub.timing`),
 so the hub's own checks before a route count too; the cookie sign-in marks it as shown. The
