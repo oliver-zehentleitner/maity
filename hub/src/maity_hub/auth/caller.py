@@ -101,6 +101,11 @@ class Caller:
     runner_id: str | None = None
     bridge: Bridged | None = None  # a bridge calling as this agent (`Maity-For`, §2.3)
     on_request: OnRequest | None = None  # a proxy's go for this call, signed (§2.3)
+    # A cookie call's session row and account status as authentication read them, so that
+    # the second-factor gate and the pending check do not read them again on every call
+    # (tsk-6srccd2r1h62). The row is the one before this call's `last_seen_at`/`ip` update.
+    session_row: Any = field(default=None, compare=False, repr=False)
+    account_status: str | None = field(default=None, compare=False)
 
     @property
     def principal_id(self) -> str:
@@ -198,11 +203,19 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
-    row = conn.execute(select(t.human_session).where(t.human_session.c.id_hash == id_hash)).first()
+    # The session and its human in one statement: this runs before every dashboard call.
+    row = conn.execute(
+        select(
+            t.human_session,
+            t.human.c.deleted_at.label("human_deleted_at"),
+            t.human.c.account_status.label("human_account_status"),
+        )
+        .join(t.human, t.human.c.id == t.human_session.c.human_id)
+        .where(t.human_session.c.id_hash == id_hash)
+    ).first()
     if row is None or row.ended_at is not None or not session_alive(row, now):
         raise unauthenticated("the session has ended or expired")
-    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == row.human_id))
-    if deleted.scalar() is not None:  # a deleted account calls nothing (§2.9)
+    if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
     if facts.method in UNSAFE_METHODS:
         token = facts.headers.get(CSRF_HEADER, "")
@@ -240,7 +253,14 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
                 # A limit's hold is never shortened by a renewal (§6.12).
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
-    return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
+    return Caller(
+        kind="human",
+        via="cookie",
+        human_id=row.human_id,
+        human_session=id_hash,
+        session_row=row,
+        account_status=row.human_account_status,
+    )
 
 
 def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
