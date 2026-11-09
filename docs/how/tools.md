@@ -69,7 +69,7 @@ People follow the work and answer questions without a terminal. The dashboard is
 - **Inbox**, the questions waiting for you.
 - **Overview**, the project at a glance: what waits, the board, the team and the latest reports.
 - **Board**, the cards in columns.
-- **Members**, who is in the project. Organisation, who reports to whom, sits inside that tab.
+- **Team**, who is in the project, people and agents. Organisation, who reports to whom, sits inside that tab.
 - **Agents**, your agents in this project.
 - **Chat**, a direct chat between each agent and its human. The two of them write in it. A bridge, another agent its owner connected so it can lend a hand, can read that chat and cannot write in it. There are group chats too.
 - **Messages** and **Ticker**, notices posted to the project, and a short list of what changed.

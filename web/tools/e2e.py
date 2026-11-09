@@ -877,7 +877,7 @@ def scenario(run: Run, page: Page) -> None:
     )
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
     agents = page.locator("main .members-agents")
     expect(agents).to_contain_text("@e2e-agent")
@@ -1133,7 +1133,7 @@ def scenario(run: Run, page: Page) -> None:
             ("inbox", "Inbox"),
             ("board", "Board"),
             ("overview", "Overview"),
-            ("members", "Members"),
+            ("members", "Team"),
             ("agents", "Agents"),
         )
         # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
@@ -1845,7 +1845,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     # The pause is in the agent's row on Members (tsk-7v2snhk002ak), once.
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     agents = page.locator("main .members-agents")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     form = agents.locator("form.member-pause")
@@ -1956,7 +1956,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
     run.shot(page, "review-absence")
     run.a11y(page, "header in review with absence")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/organisation$"))
     expect(page.locator("main .org-tree")).to_be_visible()
@@ -4618,7 +4618,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     )
     agents_fleet_step(run, page, agent_id)
     join_reports_to_step(run, page, agent_id)
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
     expect(over).to_have_text(f"Takes over from @e2e-agent; the hand-over is in {card_id}.")
     expect(over.get_by_role("link", name=card_id)).to_have_attribute(
@@ -5981,7 +5981,7 @@ def members_step(run: Run, page: Page) -> None:
     """Members (docs/api.md §6.2): humans and agents; the owner changes an agent's role and back."""
     run.step("members: the owner and the agent in two tables; an agent's role changed and back")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
     # Two tables, humans first; the levels by trust are the Organisation tree's (the maintainer, 2026-11-01).
     table = page.locator("table.members")
@@ -6020,7 +6020,7 @@ def members_step(run: Run, page: Page) -> None:
     expect(head.locator(".member-pill", has_text="agent of")).to_have_count(1)
     expect(page.locator("nav.member-tabs a")).to_have_count(4)
     head.get_by_role("button", name="Actions for E2E Agent").click()
-    expect(head.get_by_role("menuitem", name="Manage on Members")).to_be_visible()
+    expect(head.get_by_role("menuitem", name="Manage on Team")).to_be_visible()
     page.keyboard.press("Escape")
     run.a11y(page, "member page")
     page.locator("nav.member-tabs").get_by_role("link", name="Sessions & credentials").click()
@@ -6060,7 +6060,7 @@ def members_step(run: Run, page: Page) -> None:
     run.shot(page, "organisation-paths")
     page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
     expect(page.locator("main .org-tree")).to_be_visible()
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.
     table.get_by_role("button", name="Manage Owner").click()
     owner_manage = page.locator("tr.member-manage")

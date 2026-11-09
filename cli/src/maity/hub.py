@@ -54,11 +54,12 @@ ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")  # fullmatch only: `$` would ta
 
 def error_code(exc: HubError) -> str | None:
     """What a machine line says for a refusal: the hub's code and, for `forbidden`, its
-    `details.reason`; `network` when the hub was not reached; None when neither holds."""
+    `details.reason`; `network` when the hub was not reached; None when neither holds. A
+    `code` that is no string (a proxy's `{"error": {"code": 409}}`) holds no code either."""
     if exc.code is None:
         unreached = exc.status is None and str(exc).startswith("cannot reach ")
         return "network" if unreached else None
-    if not ERROR_CODE.fullmatch(exc.code):
+    if not isinstance(exc.code, str) or not ERROR_CODE.fullmatch(exc.code):
         return None
     reason = exc.details.get("reason")
     if exc.code == "forbidden" and isinstance(reason, str) and ERROR_CODE.fullmatch(reason):
@@ -247,7 +248,8 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
     details: dict[str, Any] = {}
     try:
         envelope = json.loads(exc.read() or b"{}")
-        error = envelope.get("error", {}) if isinstance(envelope, dict) else {}
+        error = envelope.get("error") if isinstance(envelope, dict) else None
+        error = error if isinstance(error, dict) else {}  # a proxy's `"error": "text"` too
         code = error.get("code", code)
         message = error.get("message", message)
         details = error.get("details") or {}
@@ -262,7 +264,10 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
         value = details.get(key)  # a code, never a value echoed back (`_field_reasons`)
         if isinstance(value, str) and _TOKEN.match(value):
             text += f"\n  {label}: {value}"
-    err = HubError(text, code=code, status=exc.code)
+    # The one place a hub answer becomes a HubError: a `code` that is no string (a proxy's
+    # `409`, `[]`, `{}`) is shown in the text but kept as no code, so every reader of
+    # `HubError.code` (comparisons, dict lookups, `fullmatch`) gets a string or None.
+    err = HubError(text, code=code if isinstance(code, str) else None, status=exc.code)
     err.details = details
     retry_after = exc.headers.get("Retry-After") if exc.headers else None
     if retry_after and retry_after.strip().isdigit():
