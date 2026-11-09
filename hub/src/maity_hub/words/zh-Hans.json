@@ -83,6 +83,8 @@
   "notify.mail_disabled": "发往 {address} 的邮件在失败 3 次后已停用",
   "notify.mentioned": "{who} 在 {chat} 中提到了你",
   "notify.moderated": "审核管理：{action} — {type}",
+  "notify.restricted_set": "受限访问组已更改",
+  "notify.restricted_text": "受限文本已更改",
   "notify.agents_away": "你的智能体实例中有 {n} 个不在线",
   "notify.not_listening": "你的智能体实例中有 {n} 个未在监听",
   "notify.reported": "举报：{reason} — {type}",
