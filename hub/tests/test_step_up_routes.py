@@ -46,6 +46,10 @@ def _aliases(tree: ast.Module, module: str) -> dict[str, str]:
 
 
 def _callee(call: ast.Call, module: str, aliases: dict[str, str]) -> Key | None:
+    """The function a call names: `f`, `f` imported from a module under any name, or a chain of
+    attributes from an imported name, `second_factor.require_step_up` as well as
+    `maity_hub.auth.second_factor.require_step_up`. A function reached otherwise (assigned to
+    another name, taken by `getattr`, called on an object) is not followed."""
     fn = call.func
     if isinstance(fn, ast.Name):
         target = aliases.get(fn.id)
@@ -53,12 +57,18 @@ def _callee(call: ast.Call, module: str, aliases: dict[str, str]) -> Key | None:
             mod, name = target.rsplit(".", 1)
             return (mod, name)
         return (module, fn.id)
-    if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name) and fn.value.id in aliases:
-        return (aliases[fn.value.id], fn.attr)
+    chain: list[str] = []
+    node: ast.expr = fn
+    while isinstance(node, ast.Attribute):
+        chain.insert(0, node.attr)
+        node = node.value
+    if isinstance(node, ast.Name) and node.id in aliases and chain:
+        return (".".join([aliases[node.id], *chain[:-1]]), chain[-1])
     return None
 
 
-# The gate itself. Every call is resolved to it by its import, whatever name it is called by.
+# The gate itself. A call is resolved to it through the module's imports (see `_callee` for the
+# forms that are followed), whatever name or module path it is called by.
 GATE: Key = ("maity_hub.auth.second_factor", "require_step_up")
 
 
@@ -160,6 +170,8 @@ from fastapi import APIRouter
 from maity_hub.auth import second_factor
 from maity_hub.auth.second_factor import require_step_up as require_factor
 from maity_hub import account_deletion
+import maity_hub.auth.second_factor
+import maity_hub.auth.second_factor as gate
 
 router = APIRouter(prefix="/probe")
 
@@ -188,6 +200,16 @@ def through_module(conn, hub, caller):
     account_deletion.request(conn, hub, caller, "x")
 
 
+@router.post("/dotted")
+def dotted(conn, hub, caller):
+    maity_hub.auth.second_factor.require_step_up(conn, hub, caller)
+
+
+@router.post("/module-alias")
+def module_alias(conn, hub, caller):
+    gate.require_step_up(conn, hub, caller)
+
+
 @router.get("/plain")
 def plain(conn):
     return None
@@ -195,7 +217,8 @@ def plain(conn):
 
 
 def test_the_gate_is_found_by_any_name_it_is_imported_as() -> None:
-    """Review of #1547: an alias (`import require_step_up as require_factor`) is the same gate."""
+    """Review of #1547: an alias (`import require_step_up as require_factor`), a module imported
+    under another name, and the module's full dotted path are the same gate."""
     found = {
         r
         for r in hub_step_up_routes({"maity_hub.routes.probe": PROBE})
@@ -206,4 +229,6 @@ def test_the_gate_is_found_by_any_name_it_is_imported_as() -> None:
         "GET /probe/attribute",
         "POST /probe/helper",
         "POST /probe/module",
+        "POST /probe/dotted",
+        "POST /probe/module-alias",
     }

@@ -1447,18 +1447,41 @@ def argument_index(code, at):
     return index
 
 
-FUNCTION_START = re.compile(r"\s*(?:async\b\s*)?(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
+FUNCTION_START = re.compile(r"\s*(?:async\b\s*)?(?:(?P<fn>function\b)|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
+
+
+def function_body(code, begin, end):
+    """The span of the body of the function expression that is the whole of code[begin:end], or
+    None where the argument is something else: a function called or bound right there
+    (`function () {…}()`, `….bind(…)`) runs or is worked out before it is handed on."""
+    m = FUNCTION_START.match(code, begin)
+    if not m:
+        return None
+    p = m.end()
+    if m.group("fn"):
+        paren = code.find("(", p, end)
+        if paren < 0:
+            return None
+        p = call_end(code, paren + 1) + 1
+    while p < end and code[p].isspace():
+        p += 1
+    if p < end and code[p] == "{":
+        close = call_end(code, p + 1)
+        return (p + 1, close) if code[close + 1:end].strip() == "" else None
+    # An arrow's expression body reaches to the end of the argument; a function has a block.
+    return None if m.group("fn") else (p, end)
 
 
 def asks_first(code, at):
     """Whether the call at position at goes through M.stepUp.run: inside the function given as its
-    first argument, or in an arrow that is handed to it by name, as a `call:` property, or through
+    first argument (that function expression alone, see function_body), or in an arrow that is handed to it by name, as a `call:` property, or through
     a local function that hands that parameter on as its first argument (security.js's act). A call
     made while M.stepUp.run's arguments are worked out, or in another argument, does not ask: it
     is sent before anything is asked (review of #1547)."""
     for s in re.finditer(r"\bM\.stepUp\.run\(", code):
         begin, end = first_argument(code, s.end())
-        if begin <= at < end and FUNCTION_START.match(code, begin):
+        body = function_body(code, begin, end)
+        if body and body[0] <= at < body[1]:
             return True
     m = re.search(r"(\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\(?\s*$", code[:at])
     if not m:

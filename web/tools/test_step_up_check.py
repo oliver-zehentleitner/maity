@@ -82,6 +82,15 @@ pattern, asks = first_call(
 )
 expect(not asks, "an arrow in the place of a parameter that is not handed on does not ask")
 
+pattern, asks = first_call('await M.stepUp.run(function () { return M.api.post("/auth/password", b); }(), slot);')
+expect(not asks, "a function called where it is written, as the first argument, does not ask: it runs first")
+
+pattern, asks = first_call('await M.stepUp.run(async function () { return go(); }.bind(M.api.post("/auth/password", b)), slot);')
+expect(not asks, "a call in what binds the first argument's function does not ask: it is sent first")
+
+pattern, asks = first_call('await M.stepUp.run(async () => { await M.api.post("/auth/password", b); }, slot);')
+expect(asks, "inside an arrow's block given as the first argument it asks")
+
 src = 'const MAIL = "/admin/settings/mail";\nM.api.patch(MAIL, body);'
 pattern, asks = first_call(src)
 expect(reaches(pattern, "/admin/settings/mail"), "a path held in a const is read")
