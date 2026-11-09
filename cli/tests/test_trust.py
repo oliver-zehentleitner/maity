@@ -105,6 +105,19 @@ def test_config_file_is_the_one_claude_code_reads(
     assert trust.config_file(home) == home / chosen
 
 
+def test_an_empty_read_only_legacy_file_is_not_the_one_claude_code_reads(tmp_path: Path) -> None:
+    """2.1.319 takes the legacy file when `size > 0 || (mode & 0o222) != 0`: an empty file
+    without a write bit is passed over, and Claude Code creates `~/.claude.json` (#1560 R2)."""
+    home = tmp_path / "h"
+    (home / ".claude").mkdir(parents=True)
+    legacy = home / ".claude" / ".config.json"
+    legacy.write_text("")
+    legacy.chmod(0o444)
+    assert trust.config_file(home) == home / ".claude.json"
+    trust.record(home, _clone(tmp_path))
+    assert legacy.read_text() == "" and (home / ".claude.json").exists()
+
+
 def test_config_file_ignores_claude_config_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -304,7 +317,7 @@ def _slow_fsync(monkeypatch: pytest.MonkeyPatch, seconds: float, then: Any = Non
     monkeypatch.setattr(os, "fsync", slow)
 
 
-def test_a_slow_holder_keeps_its_lock_and_no_write_is_lost(
+def test_a_slow_holder_keeps_its_lock_and_the_other_writer_waits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The holder renews the lock's mtime while it writes, so another writer does not take
@@ -357,3 +370,23 @@ def test_a_holder_whose_lock_was_taken_over_writes_nothing(
     assert [p.name for p in home.iterdir() if p.name.startswith(".claude.json.")] == [
         ".claude.json.lock"
     ]  # no temporary file left
+
+
+@pytest.mark.parametrize("step", ["fsync", "utime"])
+def test_a_failing_write_is_a_trust_error_with_its_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """Every failure is a TrustError naming the cause (#1560 R2: a PermissionError from the
+    fsync, or from the first renewal of the lock, came out as itself); the file and the lock
+    are left as they were."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    path = _config(home, {"projects": {}})
+
+    def refused(*args: Any, **kwargs: Any) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(os, step, refused)
+    with pytest.raises(trust.TrustError, match="Permission denied"):
+        trust.record(home, clone)
+    assert json.loads(path.read_text()) == {"projects": {}}
+    assert sorted(p.name for p in home.iterdir()) == [".claude.json"]  # no lock, no temp

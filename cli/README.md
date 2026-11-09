@@ -989,7 +989,9 @@ project's own harness configuration is never loaded:
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
   configuration. Before an `interactive` start the runner marks the
   clone as trusted in the agents' Claude Code configuration
-  (`hasTrustDialogAccepted` for the clone's path, nothing else), so the
+  (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
+  Code's own saves take; see `cli/context/runner.md` for the one case in
+  which a concurrent write can be lost), so the
   first start in a fresh clone does not wait at the folder-trust
   question; a start whose entry cannot be written fails with the cause in
   the log. Where bubblewrap and socat are on the agents' `PATH`,
