@@ -110,5 +110,85 @@ expect(pattern is None, "a path nothing of which can be read is left alone")
 pattern, asks = first_call('M.api.get(ctx.base + "/members");')
 expect(not reaches(pattern, "/projects/{owner}/{slug}"), "another route under the project is not the project's own")
 
+# A wrapper is tied to the binding it is given, not to its name anywhere in the file (xyfr at #1547).
+pattern, asks = first_call(
+    'function a(){ const call = () => M.api.post("/runners/enrollments", b); return call(); }\n'
+    'function b(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); }'
+)
+expect(not asks, "another binding of the same name handed to M.stepUp.run elsewhere does not make this one ask")
+
+pattern, asks = first_call(
+    'function b(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); }\n'
+    'function a(){ const call = () => M.api.post("/runners/enrollments", b); return M.stepUp.run(call, slot); }'
+)
+expect(asks, "the binding handed to M.stepUp.run in its own function asks, whatever another function names its own")
+
+pattern, asks = first_call(
+    'function a(){ const call = () => M.api.post("/runners/enrollments", b);\n'
+    '  function c(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); } return call(); }'
+)
+expect(not asks, "a binding of the same name in a function inside does not make the outer one ask")
+
+pattern, asks = first_call(
+    'const call = () => M.api.post("/runners/enrollments", b);\n'
+    'async function go(){ await M.stepUp.run(call, slot); }'
+)
+expect(asks, "a binding handed on from a function inside its scope asks")
+
+pattern, asks = first_call(
+    'const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nawait M.stepUp.run(steps[i].call, slot);\nawait steps[0].call();'
+)
+expect(not asks, "a call: property also called outside M.stepUp.run does not ask")
+
+pattern, asks = first_call(
+    'const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nconst { call } = steps[0];\nawait M.stepUp.run(steps[i].call, slot);'
+)
+expect(not asks, "a call: property that is destructured does not ask")
+
+pattern, asks = first_call(
+    'const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nawait M.stepUp.run(other.items[k].call, slot);'
+)
+expect(asks, "a call: property read only into M.stepUp.run asks, through any path")
+
+pattern, asks = first_call('const go = () => M.api.post(M.api.projectPath(slug) + "/requests/" + id + "/answer", b);')
+expect(reaches(pattern, "/projects/{owner}/{slug}/requests/{id}/answer") and reaches(pattern, "/requests/{id}/answer") and not asks,
+       "a part that cannot be read may stand for several segments: a project path before a personal route's tail")
+
+
+def scan(name, src):
+    """check_step_up's findings for one file js/<name> beside the real list and fixture."""
+    import json
+    import os
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(root, "js"))
+        shutil.copy(os.path.join(check.ROOT, "js", "api.js"), os.path.join(root, "js", "api.js"))
+        with open(os.path.join(root, "js", name), "w") as f:
+            f.write('"use strict";\n' + src + "\n")
+        saved = check.ROOT, list(check.findings)
+        check.ROOT = root
+        del check.findings[:]
+        try:
+            check.check_step_up()
+            return [x for x in check.findings if name in x]
+        finally:
+            check.ROOT = saved[0]
+            check.findings[:] = saved[1]
+    finally:
+        shutil.rmtree(root)
+
+
+got = scan("collision.js", 'function a(){ const call = () => M.api.post("/runners/enrollments", b); return call(); }\n'
+           'function b(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); }')
+expect(len(got) == 1 and "POST /runners/enrollments" in got[0], "make check: xyfr's two bindings named call, the unwrapped one is a finding " + repr(got))
+
+got = scan("hidden.js", 'const patch = { address: "a@b.c" };\nM.api.patch("/me/notification-settings", { email: patch });')
+expect(len(got) == 1 and "/me/notification-settings" in got[0], "make check: the address behind a variable in the body is a finding " + repr(got))
+
+got = scan("plain.js", 'M.api.patch("/me/notification-settings", { email: { muted: true } });')
+expect(got == [], "make check: a notification-settings write without the address is none " + repr(got))
+
 print("%d failure(s)" % failures)
 sys.exit(1 if failures else 0)

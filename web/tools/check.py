@@ -1395,10 +1395,21 @@ def initializer(src, code, name, before):
     return src[last.end():end].strip()
 
 
+def body_text(src, code, body, at, depth=0):
+    """A call's body as written, with the `const` of every name in it put beside it, names in those
+    too, three deep: a key behind a variable (`{ email: patch }`) is read (xyfr at #1547)."""
+    if depth >= 3:
+        return body
+    names = set(re.findall(r"(?<![\w$.])[A-Za-z_$][\w$]*", body))
+    more = [initializer(src, code, name, at) for name in sorted(names)]
+    return body + " " + " ".join(body_text(src, code, x, at, depth + 1) for x in more if x)
+
+
 def path_pattern(src, code, expr, at, depth=0):
     """A regular expression for the paths a call's first argument builds, or None where no part of it
     can be read here: string literals, `ctx.base`, a name's own `const`, a helper arrow's body, both
-    sides of a `?:` or `||`. What cannot be read stands for one path segment or part of one."""
+    sides of a `?:` or `||`. What cannot be read stands for any run of characters, slashes too: a
+    helper such as M.api.projectPath gives several segments (xyfr at #1547)."""
     expr = expr.strip()
     if expr.startswith("(") and expr.endswith(")") and call_end(expr, 1) == len(expr) - 1:
         expr = expr[1:-1]
@@ -1422,9 +1433,9 @@ def path_pattern(src, code, expr, at, depth=0):
             sub = "(?:" + "|".join(alts) + ")" if all(a is not None for a in alts) else None
         elif depth < 3 and "||" in part:
             alts = [path_pattern(src, code, x, at, depth + 1) for x in part.split("||")]
-            sub = "(?:" + "|".join(a if a is not None else "[^/]*" for a in alts) + ")" if any(alts) else None
+            sub = "(?:" + "|".join(a if a is not None else ".*" for a in alts) + ")" if any(alts) else None
         if sub is None:
-            out += "[^/]*"
+            out += ".*"
         else:
             out += sub
             known = True
@@ -1472,6 +1483,39 @@ def function_body(code, begin, end):
     return None if m.group("fn") else (p, end)
 
 
+def brace_blocks(code):
+    """Every {…} in code (strings and comments stripped) as (open, close) index pairs."""
+    pairs, stack = [], []
+    for i, c in enumerate(code):
+        if c == "{":
+            stack.append(i)
+        elif c == "}" and stack:
+            pairs.append((stack.pop(), i))
+    return pairs
+
+
+def innermost_block(blocks, at):
+    """The {…} closest around position at, or None at the top of the file."""
+    around = [b for b in blocks if b[0] < at < b[1]]
+    return max(around) if around else None
+
+
+def declaration_of(code, blocks, name, at):
+    """Where the `const` or `let` binding of name that is seen at position at is declared (the
+    index of the name), walking out from the block around at; None where none is."""
+    found = [(d.start(1), innermost_block(blocks, d.start(1)))
+             for d in re.finditer(r"\b(?:const|let)\s+(" + re.escape(name) + r")\s*=", code)]
+    block = innermost_block(blocks, at)
+    while True:
+        here = [pos for pos, b in found if b == block]
+        if here:
+            before = [pos for pos in here if pos < at]
+            return max(before) if before else min(here)
+        if block is None:
+            return None
+        block = innermost_block(blocks, block[0])
+
+
 def asks_first(code, at):
     """Whether the call at position at goes through M.stepUp.run: inside the function given as its
     first argument (that function expression alone, see function_body), or in an arrow that is handed to it by name, as a `call:` property, or through
@@ -1488,11 +1532,23 @@ def asks_first(code, at):
         return False
     head = code[:m.start()]
     named = re.search(r"\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*$", head)
-    if named and re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(named.group(1)) + r"\s*,", code):
-        return True
+    if named:
+        # The name M.stepUp.run is given must be this binding: the nearest declaration of that
+        # name in the blocks around the run, not another one of the same name (xyfr at #1547).
+        name = named.group(1)
+        blocks = brace_blocks(code)
+        return any(declaration_of(code, blocks, name, r.start()) == named.start(1)
+                   for r in re.finditer(r"\bM\.stepUp\.run\(\s*" + re.escape(name) + r"\s*,", code))
     prop = re.search(r"\b([A-Za-z_$][\w$]*)\s*:\s*$", head)
-    if prop and re.search(r"\bM\.stepUp\.run\([^,()]*\." + re.escape(prop.group(1)) + r"\s*,", code):
-        return True
+    if prop:
+        # A property is not bound to a name: it asks only when every read of it in the file goes
+        # straight into M.stepUp.run as the first argument, and none is destructured (xyfr at #1547).
+        key = re.escape(prop.group(1))
+        reads = [r.start() for r in re.finditer(r"\.\s*" + key + r"\b", code)]
+        handed = {r.end() - len(prop.group(1)) - 1 for r in re.finditer(
+            r"\bM\.stepUp\.run\(\s*[A-Za-z_$][\w$]*(?:\[[^\[\]]*\]|\.[A-Za-z_$][\w$]*)*\." + key + r"(?=\s*,)", code)}
+        unpacked = re.search(r"\{[^{}]*\b" + key + r"\b[^{}]*\}\s*=(?!=|>)", code)
+        return bool(reads) and all(at_ in handed for at_ in reads) and not unpacked
     fn = callee_of(code, m.start())
     if fn:
         d = re.search(r"(?:function\s+" + re.escape(fn) + r"\s*\(([^)]*)\)|\b(?:const|let)\s+" + re.escape(fn)
@@ -1539,9 +1595,7 @@ def check_step_up():
             if not hits:
                 continue
             if len(hits) == 1 and hits[0][1]:
-                body = src[end + 1:call_end(code, m.end())]
-                if re.fullmatch(r"\s*[A-Za-z_$][\w$]*\s*", body):
-                    body = initializer(src, code, body.strip(), m.start()) or ""
+                body = body_text(src, code, src[end + 1:call_end(code, m.end())], m.start())
                 if not re.search(r"\b" + re.escape(hits[0][1]) + r"\b", body):
                     continue
             if not asks_first(code, m.start()):
