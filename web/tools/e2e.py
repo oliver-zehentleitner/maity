@@ -780,6 +780,7 @@ def main() -> int:
                     join_reports_layout(run, browser)
                     profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
+                    chat_phone_views(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
@@ -1002,7 +1003,10 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "answer")
 
     run.step("a second project, the same agent joins it and asks")
-    page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
+    # A new project is in the "+" menu; the row of tabs has none (tsk-hp9gq9rmrdq2).
+    expect(page.locator("nav.switcher a[href='/new']")).to_have_count(0)
+    page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+    page.get_by_role("menuitem", name="Project", exact=True).click()
     create_project(run, page, "E2E Beta", "e2e-beta")
     url, code = join_line(run, page, "e2e-beta", None)
     beta = run.clone("clone-beta")
@@ -1157,7 +1161,8 @@ def scenario(run: Run, page: Page) -> None:
             run.shot(page, f"phone-{view}{suffix}")
             run.problems = [p for p in run.problems if not ("/keep-the-why" in p and "answered 409" in p)]
         # The create form: its preset select has long option labels.
-        page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
+        page.locator("header").get_by_role("button", name="Add a project, an agent or a person", exact=True).click()
+        page.get_by_role("menuitem", name="Project", exact=True).click()
         expect(page.locator("main section.view-new")).to_be_visible()
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"/new is {width[0]} px wide at {width[1]} px"
@@ -1291,6 +1296,23 @@ def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
         got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
         answer = got.get("answer") or {}
         assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+
+        # The inbox reads its open requests first (tsk-y8gkq1kvt63c): the answered consent is
+        # read alone by its link and opened among the answered, and Show -> all lists it, read then.
+        lists: list[str] = []
+        page.on("request", lambda r: lists.append(r.url.split("?", 1)[1]) if "/projects/owner/e2e-alpha/requests?" in r.url else None)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_have_attribute("data-request", request_id)
+        expect(current).to_have_class(re.compile(r"\bdone\b"))
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        page.locator("#inbox-show").select_option("open")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+        page.locator("#inbox-show").select_option("all")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        page.locator("#inbox-show").select_option("open")
+        assert lists and all(q.startswith("status=open") or q.startswith("status=answered%2Cwithdrawn") or q.startswith("status=answered,withdrawn") for q in lists), lists
+        assert not any(q.startswith("status=all") for q in lists), f"the inbox read the whole history: {lists}"
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})
         page.emulate_media(color_scheme="light")
@@ -2927,6 +2949,99 @@ def chat_height_views(run: Run, browser) -> None:
             context.close()
 
 
+def chat_phone_views(run: Run, browser) -> None:
+    """The owner's request for phones (tsk-fnch2yxp2kk1), in fixture mode, in a group chat at
+    1280 x 800, 390 x 844 and 360 x 780, light and dark. At phone width the product line is only
+    "Maity 2026" on one row (§16.13), the "In it:" line is not shown, and the composer's label is
+    out of sight but still names the field. In every size the full screen covers the window with the
+    chat, nothing scrolls sideways, and the button, Escape and the browser's back end it, back
+    without drawing the chat again."""
+    run.step("fixtures: a chat on a phone, the product line, the hint lines and the full screen")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 800), (390, 844), (360, 780)):
+        phone = width <= 600
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            page = context.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            where = f"cnv-0007 at {width}x{height}, {scheme}"
+            try:
+                page.goto(f"{index}?lang=en#/maintainer/maity/chat/cnv-0007")
+                pane = page.locator(".chat-layout.open .chat-pane.group-chat")
+                pane.locator(".compose").wait_for()
+                page.wait_for_timeout(500)
+                parts = page.evaluate(
+                    "() => Array.from(document.querySelectorAll('#product-line > *')).filter((el) => el.getClientRects().length)"
+                    ".map((el) => el.textContent.trim())"
+                )
+                line = page.locator("#product-line").bounding_box()
+                if phone:
+                    assert len(parts) == 1 and parts[0].startswith("Maity ") and line and line["height"] < 48, f"{where}: {parts} {line}"
+                else:
+                    assert len(parts) == 7, f"{where}: the product line shows {parts}"
+                people = pane.locator(".group-people-line")
+                assert people.count() == 1 and people.is_visible() is not phone, f"{where}: In it: shown {people.is_visible()}"
+                label = pane.locator(".compose-head label[for='chat-text']")
+                box = label.bounding_box()
+                assert (box is not None and box["width"] <= 1) if phone else label.is_visible(), f"{where}: the label {box}"
+                expect(page.get_by_role("textbox", name=re.compile(r"^Message \("))).to_have_count(1)
+                # The full screen: the button, Escape, the button again, then the browser's back.
+                page.evaluate("() => { window.__drawn = document.querySelector('.chat-pane.group-chat'); }")
+                toggle = pane.get_by_role("button", name="Read in full screen", exact=True)
+                toggle.click()
+                expect(pane.get_by_role("button", name="Leave full screen", exact=True)).to_have_attribute("aria-pressed", "true")
+                full = page.evaluate(
+                    "() => { const r = document.querySelector('.chat-pane.group-chat').getBoundingClientRect();"
+                    " return [r.left, r.top, r.width, r.height, window.innerWidth, window.innerHeight,"
+                    " document.documentElement.scrollWidth, document.querySelector('.chat-pane .compose').getBoundingClientRect().bottom]; }"
+                )
+                assert abs(full[0]) <= 0.5 and abs(full[1]) <= 0.5 and abs(full[2] - full[4]) <= 1 and abs(full[3] - full[5]) <= 1, f"{where}: full screen {full}"
+                assert full[6] <= full[4] and full[7] <= full[5] + 0.5, f"{where}: sideways or the composer below the window {full}"
+                if width == 390:
+                    run.shot(page, f"chat-full-{scheme}")
+                    run.a11y(page, f"chat full screen, {scheme} system theme")
+                    page.set_viewport_size({"width": width, "height": height})  # a11y ends at 1280x900
+                page.keyboard.press("Escape")
+                expect(pane.get_by_role("button", name="Read in full screen", exact=True)).to_have_attribute("aria-pressed", "false")
+                expect(page.locator("html.chat-full")).to_have_count(0)
+                toggle.click()
+                expect(page.locator("html.chat-full")).to_have_count(1)
+                page.go_back()
+                expect(page.locator("html.chat-full")).to_have_count(0)
+                same = page.evaluate("() => window.__drawn === document.querySelector('.chat-pane.group-chat') && window.__drawn.isConnected")
+                assert same, f"{where}: back drew the chat again"
+                # While full, Tab never reaches the covered page (fmzu at #1525): the rest is inert.
+                toggle.click()
+                expect(page.locator("html.chat-full")).to_have_count(1)
+                outside = []
+                for _ in range(40):
+                    page.keyboard.press("Tab")
+                    at = page.evaluate("() => { const el = document.activeElement; const pane = document.querySelector('.chat-pane.group-chat');"
+                                       " return !el || el === document.body || pane.contains(el) ? '' : el.tagName + '.' + el.className; }")
+                    if at:
+                        outside.append(at)
+                assert not outside, f"{where}: Tab left the full-screen chat for {outside[:3]}"
+                page.keyboard.press("Escape")
+                expect(page.locator("html.chat-full")).to_have_count(0)
+                # Leaving by a link while full (Back to the list on a phone) takes the layer's entry: one Back
+                # returns to the chat, not to a second stop at it (fmzu, e5kk at #1525).
+                if width <= 720:
+                    toggle.click()
+                    expect(page.locator("html.chat-full")).to_have_count(1)
+                    stops = page.evaluate("() => history.length")
+                    pane.locator("a.chat-back").click()
+                    expect(page).to_have_url(re.compile(r"#/maintainer/maity/chat$"))
+                    expect(page.locator("html.chat-full")).to_have_count(0)
+                    assert page.evaluate("() => history.length") == stops, f"{where}: leaving by a link left the layer's entry behind"
+                    page.go_back()
+                    expect(page).to_have_url(re.compile(r"#/maintainer/maity/chat/cnv-0007$"))
+                    expect(page.locator("html.chat-full")).to_have_count(0)
+                assert not errors, f"{where}: {errors}"
+            finally:
+                context.close()
+
+
 # Every element in the lines of `selector` (the Current sessions box, the bell's pinned block):
 # inside its line and the window, no two parts of a line over each other, and every link and
 # button a 24 px target, or one whose 24 px circle meets no other target (WCAG 2.5.8); a badge
@@ -3723,7 +3838,8 @@ def request_action_step(run: Run, page: Page) -> None:
             "used_seq": None,
         },
     }
-    pattern = re.compile(r"/api/v1/projects/owner/e2e-alpha/requests\?status=all")
+    # The inbox reads the open requests alone (tsk-y8gkq1kvt63c); this one is open.
+    pattern = re.compile(r"/api/v1/projects/owner/e2e-alpha/requests\?status=open")
 
     def answer(route) -> None:
         route.fulfill(json={"items": [entry], "next_cursor": None})
@@ -4546,6 +4662,17 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     ], view["pull_requests_typed"]
     run.shot(page, "release-edited")
     run.a11y(page, "board, release edited")
+    # The same release in the card panel, whose ground is --surface-2: its warning text
+    # (an unmet dependency, "Not ready") must read there too (tsk-sg1tdmwdy09z).
+    page.goto(f"{run.base}/owner/e2e-alpha/tasks/{rel['id']}")
+    panel = page.locator(".card-panel")
+    expect(panel.locator(".readiness.not-ready")).to_be_visible()
+    expect(panel.locator(".deps li.unmet").first).to_be_visible()
+    run.shot(page, "release-in-panel")
+    run.a11y(page, "card panel, a release not ready")
+    page.keyboard.press("Escape")
+    expect(page.locator(".card-panel")).to_have_count(0)
+    expect(card).to_be_visible()
     # One open editor at phone width: it stays inside the screen.
     page.set_viewport_size({"width": 390, "height": 844})
     card.get_by_role("button", name="Typed pull requests", exact=True).click()
@@ -5678,10 +5805,28 @@ def project_tabs_step(run: Run, page: Page) -> None:
     box = first.bounding_box()
     assert box is not None
     alpha.dispatch_event("dragstart", {"dataTransfer": dt})
+    # While dragging, a line shows the place by the drop's own half (tsk-hp9gq9rmrdq2): after on the second half,
+    # before on the first; one tab marked at a time.
+    first.dispatch_event("dragover", {"dataTransfer": dt, "clientX": box["x"] + box["width"] - 2})
+    expect(first).to_have_class(re.compile(r"\bdrop-after\b"))
     first.dispatch_event("dragover", {"dataTransfer": dt, "clientX": box["x"] + 2})
+    expect(first).to_have_class(re.compile(r"\bdrop-before\b"))
+    expect(first).not_to_have_class(re.compile(r"\bdrop-after\b"))
+    expect(page.locator("nav.switcher a.drop-before, nav.switcher a.drop-after")).to_have_count(1)
+    # The line itself: an upright bar in the gap before the tab, drawn and inside the row's visible box.
+    line = first.evaluate("(el) => { const s = getComputedStyle(el, '::before'); const r = el.getBoundingClientRect();"
+                          " const n = el.parentNode.getBoundingClientRect();"
+                          " return [s.content, s.width, parseFloat(s.left), r.left, n.left, s.backgroundColor]; }")
+    assert line[0] == '""' and line[1] == "3px" and line[2] < 0 and line[3] + line[2] >= line[4], f"the drop line is not drawn in the gap: {line}"
+    run.shot(page, "tabs-drop-line")
     first.dispatch_event("drop", {"dataTransfer": dt, "clientX": box["x"] + 2})
     page.locator("nav.switcher a[data-project]", has_text="E2E Alpha").dispatch_event("dragend", {"dataTransfer": dt})
     expect(tabs.first).to_contain_text("E2E Alpha")
+    expect(page.locator("nav.switcher a.drop-before, nav.switcher a.drop-after")).to_have_count(0)
+    # The tabs menu stands right after the last tab, not at the row's far end.
+    gap = page.evaluate("(() => { const t = Array.from(document.querySelectorAll('nav.switcher a')).pop().getBoundingClientRect();"
+                        " const m = document.querySelector('.tabs-menu-box').getBoundingClientRect(); return [m.left - t.right, Math.abs(m.top - t.top) < t.height]; })()")
+    assert 0 <= gap[0] <= 24 and gap[1], f"the tabs menu is not right after the tabs: {gap}"
     # The tabs menu: one switch per project; switching one off closes its tab, the menu stays.
     menu = page.locator(".tabs-menu-box")
     menu.get_by_role("button", name="Project tabs", exact=True).click()

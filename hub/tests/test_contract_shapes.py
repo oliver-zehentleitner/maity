@@ -31,6 +31,8 @@ PAGE = ('{ "items": [ ... ], "next_cursor": "..." }', {"items", "next_cursor"})
 # of docs/api.md; each key must be named after it, before the next heading.
 SHAPES: dict[str, tuple[str, set[str]]] = {
     "/me": ("### 5.1 `GET /me`", {"member", "projects", "maintenance", "server_time"}),
+    "/me/contact-of": PAGE,
+    "/me/contacts": PAGE,
     "/projects/{}/{}": (
         "### 6.1 Project",
         {
@@ -52,9 +54,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
 
 # Keys the contract names that the hub does not send yet, each with the card that adds them.
 # The test fails on an entry the hub now sends: remove it in that card's pull request.
-KNOWN_GAPS: dict[str, set[str]] = {
-    "/projects/{}/{}/roles": {"builtin"},  # tsk-g83nf2q1j728
-}
+KNOWN_GAPS: dict[str, set[str]] = {}
 
 # GET routes under /api/v1/ that answer no contract shape, each with its reason.
 OUTSIDE = {

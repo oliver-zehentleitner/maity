@@ -2895,6 +2895,14 @@
     "en": "57c7229952991827",
     "text": "8cd253069f591010"
   },
+  "chat.full.enter": {
+    "en": "6fc660678b5da3c0",
+    "text": "4d83828ccffeb1e7"
+  },
+  "chat.full.leave": {
+    "en": "1e99656337693788",
+    "text": "3b67cbc247434537"
+  },
   "chat.group.untitled": {
     "en": "1643b07ab5409364",
     "text": "3eefadb4a5719b7b"
@@ -4874,10 +4882,6 @@
   "header.new": {
     "en": "008df04307a93de8",
     "text": "22a204aab8cb67e1"
-  },
-  "header.new_project": {
-    "en": "12b032afb3e80b4a",
-    "text": "cd24d7fffc892072"
   },
   "header.observe": {
     "en": "d07888db631e55d7",
@@ -10164,8 +10168,12 @@
     "text": "7ca84dc4f04aac65"
   },
   "menu.add.label": {
-    "en": "46a58c01cabfa80e",
-    "text": "b08c99d895dafa0f"
+    "en": "f6a991eb7a84e22b",
+    "text": "b9e3fc5fb53ca21d"
+  },
+  "menu.add.project": {
+    "en": "6c6b7df3070f112f",
+    "text": "2c925658d1f8c37f"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
@@ -17311,6 +17319,10 @@
     "en": "f042d43f915123c2",
     "text": "b409aeebdf93f266"
   },
+  "users.column.email": {
+    "en": "0b57e967ff55ce5d",
+    "text": "bb2590c2998260c6"
+  },
   "users.column.last_seen": {
     "en": "5298bd8551a3b021",
     "text": "cd03898821b3911c"
@@ -17338,6 +17350,22 @@
   "users.count_more": {
     "en": "f7c487ad12dc7397",
     "text": "40afcc7dfb568d68"
+  },
+  "users.email.copied": {
+    "en": "07e04484867c17d3",
+    "text": "94a13ba81cb4ae78"
+  },
+  "users.email.copy": {
+    "en": "4f60d1e142affa9c",
+    "text": "435f6d8be7552581"
+  },
+  "users.email.copy_failed": {
+    "en": "53e46b76a52f2a1c",
+    "text": "f75b48493dfe0687"
+  },
+  "users.email.copy_label": {
+    "en": "b588fab512939453",
+    "text": "3a6a67327055e98f"
   },
   "users.filter.active": {
     "en": "f030108f5a0822ae",
@@ -17472,8 +17500,8 @@
     "text": "db60a31715f0da57"
   },
   "users.search": {
-    "en": "646d675720642e54",
-    "text": "c74dba84617ea347"
+    "en": "8e4d7dfaac768018",
+    "text": "dd1b62855d71b988"
   },
   "users.show": {
     "en": "827e0c6ac9936b69",

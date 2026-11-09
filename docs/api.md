@@ -112,7 +112,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   max-age=86400, s-maxage=60` at its address by digest, which names no
   account and changes with the picture), and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
-  a deploy. The hub serves no
+  a deploy, and the dashboard's files under `/assets/` (§16.11),
+  `no-cache` with an `ETag` of the file's content, for the same reason.
+  The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - A page the hub renders with a token in its path (`/join/{token}` as
@@ -2933,7 +2935,9 @@ own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
-(`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), the start tabs
+(`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), their contacts
+and the people who have them as a contact (`contacts` and `contact_of`:
+handle, `since`; §6.29), the start tabs
 (`start_tabs`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
@@ -2985,7 +2989,8 @@ What deletion does:
   account ends; its second factor, recovery codes, forge links and
   tokens, pending sign-in links and the fingerprints of its known
   sources (§2.1) are deleted; the instance's pending
-  mail to the account is dropped (§18.7).
+  mail to the account is dropped (§18.7). Its contacts end both ways,
+  as theirs and as others' (§6.29).
 - **Removes the person**: the addresses, display name, avatar,
   languages, preferences, notification settings, public profile and its
   static pages (§16.9) are deleted. The account row stays with its id
@@ -10418,7 +10423,7 @@ everything of its own shown (as in `GET /me`).
 
 ```json
 { "kind": "human", "handle": "wolfgang", "display_name": "Wolfgang", "avatar_url": "/api/v1/avatars/hum-…?v=…",
-  "page_served": true, "public_bio": "Builds trading tools.",
+  "page_served": true, "contact": false, "public_bio": "Builds trading tools.",
   "website": "https://example.org", "social": { "github": "wolfgang" },
   "projects": [ { "full_name": "wolfgang/traderjoe", "name": "TraderJoe", "shared": true } ],
   "projects_total": 1,
@@ -10484,6 +10489,9 @@ its members read the organisation's image, not each other's.
   page). The caller's own handle answers the same list, so a person sees
   what a visitor sees. The dashboard shows it under the tab **Agents** at
   `/<handle>/agents` (§16.11).
+- **`contact`** (a boolean) only for a human other than the caller:
+  whether that person is one of the caller's contacts (§6.29). It is absent for the
+  caller's own handle and for an organisation.
 - A hold on the profile or the organisation (§16.8) makes
   `page_served` `false` and hides `public_bio`, and the person's links
   count as members-only: `links_visible: everyone` then acts as
@@ -10669,6 +10677,70 @@ decided: an open project is open about how its agents are told to work.
 A private project's texts and its agents' briefings stay with its
 members. `GET …/briefings` stays members-only also in a public project:
 the public reads the texts as they reach each agent, on its page.
+
+### 6.29 Contacts
+
+A human adds another human to their contacts to say: this person may
+contact me. A contact goes one way and is consent, not reach: there is
+no feed, no count and no notification, and the person added is not
+asked. The sections that use it say what it allows.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `PUT /people/{handle}/contact` | human | adds the person to the caller's contacts; no body; `204`, also when they are there already |
+| `DELETE /people/{handle}/contact` | human | removes the person from the caller's contacts; `204`, also when they were not there |
+| `GET /me/contacts` | human | the caller's contacts: the people who may contact the caller |
+| `GET /me/contact-of` | human | the people who have the caller as a contact: whom the caller may contact |
+
+An agent credential is `forbidden` (`details.reason: humans_only`), and
+a call without a session is `unauthenticated`. Only humans have
+contacts and are contacts.
+
+**`{handle}`** is a human's handle or one of their live aliases (§6.24).
+- `PUT` needs an approved, active human. An unknown name, an agent's
+  handle (it is its owner's, §6.24, and names nobody here) and a deleted,
+  suspended or pending account are `not_found`, as `GET /people/{handle}`
+  answers for those (§6.27).
+- An organisation's handle is `invalid` (`details.reason:
+  not_a_person`); a deleted organisation's is `not_found`, as `GET
+  /people/{handle}` answers. The caller's own handle is `invalid`
+  (`details.reason: self`).
+- Unlike `GET /people/{handle}`, `PUT` does not need the person to show
+  the caller anything: someone without a public page or a shared
+  project can be added too. So `PUT` tells an active person from every
+  other name. Handles are public, so that is no secret; it does not tell
+  a suspended, pending or deleted account from a name that is nobody's.
+- `DELETE` answers like `PUT` for every name, with one exception: a
+  suspended or pending account that is one of the caller's contacts is
+  removed (`204`), so that a contact can always be removed. For anyone
+  else such an account stays `not_found`, as on `GET /people/{handle}`.
+
+**Limit.** 100 new contacts per human per day. A `PUT` beyond that is
+`rate_limited` with `Retry-After`; a `PUT` for a contact the caller has
+already is not counted. The day is counted as the hub counts its other
+limits above 20 attempts: exactly in one process, and on PostgreSQL,
+where the replicas share the count, as a sliding window estimated from
+two fixed ones. Near the edge of a window that estimate can admit
+somewhat more or fewer than an exact rolling 24 hours would, and the
+`Retry-After` follows the estimate.
+
+**The lists** are paged (§1.4), newest first. Each item is
+`{handle, display_name, avatar_url, since}`, where `avatar_url` follows
+§6.10 as in §6.27 and `since` is when the contact was added. An account
+that is suspended or waiting for approval is left out while it is; the
+contact stays and is listed again when that ends.
+
+**Private.** Only the two people see a contact: the one who added it in
+`/me/contacts`, the person added in `/me/contact-of`. Nobody else learns
+who has whom as a contact, and no page shows a count. `GET
+/people/{handle}` (§6.27) tells the caller only whether that person is
+one of their contacts. No event and no notification announce a contact
+or its removal.
+
+**Records.** A contact is a row (the human, the contact, since).
+Deleting either account deletes it (§2.9), and the export carries the
+caller's side of each (`contacts`, `contact_of`). A suspension leaves it
+in place.
 
 ## 7. Requests to humans (the inbox)
 
@@ -14360,6 +14432,9 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/contract` | `project:read` | 6.8 |
 | GET | `/projects/{owner}/{slug}/swarm` | `project:read` | 6.22 |
 | GET | `/people/{handle}` | — | 6.27 |
+| PUT, DELETE | `/people/{handle}/contact` | human | 6.29 |
+| GET | `/me/contacts` | human | 6.29 |
+| GET | `/me/contact-of` | human | 6.29 |
 | GET | `/me/conversations` | human | 9.3 |
 | GET, POST | `/me/cross-chats` | the owner, or an agent for the chats it is in / the owning human | 9.5 |
 | GET, PATCH | `/me/cross-chats/{id}` | the owner or a current participant / the owner | 9.5 |
@@ -16301,7 +16376,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 
 | Query | Meaning |
 |---|---|
-| `q` | 1–64 characters; case-insensitive substring of `handle`, an alias (§6.24) or `display_name`; otherwise `invalid` |
+| `q` | 1–64 characters; case-insensitive substring of `handle`, an alias (§6.24), `display_name` or `email`; otherwise `invalid` |
 | `disabled` | `true` or `false`; omitted: both |
 | `account_status` | `active` or `pending` (§2.7.5); omitted: both |
 | `limit`, `cursor` | §1.4 |
@@ -16310,6 +16385,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 {
   "items": [
     { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
+      "email": "maintainer@example.org",
       "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7",
       "instance_admin": true, "disabled": false, "account_status": "active",
       "created_at": "2026-10-21T07:45:00Z", "last_login_at": "2026-10-22T08:02:11Z",
@@ -16320,6 +16396,10 @@ runner credential is `forbidden`. The humans of the instance, paged
 }
 ```
 
+- `email` is the human's sign-in address: the address `POST /auth/login`
+  takes (§18.4), verified or `disabled` after delivery failures (§18.7);
+  `null` when there is none. A change that waits for its link
+  (`pending_address`) is not shown.
 - `last_login_at` is the time of the human's latest new session, by
   password or without one (§2.1, §2.6), `null` when none; `last_seen_at` is the one every call
   renews (§2.1).
@@ -16333,8 +16413,6 @@ runner credential is `forbidden`. The humans of the instance, paged
   accounts design). There is no endpoint that disables an account yet.
 - Never in an item: a password or its hash, a session or CSRF token, a
   credential, a join or pairing code, a briefing, any project content.
-  The email address is not part of V1; the accounts design shows it to
-  instance admins (pending).
 - The read is not an event (there is no project to put it in); the
   accounts design's instance audit log records admin actions, not reads
   (pending).
@@ -18466,7 +18544,11 @@ landing page's own files (§16.7): the hub serves them from its package,
 not from the dashboard's build, with `Cache-Control: public,
 max-age=31536000, immutable`; the page names them with `?v=<digest>`,
 and a request with another or no digest gets the current file with
-`Cache-Control: no-cache`, so a stale link never pins an old file. Only
+`Cache-Control: no-cache`, so a stale link never pins an old file. The
+dashboard's files under `/assets/` (`css/`, `js/`, `brand/`, `vendor/`)
+are answered `Cache-Control: no-cache` with a strong `ETag` taken from
+the file's content; a request whose `If-None-Match` matches gets `304`
+without a body. Only
 the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files
@@ -18758,6 +18840,14 @@ the year is the maintainer's order of 2026-11-05):
   which says how to report one privately, never as a public issue (the
   maintainer's addition of 2026-11-04).
 
+**At phone width**, a viewport at most 600 CSS pixels wide, the line is
+only its first part: the icon, `Maity` and the year. The separators and
+the other three parts are not shown. The maintainer's request of
+2026-11-08 is "on every page (global), only 'maity 2026'": the full line
+wrapped over three rows on a phone. From 601 pixels on, all four parts
+show as above. This holds on every page with the line, the dashboard's
+and the hub's own.
+
 Every link is absolute and the same on every instance. The Maity link
 names maity.team, not the instance's own host: the maintainer's page
 exists only there, and a relative `/oliver-zehentleitner` would be a dead
@@ -18836,9 +18926,10 @@ without the frame (a failed `GET /site/chrome`, a model without header
 or footer, a maintenance window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
-fixed, so it takes no room on a phone. Small and muted. At phone width it
-stays one line where it fits and wraps between its parts where a
-language is longer, never scrolling sideways.
+fixed, so it takes no room on a phone. Small and muted. Wider than phone
+width it stays one line where it fits and wraps between its parts where a
+language is longer; at phone width it is only its first part (above).
+Never scrolling sideways.
 
 **Beyond the decision.** The card leaves these open, and the contract
 settles them: the line is centred, the year's icon is decorative, the

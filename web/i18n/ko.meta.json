@@ -2895,6 +2895,14 @@
     "en": "57c7229952991827",
     "text": "2fa494bc89dcefb7"
   },
+  "chat.full.enter": {
+    "en": "6fc660678b5da3c0",
+    "text": "aa6171206dfefc29"
+  },
+  "chat.full.leave": {
+    "en": "1e99656337693788",
+    "text": "daf6cadf3955d129"
+  },
   "chat.group.untitled": {
     "en": "1643b07ab5409364",
     "text": "7a7cc27b61decf75"
@@ -4874,10 +4882,6 @@
   "header.new": {
     "en": "008df04307a93de8",
     "text": "a1ee441b2ded41c6"
-  },
-  "header.new_project": {
-    "en": "12b032afb3e80b4a",
-    "text": "73966ead4d47273f"
   },
   "header.observe": {
     "en": "d07888db631e55d7",
@@ -10164,8 +10168,12 @@
     "text": "efd0461a0aa8254d"
   },
   "menu.add.label": {
-    "en": "46a58c01cabfa80e",
-    "text": "bdf139190cc8b5f0"
+    "en": "f6a991eb7a84e22b",
+    "text": "0e48710cb08b103c"
+  },
+  "menu.add.project": {
+    "en": "6c6b7df3070f112f",
+    "text": "767d91928a39dc24"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
@@ -17311,6 +17319,10 @@
     "en": "f042d43f915123c2",
     "text": "a50cd7e53892cb62"
   },
+  "users.column.email": {
+    "en": "0b57e967ff55ce5d",
+    "text": "7aead7fe4bd3272b"
+  },
   "users.column.last_seen": {
     "en": "5298bd8551a3b021",
     "text": "2828fc1ac7db1568"
@@ -17338,6 +17350,22 @@
   "users.count_more": {
     "en": "f7c487ad12dc7397",
     "text": "2be854ae87b8308f"
+  },
+  "users.email.copied": {
+    "en": "07e04484867c17d3",
+    "text": "7c450652d7b88dca"
+  },
+  "users.email.copy": {
+    "en": "4f60d1e142affa9c",
+    "text": "ed7606aa72f95c9b"
+  },
+  "users.email.copy_failed": {
+    "en": "53e46b76a52f2a1c",
+    "text": "58196732160c7e72"
+  },
+  "users.email.copy_label": {
+    "en": "b588fab512939453",
+    "text": "2a5092a02d21c5f3"
   },
   "users.filter.active": {
     "en": "f030108f5a0822ae",
@@ -17472,8 +17500,8 @@
     "text": "a29c2ce36b56cf1e"
   },
   "users.search": {
-    "en": "646d675720642e54",
-    "text": "0423dce6c29f851e"
+    "en": "8e4d7dfaac768018",
+    "text": "940d451b37195550"
   },
   "users.show": {
     "en": "827e0c6ac9936b69",

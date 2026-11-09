@@ -550,7 +550,9 @@ address.
 **Revisit when:** the hub serves secrets on reads, or a deployment compresses at its ingress as well
 
 A `GET` or `HEAD` under `/api/v1/` or `/assets/` of 1024 bytes and more
-is gzipped at level 6 when the request accepts it (docs/api.md §1.1).
+is gzipped at level 6 when the request accepts it (docs/api.md §1.1); the
+dashboard's own files are gzipped by `shell.AssetFiles` instead, with an
+ETag per form (c6768529).
 Writes are never compressed, nor anything under `/api/v1/auth/`, the
 join and invitation documents a token opens (`/api/v1/join/{token}`,
 `/api/v1/invitations/{token}`), an attachment's bytes, or any address
@@ -583,3 +585,96 @@ by review.
 cluster, and none for a hub run without that ingress. Compressing every
 answer: the pages and writes above. Level 9, Starlette's default: the
 same size for more CPU.
+
+## The dashboard's files are revalidated by an ETag of their content, not `no-store`
+
+**Id:** c6768529-3654-45c7-bd5e-aab3067ce04f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision req-s246xb6k1mpp (option A, 2026-11-08), the card tsk-pcw785rhymyg and its plan note nte-smnd4dr3gw6y; docs/api.md §1, §16.11
+**Revisit when:** a file under `/assets/` carries anything per user or private, or the shell names its files by digest (versioned names, below)
+
+`shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
+`js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
+`ETag`, the first 32 hex digits of the file's SHA-256, and drops
+`Last-Modified`. A matching `If-None-Match` gets `304` with the same
+headers. `no-cache` is on the middleware's `ROUTE_CACHE` (images.md
+96d70040), so it is kept; a 404 under `/assets/` and every `/api/v1/`
+answer stay `no-store`, the shell keeps its own `no-cache`, and
+`/assets/landing/` its own rule.
+
+Each encoding is a representation with its own strong tag. A file of
+1024 bytes and more whose type is not compressed already has a gzip form,
+made by `AssetFiles` itself at the middleware's level 6 and with no time
+in its header, tagged `"<digest>-gzip"`; a request that accepts gzip gets
+it with `Content-Encoding: gzip`. Such a file's answers, the `304`s
+included, say `Vary: Accept-Encoding`. The compression middleware leaves
+these four directories alone (`compression.OWN_ENCODING`); it still
+compresses the rest of `/assets/` and `/api/v1/` as 5cfd29b6 says. A
+`Range` on the stored form is honoured with an `If-Range` that names its
+ETag; a date or another tag gets the whole file. The gzip form is sent
+whole. The file is read, hashed and gzipped in `lookup_path`, which
+Starlette runs in a worker thread, and kept per process for its path
+while its change time and size stay the same.
+
+**Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
+dashboard's static files may be cached"): the files hold no private
+data, and every reload fetched all 97 of them, 691 KB gzipped
+(tsk-fxjtwmkc4md5). `no-cache` makes a browser ask again on every use,
+so a deploy reaches it at once: a changed file has a new ETag and comes
+back `200`; two pods with different files during a rolling update give
+different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
+alone never answers `304`, and a date `If-Range` never selects a range:
+Starlette compares it with `Last-Modified`, which these answers do not
+have, so `AssetFileResponse` compares the ETag alone.
+
+**Rejected alternatives:**
+- Starlette's own ETag (an MD5 of the change time and size): an image
+  built with normalised file times could keep the old ETag for a changed
+  file of the same size, and a browser would keep the old file.
+- The middleware's gzip with the stored file's tag (the first version of
+  this PR): two different bodies under one strong ETag, and its `304`
+  went out before the middleware could add `Vary` (review of #1518,
+  RFC 9110 §8.8.3.3, §15.4.5).
+- A weak ETag for both forms: the contract (§16.11) promises a strong
+  one, and a weak tag can never select a range.
+- Versioned names with a long `max-age` (`?v=<digest>`, `immutable`, as
+  `/assets/landing/` does): a reload would send no requests at all, but
+  the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite
+  in `shell_document`, the `url()` references inside the CSS would stay
+  `no-cache` anyway, and it is a contract change of its own. A
+  follow-up once this card's numbers are measured.
+
+## On the hub's own pages too, the product line at phone width is its first part, by a rule inside the hashed block
+
+**Id:** 7328169a-086f-458a-8d7e-e8b6faa4dd10
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
+**Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
+**See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
+
+The hub draws the product line on the join page, the `503` maintenance
+page and the registration link page (`product_line.html`). Each of its
+four parts is a `span.product-part` and each separator a
+`span.product-sep`, the classes the dashboard uses. At
+`max-width: 600px` a rule hides the separators and every part after the
+first, so the line is the mark, `Maity` and the year, as on the
+dashboard. The rule is part of `STYLE`, the block that the join and
+`503` pages carry in `<head>` and their policy allows by its hash
+(`style-src 'sha256-…'`). The hash is computed from `STYLE`, so it covers
+the rule; the registration link page takes `STYLE` into its own sheet.
+
+**Reason:** §16.13 holds the line's phone form for every page that
+shows it. These pages have no other stylesheet they may load, and a
+second block would need a second hash in every policy. Inside the one
+block the rule needs neither. Hiding the parts with CSS keeps one
+markup for every width, as the dashboard does.
+
+**Rejected alternatives:**
+- A shorter line rendered for phones: the hub does not know the width;
+  it would take a user-agent guess.
+- A second `<style>` block for the media rule: one more hash in each
+  strict page's policy, for no gain.

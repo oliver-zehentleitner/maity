@@ -359,12 +359,22 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
    right, behind a separator, the project's state and absence; on a narrow
    screen that block goes under the chips. */
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
-.switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
+/* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
+   a project's state keeps the far end of the row. */
+.switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
 /* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
 .tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
 .tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }
 .switcher a[draggable="true"] { cursor: grab; }
-.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; }
+/* Where a dragged tab will go: an upright line in the gap before or after the tab under it (js/app.js
+   dragTab). Placed absolutely, it moves nothing; the row keeps room for the line after its last tab. */
+.switcher a[draggable="true"] { position: relative; }
+.switcher a.drop-before::before, .switcher a.drop-after::after { content: ""; position: absolute; top: 2px; bottom: 2px; width: 3px;
+  border-radius: 2px; background: var(--accent); pointer-events: none; }
+.switcher a.drop-before::before { inset-inline-start: -5px; }
+.switcher a.drop-after::after { inset-inline-end: -5px; }
+.switcher-row nav.switcher { padding-inline-end: 6px; }
+.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; margin-inline-start: auto; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -440,11 +450,16 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .entry {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
 }
 
-.entry.current { border-color: var(--accent); }
-.entry.done { opacity: 0.75; }
+/* The open entry: an accent edge and its head on the accent's soft ground. */
+.entry.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.entry.current .entry-head { background: var(--accent-soft); border-radius: calc(var(--r-card) - 1px) calc(var(--r-card) - 1px) 0 0; }
+/* An answered entry: quieter by its title and no shadow, not by opacity, so every text keeps AA. */
+.entry.done { box-shadow: none; }
+.entry.done .entry-head .title { color: var(--muted); }
 .entry.empty, .empty { padding: 16px; color: var(--muted); list-style: none; }
 .first-hint { max-width: 40rem; margin: 6px 0 12px; font-size: 0.88rem; color: var(--muted); }
 
@@ -457,11 +472,11 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
   text-align: left;
   background: none;
   border: 0;
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  border-radius: calc(var(--r-card) - 1px);
+  padding: var(--s3) var(--s4);
 }
 
-.entry-head .title { font-weight: 600; flex: 1 1 16rem; }
+.entry-head .title { font-weight: 600; font-size: 0.94rem; line-height: 1.35; flex: 1 1 16rem; }
 
 /* Agent-written tokens (paths, hashes, URLs) can be long and unbroken. */
 .entry-head .title, .entry-body, .card, .profile, .msg, .org-node, .joins li { overflow-wrap: anywhere; min-width: 0; }
@@ -475,7 +490,10 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
 .entries-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .entry-group { margin: 6px 0 0; }
-.entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.entry-group h3 { margin: 0 0 var(--s2); font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--s2); }
+.entry-group h3 .count { border: 0; background: var(--surface-2); color: var(--muted); font-family: var(--font); letter-spacing: 0; }
+/* The inbox's own menus as pills, like the board's filter: Sort and Show in a project, Sort and Project on /all. */
+.toolbar :is(#inbox-sort, #inbox-show, #inbox-project) { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 .members-filter { margin: 4px 0 8px; }
 .members-filter label.check { display: inline-flex; align-items: center; gap: 6px; }
@@ -484,8 +502,21 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .prio-normal { color: var(--normal); }
 .prio-low { color: var(--low); }
 .kind { color: var(--muted); font-weight: 400; }
+/* In an entry's head: the priority on its state's soft ground, the kind neutral; no outlines. */
+.entry-head .prio, .entry-head .kind { border: 0; }
+/* Urgent is the one filled pill: the high colour as its ground. */
+.entry-head .prio-urgent { background: var(--high); color: var(--bg); }
+.entry-head .prio-high { background: var(--bad-soft); }
+.entry-head .prio-normal { background: var(--warn-soft); }
+.entry-head .prio-low, .entry-head .kind { background: var(--surface-2); }
+.entry.current .entry-head .prio-low, .entry.current .entry-head .kind { background: var(--surface); }
 
-.entry-body { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.entry-body { padding: 0 var(--s4) var(--s4); border-top: 1px solid var(--border); }
+.entry-body .facts { grid-template-columns: minmax(6rem, max-content) 1fr; column-gap: var(--s4); }
+.entry-body .facts dt { font-size: 0.88rem; }
+/* The options it sees: rows with a rule at their start. */
+.entry-body .options { list-style: none; padding: 0; display: grid; gap: var(--s2); }
+.entry-body .options > li { border-inline-start: 3px solid var(--border); padding: 2px 0 2px var(--s3); }
 .request-action code { overflow-wrap: anywhere; }
 .request-action mark.hidden-char { background: var(--surface-2); color: var(--bad); border: 1px solid currentColor; border-radius: 3px; padding: 0 2px; }
 .request-action-body { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 8px; border-radius: 4px; font-family: var(--mono); font-size: 0.85rem; }
@@ -496,7 +527,13 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .replies { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 /* A row of buttons: at the right edge, secondary ones before the primary one. */
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
-.reply { min-width: 5rem; }
+.reply { min-width: 5rem; border-radius: var(--r-pill); }
+/* An answer one can press has an edge of 3:1 or more (--field); a disabled one keeps the base look. */
+.reply:not(:disabled) { border-color: var(--field); }
+/* Send, once there are words to send, is the main button; Later and Talk stay quiet. */
+.reply.send:not(:disabled) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.reply.send:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 80%, var(--text)); border-color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.reply.later, .reply.talk { background: transparent; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
 
@@ -758,6 +795,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .card-table tbody th { font-weight: normal; }
 .card-table tr.disabled { color: var(--muted); }
 .user-name { font-weight: 600; }
+.user-email { overflow-wrap: anywhere; }
 .users-filter { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; margin-bottom: 12px; }
 .users-filter label { font-size: 0.85rem; color: var(--muted); flex-basis: 100%; margin-bottom: -4px; }
 .users-filter label + input, .users-filter label + select { flex: 0 1 18rem; }
@@ -964,6 +1002,12 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .chat-layout.open .chat-pane .messages { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
 .chat-layout.open .chat-pane .compose { flex: none; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
+/* Full screen (js/chat.js fullScreen, tsk-fnch2yxp2kk1): the open chat covers the window, over the
+   header, the list and the product line, on the page's own ground; the page under it does not
+   scroll. Its column is the window's height, whatever --chat-h says for the page. */
+html.chat-full body { overflow: hidden; }
+html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 20; height: 100dvh; margin: 0;
+  padding: 8px 12px; box-sizing: border-box; background: var(--bg); }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
 /* The pane being left, until the next one is drawn. */
@@ -1165,7 +1209,6 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .button-link:hover { border-color: var(--accent); }
 .message-form textarea { width: 100%; }
 a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text); text-decoration: none; }
-.switcher .new-project { color: var(--muted); }
 .reply.later { color: var(--muted); }
 .notice:empty { display: none; }
 
@@ -1192,6 +1235,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .compose > button, .compose-actions > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
   .release-edit .row > button, .pause > button, .runner-actions > button, .runner-actions .rename { flex: 1 1 100%; justify-self: stretch; }
   .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
+  /* A group chat on a phone (the owner's request, tsk-fnch2yxp2kk1): no "In it: …" line over the
+     messages, and the composer's label, which names the field, is read out but not shown. */
+  .group-people-line { display: none; }
+  .group-chat .compose-head > label[for="chat-text"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* No keys to press on a phone, mostly: the hint goes, the button is laid out as it was. */
   .compose-actions { flex-wrap: wrap; }
   /* On a phone the composer folds away for reading; the 2× or 3× chosen on a
@@ -1208,7 +1255,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .profiles { grid-template-columns: 1fr; }
   .facts { grid-template-columns: 1fr; }
   .facts dt { margin-top: 4px; }
-  .reply { flex: 1 1 100%; }
+  /* The answers two by two, a thumb's size; Send across the whole row. */
+  .replies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reply { min-height: 40px; min-width: 0; }
+  .reply.send, .reply:only-child { grid-column: 1 / -1; }
 }
 
 /* Pictures on the account (docs/api.md §6.10). */
@@ -1699,6 +1749,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .board-body.has-panel > .columns { flex: 1 1 auto; min-width: 0; }
 .card-panel { flex: 0 0 min(30rem, 42%); position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 12px 16px; }
+/* The panel's ground, --surface-2, takes the light --warn at only 4.26:1, so the panel has its own:
+   4.79:1 there (WCAG AA), the same amber. Both ways to dark give the panel :root's dark --warn back. */
+.card-panel { --warn: #8f6000; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card-panel { --warn: inherit; } }
+:root[data-theme="dark"] .card-panel { --warn: inherit; }
 /* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
 @media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1905,6 +1960,30 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
 
+/* The person or organisation view in the refreshed look (design refresh step 4): the head as a
+   panel with a round picture, the name in the display face, links and the public page as pills,
+   the projects and members as rows. As on the public page mocks; no field more, none less. */
+/* A profile reads as one column, not a band across a wide screen. */
+.view-person { max-width: 46rem; }
+.view-person .person-head { gap: var(--s4); padding: var(--s4); margin-bottom: var(--s4);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); }
+.view-person .person-head > .avatar-img, .view-person .person-head > .person-picture-none { width: 80px; height: 80px; border-radius: 50%; }
+.view-person .person-name { font: 700 1.6rem/1.15 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.view-person a.button-link { display: inline-block; border-radius: var(--r-pill); border-color: var(--field); padding: 6px 14px; }
+.view-person .person-bio { font-size: 1.05rem; line-height: 1.6; max-width: 62ch; }
+.view-person .person-links { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0; }
+.view-person .person-links li { padding: 4px 12px; border: 1px solid var(--field); border-radius: var(--r-pill); font-size: 0.9rem; }
+.view-person h3 { font: 700 1.1rem/1.2 var(--display); letter-spacing: -0.01em; margin: var(--s5) 0 var(--s2); }
+.view-person .person-projects, .view-person .person-members { gap: 2px; }
+.view-person .person-projects li, .view-person .person-members li { padding: var(--s2); border-radius: var(--r-field); }
+.view-person .person-projects li:hover, .view-person .person-members li:hover { background: var(--surface-2); }
+.view-person .person-projects a { font-weight: 600; }
+.view-person .person-members .avatar-img, .view-person .person-members .person-picture-none { width: 28px; height: 28px; border-radius: 50%; }
+@media (max-width: 600px) {
+  .view-person .person-head { flex-wrap: wrap; }
+  .view-person .person-head > .avatar-img, .view-person .person-head > .person-picture-none { width: 64px; height: 64px; }
+}
+
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
@@ -1953,18 +2032,21 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
 
 /* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
-   never sticky, small and muted; at phone width it wraps between its parts, never sideways. */
+   never sticky, small and muted; wider than phone width it wraps between its parts, never sideways. */
 .product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
   padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .product-line:empty { display: none; }
-/* At phone width the credit right after the year wraps the line onto one more row: less padding
-   above and below keeps the group chat inside the window at 390 x 844. The links keep their
-   24 px targets. */
-@media (max-width: 600px) { .product-line { padding-top: 8px; padding-bottom: 12px; } }
+/* At phone width the line is only its first part, "Maity 2026" (§16.13; the owner's request,
+   tsk-fnch2yxp2kk1): the rest wrapped it over three rows. Less padding above and below keeps
+   the group chat inside the window at 390 x 844. */
+@media (max-width: 600px) {
+  .product-line { padding-top: 8px; padding-bottom: 12px; }
+  .product-line > .product-sep, .product-line > .product-part ~ .product-part { display: none; }
+}
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
 /* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line
-   wraps at phone width, whatever stands on the row above or below it. */
+   wraps between its parts, wider than phone width, whatever stands on the row above or below it. */
 .product-line a { color: inherit; display: inline-flex; align-items: center; min-height: 24px; }
 .product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
 .product-icon { justify-content: center; min-width: 24px; border-radius: 3px; }
