@@ -1730,17 +1730,22 @@ own pages that the board always had. A change after the last read is the
 board's usual news, offered as a reload. The reload after a write reads the
 same way; the hub search still asks one list over every status
 (`status=all&q=`).
-When the board falls back to the one list: when cards keep changing while
-the passes read, and also with no change at all when 50 or more cards
-share the newest `updated_at` in the window (one change of many cards in
-the same second), since every pass then takes those ties again and pages.
+When the board falls back to the one list: when three passes in a row
+each followed a cursor. A pass follows one when the cards at or after its
+start fill its first page and the window holds more cards after them. That
+happens when cards keep changing while the passes read, and also with no
+change at all when the cards sharing the newest `updated_at` fill a page
+and older cards follow in the window (one change of many cards in the same
+second), since every pass then takes those ties again.
 The cost is bounded: at most four more requests than one list for the same
 cards (one per group that holds a page or less), plus the changed-cards
-read: one page while fewer than 50 cards changed since a minute before
-the reads; otherwise one page per 50 of them in the first pass, one page
-per 50 cards at or after the newest time the pass before saw in each of up
-to two more, and where all three page, every page of the one list as well. At most five requests are in flight at once. The wait is the longest
-group plus those pages, one after the other, not the sum of every page.
+read. A pass reads pages until it meets a card older than its start, or
+the window ends: one page when its cards and that older one fit on it,
+and otherwise as many pages as its cards fill plus possibly one more to
+find that older card. There are at most three passes, and where all three
+followed a cursor, every page of the one list as well. At most five
+requests are in flight at once. The wait is the longest group plus those
+pages, one after the other, not the sum of every page.
 
 **Reason:** the pages were the board's longest wait, and nothing in one
 page depends on another. Side by side, the wait is the longest group,

@@ -4540,7 +4540,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Tied updated_at (review of #1536, delta 2): 51 cards sharing the newest time in the window, nothing written
   // during the reads. Every pass takes the ties again (the inclusive comparison recovers a card changed in that
   // same second), so all three page and the board reads the one list instead; with 49 the second pass fits one page.
-  // (50 or more ties fall back: a full page of them still follows the cursor.)
+  // (Ties that fill a page fall back when older cards follow in the window, as the fixture's do: a full page then
+  // has a next cursor. Exactly 50 cards in the whole window would fit one page and end it.)
   for (const [tbCount, tbFallback] of [[51, 1], [50, 1], [49, 0]]) {
     const tbAll = win.Maity.api.getAll, tbGet = win.Maity.api.get;
     const tbIso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -4577,6 +4578,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(tbLists === tbFallback && (tbFallback ? tbPages.length === 6 && [0, 2, 4].every((i) => tbPages[i] === 50) : tbPages.length === 3),
       "board: " + tbCount + " cards tied at the newest time in the window " + (tbFallback ? "make three passes page, then the one list is read" : "end the reading on the second pass, no list")
       + " " + JSON.stringify([tbPages, tbLists, tbPasses]));
+  }
+  await go("#/maintainer/maity/inbox");
+
+  // The page boundary (review of #1536, delta 3): the window served alone, as the hub would. Exactly 50 tied cards
+  // in the whole window fit one page with no next cursor: one request, no fallback. 100 recent cards and one older:
+  // the first pass reads [50, 50, 1], the last page only to find the end.
+  for (const [pbName, pbRows, pbWant] of [
+    ["exactly 50 tied cards in the whole window are one page, no fallback", (base, now) => Array.from({ length: 50 }, (_, i) => ({ ...base, id: "tsk-e" + String(100 + i), updated_at: now(5000) })), (pages, lists) => JSON.stringify(pages) === "[50]" && lists === 0],
+    ["100 recent cards and one older read [50,50,1], the last page to find the end", (base, now) => Array.from({ length: 100 }, (_, i) => ({ ...base, id: "tsk-r" + String(100 + i), updated_at: now(5000 - i * 50) }))
+      .concat([{ ...base, id: "tsk-r999", updated_at: now(-7200000) }]), (pages, lists) => JSON.stringify(pages.slice(0, 3)) === "[50,50,1]" && lists === 0],
+  ]) {
+    const pbAll = win.Maity.api.getAll, pbGet = win.Maity.api.get;
+    const pbNow = Date.now();
+    const pbIso = (d) => new Date(pbNow + d).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const pbBase = { ...(await pbGet("/projects/maintainer/maity/tasks/tsk-0003")), status: "done", parent: null, depends_on: [], related: [] };
+    const rows = pbRows(pbBase, pbIso).sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0) || (a.id < b.id ? 1 : -1));
+    const pbPages = [];
+    let pbLists = 0;
+    win.Maity.api.getAll = (p) => { if (/^\/projects\/maintainer\/maity\/tasks\?status=all&closed_after=[^&]*$/.test(p)) pbLists += 1; return pbAll(p); };
+    win.Maity.api.get = async (p) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return pbGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      const cursor = q.get("cursor");
+      let from = rows;
+      if (cursor) {
+        const [at, id] = cursor.split("|");
+        from = rows.filter((t) => (Date.parse(t.updated_at) || 0) < Number(at) || ((Date.parse(t.updated_at) || 0) === Number(at) && t.id < id));
+      }
+      const limit = Number(q.get("limit")) || 50;
+      const items = from.slice(0, limit);
+      const last = items[items.length - 1];
+      pbPages.push(items.length);
+      return { items, next_cursor: from.length > limit ? (Date.parse(last.updated_at) || 0) + "|" + last.id : null };
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.getAll = pbAll; win.Maity.api.get = pbGet;
+    expect(pbWant(pbPages, pbLists), "board: " + pbName + " " + JSON.stringify([pbPages, pbLists]));
   }
   await go("#/maintainer/maity/inbox");
 
