@@ -46,6 +46,58 @@ window.Maity = window.Maity || {};
   const mockSoulVersions = {};
   const mockSoul = (id) => mockSouls[id] || { agent_id: id, markdown: "", version: 0, by: null, confirmed_by: null, updated_at: null };
   let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
+  // The fixture hub's step-up (§2.8.4), only where a test sets window.MAITY_FIXTURE_STEP_UP: these
+  // routes, the ones of tools/step-up-routes.json (tools/check.py keeps the two equal), refuse with
+  // step_up_required until a code was verified in the last 10 minutes, and, where the flag is a time
+  // (Date.now()), after it. Off, nothing asks, as for a session that has just given its factor.
+  const STEP_UP_ROUTES = [
+    "GET /me/export",
+    "POST /me/deletion",
+    "POST /auth/password",
+    "POST /auth/second-factor/totp",
+    "POST /auth/second-factor/recovery-codes",
+    "DELETE /auth/second-factor",
+    "POST /auth/device-codes/{code_id}/approve",
+    "PATCH /me/notification-settings",
+    "POST /me/notification-settings/email/address-change/approve",
+    "POST /me/notification-settings/email/address-change/reject",
+    "POST /me/forge/github/link",
+    "PUT /me/forge/github/token",
+    "POST /runners/enrollments",
+    "DELETE /orgs/{org}",
+    "PATCH /projects/{owner}/{slug}",
+    "POST /projects/{owner}/{slug}/transfer",
+    "POST /projects/{owner}/{slug}/repository/confirm",
+    "POST /projects/{owner}/{slug}/joins",
+    "POST /projects/{owner}/{slug}/requests/{request_id}/answer",
+    "POST /requests/{request_id}/answer",
+    "POST /admin/users/{human_id}/second-factor/reset",
+    "PATCH /admin/settings/auth-pages",
+    "PATCH /admin/settings/landing",
+    "PATCH /admin/settings/legal",
+    "PATCH /admin/settings/limits",
+    "PATCH /admin/settings/mail",
+    "PATCH /admin/settings/registration",
+    "PATCH /admin/settings/sign-in",
+    "PATCH /admin/settings/site-values",
+  ];
+  // Where the hub asks only in some cases: a change of restricted_access, of the address, a go
+  // (the hub on a project transfer's go only), never on a reject.
+  const STEP_UP_WHEN = {
+    "PATCH /projects/{owner}/{slug}": (b) => !!(b.settings && "restricted_access" in b.settings),
+    "PATCH /me/notification-settings": (b) => !!(b.email && "address" in b.email),
+    "POST /me/notification-settings/email/address-change/reject": () => false,
+    "POST /projects/{owner}/{slug}/requests/{request_id}/answer": (b) => b.reply_id === "go",
+    "POST /requests/{request_id}/answer": (b) => b.reply_id === "go",
+  };
+  const STEP_UP_MATCH = STEP_UP_ROUTES.map((r) => {
+    const [verb, template] = r.split(" ");
+    return [verb, new RegExp("^" + template.replace(/\{[^}]+\}/g, "[^/]+") + "$"), STEP_UP_WHEN[r]];
+  });
+  let mockSteppedAt = 0;
+  const stepUpOwed = (method, path, body) => !!window.MAITY_FIXTURE_STEP_UP
+    && mockSteppedAt < Math.max(Number(window.MAITY_FIXTURE_STEP_UP) || 0, Date.now() - 600000)
+    && STEP_UP_MATCH.some(([verb, pattern, when]) => verb === method && pattern.test(path) && (!when || when(body || {})));
   let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
@@ -2275,6 +2327,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
       if (body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
       mockFactorOn = true;
+      mockSteppedAt = Date.now(); // the code just given counts (§2.8.1)
       return { recovery_codes: Array.from({ length: 10 }, (_, i) => "abcde-fghi" + i) };
     }],
     ["POST", /^\/auth\/second-factor\/recovery-codes$/, () => ({ recovery_codes: Array.from({ length: 10 }, (_, i) => "klmno-pqrs" + i) })],
@@ -2286,6 +2339,7 @@ window.Maity = window.Maity || {};
       if (body.code !== "123456" && body.recovery_code !== "abcde-fghij" && body.email_code !== "654321" && body.email_token !== "mailtoken") {
         fail(403, "code_invalid", "the code is wrong or was used", path);
       }
+      mockSteppedAt = Date.now();
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z"), member: me().member, next: "/" };
     }],
     ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
@@ -2700,6 +2754,61 @@ window.Maity = window.Maity || {};
     ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       project(m[1], path);
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+    }],
+    // A human with members:admin places an agent on a runner of their own attached here: one of
+    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
+    // the placement quota, the repository's offer or the spec's other validations (review of
+    // #1558). The placement waits for the runner (reported null) and needs no consent.
+    ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
+      const prj = project(m[1], path);
+      const caller = me().member;
+      if (caller.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path);
+      const r = runnersFile().items.find((x) => x.id === body.runner && !x.removed_at);
+      if (!r || !activeAttachments(m[1]).some((a) => a.runner_id === r.id)) fail(409, "runner_not_attached", "the runner is not attached here", path);
+      if (r.owner_id !== caller.id) fail(403, "forbidden", "only the runner's owner places agents on it", path);
+      if (["plan", "review"].includes(prj.state) && !body.reason) fail(400, "invalid", "the project is in " + prj.state + ": say why", path, { fields: { reason: "required" } });
+      if (prj.state === "archived") fail(409, "project_closed", "the project is closed", path);
+      if (r.credential_state !== "active") fail(409, "runner_revoked", "the runner has no live credential", path);
+      const live = placementsOf(m[1]).filter((x) => x.active);
+      const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
+      let agent;
+      if (body.agent && body.agent.id) {
+        const a = members.find((x) => x.id === body.agent.id && !x.removed_at);
+        if (!a || a.kind !== "agent") fail(400, "invalid", "not an agent of this project", path, { fields: { "agent.id": "not_a_member" } });
+        if (a.owner_id !== caller.id) fail(400, "invalid", "name one of your own agents", path, { fields: { "agent.id": "not_yours" } });
+        if (live.some((x) => x.agent.id === a.id)) fail(409, "placement_exists", "an active placement holds this", path);
+        agent = { id: a.id, handle: a.handle, display_name: a.display_name, avatar_url: null };
+      } else {
+        const handle = body.agent && body.agent.handle, name = body.agent && body.agent.display_name;
+        if (!handle || !name) fail(400, "invalid", "name an agent by id, or give handle and name", path, { fields: { agent: "id_or_handle" } });
+        if (members.some((x) => x.handle === handle) || fixtures()["agents.json"].items.some((x) => x.handle === handle)) {
+          fail(400, "invalid", "you already have an agent with this handle", path, { fields: { handle: "taken" } });
+        }
+        if (live.some((x) => !x.agent.id && x.agent.handle === handle)) fail(409, "placement_exists", "an active placement holds this", path);
+        agent = { id: null, handle, display_name: name, avatar_url: null };
+      }
+      const clone = (body.workspace && body.workspace.clone) || agent.handle;
+      if (live.some((x) => x.runner.id === r.id && x.workspace.clone === clone)) fail(409, "placement_exists", "an active placement holds this", path);
+      const c = r.capabilities || {};
+      const tool = (c.harnesses || []).find((x) => x.id === body.harness && x.available !== false && (!body.target || (x.targets || []).includes(body.target)));
+      const mode = body.mode || (tool && tool.default_mode);
+      if (!tool || !(tool.modes || []).includes(mode) || (body.model && !(tool.models || []).includes(body.model))
+        || (body.target && !(c.targets || []).some((t) => t.name === body.target))) {
+        fail(409, "harness_not_offered", "not in the runner's advertised capabilities", path, { offered: c.harnesses || [] });
+      }
+      const at = nowIso();
+      const made = {
+        id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
+        runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
+        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
+        desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
+        approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
+        session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
+        created_by: caller.id, proposed_by: null, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
+      };
+      made.logs_hint = "maity runner logs " + made.id;
+      placementsOf(m[1]).push(made);
+      return made;
     }],
     ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
       const p = placementFor(m[1], m[2], path);
@@ -5170,6 +5279,7 @@ window.Maity = window.Maity || {};
       }
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
       if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
+      if (stepUpOwed(method, path, body)) fail(403, "forbidden", "this call needs your second factor first", fullPath, { reason: "step_up_required" });
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;

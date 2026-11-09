@@ -15,6 +15,7 @@ live credential to report with.
 from __future__ import annotations
 
 import fnmatch
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -64,6 +65,9 @@ REASONS: dict[str, tuple[str, ...]] = {
     "adopted": ("running",),
     "orphaned": ("stopped",),
 }
+# `join_failed`'s detail is the hub's own error code (§15.7): any code in this form, matched
+# with `fullmatch` only (`$` would take a final LF)
+JOIN_DETAIL_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 # detail -> ("reason", r) or ("state", s): what it comes with (§15.7)
 _JOIN_DETAILS = (
     "code_invalid",
