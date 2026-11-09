@@ -401,9 +401,13 @@ window.Maity = window.Maity || {};
     return box;
 
     // Start on a runner: for a human with members:admin, over the runners of their own that
-    // are attached here with a live credential (§15.4, §15.6); none, and the way to allow one.
+    // are attached here with a live credential (§15.4, §15.6) and offer this project's
+    // repository (the hub's `repository_not_offered`); none, and the way to allow one.
     async function starting() {
       if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
+      // A project without a repository: the hub refuses every placement, so no form.
+      const repo = ctx.project && ctx.project.repository && ctx.project.repository.url;
+      if (!repo) return h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository"));
       let runners = [];
       try {
         runners = (await M.api.getAll(ctx.base + "/runners")).items
@@ -414,6 +418,11 @@ window.Maity = window.Maity || {};
       if (!runners.length) {
         return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
           { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) }));
+      }
+      const name = repositoryName(repo);
+      runners = runners.filter((a) => ((a.runner.capabilities || {}).repositories || []).some((p) => typeof p === "string" && fnmatch(name, p)));
+      if (!runners.length) {
+        return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) }));
       }
       const slot = h("div", { class: "placement-new-slot" });
       const open = h("button", { type: "button", class: "placement-new-open", "aria-expanded": "false" }, M.t("placements.new.open"));
@@ -448,5 +457,97 @@ window.Maity = window.Maity || {};
     }
   }
 
-  M.placements = { section };
+  // The repository as a runner names it, and the hub's match of it against a runner's advertised
+  // patterns (`check_repository` in hub/src/maity_hub/placements.py: the URL without `https://`
+  // and trailing slashes, Python's `fnmatch.fnmatchcase`: `*` and `?` across `/` too, `[…]` and
+  // `[!…]` a set, case kept). A set is read as Python 3.12's `fnmatch.translate` reads it: split
+  // at the hyphens that make ranges, a reversed range dropped, so `[z-a]` matches nothing and
+  // `[!z-a]` any one character, never a set JS cannot compile. The name is read by Unicode code
+  // point, as Python counts characters: `?` takes a character beyond U+FFFF whole, not half of it.
+  // An advertised pattern is printable ASCII on the hub; the port reads any pattern the same way.
+  const repositoryName = (url) => url.replace(/^https:\/\//, "").replace(/\/+$/, "");
+  const inSet = (s) => s.replace(/[\\\]\[^-]/g, "\\$&");
+  function charSet(pattern, i, j) {
+    const at = (a, b) => pattern.slice(a, b).join("");
+    let chunks;
+    if (!pattern.slice(i, j).includes("-")) chunks = [at(i, j)];
+    else {
+      chunks = [];
+      let k = pattern[i] === "!" ? i + 2 : i + 1;
+      for (;;) {
+        k = pattern.indexOf("-", k);
+        if (k < 0 || k >= j) break;
+        chunks.push(at(i, k));
+        i = k + 1;
+        k = k + 3;
+      }
+      const chunk = at(i, j);
+      if (chunk) chunks.push(chunk);
+      else chunks[chunks.length - 1] += "-";
+      for (let k = chunks.length - 1; k > 0; k--) {
+        const last = Array.from(chunks[k - 1]), next = Array.from(chunks[k]);
+        if (last[last.length - 1].codePointAt(0) > next[0].codePointAt(0)) {
+          chunks[k - 1] = last.slice(0, -1).join("") + next.slice(1).join("");
+          chunks.splice(k, 1);
+        }
+      }
+    }
+    const stuff = chunks.join("-");
+    if (!stuff) return "(?!)";
+    if (stuff === "!") return "[\\s\\S]";
+    const not = stuff[0] === "!";
+    if (not) chunks[0] = chunks[0].slice(1);
+    return "[" + (not ? "^" : "") + chunks.map(inSet).join("-") + "]";
+  }
+  // Each `*` is matched by going back only to the last `*` seen, never by a RegExp over the whole
+  // pattern: a pattern of many stars against a long name stays linear in each, as on the hub
+  // (4hv7 at #1567), where a backtracking RegExp took seconds. A set is tested as one character.
+  const STAR = {};
+  function fnmatch(name, text) {
+    const pattern = Array.from(text);
+    const n = pattern.length;
+    const tokens = [];
+    let i = 0;
+    while (i < n) {
+      const c = pattern[i++];
+      if (c === "*") {
+        if (tokens[tokens.length - 1] !== STAR) tokens.push(STAR);
+      } else if (c === "?") tokens.push(() => true);
+      else if (c === "[") {
+        let j = i;
+        if (j < n && pattern[j] === "!") j++;
+        if (j < n && pattern[j] === "]") j++;
+        while (j < n && pattern[j] !== "]") j++;
+        if (j >= n) tokens.push((x) => x === "[");
+        else {
+          let one;
+          try {
+            one = new RegExp("^" + charSet(pattern, i, j) + "$", "u");
+          } catch (e) {
+            return false; // a set this port cannot read is no match; the other patterns still count
+          }
+          tokens.push((x) => one.test(x));
+          i = j + 1;
+        }
+      } else tokens.push((x) => x === c);
+    }
+    const chars = Array.from(name);
+    let p = 0, at = 0, star = -1, mark = 0;
+    while (at < chars.length) {
+      if (p < tokens.length && tokens[p] !== STAR && tokens[p](chars[at])) {
+        p++;
+        at++;
+      } else if (p < tokens.length && tokens[p] === STAR) {
+        star = p++;
+        mark = at;
+      } else if (star >= 0) {
+        p = star + 1;
+        at = ++mark;
+      } else return false;
+    }
+    while (p < tokens.length && tokens[p] === STAR) p++;
+    return p === tokens.length;
+  }
+
+  M.placements = { section, fnmatch };
 })(window.Maity);

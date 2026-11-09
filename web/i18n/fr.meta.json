@@ -12804,8 +12804,8 @@
     "text": "504e9ed49c916b5b"
   },
   "placements.new.hint": {
-    "en": "927287e43f0e965e",
-    "text": "9ea107c4cf6b6d10"
+    "en": "0f5300ecabf4f2b2",
+    "text": "d8898b6c30cd6a8a"
   },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
@@ -12818,6 +12818,14 @@
   "placements.new.model_default": {
     "en": "40f3fd78cdcd6185",
     "text": "1b5f17614c1e793b"
+  },
+  "placements.new.no_repository": {
+    "en": "d3bdc52da501f2ad",
+    "text": "315b6ec24664668e"
+  },
+  "placements.new.no_runner_offers": {
+    "en": "3d2efb0a712bd63b",
+    "text": "cad9344f652997a6"
   },
   "placements.new.no_tool": {
     "en": "0e25eee1502a372a",

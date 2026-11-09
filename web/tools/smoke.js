@@ -1924,6 +1924,83 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
     && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
     "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
+  // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
+  const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;
+  const srRepos = (lists) => (p) => (p === "/projects/maintainer/maity/runners" ? srGetAll(p).then((r) => {
+    const live = r.items.find((a) => a.runner.name === "home-laptop");
+    return { ...r, items: lists.map((repositories, i) => ({ ...live, runner: { ...live.runner, id: "rnr-r" + i, name: "box-" + i,
+      capabilities: { ...live.runner.capabilities, repositories } } })) };
+  }) : srGetAll(p));
+  win.Maity.api.getAll = srRepos([["github.com/someone-else/*"], ["GitHub.com/oliver-zehentleitner/maity"], ["github.com/oliver-zehentleitner/mait?"]]);
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  srOpen().click(); await tick();
+  expect(JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-2"]),
+    "placements: a runner whose repositories miss the project's (another owner, another case) is not offered, one whose pattern matches is "
+    + JSON.stringify(srOpts("placement-new-runner")));
+  srCancel().click(); await tick();
+  // A reversed range in a set, as Python's fnmatch reads it (4hv7 at #1567): `[z-a]` matches nothing,
+  // `[!z-a]` any one character, and neither hides a later pattern or another runner.
+  const srFn = win.Maity.placements.fnmatch;
+  const srFnCases = [["github.com/[z-a]/*", false], ["github.com/[!z-a]/*", true], ["github.com/o/*", true]].map(([pattern, want]) => {
+    let got; try { got = srFn("github.com/o/repo", pattern); } catch (e) { got = String(e); }
+    return [pattern, want, got];
+  });
+  expect(srFnCases.every(([, want, got]) => got === want), "placements: a reversed range matches as the hub's fnmatch does, never a throw " + JSON.stringify(srFnCases));
+  win.Maity.api.getAll = srRepos([["github.com/[z-a]/*"], ["github.com/[z-a]/*", "github.com/o/*"], ["github.com/[!z-a]/*"]]);
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: { ...x.repository, url: "https://github.com/o/repo" } })) : srGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  if (srBox() && srOpen()) { srOpen().click(); await tick(); }
+  expect(srBox() && srForm() && JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-1", "box-2"]),
+    "placements: a pattern with a reversed range is no match and hides neither the runner's next pattern nor another runner "
+    + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
+  if (srBox() && srForm()) { srCancel().click(); await tick(); }
+  win.Maity.api.get = srGet;
+  // Many stars against a long name stay quick, as on the hub (4hv7 at #1567, delta 2; vuur's input):
+  // a backtracking RegExp took about 5 s for k = 8 and about 107 s for k = 10. The larger cases run
+  // only once k = 8 is quick, so an old matcher fails here instead of holding the run. The last is the
+  // hub's limits (routes/runner.py, routes/projects.py): 200 advertised patterns of up to 200
+  // characters each, and a URL of up to 255, so a name of 247 after `https://`.
+  const srTimed = (k) => { const t = Date.now(); const got = srFn("a".repeat(50), "*a".repeat(k) + "b"); return [k, got, Date.now() - t]; };
+  const srStars = [srTimed(8)];
+  if (srStars[0][2] < 50) {
+    srStars.push(srTimed(10), srTimed(31));
+    const t = Date.now();
+    const got = Array.from({ length: 200 }, () => "*a".repeat(99) + "b").some((p) => srFn("a".repeat(247), p));
+    srStars.push(["200 x 199 against 247", got, Date.now() - t]);
+  }
+  expect(srStars.length === 4 && srStars.every(([, got, ms], i) => got === false && ms < (i === 3 ? 250 : 50)),
+    "placements: a pattern of many stars against a long name is matched at once, up to the hub's limits " + JSON.stringify(srStars));
+  // By Unicode character, as Python's fnmatch counts (4hv7 at #1567, delta 1): a repository the hub
+  // stores as https://github.com/o/\u{1F600} is one character after the owner, not two halves.
+  const srEmoji = "github.com/o/\u{1F600}";
+  const srUniCases = [["github.com/o/??", false], ["github.com/o/?", true], ["github.com/o/[!a]", true], ["github.com/o/[!z-a]", true]]
+    .map(([pattern, want]) => [pattern, want, srFn(srEmoji, pattern)]);
+  expect(srUniCases.every(([, want, got]) => got === want), "placements: ? and a negated set take one character beyond U+FFFF, as the hub's fnmatch does " + JSON.stringify(srUniCases));
+  win.Maity.api.getAll = srRepos([["github.com/o/??"], ["github.com/o/?"], ["github.com/o/[!a]"], ["github.com/o/[!z-a]"]]);
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: { ...x.repository, url: "https://" + srEmoji } })) : srGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  if (srBox() && srOpen()) { srOpen().click(); await tick(); }
+  expect(srBox() && srForm() && JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-1", "box-2", "box-3"]),
+    "placements: a repository named beyond U+FFFF is offered by the runners whose pattern the hub accepts, not by ?? "
+    + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
+  if (srBox() && srForm()) { srCancel().click(); await tick(); }
+  win.Maity.api.get = srGet;
+  win.Maity.api.getAll = srRepos([["github.com/someone-else/*"], []]);
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  const srNoRepo = () => srBox().querySelector(".placement-new-none");
+  expect(!srOpen() && srNoRepo() && text(srNoRepo()) === "None of your runners allowed in this project offers its repository, github.com/oliver-zehentleitner/maity. A runner offers the repositories its configuration lists."
+    && srNoRepo().querySelector("code"),
+    "placements: no runner of one's own here offers the project's repository: no form, and why " + (srNoRepo() && text(srNoRepo())));
+  win.Maity.api.getAll = srGetAll;
+  const srRunnerReads = [];
+  win.Maity.api.getAll = (p) => { if (p === "/projects/maintainer/maity/runners") srRunnerReads.push(p); return srGetAll(p); };
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: null })) : srGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  expect(!srOpen() && srNoRepo() && text(srNoRepo()) === "A runner starts an agent in a clone of the project's repository, and this project has none."
+    && !srRunnerReads.length,
+    "placements: a project without a repository offers no form, says why and reads no runners " + (srNoRepo() && text(srNoRepo())));
+  win.Maity.api.getAll = srGetAll; win.Maity.api.get = srGet;
   win.Maity.api.post = srPost;
   await go("#/maintainer/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
@@ -1992,6 +2069,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(prCard("build-box")).includes("Its own configuration does not allow maintainer/maity, so it starts nothing here"),
     "project runners: allowed, and warned where its own configuration does not allow the project");
   expect(text(main).includes("All your runners are allowed here."), "project runners: nothing left to allow");
+  // Attached here now, build-box offers github.com/example/* only: the fixture refuses a placement on it as the hub does (tsk-wn6qp27090qy).
+  const prRepoRefusal = await prPost("/projects/maintainer/maity/placements", { agent: { handle: "agent-r", display_name: "Agent R" }, trust: "member",
+    role: "coder", reports_to: "hum-maintainer", areas: [], capabilities: [], runner: "rnr-0003", target: "build-1", harness: "codex", mode: "supervised", model: null })
+    .then(() => null, (err) => err.code);
+  expect(prRepoRefusal === "repository_not_offered", "project runners: a placement on a runner that does not offer the repository is refused " + prRepoRefusal);
   let prAsked = "";
   const prConfirm = win.confirm;
   win.confirm = (q) => { prAsked = q; return true; };
