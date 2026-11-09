@@ -462,9 +462,9 @@ window.Maity = window.Maity || {};
   // and trailing slashes, Python's `fnmatch.fnmatchcase`: `*` and `?` across `/` too, `[…]` and
   // `[!…]` a set, case kept). A set is read as Python 3.12's `fnmatch.translate` reads it: split
   // at the hyphens that make ranges, a reversed range dropped, so `[z-a]` matches nothing and
-  // `[!z-a]` any one character, never a pattern JS cannot compile. Pattern and name are read by
-  // Unicode code point, in Unicode mode, as Python counts characters: `?` takes a character beyond
-  // U+FFFF whole, not half of it.
+  // `[!z-a]` any one character, never a set JS cannot compile. Pattern and name are read by
+  // Unicode code point, as Python counts characters: `?` takes a character beyond U+FFFF whole,
+  // not half of it.
   const repositoryName = (url) => url.replace(/^https:\/\//, "").replace(/\/+$/, "");
   const inSet = (s) => s.replace(/[\\\]\[^-]/g, "\\$&");
   function charSet(pattern, i, j) {
@@ -499,32 +499,54 @@ window.Maity = window.Maity || {};
     if (not) chunks[0] = chunks[0].slice(1);
     return "[" + (not ? "^" : "") + chunks.map(inSet).join("-") + "]";
   }
+  // Each `*` is matched by going back only to the last `*` seen, never by a RegExp over the whole
+  // pattern: a pattern of many stars against a long name stays linear in each, as on the hub
+  // (4hv7 at #1567), where a backtracking RegExp took seconds. A set is tested as one character.
+  const STAR = {};
   function fnmatch(name, text) {
-    let re = "";
     const pattern = Array.from(text);
     const n = pattern.length;
+    const tokens = [];
     let i = 0;
     while (i < n) {
       const c = pattern[i++];
-      if (c === "*") re += "[\\s\\S]*";
-      else if (c === "?") re += "[\\s\\S]";
+      if (c === "*") {
+        if (tokens[tokens.length - 1] !== STAR) tokens.push(STAR);
+      } else if (c === "?") tokens.push(() => true);
       else if (c === "[") {
         let j = i;
         if (j < n && pattern[j] === "!") j++;
         if (j < n && pattern[j] === "]") j++;
         while (j < n && pattern[j] !== "]") j++;
-        if (j >= n) re += "\\[";
+        if (j >= n) tokens.push((x) => x === "[");
         else {
-          re += charSet(pattern, i, j);
+          let one;
+          try {
+            one = new RegExp("^" + charSet(pattern, i, j) + "$", "u");
+          } catch (e) {
+            return false; // a set this port cannot read is no match; the other patterns still count
+          }
+          tokens.push((x) => one.test(x));
           i = j + 1;
         }
-      } else re += c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+      } else tokens.push((x) => x === c);
     }
-    try {
-      return new RegExp("^(?:" + re + ")$", "u").test(name);
-    } catch (e) {
-      return false; // one pattern this port cannot read hides neither the others nor the section
+    const chars = Array.from(name);
+    let p = 0, at = 0, star = -1, mark = 0;
+    while (at < chars.length) {
+      if (p < tokens.length && tokens[p] !== STAR && tokens[p](chars[at])) {
+        p++;
+        at++;
+      } else if (p < tokens.length && tokens[p] === STAR) {
+        star = p++;
+        mark = at;
+      } else if (star >= 0) {
+        p = star + 1;
+        at = ++mark;
+      } else return false;
     }
+    while (p < tokens.length && tokens[p] === STAR) p++;
+    return p === tokens.length;
   }
 
   M.placements = { section, fnmatch };

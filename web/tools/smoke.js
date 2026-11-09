@@ -1956,6 +1956,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
   if (srBox() && srForm()) { srCancel().click(); await tick(); }
   win.Maity.api.get = srGet;
+  // Many stars against a long name stay quick, as on the hub (4hv7 at #1567, delta 2; vuur's input):
+  // a backtracking RegExp took about 5 s for k = 8 and about 107 s for k = 10. k = 10 and the largest
+  // accepted pattern (k = 31, 63 characters) run only once k = 8 is quick, so an old matcher fails here
+  // instead of holding the run.
+  const srTimed = (k) => { const t = Date.now(); const got = srFn("a".repeat(50), "*a".repeat(k) + "b"); return [k, got, Date.now() - t]; };
+  const srStars = [srTimed(8)];
+  if (srStars[0][2] < 50) srStars.push(srTimed(10), srTimed(31));
+  expect(srStars.length === 3 && srStars.every(([, got, ms]) => got === false && ms < 50),
+    "placements: a pattern of many stars against a long name is matched at once " + JSON.stringify(srStars));
   // By Unicode character, as Python's fnmatch counts (4hv7 at #1567, delta 1): a repository the hub
   // stores as https://github.com/o/\u{1F600} is one character after the owner, not two halves.
   const srEmoji = "github.com/o/\u{1F600}";

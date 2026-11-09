@@ -1350,7 +1350,9 @@ port, a `[…]` set read as Python 3.12's `fnmatch.translate` reads it, so a
 reversed range such as `[z-a]` matches nothing, `[!z-a]` any one character,
 and neither throws and hides the runner's other patterns; pattern and name are
 read by Unicode character, as Python reads them, so `?` takes a character
-beyond U+FFFF whole). With none, the section says so and links the project's Runners; with
+beyond U+FFFF whole; and a `*` is matched by going back only to the last `*`,
+not by one RegExp over the pattern, so many stars against a long name take
+time in proportion to the two lengths, not seconds). With none, the section says so and links the project's Runners; with
 attached runners of which none offers the repository, it says that and
 names the repository; a project without a repository offers no form and
 says a runner needs one. The agent is one
