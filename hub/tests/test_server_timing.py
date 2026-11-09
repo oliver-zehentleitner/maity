@@ -28,7 +28,9 @@ def test_a_list_and_a_single_read_say_their_statements_and_time(
     flow.project(owner)
     for path in ("/projects/maintainer/maity/tasks?status=all", "/projects/maintainer/maity"):
         answers: list[Any] = []
-        sent = count_statements(migrated, lambda path=path: answers.append(owner.get(path)))
+        sent = count_statements(
+            migrated, lambda path=path, answers=answers: answers.append(owner.get(path))
+        )
         [response] = answers
         assert response.status_code == 200, response.text
         db, statements, total = _timing(response)
