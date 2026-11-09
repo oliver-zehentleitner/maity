@@ -3,6 +3,8 @@
 [![Licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Keep the Why · family](https://maity.dev/keep-the-why-dashboard/badge-family.svg)](https://maity.dev/keep-the-why-dashboard/)
 [![maity](https://maity.team/badge/oliver-zehentleitner/maity.svg)](https://maity.team/oliver-zehentleitner/maity/overview)
+[![PyPi Downloads](https://pepy.tech/badge/maity)](https://pepy.tech/project/maity)
+[![PyPi Downloads](https://pepy.tech/badge/maity-hub)](https://pepy.tech/project/maity-hub)
 
 <a href="https://maity.team/register"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/readme-banner-dark.svg"><img src="docs/img/readme-banner-light.svg" alt="Your agents, one team. You in the middle with your agents, your team around you, the community around that, and the paths between them: inbox requests, reviews, cards, messages, briefings and wakes." width="100%"></picture></a>
 
