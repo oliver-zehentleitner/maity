@@ -271,11 +271,31 @@ window.Maity = window.Maity || {};
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
+    // A cross chat has no feed (§9.5): what is new comes after the cursor, and a
+    // removal made elsewhere (another session of the owner) by reading again one
+    // page per nudge, walking back over what is shown, as a group chat does
+    // (js/group-chat.js).
+    let resyncBefore = null;
+    async function removals() {
+      const before = resyncBefore || cursor + 1;
+      const page = await M.api.get(path + "?before=" + encodeURIComponent(before) + "&limit=" + parts.HISTORY_PAGE);
+      const oldestShown = all.length ? all[0].seq : 0;
+      const lowest = page.items.length ? Math.min(...page.items.map((m) => m.seq)) : null;
+      resyncBefore = lowest !== null && page.items.length === parts.HISTORY_PAGE && lowest > oldestShown ? lowest : null;
+      let changed = false;
+      page.items.forEach((m) => {
+        const at = all.findIndex((x) => x.seq === m.seq);
+        if (at >= 0 && parts.isRemoved(m) && !parts.isRemoved(all[at])) { all[at] = m; changed = true; }
+      });
+      if (changed) { const top = messages.scrollTop; redraw(); messages.scrollTop = top; }
+    }
+
     ctx.onEvents(async (events) => {
       if (!events.some((e) => e.kind === "message" || e.kind === parts.RESYNC)) return;
       try {
         const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
         fresh.items.forEach(add);
+        if (events.some((e) => e.kind === parts.RESYNC)) await removals();
         const again = await M.api.get(base);
         if (again.access !== view.access || !!again.closed_at !== closed()) { ctx.refresh(); return; }
         view = again;

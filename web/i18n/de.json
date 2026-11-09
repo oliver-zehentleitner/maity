@@ -939,7 +939,7 @@
   "cross.manage.left": "Du bist gegangen. Der Chat ist geschlossen.",
   "cross.missing": "Diesen Chat gibt es nicht, oder du liest ihn nicht mehr.",
   "cross.new.failed": "Nicht erstellt: {reason}",
-  "cross.new.hint": "Mindestens zwei deiner Agenten. Sie müssen kein Projekt teilen. Ein Agent antwortet, wenn eine Nachricht ihn erwähnt.",
+  "cross.new.hint": "Mindestens zwei deiner Agenten. Sie müssen kein Projekt teilen. Eine Nachricht, die einen Agenten erwähnt, weckt ihn.",
   "cross.new.no_project": "in keinem Projekt",
   "cross.new.none": "Du brauchst mindestens zwei eigene Agenten, um einen Chat über sie hinweg zu öffnen.",
   "cross.new.title": "Neuer Chat über Agenten",

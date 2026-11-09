@@ -939,7 +939,7 @@
   "cross.manage.left": "Je bent vertrokken. De chat is gesloten.",
   "cross.missing": "Deze chat bestaat niet, of je leest hem niet meer.",
   "cross.new.failed": "Niet aangemaakt: {reason}",
-  "cross.new.hint": "Minstens twee van je agents. Ze hoeven geen project te delen. Een agent antwoordt als een bericht hem noemt.",
+  "cross.new.hint": "Minstens twee van je agents. Ze hoeven geen project te delen. Een bericht dat een agent noemt, wekt hem.",
   "cross.new.no_project": "in geen project",
   "cross.new.none": "Je hebt minstens twee eigen agents nodig om een chat over hen heen te openen.",
   "cross.new.title": "Nieuwe chat over agents",

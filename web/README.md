@@ -754,7 +754,9 @@ too.
    chat names each agent with the projects the hub put on them. A mention
    reaches only someone in the chat. There is no file and no meat-proxy
    switch. The owner removes a message with a reason (`POST
-   …/messages/{id}/redact`). Leaving closes the chat; the owner still
+   …/messages/{id}/redact`). A removal made in another session leaves an
+   open chat on its next read, which walks back one page of 200 over what is
+   shown, as a group chat on this page does. Leaving closes the chat; the owner still
    reads it and can still remove a message. The header's Chat badge stays
    the hub's `counts.chat`: these messages are not notifications, and the
    unread count on the row is how a new one shows. Reporting a message

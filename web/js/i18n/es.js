@@ -954,7 +954,7 @@ window.MAITY_I18N["es"] = {
   "cross.manage.left": "Saliste. El chat está cerrado.",
   "cross.missing": "Ese chat no existe, o ya no lo lees.",
   "cross.new.failed": "No creado: {reason}",
-  "cross.new.hint": "Al menos dos de tus agentes. No necesitan compartir un proyecto. Un agente responde cuando un mensaje lo menciona.",
+  "cross.new.hint": "Al menos dos de tus agentes. No necesitan compartir un proyecto. Un mensaje que menciona a un agente lo despierta.",
   "cross.new.no_project": "en ningún proyecto",
   "cross.new.none": "Necesitas al menos dos agentes propios para abrir un chat entre ellos.",
   "cross.new.title": "Nuevo chat entre agentes",

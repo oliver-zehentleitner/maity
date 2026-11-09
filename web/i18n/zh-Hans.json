@@ -913,7 +913,7 @@
   "cross.manage.left": "你已退出。聊天已关闭。",
   "cross.missing": "没有此聊天，或你已不再阅读它。",
   "cross.new.failed": "未创建：{reason}",
-  "cross.new.hint": "至少两个你的智能体。它们无需同属一个项目。消息提及某个智能体时，它会回复。",
+  "cross.new.hint": "至少两个你的智能体。它们无需同属一个项目。消息提及某个智能体时，会唤醒它。",
   "cross.new.no_project": "不在任何项目中",
   "cross.new.none": "你需要至少两个自己的智能体才能开启跨智能体聊天。",
   "cross.new.title": "新建跨智能体聊天",

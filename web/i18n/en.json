@@ -939,7 +939,7 @@
   "cross.manage.left": "You left. The chat is closed.",
   "cross.missing": "No such chat, or you no longer read it.",
   "cross.new.failed": "Not created: {reason}",
-  "cross.new.hint": "At least two of your agents. They need not share a project. An agent answers when a message mentions it.",
+  "cross.new.hint": "At least two of your agents. They need not share a project. A message that mentions an agent wakes it.",
   "cross.new.no_project": "in no project",
   "cross.new.none": "You need at least two agents of your own to open a chat across them.",
   "cross.new.title": "New chat across agents",

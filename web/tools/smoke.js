@@ -11192,6 +11192,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !xcPane().querySelector("input[type=\"file\"]") && !xcPane().querySelector(".meat-chat-toggle")
     && byId("chat-text") && main.querySelector(".chat-back").getAttribute("href") === "#/chats",
     "cross chat: opens with its messages and the agents' projects, and offers no file and no meat-proxy switch " + JSON.stringify(xcMarks()));
+  // A removal made elsewhere (another session of the owner) leaves the open pane on its next read (4hv7's review of #1422).
+  const xcFar = (await win.Maity.api.get("/me/cross-chats/xch-0001/messages?before=100000")).items.find((m) => (m.body || "").includes("Both of you, a look across the projects."));
+  await win.Maity.api.post("/me/cross-chats/xch-0001/messages/" + xcFar.id + "/redact", { reason: "elsewhere" });
+  expect(text(xcPane()).includes("Both of you, a look across the projects."), "cross chat: the removal elsewhere is not drawn before the next read");
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(xcPane() && !text(xcPane()).includes("Both of you, a look across the projects.") && text(xcPane()).includes("@maintainer done on my side"),
+    "cross chat: a message removed in another session leaves the open pane on its next read");
   const xcPosts = [], xcPatches = [];
   const xcPost = win.Maity.api.post, xcPatch = win.Maity.api.patch, xcPrompt = win.prompt;
   win.Maity.api.post = (p, b) => { xcPosts.push([p, b]); return xcPost(p, b); };
