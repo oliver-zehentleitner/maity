@@ -83,6 +83,8 @@
   "notify.mail_disabled": "{address}(으)로의 메일이 3회 실패하여 중지되었어요",
   "notify.mentioned": "{chat}에서 {who}님이 나를 멘션했어요",
   "notify.moderated": "모더레이션: {action} — {type}",
+  "notify.restricted_set": "제한 접근 멤버가 변경됨",
+  "notify.restricted_text": "제한 텍스트가 변경됨",
   "notify.agents_away": "내 에이전트 인스턴스 {n}개가 자리를 비웠어요",
   "notify.not_listening": "내 에이전트 인스턴스 {n}개가 수신하지 않고 있어요",
   "notify.reported": "신고: {reason} — {type}",

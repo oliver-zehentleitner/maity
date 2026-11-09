@@ -138,9 +138,11 @@ def _confine_pending(conn: Connection, caller: Caller, method: str, path: str) -
     """A pending account holds no scope (§2.3, §2.7.5): everything outside `PENDING_MAY`
     is `account_pending`. Raised inside the transaction, before any route runs, so the
     call's presence side effects are undone with it."""
-    status = conn.execute(
-        select(t.human.c.account_status).where(t.human.c.id == caller.human_id)
-    ).scalar()
+    status = caller.account_status  # read with the session (a cookie call)
+    if status is None:
+        status = conn.execute(
+            select(t.human.c.account_status).where(t.human.c.id == caller.human_id)
+        ).scalar()
     if status != "pending":
         return
     if (method, path) in PENDING_MAY:
