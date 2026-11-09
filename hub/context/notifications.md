@@ -567,7 +567,8 @@ reader sees what happened without opening the dashboard, which is what these mai
 
 **Id:** 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** c9d8b583-94c6-4599-90a6-325e1c03c984
 **Evidence:** inferred
 **Source:** docs/api.md §18.4 (`browser`, `timezone`); `preferences.DEFAULTS`; a review note on the settings card (tsk-32jx98jzne6z), 2026-10-29
 **Revisit when:** the dashboard asks for the browser's permission before the first `GET` of the settings, or an instance wants another default zone
@@ -588,6 +589,34 @@ no guess and shows in the settings, where the dashboard's proposal replaces it.
 example illustrates a human who already turned it on; as a default it would be a claim without a
 permission); no default for `timezone` (every read would need a "not set" case and the mail pass a
 fallback of its own). Whether either was weighed when the code was written is unknown.
+
+## The browser switch defaults to off; the account's time zone defaults to none, and the mails use UTC while it is none
+
+**Id:** c9d8b583-94c6-4599-90a6-325e1c03c984
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the owner's decision that a human sets their time zone in Account → Settings and sees times in it (message seq 94723), the approved plan on card tsk-j8s6n725a06r, 2026-11-08; docs/api.md §5.1, §18.4; `preferences.DEFAULTS`, `preferences.mail_zone`
+**See:** notifications.md#the-browser-switch-defaults-to-off-and-the-mail-time-zone-to-utc-both-are-the-contracts-the-human-decides-made-concrete — 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1 — as of 2026-11-08
+**Revisit when:** the hub needs a human's zone for something other than mail, or an instance wants another zone for mails while none is set
+
+`DEFAULTS["browser"]["enabled"]` stays `False`, for the reason the earlier entry gives (inferred
+from §18.4, unchanged). `DEFAULTS["email"]["timezone"]` is now `None`: §18.4's `timezone` is the
+account's one time zone, read in `GET /me` as `member.timezone` as well, and `null` until the
+human sets one; `PATCH` takes `null` to go back to none. The mail pass reads it through
+`preferences.mail_zone`, which gives UTC for `null`.
+
+**Reason:** the owner decided that every time the dashboard shows follows the zone the human
+sets, and the browser's zone until then (confirmed). That needs the hub to say whether a zone was
+set at all: with `"UTC"` filled in on read, "never chose" and "chose UTC" look the same. `null` says
+it in the one value the contract already had; the mails keep the UTC they used before, so nothing
+the hub sends changes for a human who never set a zone.
+
+**Rejected alternatives:** a new account field that §18.4 then follows: a second source of truth
+for one value. Keeping `"UTC"` and adding a read-only `timezone_set`: a flag beside the value that
+can disagree with it; the lead chose `null` (one value, no flag; the project is in alpha and
+carries no legacy). Writing the browser's zone into the account on first sign-in: the hub would
+store a guess the human never made, and a browser on a trip would set it.
 
 ## A second first write of the same human's settings finds the row the first made
 
