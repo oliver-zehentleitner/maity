@@ -122,7 +122,9 @@ window.Maity = window.Maity || {};
     const areas = input("areas", { placeholder: "hub/, docs/" });
     const briefing = h("textarea", { id: id("briefing"), rows: "4", placeholder: M.t("join.briefing.placeholder") });
     const fresh = h("fieldset", { class: "placement-new-profile" }, h("legend", null, M.t("placements.new.profile")),
-      field("handle", M.t("agents.handle"), handle, M.dom.NAME_RULES.handle.text),
+      // What a handle is, as at every other agent handle (#1488), and its rule.
+      h("div", { class: "field" }, h("label", { for: id("handle") }, M.t("agents.handle")), handle,
+        M.handles.explain("agent", handle), h("p", { class: "hint", id: id("handle") + "-hint" }, M.dom.NAME_RULES.handle.text)),
       field("name", M.t("agents.display_name"), name),
       field("trust", M.t("join.field.trust"), trust),
       h("div", { class: "field" }, h("label", { for: id("role") }, M.t("join.field.role")), role, roleHelp),

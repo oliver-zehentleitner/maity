@@ -1875,6 +1875,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !srBox().querySelector(".placement-new-profile").hidden,
     "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
     + JSON.stringify([srOpts("placement-new-agent"), srOpts("placement-new-runner"), srOpts("placement-new-tool")]));
+  const srHandleBy = (byId("placement-new-handle").getAttribute("aria-describedby") || "").split(" ");
+  expect(srHandleBy.includes("placement-new-handle-hint") && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
+    && text(byId(x)) === "The agent's handle names it among your agents and in @mentions in a project."),
+    "placements: the new handle says what a handle is and its rule, as every agent handle does (#1488) " + JSON.stringify(srHandleBy));
   byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change");
   byId("placement-new-target").value = "local"; byId("placement-new-target").dispatch("change");
   byId("placement-new-mode").value = "supervised"; byId("placement-new-model").value = "sonnet";
