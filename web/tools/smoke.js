@@ -1956,6 +1956,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
   if (srBox() && srForm()) { srCancel().click(); await tick(); }
   win.Maity.api.get = srGet;
+  // By Unicode character, as Python's fnmatch counts (4hv7 at #1567, delta 1): a repository the hub
+  // stores as https://github.com/o/\u{1F600} is one character after the owner, not two halves.
+  const srEmoji = "github.com/o/\u{1F600}";
+  const srUniCases = [["github.com/o/??", false], ["github.com/o/?", true], ["github.com/o/[!a]", true], ["github.com/o/[!z-a]", true]]
+    .map(([pattern, want]) => [pattern, want, srFn(srEmoji, pattern)]);
+  expect(srUniCases.every(([, want, got]) => got === want), "placements: ? and a negated set take one character beyond U+FFFF, as the hub's fnmatch does " + JSON.stringify(srUniCases));
+  win.Maity.api.getAll = srRepos([["github.com/o/??"], ["github.com/o/?"], ["github.com/o/[!a]"], ["github.com/o/[!z-a]"]]);
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: { ...x.repository, url: "https://" + srEmoji } })) : srGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  if (srBox() && srOpen()) { srOpen().click(); await tick(); }
+  expect(srBox() && srForm() && JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-1", "box-2", "box-3"]),
+    "placements: a repository named beyond U+FFFF is offered by the runners whose pattern the hub accepts, not by ?? "
+    + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
+  if (srBox() && srForm()) { srCancel().click(); await tick(); }
+  win.Maity.api.get = srGet;
   win.Maity.api.getAll = srRepos([["github.com/someone-else/*"], []]);
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
   const srNoRepo = () => srBox().querySelector(".placement-new-none");

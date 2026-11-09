@@ -462,28 +462,32 @@ window.Maity = window.Maity || {};
   // and trailing slashes, Python's `fnmatch.fnmatchcase`: `*` and `?` across `/` too, `[…]` and
   // `[!…]` a set, case kept). A set is read as Python 3.12's `fnmatch.translate` reads it: split
   // at the hyphens that make ranges, a reversed range dropped, so `[z-a]` matches nothing and
-  // `[!z-a]` any one character, never a pattern JS cannot compile.
+  // `[!z-a]` any one character, never a pattern JS cannot compile. Pattern and name are read by
+  // Unicode code point, in Unicode mode, as Python counts characters: `?` takes a character beyond
+  // U+FFFF whole, not half of it.
   const repositoryName = (url) => url.replace(/^https:\/\//, "").replace(/\/+$/, "");
   const inSet = (s) => s.replace(/[\\\]\[^-]/g, "\\$&");
   function charSet(pattern, i, j) {
+    const at = (a, b) => pattern.slice(a, b).join("");
     let chunks;
-    if (!pattern.slice(i, j).includes("-")) chunks = [pattern.slice(i, j)];
+    if (!pattern.slice(i, j).includes("-")) chunks = [at(i, j)];
     else {
       chunks = [];
       let k = pattern[i] === "!" ? i + 2 : i + 1;
       for (;;) {
         k = pattern.indexOf("-", k);
         if (k < 0 || k >= j) break;
-        chunks.push(pattern.slice(i, k));
+        chunks.push(at(i, k));
         i = k + 1;
         k = k + 3;
       }
-      const chunk = pattern.slice(i, j);
+      const chunk = at(i, j);
       if (chunk) chunks.push(chunk);
       else chunks[chunks.length - 1] += "-";
       for (let k = chunks.length - 1; k > 0; k--) {
-        if (chunks[k - 1].slice(-1) > chunks[k][0]) {
-          chunks[k - 1] = chunks[k - 1].slice(0, -1) + chunks[k].slice(1);
+        const last = Array.from(chunks[k - 1]), next = Array.from(chunks[k]);
+        if (last[last.length - 1].codePointAt(0) > next[0].codePointAt(0)) {
+          chunks[k - 1] = last.slice(0, -1).join("") + next.slice(1).join("");
           chunks.splice(k, 1);
         }
       }
@@ -495,8 +499,9 @@ window.Maity = window.Maity || {};
     if (not) chunks[0] = chunks[0].slice(1);
     return "[" + (not ? "^" : "") + chunks.map(inSet).join("-") + "]";
   }
-  function fnmatch(name, pattern) {
+  function fnmatch(name, text) {
     let re = "";
+    const pattern = Array.from(text);
     const n = pattern.length;
     let i = 0;
     while (i < n) {
@@ -516,7 +521,7 @@ window.Maity = window.Maity || {};
       } else re += c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
     }
     try {
-      return new RegExp("^(?:" + re + ")$").test(name);
+      return new RegExp("^(?:" + re + ")$", "u").test(name);
     } catch (e) {
       return false; // one pattern this port cannot read hides neither the others nor the section
     }
