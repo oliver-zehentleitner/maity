@@ -47,6 +47,8 @@ class FakeApi:
             )
             return {"workflow_runs": self.ci()}
         if path == "actions/workflows/hub-mariadb.yml/runs":
+            assert params["branch"] == "main"
+            # The API filters by branch; the gate must still refuse what slips through.
             return {"workflow_runs": self.maria()}
         rid = int(re.fullmatch(r"actions/runs/(\d+)/jobs", path).group(1))
         assert params["filter"] == "latest"
@@ -205,11 +207,18 @@ class MariaDb(unittest.TestCase):
             self.assertEqual(code, 1, title)
 
     def test_runs_off_main_are_left_out(self):
-        runs = [
-            run(5, sha=TAG, event="workflow_dispatch", title="hub-mariadb ci", branch="v0.1.0a2")
-        ]
-        code, _out = gate(self.api(runs, {5: {"hub-mariadb": "success"}}))
-        self.assertEqual(code, 1)
+        # Off main, hub-mariadb.yml's run-name gives a hand title whatever the trigger.
+        green = {5: {"hub-mariadb": "success"}}
+        for title, event in (
+            ("hub-mariadb ci", "workflow_dispatch"),
+            ("hub-mariadb hand head", "workflow_dispatch"),
+            ("hub-mariadb hand " + TAG, "workflow_dispatch"),
+            ("hub-mariadb schedule", "schedule"),
+        ):
+            runs = [run(5, sha=TAG, event=event, title=title, branch="v0.1.0a2")]
+            code, out = gate(self.api(runs, green))
+            self.assertEqual(code, 1, title)
+            self.assertIn("no hub-mariadb run tested", out)
 
     def test_not_asked_while_ci_is_red(self):
         api = FakeApi(
@@ -405,6 +414,55 @@ class Workflows(unittest.TestCase):
     def test_hand_title_names_the_tested_commit(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
         self.assertIn("format('hand {0}', inputs.sha || 'head')", text)
+
+
+class ApiErrors(unittest.TestCase):
+    """An API error ends the gate with an error, never with a pass."""
+
+    def test_errors_propagate_and_fail(self):
+        import urllib.error
+
+        for error in (
+            urllib.error.HTTPError("u", 502, "Bad Gateway", None, None),
+            urllib.error.URLError("down"),
+            ValueError("not JSON"),
+        ):
+
+            class Broken(FakeApi):
+                def get(self, path, error=error, **params):
+                    if path == "actions/workflows/hub-mariadb.yml/runs":
+                        raise error
+                    return super().get(path, **params)
+
+            with self.assertRaises(type(error)):
+                gate(Broken(**GREEN_CI))
+
+            class BrokenCi(FakeApi):
+                def get(self, path, error=error, **params):
+                    raise error
+
+            with self.assertRaises(type(error)):
+                gate(BrokenCi(), mariadb=False)
+
+    def test_api_get_raises_instead_of_answering_empty(self):
+        import urllib.error
+        from unittest import mock
+
+        api = g.Api("o/r", "t", base="https://example.test")
+        for error in (
+            urllib.error.HTTPError("u", 403, "Forbidden", None, None),
+            urllib.error.URLError("down"),
+        ):
+            with (
+                mock.patch.object(g.urllib.request, "urlopen", side_effect=error),
+                self.assertRaises(type(error)),
+            ):
+                api.get("actions/workflows/ci.yml/runs", head_sha=TAG)
+        with (
+            mock.patch.object(g.urllib.request, "urlopen", return_value=io.BytesIO(b"<html>")),
+            self.assertRaises(ValueError),
+        ):
+            api.get("actions/workflows/ci.yml/runs")
 
 
 class Main(unittest.TestCase):

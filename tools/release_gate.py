@@ -190,7 +190,11 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
     commit that cannot be compared stops the gate, so an older green run
     never stands in for a newer one.
     """
-    runs = api.get("actions/workflows/hub-mariadb.yml/runs", per_page=50)["workflow_runs"]
+    # Only main's runs: those of other refs can never count, and must not push main's own
+    # off the page.
+    runs = api.get("actions/workflows/hub-mariadb.yml/runs", branch="main", per_page=50)[
+        "workflow_runs"
+    ]
     for run in runs:
         commit = tested(run)
         if commit is None or run.get("head_branch") != "main":
