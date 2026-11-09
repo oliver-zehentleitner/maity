@@ -1341,8 +1341,15 @@ the hub for each credential to decide on `rejoin`: the view has them.
 
 Where they run, on the project's Agents, has **Start an agent on a runner**
 for a human with members:admin. It offers the runners attached here
-(`GET …/runners`) that the human owns and whose credential is live. With
-none, the section says so and links the project's Runners. The agent is one
+(`GET …/runners`) that the human owns, whose credential is live and which
+offer the project's repository: one of the runner's advertised
+`repositories` matches the repository's URL without `https://`, with the
+hub's rule (`check_repository` in `hub/src/maity_hub/placements.py`,
+Python's `fnmatch.fnmatchcase`; `fnmatch` in `web/js/placements.js` is its
+port). With none, the section says so and links the project's Runners; with
+attached runners of which none offers the repository, it says that and
+names the repository; a project without a repository offers no form and
+says a runner needs one. The agent is one
 of the human's own agents here without an active placement, or a new
 profile with the join panel's fields (trust, role, reports to, areas,
 briefing). Where, tool, mode and model come from what the chosen runner
@@ -1356,8 +1363,11 @@ second factor, so the call is not wrapped in `M.stepUp.run`.
 **Reason:** the placements are already shown and steered here, so the
 form sits beside them. Offering only what the hub accepts keeps the
 choices few: someone else's runner is `forbidden`, a revoked one
-`runner_revoked`, an agent placed already `placement_exists`, and a tool
-that is not advertised `harness_not_offered`.
+`runner_revoked`, an agent placed already `placement_exists`, a tool
+that is not advertised `harness_not_offered`, and a runner that does not
+offer the project's repository, or a project without one,
+`repository_not_offered` (the last added by tsk-wn6qp27090qy, after a
+re-check of the merged form found such runners offered).
 
 **Rejected alternative:** the form on the instance-level Runners page:
 there the project would be one more choice, and the placements are not
@@ -1366,7 +1376,9 @@ the lists, and a typo would only be refused by the hub (a tool it does not
 know as `invalid`, a model the runner does not offer as
 `harness_not_offered`, `_check_spec` in `hub/src/maity_hub/routes/placements.py`).
 Listing every attached runner and letting the hub refuse: a choice that
-can only fail.
+can only fail. Listing a runner that does not offer the repository as
+unavailable instead of leaving it out: the other runners the hub would
+refuse are left out too, and with none left the section says why.
 
 ## Project settings are the project's last tab, not a panel from the gear menu
 

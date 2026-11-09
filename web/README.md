@@ -541,9 +541,14 @@ too.
    creates its profile. `placement_created`, `placement_updated`
    and `placement_reported` read the list again. **Start an agent on a
    runner** (§15.6) is there for a human with `members:admin` who owns a
-   runner attached here with a live credential. Such a human without one
-   reads that none is allowed and a link to the project's Runners; anyone
-   else sees neither. The form takes
+   runner attached here with a live credential that offers the project's
+   repository (one of its advertised `repositories` matches the URL without
+   `https://`, as the hub's `fnmatch` matches it). Such a human without one
+   reads that none is allowed and a link to the project's Runners; with
+   such runners of which none offers the repository, that none does, and
+   the repository's name; in a project without a repository, that a runner
+   needs one, and the runners are not read. Anyone else sees neither. The
+   form takes
    one of the human's own agents here without a placement, or a new
    profile with the join fields (handle, name, trust, role, reports to,
    areas, briefing); the runner; where, tool, mode and model from what

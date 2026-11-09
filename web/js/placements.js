@@ -401,9 +401,13 @@ window.Maity = window.Maity || {};
     return box;
 
     // Start on a runner: for a human with members:admin, over the runners of their own that
-    // are attached here with a live credential (§15.4, §15.6); none, and the way to allow one.
+    // are attached here with a live credential (§15.4, §15.6) and offer this project's
+    // repository (the hub's `repository_not_offered`); none, and the way to allow one.
     async function starting() {
       if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
+      // A project without a repository: the hub refuses every placement, so no form.
+      const repo = ctx.project && ctx.project.repository && ctx.project.repository.url;
+      if (!repo) return h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository"));
       let runners = [];
       try {
         runners = (await M.api.getAll(ctx.base + "/runners")).items
@@ -414,6 +418,11 @@ window.Maity = window.Maity || {};
       if (!runners.length) {
         return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
           { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) }));
+      }
+      const name = repositoryName(repo);
+      runners = runners.filter((a) => ((a.runner.capabilities || {}).repositories || []).some((p) => typeof p === "string" && fnmatch(name, p)));
+      if (!runners.length) {
+        return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) }));
       }
       const slot = h("div", { class: "placement-new-slot" });
       const open = h("button", { type: "button", class: "placement-new-open", "aria-expanded": "false" }, M.t("placements.new.open"));
@@ -448,5 +457,28 @@ window.Maity = window.Maity || {};
     }
   }
 
-  M.placements = { section };
+  // The repository as a runner names it, and the hub's match of it against a runner's advertised
+  // patterns (`check_repository` in hub/src/maity_hub/placements.py: the URL without `https://`
+  // and trailing slashes, Python's `fnmatch.fnmatchcase`: `*` and `?` across `/` too, `[…]` and
+  // `[!…]` a set, case kept).
+  const repositoryName = (url) => url.replace(/^https:\/\//, "").replace(/\/+$/, "");
+  function fnmatch(name, pattern) {
+    let re = "";
+    for (let i = 0; i < pattern.length; i++) {
+      const c = pattern[i];
+      if (c === "*") re += "[\\s\\S]*";
+      else if (c === "?") re += "[\\s\\S]";
+      else if (c === "[") {
+        const end = pattern.indexOf("]", i + (pattern[i + 1] === "!" ? 2 : 1) + 1);
+        if (end < 0) { re += "\\["; continue; }
+        const set = pattern.slice(i + 1, end);
+        const not = set[0] === "!";
+        re += "[" + (not ? "^" : "") + (not ? set.slice(1) : set).replace(/[\\\]^]/g, "\\$&") + "]";
+        i = end;
+      } else re += c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    }
+    return new RegExp("^(?:" + re + ")$").test(name);
+  }
+
+  M.placements = { section, fnmatch };
 })(window.Maity);
