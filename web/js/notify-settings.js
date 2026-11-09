@@ -149,6 +149,8 @@ window.Maity = window.Maity || {};
         (field === "address" ? input : password).setAttribute("aria-invalid", "true");
       };
       const buttons = [];
+      // Changing or removing the verified address is a sensitive call (§2.8.4): the second factor is asked for here.
+      const stepSlot = h("div", { class: "step-up-slot", hidden: true });
       // One PATCH of the address; the page follows the hub's answer, a held change included.
       async function send(address, busy) {
         Object.values(errors).forEach((x) => { x.textContent = ""; });
@@ -158,7 +160,7 @@ window.Maity = window.Maity || {};
         buttons.forEach((b) => { b.disabled = true; });
         status.busy(busy);
         try {
-          settings = await M.api.patch("/me/notification-settings", body);
+          settings = await M.stepUp.run(() => M.api.patch("/me/notification-settings", body), stepSlot, M.t("mail.address.step_up"));
           saved(settings);
           // Held is this change waiting (202), not an older one the hub still holds.
           const held = settings.email.address_change && settings.email.address_change.address === address;
@@ -167,6 +169,7 @@ window.Maity = window.Maity || {};
           else if (address === null) say(M.t("mail.address.removed"));
           else say(M.t("mail.address.sent", { address }));
         } catch (err) {
+          if (err.code === "cancelled") { status.done(); buttons.forEach((b) => { b.disabled = false; }); return; }
           const fields = err.code === "invalid" && err.details && err.details.fields;
           if (fields && fields["email.address"]) fail("address", M.t("mail.address.invalid"));
           if (fields && fields.current_password === "required") fail("password", M.t("mail.address.password_required"));
@@ -231,7 +234,7 @@ window.Maity = window.Maity || {};
           h("label", { for: "mail-address-password" }, M.t("mail.address.password")), password,
           h("p", { class: "hint", id: "mail-address-password-hint" }, M.t("mail.address.password_hint")), errors.password,
         ] : null,
-        h("div", { class: "actions" }, save, again, remove)),
+        stepSlot, h("div", { class: "actions" }, save, again, remove)),
         status.el);
     }
     draw();

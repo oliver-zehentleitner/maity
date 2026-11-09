@@ -46,6 +46,58 @@ window.Maity = window.Maity || {};
   const mockSoulVersions = {};
   const mockSoul = (id) => mockSouls[id] || { agent_id: id, markdown: "", version: 0, by: null, confirmed_by: null, updated_at: null };
   let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
+  // The fixture hub's step-up (§2.8.4), only where a test sets window.MAITY_FIXTURE_STEP_UP: these
+  // routes, the ones of tools/step-up-routes.json (tools/check.py keeps the two equal), refuse with
+  // step_up_required until a code was verified in the last 10 minutes, and, where the flag is a time
+  // (Date.now()), after it. Off, nothing asks, as for a session that has just given its factor.
+  const STEP_UP_ROUTES = [
+    "GET /me/export",
+    "POST /me/deletion",
+    "POST /auth/password",
+    "POST /auth/second-factor/totp",
+    "POST /auth/second-factor/recovery-codes",
+    "DELETE /auth/second-factor",
+    "POST /auth/device-codes/{code_id}/approve",
+    "PATCH /me/notification-settings",
+    "POST /me/notification-settings/email/address-change/approve",
+    "POST /me/notification-settings/email/address-change/reject",
+    "POST /me/forge/github/link",
+    "PUT /me/forge/github/token",
+    "POST /runners/enrollments",
+    "DELETE /orgs/{org}",
+    "PATCH /projects/{owner}/{slug}",
+    "POST /projects/{owner}/{slug}/transfer",
+    "POST /projects/{owner}/{slug}/repository/confirm",
+    "POST /projects/{owner}/{slug}/joins",
+    "POST /projects/{owner}/{slug}/requests/{request_id}/answer",
+    "POST /requests/{request_id}/answer",
+    "POST /admin/users/{human_id}/second-factor/reset",
+    "PATCH /admin/settings/auth-pages",
+    "PATCH /admin/settings/landing",
+    "PATCH /admin/settings/legal",
+    "PATCH /admin/settings/limits",
+    "PATCH /admin/settings/mail",
+    "PATCH /admin/settings/registration",
+    "PATCH /admin/settings/sign-in",
+    "PATCH /admin/settings/site-values",
+  ];
+  // Where the hub asks only in some cases: a change of restricted_access, of the address, a go
+  // (the hub on a project transfer's go only), never on a reject.
+  const STEP_UP_WHEN = {
+    "PATCH /projects/{owner}/{slug}": (b) => !!(b.settings && "restricted_access" in b.settings),
+    "PATCH /me/notification-settings": (b) => !!(b.email && "address" in b.email),
+    "POST /me/notification-settings/email/address-change/reject": () => false,
+    "POST /projects/{owner}/{slug}/requests/{request_id}/answer": (b) => b.reply_id === "go",
+    "POST /requests/{request_id}/answer": (b) => b.reply_id === "go",
+  };
+  const STEP_UP_MATCH = STEP_UP_ROUTES.map((r) => {
+    const [verb, template] = r.split(" ");
+    return [verb, new RegExp("^" + template.replace(/\{[^}]+\}/g, "[^/]+") + "$"), STEP_UP_WHEN[r]];
+  });
+  let mockSteppedAt = 0;
+  const stepUpOwed = (method, path, body) => !!window.MAITY_FIXTURE_STEP_UP
+    && mockSteppedAt < Math.max(Number(window.MAITY_FIXTURE_STEP_UP) || 0, Date.now() - 600000)
+    && STEP_UP_MATCH.some(([verb, pattern, when]) => verb === method && pattern.test(path) && (!when || when(body || {})));
   let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
@@ -2277,6 +2329,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
       if (body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
       mockFactorOn = true;
+      mockSteppedAt = Date.now(); // the code just given counts (§2.8.1)
       return { recovery_codes: Array.from({ length: 10 }, (_, i) => "abcde-fghi" + i) };
     }],
     ["POST", /^\/auth\/second-factor\/recovery-codes$/, () => ({ recovery_codes: Array.from({ length: 10 }, (_, i) => "klmno-pqrs" + i) })],
@@ -2288,6 +2341,7 @@ window.Maity = window.Maity || {};
       if (body.code !== "123456" && body.recovery_code !== "abcde-fghij" && body.email_code !== "654321" && body.email_token !== "mailtoken") {
         fail(403, "code_invalid", "the code is wrong or was used", path);
       }
+      mockSteppedAt = Date.now();
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z"), member: me().member, next: "/" };
     }],
     ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
@@ -5172,6 +5226,7 @@ window.Maity = window.Maity || {};
       }
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
       if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
+      if (stepUpOwed(method, path, body)) fail(403, "forbidden", "this call needs your second factor first", fullPath, { reason: "step_up_required" });
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;

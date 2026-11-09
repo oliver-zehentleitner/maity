@@ -1646,17 +1646,19 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // "+": a new project, or bring someone in, an agent or a person (the maintainer, 2026-10-31):
-    // the create form, the agents page with its join, the invitations page. Humans only.
+    // "+": bring someone in, an agent or a person, pair a runner, or a new project (the maintainer,
+    // 2026-10-31; the order and the runner, tsk-45fhe2yrwzb7): the agents page with its join, the
+    // invitations page, the runners page with its pairing form, the create form. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
       face: M.icons.plus(18),
       items: () => [
-        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
-        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+        { label: M.t("menu.add.runner"), href: "/runners", current: ctx.scope === "runners" },
+        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
+        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
       ],
     }) : null;
     // The human: their picture, the account, signing out.
