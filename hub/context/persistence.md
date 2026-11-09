@@ -934,3 +934,69 @@ dictionary in the order PostgreSQL would return finds the places that forgot; SQ
 
 **Reason:** the order of keys looks stable in development, on SQLite, and breaks only on the production database, in a job nobody
 runs locally, so the rule has to be a habit of reading rather than a thing a test happens to catch.
+
+## A migration's backfill is a fixed number of set-based statements, never a loop over humans
+
+**Id:** 319da070-d55d-4e2f-a59e-2b74e94423df
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the reviews of #1447 (2026-11-06/07, migration `20261106210000_join_subagents`): akbp measured the per-human loop and then the per-chunk fallback as full scans of `membership` and `join_link` (neither `subagents_by` nor `created_by` is indexed); vuur and spq4 named the bound
+**Revisit when:** a backfill needs a value SQL cannot compute on all supported databases
+
+The backfill of `20261106210000_join_subagents` gives every coder or reviewer membership, and every open coder or
+reviewer join, its owner's language as `languages.of_interface` decides it: the interface language, else the mail language in
+`notification_settings.preferences`, else `en`. It is two `UPDATE`s, one per table. Each row's value comes from correlated
+subqueries on primary keys (`agent_profile.id`, `human.id`, `notification_settings.human_id`), and the mail language is read
+in SQL through SQLAlchemy's JSON path (`#>>` on PostgreSQL, `JSON_EXTRACT` on SQLite and MariaDB). Each table is scanned once,
+whatever the number of humans. The migration test counts the statements and compares the rows with the per-human loop.
+
+**Reason:** a migration runs inside the deployment's transaction and holds its locks; work that grows with humans × rows
+grows with the instance's history, where nobody measures it before the deploy.
+
+**Rejected alternatives:**
+- One `UPDATE` per table and human, with the language computed in Python: two statements per human, each a full scan of
+  `join_link` without an index on `created_by`, O(humans × joins).
+- Set-based for the interface language, then one `UPDATE` per mail language and chunk of 500 humans: fewer statements, but
+  each still a full scan, O(chunks × rows).
+- A temporary table of humans and languages joined once per table: the same bound, but more statements and a table to clean up.
+- An index on `created_by` / `subagents_by` for the loop: it makes the loop cheaper, not bounded, and keeps an index only
+  this migration needs.
+
+## On PostgreSQL a migration run stays one transaction and is run again after a deadlock or a lock timeout
+
+**Id:** 3320d30f-9516-495a-8abb-11da2a93c0b0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** two of three migrate attempts of the 2026-11-08 deploy failed with `deadlock detected`;
+local reproduction on PostgreSQL (`tests/test_migrate_concurrency.py`)
+**Revisit when:** the hub stops serving during `maity-hub migrate`, or `/health` accepts a schema
+other than the code's head
+
+`maity-hub migrate` runs while the hub serves. On PostgreSQL the chain is one transaction, so every
+lock an earlier migration took (`human` for a new foreign key, then for a new column) is held until
+the last one ends. A hub transaction that holds a table the chain wants next and then reads one it
+already holds closes a cycle; inside one migration that alters two tables, the same happens with
+the opposite order. `migrations/env.py` sets `lock_timeout` on the migrate session (5 s), and
+`db.migrate` runs the whole chain again on a deadlock (40P01) or a lock it did not get in time
+(55P03): five attempts, with growing pauses, then the error, and `maity-hub migrate` says the
+revision the schema stayed at.
+
+**Reason:** a failed attempt rolls the whole chain back, so the schema is always the one the
+running hub expects and the next attempt starts clean. The lock timeout keeps a waiting
+`ACCESS EXCLUSIVE` request from queueing every request for that table behind it.
+
+**Rejected alternatives:**
+- One transaction per migration (`transaction_per_migration`): it shortens how long a lock is held,
+  but a run that dies halfway leaves the database at an intermediate revision. `/health` answers
+  503 `schema_outdated` for any revision other than the code's head, so the old pods leave service
+  and the failed deploy brings no new ones: a failure that costs nothing today would become an
+  outage. It also leaves the deadlock inside one migration in place.
+- Taking every lock up front in a fixed order: the tables a migration needs are known only while it
+  runs, and the list would have to follow every new migration.
+
+**Known limit:** MariaDB commits per step and gets no retry here, since an attempt from the start
+would redo committed DDL (see "On MariaDB a migration run commits per step").

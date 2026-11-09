@@ -308,8 +308,39 @@ def alembic_config(engine: Engine, script_location: Path | None = None) -> Confi
     return config
 
 
-def migrate(engine: Engine, revision: str = "head") -> None:
-    command.upgrade(alembic_config(engine), revision)
+# `maity-hub migrate` on PostgreSQL runs while the hub serves: the chain is one transaction that
+# meets the hub's own (hub/context/persistence.md). A deadlock (40P01) or a lock not had within
+# MIGRATE_LOCK_TIMEOUT (55P03) rolled all of it back, and it is run again from the start.
+MIGRATE_LOCK_TIMEOUT = 5.0
+MIGRATE_ATTEMPTS = 5
+MIGRATE_PAUSE = 1.0
+MIGRATE_AGAIN = {"40P01", "55P03"}
+
+
+def migrate(
+    engine: Engine,
+    revision: str = "head",
+    *,
+    lock_timeout: float = MIGRATE_LOCK_TIMEOUT,
+    attempts: int = MIGRATE_ATTEMPTS,
+    pause: float = MIGRATE_PAUSE,
+) -> None:
+    from maity_hub.errors import driver_code, driver_fields
+
+    config = alembic_config(engine)
+    config.attributes["lock_timeout"] = lock_timeout
+    for attempt in range(attempts):
+        try:
+            command.upgrade(config, revision)
+            return
+        except DBAPIError as error:
+            again = engine.dialect.name == "postgresql" and driver_code(error) in MIGRATE_AGAIN
+            if not again or attempt == attempts - 1:
+                raise
+            log.warning(
+                "migrate retry: attempt=%d of=%d %s", attempt + 1, attempts, driver_fields(error)
+            )
+            time.sleep(pause * 2**attempt)
 
 
 def downgrade(engine: Engine, revision: str = "base") -> None:

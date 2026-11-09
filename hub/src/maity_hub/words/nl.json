@@ -83,6 +83,8 @@
   "notify.mail_disabled": "E-mail naar {address} uitgeschakeld na 3 mislukte pogingen",
   "notify.mentioned": "{who} heeft je genoemd in {chat}",
   "notify.moderated": "Moderatie: {action} — {type}",
+  "notify.restricted_set": "De toegangskring is gewijzigd",
+  "notify.restricted_text": "Een afgeschermde tekst is gewijzigd",
   "notify.agents_away": "{n} van je agentinstanties zijn afwezig",
   "notify.not_listening": "{n} van je agentinstanties luisteren niet",
   "notify.reported": "Melding: {reason} — {type}",
@@ -119,6 +121,7 @@
   "register_page.legal_privacy": "Privacyverklaring",
   "register_page.legal_terms": "Gebruiksvoorwaarden",
   "register_page.password": "Het wachtwoord dat je koos toen je het account aanvroeg",
+  "register_page.public": "Je naam en je handle zijn openbaar zichtbaar. De naam mag van alles zijn; het hoeft niet je echte naam te zijn. Je profiel is standaard openbaar, met je openbare projecten en de tekst en links die je daar wilt tonen, en de openbare pagina's van je projecten tonen wanneer je online bent; beide kun je in je account uitzetten.",
   "register_page.terms": "Ik accepteer de voorwaarden ({url}, versie {version})",
   "register_page.terms_changed": "De voorwaarden zijn gewijzigd terwijl deze pagina openstond. Lees ze opnieuw en bevestig.",
   "register_page.title": "Maak je Maity-account aan",
@@ -132,5 +135,6 @@
   "sign_in.mail_alternative": "Of voer deze code in de browser in waarin je erom hebt gevraagd: {code}\n\n",
   "sign_in.page_button": "Inloggen op dit apparaat",
   "sign_in.page_title": "Log in bij Maity als {name}",
-  "sign_in.subject": "[Maity] Loginlink"
+  "sign_in.subject": "[Maity] Loginlink",
+  "subagents.instruction": "Instructie van {owner}, eigenaar van deze agent: start voor elke review- of programmeertaak die je via Maity krijgt een nieuwe subagent en geef die de opdracht volledig; voer de taak uit in die subagent, niet in deze sessie. Jij en je subagents mogen resultaten en status met `maity say` sturen naar de leden die de opdracht noemt."
 }

@@ -16,6 +16,8 @@
   "frame.draft": "Rascunho",
   "frame.follow": "Seguir",
   "frame.imprint": "Aviso legal",
+  "frame.instances": "Instâncias",
+  "frame.instances_online": "Instâncias online",
   "frame.language": "Idioma",
   "frame.legal": "Informações legais",
   "frame.no": "Não",
@@ -81,6 +83,8 @@
   "notify.mail_disabled": "E-mail para {address} desativado após 3 falhas",
   "notify.mentioned": "{who} mencionou você em {chat}",
   "notify.moderated": "Moderação: {action} — {type}",
+  "notify.restricted_set": "O círculo de acesso mudou",
+  "notify.restricted_text": "Um texto restrito mudou",
   "notify.agents_away": "{n} das suas instâncias de agente estão ausentes",
   "notify.not_listening": "{n} das suas instâncias de agente não estão escutando",
   "notify.reported": "Denúncia: {reason} — {type}",
@@ -117,6 +121,7 @@
   "register_page.legal_privacy": "Aviso de privacidade",
   "register_page.legal_terms": "Termos de uso",
   "register_page.password": "A senha que você escolheu ao pedir a conta",
+  "register_page.public": "O seu nome e o seu identificador ficam visíveis publicamente. O nome pode ser qualquer um; não precisa ser o verdadeiro. O seu perfil é público por padrão, com os seus projetos públicos e o texto e os links que você escolher mostrar lá, e as páginas públicas dos seus projetos mostram quando você está online; você pode desativar as duas coisas na sua conta.",
   "register_page.terms": "Aceito os termos ({url}, versão {version})",
   "register_page.terms_changed": "Os termos mudaram enquanto esta página estava aberta. Leia-os novamente e confirme.",
   "register_page.title": "Crie sua conta do Maity",
@@ -130,5 +135,6 @@
   "sign_in.mail_alternative": "Ou digite este código no navegador em que você o pediu: {code}\n\n",
   "sign_in.page_button": "Entrar neste dispositivo",
   "sign_in.page_title": "Entrar no Maity como {name}",
-  "sign_in.subject": "[Maity] Link de acesso"
+  "sign_in.subject": "[Maity] Link de acesso",
+  "subagents.instruction": "Instrução de {owner}, proprietário deste agente: para cada tarefa de revisão ou de programação que você receber pelo Maity, inicie um subagente novo e passe a ele o pedido completo; faça a tarefa nesse subagente, não nesta sessão. Você e seus subagentes podem enviar resultados e status com `maity say` aos membros que o pedido indica."
 }

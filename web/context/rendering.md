@@ -98,6 +98,53 @@ CSSOM instead of a `style` attribute keeps working under a strict CSP.
 attribute — blocked by a strict CSP and parsed as markup-adjacent text. A
 picture from a third-party avatar service — it would send member ids out.
 
+## An avatar shows the generated picture at once and loads the hub's picture only near the screen, at the size shown
+
+**Id:** 4db0d863-545e-46bb-b031-b5c9bbbfacb8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's plan for the avatar card (tsk-vvyqmk9vwg8e), 2026-11-09; a local reproduction of a board's burst of avatar reads against a hub on PostgreSQL, 2026-11-09
+**Revisit when:** the hub serves a board's avatars without queueing (one read for all of them, or a picture inside the list's answer), or browsers lazy-load images that are not yet on the page
+**See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-11-09
+
+`M.avatar` returns the identicon every time. When the member carries an
+`avatar_url` the page may load, it loads that picture once the identicon
+is within 200 px of the screen (IntersectionObserver; without one, at
+once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
+128, 256) that covers the shown size on this screen, with the device pixel
+ratio capped at 2. The loaded image takes the identicon's place with the
+same size and class rules. A picture that does not load leaves the
+identicon. A logo or banner is loaded as given, without a size. `h()`
+allows the sized address and no other parameter. The observer watches
+only placeholders that are on the page. One that is not (built before its
+view is mounted, or taken off the page) is held only through a `WeakRef`,
+and is watched again once it is on the page: a sweep runs after every
+change of the page (a MutationObserver, once per frame) and at every
+avatar drawn. A view that is thrown away keeps nothing alive, and one that
+is mounted late still gets its pictures.
+
+**Reason:** a board draws about 35 avatars, and the hub answered them one
+after another in effect (about 380 ms in the browser for 52 ms in the
+hub). Until then the page showed empty boxes and laid out late. With the
+identicon first, nothing waits for the pictures. Loading only near the
+screen leaves the reads of long lists to the rows someone scrolls to. The
+size cuts the bytes: a 16 px avatar fetched 256 px.
+
+**Rejected alternative:** `<img loading="lazy">` in place of the
+identicon. The browser leaves it empty until the picture arrives, and a
+detached image is never lazy-loaded, so the identicon could not stay in
+its place. A wrapper holding both the identicon and the image: the CSS
+rules for avatars (clipping on cards, overlap in a row of avatars) select
+`.avatar-svg` and `.avatar-img` directly, and a wrapper would break them.
+Letting a placeholder go only once the observer had seen it on the page:
+a view drawn twice before the observer's first callback left its first
+placeholders observed for good. Letting go of every placeholder still off
+the page 10 s after it was drawn: a view mounted later than that (the
+board waits for a card's own read before it is mounted) kept the generated
+pictures for good (both from the review of #1541).
+
+
 ## Chat messages are Markdown drawn as DOM nodes by a small renderer of our own, never an HTML-producing library
 
 **Id:** 854c8122-770c-4c80-be9f-0ce9c90c0d2e
@@ -655,12 +702,12 @@ Plural forms follow the catalog's language, not the locale of the numbers: a Ger
 the English catalog needs English forms.
 
 The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
-`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+or `?lang=`, unless the landing page's frame overrode that `?lang=`: fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17). Without one it leaves the field out, so the account keeps
 `null` and goes on following the browser.
 
 `?lang=` is read on every call of the rule, so a choice made on the page (`M.i18n.choose`: the
-pickers on `/login` and `/register`, the frame's languages) also writes its tag into an address
-that carries `?lang=`, through `M.route.go` with `quiet`, which replaces the address without
+pickers on `/login` and `/register`, the frame's languages) also writes its tag into the address
+(since 2026-11-07 also one without `?lang=`: 323db387-6c53-4a63-86bd-13a464b114e7), through `M.route.go` with `quiet`, which replaces the address without
 drawing the view again. The frame's links lead to `/register?lang=<the frame's language>`, and `/register`
 reads the session again when it is drawn: before, its 401 read the older `?lang=` back, and the
 page jumped back to the language it was reached in (tsk-7dty3gkegqgc; on `/login`, a reload did).
@@ -674,14 +721,112 @@ the session themselves. A catalog per language keeps nine languages off every pa
   ignore `language` (§6.2).
 - All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
 - Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
-- Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
-  the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+- Picking the language in the hub before sign-in: the dashboard chooses and passes `lang` to the
+  page texts (§16.7.4). (The first reason, a choice kept in the browser, is gone since 2026-11-07:
+  323db387-6c53-4a63-86bd-13a464b114e7.)
 - Reading `?lang=` only once, when the dashboard loads: an address with `?lang=` would then say
   another language than the page, and a reload would still take the choice back.
-- Writing `?lang=` into every address on a choice, also one without it: the choice is already kept in
-  the browser, and an address copied from the page would then fix the language for whoever opens it.
+- Writing `?lang=` into every address on a choice, also one without it: rejected while the choice was
+  kept in the browser; adopted on 2026-11-07, once nothing is kept there
+  (323db387-6c53-4a63-86bd-13a464b114e7).
 - `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
   so what was typed into the form so far would be lost.
+
+## Before sign-in the dashboard takes the landing page's order for the language, and keeps nothing in the browser
+
+**Id:** 323db387-6c53-4a63-86bd-13a464b114e7
+**Type:** decision
+**Status:** superseded
+**Superseded by:** fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17
+**Evidence:** confirmed
+**Source:** card tsk-a9n9p6952wwb (landing in English, sign-in and visitor views in German for the same visitor, 2026-11-06), reproduced on maity.team 2026-11-07; the lead's go on the plan (Maity message, 2026-11-07); `web/js/i18n.js`, `hub/src/maity_hub/render.py` `choose_language`
+**See:** rendering.md#english-is-always-loaded-the-readers-language-comes-as-its-own-script-chosen-by-one-rule-in-one-place — 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6 — as of 2026-11-07
+**Revisit when:** the maintainer wants a visitor's choice kept across visits, the hub's public pages start reading a language cookie, or the dashboard takes the visitor's language from `GET /site/chrome` (which closes the gap below)
+
+Without an account's `interface_language` the dashboard takes the landing page's order: `?lang=`,
+then the browser's languages, then `en`. The landing page itself offers only the languages it has a
+page in, takes `?lang=` only as an exact offered tag where the dashboard reads the closest catalog
+(`de-AT` reads `de`), and falls back to its `default_language`, not to `en`
+(`render.choose_language`, `render.best_language`, §16.7). A choice made on a page (`M.i18n.choose`) holds
+for the page while it lives and writes `?lang=` into the address, also one that had none; the
+frame's and the landing page's links carry `?lang=` from page to page. Nothing goes into
+`localStorage`: the key an older version wrote, `maity.language`, is removed once when the
+dashboard loads, and no other key is touched.
+
+**Reason:** a choice kept in `localStorage` is invisible to the pages the hub renders itself. After
+one visit to `/signin?lang=de` an en-US browser got the landing page in English and the sign-in and
+visitor views in German, in the same visit. One rule that both sides can read is the fix.
+
+**Consequence:** a visitor who chose a language and later types a bare address gets the browser's
+language again, on every page alike. An address copied from a page after a choice carries
+`?lang=` and opens in that language, as the landing page's links already do. Two gaps remain. Where
+the fallbacks differ: with `default_language: de`, a browser asking only for a language without a
+landing page (`sv`) gets the landing page in German and the dashboard in English. Where the offered
+sets differ: with `default_language: en` and pages only in `en` and `fr`, a browser asking for `de`
+gets the landing page in English and the dashboard in German, and one asking for `de, fr;q=0.8` gets
+it in French and the dashboard in German (likewise `?lang=de-AT`). The two agree only where the
+landing page has a page in each of the ten languages and `default_language` is `en`, as on
+maity.team. Closing both means taking the visitor's language from `GET /site/chrome`, which the hub
+chooses exactly as the landing page's; that is a change of behaviour, left to a card of its own
+rather than to the review of this one.
+
+**Rejected alternative:** a language cookie the hub reads too: it would keep the choice across visits,
+but the public pages set no language or tracking cookie (context/scope.md, hub/context/landing.md;
+`/` reads only the session cookie, to choose between the landing page and the dashboard), and
+`GET /site/chrome` and `GET /auth/pages/{page}`, which vary on `Accept-Language` only, would need
+`Vary: Cookie`. Keeping the choice across visits is the maintainer's call, and it is that cookie.
+
+## Before sign-in the dashboard takes the landing page's own language from `GET /site/chrome`
+
+**Id:** fc89488b-2c14-4e1c-8dc1-4e1b5f6a8f17
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-jh94ax9pphxs, the follow-up 323db387 named, and the gaps the reviews of #1463 found (2026-11-07); the lead's go on the plan and on the revised hook, with the redraw accepted and a short timeout required (Maity messages, 2026-11-07); `web/js/i18n.js`, `web/js/site-chrome.js`, `hub/src/maity_hub/render.py` `choose_language`
+**See:** rendering.md#before-sign-in-the-dashboard-takes-the-landing-pages-order-for-the-language-and-keeps-nothing-in-the-browser — 323db387-6c53-4a63-86bd-13a464b114e7 — as of 2026-11-07
+**Revisit when:** `GET /site/chrome` stops choosing its language as the landing page does, the maintainer wants a visitor's choice kept across visits (that is a language cookie, 323db387), or the read's cost or delay shows on signed-out pages
+
+Without an account's `interface_language` the dashboard takes the landing page's own language.
+On the 401 of `GET /auth/session`, which every view without a session waits for, `i18n` reads
+`GET /site/chrome` once per page and address, with the address's `?lang=` as written (or the last
+one this page saw, or a pick on it, across routes without one) or without `lang`, and takes its
+`language`: the hub chooses it from the exact `?lang=`, `Accept-Language`,
+the landing page's languages and its `default_language` (§16.7.5). The frame on `/login` and
+`/register` reads the same address (the browser's cache answers it) and its `language` counts the
+same way; where it differs from what the page was drawn in, the page draws itself again once, never
+when they agree. Precedence: the account's language, then a choice made on the page (it holds for
+the page's life, until an address with any other `?lang=` value, as `sv`, `xx` or `de-AT` after
+a pick of `de`), then the
+frame's, then `?lang=` (the closest catalog), the browser's languages and `en`. A signed-in account
+without an `interface_language` (the session read answered 200) is no visitor: it keeps the
+browser's rule and never reads the frame. Nothing goes into the browser's storage, as
+323db387 decided. The read is given `i18n.frameWait` (1500 ms): a failed or late answer leaves the
+rule without it and holds no view; fixture mode reads nothing, its frame answering English whatever
+is asked.
+
+**Reason:** the reviews of #1463 showed the dashboard's own rule could only approximate the landing
+page's: the landing page offers only the languages it has pages in, takes `?lang=` only as an exact
+offered tag and falls back to its `default_language`. Asking the hub, which already chooses the
+frame's language that way, makes them one choice instead of two that agree only with all ten pages
+and `default_language: en`.
+
+**Consequence:** a reload with a `?lang=` the landing page has no page in (pages `en` and `fr`,
+`?lang=ko`) follows the landing page, though the address still shows `?lang=ko`, as the landing page
+itself does; only a choice made on the page holds against the frame, for that page. Such an
+overridden `?lang=` is no choice of the person's either: `/register` does not store it as the
+account's `interface_language`, or the account would read Korean while the landing page reads
+English, the split this entry closes. Every signed-out
+page load costs one more `GET`, `Cache-Control: public, max-age=60`.
+
+**Rejected alternatives:**
+- Waiting for the read before every visitor view: a slow hub would delay every signed-out page;
+  the short timeout keeps the delay bounded instead, and the redraw is only where the two differ.
+- Reading the frame before `M.i18n.ready`, on every page load: also for signed-in readers, who never
+  need it, and before the session says whether there is one.
+- Reading it only where the frame is drawn (`/login`, `/register`): the visitor views, which the card
+  was about, would keep the gap.
+- Restricting the pickers to the landing page's languages while the frame stands: a person may
+  still want a dashboard language the landing page lacks; their choice holds for the page instead.
 
 ## A missing translation is a note until the release; a wrong one fails at once
 
@@ -869,9 +1014,27 @@ chat is found again by its participants, never by its title; its
 maker may rename it (§9.2). Rejected: a chat without a title (the
 hub allows one), named from its participants when read: every list
 that shows the chat would need that naming, and the participants alone
-do not say what the chat is for. Still put together from
-pieces: a status line's prefix and its reason ("Not saved: " + the
-hub's words, `status.fail`), for a later part of stage 2.
+do not say what the chat is for. A failure is one
+sentence with `{reason}` where the hub's words go ("Not saved:
+{reason}"): `status.fail(sentence, err)` fills it through
+`M.reasonIn`, so a language may put the reason first or in the middle.
+Text before an element (an inbox entry's label, a diff line's "added:",
+the list of what blocks a release) has its own placeholder (`{entry}`,
+`{line}`, `{reasons}`) filled with that element by `M.tn`. A failure
+with other values is handed over as a function of the reason,
+`(reason) => M.t(key, { name, reason })`, so its text is filled once:
+a value that reads "{reason}" (a file's name) stays as it is. A failure
+shown outside a status line is filled where it is shown
+(`M.t(key, { reason })`). `make check` fails on an English text that
+ends in ": ", on a key handed to `status.fail` without `{reason}`, and
+on a text put into an element, joined with `+` or written to
+`textContent` with a placeholder left unfilled, a placeholder counting
+as filled only where the values' object literal has a property of that
+name. It does not read values from a variable or a spread, nor follow a
+text kept in a variable (tsk-0zbms0wwqhmm, #1498). Rejected: the
+reason glued after the sentence in code, which fixed its place for
+every language; filling `{reason}` in the finished text for every
+failure, which filled it again inside a value.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code
@@ -1160,6 +1323,39 @@ Each case is settled once:
   catalogs build on it.
 - French `fil d'actualité` in full in every sentence: nine sentences grow long for no gain once `le fil` means the
   ticker alone.
+
+## `make check` holds every translation to the glossary's fixed terms and form of address
+
+**Id:** 7d49c1e3-32a6-4a9e-af9e-c385ee719ee0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-47tbmmmemf6x and the reviews of PR #1457, 2026-11-07; findings of the reviews of #1451 (a translated `harness`, Portuguese `tu` forms)
+**Revisit when:** the address table of `web/i18n/glossary.md` changes its shape, informal French possessives (`ton`, `ta`) appear in a catalog, or Chinese gets a check for `您`
+
+See: rendering.md#one-word-per-thing-in-the-translations — fc2e6592-2711-447a-978c-75a9ccce1e0a — as of 2026-11-07
+
+Reviews kept finding the same two slips by hand: a term the glossary keeps as it is came back translated, and a text
+used the other form of address than the one the glossary names. `web/tools/check.py` now reads both rules from
+`glossary.md` itself and checks every catalog and the hub's mail words: a term its Words table keeps `unchanged` in
+every language must stay in a text whose English holds it, and a text uses no word of the other address
+(`GLOSSARY_OTHER_ADDRESS`). Code spans and placeholders are taken out first, and a placeholder reads as a number, so
+`{harness}` is no harness and Dutch `{count} u` stays hours. German `Sie` and `Ihr…` count only inside a sentence. An
+address in the table that the check does not know is itself a finding, so the table cannot change unseen.
+
+Chinese is not checked, and no reason was weighed for that: the check grouped it with Japanese and Korean when it was
+written, as if its address were a register too. It is not: the glossary names `你`, and the other address is the
+single character `您`, which a pattern finds; neither Chinese catalog holds `您` (found in the delta review of #1457).
+
+**Rejected alternatives:**
+- Checking `resume` with the other fixed terms: the glossary translates it as an ordinary verb, so the check would flag
+  correct sentences; it stays a reviewer's call (`GLOSSARY_NOT_CHECKED`).
+- Flagging French `ton` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses it so
+  (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with no
+  reason of their own; neither occurs in a French catalog today.
+- A word list for Japanese and Korean: their address is a register (です・ます, 해요체), not a set of words a pattern
+  can find; nothing is checked there and reviewers keep it.
+- Leaving both rules to review alone: the same findings came back on #1451 after the glossary named them.
 
 ## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
 

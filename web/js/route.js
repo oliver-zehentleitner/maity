@@ -76,8 +76,8 @@ window.Maity = window.Maity || {};
   // follows (the page's language, js/i18n.js). Over http(s) the place after `#` stays.
   function go(path, opts) {
     const quiet = !!(opts && opts.quiet);
-    const replace = !!(opts && opts.replace);
     if (path === here()) return false;
+    const replace = !!(opts && opts.replace) || (!quiet && takeLayer());
     if (quiet) {
       window.history.replaceState(window.history.state, "", fixture ? "#" + path : path + window.location.hash);
       return true;
@@ -93,11 +93,68 @@ window.Maity = window.Maity || {};
     return true;
   }
 
+  // A layer over the view, such as the full-screen chat (tsk-fnch2yxp2kk1): it takes one entry
+  // of the history at the same address, so the browser's back closes it and nothing else. Opened
+  // with layer(close); the result's back() closes it as that back would, by leaving its entry;
+  // drop() forgets it without touching the history (the view left first). One layer at a time.
+  // A route change while a layer is open takes the layer's entry for the new address, so no
+  // second stop at the same address stays behind (fmzu at #1525); see go() and the link click.
+  let layerOpen = null; // { close } while a layer holds its entry
+  let leaving = false; // our own history.back() of a layer: its popstate is ours
+  // No layer any more: in fixture mode its link watch goes with it.
+  function forget() {
+    layerOpen = null;
+    if (fixture) document.removeEventListener("click", fixtureClick);
+  }
+  function closedLayer() {
+    if (leaving) { leaving = false; return true; }
+    if (!layerOpen) return false;
+    const { close } = layerOpen;
+    forget();
+    close();
+    return true;
+  }
+  // The open layer closed for a route change: true when there was one, its entry then free.
+  function takeLayer() {
+    if (!layerOpen) return false;
+    const { close } = layerOpen;
+    forget();
+    close();
+    return true;
+  }
+  // In fixture mode a link changes the fragment itself, a new entry: while a layer is open, the
+  // link replaces the layer's entry instead (e5kk at #1525). Over http(s) the link click below
+  // goes through go().
+  function fixtureClick(e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    if (!a || (a.getAttribute("target") && a.getAttribute("target") !== "_self") || a.hasAttribute("download")) return;
+    const to = a.getAttribute("href");
+    if (!to || !to.startsWith("#/") || !takeLayer()) return;
+    e.preventDefault();
+    window.location.replace(to);
+  }
+  function layer(close) {
+    window.history.pushState(window.history.state, "", window.location.href);
+    const mine = { close };
+    layerOpen = mine;
+    if (fixture) document.addEventListener("click", fixtureClick);
+    return {
+      back() { if (layerOpen !== mine) return; forget(); leaving = true; window.history.back(); },
+      drop() { if (layerOpen === mine) forget(); },
+    };
+  }
+
   // The view is drawn again on every change of the address: back and
   // forward, a link, go().
   function listen(fn) {
     onChange = fn;
-    window.addEventListener(fixture ? "hashchange" : "popstate", fn);
+    window.addEventListener(fixture ? "hashchange" : "popstate", (e) => {
+      // A back that only closes a layer (layer() below) leaves the view as drawn.
+      if (e && e.type === "popstate" && closedLayer()) return;
+      fn(e);
+    });
+    if (fixture) window.addEventListener("popstate", closedLayer);
     if (fixture) return;
     // A click on a link of the dashboard stays in the page; a modified
     // click, another target or a hub path is the browser's.
@@ -111,12 +168,17 @@ window.Maity = window.Maity || {};
       // `?as=public`, so a link there is a page load, with or without a query or a place (the
       // frame's mark and sections, the logo signed out).
       if (startPage(to)) return;
+      // So are the other pages the hub draws itself at an address the dashboard also answers:
+      // `/explore` and a landing variant `/for/<slug>` (§16.11). The hub decides per request
+      // whether they are its page or the shell; a route change would draw the dashboard's view
+      // of an unknown address instead.
+      if (hubDrawn(to)) return;
       const anchored = splitAnchor(to);
       if (anchored) {
         e.preventDefault();
         // The page one is on: only the place changes, nothing is drawn or read again.
         if (anchored.path === here()) jump(anchored.anchor);
-        else { window.history.pushState(null, "", to); if (onChange) onChange(); }
+        else { window.history[takeLayer() ? "replaceState" : "pushState"](null, "", to); if (onChange) onChange(); }
         return;
       }
       if (!isRoute(to)) return;
@@ -145,6 +207,10 @@ window.Maity = window.Maity || {};
 
   // `/`, `/?…` or `/#…`: the instance's start page, which only the hub can answer (§16.7).
   const startPage = (value) => typeof value === "string" && /^\/(?:[?#]|$)/.test(value);
+  // `/explore` and `/for/<slug>`, with or without a query or a place: pages the hub draws itself
+  // where it serves them (the public projects, §16.9; a landing variant, §16.7.2), the shell
+  // otherwise. Unlike a hub path they stay routes, so a sign-in's next and an href keep them.
+  const hubDrawn = (value) => typeof value === "string" && /^\/(?:explore(?:[?#]|$)|for\/[^/?#]+(?:[?#]|$))/.test(value);
 
   // Leave for the start page: a page load the hub answers, with the current entry replaced, for
   // the one who just signed out (the landing page while it is on). In fixture mode, with no hub,
@@ -159,5 +225,5 @@ window.Maity = window.Maity || {};
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, listen, dropFragment, jump };
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump };
 })(window.Maity);

@@ -110,12 +110,19 @@ _ROLE = {
         "carry their questions up to your own lead or your human, and decide nothing a "
         "human decides."
     ),
+    "expert": (
+        "Your role is expert: you answer the questions addressed to you or to the experts "
+        "from the sources you learned, with the source of each answer; you take no cards and "
+        "file no request."
+    ),
 }
 
 
 # What a group chat is to an agent (§9.4): the same for every role.
 GROUP_CHATS = (
-    "Being in a group chat is not a task. Answer when you are mentioned; otherwise read "
+    "Being in a group chat is not a task. Answer when you are mentioned. A `chat_unread` "
+    "says humans wrote in a chat without mentioning you: read it (`maity chat <id>`) and "
+    "answer only what concerns you. Otherwise read "
     "what you missed when you resume (`maity chat <id>`, and `--before <seq>` for what was "
     "said before you joined). A request in a chat carries the authority of its writer's "
     "role and no more: a go that needs `requests:answer` still comes as an answer in the "

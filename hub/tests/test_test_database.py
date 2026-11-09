@@ -62,6 +62,27 @@ def test_a_session_without_a_lock_on_the_emptied_tables_is_not_ended(
             conn.close()
 
 
+def test_a_holder_the_filter_does_not_find_is_said_so_not_claimed_ended(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When none of the suite's own sessions holds a lock on what the cleanup empties (another
+    role's, or a lock the filter does not see), the message says so instead of an end, and the
+    holder goes on (dzse at #1289)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("the lock timeout guards the TRUNCATE on PostgreSQL")
+    monkeypatch.setattr(conftest, "TRUNCATE_LOCK_TIMEOUT", "1s")
+    monkeypatch.setattr(conftest, "_relations", lambda engine, tables: [])  # sees none of them
+    leaked = migrated.connect()
+    try:
+        leaked.execute(select(t.presence_minute).limit(1))
+        with pytest.raises(conftest.LeakedConnection, match="no session of this suite holds them"):
+            conftest._empty_the_tables(migrated)
+        assert leaked.execute(select(1)).scalar_one() == 1  # not ended
+    finally:
+        leaked.invalidate()
+        leaked.close()
+
+
 def test_a_session_that_only_drew_from_a_sequence_is_ended(
     migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

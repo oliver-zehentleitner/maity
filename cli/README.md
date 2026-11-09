@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a6 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a7 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -318,8 +318,8 @@ git and gh run with prompts switched off (`GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never`, `GH_PROMPT_DISABLED=1`), stdin closed and a
 30-second timeout. A remote that asks for a password is an error, never a
 hanging command. maity's own git and gh calls (such as report, checkpoint,
-the cite and text checks, the state lookup, the join's root lookup and
-the build identity) start by name from an absolute
+the cite and text checks, the state lookup, the join's root lookup, the
+first resume's remote check and the build identity) start by name from an absolute
 `PATH` entry, never from the current directory, and git may use only the
 https, http, ssh, git and file transports (`GIT_ALLOW_PROTOCOL`, narrowed
 further by one you set yourself). The runner's `gc` read of a clone and a
@@ -458,6 +458,7 @@ transferred project needs no new join.
 | `maity request claim <request> [--json]` | `POST …/requests/{id}/claim` (§7) with `{}`; prints `claimed <request>`. The first eligible admin claims a request in the admin pool; the hub's `request_claimed`, rights and humans-only refusals pass through |
 | `maity request withdraw <request> [--reason R] [--json]` | `POST …/requests/{id}/withdraw` (§7) with the optional reason; prints `withdrawn <request>`. The asker or a holder of `requests:answer` may withdraw a non-personal project request; the hub checks rights and request state, and its refusals are printed as they come |
 | `maity answer <request> [--reply ID] [--text T] [--on-behalf-of MEMBER]` | `POST …/requests/{id}/answer` (§7); `--on-behalf-of` (id or handle) is a proxy relaying its owner's answer, sent as `on_behalf_of` (§2.3) |
+| `maity ask "…" --to T --class C --task ID [--wait]` | `POST …/requests` with `task_id` (§7). Without `--wait` the CLI sends no `while_open`, and the hub takes the class's default: `wait` for a `consent`, `proceed_provisionally` for the rest, which leaves the card as it is. `--wait` sends `while_open: wait`: a card the asker holds is `blocked` until the request is answered or withdrawn |
 | `maity ask "…" --to owner --class decision\|consent --action "METHOD PATH[?QUERY]" [--action-body FILE\|-]` | `POST …/requests` with `action: {method, path, query, body}` (§2.3, §7): a proxy asking its owner's go for one call. The query is put in the order `maity api --query` sends it, the body is the file's text as it is; then `maity api METHOD PATH --json FILE --on-request <request>` |
 | a handle as an argument | `say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the placement commands read `GET …/members` and send the member id (§6.24): a current handle, a former one (`aliases`), or a global name `owner/handle` with either part former. Several candidates are refused with their names, unless exactly one is a human whose current handle it is. A name nobody has goes to the hub as given, except for `--on-behalf-of`, which refuses it. The placement commands resolve the name against the member list before they look at the placements, so two members sharing a name are refused and never settled by which one happens to be placed; only a name no member has is matched against the placements' own handles. `maity resume` lists a member's former handles after its presence |
 | `maity release list` | `GET …/tasks?kind=release&status=all`, every page |
@@ -1255,3 +1256,9 @@ make lock     # after changing the dev extra or requirements/release.in (uv from
 The tests run real git against a bare remote, a fake `gh` on an isolated
 `PATH`, and a hub on loopback (`tests/fakehub.py`). The fake hub verifies
 the signature with its own implementation of the contract.
+
+Locally they need no database and no running hub. `make test` runs them in
+one process (the dev set has no pytest-xdist), which stays within a shared
+machine's limits (`CONTRIBUTING.md`, "Local test environment"). Run them from
+the `.venv` that `make dev` builds: it has `build`, without which the sdist
+tests in `tests/test_versioninfo.py` fail.

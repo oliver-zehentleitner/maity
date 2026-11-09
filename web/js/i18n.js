@@ -7,7 +7,13 @@
 //
 // Which language (docs/api.md §6.2): the account's interface_language, which
 // M.api gives M.i18n.follow with every GET /auth/session; without one, and
-// before sign-in, the explicit choice or ?lang=, then the browser's, then en.
+// before sign-in, the landing page's own choice, read from GET /site/chrome's
+// `language` once per page (the hub chooses it from the raw ?lang=, the
+// browser's Accept-Language, the landing page's languages and its
+// default_language); a choice made on this page comes first, and without that
+// read (fixture mode, the join host, an error, a late answer) ?lang=, the
+// browser's, then en. Nothing is stored in the browser for it: the hub's own
+// pages cannot read that (web/context/rendering.md).
 //
 // M.t(key, values): one key per sentence, never a sentence put together
 // from pieces. `{name}` in the text takes values.name, a number formatted
@@ -27,6 +33,7 @@ window.Maity = window.Maity || {};
   const i18n = { language: "en", locale: undefined };
   // The languages with a catalog: a tag outside them is never loaded.
   const available = window.MAITY_I18N_LANGUAGES || ["en"];
+  // Where an older version kept the visitor's choice: removed once, every other key left alone.
   const STORED = "maity.language";
   // js/i18n.js's own address: a route's path is deep, the bundles stay beside this file.
   const here = (window.document && window.document.currentScript && window.document.currentScript.src) || "js/i18n.js";
@@ -43,32 +50,95 @@ window.Maity = window.Maity || {};
   }
   const closest = (tag) => closestIn(available, tag);
 
-  function stored() {
-    try { return window.localStorage.getItem(STORED); } catch { return null; }
-  }
-  function remember(tag) {
-    try { window.localStorage.setItem(STORED, tag); } catch { /* the page still follows it */ }
-  }
-  // A choice made on the page writes its tag into an address's ?lang=, so a reload or a copied
-  // address says the same; without ?lang= the address stays as it is. Nothing is drawn again:
-  // the page that asked draws itself in the language (js/route.js, go with quiet).
+  try { window.localStorage.removeItem(STORED); } catch { /* nothing kept, or no storage */ }
+  // The visitor's choice while this page lives: a route without ?lang= keeps it, a new page
+  // starts from its own address and the browser again, as the hub's pages do.
+  let chosen = null;
+  // A choice made on the page writes its tag into the address's ?lang=, so a reload, a copied
+  // address and the hub's pages say the same. Nothing is drawn again: the page that asked
+  // draws itself in the language (js/route.js, go with quiet).
   function carry(tag) {
     const route = M.route;
     if (!route) return;
     const at = route.current();
-    if (!at.query.has("lang") || at.query.get("lang") === tag) return;
+    if (at.query.get("lang") === tag) return;
     at.query.set("lang", tag);
     route.go(at.path + "?" + at.query.toString(), { quiet: true });
   }
 
-  // Without an account's language: ?lang= (which then stays the choice), the
-  // explicit choice, the browser's list, English. A choice made on the page writes ?lang=
-  // too (carry), or a view drawn again would read the older one back.
+  // The landing page's language for this visitor, from GET /site/chrome (docs/api.md §16.7.5),
+  // once per page and per asked ?lang=: never in fixture mode, whose frame answers English
+  // whatever is asked, and given `i18n.frameWait` ms, so a read that fails or answers late
+  // leaves the rule below and never holds a view (the answer then counts for nothing).
+  let picked = null;  // a choice made on this page (choose), while the address says no other
+  const framed = {};  // the frame's language per address read
+  let account = false;  // the session's interface_language decides
+  const frameReads = {};
+  // The address's ?lang= as written, for the hub to match exactly as the landing page does.
+  // The last one this page saw, or a pick on it, stays its ?lang= across routes without one
+  // (a link to /login from /register?lang=de), as `chosen` does for the rule below.
+  let pageAsked = null;
+  function askedRaw() {
+    const raw = window.location ? new URLSearchParams(window.location.search).get("lang") : null;
+    if (raw && raw.length <= 35) { pageAsked = raw; return raw; }
+    return null;
+  }
+  const frameAddress = () => {
+    const raw = askedRaw() || pageAsked;
+    return "/site/chrome" + (raw ? "?lang=" + encodeURIComponent(raw) : "");
+  };
+  function readFrame() {
+    const address = frameAddress();
+    if (Object.hasOwn(frameReads, address)) return frameReads[address];
+    if (!M.api || !window.location || window.location.protocol === "file:") return Promise.resolve(null);
+    const stop = typeof AbortController === "function" ? new AbortController() : null;
+    let late;
+    const wait = new Promise((resolve) => {
+      late = window.setTimeout(() => { if (stop) stop.abort(); resolve(null); }, i18n.frameWait);
+    });
+    const answer = M.api.get(address, stop ? { signal: stop.signal } : undefined)
+      .then((model) => (model && typeof model.language === "string" ? closest(model.language) : null), () => null);
+    frameReads[address] = Promise.race([answer, wait]).then((tag) => {
+      window.clearTimeout(late);
+      if (tag) framed[address] = tag;
+      return tag;
+    });
+    return frameReads[address];
+  }
+
+  // Without an account's language: ?lang= (which then stays the choice for this page), the
+  // choice made on this page, the browser's list, English.
   // What the person chose themselves, or null: only this may go on an account.
   function explicitChoice() {
     const asked = window.location ? closest(new URLSearchParams(window.location.search).get("lang")) : null;
-    if (asked) { remember(asked); return asked; }
-    return closest(stored());
+    if (asked) { chosen = asked; return asked; }
+    return closest(chosen);
+  }
+  // Without an account's language: a choice made on this page, the landing page's (the frame),
+  // then the rule below.
+  // A newer address with any other ?lang= value ends a pick: sv, xx, also de-AT after de (a
+  // pick writes its own tag into the address, so the address the pick made never ends it).
+  function releasePick() {
+    const raw = askedRaw();
+    if (raw && picked && raw !== picked) picked = null;
+  }
+  // What the person chose, for the account (js/register.js): a pick on the page, else ?lang= or
+  // the choice kept for the page, unless the landing page's frame overrode that ?lang= (a reload
+  // with ?lang=ko and no ko page): the page shows the frame's language then, and an address the
+  // landing page ignores is no choice to store.
+  function personChoice() {
+    releasePick();
+    const pick = closest(picked);
+    if (pick) return pick;
+    const asked = explicitChoice();
+    const shown = framed[frameAddress()];
+    return asked && shown && shown !== asked ? null : asked;
+  }
+  function visitorChoice() {
+    releasePick();
+    const pick = closest(picked);
+    if (pick) return pick;
+    return closest(framed[frameAddress()]) || browserChoice();
   }
   const browserList = () => (window.navigator && window.navigator.languages) || [];
   function browserChoice() {
@@ -183,6 +253,13 @@ window.Maity = window.Maity || {};
   M.t = t;
   M.tOwn = tOwn;
   M.tn = tn;
+  // A failure said as one sentence (tsk-0zbms0wwqhmm): the reason where the catalog's sentence has
+  // {reason}, so the language decides the order. "" is the reason alone. A sentence without the
+  // placeholder still shows the reason after it rather than losing it; check.py flags such a key.
+  // A sentence with other values is a function of the reason, (reason) => M.t(key, { name, reason }):
+  // its text is filled once, so a value that reads "{reason}" (a file's name) stays as it is.
+  M.reasonIn = (sentence, reason) => (typeof sentence === "function" ? sentence(reason)
+    : sentence.includes("{reason}") ? sentence.split("{reason}").join(reason) : sentence + reason);
   M.fmt = {
     number,
     // A list of names or facts as the catalog's language joins them, without
@@ -194,7 +271,7 @@ window.Maity = window.Maity || {};
     when,
   };
   i18n.available = available;
-  i18n.explicit = explicitChoice;
+  i18n.explicit = personChoice;
   // The first of the browser's languages among these tags, or null.
   i18n.fromBrowser = (tags) => {
     for (const tag of browserList()) {
@@ -205,10 +282,38 @@ window.Maity = window.Maity || {};
   };
   // The first language, before the first view is drawn.
   i18n.ready = use(browserChoice());
-  // The account's interface language, or null: the rule without an account.
-  i18n.follow = (tag) => use(closest(tag) || browserChoice());
+  // How long the frame's language may take before the rule without it decides.
+  i18n.frameWait = 1500;
+  // The account's interface language, or null. Signed in without one (`signedIn`, the session
+  // read answered 200): the browser's rule, as docs/api.md §6.2 says, and no frame read. Signed
+  // out (the 401): the visitor's language, the frame read first.
+  i18n.follow = (tag, signedIn) => {
+    const own = closest(tag);
+    account = !!own || !!signedIn;
+    if (own) return use(own);
+    if (signedIn) return use(browserChoice());
+    return readFrame().then(() => (account ? undefined : use(visitorChoice())));
+  };
   // A choice made on a page before sign-in.
-  i18n.choose = (tag) => { remember(tag); carry(tag); return use(tag); };
+  i18n.choose = (tag) => {
+    chosen = closest(tag) || chosen;
+    picked = closest(tag) || picked;
+    if (closest(tag)) pageAsked = tag;
+    carry(tag);
+    return use(tag);
+  };
+  // The frame's own read (js/site-chrome.js) at the same address: its `language` counts as the
+  // read above does. True when the page's language changed, so the page draws itself again once;
+  // false when it agrees, under an account's language, or after a choice made on the page.
+  i18n.frameAddress = frameAddress;
+  i18n.frame = (tag) => {
+    const found = closest(tag);
+    if (!found) return Promise.resolve(false);
+    framed[frameAddress()] = found;
+    const next = visitorChoice();
+    if (account || next === i18n.language) return Promise.resolve(false);
+    return use(next).then(() => i18n.language === next);
+  };
   // A key's English text, for a translation that may not be used (the product line's
   // sentence with a placeholder missing or twice, docs/api.md §16.13).
   i18n.english = (key) => {

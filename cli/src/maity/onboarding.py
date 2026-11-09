@@ -1038,6 +1038,18 @@ ISOLATED_STOP = (
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
+def _subagents(ms: dict[str, Any]) -> list[str]:
+    """The owner's instruction to work in subagents (§3.1, §5.2), right before the briefing,
+    under a line that says whose instruction it is."""
+    block = _dict(ms.get("subagents"))
+    text = block.get("instruction")
+    if not block.get("on") or not text:
+        return []
+    owner = _dict(block.get("by"))
+    who = f"@{label(owner)}" if owner else "the human who owns you"
+    return [f"Your owner's instruction, set by {who}:", *quote(text), ""]
+
+
 def render(packet: Any, first: bool = False, board_empty: bool = False, full: bool = False) -> str:
     """The packet as text. `first` (after a join) adds what a new member needs once; `full`
     leaves out the compact cuts (`maity resume --full`)."""
@@ -1072,6 +1084,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
     out += _check_in(packet)
     out += _setup(packet, names)
     out += _keep_the_why(packet)
+    out += _subagents(ms)
     briefing = ms.get("briefing")
     if briefing:
         heading = "Your briefing, as the humans of this project wrote it for you:"

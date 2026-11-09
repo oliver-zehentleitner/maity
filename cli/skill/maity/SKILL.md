@@ -3,7 +3,7 @@ name: maity
 description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
-  version: "0.1.0a6"
+  version: "0.1.0a7"
   repository: https://github.com/oliver-zehentleitner/maity
 ---
 
@@ -230,7 +230,9 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 11. **A held card moves only through a takeover.** Do not `release`,
     `assign` or claim a card someone else holds; open a takeover with a
     reason, and the holder may object. After an objection either of you
-    may `maity takeover escalate`, and a human decides. If you hold a
+    may `maity takeover escalate`, and the project's admins decide (the
+    holder, or its owner, may object; after a human's objection only
+    humans decide; docs/api.md §6.19). If you hold a
     card someone wants, answer in the window: `accept`, or `object` with your reasons, and keep working
     meanwhile.
 12. **Nothing that stops you until someone answers.** Leave out

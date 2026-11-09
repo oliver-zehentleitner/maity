@@ -20,6 +20,7 @@ from maity_hub import (
     availability,
     bridges,
     briefings,
+    cards,
     clock,
     cross_owner,
     foreign_agent,
@@ -38,6 +39,7 @@ from maity_hub import (
     restricted,
     rules,
     seats,
+    subagents,
     takeovers,
 )
 from maity_hub import tables as t
@@ -49,7 +51,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -85,6 +87,9 @@ class MemberPausedIn(PausedIn):
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     owner_preferences: bool | None = None
+    # The owner's instruction to work in subagents and its language (§3.1, §6.2).
+    subagents: bool | None = None
+    subagents_language: str | None = Field(default=None, max_length=16)
     availability_policy: AvailabilityPolicyIn | None = None
     trust: str | None = None
     role: str | None = None
@@ -440,6 +445,68 @@ def change_of(mine: Membership, caller: Caller, *, line: bool = False) -> Change
     )
 
 
+def _cards_on_the_way(conn: Connection, target: Any) -> bool:
+    """Whether the member holds a card or is assigned an open one, is the receiver of an
+    open takeover (§6.19), has cards out with a substitute that a cover's end gives back to
+    it, or is the substitute of a running cover, to which area routing hands new cards
+    (§6.12, `cover.routed`)."""
+    from maity_hub import takeovers
+
+    if conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first():
+        return True
+    if conn.execute(
+        select(t.card.c.id)
+        .where(t.card.c.assigned_to == target.id, t.card.c.status.not_in(cards.CLOSED))
+        .limit(1)
+    ).first():
+        return True
+    if conn.execute(
+        select(t.membership.c.id)
+        .where(
+            t.membership.c.project_id == target.project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.cover_state == "covered",
+            t.membership.c.cover_by == target.id,
+        )
+        .limit(1)
+    ).first():
+        return True
+    if conn.execute(
+        select(t.takeover.c.id)
+        .where(t.takeover.c.to_member == target.id, t.takeover.c.status.in_(takeovers.OPEN))
+        .limit(1)
+    ).first():
+        return True
+    principal = str(target.agent_id or target.human_id)
+    covers = conn.execute(
+        select(t.card.c.cover).where(
+            t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None)
+        )
+    ).scalars()
+    return any((cover or {}).get("for") == principal for cover in covers)
+
+
+def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:
+    """An expert takes no cards (§2.3 "The expert"): what the member holds or is assigned,
+    what an open takeover would move to it, what a cover would give back to it and a cover
+    it runs as substitute are settled first.
+    Checked when the PATCH arrives and again when a deferred change is written, each time
+    under the project lock that every writer of `claim_holder`/`assigned_to` holds when it
+    reads the receiver (`tasks._locked`, `cover`, `takeovers.transfer`): a claim in flight
+    either commits first and is seen here, or waits and reads the new role."""
+    if role != "expert" or target.role == "expert":
+        return
+    lock_project(conn, target.project_id)
+    if _cards_on_the_way(conn, target):
+        raise ApiError(
+            409,
+            "conflict",
+            "the member holds cards or has cards on the way to it; settle them before the "
+            "role is expert",
+            {"reason": "holds_cards"},
+        )
+
+
 def apply_patch(
     conn: Connection,
     change: Change,
@@ -457,6 +524,7 @@ def apply_patch(
     if line_consent and "reports_to" in values and not target.line_consent:
         # The edge is already there and the go now names the manager's rights for it (§6.2).
         changed["line_consent"] = True
+    _check_no_cards_for_expert(conn, target, changed.get("role"))
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
@@ -566,6 +634,8 @@ def patch_member(
             return idempotency.Outcome(200, "member_team", str(target.id), view)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
+        if given & {"subagents", "subagents_language"}:
+            return _subagents(conn, caller, slug, member_id, body, given)
         if "dormant" in given:
             return _dormant(conn, caller, slug, member_id, body, given)
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
@@ -574,6 +644,9 @@ def patch_member(
         moved = _owner_sets_reports_to(conn, caller, slug, member_id, body, given)
         if moved is not None:
             return moved
+        recast = _owner_sets_role(conn, caller, slug, member_id, body, given)
+        if recast is not None:
+            return recast
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row(conn, mine.project.id, member_id)
@@ -636,6 +709,8 @@ def patch_member(
                 admin_agents.check_instance_pause(held, mine.principal_id, pause[1] is None)
         if "reports_to" in given:
             cross_owner.check_may_supersede(conn, mine, target.id)
+        # Before any consent request: a go could not write it while cards are on the way.
+        _check_no_cards_for_expert(conn, target, values.get("role"))
         if line_lead and line.needs_consent(mine.project, target, values, pause):
             # The whole PATCH waits for a human's go, as under ᵃ (§2.3 "The manager").
             request_id = line.propose(
@@ -770,6 +845,64 @@ def _owner_lifts_line_pause(
     return idempotency.Outcome(200, "member_team", str(target.id), view)
 
 
+def _owner_sets_role(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome | None:
+    """The agent's owner changes its role without members:admin (§3.1, "The owner changes
+    the role"): `role` alone, while the owner could create a join for the agent now (the
+    check `subagents` uses), to a role a member join could give. None when the call is not
+    that: the ordinary rules then decide, `members:admin` for every other field included.
+    The owner outside the project, or no longer within the join rule, is told `join_rule`."""
+    if caller.kind != "human" or given != {"role"} or body.role is None:
+        return None
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        return None
+    if not instances.owns_agent(conn, caller, target):
+        return None
+    refused = ApiError(
+        403, "forbidden", "only whoever may let the agent join", {"reason": "join_rule"}
+    )
+    try:
+        mine = membership(conn, caller, slug)
+    except ApiError:
+        raise refused from None
+    if mine.may("members:admin"):
+        return None  # the admin's own path, with its checks and answer
+    owner_id = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+    ).scalar()
+    if not subagents.may_configure(mine, target, owner_id):
+        raise refused
+    from maity_hub.routes import joins  # the join rules live with the joins
+
+    base = project_roles.base_of(mine.project, body.role)
+    if base is not None and base not in MEMBER_RULE_ROLES:
+        raise joins.member_join_limit("role")  # a project lacking it: `invalid`, below
+    values = validate_assignment(
+        conn,
+        mine.project.id,
+        kind="agent",
+        role=body.role,
+        reports_to=None,
+        areas=None,
+        capabilities=None,
+        member=target.id,
+        current=(target.trust, target.role),
+    )
+    # The base again as read under the project's lock: a project role created on `ops`, or
+    # moved there, since the read above is refused the same way, never stored.
+    if values["role_base"] not in MEMBER_RULE_ROLES:
+        raise joins.member_join_limit("role")
+    agent_owners.check_assignment(conn, mine.project, target, values)
+    apply_patch(conn, change_of(mine, caller), target, values, (False, None))
+    return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+
+
 def _owner_sets_reports_to(
     conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
 ) -> idempotency.Outcome | None:
@@ -869,6 +1002,93 @@ def _owner_preferences(
         return idempotency.Outcome(204, None, None, {})
     view = member_view(conn, row, briefing=reader.may("members:admin"))
     return idempotency.Outcome(200, "member_team", str(row.id), view)
+
+
+def _subagents(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """Switch the owner's subagent instruction or change its language (§3.1, "Who changes
+    it"): a caller who could create a join for the agent now, else `join_rule`; an agent
+    never."""
+    if caller.kind != "human":
+        raise humans_only("only a human sets the subagent instruction")
+    if not given <= {"subagents", "subagents_language"}:
+        raise invalid({"subagents": "alone"}, "set subagents on its own")
+    # Either field, when sent, is a value: `null` is no way to leave one out.
+    nulls = {
+        key: kind
+        for key, kind in (("subagents", "bool_type"), ("subagents_language", "string_type"))
+        if key in given and getattr(body, key) is None
+    }
+    if nulls:
+        raise invalid(nulls, "subagents is true or false, subagents_language a language")
+    refused = ApiError(
+        403, "forbidden", "only whoever may let the agent join", {"reason": "join_rule"}
+    )
+    # The agent's owner may be outside the project: told `join_rule`, as the join would
+    # tell them; to anyone else who is no member the project does not exist (§2.3).
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        raise not_found()
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        target = None
+    if target is not None and instances.owns_agent(conn, caller, target):
+        try:
+            mine = membership(conn, caller, slug)
+        except ApiError:
+            raise refused from None
+    else:
+        mine = membership(conn, caller, slug)
+        if target is None:
+            raise not_found()
+    if target.agent_id is None:
+        raise invalid({"subagents": "agents_only"}, "an agent's setting")
+    owner_id = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+    ).scalar()
+    if not subagents.may_configure(mine, target, owner_id):
+        raise refused
+    # A language sent is checked even where the instruction goes off and keeps none.
+    asked = (
+        subagents.language_of(conn, body.subagents_language, caller.principal_id)
+        if body.subagents_language is not None
+        else None
+    )
+    on = bool(target.subagents) if body.subagents is None else body.subagents
+    if on:
+        language = (
+            asked
+            or (target.subagents_language if target.subagents else None)
+            or subagents.language_of(conn, None, caller.principal_id)
+        )
+        values = {
+            "subagents": True,
+            "subagents_language": language,
+            "subagents_by": mine.principal_id,
+        }
+    else:
+        values = {"subagents": False, "subagents_language": None, "subagents_by": None}
+    changed = sorted(
+        key for key in ("subagents", "subagents_language") if getattr(target, key) != values[key]
+    )
+    conn.execute(update(t.membership).where(t.membership.c.id == target.id).values(**values))
+    row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    if changed:
+        view = member_view(conn, row)  # to everyone: never the instruction
+        view["changed"] = changed
+        emit(
+            conn,
+            mine.project.id,
+            "member_updated",
+            ["all"],
+            view,
+            actor=Actor(mine.id, via=caller.via),
+            subject=("member", member_id),
+        )
+    view = member_view(conn, row, briefing=mine.may("members:admin"))
+    return idempotency.Outcome(200, "member", str(row.id), view)
 
 
 def _policy_humans_only(
@@ -987,7 +1207,14 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         .all()
     )
     for credential_id in credentials:
-        revoke(conn, credential_id, "member_removed", by=change.approver, holder_moves=True)
+        revoke(
+            conn,
+            credential_id,
+            "member_removed",
+            by=change.approver,
+            holder_moves=True,
+            member_goes=True,
+        )
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
     released = isolation.release_claims(conn, target.id)

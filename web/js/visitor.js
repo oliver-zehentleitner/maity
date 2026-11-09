@@ -201,7 +201,7 @@ window.Maity = window.Maity || {};
   }
 
   // Draws the page of `path` when the hub stores one; false when it stores none, for the
-  // caller's own answer (the login, or not_found).
+  // caller's own answer (the login, or not_found); null signed out when the read failed otherwise.
   async function page(main, header, where, path, { signedIn, brand, tools, head, live }) {
     if (!canBePublic(where, path)) return false;
     const stored = storedPath(path);
@@ -224,9 +224,13 @@ window.Maity = window.Maity || {};
     try {
       answer = await M.api.get("/public/pages/" + stored.replace(/^\/+/, ""));
     } catch (err) {
-      // No page: the caller's answer stands. Signed out, so does a failed read: the login is
-      // still a way on. Signed in, it is said as any failed page is.
-      if (err.status === 404 || !signedIn) return false;
+      // No page (404): false, and the caller's answer stands, the login at a dashboard route or
+      // "not found" at a handle or an unknown view word (app.js, showsVisitorNothing). Signed
+      // out, any other failed read is null: the caller keeps the login, which is still a way on,
+      // and never says "not found" for a page it could not read. Signed in, it is said as any
+      // failed page is.
+      if (err.status === 404) return false;
+      if (!signedIn) return null;
       throw err;
     }
     if (!live()) return true;

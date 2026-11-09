@@ -104,8 +104,9 @@
        "array": null
       },
       "allowed_projects": "null",
-      "avatar_source": "null",
-      "avatar_url": "null",
+      "avatar_motif": "null",
+      "avatar_source": "string",
+      "avatar_url": "string",
       "created_at": "string",
       "deleted_at": "null",
       "display_name": "string",
@@ -147,6 +148,22 @@
    "session_id": "string"
   }
  },
+ "GET /avatars/motifs": {
+  "object": {
+   "motifs": {
+    "array": {
+     "object": {
+      "alt": "string",
+      "label": "string",
+      "name": "string",
+      "theme": "string",
+      "url": "string"
+     }
+    }
+   },
+   "version": "string"
+  }
+ },
  "GET /me": {
   "object": {
    "deletion": "null",
@@ -178,6 +195,7 @@
      "meat_proxy_hands": "boolean",
      "meat_proxy_lead": "boolean",
      "meat_proxy_note": "string",
+     "public_agents": "string",
      "public_bio": "null",
      "public_presence": "boolean",
      "public_profile": "boolean",
@@ -185,6 +203,7 @@
      "social": {
       "object": {}
      },
+     "start_tabs": "null",
      "terms": "null",
      "website": "null"
     }
@@ -193,6 +212,7 @@
     "array": {
      "object": {
       "full_name": "string",
+      "id": "string",
       "logo": {
        "object": {
         "available": "boolean",
@@ -300,7 +320,7 @@
      "object": {
       "actor": {
        "object": {
-        "avatar_url": "null",
+        "avatar_url": "string",
         "display_name": "string",
         "member_id": "string"
        }
@@ -655,7 +675,7 @@
         }
        }
       },
-      "avatar_url": "null",
+      "avatar_url": "string",
       "bridges": {
        "array": null
       },
@@ -801,6 +821,15 @@
       "social": {
        "object": {}
       },
+      "subagents": "boolean",
+      "subagents_by": {
+       "object": {
+        "handle": "string",
+        "id": "string",
+        "kind": "string"
+       }
+      },
+      "subagents_language": "string",
       "takes_over": "null",
       "team": {
        "object": {
@@ -855,7 +884,7 @@
       "answered_at": "null",
       "asked_by": {
        "object": {
-        "avatar_url": "null",
+        "avatar_url": "string",
         "display_name": "string",
         "instance": "null",
         "member_id": "string",
@@ -1275,7 +1304,7 @@
       "answered_at": "null",
       "asked_by": {
        "object": {
-        "avatar_url": "null",
+        "avatar_url": "string",
         "display_name": "string",
         "instance": "null",
         "member_id": "string",
@@ -1517,6 +1546,51 @@
    "version": "string"
   }
  },
+ "GET /site/chrome?lang=en": {
+  "object": {
+   "footer": {
+    "object": {
+     "columns": {
+      "array": {
+       "object": {
+        "key": "string",
+        "links": {
+         "array": {
+          "object": {
+           "href": "string",
+           "label": "string",
+           "rel": "null"
+          }
+         }
+        },
+        "title": "string"
+       }
+      }
+     },
+     "languages": {
+      "array": null
+     },
+     "operator": "null"
+    }
+   },
+   "header": {
+    "object": {
+     "cta": "null",
+     "nav": {
+      "array": null
+     },
+     "sign_in": {
+      "object": {
+       "href": "string",
+       "label": "string"
+      }
+     }
+    }
+   },
+   "landing": "boolean",
+   "language": "string"
+  }
+ },
  "PATCH /projects/{foreign_project}/members/{foreign}": {
   "object": {
    "action": "null",
@@ -1603,7 +1677,7 @@
      }
     }
    },
-   "avatar_url": "null",
+   "avatar_url": "string",
    "bridges": {
     "array": null
    },
@@ -1676,6 +1750,15 @@
    "role": "string",
    "role_base": "string",
    "session": "null",
+   "subagents": "boolean",
+   "subagents_by": {
+    "object": {
+     "handle": "string",
+     "id": "string",
+     "kind": "string"
+    }
+   },
+   "subagents_language": "string",
    "takes_over": "null",
    "team": {
     "object": {

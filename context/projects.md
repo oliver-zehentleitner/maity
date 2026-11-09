@@ -839,9 +839,11 @@ A project sets `settings.role_rules`: per role (`coder`, `reviewer`,
 `tester`) a switch that adds the subagent line to that role's rules,
 and for reviewers and testers a checklist whose items become rule
 lines. A security team or a project role gets the lines of its base.
-Only a human with `project:admin` sets them. A change bumps
-`rules_version`, so a running agent reads the new lines at its next
-resume. The hub cannot see a subagent or a ticked item; these are
+Only a human with `project:admin` sets them. A change of the lines
+bumps `rules_version`, so a running agent reads the new lines at its
+next resume. A value that adds no line (`false`, an empty checklist) is
+stored as given and announced, but moves no version: the rules text is
+the same. The hub cannot see a subagent or a ticked item; these are
 rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
@@ -871,5 +873,10 @@ checklist they reach every reviewer through the rules they already read.
 - Dropping an unknown role or an empty item silently: a typo would
   leave a role without its rules and nobody told; the hub refuses
   instead.
+- Dropping a value that adds no line (`false`, `[]`) before storing it:
+  it is valid input, and a `GET` would not show back what was sent; the
+  hub filters nothing silently. Bumping the version for it, as the first
+  version did, had every running agent re-read unchanged rules
+  (`{}` → `false` → `[]` went from version 1 to 4; reviewer finding at #1279).
 - The hub enforcing either rule: it sees neither the subagent nor the
   checklist being worked through.

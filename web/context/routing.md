@@ -232,3 +232,80 @@ every start-page target: a full reload after each sign-in that ends on
 `/` (the second factor's step, a device sign-in without another `next`,
 a password sign-in with a `next` of `/`, which `render` routes to),
 where the hub answers the shell anyway.
+
+## An address that shows nothing says "not found" in words that never tell whether a name exists; the status stays the hub's 200
+
+**Id:** 51873531-fa92-4281-b935-066b6e73944f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-h1e5zmq1wnhj (an unknown address showed the sign-in form) and the lead's approval of the plan, 2026-11-07; docs/api.md §16.11; web/js/not-found.js; web/js/app.js `showsVisitorNothing`; the not-found cases in web/tools/smoke.js
+**See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-07
+**Revisit when:** the hub answers an address that can never be a page with a status of its own, or the dashboard learns, without asking the hub, whether a name exists
+
+Without a session, an address the dashboard has no page for draws
+`M.notFound.page`. That covers a handle without a stored public page,
+and a project address whose view word is none of `NAV`'s. The page
+stands in the frame of the sign-in and reads "This page does not exist,
+or it is not public." It links to the sign-in (with `next` back to this
+address), the start page and `/explore`. Signed in, `M.notFound.view`
+takes the place of "No such view" inside the app. An address under one
+of the dashboard's own first words (`/inbox`, `/requests/<id>`,
+`/sign-in/code`) and every known project view keep the sign-in, even
+where the word names no view: there the sign-in leads on.
+
+**Reason:** the hub answers all of these with the shell, 200 and
+`noindex`, so that the answer never tells whether a project or a person
+exists (e34ae588). A private profile and a missing one give the
+dashboard the same 404 from `/public/pages/…`, so the dashboard cannot
+tell them apart either. A page that says only "does not exist" would
+claim more than it knows. The sign-in form at a mistyped address read
+as if the page were the sign-in. `noindex` already keeps the address out
+of search engines, so the card's concern about crawlers needed no new
+status.
+
+**Rejected alternatives:**
+- A 404 from the hub for names that do not exist: it tells a stranger
+  which names exist, against e34ae588.
+- A 404 from the hub for addresses that can never be a page (an unknown
+  own word, more segments than any route): leaks nothing, but it is a
+  contract change to §16.11 and an update of e34ae588. The lead keeps it
+  as a separate question for the maintainer, outside this change.
+- "Not found" for every address the dashboard does not know, own first
+  words included: `/sign-in/code`, `/requests/<id>` from a mail and
+  `/inbox` reach `parseRoute` as `unknown`, and a visitor there needs
+  the sign-in that leads on (the smoke test's device-code case caught it).
+
+The page's link to `/explore` is a page load, as every link there is
+(`M.route.listen`, entry b8377791 below).
+
+## `/explore` and `/for/<slug>` are the hub's pages: a click on a link to them is a page load, and they stay routes
+
+**Id:** b8377791-ca86-4ebe-82a3-dbf40b17daa2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-mg681fdn8p6m (header links to `/explore` drew the unknown-address view), found on tsk-h1e5zmq1wnhj, 2026-11-07; docs/api.md §16.11, §16.9, §16.7.2; web/js/route.js `hubDrawn`; the route cases in web/tools/smoke.js and `visitor_step` in web/tools/e2e.py
+**See:** routing.md#-is-the-hubs-start-page-a-click-on-a-link-to-it-is-a-page-load-never-a-route-change — 4f5c757a-98f6-44d1-adad-08fbe61b3d33 — as of 2026-11-07
+**Revisit when:** the hub draws another page of its own at an address the dashboard also answers, or the dashboard gets a view of its own at `/explore` or `/for/<slug>`
+
+`M.route.listen` leaves a click on `/explore` or `/for/<slug>` to the
+browser, with or without a query or a place, as it does for `/`. Both
+stay routes (`M.route.isRoute`), and `HUB` stays the hub's own list of
+hub paths. The not-found page's own click stop for `/explore` is gone.
+
+**Reason:** the hub answers these addresses itself where it serves them:
+the public projects while public pages are on (§16.9), and a landing
+variant while the landing page is on and the variant exists (§16.7.2).
+It answers the shell otherwise. A route change kept the dashboard, which
+knows no view there and drew the unknown-address view, so the frame's
+links to `/explore` never reached the hub's page.
+
+**Rejected alternatives:**
+- Adding `explore` and `for` to `HUB`, as the card first suggested:
+  `HUB` mirrors the hub's `HUB_FIRST` (`hub/src/maity_hub/paths.py`),
+  which also decides a sign-in's `next` and which hrefs the views may
+  write. Neither page is a hub path in §16.11: both are the shell where
+  they are off.
+- A click stop on each link to them, as the not-found page had: every
+  link would have to carry it, and the frame's header links did not.

@@ -83,6 +83,8 @@
   "notify.mail_disabled": "3回失敗したため、{address} へのメールを無効にしました",
   "notify.mentioned": "{who} が {chat} であなたにメンションしました",
   "notify.moderated": "モデレーション: {action} — {type}",
+  "notify.restricted_set": "制限付きアクセスのメンバーが変更されました",
+  "notify.restricted_text": "制限付きテキストが変更されました",
   "notify.agents_away": "あなたのエージェントのインスタンス {n} 件が不在です",
   "notify.not_listening": "あなたのエージェントのインスタンス {n} 件が待機していません",
   "notify.reported": "通報: {reason} — {type}",
@@ -119,6 +121,7 @@
   "register_page.legal_privacy": "プライバシーに関するお知らせ",
   "register_page.legal_terms": "利用規約",
   "register_page.password": "アカウントを申請したときに選んだパスワード",
+  "register_page.public": "あなたの名前とハンドルは公開されます。名前は何でもかまいません。本名である必要はありません。プロフィールは既定で公開され、あなたの公開プロジェクトと、そこに表示すると選んだテキストとリンクが表示されます。また、あなたのプロジェクトの公開ページには、あなたがオンラインのときにそのことが表示されます。どちらもアカウントでオフにできます。",
   "register_page.terms": "規約に同意します ({url}、バージョン {version})",
   "register_page.terms_changed": "このページを開いている間に規約が変更されました。もう一度お読みのうえ、確認してください。",
   "register_page.title": "Maity アカウントを作成",
@@ -132,5 +135,6 @@
   "sign_in.mail_alternative": "または、要求したブラウザで次のコードを入力してください: {code}\n\n",
   "sign_in.page_button": "このデバイスでサインイン",
   "sign_in.page_title": "{name} として Maity にサインイン",
-  "sign_in.subject": "[Maity] サインイン用リンク"
+  "sign_in.subject": "[Maity] サインイン用リンク",
+  "subagents.instruction": "このエージェントのオーナーである {owner} からの指示です：Maity 経由で受け取るレビューまたはコーディングのタスクごとに、新しいサブエージェントを起動し、指示の全文を渡してください。タスクはこのセッションではなく、そのサブエージェントで行ってください。あなたとサブエージェントは、`maity say` で結果と状況を、指示に記載されたメンバーに送ってかまいません。"
 }

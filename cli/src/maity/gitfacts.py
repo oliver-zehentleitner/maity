@@ -29,6 +29,10 @@ class PullRequest:
     head: str
     state: str
     url: str
+    # Shown before a report is sent, and searched for the card id (cli.py `_belongs`); the body
+    # only where gh read it, the probe's answer has none.
+    title: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,10 @@ class Facts:
     pr: PullRequest | None
     pr_unknown_reason: str | None = None
     branch_merged: bool = False  # the branch is gone; its merged pull request has this head
+    # gh is installed and was asked, but failed (no login, no network, its GraphQL refused):
+    # an error, never "no pull request" (66da7721); `report` raises it unless the card's linked
+    # pull request, read through the hub's probe, stands in (cli/context/report.md).
+    forge_error: str | None = None
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -84,7 +92,7 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
             "--limit",
             "1",
             "--json",
-            "number,headRefOid,state,url",
+            "number,headRefOid,state,url,title,body",
         ],
         cwd,
     )
@@ -100,6 +108,8 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
             head=str(row["headRefOid"]),
             state=str(row["state"]),
             url=str(row["url"]),
+            title=str(row.get("title") or ""),
+            body=str(row.get("body") or ""),
         )
     except (ValueError, KeyError, TypeError) as exc:
         raise FactsError(f"gh returned something unexpected: {exc}") from exc
@@ -218,7 +228,12 @@ def collect(cwd: Path) -> Facts:
             remote_head = listing[0].split()[0] if listing else None
 
     unknown = _forge_unknown(cwd, remote)
-    pr = _pull_request(cwd, remote_branch or branch) if unknown is None and branch else None
+    pr = forge_error = None
+    if unknown is None and branch:
+        try:
+            pr = _pull_request(cwd, remote_branch or branch)
+        except FactsError as exc:
+            forge_error = str(exc)
     # Merged and deleted: the forge still has this head, as the merged pull request's. It
     # stands in for the branch, and the hub's probe compares only the pull request then.
     merged = (
@@ -242,6 +257,7 @@ def collect(cwd: Path) -> Facts:
         pr=pr,
         pr_unknown_reason=unknown,
         branch_merged=merged,
+        forge_error=forge_error,
     )
 
 

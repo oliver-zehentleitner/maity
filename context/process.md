@@ -303,7 +303,8 @@ the stated reason holds, is what the reviewer's gate checks.
 The agent CLI goes to PyPI under the name `maity`, the name its
 command already has. A tag `cli-v<version>` starts the release; the
 workflow refuses to build unless the tag, `cli/pyproject.toml` and
-`__version__` name the same version, runs the CLI's checks, builds
+`__version__` name the same version, requires a green ci on the
+tagged commit (ea58fdd2-6e3f-45df-ae48-4ce6825cafde), builds
 and checks sdist and wheel, and uploads them from a job that proves its
 identity to PyPI with a short-lived token. Versions start as
 pre-releases (`0.1.0a1`) while Maity is before its beta.
@@ -337,9 +338,10 @@ What goes to PyPI is built only with `cli/requirements/release.txt`:
 by the uv that `hub/requirements/tools.txt` pins (`make lock`). The
 release workflow's `build` job installs that lock alone, with
 `--require-hashes`, into a fresh environment and builds without
-isolation (`make release-build`). The checks run in a separate `check`
-job with the unpinned dev tools; `publish` needs both and uploads only
-the `build` job's artifact. `[build-system]` names the same exact
+isolation (`make release-build`). A separate `check` job ran the
+checks with the dev tools; since 2026-11-09 it looks up ci's result
+instead (ea58fdd2-6e3f-45df-ae48-4ce6825cafde). `publish` needs both and
+uploads only the `build` job's artifact. `[build-system]` names the same exact
 `setuptools` as the lock, so a build from the sdist uses the backend
 the release was made with. The `cli` job of ci.yml runs `make
 lock-check` (lock recompiled without its hashes, all three pins compared)
@@ -371,6 +373,75 @@ pinned uv instead of a second tool.
   run in the environment the files come from.
 - Locking the dev tools too: they do not touch what is uploaded once
   the build is a job of its own; alternatives beyond that: unknown.
+
+## A release tag trusts ci's result on its commit instead of running the suites again
+
+**Id:** ea58fdd2-6e3f-45df-ae48-4ce6825cafde
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
+**See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
+**See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+
+The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
+`publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
+`tools/release_gate.py`, which reads the run list with the job's
+read-only token and lets the tag through only when:
+
+- the `ci` run of the push to main for the tagged commit ended with
+  `ci-ok` green (the CLI's `cli` and `cli-windows` jobs are in it);
+- for the hub and its image also: the newest hub-mariadb run that
+  actually ran the suite on a commit of main with the same files the
+  suite reads as the tag (the list `decide` compares; `git diff`) is
+  green. A run that skipped the suite counts for nothing. Only runs of
+  main's own workflow file count: the run's ref is main and the commit
+  it ran is on main, since a dispatch on another ref runs that ref's
+  copy of `hub-mariadb.yml`, which could keep the title and the job's
+  name and drop the suite. A newer matching run that is still going is
+  waited for, and a commit the checkout cannot get or compare stops the
+  gate, so an older green run never stands in for a newer one.
+
+While those are still queued or running it waits, so a tag right after
+a merge works. Otherwise the job fails and says what is missing and what
+to do: `publish` needs it, so nothing goes to PyPI, and on a tag the
+image is not built. `build` runs beside it and keeps its files only as
+the workflow's artifact. `build`, with its proof of the files, is
+unchanged: it tests the
+product itself, not the code. A hand start of hub-mariadb now names its
+commit in its title (`hub-mariadb hand <sha>`, or `hand head`): its
+head_sha is the head of the ref it ran on, not the `sha` it tested, and
+the title is the only place the run list carries it.
+
+**Reason:** the tagged commit has already passed ci, PostgreSQL
+included; running the suite again on it only costs the release an hour
+and tests nothing new. What the rerun did guard was a tag on a commit
+that never passed, and the lookup guards exactly that, also for the
+image, which before went out from a `v*` tag with no tests at all.
+MariaDB is not in ci-ok and runs after main moves on, so its run is
+often on a later commit; a later commit counts only when the files the
+suite reads are the same, since a change there could be the very fix
+the tag lacks.
+
+**Rejected alternatives:**
+- Keeping the rerun: the cost above, for a result ci already has.
+- Any green hub-mariadb run on a later commit of main: it may have
+  passed only because of a fix in hub files the tag does not have.
+- Only a hub-mariadb run on exactly the tagged commit: an hour with
+  only web or docs merges skips the suite, and the release would need a
+  hand run for nothing.
+- Failing at once instead of waiting: a tag pushed after its merge
+  would always fail first and need a re-run of the job.
+- Counting old hand runs (`hub-mariadb hand`): the run list cannot say
+  which commit they tested.
+- Trusting a hand run by its title alone (the first version of the pull
+  request): a run dispatched on a branch uses the branch's workflow
+  file; found in review.
+- Skipping a run whose commit cannot be compared, or one still running
+  (the first version): an older green run then decides although a newer
+  one may be red; found in review.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
@@ -749,7 +820,7 @@ next test survivable whichever it is. The machine does other work: a second cras
 
 **Id:** d621283e-1580-4220-8c72-ca1d5804d0aa
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go, a Vultr dedicated-CPU plan of 8 cores and 16 GB for one week, was given in the project chat on 2026-10-29
 **Revisit when:** the week is over, or a rented server stalls with the caps in place
@@ -1150,25 +1221,74 @@ interim of one morning, while one vendor was out of quota.
   reviewers are back, and a third vendor's view is wanted on every pull
   request.
 
+## Fixes after a review are pushed as one bundle once the round's reviews are in; an exception only on the lead's word
+
+**Id:** cbfbec23-8ed4-4c5b-b552-271b3ef32962
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r8, adopted by the maintainer as req-tz2hgtmfkd42); card tsk-2ehaantapkj2; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; the three-vendor rule in this file (c73e26c4); `CONTRIBUTING.md` ("During a review and in a stack")
+**Revisit when:** the number of reviews per round changes, or the lead's exceptions become the rule
+
+The jour fixe adopted "Nachbesserungen gebündelt pushen, nachdem beide Reviews da sind" (push the fixes as
+one bundle after both reviews are in), with "Ausnahme nur auf Wort des Leads, wie bei #1256" (an exception
+only on the lead's word, as with #1256). "Both" was written while two reviewer vendors reviewed; since the
+three-vendor rule of the same jour fixe (c73e26c4, above), it means all reviews of the round.
+
+**Reason:** not recorded with the decision beyond its exception.
+
+**Alternatives:** none recorded.
+
+## A stacked pull request takes main in by a merge after the lower one is squash-merged, not by a rebase
+
+**Id:** c6288a7b-5cfe-4e7e-a08f-aeabc413bf7c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** owner request req-8m0ja218geax, adopted by the maintainer on 2026-11-03 (not a jour fixe proposal), its text verbatim in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb; `CONTRIBUTING.md` ("During a review and in a stack")
+**Revisit when:** pull requests are merged other than by squash
+
+The maintainer adopted "Gestapelte PRs nach dem Squash des unteren: main hineinmergen statt rebasen?" (stacked
+pull requests after the lower one's squash: merge main in instead of rebasing?), with its proposal "immer der
+Merge-Weg, festgehalten in `context/process.md`" (always the merge way, recorded in `context/process.md`).
+
+**Reason:** "Manchmal baut ein PR auf einem anderen auf (etwa #1278 auf #1276). Wir mergen per Squash, der
+untere PR landet als ein neuer Commit auf main. Der obere enthält aber noch dessen alte Einzelcommits." (Sometimes
+one pull request builds on another, for instance #1278 on #1276. We merge by squash, so the lower one lands on
+main as one new commit, but the upper one still holds its old single commits.) "Rebase (eigene Commits neu auf
+main setzen) ging heute einmal schief und brauchte einen zweiten Anlauf. Ein Merge von main in den oberen PR funktioniert ohne das; beim Merge auf main wird ohnehin gesquasht,
+die Historie bleibt sauber." (A rebase, putting one's own commits anew on main, went wrong once that day and
+needed a second attempt. A merge of main into the upper pull request works without that; the merge to main is
+squashed anyway, so the history stays clean.)
+
+**Rejected alternatives:**
+- "jeder Coder wählt selbst" (each coder chooses), the request's reject option.
+- A rebase: the reason above.
+
 ## The review lead's team hands out every review
 
 **Id:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Type:** decision
 **Status:** active
 **Evidence:** unknown
-**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04; the review order's form, member and instance, from the jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r7, adopted by the maintainer as req-3hp7vjqa4yvz), card tsk-wer0fdvfmdss; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on card tsk-kr6f8w50r0cb
 **Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
 
 A coder sends a review request, with the base and head SHAs in full, to
-the review lead and to nobody else. The review lead's team picks the
+the review lead and to nobody else. A review order names the reviewer by
+member and instance (`handle#instance`) and gives the base and the new
+head in full; the jour fixe adopted it as "Review-Aufträge nennen Mitglied
+und Instanz, Basis- und neuen Head voll" (review orders name member and
+instance, the base and the new head in full), with the reason "Spart
+Nachsenden und Verwechslungen" (it saves resending and mix-ups). The review lead's team picks the
 reviewer of each vendor, orders the reviews and delta reviews, checks
 the results, and collects the minor findings (P3) for the area's
 collection card. Merges, deploys and cards stay with the lead.
 
-The rule itself is confirmed by these sources; its reason is not, so
-the entry's Evidence is the weaker grade.
+The rule itself is confirmed by these sources; a reason is recorded only
+for the order's form, so the entry's Evidence is the weaker grade.
 
-**Reason:** unknown — not recorded with the rule.
+**Reason:** for the form of a review order, the jour fixe's (above); for the rest of the rule, unknown — not recorded with it.
 
 **Alternatives:** none recorded. Before 2026-11-02 the coordinator
 gave the order of the reviews (8ba32bfa, for a returning reviewer); why
@@ -1251,6 +1371,24 @@ hung MariaDB run ended without a word.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
 
+## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
+
+**Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-03 (round jfx-8yj7akxm6hzj, proposal r3, adopted by the maintainer as req-gec2x1vgxrpx); card tsk-kr6f8w50r0cb; the request's text, verbatim, in the lead's note nte-d9dztqs241tp on that card
+**Revisit when:** a limit is set, or the job timeouts above end hangs early enough on their own
+
+The jour fixe adopted "Abbruch-Recht für hängende Läufe (Lead oder Ops) mit fester Frist" (the right to
+cancel hanging runs, for the lead or ops, after a fixed limit). The decision names no value: the limit is
+open. The job timeouts above (97f338fd) stay.
+
+**Reason:** "Heute hängt jeder Abbruch an einem Menschen; die Freigabe muss Oliver geben" (today every cancel
+depends on a human; the approval has to come from Oliver).
+
+**Alternatives:** none recorded.
+
 ## hub-postgresql prints every thread's stack when a test runs longer than 300 seconds
 
 **Id:** 32d51f7e-a3dc-4027-9ceb-ce2a0ecdca69
@@ -1321,13 +1459,13 @@ pull request and in `ci-ok`.
 **The clock is not enough (2026-11-01):** (Source: the coordinator's finding, 2026-11-01, that scheduled runs were skipped, visible in the run history of the workflow; the start from the last job of `ci.yml` was decided by the coordinator on 2026-11-02 in the review of the pull request that added it, after the first version with `workflow_run` was found to break the runner rule.) GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
 after the merge only one scheduled run happened (and not at the minute asked for). Every push to main therefore also
 starts the workflow, from the last job of `ci.yml` (`gh workflow run` with `trigger=ci`, a `workflow_dispatch` with the workflow's own token), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
-clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand`) tells them apart where the run list is read.
+clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand …`) tells them apart where the run list is read. Since 2026-11-09 a hand start names the commit it tests (`hub-mariadb hand <sha>`, or `hand head`), so a release can find it (ea58fdd2-6e3f-45df-ae48-4ce6825cafde).
 
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
 green run, and later red runs comment on it, so the change that broke it is found within the hour; a green automatic run
 closes it, but only when the green commit contains every commit the issue names as red (a hand run on a newer commit may have opened it). The next hour always runs again after a run that did not end green or while the issue is open, so a revert
 closes the issue and a failure outside the watched files is not skipped over. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
-(Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
+(Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy; for a release tag the release workflows read it themselves (ea58fdd2-6e3f-45df-ae48-4ce6825cafde).
 
 **Reason:** MariaDB is the self-hoster's database and the slowest suite; held in front of every merge it made main's
 runs queue for an hour and more while the code it checks changes rarely in ways that break only there (the migration
@@ -1523,8 +1661,8 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405
-**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, or most contributors no longer push from a shared machine
+**Source:** the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, request req-qqpvjjhq02jx, adopted by the maintainer: every red CI from formatting or types costs a round of 60 to 90 minutes), card tsk-r37kzg1464b9; the choices below are the author's, in #1405; ktw-lint from card tsk-nb0f9gq7qyrb (same round), its boundary and the refusal on another linter version set by the coordinating agent on the plan, 2026-11-08
+**Revisit when:** the CLI's dev lock (`cli/requirements/dev.txt`) stops taking the hub's dev pins as constraints (then the hook needs the CLI's tools from an environment of their own), CI lints a package the hook does not know, CI's ktw-lint job changes its paths, flags or how its version is pinned, or most contributors no longer push from a shared machine
 
 `tools/hooks/pre-push` runs `tools/pre_push.py` once a clone sets `git config core.hooksPath tools/hooks`
 (CONTRIBUTING.md). For each of `hub/` and `cli/` that the pushed commits touch, it runs CI's own `make lint
@@ -1533,6 +1671,21 @@ the hashed lock. Before that it compares black, ruff and mypy there with the pin
 stops on a difference: the point is the same result as CI, and a local environment drifts (on the machine where the
 hook was written, ruff was 0.17.3 against the lock's 0.17.1). It checks the working tree, so it also stops when
 HEAD is not the pushed commit or a touched package has uncommitted changes.
+
+It also runs `ktw-lint <path>` for every Keep the Why project the push touches, the paths of CI's ktw-lint
+matrix (`.`, `hub`, `cli`, `web`; a file outside the three packages belongs to the root), without `--strict`, as
+that job does (card tsk-nb0f9gq7qyrb, the same jour fixe, which asked for ktw-lint too). A change to a project's
+`context/` or `.keep-the-why` also lints its family: a child's the root, the root's every child, since CI checks a
+family link on both ends. The `ktw-lint` it runs (PATH, or `MAITY_HOOK_KTW_LINT`) must answer `--version` with
+the version of the `# lint-vX` comment on the action's pin in `.github/workflows/ktw-lint.yml` as the pushed
+commit has it (an uncommitted edit of the workflow chooses nothing; review R1 of #1508), which
+`tools/ktw_pin.py` already holds to the context schema; otherwise the hook refuses before any check, naming
+both versions and `pipx install --force keep-the-why-lint==X`. It installs nothing and asks no network: the
+version comes from the file. A push that touches only `web/` or the root's files needs no hub environment. Its
+working-tree check covers each linted project's `context/` and `.keep-the-why`. The pushed files are listed
+without rename detection (`--no-renames`), so a file moved out of a package or project counts for the one it
+left too, which can break by losing it (review R1 of #1508: a moved `hub/context/index.md` left hub's ktw-lint
+unrun).
 
 **Rejected alternatives:**
 - A hook that is on for everyone (installed by a setup step, or a check in CI that it is set): the card asked for
@@ -1547,6 +1700,12 @@ HEAD is not the pushed commit or a touched package has uncommitted changes.
 - The pushed commit checked out into a temporary tree instead of the working tree: mypy needs the environment the
   hub's editable install points at, which is the working tree; checking there and stopping when it differs from
   the push is simpler and says so.
+- keep-the-why-lint in the hub's dev lock: a second pin of the linter beside the workflow's, and the hub's
+  environment would be needed to lint `web/` or the root alone.
+- `ktw-lint` for all four projects on every push: a push would be refused for a break in a project it did not
+  change.
+- Installing the pinned ktw-lint when the version differs: the hook would change the machine and need the
+  network; it says what to install instead.
 - The CLI's tools from the CLI's own environment: `cli/requirements/dev.txt` is compiled with the hub's dev lock as
   constraints, so its black, ruff and mypy are the versions the hook already compares with; a second environment
   per contributor would check the same versions. (When the hook was written the `cli` CI job installed its dev
@@ -1641,13 +1800,13 @@ and `join-smoke` ran `pip install -e cli`.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `cli/requirements/dev.txt`, `cli/Makefile`, `.github/workflows/ci.yml` (`cli`, `cli-windows`), `.github/workflows/release-cli.yml` (`check`)
+**Source:** card tsk-3t1tvkd5ktxs (plan approved by the team lead, the reasons below are the author's); `cli/requirements/dev.txt`, `cli/Makefile`, `.github/workflows/ci.yml` (`cli`, `cli-windows`)
 **Revisit when:** the CLI needs a tool the hub's dev lock pins to a version that does not support the CLI's oldest Python, the CLI gets runtime dependencies, or pip installs from a standard lock (`pylock.toml`) without uv
 
 `cli/requirements/dev.txt` holds the dev extra of `cli/pyproject.toml` with hashes, compiled universally for
 Python 3.11 (the CLI's oldest) with `hub/requirements/dev.txt` as constraints (`make -C cli lock`, checked by
-`make -C cli lock-check` beside the release lock). CI's `cli` and `cli-windows` jobs, the release workflow's
-check job and `make dev` install from it, then the CLI editable without build isolation. Before, they ran
+`make -C cli lock-check` beside the release lock). CI's `cli` and `cli-windows` jobs and
+`make dev` install from it (the release workflow's check job did too until 2026-11-09, ea58fdd2-6e3f-45df-ae48-4ce6825cafde), then the CLI editable without build isolation. Before, they ran
 `pip install -e '.[dev]'`, which resolved the newest ruff, black, mypy, pytest, build and wheel on every run.
 
 **Reason:**
@@ -1667,3 +1826,516 @@ check job and `make dev` install from it, then the CLI editable without build is
   hub's lock holds the hub's runtime dependencies, which the CLI must not be tested with.
 - Pinning the tools by version in `pyproject.toml`'s dev extra without hashes: the versions would hold, but
   not the files.
+
+## The overlap check before a push decides by merge-tree's exit code, and counts only the conflicts the branch adds
+
+**Id:** 53705871-3016-476f-8482-392106c6f450
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-kpbatay0r79a, from the jour fixe of 2026-11-07 (proposal t5.s1, adopted by the maintainer as req-pcxh3qdmser4); the REST list from card tsk-epkk0yd19wxs, reported by a cloud coder; the not-counting rule is the author's and the review of #1462 agreed with it; `tools/overlap.sh`, `tools/test_overlap.py`, `CONTRIBUTING.md` ("The overlap check before a push")
+**Revisit when:** git's `merge-tree --write-tree` changes its exit codes, the team wants a branch to stop for conflicts it does not cause, or GitHub's REST list of pull requests changes its fields or paging
+
+`tools/overlap.sh` checks a branch against every open pull request that changes one of its files. It
+fetches every open pull request's head and takes each one's files from git (`git diff --no-renames
+--name-only origin/main...head`), as it takes the branch's own. It three-way merges the branch with each
+pull request that shares a file (`git merge-tree --write-tree --no-messages`), and reads only the exit
+code: 0 clean, 1 conflict, anything else stops the check with exit 2. For each conflict it runs the same
+merge of `origin/main` with that pull request. A file that conflicts there too is named but not counted,
+so exit 1 means the branch adds a conflict. Path lists are sorted bytewise (`LC_ALL=C` for `sort`) and
+compared in bash itself, while git keeps the reader's locale.
+
+It lists the open pull requests over GitHub's REST API, `gh api --paginate
+"repos/<owner>/<repo>/pulls?state=open&per_page=100"`, every page, with the owner and name taken from
+the last two parts of origin's URL as configured (https, ssh, or a proxy's path), never from `gh`'s
+default, and from origin's host (`--hostname`; a proxy on the loopback stands for github.com). Each line of the list must have the shape it writes (number, a commit id, whether the head is
+in a fork, the branch name); a pull request whose fork was deleted has no head repository and counts
+as a fork.
+
+Exit 0 says "this branch adds no conflict", which is weaker than "this branch merges cleanly with every
+open pull request": a file that already conflicts between `main` and a pull request is not counted,
+even when the branch changes how it conflicts there. That pull request's line names the file.
+
+A check that did not run never ends in 0. Every command whose answer the check needs stops it with
+exit 2 when it fails: the branch's files or a pull request's (no common history with `main` included,
+which would otherwise read as "changes no file"), the list of open pull requests (also when a page
+fails, when a line has another shape, when a list of a full page or more reads differently a second
+time, or when origin's URL names no host, owner and repository), the fetch of their heads (also when a fetched head is not the
+head `gh` listed), a merge, and each step that turns
+git's answer into a list. A pull request is left out as the branch's own by its head, or by its branch
+name only when it comes from the same repository, not from a fork.
+
+The check is a convenience before a push, not the gate: the coordinating agent's merge-base and
+merge-tree check before every merge is. Two matching reads of a list that GitHub pages by offset are
+a best effort, not a snapshot: a pull request that closes, reopens and closes again in step with both
+reads can still be missed by both, with each read the same line for line. The caller's `GH_HOST`, `gh` login and clone configuration are
+trusted. Further findings on list churn, or on a caller pointing `GH_HOST` or the clone at another
+server, count as minor (the coordinator's scope for #1475).
+
+**Reason:**
+- The checks the authors wrote by hand grepped git's message for `CONFLICT`. On a machine with a German
+  locale git writes `KONFLIKT`, and one check reported a pull request as conflict-free when it was not.
+  An exit code is the same in every language. A test runs the check under a German and an English
+  locale, and the old grep fails exactly in the German one.
+- A merge that git cannot compute (no common history, a missing object) must not read as
+  "clean". Every exit other than 0 and 1 stops the check.
+- A pull request that already conflicts with `main` is that pull request's to resolve. Counting it
+  would make every branch that shares one of its files exit 1, whatever the branch does. The line
+  still names it, so the author sees it.
+- The files of a pull request come from git, not from `gh pr view --json files`: GitHub's list names a
+  renamed file only under its new name, so a pull request renaming a file the branch edits would be
+  skipped; its paths are not quoted the way git quotes them, so a path beyond ASCII never matched; and
+  it stops at 100 files per pull request (#1431 changes 113, `gh pr view --json files` lists 100).
+  With `--no-renames` a rename counts under both names, and `core.quotePath=false` gives one form for
+  every list.
+- `sort` follows the locale's collation, which can order paths differently from bytes; in one review
+  run `comm` then warned that its input was not sorted (not reproduced on the development machine).
+  Bytewise order is the same everywhere.
+- `gh` is told origin's repository (`--repo`), and each fetched head must be the head `gh` listed.
+  On its own `gh` may list another repository (`GH_REPO`, `gh repo set-default`, an `upstream`
+  remote). The check then fetched origin's pull requests of the same numbers, other changes, and
+  in a probe during the review ended in 0 where the listed pull request conflicted. A head that moved between
+  the list and the fetch stops the check too; running it again settles that.
+- Two lists are compared in bash (an associative array, so bash 4 or newer), not with `comm` on
+  `<(...)`: a program inside `<(...)` is outside `pipefail`, so its failure was lost and both lists
+  read as empty. With a failing `tr` there, a conflict came out "clean for this branch" with exit 0.
+- The list comes over REST, not from `gh pr list`: that asks GitHub's GraphQL API, which Claude Code's
+  cloud sessions cannot reach (HTTP 403), so the check ended in 2 on every push there and the cloud
+  coders checked by hand. The REST list needs only what `git fetch` and `gh api` already need.
+- `--paginate` reads every page and ends `gh` with an error when one fails. `gh pr list` stopped at its
+  `--limit` without a word, which the check guarded with a count; with every page read that count has
+  nothing left to guard.
+- GitHub pages the REST list by offset (`page=N`), where GraphQL's cursors did not shift: a pull
+  request that closes on a page already read moves the first one of the next page onto it, and no page
+  returns that one, without an error. The review of #1475 found it. A list of a full page (100) or more
+  is therefore read a second time and must be the first line for line: a skip in a list of 101 leaves
+  exactly 100 lines, so the line count cannot tell one request from two. The comparison is of the text,
+  not of the set of pull requests: one opened during a read repeats a pull request at a page edge and
+  is itself missing, and as sets both reads were equal. A pull request listed twice in one read stops
+  the check as well. Fewer than 100 lines were a single request, which cannot shift. A skip leaves the
+  closed pull request in the first read and out of the second, so the two differ, unless the same
+  churn repeats in step with the second read (above); two reads are not a snapshot. A pull request
+  opened, closed or pushed between the reads stops the check too, and running again settles it. The
+  delta reviews of #1475 found the 100-line edge and the set comparison; the tests' stand-in for `gh`
+  changes the list between pages as GitHub would.
+- The owner and name come from origin's URL as configured (`git config remote.origin.url`), not from
+  `git remote get-url`, which applies `url.<base>.insteadOf` and can name a mirror or a proxy whose
+  path is not the repository's.
+- The host comes from origin's URL too and is given to `gh` with `--hostname`. `gh`'s own host
+  (`GH_HOST`, or the one host it is logged in to) can be another server: a non-empty list from there
+  names heads origin does not serve and stops the check, but an empty one has nothing to compare and
+  read as "no open pull request", exit 0 (the review of #1475 found it). A host on the loopback
+  (`localhost` in any case, an IPv4 literal in 127.0.0.0/8, `[::1]`; a name such as `127.example.com`
+  is a server of its own) is a proxy in front of github.com, as in Claude Code's cloud sessions, which
+  serves git and not the API, so it stands for github.com. A URL without a host (a local path,
+  `file://` with or without `localhost`) names no server to ask and stops the check.
+
+**Rejected alternatives:**
+- `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
+  protects against, and the test for the German case would prove nothing.
+- Count every conflict, including those that exist against `main` alone: a branch would stop for
+  conflicts it does not cause.
+- Leave the check to each author: the jour fixe had just seen it go wrong once.
+- Exit 0 only when the branch merges cleanly with every pull request: a pull request's own conflict
+  with `main` would stop every branch that touches its files, as with counting every conflict.
+- `gh`'s file list per pull request, with a fetch only of those that share a file: fewer fetches, but
+  the gaps above, each of which ends in a silent "no overlap".
+- `gh pr list` with a fallback to REST when GraphQL fails: two ways to list, each needing its own
+  guards and tests, where the REST list alone works everywhere.
+- Exit 2 when `GH_HOST` names another host than origin's: it leaves the host to `gh` whenever
+  `GH_HOST` is unset, and `gh` may still pick another server it is logged in to.
+- More than one page of open pull requests as exit 2, like the old limit: the check would stop
+  working for a repository with more than 100 open pull requests. Reading twice keeps it working
+  there, with the limit above: a best effort, not a snapshot.
+- `gh api`'s `{owner}/{repo}` placeholders: `gh` fills them from its own default repository, the same
+  choice `--repo` was there to override.
+- `comm` with each list in a temporary file whose writing is checked: it works, but adds files to clean
+  up and a program whose exit status still has to be read at every call; bash alone has neither.
+
+## The coverage check before a MERGE-READY reads the main the ci-ok run tested from its checkout log
+
+**Id:** e48eb4a5-27b3-4e6f-b1f1-127b4e5a79d1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-z539g0je0rfk, from the jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, adopted by the maintainer as req-cem2fmhpg425); the exit 2 for a ci-ok that is not green is the coordinating agent's; `tools/coverage.sh`, `tools/test_coverage.py`, `CONTRIBUTING.md` ("The coverage check before a MERGE-READY")
+**Revisit when:** GitHub's run object names the merge commit or the base it tested, actions/checkout changes its `HEAD is now at` line, or ci.yml stops testing `refs/pull/N/merge`
+
+`tools/coverage.sh <pr>` answers one question for an open pull request based on `main`: does the
+merge that its newest green `ci-ok` run tested contain every `main` commit that changes one of the
+pull request's files? It picks the run as the CI watcher does (the newest `pull_request` run of
+`ci.yml` for exactly the head and branch, `ci-ok` of that attempt), reads the tested `main` from the
+line `HEAD is now at <sha> Merge <head> into <main>` that actions/checkout writes in a job's log
+(every job of the attempt is read, and all such lines must agree), and requires that `<head>` is the
+pull request's head and `<main>` is on `main` as just fetched. `main` and the head are fetched into
+refs of the check's own. The pull request's files are `git diff --no-renames --name-only -z <merge
+base> <head>`. The candidates are `git rev-list <main> ^<tested main> ^<head>`: the `main` commits in
+neither side of the tested merge. A candidate is a gap when `git diff --quiet` against any of its
+parents finds a change in one of the files, so a merge counts both for an edit made in the merge and
+for a side it takes. Exit 0 when there is no gap, 1 when there is (each named with its files), 2
+when the check could not run: a closed, merged or stacked pull request, a shallow clone, a head that
+differs between GitHub and the fetch, no run, a run not completed, a `ci-ok` that is not green or
+missing, a list of runs or jobs that fills its page of 100, a log that is gone or names no merge,
+another head, or different merges in different jobs, a tested `main` not on `main`, a commit
+without a parent, and every failed `gh` or `git` call it needs. It only reads.
+
+**Reason:**
+- A pull request's run tests `refs/pull/N/merge`, the merge with `main` as it was when the run
+  started. A `main` commit on the same files that lands later is in neither the run nor the review.
+  `git merge-tree --write-tree` of today's `main` with the head prints a tree id and exit 0 for a
+  clean merge, which says nothing about what the run saw; the check prints it for information only.
+  The jour fixe of 2026-11-08 asked for one command after authors had checked it by hand (#1448).
+- The run object has no field for the tested merge or base: its `head_sha` is the pull request's head
+  and `pull_requests` can be empty. The checkout log is the only record GitHub keeps of it (run
+  42478321216 of #1493: `Merge 45ad8a8d… into 8062dfb7…`). Logs expire with GitHub's retention, so a
+  missing log stops the check instead of guessing.
+- The head in the log line must be the pull request's head: a log of another merge would answer for
+  another commit.
+- A `ci-ok` that is not green is exit 2, not 1: there is no tested run to compare with, and 1 says
+  "merge `main` and push", which would not help a red run.
+- `--no-renames` counts a rename under both names, as in the overlap check, so a `main` edit of a file
+  the pull request renames is found.
+- The review of #1502 (round 1: ChatGPT all three, Grok the second and third) found three routes to a wrong exit 0 in the first version,
+  each reproduced by a test that is red on that version:
+  - `git rev-list --no-merges` dropped a merge that changes a file itself, by a conflict resolution
+    or an edit during the merge. Now every candidate counts, merges too, against each parent. "Any
+    parent" also catches a merge that takes a file back from its other side; it can name a merge
+    whose side the run had already seen, which says "merge `main` again" once too often but never
+    hides a gap.
+  - The file list was read line by line from git's display output, in which git quotes a name with
+    a newline, a tab, a double quote or a backslash even with `core.quotePath=false`; the quoted
+    form matched no file, and a gap on such a file read as none. The list is read NUL-separated.
+  - The check took `refs/remotes/origin/main` after `git fetch origin main`. A clone whose fetch
+    refspec does not cover `main` leaves that ref at an old commit, and the check compared against
+    it. `main` is fetched into a ref of the check's own.
+- The candidates exclude what the head contains: a `main` the pull request merged is in the tested
+  merge through the head, whatever `main` the run merged into.
+- Every job log is read, not the first that names a merge, so two jobs that checked out different
+  merges stop the check instead of the first one deciding. A shallow clone may lack the history
+  the merge base and the candidates come from, and a list that fills its page may continue on a
+  page not read; both stop the check rather than answer from part of the history.
+- Reading a job's merge line tells grep's "no such line" (1) from a failure (anything else), and
+  the steps after grep are checked too. Before, a failed `grep | cut | sort` gave empty output,
+  which read as a job without a checkout: a job naming an older `main` was skipped and another job
+  decided, exit 0 (the review of #1502, ChatGPT, delta 1, by a `sort` made to fail; a test does the
+  same with `sort` and with `grep`).
+- It needs bash 4.4, the first with `mapfile -d` for the NUL-separated file list, and checks for it
+  (delta 1 of #1502: the first text said bash 4).
+- The lists of runs and jobs are counted, and a merge line checked for being one, in bash itself,
+  not with `grep -c` or `wc -l` inside a numeric test, which drops their exit status: a grep that
+  printed a partial count and failed turned a full page into exit 0 (delta 2 of #1502, ChatGPT; a
+  test with such a grep for both lists). Every other command substitution is checked; the ones
+  left unchecked, the `tr` in a die message that runs only while the check is already exiting 2,
+  and merge-tree's tree id, decide nothing.
+- Commits are compared by ancestry, not by message or date, and the run list is sorted bytewise
+  (`LC_ALL=C`), so the locale changes nothing. A test runs it under German and English; the German
+  part runs only where `de_DE.UTF-8` is installed and is skipped elsewhere, CI included.
+- A job log is plain text with the runner's colour codes (a log of run 42478321216 has 27 lines
+  with an escape character). gh 2.97.0 and later refuse to print a non-JSON body with escape
+  sequences unless given `--allow-escape-sequences` (cli/cli `pkg/cmd/api/api.go` at v2.97.0;
+  GHSA-3m3g-3wcr-px46), and older gh rejects that flag as unknown, so the check passes it exactly
+  when `gh api --help` lists it. Without that every real run with a current gh ended in 2, and the
+  message blamed log expiry (the review of #1502, Grok, round 1); a failed log read now quotes gh's
+  own error. The log is only searched for the merge line and never printed. Commit subjects are
+  printed with their control characters replaced by `?`.
+
+**Rejected alternatives:**
+- Compare the run's start time with the commits' dates: commit dates are the author's, not when
+  `main` got them, and a merge can bring old commits.
+- Take the base from the pull request's `base.sha`: it is a field of the pull request, not of the run,
+  and GitHub does not document it as the `main` a given run's merge was built from.
+- Exit 1 for every `main` commit since the merge base, without the run: a pull request whose run
+  already tested the newer `main` would be sent to merge `main` again for nothing.
+- A merge counts only when a file differs from all its parents (git's combined diff): it misses a
+  merge that takes an old version of a file from a side the run had seen, so the tested `main`
+  had the newer one and today's `main` has the old one.
+- Always passing `--allow-escape-sequences`: every gh before 2.97.0 stops with "unknown flag", and
+  the development machine runs gh 2.45.0.
+- `git rev-list -- <files>` with its history simplification to find the candidates: which merges it
+  keeps depends on the simplification mode, while a diff against each parent says it directly.
+- Handle stacked pull requests: their run tests a merge into the lower branch, whose own coverage is
+  another question; the check says so and stops.
+
+## One shared CI watcher reads the pull request's own newest ci run, never the commit's checks
+
+**Id:** 67edbcd8-634f-42c8-9a22-107dbe246bef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c93gkgd4gahv (the coordinator's card and the plan the coordinator approved, 2026-11-07); `tools/ci_watch.py`
+**Revisit when:** the `ci` workflow is renamed or split, its summary job is no longer `ci-ok`, or pull requests stop getting their own `pull_request` runs (a merge queue on GitHub, for example)
+
+Authors no longer start a watcher process per pull request. They add `<pr> <full head sha> <handle#instance>` to
+one queue file, and one `tools/ci_watch.py run` goes through it every two minutes. For a line it takes the newest
+run of `.github/workflows/ci.yml` with that head SHA, event `pull_request` and the pull request's branch, waits
+until it is completed, sends the `ci-ok` job's conclusion and the failed jobs to the author with `maity say`, and
+removes the line. A moved head, a merged or closed pull request and a conflict with main (no run starts then) are
+reported and removed too. The watcher posts under the Maity identity of the `MAITY_STATE_DIR` it is started with and
+refuses to start without one. It only reads: every GitHub call is a GET, and it never cancels, re-runs or merges.
+The queue line holds no path, state directory or credential.
+
+**Reason:**
+- One watcher process per pull request: the memory reaper on the shared machine ended such watchers.
+- After a fast-forward, a commit's check runs include main's old green `ci-ok` from a push run of the same SHA,
+  so a watcher reading the commit's checks can take that old green for the pull request's result while its own run
+  is still going.
+- `gh pr checks` exits 8 while a check fails or is pending and lists an older cancelled run beside the newer one,
+  which a watcher has to work around.
+
+**Rejected alternatives:**
+- The commit's check runs (`commits/<sha>/check-runs`), newest `ci-ok` by start time: an old push run on the same
+  SHA can be the only completed one, the case above.
+- `gh pr checks`: its exit code and its table both need workarounds (exit 8, cancelled older runs).
+- Filtering runs by their `pull_requests` field: GitHub does not always fill it (the runs of one pull request head
+  seen on 2026-11-07 had it empty), so the branch decides.
+
+## Authors outside the shared machine queue a CI watch by a Maity message; the sender is the author
+
+**Id:** a03bb0b5-c951-41ec-9a75-e6c47711cf5a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's adoption from the jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, request req-z7gvyzt3hk17), card tsk-p10jranmd1hh with the plan the coordinator approved; `tools/ci_watch.py`
+**See:** process.md#one-shared-ci-watcher-reads-the-pull-requests-own-newest-ci-run-never-the-commits-checks — 67edbcd8-634f-42c8-9a22-107dbe246bef — as of 2026-11-08
+**Revisit when:** the watcher gets an identity of its own (then `--inbox` changes, not the rule), the hub can deliver a message to a tool without a member identity, or the queue file is no longer needed on the machine
+
+`tools/ci_watch.py run --inbox <member id>` reads, on every pass, the project's messages to that member that come
+after the last one it read. It takes those whose whole text is `ciwatch <pr> <full head sha>`. The author is the
+message's sender as the hub records it (`from#from_instance`), never an address in the text. The pull request must
+be open with that SHA as its head (a number of at most nine digits); the line is then added as with `add`. Each
+request is decided once and answered (added, or why not) with `(request <seq>)` at the end. Every other message gets
+no answer, and the watcher's own messages are never taken. The decision, the answer and the last message read are
+saved in `<queue>.intake` before the answer is said. An answer whose `say` failed is said again only after a later
+pass read the messages to the end without finding it, and given up after five failures (logged; that request then
+gets no answer). A request whose GitHub check fails five passes in a row is answered so and passed over. A pass
+reads at most five pages and answers at most 50 requests, and the next one goes on from there. A first start
+follows empty pages to the newest message, across passes from a saved continuation, and begins after it. Nothing
+in the intake stops the queue pass: an unreadable or malformed state file, or any other error there, is logged
+every pass and tried again. One way to two answers stays: if the
+hub changed the posted body and the response was lost, the read-back misses it and the answer is said again. One
+`run` per queue: the state file is not locked against a second runner. The queue file stays for members on the
+machine.
+The watcher runs with the inbox of the member whose `MAITY_STATE_DIR` it posts under.
+
+**Reason:**
+- Members in a cloud session cannot reach the queue file on the shared machine. Until now someone on the machine
+  added their lines by hand, and a line written without an address was skipped.
+- The sender from the hub cannot be typed wrong or given for someone else, and a result goes back to the member
+  who asked.
+- Reading messages moves no read mark: `maity messages` acknowledges nothing, and the identity's `state.json`
+  was byte for byte the same before and after a call (2026-11-08). So the watcher can read the inbox of a member
+  whose `maity wait` runs at the same time, and that wait still gets every message.
+- At most one answer per `ciwatch` message, at most 50 answers and five pages read per pass, and no answer to
+  anything else or to its own messages: the watcher cannot start a loop with itself or answer the inbox member's
+  ordinary mail.
+- Saving the decision before `say`: the first version kept only the last message read and wrote it after `say`.
+  A failed `say` then decided the request again; if the queue pass had reported and dropped the line meanwhile,
+  the head was watched and reported twice. `maity say` has no idempotency key a caller can repeat, so a `say`
+  whose response got lost posted its message anyway; the watcher reads its own answer back (the hub returns the
+  body as sent, 2026-11-08) before it says one again.
+- A message must never stop the intake: a number past Python's integer-string limit (4,300 digits) made `int()`
+  raise on every pass, and a GitHub failure for one request held up every later one.
+
+**Limit:** the intake does not check that the sender wrote the pull request. Any member who can message the
+watcher can have any open head watched; the result goes to that member. And every read is a hub call, which is
+presence (docs/api.md §2.4): each pass, every 120 s, marks the instance of the `MAITY_STATE_DIR` the watcher runs
+under online and renews the leases of the claims it holds. Until the watcher has an identity of its own, that
+instance's claims do not run out while the watcher runs, even if its own session is stuck, so the stuck-holder
+reassignment does not reach them; where that matters the watcher runs under an instance that holds no claims.
+
+**Rejected alternatives:**
+- The author named in the message text: anyone could direct results to someone else, and a typo loses them.
+- A shared file reachable from the cloud (a repository branch or a gist): a write path into the repository or an
+  outside service for a convenience, and the sender would again be whatever the line says.
+
+## The guard tests run in one script before a review request, against the work tree's own hub
+
+**Id:** aced0267-da94-4245-9c71-bff08d2ff54e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-z7prb2vtrnmy, from the jour fixe of 2026-11-07 (proposal t2.s1, adopted by the maintainer as req-kzqbz6b17a8m); `tools/guards.sh`, `CONTRIBUTING.md` ("The guard tests before a review request")
+**Revisit when:** CI gains or drops a guard test (another per-table rule, another generated file), or the hub's test environment stops being shared between checkouts
+
+`tools/guards.sh` runs, in about half a minute, the steps that otherwise turn red in CI one round at a time:
+`hub/tests/test_per_human_tables.py`, `make -C web shapes`, `make -C web fixtures` and `make -C web check`. Then
+it fails unless `git status` is clean. Every step runs, so one run names every failure. It refuses to start on
+a work tree that is not clean, and refuses a `HUB_PYTHON` that would import the hub from somewhere other than
+this work tree's `hub/src`. Both refusals, and a missing `make`, `node`, `pytest` or `HUB_PYTHON`, end in exit 2,
+never 0. `HUB_PYTHON` is made absolute where the caller stands, since the steps run it from `hub/` and `web/`.
+Every step, and the check of where the hub is imported from, runs in a cleared environment (`env -i`) that carries
+only `PATH`, `HOME`, `TMPDIR`, `LC_ALL=C`, `PYTHONNOUSERSITE=1` and `PYTHONPATH` set to the work tree's `hub/src`.
+The cleared environment also drops `MAITY_TEST_DATABASE_URL`, so these steps always use the test suite's SQLite;
+they say nothing about PostgreSQL. The script drops the caller's `GIT_*` variables. It reads tracked changes from
+`git status` and untracked files by the repository's `.gitignore` files alone, since a personal exclude
+(`core.excludesFile`, `.git/info/exclude`) could hide a file a step wrote. It refuses (exit 2) to start while an
+index entry is marked skip-worktree or assume-unchanged, because `git status` does not show such a file even when a
+step rewrites it, and it reads the work tree with `core.fsmonitor` off, since a filesystem monitor that answers
+"nothing changed" hides a rewrite too.
+
+The guards are a convenience before the review, not a security boundary; CI stays the gate. They trust the caller's
+shell and `PATH`, and the clone's own git configuration and hooks: an author who sets these against the check can
+get past it (a startup file that ends the shell before the script runs, a `PATH` that names other programs, a
+clean filter that reports old content).
+
+**Reason:**
+- After approval, #1447 and #1443 together needed four more CI rounds for these guards: a new column that names
+  a human not yet decided in `NAMES_A_HUMAN`, `web/tools/hub-shapes.json` not rewritten after the hub's answer
+  gained a field, and a fixture lacking a field the hub sends.
+- A clean start is what makes the last step mean something: a file the author changed and a file a step rewrote
+  cannot be told apart afterwards.
+- On the shared development machine the hub's virtual environment has the hub installed in editable mode from
+  another checkout. Without `PYTHONPATH` pointing at the work tree, the per-human test and the shapes would test
+  that checkout's tables and answers, and could pass for code that is not the branch's (reproduced: the import
+  resolved to another checkout's `hub/src`).
+- Inherited settings made steps end in 0 without testing, each reproduced in review: `PYTEST_ADDOPTS=--collect-only`
+  collects the per-human tests without running them, `MAKEFLAGS=-n` or `-i` skips the recipes or their errors,
+  a `PYTHON` in the environment takes over make's own (`PYTHON=true`), and a `BASH_ENV` runs in the per-human step.
+  Before the cleared environment, each of them gave "all passed" on a branch with an undecided column or a fixture
+  lacking a field.
+- In the second review round, a stale `web/tools/hub-shapes.json` marked skip-worktree or assume-unchanged, and a
+  stray file hidden by a personal exclude, each gave "all passed": `git status` reported nothing. The start now
+  refuses the flags, and untracked files are read by the repository's ignore rules alone. In the third round a
+  repository-local `core.fsmonitor` hook that reports no change did the same; the work tree is now read with the
+  monitor off. The coordinator then set the boundary above, so the list of such cases ends there.
+- A field the check names goes into the fixture by hand. `web/tools/fixture-shapes-baseline.json` only shrinks
+  for a request it already lists, so extending it would hide the gap the guard found.
+
+**Rejected alternatives:**
+- Stop at the first failing step: the author would fix one guard and meet the next in another run, the very
+  rounds the script is meant to save.
+- Compare `git status` before and after instead of requiring a clean start: a file both the author and a step
+  changed would pass unseen.
+- Unsetting a list of known variables (`PYTEST_ADDOPTS`, `MAKEFLAGS`, `MFLAGS`): each tool reads more than that
+  (`PYTEST_PLUGINS`, `MAKEFILES`, `GNUMAKEFLAGS`, `BASH_ENV`, `NODE_OPTIONS`, make's variables from the environment),
+  and the list would miss the next one; a cleared environment names what the steps need instead.
+- The `make` targets with the Python as the author's environment finds it: the case above, where the shared
+  environment tests another checkout.
+
+## A factual sentence about main, GitHub or a red old head in a pull request text or review request names the command, the head it ran on and its full output
+
+**Id:** 9c15b539-a190-4672-9219-c3ef09fb1016
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r5, adopted by the maintainer as req-08ss0z8tfnja); card tsk-4npgz5hvsx3e; `CONTRIBUTING.md` ("Evidence for tests and reports")
+**Revisit when:** a tool states these facts itself (the overlap check, the CI watcher) and the text only quotes it
+
+A factual sentence in a pull request text or a review request about main ("already done on main", "main did
+not touch these files"), about GitHub ("GitHub leaves the field empty") or "the old head is red" names the
+command that showed it, the head it ran on and its full output.
+
+**Reason:** such sentences were written from a grep cut short or from one sample, and only
+the reviewers corrected them.
+
+**Rejected alternatives:**
+- Leaving it as good practice without a rule: that was the state in which the wrong sentences were written.
+
+## A card for a tool or a security-relevant change states its boundary before the first review
+
+**Id:** 375defba-792e-4da1-a370-0b5cf4525c72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r6, adopted by the maintainer as req-02zntf4ds19a); card tsk-4npgz5hvsx3e, where the lead chose a body convention over a template file; `CONTRIBUTING.md` ("Before the first review")
+**Revisit when:** cards gain a field for it in the hub, or the project keeps a card template
+
+Before the first review order, a card for a tool or a security-relevant change carries a `Boundary:` paragraph
+in its body: what the change guarantees, what it does not, and what counts as P3. The review lead quotes it to
+all three reviewers in round one.
+
+**Reason:** #1475 and #1478 each went two extra review rounds on edge cases before that boundary was written
+down.
+
+**Rejected alternatives:**
+- Setting the boundary during the review, as before: the extra rounds above.
+- A card template file with the field: the project keeps no card template; cards are written with
+  `maity task create` and a free-text body, so the convention lives where the body is described.
+
+## The rules adopted at the jour fixes of 2026-11-03 to 2026-11-07 are written in CONTRIBUTING.md, one line each
+
+**Id:** 06438e59-d797-452c-969d-cbc3e1771f61
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe rounds jfx-8yj7akxm6hzj (2026-11-03), jfx-c3rg3cv17c48 (2026-11-04), jfx-269b897etn83 (2026-11-05), jfx-nerr4n29p2ce (2026-11-06) and jfx-08m18215rp8c (2026-11-07); the adopted proposals in the bodies of the cards named below; the lead's announcements of them; card tsk-cqzz7bs7kfj5, from the maintainer's request of 2026-11-08 to shrink the open list
+**Revisit when:** layered briefings (§6.28) carry role rules, so the rules can move where each role reads them; or a rule here is changed by a later jour fixe
+
+The adopted rules were written nowhere shared: only in the lead's announcements and in the agents' own notes.
+`CONTRIBUTING.md` ("Rules from the jour fixe") now holds them as one sentence each with its card, grouped by who
+acts. Not all of them are in force: seven lines are marked *not yet in force* (the six of
+card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), three *exception to an older entry, open*,
+and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
+
+- Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
+- Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
+  be closed (`invalid_transition`), two messages each.
+- One open pull request with a new migration (tsk-xqcney05e5fz): three in parallel, one re-chained twice with a
+  full round each time.
+- A UI layout pull request's e2e variants (tsk-e4dk3hs41vfz): a review round for missing variants.
+- The merge order agreed before stacking in shared web files (tsk-qymtmpkp43jq): a stack merged `main` several times.
+- Every path listed for a "never" finding (tsk-cnbwt37d4sdb): three rounds for one rule, one parser fixed at a time.
+- A push go covers a further `main` merge with an empty remerge-diff (tsk-z0rs3xqp1awv): a new go for nothing new.
+- A limit or timing promise names the line that enforces it (tsk-fdk4ksxedcxv): four text deltas on one pull request.
+- Allowlist grammars and no pipes in deleting `sh` checks (tsk-1yedmz1pp0a5): two extra rounds and a new P1.
+- The VERDICT line (tsk-h76gy9qxk0vj): a verdict had to be asked for. The card's form also names the base, so
+  delta rounds cannot be mixed up; the announcement asks for the head only (the open entry below).
+- The fixed scope from round 3 (tsk-g4fn0hqctbzg): a pull request grew over nine rounds.
+- A reviewer's stop announced, and the outage's state in a fixed place coders read (tsk-fgg8365e3n6z,
+  tsk-sgt89h1dj54b): nobody knew why or until when a reviewer was gone, and coders asked one by one.
+- One message per Grok result (tsk-73k2kkd3dkc4): each result came three times, each copy waking the readers.
+- Review orders acknowledged, results also to the review lead (tsk-8f1bfeh621tp): five orders lost unnoticed.
+- merge-tree against `main` in every delta order (tsk-pm9jryrf7nqv): a head ordered as clean was not.
+- The forge account's push access checked at a join (tsk-ecqtqj7dyg35): a coder got a card and could not open
+  a pull request.
+- The lead forwards review requests while the review lead is away (tsk-z3j36sy534ww): one night all reviewers
+  were free and nobody handed out reviews.
+- The maintainer decides per pull request after a vendor team is out for two hours (tsk-x8ctwgw2cmwc): about
+  ten finished pull requests stood while one vendor was offline.
+- His decision on the status card (tsk-g3entm5r2rez): authors asked one by one what happens to their pull
+  request during the outage.
+- A second review request during the outage (tsk-rkp7pvkshta2): an author with a finished next pull request
+  could not ask for a review, one request at a time.
+- A stack merged from the bottom, and the merge order named at MERGE-READY (tsk-7pnhaxkr6xnh, tsk-d1r3rm9nbnpg):
+  the longer `main` moves between steps, the larger each merge; three pull requests needed two `main` merges and
+  full CI each after approval.
+- The tester note's form and its `Live:` line (tsk-r554j0njyj2t, tsk-vw1837722z82): imprecise notes checked
+  again, and notes saying "undeployed".
+- A tester's stop announced, claims to the stand-in, and the other instance taking the queue
+  (tsk-mw1hdjyvv2tb, tsk-tx7vd6jtvrp8): a tester went offline holding claims, and notes waited while the other
+  instance was idle.
+- SQL for production tried on the shared local PostgreSQL first (tsk-79zsgnfv07pv): a script's first run was
+  on production.
+
+**Rejected alternatives:** for each rule, the reject option of its proposal, as it stands in the card's body
+(mostly: keep the practice as it was).
+
+## Some adopted rules contradict or go beyond what main already says; which version holds is open
+
+**Id:** 7b93c3fc-f483-43ae-8c75-c3c8e53134e3
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** card tsk-cqzz7bs7kfj5, whose boundary keeps main's version and names the conflict; the cards named
+below and the lead's announcement of the VERDICT rule (2026-11-04)
+**See:** process.md#fixes-after-a-review-are-pushed-as-one-bundle-once-the-rounds-reviews-are-in-an-exception-only-on-the-leads-word — cbfbec23-8ed4-4c5b-b552-271b3ef32962 — as of 2026-11-08
+**Revisit when:** the maintainer or a jour fixe decides one of these conflicts
+
+- tsk-g3p686ckd25v (jour fixe of 2026-11-07) lets an author push bundled fixes without a go when all three
+  vendors answered the head, no review lead has listened for over an hour, and every open finding is undisputed
+  and opens no new code path. `CONTRIBUTING.md` and cbfbec23-8ed4-4c5b-b552-271b3ef32962 allow an exception
+  only on the lead's word. Not written into `CONTRIBUTING.md`.
+- tsk-x61m2sv7va7b also says a card is not reported again after a later push. `docs/agents.md` says to report
+  again whenever the pull request is updated. Only the part both agree on is written.
+- tsk-h76gy9qxk0vj's body adopts `VERDICT APPROVE|CHANGES <base>..<head>`; the lead's announcement of the rule
+  asks for the full head SHA only. `CONTRIBUTING.md` writes the head-only line and marks the base form as not yet
+  in force.
+- tsk-z3j36sy534ww lets the lead forward review requests while the review lead is away;
+  eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0 gives every request and its distribution to the review lead's team alone.
+  tsk-rkp7pvkshta2's second request is a review request like any other; the card does not say who orders it
+  from the two vendors there.
+- tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
+  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e requires all three approvals before any merge.
+
+These three outage rules were announced as in force and are written in `CONTRIBUTING.md`, marked as exceptions
+to an older entry; the older entries are not changed. Which version holds, here and in the first two, is open.

@@ -83,6 +83,8 @@
   "notify.mail_disabled": "{address}(으)로의 메일이 3회 실패하여 중지되었어요",
   "notify.mentioned": "{chat}에서 {who}님이 나를 멘션했어요",
   "notify.moderated": "모더레이션: {action} — {type}",
+  "notify.restricted_set": "제한 접근 멤버가 변경됨",
+  "notify.restricted_text": "제한 텍스트가 변경됨",
   "notify.agents_away": "내 에이전트 인스턴스 {n}개가 자리를 비웠어요",
   "notify.not_listening": "내 에이전트 인스턴스 {n}개가 수신하지 않고 있어요",
   "notify.reported": "신고: {reason} — {type}",
@@ -133,5 +135,6 @@
   "sign_in.mail_alternative": "또는 요청한 브라우저에 이 코드를 입력하세요: {code}\n\n",
   "sign_in.page_button": "이 기기에서 로그인",
   "sign_in.page_title": "{name}(으)로 Maity에 로그인",
-  "sign_in.subject": "[Maity] 로그인 링크"
+  "sign_in.subject": "[Maity] 로그인 링크",
+  "subagents.instruction": "이 에이전트의 소유자인 {owner}의 지시예요: Maity를 통해 받는 리뷰나 코딩 작업마다 새 하위 에이전트를 시작하고 지시 전체를 넘겨 주세요. 작업은 이 세션이 아니라 그 하위 에이전트에서 하세요. 당신과 하위 에이전트는 `maity say`로 결과와 상태를 지시에 적힌 멤버에게 보내도 돼요."
 }

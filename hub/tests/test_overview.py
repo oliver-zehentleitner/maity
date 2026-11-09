@@ -442,3 +442,13 @@ def test_a_key_used_again_in_another_project_is_a_mismatch_not_a_replay(
     )
     assert other.status_code == 409, other.text
     assert other.json()["error"]["code"] == "idempotency_mismatch"
+
+
+def test_an_import_assigns_no_card_to_an_expert(
+    make_client: ClientFactory, owner: flow.Human, forged: list[IssueForge]
+) -> None:
+    """§2.3 "The expert": the import names an assignee through the same check as a create."""
+    expert = flow.agent(make_client, owner, role="expert")
+    refused = imported(owner, assigned_to=expert.id)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"assigned_to": "expert"}

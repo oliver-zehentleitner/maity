@@ -67,6 +67,14 @@ def test_ask_collects_options_and_tried() -> None:
     assert args.tried == "checked the release list"
 
 
+def test_ask_waits_only_when_told() -> None:
+    """Jour fixe 2026-11-02 (r4): `ask --task` leaves the card as it is; `--wait` blocks it."""
+    base = ("ask", "Which?", "--to", "human", "--class", "decision", "--task", "tsk-0004")
+    told = cli._ask_body(parse(*base, "--wait"))
+    assert (told["task_id"], told["while_open"]) == ("tsk-0004", "wait")
+    assert "while_open" not in cli._ask_body(parse(*base))  # the hub's default for the class
+
+
 def test_ask_rejects_unknown_class() -> None:
     with pytest.raises(SystemExit):
         parse("ask", "x", "--to", "human", "--class", "order")
@@ -384,7 +392,10 @@ def test_report_sends_the_facts(
     head = git(joined.parent.parent, "rev-parse", "HEAD")
     fake_gh(
         bin_dir,
-        json.dumps([{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12"}]),
+        json.dumps(
+            [{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12",
+              "title": "Leases (tsk-0004)"}]  # fmt: skip
+        ),
     )
     fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-0004/report")] = lambda s: (
         200,
@@ -414,7 +425,10 @@ def test_report_after_the_merge_deleted_the_branch(
     git(clone, "push", "--quiet", "origin", "--delete", "work")
     fake_gh(
         bin_dir,
-        json.dumps([{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12"}]),
+        json.dumps(
+            [{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12",
+              "title": "Fix (T)"}]  # fmt: skip
+        ),
     )
     fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/T/report")] = lambda s: (200, {})
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK

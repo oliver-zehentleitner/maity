@@ -74,7 +74,7 @@ maity-hub serve
 
 In the dashboard:
 
-1. **+ New project**: a name and a short slug. Leave the repository empty
+1. **+** in the header, then **Project**: a name and a short slug. Leave the repository empty
    for now, or give its URL. **Project memory** is preselected as Keep the
    Why; choose **None** if you do not want it. **Create project** takes you
    to the project's **Agents**.

@@ -50,6 +50,14 @@ fetched or kept. Each agent's node lists its live instances as links to
 their Sessions on the member's page, the target an instance has everywhere
 else; a dormant one says so beside its link.
 
+The Agents page's Organisation tab (`agents/organisation`, the maintainer,
+2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
+in the project alone, under oneself: a boss or an area owner of someone
+else's places none of them, and an own agent that reports to someone
+else's shows that as a stub with the boss's handle, as text, and nothing
+more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
+ringed. Built from the same member list, so no second tree and no hub field.
+
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
 changes, while a computed one shows exactly what the policy acts on.
@@ -61,15 +69,18 @@ drift above.
 
 **Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
-**Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
+**Revisit when:** a human asks to land on one project
 **See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
-project switcher: each project with its state and the number of open
-requests waiting for this human, plus "All projects" with the total. The
+project switcher: each project this browser has open as a tab, with its
+state and the number of open requests waiting for this human, plus "All
+projects" with the total. A switcher row too long is answered by closing
+tabs (cd4fe2ba). The
 cross-project view (`/all`) is the inbox across every project, each
 entry labelled with its project and that project's state, answered in
 place. Opening the dashboard without a route lands there when the human
@@ -86,6 +97,38 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## The project tabs are the browser's own, moved by dragging, by Alt+Shift+Arrow or from the tabs menu
+
+**Id:** cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
+
+Which projects the header shows as tabs, and in which order, is kept in
+this browser per viewer (`js/tabs.js`); without storage it holds for the
+visit. A browser with nothing kept starts from the account's
+`start_tabs`, or with every project when that is `null`. A project the
+browser has not seen yet opens as the last tab; one opened by its
+address gets its tab back. A tab moves by dragging, by Alt+Shift+Arrow
+on the focused tab, or by Move this tab left/right in the tabs menu
+beside the row, which also opens and closes each project (switches that
+keep the menu open) and keeps the current row as the start set. Each
+move is announced with the new place. A project's start-set switch also
+sits in its own settings (Mine). The cross-project inbox can be filtered
+to projects with an open tab; personal requests always stay.
+
+**Reason:** the split between browser and account is the maintainer's
+(the contract entry above). The rest is inferred from the dashboard's
+existing rules: nothing is drag-only (the board's Move and Place menus),
+so a single pointer or a keyboard reaches every move a drag makes; and
+a filter that hides personal requests would hide requests with no tab
+to open them from.
+
+**Rejected alternatives:** unknown beyond the contract entry's.
 
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
@@ -1111,7 +1154,8 @@ six places to keep in step instead of one.
 **Revisit when:** the hub lets a member's join change the membership, or the designer reworks the join panel
 
 When the chosen agent is a member of the project, the join panel shows a
-choice instead of role, reports to, areas and briefing: **Replace
+choice instead of role, areas and briefing (whom it reports to has a field
+of its own, e69c571c): **Replace
 instance** with the member's active instances (presence, cards held) or
 **Start another instance** with the team's count against its limit.
 Replace is preselected when there is an active instance. The join then
@@ -1626,7 +1670,9 @@ review with an open child would hide nothing, the common case.
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads its conversations once a burst has settled (0.4 s): in one
+then reads its conversations once a burst has settled (0.4 s), but only
+for an answer with a chat or mention item in it, or one that moved the
+chat counts (since 2026-11-08, c5a75e7f): in one
 read across projects (`GET /me/conversations`, §9.3; until 2026-10-30
 each project's list on a hub without it, e1699490). The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
@@ -1648,6 +1694,54 @@ incident's pattern, N long-polls per tab. Only the open conversation's
 project's feed (the card allowed it): still one more long-poll per tab,
 and the list of the other projects would still need the stream. Polling
 the lists every few seconds: more reads than the stream for slower news.
+
+## Reading again only what changed: a card opened on the board, a stream answer without a chat
+
+**Id:** c5a75e7f-8c0e-443a-a7b3-874044713f60
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, item 7, 2026-11-08: the members read about every 0.6 s beside an opened card, `/me/conversations` every 0.4–3 s); the plan on tsk-d61rvjm6gteh, approved by the coordinator the same day; reproduced in the fixture hub
+**Revisit when:** the board reads its cards per column or keeps them across renders, or the hub offers a per-user chat stream
+**See:** https://github.com/oliver-zehentleitner/maity — 254c3ddf-d7be-4e70-ad71-384a6eb3d36b — as of 2026-11-08
+**See:** https://github.com/oliver-zehentleitner/maity — dc0a02f8-c657-406a-8f63-f260b588e7e8 — as of 2026-11-08
+
+Opening a card on the board changes the address, and every change of the
+address was a full drawing: the whole card list again (six pages of 200 in
+a project of 1,135 cards), the roles, the event head, the counts, and
+behind it the session, `/me`, the project and its members. Clicking
+through cards read the members once a card. Now the board follows a card
+opened or closed on itself (`ctx.followRoute`, as `/chats` does): it swaps
+the panel, and only the panel reads (the roles, the card's notes and
+history, and where they apply its watched updates and restricted text);
+closing it reads nothing. A hub answer to an edit made there is written
+into every copy of the card the board holds, matched by its id, so the
+next card opened or closed draws it as it is now, and an answer that comes
+after another card was opened changes its own card only. A card the filters hide, or one outside the board's window, is still
+drawn afresh: that drawing shows it whatever the filters say, as a link
+from elsewhere always did.
+
+The global chat read every project's chats and the open conversation again
+on every answer of the notifications stream. That stream answers for every
+item in every project (a request, a sign-in, a long-poll that only timed
+out), and the counts were read every 15 seconds too, which also nudged
+it. Now it reads only for an answer with a chat or mention item in it, or
+one that moved the chat counts. Everything else waits for the 30-second
+round, which was there already.
+
+**Reason:** each of these reads costs a round trip and hub statements for
+data that did not change. On the measured hub they added up to the
+repeated reads beside every opened card and in the chat.
+
+**Rejected alternatives:**
+- Keeping the board's list in `kept`, as the project and its members are
+  for a switch: a list of a thousand cards held across views, and stale
+  after any move made elsewhere; the event feed already offers a reload.
+- Slowing the chat's nudge (a longer settle time): fewer reads per burst,
+  but still a full round for an answer that is about no chat at all.
+- Dropping the stream nudge and keeping only the 30-second round: a new
+  chat message would wait up to 30 seconds in the open conversation.
 
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
@@ -2256,7 +2350,8 @@ not hold a token that names nobody yet, which the hub accepts.
 
 **Id:** c848b045-9411-43b3-8763-2fd998270a1d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e69c571c-3365-433a-b26d-245efff28a7d
 **Evidence:** confirmed
 **Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
 **Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
@@ -2293,6 +2388,27 @@ settled, so it is not offered until it has.
 would offer trust, role and areas the hub refuses them. Finding the
 pending request by its title: fragile and invisible to the reader when
 it breaks.
+
+## Whom an agent reports to is chosen where it joins, a boss of another owner offered and marked
+
+**Id:** e69c571c-3365-433a-b26d-245efff28a7d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (req-a5xxyvq74ft7, seq 86060): on Agents, letting agents join, Reports to should be settable there, not only under Management afterwards; card tsk-nbadjbr9zpg7 and the lead's go with its two points (seq 86087), 2026-11-07; docs/api.md §3.1, §2.3 ("to any other member, which is a cross-owner edge and takes effect only with the boss's side's consent"), §6.2 ("Own consent")
+**Revisit when:** the contract gives the member view the pending edge (`reports_to_pending`), or a join that names `reports_to` for an agent already a member
+
+The join panel offers **Reports to** in every case:
+
+- **A first join, by an admin:** every member who is not a guest. One's own agents and oneself are plain; anyone else is marked "waits for consent", and the hub files that consent at the exchange (§3.1).
+- **A member's own agent:** oneself (the default) and one's own managers in the project, the only bosses §3.1 lets a member's join name.
+- **An agent already here:** a field of its own with the current boss. A change is the owner's own `PATCH …/members/{id}` (§2.3), sent before the join, so where it applies at once (200) the join page and the first resume show the new boss. Where it waits for the boss's side's consent (202, §6.2), the join page keeps the boss it was issued with, since the hub copies the boss into the join when it is created; the resume after the consent shows the new one.
+
+If that `PATCH` is refused, no join is sent. If it is taken and the join then fails, the panel says both: the join's refusal, and the new boss, or the consent it waits for. A boss already asked for is not asked again in the same panel. The owner's **Reports to** on Members and Agents offers a boss of another owner too, marked the same way, its 202 said as the consent it waits for.
+
+**Reason:** the maintainer wants to place agents, other owners' among them, at the moment they join, and §2.3 lets the owner start a cross-owner edge whatever their trust. The earlier rule (c848b045) held them back only until the contract settled that, which it now has.
+
+**Rejected alternative:** a default boss on the agent profile, carried into every project: a boss is always a member of one project, and it would need a contract change (the lead, seq 86087). Sending `reports_to` in an instance's join: the hub refuses a membership field there (`differs_from_membership`). Undoing the `PATCH` when the join fails: the change was asked for on its own terms, and an undo could itself fail.
 
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 
@@ -3907,6 +4023,64 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   parts watched, and after twenty switches the observer watched over a hundred elements no longer
   in the page. Only the current pane's parts are watched; the ones that leave are let go.
 
+## On a phone a chat shows less around it, and any chat can take the whole window
+
+**Id:** 0e55c22f-572b-44a8-882a-52e1d4ee6813
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change
+**Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
+**See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
+
+At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
+- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.
+- A group chat shows no "In it: …" line over the messages. Its participants stay under Manage.
+- The composer's label ("Message (@handle reaches someone in the chat)") is out of sight but still the field's label. A reader still hears what the field is for.
+
+Wider than that, nothing changes.
+
+Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
+
+The full screen ends:
+- with the button again;
+- with Escape, unless something open, a menu or the mention list, took that Escape first;
+- with the browser's back;
+- when the chat leaves the page: another view, or Chats putting another pane in its place.
+
+Back works through `M.route.layer` (js/route.js). Entering pushes one history entry at the same address. Back from it only closes the layer: the router does not draw the view again, so the history, its scroll position and a draft stay as they were. The button and Escape leave that entry with a `history.back()` of their own, so no extra entry is left behind. A route change while it is full (a link in the chat, Back to the list, `go()`) closes the layer and takes its entry for the new address (`replaceState`, in fixture mode `location.replace`). Back from there returns to the chat once, not twice.
+
+While full, everything outside the chat is `inert`: no focus reaches the covered page, and a reader does not read it. Only what the full screen marked is set back when it ends. The full chat's end is kept once in `js/chat.js`, not per pane: Chats swaps panes without disposing the view, and a closure per drawn pane would hold every pane visited until Chats is left.
+
+**Reason:** on a phone the room above and below the messages is what makes a chat readable. The three things the owner named take that room and carry nothing the reader needs there: the product line's other parts, the participants (also under Manage) and the composer's hint. The full screen is for reading; on a phone it is the only way to see more than a few messages. Back is how a phone leaves anything that covers the page, so it must end the full screen and nothing more.
+
+**Rejected alternatives:**
+- `display: none` on the composer's label: the field would lose its name for a screen reader.
+- The Fullscreen API (`requestFullscreen`): iOS Safari does not allow it on elements other than video, and it also hides the browser's own controls, which the owner did not ask for.
+- A route of its own for the full screen (`…/chat/<id>/full`): a reload or a shared link would open a page with no way out but the button, and the router would draw the chat again on every switch.
+- A history entry without the layer: the router draws the view again on every back (js/app.js `route.listen`), so the chat would be read again and lose its scroll position.
+
+## The row of tabs has no New project tab; the tabs menu follows the tabs, a dragged tab's place is a line
+
+**Id:** 4ff40142-df78-4c11-8f0c-c0024adecd79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged
+**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than three items, or a drop learns a right-to-left order
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
+
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is the first item of the header's "+" menu (Project, then Agent and User), which is named "Add a project, an agent or a person". The empty state's Create a project stays.
+
+While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
+
+**Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
+
+**Rejected alternatives:**
+- New project as an item of the tabs menu: that menu is about the tabs, not about creating.
+- The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
+- An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7
@@ -4504,7 +4678,7 @@ A refusal `second_factor_enrolment_required` draws the setup through `render()`;
 **Evidence:** inferred
 **Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
 
-Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
 
 **Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
 
@@ -5130,3 +5304,150 @@ can be linked.
   row that scrolls, with the fade on the side that has more.
 - Resetting the scroll on every change of address: opening a card on the board would jump to
   the top, and the board's place on return would be lost.
+
+## Before a way into the restricted-access set, the page says who will read, and no more than it knows
+
+**Id:** c6ad8006-f67b-4cfe-a383-7141ca7dfb8b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g8ts5vxhj1md, Web 2 (2026-11-07): the plan with three questions to the lead and the lead's answers on the card; docs/api.md §6.1 "Every way into the set" and "Reading the setting"; the review of #1450 (2026-11-07) for the returning accepter and the agents a transfer seats; `hub/src/maity_hub/restricted.py` `resolve`, which reads the list by member id
+**Revisit when:** the hub serves a reader without `members` more of the set, an organisation's invitation carries what its go would bring into a set, or an owner change of an agent profile is built
+**See:** refresh.md#the-restricted-access-sets-notice-is-a-projects-setting-read-by-a-read-mark-though-its-target-says-settings — aefe70f5-509b-47ea-9768-02623c68016a — as of 2026-11-07
+
+Where the dashboard creates a join or a project invitation, raises a guest, ends an isolation,
+transfers a project into an organisation, promotes a human to an organisation's owner, or shows
+an organisation's invitation or transfer for its go, it says beforehand who will read the
+project's restricted texts (`M.restricted.ahead`, `aheadOrgOwners`, `aheadOrg` in
+`js/restricted.js`). The set before and after the action comes from the same resolution as the
+setting's own widening preview. The join and invitation forms show it as a line that follows the
+form. A raise, a lift, a transfer and a promotion ask with `window.confirm`. Nothing is said
+while the set names nobody.
+
+The wording follows what the reader is served:
+- A human with `project:admin` gets the list, so the page names who enters, with the count of
+  cards with a text.
+- A reader served `{mode, included}` alone sees no list (§6.1 "Reading the setting"). Under
+  `all_except` the page says "unless the restricted-access list leaves them out". Under
+  `nobody_except` it says "may read, if the list names them". The reader's own place on the list
+  comes from `included`.
+- An organisation's invitation and a promotion to owner reach projects whose settings the page
+  does not read. There the page says one general sentence: an owner may enter a project's set.
+- Whoever accepts a project invitation is not known beforehand and may be a former member: the
+  same id comes back, and the list, never pruned, may still hold it. While the list names
+  someone who is no member now, or the reader sees no list, the line says "if the list names
+  them" or "unless the list leaves them out" for the accepter; otherwise the accepter is new
+  and treated as on no list. The accepter may also be the owner of an agent that stayed a
+  member after its owner left (not isolated, §6.1 "Every way into the set"), which comes back
+  into the set with its owner. The page names such agents the setting would let in, "if their
+  owner is the one who accepts", rather than marking the accepter as listed, which would name
+  the wrong reader.
+- A transfer into an organisation seats its owners, and with them their agents: an agent of the
+  project that is out of the set only because its owner is a guest or no member may enter. The
+  page knows those agents and names them, "if their owner is one of the owners".
+
+**Reason:** the contract asks for the sentence at each of these places, and a sentence the page
+cannot know to be true would be a false one. A reader without the list cannot tell whether an id
+is listed, so the wording says exactly that.
+
+**Rejected alternatives:**
+- Treating whoever accepts an invitation as a new id that no list names: wrong for a former
+  member whose id the list keeps, who would enter under `nobody_except` with no word said.
+- Leaving agents out of the transfer's sentence: a listed agent whose guest owner becomes an
+  owner enters the set unannounced.
+- "Will read" under every mode for a reader without the list: under `nobody_except` it is false
+  for anyone the list does not name.
+- Saying nothing where the list is unknown: the contract asks for the sentence, and under
+  `all_except` the member does enter unless listed.
+- A hub field on an organisation's invitation counting the sets its go would enter: a hub change
+  for a sentence the general wording already gives honestly. It can follow as a card of its own
+  if wanted.
+- Reading every project of an organisation before a promotion: one request per project for one
+  confirmation, and its owners are not always admins in each of them.
+
+## An agent's motif is chosen beside its picture, named with the hub's English label
+
+**Id:** d5f1e318-5368-4516-9d10-06a2194aaafd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-q155psrk6tzz, step 3 (the dashboard's part of the hub's motifs, 1c51a4c6); docs/api.md §6.10, "An agent's motif" (the dashboard shows its catalogue's `avatar.motif.<name>` where it has one)
+**Revisit when:** the catalog gets the motifs' names in other languages, or the set grows past what one list can show
+**See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-07
+
+The owner chooses an agent's motif in the same picture editor as the upload, on the agent's card on
+Agents and in its Manage row on Members, with `PATCH /agents/{id}` (`avatar_motif`, `null` to clear
+it). It is one list of `GET /avatars/motifs`, its themes as groups headed by the catalog's
+`avatar.motif.theme.<theme>`, plus a preview of the chosen motif from its public address with the
+hub's `alt`. A motif is named with the hub's own `label`. The catalog holds no
+`avatar.motif.<name>` yet, so the names stay English in every language, as the contract allows.
+
+**Reason:** the catalog's keys must be literals in the code (`make check` reads them there), so
+naming 36 motifs would mean a table of 36 keys in the view, kept in step with the hub's set by
+hand. The hub's label is always there, current with the set it serves, and the theme headings are
+two fixed words.
+
+**Rejected alternatives:**
+- A grid of all motifs as pictures, chosen by a click: every opened card would load 36 images at
+  once, and the choice would need its own keyboard handling, which a `<select>` already has.
+- Catalog keys for every motif now: a table that falls out of step with each new motif in the set.
+
+## A project's inbox reads its open requests first; the answered ones only when asked for
+
+**Id:** 874d4952-a257-4cd1-ac51-34b410b0a9a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y8gkq1kvt63c (the owner's request: the inbox took 7 s on prod); the measurement and plan on tsk-fxjtwmkc4md5 (notes nte-dpe78x619re6, nte-n1rj7s15xw3f: 4.6 s of the 7 s were three serial pages of the full request history); web/js/inbox.js `load`, `closedOf`
+**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-08
+**Revisit when:** the hub's request list gets a page size or an order that makes the full history cheap, or the inbox shows the answered ones by default
+
+A project's inbox asks its list with `status=open`. **Show** → all reads the
+answered and withdrawn requests then (`status=answered,withdrawn`, §7),
+once per view, and draws again. Choosing all again while that read runs
+waits for it; a failed one is let go, so the next choice asks again. One
+that answers after the view was left draws nothing and leaves the shared
+selection to the view that stands; so does every read on the way in. A link to a request that is not open
+(`/<owner>/<slug>/inbox/<id>`) reads that one request (`GET …/requests/{id}`)
+and shows it among the answered, as before. The cross-project inbox always
+showed the open ones alone and reads as it did.
+
+**Reason:** the inbox read `status=all`, every request the project ever had,
+page after page, before it drew anything; what it shows by default is the
+open ones. Reading those alone keeps the first drawing's cost flat as the
+history grows.
+
+**Rejected alternatives:** a smaller page of the full history, which still
+reads closed requests nobody asked to see and needs a second read for the
+open ones it cut off; reading the answered ones in the background after the
+first drawing, which spends the same reads on every visit. Both are
+inferred, the card did not discuss them.
+
+## The boot reads the window and the session together; /me still after the session
+
+**Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
+**Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
+
+`render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
+instead of after it, and handles the answers in the old order: the window first, then the session.
+`GET /me` still waits for the session's answer. The invitation and registration pages read the
+session themselves, so the drawing starts no early read for them, and only the newest session read
+sets the language: an older answer, a 401 above all, that came back after it switched a newer
+session's language back (review of #1524).
+
+**Reason:** two round trips in a row before the session was known. The answers stay in their order
+because each one decides whether the next matters (a running window, no session, a session that
+owes the second factor). The window is cached for a minute, so later drawings mostly save nothing;
+the first load saves one round trip.
+
+**Rejected alternatives:** /me early as well (the card's first plan), gated by the hub's readable
+session cookie and quiet towards the page. It fails by design for a session that still owes the
+second factor (403) and for a cookie that outlived its session (401), which e2e's check for failed
+answers reported; allowing those would have meant a harness exception that could hide a real
+failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
+and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
+outside `M.api`: a second client with its own error handling.

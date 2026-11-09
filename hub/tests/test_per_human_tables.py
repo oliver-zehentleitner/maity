@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, cross_chats, export, org_invitations
+from maity_hub import account_deletion, avatars, contacts, cross_chats, export, org_invitations
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -41,6 +41,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("account_registration", "human_id"): True,  # no foreign key on purpose (tables.py)
     ("attachment", "deleted_by"): True,
     ("avatar_image", "owner_id"): True,
+    ("avatar_size", "owner_id"): True,  # the sizes of the same picture
     ("bridge", "created_by"): True,  # the human who asked for the connection
     ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
     ("conversation_participant", "added_by"): True,
@@ -69,6 +70,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("membership", "briefing_by"): True,
     ("membership", "isolated_by"): True,
     ("membership", "paused_by"): True,
+    ("membership", "subagents_by"): True,  # the owner who set the instruction
     ("membership", "team_updated_by"): True,
     ("notification_settings", "address"): True,
     ("notification_settings", "address_change"): True,
@@ -100,6 +102,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 # removal does", "as §6.3 deletes a profile", "as DELETE /runners/{id} removes it").
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
+    "contact": contacts,  # forget, both ways
     "cross_chat": cross_chats,  # remove_owned, which account_deletion calls
     "cross_chat_participant": cross_chats,
     "membership": members,  # apply_remove
@@ -148,6 +151,7 @@ KEPT_THOUGH_READ = {"project"}
 # Tables the export reads through another module rather than in `export.py` itself.
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
+    "contact": contacts,  # exported: `contacts` and `contact_of`
     "cross_chat": cross_chats,  # export_of, which export.py calls
     "cross_chat_participant": cross_chats,
     "notification_settings": notification_preferences,
@@ -167,6 +171,7 @@ EXPORT_LEAVES_OUT = {
     "account_record": _UNLISTED,
     "account_registration": _UNLISTED,
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
+    "avatar_size": "smaller copies of the picture, which the export names by its URL only",
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,

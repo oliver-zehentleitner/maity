@@ -235,7 +235,14 @@ def test_memory_delete_sends_the_reason_and_names_the_entry(
     assert fake.signed()[-1].json() == {"reason": "outdated"}
     assert "deleted mem-0042" in capsys.readouterr().out
     assert cli.main(["memory", "delete", "mem-0042"]) == cli.EXIT_OK
-    assert cli.main(["memory", "delete", "../tasks/x"]) == cli.EXIT_USAGE
+    assert fake.signed()[-1].body == b""  # without --reason no body is sent
+    # The id is opaque (§1.1): sent as one path segment, the hub's not_found answers it.
+    assert cli.main(["memory", "delete", "../tasks/x"]) == cli.EXIT_ERROR
+    assert any(
+        r.method == "DELETE" and r.path.endswith("/memory/..%2Ftasks%2Fx") for r in fake.signed()
+    )
+    assert "not_found" in capsys.readouterr().err
+    assert cli.main(["memory", "delete", ".."]) == cli.EXIT_USAGE  # would leave its segment
 
 
 def test_memory_add_soul_proposes_the_file(

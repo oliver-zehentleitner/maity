@@ -88,12 +88,15 @@ def revoke(
     by: str | None,
     *,
     holder_moves: bool = False,
+    member_goes: bool = False,
 ) -> bool:
     """Revoke a credential and end its live session; True when this call revoked it
     (a conditional UPDATE decides between two at once), False when it was revoked
     already. `holder_moves`: the caller moves or releases the instance's claims in the same
     transaction (a replacement, a member's removal), so no `holder_stalled` is said; it is
-    the caller's word, never read from `reason`, which a revoking human writes freely."""
+    the caller's word, never read from `reason`, which a revoking human writes freely.
+    `member_goes`: the whole member is removed in the same transaction, so `member_removed`
+    says the lead's end; also the caller's word, for the same reason."""
     now = clock.now()
     won = conn.execute(
         update(t.credential)
@@ -112,7 +115,7 @@ def revoke(
             .where(t.credential.c.id == credential_id)
         ).one()
         environment.refresh(conn, member.project_id, member.id)
-    _lead_revoked(conn, credential_id, announce=reason != "member_removed")
+    _lead_revoked(conn, credential_id, announce=not member_goes)
     if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 

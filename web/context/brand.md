@@ -66,3 +66,30 @@ scripts it means either the SVG's paths in a JavaScript string or a
 `<template>` cloned at run time, both a second copy of the file to keep in
 step. Copies of the files under `docs/brand/` for the site: two homes for
 the same file.
+
+## The dashboard's brand fonts sit beside app.css in web/css/fonts/, copies of the landing page's, loaded by a relative URL
+
+**Id:** f39935ad-704e-4315-bc69-f1f2b86bdfbe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the design-refresh card (tsk-89mqceyxhbpv), step 1, and its pull request #1492, 2026-11-08
+**Revisit when:** the landing page and the dashboard share one asset folder, or the fonts change and the two copies must be kept in step
+
+`css/app.css` declares Inter (400, 600, 700), Space Grotesk 700 and
+JetBrains Mono 500 by `@font-face` with `url("fonts/…")`. The five
+woff2 files and their SIL OFL texts are in `web/css/fonts/`, byte-for-byte
+copies of `hub/src/maity_hub/landing_assets/fonts/`: the five woff2 files 107,144 bytes
+(104.6 KiB), 120,546 bytes (117.7 KiB) with the three OFL texts.
+
+**Reason:** a relative URL loads both when the hub serves the page from
+`/assets/css/` (same origin, which the hub's `default-src 'self'`
+allows) and in fixture mode from `file://`. `hub/hatch_build.py` takes
+`web/css` into the wheel as a whole, so the fonts ship with no extra
+build rule.
+
+**Rejected alternative:** an absolute `/assets/landing/fonts/…` that
+reuses the landing page's files: no copy, but under `file://` each face is
+a failed request, and the e2e fixture views fail on those console errors.
+No brand faces at all, the system stack only: the refresh's type scale
+(titles in Space Grotesk, ids in JetBrains Mono) depends on them.

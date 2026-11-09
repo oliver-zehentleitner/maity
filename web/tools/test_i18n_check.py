@@ -128,6 +128,66 @@ expect(pt_words(("release (a version)", "x"), ("release (a claim)", "x")) == ["x
 expect(pt_words(("claim", "assumir, tomar"), ("take", "tomar")) == ["tomar"], "glossary: a form in a list of forms")
 expect(pt_words(("join (noun)", "ingresso"), ("join (a project)", "ingresso")) == [], "glossary: join as noun and verb")
 
+# The glossary's mechanical rules: terms no language translates, and each language's address.
+GLOSSARY = (
+    "## How the reader is addressed\n\n| Language | Address |\n|---|---|\n"
+    "| `de` | `du`, lower case |\n| `pt` | `você` (Brazilian Portuguese) |\n| `nl` | `je` |\n"
+    "| `ja` | です・ます |\n| `ko` | 해요체 for labels and messages |\n| `zh-Hans` | `你` |\n\n## Words\n\n"
+    + table(("sign in", "entrar")).replace("| sign in | a | b | c | d | entrar | f | g | h | i |",
+                                          "| sign in | a | b | c | d | entrar | f | g | h | i |\n"
+                                          "| Keep the Why, harness, resume | unchanged | unchanged | unchanged | unchanged | unchanged"
+                                          " | unchanged | unchanged | unchanged | unchanged |")
+)
+fixed, address = check.glossary_rules(GLOSSARY)
+expect(fixed == ["Keep the Why", "harness"], "glossary: the terms every language keeps, resume left out")
+expect(address == {"de": "du", "pt": "você", "nl": "je", "ja": "です・ます", "ko": "해요체", "zh-Hans": "你"},
+       "glossary: each language's address from its table")
+expect(all((lang, said) in check.GLOSSARY_OTHER_ADDRESS for lang, said in address.items()),
+       "glossary: check.py knows every address the glossary names")
+import tempfile as _tempfile  # noqa: E402
+
+with _tempfile.TemporaryDirectory() as tree:
+    saved_i18n, saved_root = check.I18N, check.ROOT
+    check.I18N, check.ROOT = tree, str(Path(tree, "web"))
+    Path(tree, "glossary.md").write_text(GLOSSARY.replace("`você` (Brazilian Portuguese)", "`tu`"), encoding="utf-8")
+    check.findings.clear()
+    check.check_glossary()
+    expect(any("pt: address 'tu' is not in GLOSSARY_OTHER_ADDRESS" in f for f in check.findings),
+           "glossary: an address check.py does not know is a finding")
+    check.findings.clear()
+    check.I18N, check.ROOT = saved_i18n, saved_root
+
+
+def glossary(lang, text, english):
+    return check.glossary_problems(lang, {"k.t": text}, {"k.t": english}, fixed, address)
+
+
+for lang, said in (("ja", "ハーネス: {harness}"), ("ko", "하네스: {harness}"), ("zh-Hans", "运行环境：{harness}")):
+    expect(any("'harness' is translated" in p for p in glossary(lang, said, "Harness: {harness}")),
+           "glossary: harness translated in %s, as #1451 had it" % lang)
+expect(glossary("ja", "harness: {harness}", "Harness: {harness}") == [], "glossary: harness kept")
+expect(glossary("ja", "{harness}", "Runs on {harness}") == [], "glossary: a placeholder named harness is no term")
+expect(glossary("de", "Dieses Projekt veröffentlicht keinen Keep-the-Why-Export.", "No Keep the Why export.") == [],
+       "glossary: a German compound with hyphens keeps the term")
+expect(glossary("de", "Kein Export.", "No Keep the Why export.") != [], "glossary: a term left out")
+PT_1451 = ("Cartões concluídos, revisões feitas e pull requests integrados nos teus projetos públicos nos últimos 30 dias, "
+           "enquanto o teu perfil público também estiver ativo. Desativado até o ativares; ativar o perfil nunca os mostra.")
+expect(any("'teus' is not the address" in p for p in glossary("pt", PT_1451, "Cards done")),
+       "glossary: the tu forms of #1451 in Portuguese")
+expect(glossary("pt", "Pull requests com merge nos seus projetos, até você ativar.", "Cards done") == [],
+       "glossary: Portuguese with você")
+expect(glossary("de", "Sie hat eigene Teilaufgaben.", "It has subtasks.") == [],
+       "glossary: German sentence-initial Sie is she or they")
+expect(glossary("de", "Die Notiz wurde geändert. Sie lautet jetzt so.", "The note changed.") == [],
+       "glossary: German Sie after a full stop")
+expect(glossary("de", "Speichern Sie die Datei.", "Save the file.") != [], "glossary: German Sie inside a sentence")
+expect(glossary("de", "Wir schicken Ihnen eine Mail.", "We send you a mail.") != [], "glossary: German Ihnen")
+expect(glossary("nl", "{count} u geleden", "{count} h ago") == [], "glossary: Dutch u after a number is hours")
+expect(glossary("nl", "Tekens als [U+XXXX]", "Characters as [U+XXXX]") == [], "glossary: U+ is no address")
+expect(glossary("nl", "Wijzig uw wachtwoord.", "Change your password.") != [], "glossary: Dutch uw")
+expect(glossary("ko", "저장합니다", "Saved") == [], "glossary: Korean has no word check")
+expect(glossary("pt", "`tu`", "`tu`") == [], "glossary: code spans are not words")
+
 # The hub's words: a translation and what it follows, in a stand-in of the repository.
 import json  # noqa: E402
 import os  # noqa: E402
@@ -227,5 +287,96 @@ expect(pseudo_run.strings_in({"reason": "Within the rules.", "state": "open", "s
 expect(pseudo_run.pieces_of("Keep it; @agent-d sorts `x` the tabs.") >= {"Keep it;", "sorts", "the tabs."},
        "pseudo: a fixture's text comes apart where a page splits it")
 expect(len(pseudo_run.routes_of_smoke()) > 50, "pseudo: the routes come from the smoke test")
+
+# A failure is one sentence with {reason} (tsk-0zbms0wwqhmm): no English text ends in ": ", and
+# what statusLine().fail() is handed has the placeholder; a text filled into it need not.
+SENTENCES = {
+    "s.not_saved": "Not saved: {reason}",
+    "s.prefix": "Not saved: ",
+    "s.plural": {"one": "{count} left: {reason}", "other": "{count} left: "},
+    "s.what": "{what} failed: {reason}",
+    "s.busy": "Linking",
+}
+
+
+def found_by(run):
+    check.findings.clear()
+    run()
+    out = list(check.findings)
+    check.findings.clear()
+    return out
+
+
+said = found_by(lambda: check.check_prefixes(SENTENCES))
+expect(len(said) == 2 and "'s.plural'" in said[0] and "'s.prefix'" in said[1],
+       "a text or a plural form that ends in \": \" is a prefix " + repr(said))
+
+
+def fail_findings(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return found_by(lambda: check.check_fail_sentences("js/x.js", src, code, SENTENCES))
+
+
+expect(fail_findings('status.fail(M.t("s.not_saved"), err);') == [], "fail() with a sentence that has {reason}")
+expect(len(fail_findings('status.fail(M.t("s.prefix"), err);')) == 1, "fail() with a text without {reason}")
+expect(len(fail_findings('status.fail(ok ? M.t("s.not_saved") : M.t("s.prefix"), err);')) == 1,
+       "fail() with a ternary, one branch without {reason}")
+expect(fail_findings('status.fail(M.t("s.what", { what: M.t("s.busy") }), err);') == [],
+       "a text filled into the sentence is not the sentence")
+expect(len(fail_findings('status.fail(M.t("s.plural", { count: 2 }), err);')) == 1,
+       "a plural sentence needs {reason} in each form")
+expect(fail_findings('status.fail("", err); note(M.t("s.prefix"), err);') == [], "only fail()'s first argument is the sentence")
+expect(fail_findings('status.fail(M.t("s.not_saved"), { message: M.t("s.prefix") });') == [],
+       "a text in the error, fail()'s second argument, is the reason, not the sentence")
+expect(fail_findings('status.fail(M.t("s.not_saved"), M.t("s.prefix"));') == [],
+       "the first argument ends at its comma")
+
+expect(fail_findings('status.fail((reason) => M.t("s.what", { what: name, reason }), err);') == [],
+       "fail() with a sentence filled once, as a function of the reason")
+expect(len(fail_findings('status.fail((reason) => M.t("s.prefix", { reason }), err);')) == 1,
+       "a function's text is held to {reason} too")
+
+
+def shown_findings(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return found_by(lambda: check.check_unfilled_placeholders("js/x.js", src, code, SENTENCES))
+
+
+for src, what in [
+    ('h("li", null, M.t("s.not_saved"), err.message);', "an element's child, the reason beside it (memory.js, #1498)"),
+    ('append(box, M.t("s.not_saved"));', "appended"),
+    ('const s = M.t("s.not_saved") + err.message;', "joined with + after"),
+    ('const s = "x" + M.t("s.not_saved");', "joined with + before"),
+    ('el.textContent = M.t("s.not_saved");', "written to textContent"),
+    ('h("p", null, M.t("s.what", { what: "x" }));', "one value given, {reason} not"),
+    ('h("p", null, M.t("s.what", { what: reason }));', "reason only as a value, not as a name (fmzu, #1498 delta 1)"),
+    ('h("p", null, M.t("s.what", { what: "reason:" }));', "reason only inside a string"),
+]:
+    expect(len(shown_findings(src)) == 1, "shown unfilled: " + what)
+for src, what in [
+    ('h("li", null, M.t("s.not_saved", { reason: err.message }));', "filled with a value"),
+    ('h("li", null, M.t("s.what", { what, reason }));', "filled by shorthand"),
+    ('h("li", null, M.t("s.what", { "what": x, "reason": y }));', "filled with quoted names"),
+    ('h("li", null, M.t("s.what", { what: f(a, b), reason: g({ c: 1 }) }));', "values with calls and objects inside"),
+    ('h("li", null, M.t("s.what", { ...rest }));', "a spread is not read"),
+    ('status.fail(M.t("s.not_saved"), err);', "left for fail() to fill"),
+    ('act(M.t("s.busy"), M.t("s.not_saved"), call);', "handed to a helper that fails with it"),
+    ('save(body, { notSaved: M.t("s.not_saved") });', "a helper's words"),
+    ('h("p", null, M.t("s.what", values));', "values from a variable are not read"),
+    ('h("p", null, M.t("s.busy"));', "a text without placeholders"),
+]:
+    expect(shown_findings(src) == [], "not shown unfilled: " + what)
+
+# The rules above are called directly; make check runs them only through check_i18n, so each
+# must be called there too (ppge, #1498 R1).
+import ast
+import inspect
+import textwrap
+wired = {n.func.id for n in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(check.check_i18n))))
+         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+for rule in ("check_prefixes", "check_fail_sentences", "check_unfilled_placeholders"):
+    expect(rule in wired, "make check runs " + rule)
 
 raise SystemExit(1 if failures else 0)

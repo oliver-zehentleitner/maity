@@ -83,6 +83,8 @@
   "notify.mail_disabled": "Invio di email a {address} disattivato dopo 3 errori",
   "notify.mentioned": "{who} ti ha menzionato in {chat}",
   "notify.moderated": "Moderazione: {action} — {type}",
+  "notify.restricted_set": "La cerchia di accesso è cambiata",
+  "notify.restricted_text": "Un testo riservato è cambiato",
   "notify.agents_away": "{n} delle tue istanze di agente sono assenti",
   "notify.not_listening": "{n} delle tue istanze di agente non sono in ascolto",
   "notify.reported": "Segnalazione: {reason} — {type}",
@@ -133,5 +135,6 @@
   "sign_in.mail_alternative": "Oppure inserisci questo codice nel browser in cui l'hai richiesto: {code}\n\n",
   "sign_in.page_button": "Accedi su questo dispositivo",
   "sign_in.page_title": "Accedi a Maity come {name}",
-  "sign_in.subject": "[Maity] Link di accesso"
+  "sign_in.subject": "[Maity] Link di accesso",
+  "subagents.instruction": "Istruzione di {owner}, proprietario di questo agente: per ogni attività di revisione o di programmazione che ricevi tramite Maity, avvia un nuovo subagente e passagli l'incarico per intero; svolgi l'attività in quel subagente, non in questa sessione. Tu e i tuoi subagenti potete inviare risultati e stato con `maity say` ai membri indicati nell'incarico."
 }

@@ -307,7 +307,7 @@ create humans with handles such as `admin` without going through the CLI.
 **Source:** card tsk-ftnk7d1p5117, PR 1 of the plan the lead decided on 2026-10-29 (the plan is note nte-b5yq1r1xv4c4 on the card); the incident of 2026-10-26
 **Revisit when:** the cluster gets a log or metrics stack that scrapes or parses something better than `key=value` lines, or the pool line needs the number of callers waiting for a connection
 
-Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`): how
+Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`; a refusal adds a tail, see af4976fc-5ed8-4d31-bcb3-b0e71c6fa14d): how
 long the hub took from the middleware's first line, and the pattern the answering route was
 declared with (`request_stats.route_of`): the route's `path_format`, with the `/api/v1` prefix put
 back where the route's regular expression takes the rest of the path, because the route object's
@@ -374,6 +374,37 @@ nothing from the request, for the reasons of the entry above.
   answer; the request log's `ms=` gives exact values where needed.
 - Summing the request log with `kubectl logs`: it works for what the log still holds, and needs no
   code, but the time it reaches back shrinks as traffic grows.
+
+## A refused call names its code and its reason or scope in the request log, read from the answer itself
+
+**Id:** af4976fc-5ed8-4d31-bcb3-b0e71c6fa14d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-5d8hdtqhje26, from tsk-7jhpzrvsnzm3 (2026-11-06): a project owner's joins were refused 30 times and ops could not tell which check refused them, because the line said only `403`; which answers get the tail was decided by the lead on the card's plan, 2026-11-08
+**Revisit when:** the hub gets structured (JSON) logs or a log stack that indexes fields, or a `reason` or `scope` that is not a code token turns up as `?` in the log
+**See:** serving.md#the-request-log-carries-ms-and-the-routes-pattern-and-one-stats-line-a-minute-says-how-loaded-the-hub-is — 8c9025ea-d9d4-449e-a343-ecd802ddbdfd — as of 2026-11-08
+
+A 403, and any other 4xx whose `details` carry a `reason` or a `scope`, ends its request log line
+in `error=<code>` with `reason=<r>` and `scope=<s>` where present (docs/api.md §1.1). A 404 or a
+validation error with neither adds nothing. `middleware._noting_refusal` reads the code from the
+answer's `Maity-Error` header and peeks at the envelope as it passes, at most 16 KiB and only
+when the answer is not compressed. Every message goes on unchanged. Only a code token (lowercase
+letters, digits, `_ . : -`, up to 64 characters) is written; anything else is `?`.
+
+**Reason:** the line had to tell the refusing checks apart without carrying anything from the
+request. A reason and a scope are the hub's own codes, but a few details elsewhere hold free
+text, so the token guard keeps a future text reason out of the log. Reading the answer covers every
+way a refusal is made: a raised `ApiError`, an envelope a route returns itself, and the
+middleware's own refusals. Limiting the tail to 403 and to 4xx that name a reason keeps the log
+as quiet as before for the common 404 and 400.
+
+**Rejected alternatives:**
+- Recording code and reason in the app's exception handlers: misses the envelopes a route returns
+  without raising and the refusals the middleware answers before the app.
+- `error=` on every 4xx: more noise for 404s and validation errors, whose code the status already
+  says; the lead chose the narrower form.
+- Logging `details` whole: `fields` and other details can name what the request sent.
 
 ## The `stats` line says how late the event loop runs and how many worker threads are busy, from a tick on the loop
 
@@ -519,7 +550,9 @@ address.
 **Revisit when:** the hub serves secrets on reads, or a deployment compresses at its ingress as well
 
 A `GET` or `HEAD` under `/api/v1/` or `/assets/` of 1024 bytes and more
-is gzipped at level 6 when the request accepts it (docs/api.md §1.1).
+is gzipped at level 6 when the request accepts it (docs/api.md §1.1); the
+dashboard's own files are gzipped by `shell.AssetFiles` instead, with an
+ETag per form (c6768529).
 Writes are never compressed, nor anything under `/api/v1/auth/`, the
 join and invitation documents a token opens (`/api/v1/join/{token}`,
 `/api/v1/invitations/{token}`), an attachment's bytes, or any address
@@ -552,3 +585,96 @@ by review.
 cluster, and none for a hub run without that ingress. Compressing every
 answer: the pages and writes above. Level 9, Starlette's default: the
 same size for more CPU.
+
+## The dashboard's files are revalidated by an ETag of their content, not `no-store`
+
+**Id:** c6768529-3654-45c7-bd5e-aab3067ce04f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision req-s246xb6k1mpp (option A, 2026-11-08), the card tsk-pcw785rhymyg and its plan note nte-smnd4dr3gw6y; docs/api.md §1, §16.11
+**Revisit when:** a file under `/assets/` carries anything per user or private, or the shell names its files by digest (versioned names, below)
+
+`shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
+`js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
+`ETag`, the first 32 hex digits of the file's SHA-256, and drops
+`Last-Modified`. A matching `If-None-Match` gets `304` with the same
+headers. `no-cache` is on the middleware's `ROUTE_CACHE` (images.md
+96d70040), so it is kept; a 404 under `/assets/` and every `/api/v1/`
+answer stay `no-store`, the shell keeps its own `no-cache`, and
+`/assets/landing/` its own rule.
+
+Each encoding is a representation with its own strong tag. A file of
+1024 bytes and more whose type is not compressed already has a gzip form,
+made by `AssetFiles` itself at the middleware's level 6 and with no time
+in its header, tagged `"<digest>-gzip"`; a request that accepts gzip gets
+it with `Content-Encoding: gzip`. Such a file's answers, the `304`s
+included, say `Vary: Accept-Encoding`. The compression middleware leaves
+these four directories alone (`compression.OWN_ENCODING`); it still
+compresses the rest of `/assets/` and `/api/v1/` as 5cfd29b6 says. A
+`Range` on the stored form is honoured with an `If-Range` that names its
+ETag; a date or another tag gets the whole file. The gzip form is sent
+whole. The file is read, hashed and gzipped in `lookup_path`, which
+Starlette runs in a worker thread, and kept per process for its path
+while its change time and size stay the same.
+
+**Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
+dashboard's static files may be cached"): the files hold no private
+data, and every reload fetched all 97 of them, 691 KB gzipped
+(tsk-fxjtwmkc4md5). `no-cache` makes a browser ask again on every use,
+so a deploy reaches it at once: a changed file has a new ETag and comes
+back `200`; two pods with different files during a rolling update give
+different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
+alone never answers `304`, and a date `If-Range` never selects a range:
+Starlette compares it with `Last-Modified`, which these answers do not
+have, so `AssetFileResponse` compares the ETag alone.
+
+**Rejected alternatives:**
+- Starlette's own ETag (an MD5 of the change time and size): an image
+  built with normalised file times could keep the old ETag for a changed
+  file of the same size, and a browser would keep the old file.
+- The middleware's gzip with the stored file's tag (the first version of
+  this PR): two different bodies under one strong ETag, and its `304`
+  went out before the middleware could add `Vary` (review of #1518,
+  RFC 9110 §8.8.3.3, §15.4.5).
+- A weak ETag for both forms: the contract (§16.11) promises a strong
+  one, and a weak tag can never select a range.
+- Versioned names with a long `max-age` (`?v=<digest>`, `immutable`, as
+  `/assets/landing/` does): a reload would send no requests at all, but
+  the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite
+  in `shell_document`, the `url()` references inside the CSS would stay
+  `no-cache` anyway, and it is a contract change of its own. A
+  follow-up once this card's numbers are measured.
+
+## On the hub's own pages too, the product line at phone width is its first part, by a rule inside the hashed block
+
+**Id:** 7328169a-086f-458a-8d7e-e8b6faa4dd10
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
+**Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
+**See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
+
+The hub draws the product line on the join page, the `503` maintenance
+page and the registration link page (`product_line.html`). Each of its
+four parts is a `span.product-part` and each separator a
+`span.product-sep`, the classes the dashboard uses. At
+`max-width: 600px` a rule hides the separators and every part after the
+first, so the line is the mark, `Maity` and the year, as on the
+dashboard. The rule is part of `STYLE`, the block that the join and
+`503` pages carry in `<head>` and their policy allows by its hash
+(`style-src 'sha256-…'`). The hash is computed from `STYLE`, so it covers
+the rule; the registration link page takes `STYLE` into its own sheet.
+
+**Reason:** §16.13 holds the line's phone form for every page that
+shows it. These pages have no other stylesheet they may load, and a
+second block would need a second hash in every policy. Inside the one
+block the rule needs neither. Hiding the parts with CSS keeps one
+markup for every width, as the dashboard does.
+
+**Rejected alternatives:**
+- A shorter line rendered for phones: the hub does not know the width;
+  it would take a user-agent guess.
+- A second `<style>` block for the media rule: one more hash in each
+  strict page's policy, for no gain.

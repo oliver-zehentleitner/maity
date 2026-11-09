@@ -30,6 +30,7 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     clock,
+    contacts,
     invitations,
     namespace,
     orgs,
@@ -53,7 +54,8 @@ from maity_hub.notifications import tokens
 PURPOSE = "account_deletion"
 VALID_FOR = timedelta(hours=24)
 DELETED_NAME = "Deleted account"
-# Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given.
+# Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given. Distinct
+# from the load test's seed marker (`loadtest.NO_PASSWORD`), which `purge` deletes by.
 NO_PASSWORD = "deleted"
 ENDED_BY = "account_deleted"  # the sessions' `ended_by` (§2.6.5)
 HUB = Actor(None)  # the events the deletion writes name no actor: the hub's own change
@@ -556,6 +558,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.known_source).where(t.known_source.c.human_id == human_id))
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
+    contacts.forget(conn, human_id)  # both ways (§6.29)
     conn.execute(
         delete(t.conversation_meat_proxy).where(t.conversation_meat_proxy.c.human_id == human_id)
     )
@@ -606,6 +609,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))
+    conn.execute(delete(t.avatar_size).where(t.avatar_size.c.owner_id == human_id))
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == human_id)
@@ -624,7 +628,9 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
             public_stats=False,
+            public_agents="public_projects",
             interface_language=None,
+            start_tabs=None,  # project ids only, but the person's choice (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )

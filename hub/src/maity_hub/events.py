@@ -278,7 +278,7 @@ def emit(
         )
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
-    # project's last event (§18.2, "at is monotonic per project").
+    # project's last event. The contract promises only `seq` (§8.1); this floor is the hub's own.
     last = conn.execute(
         select(t.event.c.at)
         .where(t.event.c.project_id == project_id)
@@ -377,6 +377,21 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
+    if (
+        kind in MEMBER_KINDS
+        and project.public_page != "on"
+        and subject
+        and subject[0] == "member"
+        and _shown_member_change(kind, payload)
+    ):
+        # Under `public_agents: all` an agent's membership in any project lists it on its
+        # owner's agents page (§16.9, "A person's agents"); a public project's change reaches
+        # that page above, as a dependent of the project's page.
+        from maity_hub import public_people
+
+        public_people.touch_owner_of(
+            conn, subject[1], removal=kind != "member_joined", only_all=True
+        )
     return seq
 
 
@@ -683,8 +698,9 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
-    if row.kind == "cross_chat_mention":
-        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5).
+    if row.kind in ("cross_chat_mention", "chat_unread"):
+        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);
+        # the unread nudge names a group chat's title, which the see-all does not read (§9.2).
         return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True

@@ -266,7 +266,7 @@ def project_view(
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
     aliases: list[str] | None = None,
-    stored: dict[str, int] | None = None,
+    stored: dict[str, int | None] | None = None,
     confirmed_by: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
@@ -628,6 +628,9 @@ def member_views(
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
     writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
+    subagent_writers = briefings.writers(
+        conn, {r.subagents_by for r in rows if r.agent_id is not None and r.subagents_by}
+    )
     languages = human_languages(conn, human_ids)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
@@ -764,6 +767,14 @@ def member_views(
             view["shared_environment"] = sharing.get(row.id, [])
             if row.agent_id is not None:  # given its owner's preferences (§19.4)
                 view["owner_preferences"] = bool(row.owner_preferences)
+        if row.agent_id is not None:  # the owner's subagent instruction, never its words (§6.2)
+            view["subagents"] = bool(row.subagents)
+            view["subagents_language"] = row.subagents_language if row.subagents else None
+            view["subagents_by"] = (
+                subagent_writers.get(row.subagents_by)
+                if row.subagents and row.subagents_by
+                else None
+            )
         held = profile_holds.get(row.agent_id or row.human_id or "")
         if held is not None:  # only while a hold stands on the profile (§16.8)
             view["moderation"] = held
@@ -931,8 +942,9 @@ def agent_view(
         ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
-        # avatar_url and avatar_source: only its owner reads this
+        # avatar_url, avatar_source and avatar_motif: only its owner reads this
         **(picture if picture is not None else avatars.state(conn, row.id)),
+        "avatar_motif": row.avatar_motif,
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "allowed_projects": row.allowed_projects,  # null: any project (§6.3)
@@ -1009,6 +1021,8 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "instance": row.instance,
         "takes_over": row.takes_over,
         "handover": row.handover,
+        "subagents": bool(row.subagents),
+        "subagents_language": row.subagents_language,
     }
 
 

@@ -150,6 +150,12 @@ window.Maity = window.Maity || {};
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
+  // An action above the list as an icon in the heading's row (tsk-qgy2tb3w3x93): as text the two
+  // took a row of their own and wrapped. A link still, since it opens a page; its text stays as
+  // the name and the tooltip.
+  const iconLink = (cls, href, label, icon) =>
+    h("a", { class: "icon-button " + cls, href, "aria-label": label, title: label }, icon(20));
+
   function conversations(ctx, currentId) {
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
@@ -206,12 +212,12 @@ window.Maity = window.Maity || {};
     // nor one read along from outside the project.
     const closedProject = ctx.outsider || ctx.project.state === "archived";
     const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chat.conversations") },
-      h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? M.t("chat.title.group_chats") : M.t("chat.title")),
+      h("div", { class: "toolbar chat-actions" }, h("h2", null, ctx.outsider ? M.t("chat.title.group_chats") : M.t("chat.title")),
         // A human guest creates no group chat (§2.3, §9.2).
-        closedProject || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, M.t("chat.new_group")),
+        closedProject || M.trust.guest(ctx) ? null : iconLink("new-group", ctx.link("chat", "new"), M.t("chat.new_group"), M.icons.newGroup),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
-        ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, M.t("chat.message_project"))),
+        ctx.outsider ? null : iconLink("message-project", ctx.link("message"), M.t("chat.message_project"), M.icons.writeProject)),
       none, ul, status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };
@@ -440,6 +446,86 @@ window.Maity = window.Maity || {};
   // keyboard, 100dvh does not everywhere.
   // The lines of history an open chat keeps in view however small the screen.
   const HISTORY_LEAST = 60;
+  // Full screen (the owner's request, tsk-fnch2yxp2kk1): the open chat covers the window, the
+  // page around it hidden, to read on a phone. A button in the chat's heading row, as the list's
+  // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
+  // button again, with Escape (unless something open, a menu or the mention list, took it), with
+  // the browser's back (a layer of the history, js/route.js), and when the chat leaves the page.
+  // One chat is full at a time; its end is kept here, so a pane drawn is never held by the view's
+  // disposers (Chats replaces panes without disposing the view, fmzu at #1525).
+  let fullEnd = null; // the full chat's end, while one is full
+  let fullHooked = false; // the view's disposers hold endFull once, until they run
+  const endFull = () => { fullHooked = false; if (fullEnd) fullEnd(false); };
+  // While full, everything outside the chat is inert: the page under it can take no focus and is
+  // not read (fmzu at #1525). Only what this marks is set back; what was inert before stays.
+  function coverRest(pane) {
+    const marked = [];
+    for (let el = pane; el && el.parentNode && el !== document.body; el = el.parentNode) {
+      Array.from(el.parentNode.childNodes).forEach((sib) => {
+        if (sib === el || !sib.setAttribute || sib.getAttribute("inert") != null) return;
+        sib.setAttribute("inert", "");
+        marked.push(sib);
+      });
+    }
+    return () => marked.forEach((sib) => sib.removeAttribute("inert"));
+  }
+  function fullScreen(ctx, pane) {
+    const root = document.documentElement;
+    const button = h("button", { type: "button", class: "icon-button chat-full-toggle" });
+    let held = null; // the history layer while full
+    let watch = null;
+    let uncover = null;
+    const isFull = () => held !== null;
+    const label = () => {
+      const text = isFull() ? M.t("chat.full.leave") : M.t("chat.full.enter");
+      button.setAttribute("aria-label", text);
+      button.setAttribute("title", text);
+      button.setAttribute("aria-pressed", String(isFull()));
+      clear(button);
+      append(button, (isFull() ? M.icons.collapse : M.icons.expand)(20));
+    };
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      end(true);
+      button.focus();
+    };
+    // `back`: leave the layer's entry too (the button, Escape); not when the browser's back
+    // already did, or the chat left the page.
+    function end(back) {
+      if (!isFull()) return;
+      const layer = held;
+      held = null;
+      if (fullEnd === end) fullEnd = null;
+      root.classList.toggle("chat-full", false);
+      pane.classList.toggle("chat-full-pane", false);
+      if (uncover) { uncover(); uncover = null; }
+      document.removeEventListener("keydown", onKey);
+      if (watch) { watch.disconnect(); watch = null; }
+      if (back) layer.back(); else layer.drop();
+      label();
+    }
+    button.addEventListener("click", () => {
+      if (isFull()) { end(true); return; }
+      if (fullEnd) fullEnd(false);
+      held = M.route.layer(() => end(false));
+      fullEnd = end;
+      if (!fullHooked && ctx.onDispose) { fullHooked = true; ctx.onDispose(endFull); }
+      root.classList.toggle("chat-full", true);
+      pane.classList.toggle("chat-full-pane", true);
+      uncover = coverRest(pane);
+      document.addEventListener("keydown", onKey);
+      // Chats replaces a pane in place: the one that left takes the full screen with it.
+      if (window.MutationObserver && pane.parentNode) {
+        watch = new window.MutationObserver(() => { if (!pane.isConnected) end(false); });
+        watch.observe(pane.parentNode, { childList: true });
+      }
+      label();
+    });
+    label();
+    return button;
+  }
+
   function fitToScreen(layout) {
     let watcher = null, swaps = null, frame = 0;
     // The pane's parts now watched: only the current pane's, so a pane Chats
@@ -558,7 +644,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, togglePin, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -891,6 +977,7 @@ window.Maity = window.Maity || {};
       h("a", { class: "chat-back", href: ctx.link("chat") }, M.t("chat.back")),
       h("div", { class: "toolbar" },
         heading,
+        fullScreen(ctx, pane),
         h("span", { class: "muted" }, agent.session
           ? (agent.session.listening ? M.t("chat.session.listening", { id: agent.session.id }) : M.t("chat.session", { id: agent.session.id }))
           : M.t("chat.session.none")),
