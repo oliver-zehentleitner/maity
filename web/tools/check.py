@@ -1570,10 +1570,11 @@ def asks_first(code, at, src=None):
         handed = {r.end() - len(prop.group(1)) - 1 for r in re.finditer(
             r"\bM\.stepUp\.run\(\s*[A-Za-z_$][\w$]*(?:\[[^\[\]]*\]|\.[A-Za-z_$][\w$]*)*\." + key + r"(?=\s*,)", code)}
         unpacked = re.search(r"\{[^{}]*\b" + key + r"\b[^{}]*\}\s*=(?!=|>)", code)
-        # A read by a string in brackets (`a["call"]`) or a call through a computed name (`a[k]()`)
-        # may be this property outside the question: not counted as asking (4hch at #1566).
+        # A read by a string in brackets (`a["call"]`) or any call through brackets (`a[k]()`,
+        # `a["ca" + "ll"]()`, `a[(k)]()`) may be this property outside the question: not counted
+        # as asking (4hch at #1566).
         bracketed = src is not None and re.search(r"\[\s*([\"'`])" + key + r"\1\s*\]", src)
-        computed = re.search(r"\[\s*[A-Za-z_$][\w$.]*\s*\]\s*\(", code)
+        computed = re.search(r"\]\s*\(", code)
         return bool(reads) and all(at_ in handed for at_ in reads) and not (unpacked or bracketed or computed)
     fn = callee_of(code, m.start())
     if fn:

@@ -197,6 +197,11 @@ expect(not asks, "a call: property also read by a string in brackets does not as
 pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\na[key]();')
 expect(not asks, "a call: property where a computed name is called does not ask")
 
+# 4hch at #1566, delta 1: any call through brackets, not only a bare name in them.
+for form in ('a["ca" + "ll"]()', 'a[key || "call"]()', 'a[(key)]()', 'a[key()]()'):
+    pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\n' + form + ';')
+    expect(not asks, "a call: property where the file calls through brackets, " + form + ", does not ask")
+
 got = scan("shadow.js", 'const patch = { address: "a@b.c" };\nfunction other(){ const patch = { muted: true }; return patch; }\n'
            'M.api.patch("/me/notification-settings", { email: patch });')
 expect(len(got) == 1, "make check: the body's name is the binding around the call, not another function's of the same name " + repr(got))
