@@ -470,8 +470,14 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
 def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:
     """An expert takes no cards (§2.3 "The expert"): what the member holds, what an open
     takeover would move to it and what a cover would give back to it are settled first.
-    Checked when the PATCH arrives and again when a deferred change is written."""
-    if role == "expert" and target.role != "expert" and _cards_on_the_way(conn, target):
+    Checked when the PATCH arrives and again when a deferred change is written, each time
+    under the project lock that every writer of `claim_holder`/`assigned_to` holds when it
+    reads the receiver (`tasks._locked`, `cover`, `takeovers.transfer`): a claim in flight
+    either commits first and is seen here, or waits and reads the new role."""
+    if role != "expert" or target.role == "expert":
+        return
+    lock_project(conn, target.project_id)
+    if _cards_on_the_way(conn, target):
         raise ApiError(
             409,
             "conflict",

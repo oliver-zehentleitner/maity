@@ -205,8 +205,17 @@ idempotency.LOADERS["task"] = load_task
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    """The caller's membership with the project row as read under the project lock."""
-    return replace(mine, project=lock_project(conn, mine.project.id))
+    """The caller's membership with the project row and its own row as read under the
+    project lock. A role change takes the same lock (`members._check_no_cards_for_expert`),
+    so a scope checked on what this returns holds until the write commits (§2.3 "The
+    expert"); one checked before it may be stale."""
+    project = lock_project(conn, mine.project.id)
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
+    ).first()
+    if row is None:  # the membership ended meanwhile
+        raise not_found()
+    return replace(mine, project=project, row=row)
 
 
 def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
@@ -854,6 +863,7 @@ def create_card(
     _check_label(body.label)
     _check_area(body.area)
     mine = _locked(conn, mine)
+    mine.require("tasks:write")  # again, on the row read under the lock
     _check_needs(mine.project, body.needs)
     state = _require_open_project(mine, body.reason)
     _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
@@ -1003,6 +1013,8 @@ def patch_task(
             mine.require("tasks:write")
         mine.require("project:read")
         mine = _locked(conn, mine)
+        if given != {"contract"}:
+            mine.require("tasks:write")  # again, on the row read under the lock
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
@@ -1362,6 +1374,9 @@ def claim(
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
         mine = _locked(conn, mine)
+        # Again on the row read under the lock: a role change to expert that committed
+        # since the first read leaves no `tasks:write` (§2.3 "The expert").
+        mine.require("tasks:write")
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id

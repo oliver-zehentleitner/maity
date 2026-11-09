@@ -261,6 +261,10 @@ def transfer(
     values: dict[str, Any] = {"status": "transferred", "outcome": outcome, "closed_at": now}
     if override is not None:
         values["override"] = override
+    # The receiver's role is read under the project lock, which a role change to expert
+    # takes too (`members._check_no_cards_for_expert`); `settle` and the routes hold it
+    # already, a decision through the requests answer may not.
+    lock_project(conn, row.project_id)
     receiver_role = conn.execute(
         select(t.membership.c.role).where(t.membership.c.id == row.to_member)
     ).scalar()

@@ -234,3 +234,109 @@ def test_a_takeover_to_a_member_that_became_an_expert_moves_nothing(
     assert taken["status"] == "cancelled"
     held = owner.get(f"{PROJECT}/tasks/{card}").json()
     assert held["claim"]["holder"] == holder.id and held["assigned_to"] != receiver.id
+
+
+def _paused(monkeypatch: pytest.MonkeyPatch, where: str) -> tuple[Any, Any]:
+    """Pause the first call of `routes.tasks.<where>` until released; returns (reached,
+    release), two events. The route runs in the app's worker thread, so the pause holds
+    that request's transaction open at exactly that point."""
+    import threading
+
+    from maity_hub.routes import tasks as tasks_route
+
+    reached, release = threading.Event(), threading.Event()
+    real = getattr(tasks_route, where)
+    armed = [True]
+
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if armed[0]:
+            armed[0] = False
+            reached.set()
+            assert release.wait(10), "never released"
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(tasks_route, where, wrapper)
+    return reached, release
+
+
+def _in_thread(fn: Any) -> Any:
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(fn)
+    pool.shutdown(wait=False)
+    return future
+
+
+def test_a_claim_in_flight_takes_no_card_once_its_member_became_an_expert(
+    make_client: ClientFactory,
+    owner: flow.Human,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§2.3 "The expert": the claim read its membership as a coder; the role change to
+    expert commits before the claim takes the project lock. Under the lock the claim reads
+    its row again and has no `tasks:write`."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    coder = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    reached, release = _paused(monkeypatch, "_locked")
+    claim = _in_thread(lambda: coder.post(f"{PROJECT}/tasks/{card}/claim", {}))
+    try:
+        assert reached.wait(10), "the claim never reached the lock"
+        changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+        assert changed.status_code == 200, changed.text  # no card yet
+    finally:
+        release.set()
+    refused = claim.result(timeout=10)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
+    assert owner.get(f"{PROJECT}/tasks/{card}").json()["claim"] is None
+
+
+def test_a_role_change_to_expert_waits_for_a_claim_in_flight_and_then_refuses(
+    make_client: ClientFactory,
+    owner: flow.Human,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§2.3 "The expert": the claim has written its holder under the project lock and not
+    committed; the role change takes the same lock before its check, so it waits, then
+    sees the claim and writes nothing. Without that lock the change passes its check,
+    writes the role and only then meets the claim, a deadlock the database breaks by
+    rolling it back for a retry: `apply_patch` would have run."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from concurrent.futures import TimeoutError as Pending
+
+    from maity_hub.routes import members as members_route
+
+    written: list[str] = []
+    real_apply = members_route.apply_patch
+
+    def apply_patch(*args: Any, **kwargs: Any) -> Any:
+        written.append("apply_patch")
+        return real_apply(*args, **kwargs)
+
+    monkeypatch.setattr(members_route, "apply_patch", apply_patch)
+    coder = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    reached, release = _paused(monkeypatch, "_card")  # read right after the claim's write
+    claim = _in_thread(lambda: coder.post(f"{PROJECT}/tasks/{card}/claim", {}))
+    change = None
+    try:
+        assert reached.wait(10), "the claim never wrote"
+        change = _in_thread(
+            lambda: owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+        )
+        with pytest.raises(Pending):
+            change.result(timeout=1)  # held at the project lock the claim holds
+    finally:
+        release.set()
+    assert claim.result(timeout=10).status_code == 200
+    assert change is not None
+    refused = change.result(timeout=10)
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "holds_cards"}
+    assert written == []  # refused at the check, never written and rolled back
