@@ -490,3 +490,40 @@ empty leftover directory is harmless; removing someone else's is not.
   window still removes another process's directory (#1478 delta, 399x).
 - Removing only the leaf, never the parents: smaller exposure, the same open window.
 
+
+## A GET answered with `nonce_reused` is signed again and sent once more; a write is not
+
+**Id:** c3f73129-6ee0-469c-87bf-d79fbd1953fc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-d9b3t5wprwgc (jour fixe of 2026-11-06: three instances got `nonce_reused` on `GET …/events` in the same minute, a restart helped each time) and the lead's go for the plan, 2026-11-09; `hub/tests/test_two_processes.py` (the identical signed GET at a second hub process is refused), `cli/tests/test_nonce_reused.py`
+**Revisit when:** the hub can tell a re-delivered request from a replay, a write gets a safe way to be sent again after `nonce_reused`, or a `nonce_reused` turns up that a re-delivery cannot explain
+**See:** https://github.com/oliver-zehentleitner/maity — 1c65bb74-d5a1-41ff-8741-dafd80ce449f — as of 2026-11-09
+
+`hub._send` makes a new nonce for every attempt (`sign.new_nonce`, 16 random bytes), so a
+`nonce_reused` answer to it usually means the request reached the hub twice: something between
+the client and the hub delivered a copy, and the hub refused the second delivery. (A real
+replay by someone else gets the same answer; sending a `GET` once more changes nothing then.) A `GET` answered
+that way is signed again with a new nonce and sent once more, within what is left of the call's
+timeout; a second `nonce_reused` ends the call as before. `POST`, `PATCH`, `PUT` and `DELETE`
+are never sent again on it.
+
+**Reason:** the hub found no path that spends one request's nonce twice (the auth transaction's
+retry takes the nonce row back on PostgreSQL, the process window keys it by the request), and the
+client shares no counter between instances. What remains is a re-delivery. The likely one is a
+proxy re-sending a long-poll `GET` to a restarted or another pod after its upstream broke, which
+would hit every open wait in the same minute. That trigger on the production hub is inferred,
+not reproduced; the mechanism is shown by the tests named above. `maity wait` ended on that 401,
+so the agent stopped waiting until someone restarted it. A `GET` changes nothing, so sending it
+once more is safe.
+
+**Rejected alternatives:**
+- The hub accepting a re-delivered request: it cannot tell one from a replay, which is what the
+  nonce window exists to refuse.
+- Retrying writes too: the first delivery may have done the write; idempotency keys cover only
+  some writes, and a repeat could act twice.
+- Only telling operators to switch off their proxy's retries: it helps one deployment, not every
+  hub a client talks to; the Helm README says it as a note instead.
+- Retrying without limit: a hub that refuses every attempt would keep the call busy until its
+  timeout for nothing; one more attempt covers a single re-delivery.

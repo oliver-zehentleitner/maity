@@ -576,12 +576,20 @@ class Client:
         timeout: float | None,
         handle: Callable[[Any], Any],
     ) -> Any:
-        """Sign and send one request, once more after a clock correction (§2.2); `handle`
-        reads the successful response. The second attempt gets only what is left of the
-        timeout, so a caller's deadline holds across both."""
+        """Sign and send one request, once more after a clock correction (§2.2), and a `GET`
+        once more after `nonce_reused`; `handle` reads the successful response. A repeat gets
+        only what is left of the timeout, so a caller's deadline holds across the attempts.
+
+        `nonce_reused` for a nonce made for this one attempt usually means the request reached
+        the hub twice: something between (a proxy re-sending after its upstream broke) delivered
+        a copy, and the hub refused the second (tsk-d9b3t5wprwgc). A real replay by someone
+        else gets the same answer, which is one more reason to send only a `GET` again: a `GET`
+        changes nothing, so it is signed again with a new nonce and sent once more; a write is
+        never sent again on it, since the first delivery may have done it."""
         limit = timeout or self.timeout
         end = time.monotonic() + limit
-        for attempt in (1, 2):
+        skew_retried = nonce_retried = False
+        while True:
             stamp = int(time.time() + self.clock_offset)
             on_request = self.on_request if method != "GET" else None
             signed = sign.sign_headers(
@@ -596,15 +604,20 @@ class Client:
             except urllib.error.HTTPError as exc:
                 err = _error_from(exc, f"{method} {full_path}")
                 server = _parse_server_time(err.details.get("server_time"))
-                if err.code == "timestamp_skew" and attempt == 1 and server is not None:
+                if err.code == "timestamp_skew" and not skew_retried and server is not None:
+                    skew_retried = True
                     self.clock_offset = server - time.time()
+                    limit = end - time.monotonic()
+                    if limit > 0:
+                        continue
+                if err.code == "nonce_reused" and method == "GET" and not nonce_retried:
+                    nonce_retried = True
                     limit = end - time.monotonic()
                     if limit > 0:
                         continue
                 raise err from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
-        raise AssertionError("unreachable")
 
 
 CHUNK = 64 * 1024

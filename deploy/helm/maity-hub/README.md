@@ -289,6 +289,13 @@ The event long-poll holds a request open for up to 55 seconds. The
 controller must allow at least that per request (the defaults give 75 s)
 and must pass the response on unbuffered.
 
+A proxy that sends a request again after its upstream connection broke
+(ingress-nginx does so for a `GET` by default, `proxy-next-upstream`) can
+deliver a signed call twice, for instance an event long-poll during a pod
+restart. The hub refuses the second delivery as `nonce_reused`, since it
+cannot tell it from a replay. A current `maity` signs such a `GET` again
+and sends it once more; an older `maity wait` ends on it.
+
 An attachment upload is one body of up to 10 MiB (`docs/api.md` §8.7).
 The controller must let it through: ingress-nginx refuses bodies over 1 MiB
 unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
