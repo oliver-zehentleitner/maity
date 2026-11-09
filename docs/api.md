@@ -15319,7 +15319,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `harness_missing` | `failed` | the binary or image is not there or does not run |
 | `clone_failed` | `failed` | `git clone` failed; `exit_code` from git |
 | `workspace_in_use` | `failed` | the clone path exists and is not recorded for this agent |
-| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code, for a `403 forbidden` its `details.reason` (below) |
+| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code, for a `403 forbidden` its `details.reason` when that has the code form, otherwise `forbidden` (below) |
 | `crash_loop` | `failed` | the restart cap was reached |
 | `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
 | `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
@@ -15349,8 +15349,8 @@ after, not even a line break. That includes a code the list names for
 another reason. A refusal the runner does not know yet thus still names
 its reason instead of becoming `null`. Any other value is `invalid` there
 too. The runner takes the code from the pickup's error answer: its `code`,
-or for `forbidden` its `details.reason` when that has the code form. For
-the join, it gives `maity join` a random value of its own for each call
+or for `forbidden` its `details.reason` when that has the code form,
+otherwise `forbidden`. For the join, it gives `maity join` a random value of its own for each call
 in `MAITY_ERROR_LINE`. A `maity` command that fails and handles the
 failure itself then writes `maity-error <that value>: <code>` as its last
 line. For a `forbidden` with a code-form reason it writes `forbidden
@@ -15358,8 +15358,9 @@ line. For a `forbidden` with a code-form reason it writes `forbidden
 no code in this form. The line is built from the same fields, and the
 runner reads only the last line, and only with its own value. Anything
 else fails closed with detail `null`: no line, a last line without that
-value or not in that form, a crash, or an error output the child could
-not write. The value is a
+value or not in that form, a crash (its traceback follows the line, so
+the line is not the last one), or an error output the child could not
+write. The value is a
 correlation value, not a secret: under sudo or ssh it stands in the
 command line. It keeps the hub's or a library's message text, which can
 hold the join URL and with it the token, from passing for the line,

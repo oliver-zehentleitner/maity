@@ -307,7 +307,8 @@ no transfer of a profile's owner yet.
 
 §15.7's lists of reasons and details are closed. `join_failed` is the
 one exception. Its detail is the hub's own error code from the pickup or
-the join exchange, or for a `403 forbidden` the `details.reason`. The
+the join exchange; for a `403 forbidden` it is the `details.reason` when
+that has the code form, otherwise `forbidden`. The
 hub takes any value in the form of its error codes there (the whole value,
 no line break), also a code the list names for another reason. A pickup's `404`
 carries no detail. It can mean the placement is gone, or a hub or proxy
@@ -323,8 +324,9 @@ random value of its own for each call. It reads the code only from the
 child's last line, `maity-error <value>: <code>`, which the CLI writes
 after a failure it handles itself, built from the error's code fields,
 or `-` without one. Anything else fails closed with detail `null`: no
-such last line, one without this call's value, a crash, or an error
-output the child could not write. The value is a correlation value, not a secret: it stands in the
+such last line, one without this call's value, a crash (its traceback
+follows the line, so the line is not the last one), or an error output
+the child could not write. The value is a correlation value, not a secret: it stands in the
 command line under sudo or ssh. It keeps message text from passing for
 the line, because the hub and the libraries write their messages without
 knowing it, even a message that names the URL and the join code. A
