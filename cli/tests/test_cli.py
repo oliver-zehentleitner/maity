@@ -269,6 +269,11 @@ def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
     assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
     lines = capsys.readouterr().err.splitlines()
     assert lines[-2:] == ["maity: join: 409: m", f"maity-error {nonce}: -"]
+    unhashables: list[Any] = [[], {}]  # a dict lookup on such a code raised TypeError (4hv7)
+    for unhashable in unhashables:
+        fake.join_error = (409, unhashable, {}, "m")
+        assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+        assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
     # A usage error exits through argparse: the line still comes last.
     with pytest.raises(SystemExit):
         cli.main(["join", url, "--no-such-option"])
@@ -283,6 +288,33 @@ def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
     assert hub.error_code(hub.HubError("x", code="instance_quota\n", status=409)) is None
     assert hub.error_code(hub.HubError("cannot reach https://h: down")) == "network"
     assert hub.error_code(hub.HubError("not a hub URL: x")) is None
+
+
+@pytest.mark.parametrize(
+    ("body", "code", "shown"),
+    [
+        (b'{"error": {"code": "conflict", "message": "m"}}', "conflict", "x: conflict: m"),
+        (b'{"error": {"code": 409, "message": "m"}}', None, "x: 409: m"),
+        (b'{"error": {"code": [], "message": "m"}}', None, "x: error: m"),
+        (b'{"error": {"code": {"a": 1}, "message": "m"}}', None, "x: {'a': 1}: m"),
+        (b'{"error": {"code": true, "message": "m"}}', None, "x: True: m"),
+        (b'{"error": "a proxy\'s text"}', None, "x: error: 502 Bad Gateway"),
+        (b'["not", "an", "envelope"]', None, "x: error: 502 Bad Gateway"),
+    ],
+)
+def test_a_hub_answer_becomes_a_hub_error_with_a_string_code_or_none(
+    body: bytes, code: str | None, shown: str
+) -> None:
+    """The one boundary (#1565 R1): whatever JSON a proxy sends, `HubError.code` is a string
+    or None, so no reader (a comparison, a dict lookup, `fullmatch`) can raise."""
+    import email.message
+    import io
+    import urllib.error
+
+    headers = email.message.Message()
+    raw = urllib.error.HTTPError("https://h/x", 502, "Bad Gateway", headers, io.BytesIO(body))
+    err = hub._error_from(raw, "x")
+    assert err.code == code and str(err) == shown and err.status == 502
 
 
 def test_a_maintenance_refusal_ends_with_the_error_line(
