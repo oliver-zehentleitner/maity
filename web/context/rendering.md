@@ -98,6 +98,53 @@ CSSOM instead of a `style` attribute keeps working under a strict CSP.
 attribute — blocked by a strict CSP and parsed as markup-adjacent text. A
 picture from a third-party avatar service — it would send member ids out.
 
+## An avatar shows the generated picture at once and loads the hub's picture only near the screen, at the size shown
+
+**Id:** 4db0d863-545e-46bb-b031-b5c9bbbfacb8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's plan for the avatar card (tsk-vvyqmk9vwg8e), 2026-11-09; a local reproduction of a board's burst of avatar reads against a hub on PostgreSQL, 2026-11-09
+**Revisit when:** the hub serves a board's avatars without queueing (one read for all of them, or a picture inside the list's answer), or browsers lazy-load images that are not yet on the page
+**See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-11-09
+
+`M.avatar` returns the identicon every time. When the member carries an
+`avatar_url` the page may load, it loads that picture once the identicon
+is within 200 px of the screen (IntersectionObserver; without one, at
+once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
+128, 256) that covers the shown size on this screen, with the device pixel
+ratio capped at 2. The loaded image takes the identicon's place with the
+same size and class rules. A picture that does not load leaves the
+identicon. A logo or banner is loaded as given, without a size. `h()`
+allows the sized address and no other parameter. The observer watches
+only placeholders that are on the page. One that is not (built before its
+view is mounted, or taken off the page) is held only through a `WeakRef`,
+and is watched again once it is on the page: a sweep runs after every
+change of the page (a MutationObserver, once per frame) and at every
+avatar drawn. A view that is thrown away keeps nothing alive, and one that
+is mounted late still gets its pictures.
+
+**Reason:** a board draws about 35 avatars, and the hub answered them one
+after another in effect (about 380 ms in the browser for 52 ms in the
+hub). Until then the page showed empty boxes and laid out late. With the
+identicon first, nothing waits for the pictures. Loading only near the
+screen leaves the reads of long lists to the rows someone scrolls to. The
+size cuts the bytes: a 16 px avatar fetched 256 px.
+
+**Rejected alternative:** `<img loading="lazy">` in place of the
+identicon. The browser leaves it empty until the picture arrives, and a
+detached image is never lazy-loaded, so the identicon could not stay in
+its place. A wrapper holding both the identicon and the image: the CSS
+rules for avatars (clipping on cards, overlap in a row of avatars) select
+`.avatar-svg` and `.avatar-img` directly, and a wrapper would break them.
+Letting a placeholder go only once the observer had seen it on the page:
+a view drawn twice before the observer's first callback left its first
+placeholders observed for good. Letting go of every placeholder still off
+the page 10 s after it was drawn: a view mounted later than that (the
+board waits for a card's own read before it is mounted) kept the generated
+pictures for good (both from the review of #1541).
+
+
 ## Chat messages are Markdown drawn as DOM nodes by a small renderer of our own, never an HTML-producing library
 
 **Id:** 854c8122-770c-4c80-be9f-0ce9c90c0d2e

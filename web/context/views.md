@@ -1670,7 +1670,9 @@ review with an open child would hide nothing, the common case.
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads its conversations once a burst has settled (0.4 s): in one
+then reads its conversations once a burst has settled (0.4 s), but only
+for an answer with a chat or mention item in it, or one that moved the
+chat counts (since 2026-11-08, c5a75e7f): in one
 read across projects (`GET /me/conversations`, §9.3; until 2026-10-30
 each project's list on a hub without it, e1699490). The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
@@ -1692,6 +1694,54 @@ incident's pattern, N long-polls per tab. Only the open conversation's
 project's feed (the card allowed it): still one more long-poll per tab,
 and the list of the other projects would still need the stream. Polling
 the lists every few seconds: more reads than the stream for slower news.
+
+## Reading again only what changed: a card opened on the board, a stream answer without a chat
+
+**Id:** c5a75e7f-8c0e-443a-a7b3-874044713f60
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, item 7, 2026-11-08: the members read about every 0.6 s beside an opened card, `/me/conversations` every 0.4–3 s); the plan on tsk-d61rvjm6gteh, approved by the coordinator the same day; reproduced in the fixture hub
+**Revisit when:** the board reads its cards per column or keeps them across renders, or the hub offers a per-user chat stream
+**See:** https://github.com/oliver-zehentleitner/maity — 254c3ddf-d7be-4e70-ad71-384a6eb3d36b — as of 2026-11-08
+**See:** https://github.com/oliver-zehentleitner/maity — dc0a02f8-c657-406a-8f63-f260b588e7e8 — as of 2026-11-08
+
+Opening a card on the board changes the address, and every change of the
+address was a full drawing: the whole card list again (six pages of 200 in
+a project of 1,135 cards), the roles, the event head, the counts, and
+behind it the session, `/me`, the project and its members. Clicking
+through cards read the members once a card. Now the board follows a card
+opened or closed on itself (`ctx.followRoute`, as `/chats` does): it swaps
+the panel, and only the panel reads (the roles, the card's notes and
+history, and where they apply its watched updates and restricted text);
+closing it reads nothing. A hub answer to an edit made there is written
+into every copy of the card the board holds, matched by its id, so the
+next card opened or closed draws it as it is now, and an answer that comes
+after another card was opened changes its own card only. A card the filters hide, or one outside the board's window, is still
+drawn afresh: that drawing shows it whatever the filters say, as a link
+from elsewhere always did.
+
+The global chat read every project's chats and the open conversation again
+on every answer of the notifications stream. That stream answers for every
+item in every project (a request, a sign-in, a long-poll that only timed
+out), and the counts were read every 15 seconds too, which also nudged
+it. Now it reads only for an answer with a chat or mention item in it, or
+one that moved the chat counts. Everything else waits for the 30-second
+round, which was there already.
+
+**Reason:** each of these reads costs a round trip and hub statements for
+data that did not change. On the measured hub they added up to the
+repeated reads beside every opened card and in the chat.
+
+**Rejected alternatives:**
+- Keeping the board's list in `kept`, as the project and its members are
+  for a switch: a list of a thousand cards held across views, and stale
+  after any move made elsewhere; the event feed already offers a reload.
+- Slowing the chat's nudge (a longer settle time): fewer reads per burst,
+  but still a full round for an answer that is about no chat at all.
+- Dropping the stream nudge and keeping only the 30-second round: a new
+  chat message would wait up to 30 seconds in the open conversation.
 
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
@@ -5372,3 +5422,32 @@ reads closed requests nobody asked to see and needs a second read for the
 open ones it cut off; reading the answered ones in the background after the
 first drawing, which spends the same reads on every visit. Both are
 inferred, the card did not discuss them.
+
+## The boot reads the window and the session together; /me still after the session
+
+**Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
+**Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
+
+`render()` starts `GET /auth/session` together with the window's read (`M.maintenance.fresh()`)
+instead of after it, and handles the answers in the old order: the window first, then the session.
+`GET /me` still waits for the session's answer. The invitation and registration pages read the
+session themselves, so the drawing starts no early read for them, and only the newest session read
+sets the language: an older answer, a 401 above all, that came back after it switched a newer
+session's language back (review of #1524).
+
+**Reason:** two round trips in a row before the session was known. The answers stay in their order
+because each one decides whether the next matters (a running window, no session, a session that
+owes the second factor). The window is cached for a minute, so later drawings mostly save nothing;
+the first load saves one round trip.
+
+**Rejected alternatives:** /me early as well (the card's first plan), gated by the hub's readable
+session cookie and quiet towards the page. It fails by design for a session that still owes the
+second factor (403) and for a cookie that outlived its session (401), which e2e's check for failed
+answers reported; allowing those would have meant a harness exception that could hide a real
+failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
+and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
+outside `M.api`: a second client with its own error handling.

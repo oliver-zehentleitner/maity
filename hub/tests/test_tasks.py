@@ -88,6 +88,7 @@ def test_a_card_has_the_contract_shape(owner: flow.Human, migrated: Engine) -> N
         ({"needs": "plumber"}, {"needs": "unknown"}),
         ({"needs": "proxy"}, {"needs": "unknown"}),
         ({"needs": "manager"}, {"needs": "unknown"}),
+        ({"needs": "expert"}, {"needs": "unknown"}),
         ({"kind": "epic"}, {"kind": "unknown"}),
         ({"kind": "release"}, {"release.version": "required"}),
         ({"release": {"version": "1.0.0"}}, {"release": "releases_only"}),

@@ -22,8 +22,8 @@ if TYPE_CHECKING:  # access imports the caller, which reads the claims below: ca
 KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
 # The built-in roles a card may be for (§6.4), besides a project's own (§2.3): every role
-# that does a card's work, which the proxy and the manager do not.
-NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager"))
+# that does a card's work, which the proxy, the manager and the expert do not.
+NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager", "expert"))
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 # The one list of closed statuses. A closed card keeps its holder's columns as a record, so
 # every reader of claims leaves these out; `open_claims` does it for them.
@@ -435,7 +435,7 @@ def set_symmetric(
 
 def area_owner(conn: Connection, project_id: str, area: str | None) -> int | None:
     """The membership owning the narrowest area that contains `area` (§6.2 routing); a
-    guest is never routed to (§2.3)."""
+    guest or an expert is never routed to (§2.3)."""
     if not area:
         return None
     rows = conn.execute(
@@ -444,6 +444,7 @@ def area_owner(conn: Connection, project_id: str, area: str | None) -> int | Non
             t.membership.c.project_id == project_id,
             t.membership.c.active.is_(True),
             t.membership.c.trust != "guest",
+            t.membership.c.role != "expert",
         )
         .order_by(t.membership.c.joined_at, t.membership.c.id)
     ).all()

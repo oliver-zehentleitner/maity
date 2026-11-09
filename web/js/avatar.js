@@ -1,9 +1,9 @@
-// A member's picture. Where the member carries an avatar URL the page may
-// show (later: a forge or an upload, contract pending), that one; else a
-// generated identicon: a 5×5 mirrored pattern and a hue, both from the
-// member id alone, so every client draws the same picture for the same
-// member. Built as SVG nodes, never from markup. Decorative: the name is
-// always written next to it.
+// A member's picture. A generated identicon first: a 5×5 mirrored pattern
+// and a hue, both from the member id alone, so every client draws the same
+// picture for the same member. Where the member carries an avatar URL the
+// page may show (§6.10), that picture replaces it once it has loaded. Built
+// as SVG nodes, never from markup. Decorative: the name is always written
+// next to it.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -54,22 +54,106 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  // member: { id, avatar_url? }. A URL the page refuses (h() allows only
-  // the hub's own images), and an image that does not load (a 404 once the
-  // access is gone, §6.10), fall back to the identicon.
-  M.avatar = function (member, size) {
-    const px = size || 24;
-    if (member && member.avatar_url) {
-      try {
-        const img = M.dom.h("img", { class: "avatar-img", src: member.avatar_url, alt: "", width: String(px), height: String(px) });
-        img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(identicon(member.id || "?", px), img); });
-        return img;
-      } catch (refused) {
-        // not an image the page may load: the generated one instead
+  // The side to ask the hub for (§6.10, Sizes): the smallest of its sizes that covers the
+  // shown size on this screen (at most twice the CSS pixels). Only the hub's avatar
+  // addresses take `s`; a logo or banner is loaded as it is given.
+  const SIDES = [32, 64, 128, 256];
+  function sized(url, px) {
+    if (!/^\/api\/v1\/avatars\//.test(url) || /[?&]s=/.test(url)) return url;
+    const ratio = Math.min(Math.max(Number(window.devicePixelRatio) || 1, 1), 2);
+    const side = SIDES.find((s) => s >= px * ratio) || 256;
+    return url + (url.includes("?") ? "&" : "?") + "s=" + side;
+  }
+
+  // Load the picture once its place is near the screen: a page with many avatars (the
+  // board) never waits for the ones nobody sees. Without IntersectionObserver or WeakRef,
+  // at once. The observer watches only placeholders that are on the page. One that is not
+  // (built before its view is mounted, or taken off the page) is held only weakly, so a view
+  // that is thrown away keeps nothing alive. It is watched (again) once it is on the page:
+  // `sweep` runs after every change of the page (MutationObserver, once per frame) and at
+  // every avatar drawn.
+  const starts = new WeakMap(); // placeholder -> start, until its picture is started
+  const offPage = new Set(); // WeakRefs of placeholders not on the page
+  const watched = new Set(); // placeholders on the page, observed
+  let observer = null;
+  let swept = false;
+  function sweep() {
+    swept = false;
+    watched.forEach((el) => {
+      if (el.isConnected !== false) return;
+      watched.delete(el);
+      observer.unobserve(el);
+      offPage.add(new WeakRef(el));
+    });
+    offPage.forEach((ref) => {
+      const el = ref.deref();
+      if (!el || !starts.has(el)) { offPage.delete(ref); return; }
+      if (el.isConnected === false) return;
+      offPage.delete(ref);
+      watched.add(el);
+      observer.observe(el);
+    });
+  }
+  function soon() {
+    if (swept) return;
+    swept = true;
+    (window.requestAnimationFrame || ((f) => window.setTimeout(f, 16)))(sweep);
+  }
+  function whenSeen(el, start) {
+    if (typeof window.IntersectionObserver !== "function" || typeof window.WeakRef !== "function") { start(); return; }
+    if (!observer) {
+      observer = new window.IntersectionObserver((entries) => entries.forEach((e) => {
+        const go = starts.get(e.target);
+        if (!go || !e.isIntersecting) return;
+        starts.delete(e.target);
+        watched.delete(e.target);
+        observer.unobserve(e.target);
+        go();
+      }), { rootMargin: "200px" });
+      if (typeof window.MutationObserver === "function" && document.body) {
+        new window.MutationObserver(soon).observe(document.body, { childList: true, subtree: true });
       }
     }
-    return identicon(member && member.id ? member.id : "?", px);
+    starts.set(el, start);
+    offPage.add(new WeakRef(el));
+    soon();
+  }
+
+  // The picture for a placeholder that is still waiting for it (smoke tests only).
+  const pending = new WeakMap();
+
+  // member: { id, avatar_url? }. The generated picture is shown at once; where the member
+  // carries a picture the page may load (h() allows only the hub's own images), it is loaded
+  // at the size shown and takes the generated one's place once it has arrived. One that
+  // does not load (a 404 once the access is gone, §6.10) leaves the generated one.
+  M.avatar = function (member, size) {
+    const px = size || 24;
+    const shown = identicon(member && member.id ? member.id : "?", px);
+    const url = member && member.avatar_url ? sized(member.avatar_url, px) : null;
+    if (!url || !M.dom.isOwnImage(url)) return shown;
+    const start = () => {
+      let img;
+      try {
+        img = M.dom.h("img", { class: "avatar-img", alt: "", width: String(px), height: String(px), decoding: "async", src: url });
+      } catch (refused) {
+        return; // not an image the page may load: the generated one stays
+      }
+      pending.set(shown, img);
+      img.addEventListener("load", () => {
+        pending.delete(shown);
+        if (shown.parentNode) shown.parentNode.replaceChild(img, shown);
+      });
+      img.addEventListener("error", () => pending.delete(shown));
+    };
+    whenSeen(shown, start);
+    return shown;
   };
+  M.avatar.picture = (placeholder) => pending.get(placeholder) || null;
+  // Smoke tests only: how many placeholders are watched or held off the page, and a sweep now.
+  M.avatar.watched = () => watched.size;
+  M.avatar.offPage = () => offPage.size;
+  M.avatar.sweep = sweep;
+  M.avatar.sized = sized;
   M.avatar.cells = cells;
   M.avatar.hueOf = hueOf;
 })(window.Maity);
