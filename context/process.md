@@ -1925,9 +1925,11 @@ server, count as minor (the coordinator's scope for #1475).
   (`GH_HOST`, or the one host it is logged in to) can be another server: a non-empty list from there
   names heads origin does not serve and stops the check, but an empty one has nothing to compare and
   read as "no open pull request", exit 0 (the review of #1475 found it). A host on the loopback
-  (`localhost` in any case, an IPv4 literal in 127.0.0.0/8, `[::1]`; a name such as `127.example.com`
-  is a server of its own) is a proxy in front of github.com, as in Claude Code's cloud sessions, which
-  serves git and not the API, so it stands for github.com. A URL without a host (a local path,
+  (`localhost` in any case, `[::1]`, or `127` and three more dot-separated groups of one to three
+  digits, which covers 127.0.0.0/8 and does not check each group's range, so `127.999.999.999`
+  passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
+  github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
+  github.com. A URL without a host (a local path,
   `file://` with or without `localhost`) names no server to ask and stops the check.
 
 **Rejected alternatives:**
