@@ -12732,8 +12732,8 @@
     "text": "269714234c0785a7"
   },
   "placements.empty": {
-    "en": "9d7e488980d698a3",
-    "text": "18516c99c99818fd"
+    "en": "49d75e6bb3a610c1",
+    "text": "e6e96e988b804458"
   },
   "placements.generation": {
     "en": "9b9df9a3ed351ac2",
@@ -12758,6 +12758,122 @@
   "placements.logs.region": {
     "en": "7ea323c032a73009",
     "text": "41311408ed1b3a07"
+  },
+  "placements.new.agent_new": {
+    "en": "850f486460afc138",
+    "text": "f7b882d7c01c4418"
+  },
+  "placements.new.branch": {
+    "en": "96c59fd717d8cd7b",
+    "text": "eff69ed2cf4b6cdb"
+  },
+  "placements.new.briefing": {
+    "en": "6da8dc3401eadaa4",
+    "text": "f8eb76d68acd675d"
+  },
+  "placements.new.busy": {
+    "en": "a3a89076ed74c17c",
+    "text": "f17383041a91d9c8"
+  },
+  "placements.new.clone": {
+    "en": "3606c107ecc21fc2",
+    "text": "3606c107ecc21fc2"
+  },
+  "placements.new.clone_hint": {
+    "en": "023b7e71a24d2524",
+    "text": "bca37723ccf0f725"
+  },
+  "placements.new.clone_placeholder": {
+    "en": "122595b0c0071654",
+    "text": "fe2b67e95641e192"
+  },
+  "placements.new.done": {
+    "en": "91f963cf85737d3a",
+    "text": "6f1f1ae781d75874"
+  },
+  "placements.new.failed": {
+    "en": "37349451da0c226c",
+    "text": "5769a74364ff99e0"
+  },
+  "placements.new.field": {
+    "en": "5e9c7b12a38cdf3a",
+    "text": "5e9c7b12a38cdf3a"
+  },
+  "placements.new.hint": {
+    "en": "927287e43f0e965e",
+    "text": "f174fbb5a58de792"
+  },
+  "placements.new.mode": {
+    "en": "b47ccf6a86662344",
+    "text": "6957d9ca4ff037d5"
+  },
+  "placements.new.model": {
+    "en": "9c16c09f0c180580",
+    "text": "9c575bbf6541f16f"
+  },
+  "placements.new.model_default": {
+    "en": "40f3fd78cdcd6185",
+    "text": "ebda97b3fcd361d2"
+  },
+  "placements.new.no_tool": {
+    "en": "0e25eee1502a372a",
+    "text": "1cde0c047b8a3bd5"
+  },
+  "placements.new.none": {
+    "en": "4c51e5fed486a0c4",
+    "text": "30c9c6b29c511f90"
+  },
+  "placements.new.none_link": {
+    "en": "2585c200021d665e",
+    "text": "8723cecae463b718"
+  },
+  "placements.new.open": {
+    "en": "0fe4c7d73ff8f4e0",
+    "text": "1966c8c8f4fe4aa7"
+  },
+  "placements.new.profile": {
+    "en": "ddd0aac4da02e11d",
+    "text": "e138da7c98ad89fc"
+  },
+  "placements.new.reason": {
+    "en": "ea28e950a716a823",
+    "text": "31070471cd9f8682"
+  },
+  "placements.new.reason_required": {
+    "en": "055f8753c6433edf",
+    "text": "45efa8b0ca065cff"
+  },
+  "placements.new.runner": {
+    "en": "e98aef21e99228bc",
+    "text": "e98aef21e99228bc"
+  },
+  "placements.new.runner_option": {
+    "en": "46808490e0d0c394",
+    "text": "5e5758c7980f8cd0"
+  },
+  "placements.new.runners_failed": {
+    "en": "232df72ace352b08",
+    "text": "160076ad0cb30c40"
+  },
+  "placements.new.submit": {
+    "en": "3b031a459fef530f",
+    "text": "757fdf5cac6da426"
+  },
+  "placements.new.target": {
+    "en": "411ed77afa450e98",
+    "text": "2159f052574ee3f8"
+  },
+  "placements.new.target_any": {
+    "en": "50d82c38be3b5eee",
+    "text": "f890415dcb5a64c0"
+  },
+  "placements.new.title": {
+    "en": "0fe4c7d73ff8f4e0",
+    "text": "1966c8c8f4fe4aa7"
+  },
+  "placements.new.tool": {
+    "en": "077dcaba577a59ac",
+    "text": "991e179ea4d9a01b"
   },
   "placements.not_restarted": {
     "en": "e8f1c3c51f9bfa2d",

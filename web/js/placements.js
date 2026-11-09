@@ -7,7 +7,9 @@
 // confirmed with one more click. A placement waiting for consent links to
 // its request in the inbox, which answers it. Every action is one contract
 // call; a refusal is the hub's envelope as it comes. Placement events
-// (§15.10) read the list again.
+// (§15.10) read the list again. A human with members:admin starts an agent
+// on one of their own runners here too: an agent of theirs in the project
+// or a new profile, with what the runner advertises (§15.6, tsk-dsp6htj4c686).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -84,6 +86,178 @@ window.Maity = window.Maity || {};
     // A box that scrolls sideways is reachable by keyboard, and named.
     return h("div", { class: "placement-command" }, h("span", { class: "muted" }, words.name, ": "),
       h("code", { tabindex: "0", role: "region", "aria-label": words.region }, text), copy);
+  }
+
+  // The form that starts an agent on a runner (POST …/placements, §15.6). `runners`: the
+  // attachments of one's own runners with a live credential (§15.4); `placed`: the agent ids
+  // that have an active placement already, one per membership (§15.5). `made(placement)`:
+  // after the hub's 201. A refusal is the hub's message and code, a field's as it names it.
+  function startForm(ctx, runners, placed, hooks) {
+    const words = M.runnerWords;
+    const status = M.statusLine();
+    const id = (x) => "placement-new-" + x;
+    const field = (key, label, control, hint) => h("div", { class: "field" },
+      h("label", { for: id(key) }, label), control, hint ? h("p", { class: "hint", id: id(key) + "-hint" }, hint) : null);
+    const select = (key, options) => h("select", { id: id(key) }, options);
+    const input = (key, attrs) => h("input", Object.assign({ id: id(key) }, attrs || {}));
+
+    // The agent: one's own agents here without a placement, or a new profile (humans only, §15.6).
+    const own = ctx.members.filter((m) => m.kind === "agent" && !m.removed_at && m.owner_id === ctx.me.id && !placed.has(m.id));
+    const agent = select("agent", [h("option", { value: "" }, M.t("placements.new.agent_new"))]
+      .concat(own.map((m) => h("option", { value: m.id }, m.display_name + " (@" + m.handle + ")"))));
+    const handle = input("handle", { pattern: M.dom.NAME_RULES.handle.pattern, autocomplete: "off", "aria-describedby": id("handle") + "-hint" });
+    const name = input("name", { autocomplete: "off" });
+    // Trust admin and the role proxy only from an owner (§3.1, owner_only §2.3), as in a join.
+    const trust = select("trust", (ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"]).map((r) => h("option", { value: r }, M.trust.trustWord(r))));
+    trust.value = "member";
+    const role = select("role");
+    const fillRoles = () => M.trust.fillRoles(role, M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")), role.value || "coder", "coder");
+    const roleHelp = M.trust.roleHint(role);
+    trust.addEventListener("change", fillRoles);
+    fillRoles();
+    // A guest is never reported to (§2.3).
+    const reportsTo = select("reports", [h("option", { value: "" }, M.t("join.reports.nobody"))]
+      .concat(ctx.members.filter((x) => !x.removed_at && !M.trust.guest(x)).map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")"))));
+    reportsTo.value = ctx.me.id;
+    const areas = input("areas", { placeholder: "hub/, docs/" });
+    const briefing = h("textarea", { id: id("briefing"), rows: "4", placeholder: M.t("join.briefing.placeholder") });
+    const fresh = h("fieldset", { class: "placement-new-profile" }, h("legend", null, M.t("placements.new.profile")),
+      // What a handle is, as at every other agent handle (#1488), and its rule.
+      h("div", { class: "field" }, h("label", { for: id("handle") }, M.t("agents.handle")), handle,
+        M.handles.explain("agent", handle), h("p", { class: "hint", id: id("handle") + "-hint" }, M.dom.NAME_RULES.handle.text)),
+      field("name", M.t("agents.display_name"), name),
+      field("trust", M.t("join.field.trust"), trust),
+      h("div", { class: "field" }, h("label", { for: id("role") }, M.t("join.field.role")), role, roleHelp),
+      field("reports", M.t("join.field.reports_to"), reportsTo),
+      field("areas", M.t("join.field.areas"), areas),
+      field("briefing", M.t("placements.new.briefing"), briefing));
+
+    // The runner, and what it advertises (§15.3): where, which tool, its modes and models.
+    const runner = select("runner", runners.map((a) => {
+      const c = a.runner.capabilities || {};
+      return h("option", { value: a.runner.id }, M.t("placements.new.runner_option", { name: a.runner.name, presence: words.presenceText(a.runner),
+        running: String(c.running || 0), max: String(c.max_agents || 0) }));
+    }));
+    runner.value = runners[0].runner.id;
+    const target = select("target");
+    const tool = select("tool");
+    tool.setAttribute("aria-describedby", id("tool") + "-none");
+    const mode = select("mode");
+    const model = select("model");
+    const submit = h("button", { type: "submit", class: "primary" }, M.t("placements.new.submit"));
+    const chosen = () => runners.find((a) => a.runner.id === runner.value).runner;
+    const caps = () => chosen().capabilities || {};
+    const tools = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
+    const harness = () => tools().find((x) => x.id === tool.value);
+    const fillModes = () => {
+      const x = harness();
+      const modes = x ? x.modes || [] : [];
+      append(clear(mode), modes.map((m) => h("option", { value: m }, Object.hasOwn(words.MODES, m) ? words.MODES[m] : m)));
+      mode.value = x && modes.includes(x.default_mode) ? x.default_mode : modes[0] || "";
+      append(clear(model), h("option", { value: "" }, M.t("placements.new.model_default")), (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
+    };
+    const fillTools = () => {
+      const kept = tool.value;
+      const list = tools();
+      append(clear(tool), list.map((x) => h("option", { value: x.id }, words.toolName(x.id) + (x.version ? " " + x.version : ""))));
+      tool.value = list.some((x) => x.id === kept) ? kept : list.length ? list[0].id : "";
+      noTool.hidden = !!list.length;
+      // Nothing to start with: the hub would refuse it (harness_not_offered).
+      submit.disabled = !list.length;
+      fillModes();
+    };
+    const fillTargets = () => {
+      append(clear(target), h("option", { value: "" }, M.t("placements.new.target_any")),
+        (caps().targets || []).filter((x) => x.reachable !== false).map((x) => h("option", { value: x.name }, x.name)));
+      fillTools();
+    };
+    const noTool = h("p", { class: "hint", id: id("tool") + "-none", hidden: true }, M.t("placements.new.no_tool"));
+    runner.addEventListener("change", fillTargets);
+    target.addEventListener("change", fillTools);
+    tool.addEventListener("change", fillModes);
+
+    const clone = input("clone", { pattern: "[a-z0-9][a-z0-9\\-]{0,62}", autocomplete: "off", "aria-describedby": id("clone") + "-hint" });
+    const branch = input("branch", { autocomplete: "off" });
+    // A reason is required while the project plans or is in review (§6.1).
+    const needsReason = ["plan", "review"].includes(ctx.project.state);
+    const reason = h("textarea", { id: id("reason"), rows: "2", required: needsReason || null });
+    const followAgent = () => {
+      // Hidden and disabled together: a disabled fieldset's controls are not validated, so a
+      // handle typed before an existing agent was chosen cannot block the submit unseen.
+      fresh.hidden = !!agent.value;
+      fresh.disabled = !!agent.value;
+      const m = own.find((x) => x.id === agent.value);
+      clone.setAttribute("placeholder", m ? m.handle : handle.value.trim() || M.t("placements.new.clone_placeholder"));
+    };
+    agent.addEventListener("change", followAgent);
+    handle.addEventListener("input", followAgent);
+
+    const cancel = h("button", { type: "button", onclick: () => hooks.cancel() }, M.t("placements.cancel"));
+    const form = h("form", { class: "placement-new", "aria-labelledby": id("title") },
+      h("h4", { id: id("title") }, M.t("placements.new.title")),
+      h("p", { class: "hint" }, M.t("placements.new.hint")),
+      field("agent", M.t("join.field.agent"), agent), fresh,
+      field("runner", M.t("placements.new.runner"), runner),
+      field("target", M.t("placements.new.target"), target),
+      h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool),
+      field("mode", M.t("placements.new.mode"), mode),
+      field("model", M.t("placements.new.model"), model),
+      field("clone", M.t("placements.new.clone"), clone, M.t("placements.new.clone_hint")),
+      field("branch", M.t("placements.new.branch"), branch),
+      field("reason", needsReason ? M.t("placements.new.reason_required", { state: ctx.project.state }) : M.t("placements.new.reason"), reason),
+      h("div", { class: "actions" }, submit, " ", cancel), status.el);
+
+    // What the hub is sent: an agent by id, or a new profile with its join fields (§3.1).
+    function body() {
+      const b = {};
+      if (agent.value) {
+        b.agent = { id: agent.value };
+      } else {
+        b.agent = { handle: handle.value.trim(), display_name: name.value.trim() };
+        b.trust = trust.value;
+        b.role = role.value;
+        b.reports_to = reportsTo.value || null;
+        b.areas = areas.value.split(",").map((a) => a.trim()).filter(Boolean);
+        b.capabilities = [];
+        if (briefing.value.trim()) b.briefing = briefing.value.trim();
+      }
+      b.runner = runner.value;
+      b.target = target.value || null;
+      b.harness = tool.value;
+      if (mode.value) b.mode = mode.value;
+      b.model = model.value || null;
+      const workspace = {};
+      if (clone.value.trim()) workspace.clone = clone.value.trim();
+      if (branch.value.trim()) workspace.branch = branch.value.trim();
+      if (Object.keys(workspace).length) b.workspace = workspace;
+      if (reason.value.trim()) b.reason = reason.value.trim();
+      return b;
+    }
+    // A refusal as the hub sends it; the fields it names, each with its code.
+    const said = (err) => {
+      const fields = err.code === "invalid" && err.details && err.details.fields;
+      const named = fields ? Object.entries(fields).map(([k, v]) => M.t("placements.new.field", { field: k, why: v })).join("; ") : "";
+      const text = err.code ? M.t("placements.refusal", { reason: err.message || M.t("placements.an_error"), code: err.code }) : err.message || M.t("placements.an_error");
+      return { message: named ? text + " — " + named : text };
+    };
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (submit.disabled || !tool.value) return;
+      submit.disabled = true;
+      status.busy(M.t("placements.new.busy"));
+      try {
+        const made = await M.api.post(ctx.base + "/placements", body());
+        status.done();
+        await hooks.made(made);
+      } catch (err) {
+        status.fail(M.t("placements.new.failed"), said(err));
+      } finally {
+        submit.disabled = !tool.value;
+      }
+    });
+    fillTargets();
+    followAgent();
+    return { form, first: agent };
   }
 
   // The section, read and drawn into the Agents view. `credentials`: the
@@ -223,8 +397,55 @@ window.Maity = window.Maity || {};
     ctx.onEvents((events) => { if (events.some((e) => EVENTS.test(e.kind))) reread(); });
     append(box, h("h3", { id: "placements-title" }, M.t("placements.title")),
       h("p", { class: "muted" }, M.t("placements.hint")),
-      list, status.el);
+      await starting(), list, status.el);
     return box;
+
+    // Start on a runner: for a human with members:admin, over the runners of their own that
+    // are attached here with a live credential (§15.4, §15.6); none, and the way to allow one.
+    async function starting() {
+      if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
+      let runners = [];
+      try {
+        runners = (await M.api.getAll(ctx.base + "/runners")).items
+          .filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
+      } catch (err) {
+        return h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message }));
+      }
+      if (!runners.length) {
+        return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
+          { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) }));
+      }
+      const slot = h("div", { class: "placement-new-slot" });
+      const open = h("button", { type: "button", class: "placement-new-open", "aria-expanded": "false" }, M.t("placements.new.open"));
+      const close = (refocus) => {
+        clear(slot);
+        open.hidden = false;
+        open.setAttribute("aria-expanded", "false");
+        if (refocus) open.focus();
+      };
+      open.addEventListener("click", () => {
+        const placed = new Set(items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
+        const f = startForm(ctx, runners, placed, {
+          cancel: () => close(true),
+          // Only the form that sent it closes: one cancelled while its POST ran and opened anew
+          // keeps its draft and the focus; the placement made is listed and said all the same.
+          made: async (made) => {
+            const mine = f.form.parentNode === slot;
+            if (mine) close(false);
+            await reread();
+            append(clear(status.el), h("span", { class: "ok" }, M.t("placements.new.done",
+              { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })));
+            if (mine) status.el.focus();
+          },
+        });
+        append(clear(slot), f.form);
+        open.hidden = true;
+        open.setAttribute("aria-expanded", "true");
+        f.first.focus();
+      });
+      status.el.setAttribute("tabindex", "-1");
+      return h("div", { class: "placement-new-box" }, open, slot);
+    }
   }
 
   M.placements = { section };

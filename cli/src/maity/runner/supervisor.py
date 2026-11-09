@@ -19,6 +19,7 @@ import json
 import os
 import random
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -38,9 +39,21 @@ from .tmux import Session, Tmux, TmuxError, session_name
 TICK = 5.0
 PICKUP_RETRY = 15.0
 JOIN_TIMEOUT = 120.0
-PICKUP_DETAILS = ("pickup_not_allowed", "pickup_used")
-JOIN_DETAILS = ("code_invalid", "expired", "not_found", "rate_limited", "insecure_transport")
-_JOIN_ERROR = re.compile(r"\bjoin: ([a-z_]+):")
+# `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.
+DETAIL_CODE = hub.ERROR_CODE  # fullmatch only
+# The child's last stderr line under MAITY_ERROR_LINE=<nonce> (cli.main), and nothing else.
+_ERROR_LINE = re.compile(
+    r"maity-error ([0-9a-f]{32}): (?:-|([a-z][a-z0-9_]{0,63})(?: ([a-z][a-z0-9_]{0,63}))?)"
+)
+
+
+def join_detail(code: str | None, reason: Any = None) -> str | None:
+    """The `join_failed` detail for a hub refusal: its error code, or for `forbidden` the
+    `details.reason` that says which rule refused (`member_join_limit`, `member_agents_max`,
+    §3.1). None when neither has the form of a code."""
+    if code == "forbidden" and isinstance(reason, str) and DETAIL_CODE.fullmatch(reason):
+        return reason
+    return code if code is not None and DETAIL_CODE.fullmatch(code) else None
 
 
 class Retry(Exception):
@@ -55,8 +68,11 @@ def run_join(
     as_user: AsUser = RUNNER,
     agent_path: str | None = None,
 ) -> tuple[bool, str | None]:
-    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not;
-    None when the CLI's error has no code in §15.7's list).
+    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not:
+    the hub's code, `network`, or None). The detail comes only from the child's last stderr
+    line, `maity-error <nonce>: …` with this call's own nonce (`MAITY_ERROR_LINE`), built from
+    the error's code fields: no message or traceback text knows the nonce, so none can pass for
+    a code.
 
     `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
     finds it without running git in a clone the agent can write (§5.3). Python runs isolated
@@ -65,14 +81,16 @@ def run_join(
     user, who then owns the credential; on an ssh host it is the host's own `maity`, found
     on the target's `agent_path`. Its output is never logged: an error names the join URL,
     and with it the token."""
+    nonce = secrets.token_hex(16)  # only this call's own machine line carries it
     if not as_user.direct:  # sudo and ssh start empty: pass only what the join needs
-        env = {state.STATE_DIR_ENV: str(place.credential.parent)}
+        env = {state.STATE_DIR_ENV: str(place.credential.parent), hub.ERROR_LINE_ENV: nonce}
         if not as_user.here and agent_path:
             env["PATH"] = agent_path
         cwd = Path("/")
     else:
         env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
         env[state.STATE_DIR_ENV] = str(place.credential.parent)
+        env[hub.ERROR_LINE_ENV] = nonce
     command = [
         *as_user.maity, "join", "--join-file", "-", "--no-resume", "--no-pointer",
         "--client", f"maity-runner/{__version__}",
@@ -87,10 +105,13 @@ def run_join(
         return False, "network"
     if done.returncode == 0:
         return True, None
-    found = _JOIN_ERROR.search(done.stderr)
-    if found and found.group(1) in JOIN_DETAILS:
-        return False, found.group(1)
-    return False, "network" if "cannot reach" in done.stderr else None
+    lines = done.stderr.splitlines()
+    found = _ERROR_LINE.fullmatch(lines[-1]) if lines else None
+    if found is None or not secrets.compare_digest(found.group(1), nonce) or not found.group(2):
+        return False, None
+    if found.group(2) == "network" and found.group(3) is None:
+        return False, "network"
+    return False, join_detail(found.group(2), found.group(3))
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
@@ -194,6 +215,14 @@ class Record:
 
 
 Log = Callable[[str], None]
+
+
+def changed(pid: str, rec: Record) -> str:
+    """The log line for a placement's new reported state: codes and numbers only, so no
+    URL, join code or credential can reach it."""
+    words = [w for w in (rec.state, rec.reason, rec.detail) if w]
+    restarts = f", restart {rec.restarts}" if rec.restarts else ""
+    return f"{pid}: {' '.join(words)} (generation {rec.generation}{restarts})"
 
 
 @dataclass
@@ -768,7 +797,9 @@ class Supervisor:
         except hub.HubError as exc:
             if exc.status is None or exc.status >= 500 or exc.status == 429:
                 raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
-            detail = exc.code if exc.code in PICKUP_DETAILS else None
+            # A 404 (the placement gone, or no such route) is not the join token's `not_found`.
+            gone = exc.status == 404
+            detail = None if gone else join_detail(exc.code, exc.details.get("reason"))
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):
@@ -960,6 +991,7 @@ class Supervisor:
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     rec.pending = {"key": key, "body": self._body(rec)}
+                    self.log(changed(p["id"], rec))
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
         if not outgoing or self.client is None:

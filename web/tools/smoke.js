@@ -1841,6 +1841,91 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(urForm(), "Close").click(); await tick();
   expect(!urForm(), "user reset: Close takes the form away");
   await go("#/maintainer/maity/inbox");
+  // Start an agent on a runner (tsk-dsp6htj4c686, §15.6), before the runners below are detached and revoked:
+  // one's own runners attached here with a live credential, one's own agents without a placement or a new
+  // profile, and what the runner advertises. The two placements made here are listed further down.
+  const srMade = [];
+  const srPost = win.Maity.api.post;
+  // srHold: the next POST waits for srRelease(), as a slow hub would.
+  let srHold = false, srRelease = null;
+  win.Maity.api.post = (p, b) => {
+    if (p !== "/projects/maintainer/maity/placements") return srPost(p, b);
+    srMade.push(b);
+    if (!srHold) return srPost(p, b);
+    srHold = false;
+    return new Promise((r) => { srRelease = r; }).then(() => srPost(p, b));
+  };
+  const srBox = () => main.querySelector("section.placements");
+  const srOpen = () => srBox().querySelector("button.placement-new-open");
+  const srForm = () => srBox().querySelector("form.placement-new");
+  const srOpts = (id) => byId(id).querySelectorAll("option").map((o) => text(o));
+  await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  expect(srOpen() && text(srOpen()) === "Start an agent on a runner" && !srBox().querySelector(".placement-new-none"),
+    "placements: a project admin with a runner of their own here is offered Start an agent on a runner");
+  const srProto = Object.getPrototypeOf(srOpen()), srFocus = srProto.focus;
+  srProto.focus = function () { document.activeElement = this; };
+  srOpen().click(); await tick();
+  srProto.focus = srFocus;
+  expect(srForm() && srOpen().hidden && byId("placement-new-agent") === document.activeElement
+    && JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent", "Agent A (@agent-a)"])
+    && JSON.stringify(srOpts("placement-new-runner")) === JSON.stringify(["home-laptop · online · 2 of 4 agents running"])
+    && JSON.stringify(srOpts("placement-new-target")) === JSON.stringify(["Wherever the runner chooses", "local"])
+    && JSON.stringify(srOpts("placement-new-tool")) === JSON.stringify(["Claude Code 2.1.308"]) && byId("placement-new-mode").value === "interactive"
+    && JSON.stringify(srOpts("placement-new-model")) === JSON.stringify(["The runner's default", "opus", "sonnet"])
+    && !srBox().querySelector(".placement-new-profile").hidden,
+    "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
+    + JSON.stringify([srOpts("placement-new-agent"), srOpts("placement-new-runner"), srOpts("placement-new-tool")]));
+  const srHandleBy = (byId("placement-new-handle").getAttribute("aria-describedby") || "").split(" ");
+  expect(srHandleBy.includes("placement-new-handle-hint") && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
+    && text(byId(x)) === "The agent's handle names it among your agents and in @mentions in a project."),
+    "placements: the new handle says what a handle is and its rule, as every agent handle does (#1488) " + JSON.stringify(srHandleBy));
+  byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change");
+  byId("placement-new-target").value = "local"; byId("placement-new-target").dispatch("change");
+  byId("placement-new-mode").value = "supervised"; byId("placement-new-model").value = "sonnet";
+  expect(srBox().querySelector(".placement-new-profile").hidden && byId("placement-new-clone").getAttribute("placeholder") === "agent-a",
+    "placements: an agent already here needs no profile fields; its clone defaults to its handle");
+  // Disabled as well as hidden (review of #1558): a hidden control the browser still validates
+  // would block the submit with nothing to correct. A new profile enables it again.
+  const srFresh = () => srBox().querySelector(".placement-new-profile");
+  const srDisabled = [srFresh().disabled];
+  byId("placement-new-agent").value = ""; byId("placement-new-agent").dispatch("change"); srDisabled.push(srFresh().disabled);
+  byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change"); srDisabled.push(srFresh().disabled);
+  expect(JSON.stringify(srDisabled) === "[true,false,true]", "placements: the new profile's fields are disabled while an agent already here is chosen " + JSON.stringify(srDisabled));
+  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  expect(srMade.length === 1 && JSON.stringify(srMade[0]) === JSON.stringify({ agent: { id: "agt-a" }, runner: "rnr-0002", target: "local", harness: "claude-code", mode: "supervised", model: "sonnet" })
+    && srBox().querySelectorAll("li.placement").length === 5 && !srForm() && !srOpen().hidden
+    && text(srBox().querySelector(".send-status")).includes("Agent A is placed on home-laptop. The runner starts it when it next reads its placements."),
+    "placements: Start sends one POST with the agent's id and the runner's offer; the new placement is listed " + JSON.stringify(srMade[0]));
+  srOpen().click(); await tick();
+  expect(JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent"]), "placements: an agent placed now is offered no more");
+  byId("placement-new-handle").value = "agent-b"; byId("placement-new-name").value = "Agent Bee";
+  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  expect(srForm() && text(srForm().querySelector(".send-status")) === "Not placed on the runner: you already have an agent with this handle (invalid) — handle: taken",
+    "placements: a refusal is the hub's message, code and field, and the form stays " + (srForm() && text(srForm().querySelector(".send-status"))));
+  byId("placement-new-handle").value = "agent-f"; byId("placement-new-name").value = "Agent F"; byId("placement-new-areas").value = "web/, docs/";
+  byId("placement-new-briefing").value = "You own the runner form."; byId("placement-new-clone").value = "agent-f-web"; byId("placement-new-branch").value = "main";
+  // A slow POST, the form cancelled and opened anew, a draft begun (review of #1558): the first
+  // request's answer lists the placement and says so, and leaves the new form, its draft and the focus.
+  const srCancel = () => srForm().querySelectorAll("button").find((b) => text(b) === "Cancel");
+  srHold = true;
+  srForm().requestSubmit(); for (let k = 0; k < 4; k++) await tick();
+  srProto.focus = function () { document.activeElement = this; };
+  srCancel().click(); await tick();
+  srOpen().click(); await tick();
+  byId("placement-new-handle").value = "draft-x";
+  srRelease(); for (let k = 0; k < 8; k++) await tick();
+  expect(srForm() && byId("placement-new-handle").value === "draft-x" && byId("placement-new-agent") === document.activeElement
+    && text(srBox()).includes("Agent F is placed on home-laptop."),
+    "placements: a POST answered after its form was cancelled leaves the form opened since, with its draft and the focus");
+  srCancel().click(); await tick();
+  srProto.focus = srFocus;
+  expect(srMade.length === 3 && JSON.stringify(srMade[2]) === JSON.stringify({ agent: { handle: "agent-f", display_name: "Agent F" }, trust: "member", role: "coder",
+    reports_to: "hum-maintainer", areas: ["web/", "docs/"], capabilities: [], briefing: "You own the runner form.", runner: "rnr-0002", target: null,
+    harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
+    && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
+    "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  win.Maity.api.post = srPost;
+  await go("#/maintainer/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
   // No tab of its own any more (the maintainer, 2026-10-31): Settings links it.
@@ -4381,7 +4466,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plBox = () => main.querySelector("section.placements");
   const plRow = (id) => plBox().querySelectorAll("li.placement").find((li) => li.attrs["data-placement"] === id);
   const plFacts = (id) => text(plRow(id).querySelector("dl.facts"));
-  expect(plBox() && text(plBox().childNodes[0]) === "Where they run" && plBox().querySelectorAll("li.placement").length === 4
+  expect(plBox() && text(plBox().childNodes[0]) === "Where they run" && plBox().querySelectorAll("li.placement").length === 6
     && (() => { const slot = plBox().parentNode; const kids = slot.parentNode.childNodes; return kids[kids.indexOf(slot) + 1] === main.querySelector(".earlier-box"); })(),
     "placements: a section on Agents after the cards, before the earlier joins, one row per placement");
   expect(text(plRow("plc-0001")).includes("on home-laptop") && plFacts("plc-0001").includes("claude-code · opus · interactive")
@@ -4441,7 +4526,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet(p));
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  expect(text(main).includes("None of your agents is in this project yet") && plBox() && plBox().querySelectorAll("li.placement").length === 4,
+  expect(text(main).includes("None of your agents is in this project yet") && plBox() && plBox().querySelectorAll("li.placement").length === 6,
     "placements: with no agent yet, where they run is still shown");
   // While the placements are read the join panel is open already: the button never shows to vanish.
   let plRelease = null;
@@ -4462,9 +4547,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/runners" ? Promise.resolve({ items: [], next_cursor: null })
     : p === "/projects/maintainer/maity/members" ? plGetAll(p).then(othersOwn) : plGetAll(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  expect(plBox() && plBox().querySelectorAll("li.placement").length === 4 && !plActs().length,
+  expect(plBox() && plBox().querySelectorAll("li.placement").length === 6 && !plActs().length,
     "placements: neither the runner's nor the agent's owner sees no actions");
   win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
+  // Its runners revoked or removed above: no form, and where to allow one.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  const plNone = plBox().querySelector(".placement-new-none");
+  expect(!plBox().querySelector("button.placement-new-open") && plNone
+    && text(plNone) === "None of your paired runners is allowed in this project yet. Allow one under this project's Runners."
+    && plNone.querySelector("a").getAttribute("href") === "#/maintainer/maity/runners",
+    "placements: no paired runner of one's own allowed here: no form, and where to allow one " + (plNone && text(plNone)));
   await go("#/maintainer/maity/inbox");
 
   // Clicking through cards (tsk-d61rvjm6gteh): each opens in place and reads that card's notes and history,
