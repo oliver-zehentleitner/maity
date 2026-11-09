@@ -230,12 +230,33 @@ window.Maity = window.Maity || {};
     if (args[0] === "at" && (args.length === 3 || args.length === 4)) {
       return { view: "entry", uuid: args[1], centre: { mode: "public", canonical: args[2], root: args[3] || "" } };
     }
+    if (args[0] === "centre" && args[1] === "public" && args.length >= 3) return publicCentre(K, args);
     return K.core.routes.parse("#" + args.map(encodeURIComponent).join("/").replace(/%2C/g, ","));
   }
 
-  // The path below Why of a route. The library's grammar has no place for a route's `centre`
-  // (another repository of the family): an entry there is the host's own `at/<uuid>/<canonical>
-  // [/<root>]`, drawn from that repository's export (atCentre); any other place there is the
+  // The library's `centre/public/<canonical>/<root>/<place>` (0.11.44), as a link from it or
+  // another host reaches this page. The router drops an empty segment, so a repository at its
+  // root arrives without one: the segment after the canonical is the root unless it names a
+  // place the grammar has (a root named like a place, `graph` say, reads as that place).
+  const PLACE_HEADS = ["entry", "topic", "timeline", "thought", "ref", "search"];
+  function publicCentre(K, args) {
+    const head = args[3];
+    const atRoot = head === undefined || PLACE_HEADS.includes(head) || (K.core.routes.PAGES || []).includes(head);
+    const root = atRoot ? "" : head;
+    const rest = args.slice(atRoot ? 3 : 4);
+    const enc = (s) => encodeURIComponent(s).replace(/%2C/g, ",");
+    const hash = "#centre/public/" + enc(args[2]) + "/" + enc(root) + (rest.length ? "/" + rest.map(enc).join("/") : "");
+    const r = K.core.routes.parse(hash);
+    // only an entry has a place of its own at another repository here (atCentre); the rest is
+    // the family page, which lists that repository
+    return r.view === "entry" && r.centre ? r : { view: "family" };
+  }
+
+  // The path below Why of a route. An entry in another repository of the family is written as the
+  // host's own `at/<uuid>/<canonical>[/<root>]`, drawn from that repository's export (atCentre),
+  // not as the library's `centre/public/<canonical>/<root>/entry/<uuid>`: the router drops the
+  // empty root of a repository at its root, so that form would not read back; routeOf takes it
+  // when it arrives from elsewhere. Any other place there is the
   // family page, which lists it. A topic's file is written segment by segment, encoded.
   function below(K, route) {
     let r = route;
@@ -311,29 +332,35 @@ window.Maity = window.Maity || {};
       inline: H.inline, renderBody: H.renderBody, listBox: () => aside, render,
     };
     const r = route;
+    const drawn = x.drawn;
+    // A place the library draws after a read (an await) and then fails shows that failure, not
+    // its "Loading…" for good; a later draw of the page owns `main` and is left alone.
+    const settle = (work) => Promise.resolve(work).catch((err) => {
+      if (x.drawn === drawn) append(clear(main), M.errorBox(err));
+    });
     if (r.view === "graph") {
       const wrap = h("div", { class: "ktw-graph-wrap why-graph" });
       const canvas = h("canvas");
       append(wrap, canvas);
       append(main, wrap);
       graphView.run(canvas, graphOf(), { fit: true, onEntry: (n) => nav.go({ view: "entry", uuid: n.entry.uuid || n.entry.id }), onTopic: (n) => nav.go({ view: "topic", file: n.file }) });
-    } else if (r.view === "timeline") timeline.view(main, r.day || null, { graph: () => graphOf(), bodies: (st) => family.bodies(st), entryRow: (e) => pages.entryRow(e, H), renderBody: H.renderBody, render });
-    else if (r.view === "thoughts") thoughts.page(main, T);
-    else if (r.view === "thought") thoughts.reader(main, r.refs, T);
-    else if (r.view === "queues") pages.queuesPage(main, H);
-    else if (r.view === "findings") pages.findings(main);
-    else if (r.view === "authors") pages.authors(main, H);
-    else if (r.view === "topic") pages.topic(main, r.file, H);
-    else if (r.view === "entry" && r.centre) atCentre(x, r, main, H);
-    else if (r.view === "entry") pages.entry(main, r.uuid, H);
-    else if (r.view === "search") search.view(main, r.scope || "self", r.q || "");
-    else if (r.view === "family") family.view(main);
+    } else if (r.view === "timeline") settle(timeline.view(main, r.day || null, { graph: () => graphOf(), bodies: (st) => family.bodies(st), entryRow: (e) => pages.entryRow(e, H), renderBody: H.renderBody, render }));
+    else if (r.view === "thoughts") settle(thoughts.page(main, T));
+    else if (r.view === "thought") settle(thoughts.reader(main, r.refs, T));
+    else if (r.view === "queues") settle(pages.queuesPage(main, H));
+    else if (r.view === "findings") settle(pages.findings(main));
+    else if (r.view === "authors") settle(pages.authors(main, H));
+    else if (r.view === "topic") settle(pages.topic(main, r.file, H));
+    else if (r.view === "entry" && r.centre) settle(atCentre(x, r, main, H));
+    else if (r.view === "entry") settle(pages.entry(main, r.uuid, H));
+    else if (r.view === "search") settle(search.view(main, r.scope || "self", r.q || ""));
+    else if (r.view === "family") settle(family.view(main));
     else if (r.view === "ref") {
       // the repository comes from the address: plain https or nothing is read (context/rendering.md)
-      if (M.dom.safeUrl(r.canonical)) pages.remoteEntry(main, r.canonical, r.uuid, H);
+      if (M.dom.safeUrl(r.canonical)) settle(pages.remoteEntry(main, r.canonical, r.uuid, H));
       else append(main, h("p", { class: "flag" }, M.t("why.lib.error.not_in_family")));
     }
-    else pages.overview(main, H);
+    else settle(pages.overview(main, H));
   }
 
   // A relative directory of the repository, segment by segment, or "" for its root.
@@ -391,6 +418,18 @@ window.Maity = window.Maity || {};
     sweep(aside);
   }
 
+  // The app puts a view's root into the page only once the view has returned (js/app.js), and a
+  // library place that reads first (Thoughts, Family, …) stops after its read when its box is not
+  // in the document: it takes that as a page left meanwhile. So the place is drawn once `main` is
+  // shown, the next turn after the view returned, unless the reader went elsewhere meanwhile.
+  function drawWhenShown(x, route, main, aside, tries) {
+    if (main.isConnected === false) {
+      if (tries > 0) window.setTimeout(() => { if (x.nav.current() === route) drawWhenShown(x, route, main, aside, tries - 1); }, 0);
+      return;
+    }
+    draw(x, route, main, aside);
+  }
+
   // Read again drops what this page holds of the project and reads its export anew.
   const readAgain = (ctx) => h("button", { type: "button", class: "small", onclick: () => { host = null; ctx.refresh(); } }, M.t("why.lib.read_again"));
 
@@ -436,7 +475,7 @@ window.Maity = window.Maity || {};
     const note = host.stale ? h("p", { class: "flag" }, M.t("why.lib.stale", { reason: host.stale.reason,
       ago: host.stale.at ? M.dom.formatAgo(host.stale.at) : "" })) : null;
     append(clear(root), toolbar(host, route, ctx), note, h("div", { class: "why-layout" }, main, aside));
-    draw(host, route, main, aside);
+    drawWhenShown(host, route, main, aside, 20);
   };
 
   M.ktwHost = { SCRIPTS, STYLES, routeOf, below, failure, provider, load, whyPath, httpsOnly, linkOk, sweep };

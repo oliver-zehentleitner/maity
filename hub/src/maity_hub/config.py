@@ -79,14 +79,13 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
-    # MAITY_ATTACHMENT_STORE, MAITY_ATTACHMENT_DIR, MAITY_ATTACHMENT_S3_*,
-    # MAITY_ATTACHMENT_QUOTA (§8.7, §16): where an attachment's bytes live and how many a
-    # project may store. `local` (the default) with `attachment_dir` unset leaves
-    # attachments unconfigured; `s3` is opt-in, for replicas that share the bytes.
+    # MAITY_ATTACHMENT_STORE, MAITY_ATTACHMENT_DIR, MAITY_ATTACHMENT_S3_* (§8.7, §16): where
+    # an attachment's bytes live. `local` (the default) with `attachment_dir` unset leaves
+    # attachments unconfigured; `s3` is opt-in, for replicas that share the bytes. How many a
+    # project may store is the limit `max_attachment_storage_per_project` (§16.5).
     attachment_store: str = "local"
     attachment_dir: Path | None = None
     attachment_s3: AttachmentS3 | None = None
-    attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_WORKERS: how many serving processes `maity-hub serve` starts, 1–64. More than one
     # only on PostgreSQL, where the processes share what they must (hub/context/replicas.md).
     workers: int = 1
@@ -144,6 +143,12 @@ class Settings:
     # MAITY_MAX_ATTACHMENT_STORAGE (§16.5, §8.7): bytes of attachments the whole instance may
     # store, from 1 GiB to 1 PiB, or `unlimited`; None leaves it to the instance admin.
     max_attachment_storage: int | str | None = None
+    # MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT (§16.5, §8.7): bytes of attachments one project
+    # may store, from 1 MiB to 1 PiB, or `unlimited`; None leaves it to the instance admin.
+    max_attachment_storage_per_project: int | str | None = None
+    # MAITY_MAX_ALIASES (§16.5, §6.24): the aliases one human, organisation, agent profile or
+    # project may hold, 1–8 and never `unlimited`; None leaves it to the instance admin.
+    max_aliases: int | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -213,9 +218,6 @@ class Settings:
             attachment_store=parse_attachment_store(env),
             attachment_dir=parse_attachment_dir(env),
             attachment_s3=parse_attachment_s3(env),
-            attachment_quota=int(
-                parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
-            ),
             workers=int(parse_number(env, "MAITY_WORKERS", 1, minimum=1, maximum=64)),
             replicas=int(parse_number(env, "MAITY_REPLICAS", 1, minimum=1, maximum=100)),
             db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
@@ -266,6 +268,10 @@ class Settings:
             max_attachment_storage=parse_limit(
                 env, "MAITY_MAX_ATTACHMENT_STORAGE", 1024**3, 1024**5
             ),
+            max_attachment_storage_per_project=parse_limit(
+                env, "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT", 1024**2, 1024**5
+            ),
+            max_aliases=parse_alias_limit(env),
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
@@ -496,6 +502,17 @@ def parse_limit(
     return int(value)
 
 
+def parse_alias_limit(env: dict[str, str]) -> int | None:
+    """MAITY_MAX_ALIASES (§16.5): a whole number from 1 to 8; unlike the other caps it has no
+    `unlimited`, since other bounds rest on 8 (§6.25). Unset or empty is None."""
+    value = env.get("MAITY_MAX_ALIASES", "").strip()
+    if not value:
+        return None
+    if not value.isdigit() or not 1 <= int(value) <= 8:
+        raise ConfigError("MAITY_MAX_ALIASES must be a number from 1 to 8")
+    return int(value)
+
+
 @dataclass(frozen=True)
 class RouteLimit:
     """One entry of MAITY_ROUTE_LIMITS: at most `count` calls of `method` on the route
@@ -563,6 +580,40 @@ def parse_cli_install(value: str) -> str:
     return value or DEFAULT_CLI_INSTALL
 
 
+# ASCII only: under IGNORECASE alone, `[a-z]` also matches İ, ı, ſ and the Kelvin sign.
+_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE | re.ASCII)
+# The whole value as it is returned: `https://`, a host name or an IPv4 address or a bracketed
+# IPv6 address (no zone), an optional port, an optional `/`. Nothing else can reach the line.
+_JOIN_URL = re.compile(
+    r"https://(?:\[(?P<v6>[0-9a-f:.]+)\]|(?P<name>[a-z0-9.-]+))(?::[0-9]{1,5})?/?",
+    re.IGNORECASE | re.ASCII,
+)
+
+
+def _dns_name_or_address(host: str) -> bool:
+    """A host name of letters, digits and hyphens per label (RFC 1123), or an IP address."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    labels = host.removesuffix(".").split(".")
+    return len(host) <= 253 and all(_LABEL.fullmatch(label) for label in labels)
+
+
+def _join_host_ok(value: str) -> bool:
+    """`value` is `_JOIN_URL` whole, and its host a host name, an IPv4 or an IPv6 address."""
+    found = _JOIN_URL.fullmatch(value)
+    if found is None:
+        return False
+    if found["v6"] is not None:
+        try:
+            return ipaddress.ip_address(found["v6"]).version == 6
+        except ValueError:
+            return False
+    return _dns_name_or_address(found["name"])
+
+
 def parse_join_url(value: str, public_url: str) -> str | None:
     """`MAITY_JOIN_URL`: https, a host and nothing else, and not the public URL's host
     (§1.1). Anything else stops the hub."""
@@ -584,6 +635,14 @@ def parse_join_url(value: str, public_url: str) -> str | None:
         or parts.fragment
     ):
         raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
+    # The value goes into a shell line unquoted (`join_line`), so the check is on the exact
+    # string returned, not on what `urlsplit` makes of it: it drops tabs and line breaks
+    # before it parses, and an IPv6 zone (`%eth0…`) is free text.
+    if not _join_host_ok(value):
+        raise ConfigError(
+            "MAITY_JOIN_URL's host must be a host name (letters, digits and hyphens per label)"
+            f" or an IP address, got {value!r}"
+        )
     if parts.hostname.lower().rstrip(".") == (urlsplit(public_url).hostname or "").lower().rstrip(
         "."
     ):
@@ -674,7 +733,7 @@ def derive_public_url(host: str, port: int) -> str:
 
 def checkout_web_dir() -> Path | None:
     """`web/` beside `hub/` when running from a checkout, else the dashboard an installed
-    package carries (`maity_hub/web`, built in by `pyproject.toml`), else nothing."""
+    package carries (`maity_hub/web`, built in by `hatch_build.py`), else nothing."""
     package = Path(__file__).resolve().parent
     hub = package.parents[1]
     if package.parent.name == "src" and (hub / "pyproject.toml").is_file():

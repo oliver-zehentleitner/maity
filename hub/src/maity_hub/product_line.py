@@ -1,8 +1,9 @@
 """The product line (docs/api.md §16.13): one small line about Maity at the end of every page
-of the platform's own interface, on the hub's own pages as on the dashboard's, always shown.
+of the platform's own interface, on the hub's own pages as on the dashboard's, always shown;
+at phone width (at most 600 CSS pixels) only its first part, the mark, Maity and the year.
 
-    [Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? ·
-    Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+    [Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] &
+    [Maity icon] · Found a bug? · Found a vulnerability?
 
 The hub's pages load no file, so the icons are inline SVG with presentation attributes only.
 The line's look is one fixed block, `STYLE`: centred and muted. A page whose policy allows
@@ -57,11 +58,16 @@ _GITHUB_MARK = (
 )
 
 # The line centred and muted, as the dashboard draws it (§16.13, "How it looks"). A page
-# without a `--muted` of its own gets the dashboard's light muted colour.
+# without a `--muted` of its own gets the dashboard's light muted colour. At phone width,
+# at most 600 CSS pixels, only the first part shows, "Maity 2026", as on the dashboard
+# (§16.13, tsk-fnch2yxp2kk1): the rest wrapped the line over three rows there. The rule is
+# part of the block, so the strict pages' hash allows it with the rest.
 STYLE = (
     ".product-line{text-align:center;color:var(--muted,#5f6b76);margin:1.5rem 0;padding:0 1rem;"
     "border:0}.product-line p{margin:0}.product-line a{color:inherit;margin:0}"
     ".product-line svg{vertical-align:-2px}"
+    "@media (max-width:600px){.product-line .product-sep,"
+    ".product-line .product-part~.product-part{display:none}}"
 )
 # A page with a dark theme: the dark mark's colours (brand/maity-mark-small-dark.svg) over
 # the presentation attributes.
@@ -120,10 +126,12 @@ def html(language: str, section: str | None = None) -> str:
     words = catalog.section("product", language)
     parts = (
         f"{_MAITY_MARK} Maity {clock.now().year}",
+        _sentence(language),
         _link(ISSUES, escape(words["bug"])),
         _link(SECURITY, escape(words["security"])),
-        _sentence(language),
     )
-    # The separators are drawn, not read, as on the dashboard.
-    dot = '<span aria-hidden="true"> · </span>'
-    return f'<footer class="product-line"><p><small>{dot.join(parts)}</small></p></footer>'
+    # Each part and each separator its own element, as on the dashboard, so a phone shows the
+    # first part alone (`STYLE`). The separators are drawn, not read.
+    dot = '<span class="product-sep" aria-hidden="true"> · </span>'
+    inner = dot.join(f'<span class="product-part">{part}</span>' for part in parts)
+    return f'<footer class="product-line"><p><small>{inner}</small></p></footer>'

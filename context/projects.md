@@ -703,6 +703,57 @@ owner.
 - Only a personal value: a member cannot treat a busy project
   differently from a quiet one.
 
+## The dashboard's tabs belong to the browser; the account keeps only a start set, as project ids on `/me`
+
+**Id:** 6e21a45a-26a7-46a0-b7c4-f7213718225b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-06 (request req-6zp8zjwabmds, "a mix"), relayed on card tsk-p6aye59z0k7g; the field's place, chosen by the contract author as the card asked; contract `docs/api.md` §5.1 "Start tabs"
+**Revisit when:** a human wants their open tabs to follow them from device to device, or the tab row gets a second account-level setting (groups, pinned tabs)
+
+The project tabs in the dashboard's header can be reordered, closed and
+opened. Which tabs a browser has open and in which order, and the cross-project inbox's
+filter to open tabs, stay in that browser and are never sent, so two
+devices may differ. The account holds one thing: `start_tabs` on the
+human's `member` in `GET /me`, an ordered list of project ids that
+seeds a browser with no tabs of its own yet. `null` opens every
+membership, as before. A membership made later goes to the end of the
+list, so a project joined after the list was set still opens, as the
+last tab. The human sets it from a project's own settings (Mine) or
+saves the current tab row in one go, and `PATCH /me` always takes the
+whole list.
+
+**Reason:** the maintainer chose the mix: tabs per device, and a start
+set in the account so that a new sign-in on a new device does not begin
+empty. Three choices of form were the contract author's:
+- The set is one ordered list on `/me` because its order runs across
+  projects. The dashboard reads `/me` before it draws the header, so a
+  fresh browser has the set without a further request.
+- It names projects by their fixed id, not their full name, because a
+  rename or a transfer must not drop a project from the set. That is
+  what the id is for (§6.25).
+- The hub appends a new membership itself, because a browser cannot
+  tell a project joined since the set was saved from one the human
+  took out.
+
+A whole-list write means two tabs changing it at the same moment keep
+the later write. That is accepted for a setting changed by hand.
+
+**Rejected alternatives:**
+- A per-project switch in the membership's own settings
+  (`/projects/{owner}/{slug}/me/settings`, b880260a): the order across
+  projects would need a position on every membership, and a fresh
+  browser would read every project's settings before drawing the header.
+- The notification settings (`/me/notification-settings`): the set is
+  not about notifications.
+- Full names in the list: a rename or a transfer would silently drop the
+  project from it.
+- Only browser storage, as for the theme: a new device starts with every
+  project open, which the maintainer wants to avoid.
+- Open tabs kept in the account, the same on every device: the
+  maintainer wants devices to differ.
+
 ## A change of the hub's own rules text bumps every project's rules version once
 
 **Id:** bea10667-bbe1-4cf3-a93b-7eeabe50eb1c
@@ -788,9 +839,11 @@ A project sets `settings.role_rules`: per role (`coder`, `reviewer`,
 `tester`) a switch that adds the subagent line to that role's rules,
 and for reviewers and testers a checklist whose items become rule
 lines. A security team or a project role gets the lines of its base.
-Only a human with `project:admin` sets them. A change bumps
-`rules_version`, so a running agent reads the new lines at its next
-resume. The hub cannot see a subagent or a ticked item; these are
+Only a human with `project:admin` sets them. A change of the lines
+bumps `rules_version`, so a running agent reads the new lines at its
+next resume. A value that adds no line (`false`, an empty checklist) is
+stored as given and announced, but moves no version: the rules text is
+the same. The hub cannot see a subagent or a ticked item; these are
 rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
@@ -820,5 +873,10 @@ checklist they reach every reviewer through the rules they already read.
 - Dropping an unknown role or an empty item silently: a typo would
   leave a role without its rules and nobody told; the hub refuses
   instead.
+- Dropping a value that adds no line (`false`, `[]`) before storing it:
+  it is valid input, and a `GET` would not show back what was sent; the
+  hub filters nothing silently. Bumping the version for it, as the first
+  version did, had every running agent re-read unchanged rules
+  (`{}` → `false` → `[]` went from version 1 to 4; reviewer finding at #1279).
 - The hub enforcing either rule: it sees neither the subagent nor the
   checklist being worked through.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import timedelta
 
@@ -53,6 +54,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "project",
         "expires_at",
         "via",
+        "instruction",
     }
     assert body["via"] == "public"  # no join host configured
     assert body["join_url"].startswith("https://hub.example/join/")
@@ -96,6 +98,8 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "instance",
         "takes_over",
         "handover",
+        "subagents",  # the owner's instruction and its language (§3.1)
+        "subagents_language",
     }
     assert body["code"] not in str(listed) and _token(body) not in str(listed)
 
@@ -136,6 +140,41 @@ def test_joins_need_members_admin(owner: flow.Human, make_client: ClientFactory)
     )
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "forbidden"
+
+
+def _access_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+
+
+def test_a_refused_join_names_the_missing_scope_in_the_request_log(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """tsk-5d8hdtqhje26: ops could not tell which check refused an owner's joins, because
+    the line had only the status; it names the code and the scope (§1.1)."""
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    member = flow.human(make_client, migrated, "plain")
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    policy = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"member_agents": "off"}, "reason": "test"}
+    )
+    assert policy.status_code == 200, policy.text
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        response = member.post(
+            "/projects/maintainer/maity/joins",
+            {"agent": {"handle": "helper", "display_name": "Helper"}},
+        )
+    assert response.json()["error"]["details"] == {"scope": "members:admin"}, response.text
+    assert re.fullmatch(
+        r"POST /api/v1/projects/maintainer/maity/joins 403 ms=\d+ "
+        r"route=/api/v1/projects/\{owner\}/\{slug\}/joins error=forbidden scope=members:admin",
+        _access_lines(caplog)[-1],
+    )
 
 
 def test_a_join_for_an_existing_member_keeps_the_membership(
@@ -279,6 +318,52 @@ def test_a_spent_or_unknown_token_has_no_page(
         assert response.headers["Maity-Error"] == "not_found"
 
 
+def test_a_dead_link_on_the_public_host_is_the_dead_link_page(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """§3.2: every dead token is the same page at `/join/{token}` on the public host, as on the
+    join host, HTML or Markdown by `Accept`; the API path keeps the envelope unless HTML is
+    asked for."""
+    client = make_client()
+    used = flow.join(owner, "maity")
+    flow.exchange(client, used)
+    revoked = flow.join(owner, "maity")
+    owner.delete(f"/projects/maintainer/maity/joins/{revoked['id']}")
+    burned = flow.join(owner, "maity")
+    for _ in range(3):
+        flow.exchange(client, {**burned, "code": "ZZZZ-ZZZZ-ZZZZ"})
+    expired = flow.join(owner, "maity", ttl_seconds=60)
+    start = clock.now()
+    clock.set_source(lambda: start + timedelta(seconds=61))
+    tokens = [_token(x) for x in (used, revoked, burned, expired)] + ["A" * 22, "nope"]
+    pages: dict[str, set[str]] = {"html": set(), "markdown": set()}
+    for token in tokens:
+        for accept, kind, media in (
+            ("text/html", "html", "text/html"),
+            ("text/markdown", "markdown", "text/markdown"),
+            ("*/*", "markdown", "text/markdown"),
+            (None, "markdown", "text/markdown"),
+        ):
+            headers = {"Accept": accept} if accept else {}
+            page = client.get(f"/join/{token}", headers=headers)
+            assert page.status_code == 404, (token, accept)
+            assert page.headers["Maity-Error"] == "not_found"
+            assert page.headers["content-type"].startswith(media), (token, accept)
+            assert "no longer works" in page.text and "new join line" in page.text
+            pages[kind].add(page.text)
+        api = client.get(f"/api/v1/join/{token}", headers={"Accept": "application/json"})
+        assert api.status_code == 404 and api.headers["Maity-Error"] == "not_found"
+        assert api.json()["error"]["code"] == "not_found"
+        bare = client.get(f"/api/v1/join/{token}")
+        assert bare.status_code == 404 and bare.json()["error"]["code"] == "not_found"
+        html = client.get(f"/api/v1/join/{token}", headers={"Accept": "text/html"})
+        assert html.status_code == 404 and html.headers["Maity-Error"] == "not_found"
+        assert html.headers["content-type"].startswith("text/html")
+        pages["html"].add(html.text)
+    assert len(pages["html"]) == 1 and len(pages["markdown"]) == 1  # never says which reason
+    assert "<h1>This join link no longer works</h1>" in pages["html"].pop()
+
+
 # --- §3.3 the exchange -------------------------------------------------------------------
 
 
@@ -418,7 +503,10 @@ def test_ordinary_areas_are_fine(owner: flow.Human) -> None:
 
 
 def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A join that leaves trust and role out takes the member's own: for an agent the
     owner raised to trust `admin`, that is a credential with trust admin, which only an
@@ -436,8 +524,10 @@ def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
     go = deputy.post(f"/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
     assert go.status_code == 200, go.text
     deputy.patch(f"{members}/{agent.id}", {"team": {"max_instances": 3}})
-    refused = deputy.post(
-        "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
-    )
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        refused = deputy.post(
+            "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
+        )
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"reason": "owner_only"}
+    assert _access_lines(caplog)[-1].endswith(" error=forbidden reason=owner_only")

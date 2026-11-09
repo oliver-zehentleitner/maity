@@ -186,7 +186,8 @@ example; any cluster with the same pieces works.
 
    ```sh
    kubectl -n maity exec -i deploy/maity-maity-hub -- \
-     maity-hub owner create --handle <handle> --display-name '<Your Name>' < password-file
+     maity-hub owner create --handle <handle> --display-name '<Your Name>' \
+       --email <you@example.org> < password-file
    ```
 
 Upgrades are the same command with `helm upgrade`, also with
@@ -213,7 +214,7 @@ silently ignored. These are the values that matter:
 | `topologySpreadConstraints` | `[]` | with more than one replica: spread over nodes by default; set to replace it |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
 | `forge.github.instanceNamespaces` | empty | `MAITY_FORGE_INSTANCE_NAMESPACES`: the operator's own namespaces, comma separated, the only ones the token reads for (public repositories only); empty, it serves no project |
-| `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`. A directory the hub cannot write stops the new hub at its start: with `Recreate` the old pod is already gone, so the hub is down, and the migration has already run. The way back is forward: fix the volume or `attachments.mountPath` and run `helm upgrade` again with the same image. `helm rollback` to the old image works only if the upgrade did not move the schema (see Rollback below); otherwise the old image needs the dump restored; empty claim: attachments off. The files are not in the database: back the volume up with it |
+| `attachments.existingClaim`, `.mountPath` | none, `/var/lib/maity/attachments` | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`. What one project may store is the hub's limit `max_attachment_storage_per_project` (§16.5), set under Limits or by `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` in `extraEnv`. A directory the hub cannot write stops the new hub at its start: with `Recreate` the old pod is already gone, so the hub is down, and the migration has already run. The way back is forward: fix the volume or `attachments.mountPath` and run `helm upgrade` again with the same image. `helm rollback` to the old image works only if the upgrade did not move the schema (see Rollback below); otherwise the old image needs the dump restored; empty claim: attachments off. The files are not in the database: back the volume up with it |
 | `attachments.store` | `local` | `MAITY_ATTACHMENT_STORE`: `local` keeps the files on the claim, for one replica; `s3` keeps them in a bucket that several replicas share (below, and *Moving attachments to S3*) |
 | `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
 | `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
@@ -345,7 +346,8 @@ deletions reach only the claim. The object of a deleted attachment goes at once,
 row names once it is older than 30 minutes; a folder of a project the database does not know
 is left alone and named once in the log. Without `--apply` it counts those removals too. After each copy it checks the object's
 size and the SHA-256 it wrote as metadata (the bytes themselves are protected in transit by the
-client's checksum). A folder it cannot read (`lost+found`) counts as failed, the rest is copied.
+client's checksum). A folder no project has (`lost+found`) is left alone and named in the log; a
+project's folder it cannot read counts as failed, the rest is copied.
 Without `--apply` it only counts.
 
 1. Upgrade to a hub version that has the `s3` store, still with `attachments.store: local`, and

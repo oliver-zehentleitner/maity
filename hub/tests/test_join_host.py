@@ -35,7 +35,7 @@ def hosted_human(make_client: ClientFactory, migrated: Any, handle: str) -> flow
     """A human logged in on the public host of an app that has a join host."""
     human_id = factory.human(migrated, handle)
     client = make_client(join_url=JOIN)
-    login = client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
+    login = factory.login_handle(client, handle)
     assert login.status_code == 200, login.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, human_id, handle)
@@ -77,6 +77,65 @@ def test_a_join_url_that_is_not_a_bare_https_host_stops_the_hub(value: str) -> N
 def test_a_join_url_is_normalised() -> None:
     assert parse_join_url("https://join.example/", PUBLIC) == JOIN
     assert parse_join_url("", PUBLIC) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://join.example;Write-Output INJECTED",
+        "https://join.example$(id)",
+        "https://join.example`id`",
+        "https://join_example.org",
+        "https://-join.example",
+        "https://join-.example",
+        "https://join..example",
+        "https://" + "a" * 64 + ".example",
+        "https://[fe80::1%eth0$(printf PROBE)]",
+        "https://[fe80::1%25eth0]",
+        "https://join.example\tprintf",
+        "https://join.exa\nmple",
+        "https://join.example\n/",
+        "https://join.exa\rmple",
+        "https://bücher.example",
+        "https://j\u0130.example",  # İ, \u0131 ı, \u017f ſ, \u212a K: each folds to an ASCII letter
+        "https://j\u0131.example",
+        "https://j\u017f.example",
+        "https://j\u212a.example",
+    ],
+)
+def test_a_join_host_that_is_no_dns_name_or_address_stops_the_hub(value: str) -> None:
+    """The host goes into a shell line unquoted (`join_line`): letters, digits and hyphens per
+    label, or an IP address, so no shell punctuation can reach it (nyh5 at #1236)."""
+    with pytest.raises(ConfigError, match="MAITY_JOIN_URL's host must be a host name"):
+        parse_join_url(value, PUBLIC)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["https://join.example/\nprintf PROBE", "https://[192.0.2.7]", "https://join.example//"],
+)
+def test_a_join_url_the_earlier_checks_refuse_stops_the_hub_too(value: str) -> None:
+    """These never reach the host check (a path, a bracket `urlsplit` cannot read): the routes
+    are covered all the same (e5kk at #1486)."""
+    with pytest.raises(ConfigError, match="MAITY_JOIN_URL (must be|is not a URL)"):
+        parse_join_url(value, PUBLIC)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://join.example",
+        "https://Join.Example.",
+        "https://xn--bcher-kva.example",
+        "https://join.example:8443",
+        "https://192.0.2.7",
+        "https://[2001:db8::7]",
+        "https://[2001:db8::7]:8443",
+        "HTTPS://join.example",
+    ],
+)
+def test_a_join_host_that_is_a_dns_name_or_an_address_is_taken(value: str) -> None:
+    assert parse_join_url(value, PUBLIC) == value
 
 
 # --- join links -------------------------------------------------------------------------------
@@ -158,6 +217,9 @@ def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> N
     assert html.status_code == 404 and "<h1>This join link no longer works</h1>" in html.text
     unknown = join_client(make_client).get("/" + "A" * 22)
     assert unknown.status_code == 404 and unknown.text == dead.text  # never says why
+    # The same page as the public host's `/join/{token}` (§3.2), apart from the dashboard link.
+    public = make_client(join_url=JOIN).get(f"/join/{token_of(created)}")
+    assert public.status_code == 404 and public.text == dead.text
     exchange = join_client(make_client).post(
         f"/{token_of(created)}", json={"code": created["code"], "client": "curl"}
     )
@@ -259,7 +321,7 @@ def test_a_variant_of_the_join_host_is_the_join_host(
     assert help_.status_code == 302 and help_.headers["location"] == f"{PUBLIC}/"
     login = client.post(
         "/api/v1/auth/login",
-        json={"handle": "variant", "password": factory.PASSWORD},
+        json={"email": "variant@example.org", "password": factory.PASSWORD},
         headers=headers,
     )
     assert login.status_code == 404 and "set-cookie" not in login.headers

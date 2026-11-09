@@ -19,7 +19,6 @@ import json
 import os
 import random
 import re
-import stat
 import subprocess
 import threading
 import time
@@ -31,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import adapters, capabilities, config, loop, restart, targets, workspace
+from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
 from .tmux import Session, Tmux, TmuxError, session_name
@@ -103,7 +102,6 @@ ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per 
 LIVE = ("starting", "running", "stopping")
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
-LIMIT_BYTES = 512
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
@@ -559,23 +557,18 @@ class Supervisor:
     def _limit_exit_code(self, pid: str, target: Target) -> int | None:
         """The harness's exit code from the loop's `limit.json`. The file is on the agents'
         side, which may have written or replaced it: a regular file only, never followed
-        through a link, at most LIMIT_BYTES, and nothing but a plain exit code taken."""
+        through a link, at most limitread.LIMIT_BYTES, and nothing but a plain exit code taken."""
         path, as_user = self._limit_file(pid, target), target.as_user
         try:
             if not as_user.direct:  # the agents' user, or the ssh host's
-                # Opened without following a link and without blocking on a FIFO, so a file
-                # swapped after any check cannot hold the read.
-                done = as_user.run(["dd", f"if={path}", f"bs={LIMIT_BYTES}", "count=1",
-                                    "iflag=nofollow,nonblock", "status=none"])  # fmt: skip
+                # Read there by the runner's own module (limitread): opened without following
+                # a link and without blocking on a FIFO, so a file swapped after any check
+                # cannot hold the read. A host's `maity` without it reads nothing: no code.
+                done = as_user.run([*as_user.runner_module("limitread"), str(path)],
+                                   env={"PATH": target.agent_path})  # fmt: skip
                 raw = done.stdout if done.returncode == 0 else ""
             else:
-                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-                try:
-                    if not stat.S_ISREG(os.fstat(fd).st_mode):
-                        return None
-                    raw = os.read(fd, LIMIT_BYTES).decode("utf-8", errors="replace")
-                finally:
-                    os.close(fd)
+                raw = limitread.read(str(path)) or ""
             data = json.loads(raw)
         except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
             return None
@@ -740,6 +733,10 @@ class Supervisor:
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
+        found = target.probes.get(harness.id)
+        warning = capabilities.unchecked(harness.id, found.version if found else None)
+        if warning is not None:
+            self.log(f"{name}: {warning}")
 
     # --- the join (§15.9) -------------------------------------------------------------------
 

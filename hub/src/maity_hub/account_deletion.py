@@ -30,6 +30,7 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     clock,
+    contacts,
     invitations,
     namespace,
     orgs,
@@ -53,7 +54,8 @@ from maity_hub.notifications import tokens
 PURPOSE = "account_deletion"
 VALID_FOR = timedelta(hours=24)
 DELETED_NAME = "Deleted account"
-# Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given.
+# Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given. Distinct
+# from the load test's seed marker (`loadtest.NO_PASSWORD`), which `purge` deletes by.
 NO_PASSWORD = "deleted"
 ENDED_BY = "account_deleted"  # the sessions' `ended_by` (§2.6.5)
 HUB = Actor(None)  # the events the deletion writes name no actor: the hub's own change
@@ -414,6 +416,7 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     org_invitations.withdraw_by_inviter_everywhere(conn, human_id, "inviter_deleted")
     project_names.withdraw_started_by(conn, human_id, "initiator_deleted")
     conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
+    _off_restricted_lists(conn, human_id, owned)
     _leave_projects(conn, human_id)
     _forget_confirmations(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
@@ -471,6 +474,17 @@ def _return_held(conn: Connection, human_id: str) -> None:
         .order_by(t.request.c.created_at, t.request.c.id),
     ):
         return_held(conn, request_id, human_id, "the holder's account was deleted")
+
+
+def _off_restricted_lists(conn: Connection, human_id: str, owned: list[str]) -> None:
+    """The account leaves the private lists of the restricted-text events (§2.9, §6.4): its
+    memberships' and its agents', the ended ones included. The events stay as written."""
+    mine = select(t.membership.c.id).where(
+        (t.membership.c.human_id == human_id) | t.membership.c.agent_id.in_(owned)
+    )
+    conn.execute(
+        delete(t.restricted_event_list).where(t.restricted_event_list.c.membership_id.in_(mine))
+    )
 
 
 def _leave_projects(conn: Connection, human_id: str) -> None:
@@ -541,8 +555,10 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.second_factor_reset).where(t.second_factor_reset.c.human_id == human_id))
     conn.execute(delete(t.second_factor).where(t.second_factor.c.human_id == human_id))
     conn.execute(delete(t.human_device).where(t.human_device.c.human_id == human_id))
+    conn.execute(delete(t.known_source).where(t.known_source.c.human_id == human_id))
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
+    contacts.forget(conn, human_id)  # both ways (§6.29)
     conn.execute(
         delete(t.conversation_meat_proxy).where(t.conversation_meat_proxy.c.human_id == human_id)
     )
@@ -593,6 +609,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))
+    conn.execute(delete(t.avatar_size).where(t.avatar_size.c.owner_id == human_id))
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == human_id)
@@ -610,7 +627,10 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            public_stats=False,
+            public_agents="public_projects",
             interface_language=None,
+            start_tabs=None,  # project ids only, but the person's choice (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )

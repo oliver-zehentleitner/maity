@@ -439,6 +439,7 @@ install maity`, so it adds no new party to trust.
 **Evidence:** inferred
 **Source:** a replacement agent's first join, which said nothing about the agent it replaced or where the hand-over was (friction report, 2026-10-30), and the maintainer's choice at link creation between adding and replacing an instance; contract in `docs/api.md` §3.1, §5.2, §6.2 and §8.1, 2026-10-31
 **Revisit when:** a takeover should also move the old agent's cards and claims, or the hand-over needs to be readable by fewer than all members
+**See:** members.md#a-boss-of-another-owner-is-sent-only-session_paused — 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a — as of 2026-11-04
 
 A first join may carry `takes_over` (an agent member of the project) and
 `handover` (a card id, or a message to `all`). Both are stored on the new
@@ -446,7 +447,11 @@ membership, shown in its resume packet and member view as references
 only; the resume packet carries them until the agent has checked in
 (then `null`, the member view keeps them), and the CLI prints them
 whenever the packet has them. The exchange's `member_joined` also reaches the project's
-coordinator and the old agent's `reports_to`. Nothing is moved: the old
+coordinator and the old agent's `reports_to`, except a boss of another
+owner, who is not added (members.md, "A boss of another owner is sent
+only `session_paused`"). The event's audience is `all`, so that boss
+still reads it as any member does; only the added `member:<id>` is
+left out. Nothing is moved: the old
 agent's cards, claims and membership stay until a human or admin acts.
 
 **Reason:** `replaces` already covers one team replacing its own
@@ -528,3 +533,36 @@ own shell, so `cmd.exe` and fish are served by the first line.
   reading the line adapts it (the maintainer's narrowing of tsk-tq5n569zev9k,
   2026-11-01).
 - Asking the hub for the line per platform: the code is shown once.
+
+## A dead join link shows the dead-link page on the public host too
+
+**Id:** 9409ba26-5387-41ab-8be8-6b3b5d4a7ef0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-sm093ps0b35t with its reproduction note nte-7m62p1ad9hdf (curl against the hosted instance, 2026-11-07); the lead's choice of option A, 2026-11-07; contract #1455 (`docs/api.md` §3.2); the hub's `_page` in `hub/src/maity_hub/routes/joins.py`
+**Revisit when:** the dead-link page moves into the shared frame of the public pages, or a client starts reading the join page through `GET /api/v1/join/{token}` and needs another answer for a dead token
+
+A dead join token (unknown, used, expired, burned or revoked) at
+`GET /join/{token}` answers on the public host with the same page as on
+the join host (§1.1, §3.2): 404, `Maity-Error: not_found`, HTML for a
+browser, Markdown otherwise, the same for every reason. `GET
+/api/v1/join/{token}` keeps the JSON error envelope of §1.3 unless the
+client asks for `text/html`, which gets the same HTML page.
+
+**Reason:** without a join host, and for links made with `via: "public"`,
+the join URL is `https://<public host>/join/<token>`, and a browser that
+opened a dead one saw the JSON envelope, while the join host already
+showed "This join link no longer works". The person holding the link
+needs the same answer on both hosts. The API path is for machine clients,
+which read the envelope everywhere under `/api/v1`; no client reads the
+join page there, since the CLI only posts the exchange.
+
+**Rejected alternatives:**
+- Leaving the public host on the JSON envelope and documenting only the
+  join host: dead public links are opened in browsers just the same, and
+  the reproduction showed the hub answers, not the proxy.
+- Treating `/join/<token>` on the join host like `/<token>`, for a link
+  whose host was swapped by hand: it changes the §1.1 rule that every
+  other path there is a `302` to the start page, and stays out unless the
+  maintainer asks for it.

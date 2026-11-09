@@ -126,7 +126,11 @@ window.Maity = window.Maity || {};
           if (!to) { select.focus(); return; }
           const at = once(to);
           const o = { project: p.full_name, name: to.name, to: to.handle + "/" + p.slug };
-          if (!window.confirm(at ? M.t("names.transfer.confirm_move", o) : M.t("names.transfer.confirm_ask", o))) return;
+          // Into an organisation its owners join with trust owner (§6.26): what that means
+          // for the restricted texts is said before (§6.1 "Every way into the set").
+          const ahead = to.org && M.restricted ? M.restricted.aheadOrgOwners(ctx, "@" + to.handle) : null;
+          const asked = at ? M.t("names.transfer.confirm_move", o) : M.t("names.transfer.confirm_ask", o);
+          if (!window.confirm(ahead ? asked + "\n\n" + ahead : asked)) return;
           button.disabled = true;
           status.busy(at ? M.t("names.transfer.moving") : M.t("names.transfer.asking"));
           try {

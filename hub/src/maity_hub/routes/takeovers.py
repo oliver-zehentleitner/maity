@@ -19,6 +19,7 @@ from maity_hub.errors import invalid, not_found
 from maity_hub.events import transaction
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
+from maity_hub.routes.tasks import _locked
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -78,6 +79,9 @@ def open_takeover(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         takeovers.settle(conn, mine.project.id)
+        # Under the project lock `settle` took: the caller's own row again, as a role change
+        # to expert may have committed since (§2.3 "The expert"; `to` omitted means itself).
+        mine = _locked(conn, mine)
         card = conn.execute(
             select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
         ).first()

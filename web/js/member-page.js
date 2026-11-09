@@ -60,6 +60,8 @@ window.Maity = window.Maity || {};
     task_reported: () => M.t("memberpage.kind.task_reported"), request_created: () => M.t("memberpage.kind.request_created"),
     request_answered: () => M.t("memberpage.kind.request_answered"), message: () => M.t("memberpage.kind.message"),
     member_joined: () => M.t("memberpage.kind.member_joined"), member_updated: () => M.t("memberpage.kind.member_updated"),
+    // A card's restricted text, or the set, changed (§6.4): never the text, never its length.
+    restricted_changed: () => M.t("memberpage.kind.restricted_changed"),
   };
 
   const ownAgentOf = (ctx, m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;

@@ -122,8 +122,8 @@ def _empty_the_tables(engine: Engine) -> None:
     On PostgreSQL a connection a test left in a transaction holds its locks, and the TRUNCATE
     waited for them without end (tsk-xz3bxa5cwv4v). It now gives up after
     `TRUNCATE_LOCK_TIMEOUT`; the suite's own sessions that hold a lock on the tables it empties
-    are named and ended, so this one test fails and the next one runs (hub/context/testing.md
-    210f3def). The test database is the suite's alone (hub/README.md)."""
+    or on a sequence they own are named and ended, so this one test fails and the next one runs
+    (hub/context/testing.md 210f3def). The test database is the suite's alone (hub/README.md)."""
     tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
     try:
         _truncate(engine, tables)
@@ -135,7 +135,7 @@ def _empty_the_tables(engine: Engine) -> None:
             f"ended so the next test runs (unless named otherwise): {holders}"
             if holders
             else "no session of this suite holds them: another role's, or a lock outside the"
-            " emptied tables and their sequences, so the next cleanup waits again"
+            " emptied tables and their sequences, so the next cleanup may wait again"
         )
         raise LeakedConnection(
             f"the cleanup before this test waited {TRUNCATE_LOCK_TIMEOUT} for locks a connection"
@@ -347,7 +347,7 @@ def _fresh_process_state() -> Iterator[None]:
         shared_budget,
         shared_counts,
     )
-    from maity_hub.auth import caller
+    from maity_hub.auth import caller, password_limits
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
     from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
@@ -368,7 +368,8 @@ def _fresh_process_state() -> Iterator[None]:
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()
     runners.PAIR_BY_ADDRESS.reset()
-    auth.LOGIN_BY_HANDLE.reset()
+    for limiter in password_limits.ALL:
+        limiter.reset()
     mentions.PINGS.reset()
     mail_settings.test_limiter.reset()
     for limiter in (

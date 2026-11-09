@@ -8,10 +8,12 @@ name: release-cli
 # short-lived OIDC token, so no PyPI token is stored in this repository. The
 # PyPI project names this repository, this file and the `pypi` environment as
 # its publisher; the environment is where a required approval can be set.
-# The checks run in a job of their own with the dev tools; the sdist and wheel
-# come from a separate job that installs only cli/requirements/release.txt,
-# pinned with hashes, and builds without isolation, so nothing the checks
-# installed and no unpinned package reaches what is uploaded. The interpreter
+# The tests are not run again here: `check` lets the tag through only when
+# ci already passed on its commit (ci-ok of the push to main, which holds the
+# cli and cli-windows jobs; tools/release_gate.py, read-only), and waits while
+# that run is still going. The sdist and wheel come from a separate job
+# that installs only cli/requirements/release.txt, pinned with hashes, and
+# builds without isolation, so no unpinned package reaches what is uploaded. The interpreter
 # setup-python provides, with the pip it bundles, is the trusted base.
 on:
   push:
@@ -25,15 +27,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The same checks as the cli job of ci.yml, on the tagged commit. Nothing from
-  # this job is uploaded.
+  # ci's result on the tagged commit instead of the suite again: ci-ok of the
+  # push to main (tools/release_gate.py). A tag on a commit without it stops
+  # here, before `publish`. Nothing from this job is uploaded.
   check:
     runs-on: ubuntu-latest
+    # ci takes about an hour: the wait covers a tag pushed right after its merge.
+    timeout-minutes: 120
     permissions:
+      actions: read # the ci run of the tagged commit
       contents: read
-    defaults:
-      run:
-        working-directory: cli
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,10 +44,11 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - run: python -m pip install -e ".[dev]"
-      - run: make check
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/release_gate.py --sha "$GITHUB_SHA" --wait-minutes 110
 
   build:
     runs-on: ubuntu-latest

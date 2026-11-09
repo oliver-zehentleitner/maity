@@ -1,0 +1,127 @@
+name: release-hub
+
+# The hub (hub/) on PyPI as `maity-hub`: on a v* tag, and on nothing else, so
+# merging this file publishes nothing. The same tag publishes the hub image
+# (publish-image.yml), so one tag gives the package and the image one version.
+# The tag must name the version in hub/pyproject.toml (v0.1.0a1 for 0.1.0a1),
+# or the build stops before anything is uploaded; `maity_hub.__version__`
+# comes from the installed package's metadata. The upload uses PyPI's trusted
+# publishing: the `publish` job proves its identity with a short-lived OIDC
+# token, so no PyPI token is stored in this repository. The PyPI project names
+# this repository, this file and the `pypi` environment as its publisher; the
+# environment is where a required approval can be set.
+# The tests are not run again here: `check` lets the tag through only when
+# ci already passed on its commit (ci-ok of the push to main) and hub-mariadb
+# passed on a commit of main with the same hub files (tools/release_gate.py,
+# read-only); it waits while those are still running. publish-image.yml asks
+# the same before it builds the image. The sdist and wheel come from a
+# separate job that installs only hub/requirements/release.txt, pinned with
+# hashes, and builds without isolation, so no unpinned package reaches what is
+# uploaded. That job also proves the files before the upload
+# (scripts/check_dist.py, as the hub-dist job of ci.yml): the dashboard and the
+# join page in the wheel, a wheel rebuilt from the sdist, and an install outside
+# the checkout that serves the dashboard. The interpreter setup-python provides,
+# with the pip it bundles, is the trusted base.
+on:
+  push:
+    tags: ["v*"]
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: release-hub-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: hub
+
+jobs:
+  # ci's result on the tagged commit instead of the suites again: ci-ok of the
+  # push to main, and hub-mariadb on the same hub files (tools/release_gate.py).
+  # A tag on a commit without them stops here, before `publish`. Nothing from
+  # this job is uploaded.
+  check:
+    runs-on: ubuntu-latest
+    # ci takes about an hour, hub-mariadb about 40 minutes and may queue behind
+    # another run: the wait covers a tag pushed right after its merge.
+    timeout-minutes: 240
+    permissions:
+      actions: read # the runs of ci and hub-mariadb
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the commits hub-mariadb tested, to compare their hub files
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/release_gate.py --sha "$GITHUB_SHA" --mariadb --wait-minutes 230
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # The tag decides, pyproject.toml must agree.
+      - name: Tag and pyproject agree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'EOF'
+          import os, sys, tomllib
+          tag = os.environ["TAG"].removeprefix("v")
+          with open("pyproject.toml", "rb") as f:
+              project = tomllib.load(f)["project"]["version"]
+          if tag != project:
+              sys.exit(f"version mismatch: tag {tag}, pyproject {project}")
+          print(f"version {tag}")
+          EOF
+
+      # A fresh environment with only the hashed lock; sdist and wheel to ../dist.
+      - name: Build and check sdist and wheel
+        run: make release-build
+
+      - name: Prove sdist and wheel
+        run: make release-check
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: pypi
+      url: https://pypi.org/project/maity-hub/
+    permissions:
+      id-token: write # trusted publishing: the short-lived token PyPI checks
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

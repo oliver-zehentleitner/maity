@@ -266,7 +266,7 @@ def project_view(
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
     aliases: list[str] | None = None,
-    stored: dict[str, int] | None = None,
+    stored: dict[str, int | None] | None = None,
     confirmed_by: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
@@ -628,6 +628,9 @@ def member_views(
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
     writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
+    subagent_writers = briefings.writers(
+        conn, {r.subagents_by for r in rows if r.agent_id is not None and r.subagents_by}
+    )
     languages = human_languages(conn, human_ids)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
@@ -764,6 +767,14 @@ def member_views(
             view["shared_environment"] = sharing.get(row.id, [])
             if row.agent_id is not None:  # given its owner's preferences (§19.4)
                 view["owner_preferences"] = bool(row.owner_preferences)
+        if row.agent_id is not None:  # the owner's subagent instruction, never its words (§6.2)
+            view["subagents"] = bool(row.subagents)
+            view["subagents_language"] = row.subagents_language if row.subagents else None
+            view["subagents_by"] = (
+                subagent_writers.get(row.subagents_by)
+                if row.subagents and row.subagents_by
+                else None
+            )
         held = profile_holds.get(row.agent_id or row.human_id or "")
         if held is not None:  # only while a hold stands on the profile (§16.8)
             view["moderation"] = held
@@ -931,8 +942,9 @@ def agent_view(
         ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
-        # avatar_url and avatar_source: only its owner reads this
+        # avatar_url, avatar_source and avatar_motif: only its owner reads this
         **(picture if picture is not None else avatars.state(conn, row.id)),
+        "avatar_motif": row.avatar_motif,
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "allowed_projects": row.allowed_projects,  # null: any project (§6.3)
@@ -1009,6 +1021,8 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "instance": row.instance,
         "takes_over": row.takes_over,
         "handover": row.handover,
+        "subagents": bool(row.subagents),
+        "subagents_language": row.subagents_language,
     }
 
 
@@ -1311,6 +1325,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     decided = ticker_read.details(conn, rows)
     notices = ticker_read.ticker_subjects(conn, rows)
     standing = _standing_of(conn, rows, reader)
+    restricted_reads = _RestrictedReads(conn, reader)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -1362,6 +1377,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "via": row.actor_via,
             }
         payload = _without_reason(row, reader, reason_readers.get(row.conversation_id or ""))
+        if row.kind == "project_updated":
+            payload = shaped_restricted(row, payload, restricted_reads)
         audience = row.audience
         if row.kind == "event_redacted" and row.subject_id in notices:
             audience = ticker_read.shaped_audience(audience, reader)  # like the item it removed
@@ -1405,15 +1422,46 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     return views
 
 
+class _RestrictedReads:
+    """How one reader reads `settings.restricted_access` in `project_updated` (§6.1 "Reading
+    the setting"), decided once per batch and only when a batch holds such an event."""
+
+    def __init__(self, conn: Connection, reader: Any) -> None:
+        self.conn, self.reader = conn, reader
+        self._full: bool | None = None
+
+    def shape(self, value: Any) -> Any:
+        from maity_hub import restricted
+
+        project = getattr(self.reader, "project", None)
+        if project is None:
+            return restricted.announced(self.conn, None, value, None, False)
+        if self._full is None:
+            self._full = restricted.reads_members(self.conn, project, self.reader)
+        return restricted.announced(self.conn, project, value, self.reader, self._full)
+
+
+def shaped_restricted(row: Any, payload: Any, reads: _RestrictedReads) -> Any:
+    """A `project_updated` naming `settings.restricted_access`, served per reader at read: the
+    stored `{mode, members}` or `{mode, included}` (§6.1)."""
+    fields = (payload or {}).get("fields") if isinstance(payload, dict) else None
+    if not isinstance(fields, dict) or "settings.restricted_access" not in fields:
+        return payload
+    value = reads.shape(fields["settings.restricted_access"])
+    return {**payload, "fields": {**fields, "settings.restricted_access": value}}
+
+
 def _wakes(row: Any, reader: Any = None) -> dict[str, Any]:
     """The instances a team's wake rule chose, as addresses; absent when no team's rule
-    narrowed the event (§8.2). Where the audience holds a watch's token only the reader's own
-    entries: the others would tell who watches the card (§6.4)."""
+    narrowed the event (§8.2). Where the audience holds a watch's token, or a restricted text's
+    (`restricted:`), only the reader's own entries: the others would tell who watches the card,
+    or who is in the set (§6.4)."""
     if row.wakes is None:
         return {}
     chosen = row.wakes
     if any(
-        isinstance(token, str) and token.startswith("watchers:") for token in row.audience or []
+        isinstance(token, str) and token.startswith(("watchers:", "restricted:"))
+        for token in row.audience or []
     ):
         own = getattr(reader, "principal_id", None)
         chosen = {member: ids for member, ids in chosen.items() if member == own}

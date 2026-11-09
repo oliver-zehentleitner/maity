@@ -34,7 +34,7 @@ FORGE_ADDED = ("linked", "token_set")
 # Records that are `inbox` items, open until their matter is closed (§18.1).
 INBOX = ("registration_pending", "mail_disabled", "agents_not_listening")
 # Records that are `inbox` items read by a read mark, as any notice (§18.1).
-NOTICES = ("moderation_applied",)
+NOTICES = ("moderation_applied", "restricted_changed")
 PERSONAL = (
     "personal_request_created",
     "personal_request_answered",

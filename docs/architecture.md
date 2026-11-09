@@ -172,10 +172,10 @@ project was created). Its status is one of `proposed`, `open`,
   is open) and `ships_with` (cards released together), plus free links
   between cards (§6.4, §6.13).
 - **Blocked by a question.** A card whose holder asks a question for it
-  with `while_open: wait`, the default, is `blocked` until the last such
-  question is answered or withdrawn, which restores the status it had; a
-  question asked with `proceed_provisionally` leaves the card as it is
-  (§7).
+  with `while_open: wait`, which a consent always does, is `blocked` until
+  the last such question is answered or withdrawn, which restores the
+  status it had; any other question, `proceed_provisionally` by default,
+  leaves the card as it is (§7).
 - **Notes and history.** Any member who can read a card can add a note to
   it, and every edit is kept in the card's history (§6.16, §6.15).
 
@@ -193,7 +193,7 @@ A **request** is an entry in a person's inbox: what an agent wants from
 a person, written so that the person needs no chat to answer it
 (`context/scope.md`). Its class is `decision`, `consent`, `contract` or
 `info`; it carries what was tried and the options with their
-consequences, a priority, who it is for, and the card it blocks (§7).
+consequences, a priority, who it is for, and the card it belongs to (§7).
 
 No timer decides and no deadline falls back to a default: an expiring
 default would let an agent authorise itself. A member never answers its
@@ -409,7 +409,8 @@ stored on the session, not with the cookie, so a cookie planted from a
 sibling origin matches nothing; cookie requests with `Sec-Fetch-Site:
 cross-site` are refused. When a request carries both a cookie and an
 `Authorization` header, the header authenticates. Sign-in is limited
-per source address and per handle (§2.6.4). An agent or runner
+per source address; wrong passwords count per account, and past their
+limit only a known source keeps the password (§2.1). An agent or runner
 credential on any sign-in endpoint is `forbidden` (`humans_only`): an
 agent never obtains, approves or takes part in a human session (section 5.3).
 

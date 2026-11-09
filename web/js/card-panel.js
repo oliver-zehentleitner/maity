@@ -171,6 +171,8 @@ window.Maity = window.Maity || {};
       c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("members", id), ctx }))
         : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
       (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
+      // The restricted text (§6.4): a box for a member in the set alone, read when the card opens.
+      M.restricted ? M.restricted.cardBox(ctx, c) : null,
       h("h3", null, M.t("cardpanel.notes")), notesBox,
       updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import __version__
+from .. import __version__, clonecheck, proc
 from . import config, stub
 from .asuser import AsUser
 
@@ -105,6 +105,14 @@ def launch(ctx: Context) -> Launch:
         **SESSION_GIT_CONFIG,
         **ctx.extra_env,
     }
+    # The mark that this clone runs under the runner: maity refuses its git here when the
+    # session's variables are gone (clonecheck.placement_root), instead of trusting that.
+    ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
+    ctx.as_user.write(ctx.clone / clonecheck.MARKER_PATH, ctx.placement["id"] + "\n")
+    # The git maity starts there: this one, found on the runner's PATH, not the agent's.
+    git = proc.program("git")
+    if git is not None:
+        ctx.as_user.write(ctx.clone / clonecheck.GIT_PATH, git + "\n")
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -154,11 +162,12 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
-    allow += [f"Bash({cmd})" for cmd in ctx.grant.allow]
+    allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     # Agents commit through git and never edit .git: its config and hooks would turn an
     # allowed `git status` into anything. The credential is not readable through Read.
-    deny = [f"{tool}(/{ws}/.git/**)" for tool in ("Edit", "Write")]
+    # `Edit(…)` covers every file-editing tool; Claude Code ignores a `Write(…)` deny rule.
+    deny = [f"Edit(/{ws}/.git/**)"]
     deny += [f"Read(/{ws}/.git/maity/**)"]
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
     settings: dict[str, Any] = {
@@ -193,7 +202,9 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         "--setting-sources", "user",  # the project's .claude/ is not loaded, hooks included
         "--settings", str(settings),
         "--permission-mode", "dontAsk",
-        "--strict-mcp-config", "--mcp-config", str(mcp),
+        # `=`: `--mcp-config` takes several values, and in interactive mode the start
+        # prompt comes next, which Claude Code would read as a second configuration file.
+        "--strict-mcp-config", f"--mcp-config={mcp}",
     ]  # fmt: skip
     model = ctx.placement.get("model")
     if model:
@@ -277,7 +288,8 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
     project's configuration switched off, `AGENTS.md` is named as an instruction."""
     bash = {"*": "deny", "maity *": "allow"}
-    for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *ctx.grant.allow):
+    granted = [cmd for cmd in ctx.grant.allow if config.plain_command(cmd)]
+    for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
     bash.update({rule: "deny" for rule in GIT_DENIED})  # after the allows: the last match wins

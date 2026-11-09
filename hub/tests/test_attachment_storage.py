@@ -1,4 +1,5 @@
-"""docs/api.md §8.7 and §16.5: the limit on the attachments the whole instance stores."""
+"""docs/api.md §8.7 and §16.5: the limits on the attachments one project and the whole
+instance store."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from tests.conftest import ClientFactory
 from tests.test_attachments import put
 
 PATH = "/admin/settings/limits"
+MIB = 1024**2
 GIB = 1024**3
 PIB = 1024**5
 
@@ -140,7 +142,7 @@ def test_an_upload_over_the_limit_is_refused_in_any_project_without_numbers(
 def test_the_project_quota_and_the_pending_cap_are_checked_first(
     stored: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    who = flow.human(lambda **kw: stored(attachment_quota=2048, **kw), migrated)
+    who = flow.human(lambda **kw: stored(max_attachment_storage_per_project=2048, **kw), migrated)
     flow.project(who, "maity")
     assert who.patch(PATH, {"max_attachment_storage": GIB}).status_code == 200
     room_of(monkeypatch, 100)
@@ -176,3 +178,112 @@ def test_unlimited_reads_no_total(admin: flow.Human, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(attachments, "used_total", no_read)
     assert put_in(admin, "maity", "a.bin", 1500).status_code == 201
+
+
+PER_PROJECT = "max_attachment_storage_per_project"
+PROJECT = "/projects/maintainer/maity"
+
+
+def project_used_of(monkeypatch: pytest.MonkeyPatch, extra: int) -> None:
+    """The project's own total is raised by `extra` bytes, so that a limit of 1 MiB or more
+    is reached without uploading a MiB."""
+    real = attachments.used
+    monkeypatch.setattr(
+        attachments, "used", lambda conn, project_id: real(conn, project_id) + extra
+    )
+
+
+def test_the_project_limit_defaults_to_one_gib_and_the_admin_sets_it(admin: flow.Human) -> None:
+    got = admin.get(PATH).json()
+    assert got[PER_PROJECT] == {"value": GIB, "source": "default"}
+    assert admin.get(PROJECT).json()["attachments"]["quota"] == GIB
+    for good in (MIB, 5 * GIB, PIB, "unlimited"):
+        changed = admin.patch(PATH, {PER_PROJECT: good})
+        assert changed.status_code == 200, changed.text
+        assert changed.json()[PER_PROJECT] == {"value": good, "source": "admin"}
+    for bad in (MIB - 1, PIB + 1, 0, -1, "1GiB", "1048576", True, 1.5):
+        refused = admin.patch(PATH, {PER_PROJECT: bad})
+        assert refused.status_code == 400, (bad, refused.text)
+        assert refused.json()["error"]["details"]["fields"] == {PER_PROJECT: "invalid"}
+    back = admin.patch(PATH, {PER_PROJECT: None}).json()
+    assert back[PER_PROJECT] == {"value": GIB, "source": "default"}
+
+
+def test_the_environment_sets_the_project_limit_and_a_bad_value_stops_the_hub(
+    stored: ClientFactory, migrated: Engine, tmp_path: Path
+) -> None:
+    name = "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT"
+    base = {"MAITY_DATABASE_URL": f"sqlite:///{tmp_path / 'x.db'}"}
+    assert Settings.from_env(base).max_attachment_storage_per_project is None
+    assert Settings.from_env({**base, name: ""}).max_attachment_storage_per_project is None
+    for good, value in ((str(MIB), MIB), (str(PIB), PIB), ("unlimited", "unlimited")):
+        assert Settings.from_env({**base, name: good}).max_attachment_storage_per_project == value
+    for bad in (str(MIB - 1), str(PIB + 1), "1GiB", "-5", "lots"):
+        with pytest.raises(ConfigError, match=name):
+            Settings.from_env({**base, name: bad})
+    who = flow.human(
+        lambda **kw: stored(max_attachment_storage_per_project=2 * MIB, **kw), migrated
+    )
+    flow.project(who, "maity")
+    assert who.get(PATH).json()[PER_PROJECT] == {"value": 2 * MIB, "source": "env"}
+    assert who.get(PROJECT).json()["attachments"]["quota"] == 2 * MIB
+    refused = who.patch(PATH, {PER_PROJECT: GIB})
+    assert refused.json()["error"]["details"]["fields"] == {PER_PROJECT: "set_by_environment"}
+
+
+def test_the_old_quota_variable_is_not_read(stored: ClientFactory, tmp_path: Path) -> None:
+    """No legacy (context/attachments.md 24123f11): `MAITY_ATTACHMENT_QUOTA` sets nothing."""
+    base = {"MAITY_DATABASE_URL": f"sqlite:///{tmp_path / 'x.db'}"}
+    hub = Settings.from_env({**base, "MAITY_ATTACHMENT_QUOTA": "2048"})
+    assert hub.max_attachment_storage_per_project is None
+    assert not hasattr(hub, "attachment_quota")
+
+
+def test_an_upload_over_the_admins_project_limit_is_refused_with_its_numbers(
+    admin: flow.Human, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    first = put(admin, "a.bin", b"x" * 1500, "application/octet-stream")
+    assert first.status_code == 201, first.text
+    assert admin.patch(PATH, {PER_PROJECT: MIB}).status_code == 200
+    project_used_of(monkeypatch, MIB - 2000)  # 1500 stored: 500 bytes left
+    over = put(admin, "b.bin", b"x" * 501, "application/octet-stream")
+    assert over.status_code == 409, over.text
+    assert over.json()["error"]["code"] == "attachment_quota"
+    assert over.json()["error"]["details"] == {
+        "scope": "project",
+        "used": MIB - 500,
+        "quota": MIB,
+    }
+    assert [p.name for p in (tmp_path / "blobs").glob("*/*")] == [first.json()["id"]]
+    assert put(admin, "c.bin", b"x" * 500, "application/octet-stream").status_code == 201
+    shown = admin.get(PROJECT).json()["attachments"]
+    assert shown == {"used": MIB, "quota": MIB}
+
+
+def test_lowering_the_project_limit_deletes_nothing_and_refuses_until_under_it(
+    admin: flow.Human, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kept = [put(admin, f"{n}.bin", b"x" * 1000, "application/octet-stream") for n in "ab"]
+    assert all(r.status_code == 201 for r in kept)
+    project_used_of(monkeypatch, MIB - 1500)  # 2000 stored: 500 over the lowered limit
+    assert admin.patch(PATH, {PER_PROJECT: MIB}).status_code == 200
+    assert admin.get(PROJECT).json()["attachments"] == {"used": MIB + 500, "quota": MIB}
+    assert len(list((tmp_path / "blobs").glob("*/*"))) == 2
+    for r in kept:
+        got = admin.get(f"{PROJECT}/attachments/{r.json()['id']}")
+        assert got.status_code == 200, got.text
+    over = put(admin, "c.bin", b"x", "application/octet-stream")
+    assert over.json()["error"]["details"]["scope"] == "project"
+    gone = admin.delete(f"{PROJECT}/attachments/{kept[0].json()['id']}")
+    assert gone.status_code == 200
+    assert put(admin, "c.bin", b"x" * 500, "application/octet-stream").status_code == 201
+
+
+def test_unlimited_refuses_nothing_in_the_project_and_shows_no_quota(
+    admin: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert admin.patch(PATH, {PER_PROJECT: "unlimited"}).status_code == 200
+    project_used_of(monkeypatch, 2 * PIB)
+    assert put(admin, "a.bin", b"x" * 100, "application/octet-stream").status_code == 201
+    assert admin.get(PROJECT).json()["attachments"] == {"used": 2 * PIB + 100, "quota": None}
+    assert admin.get(PATH).json()[PER_PROJECT] == {"value": "unlimited", "source": "admin"}

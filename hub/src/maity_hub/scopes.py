@@ -28,10 +28,13 @@ _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "red-team": _TESTER,
     "blue-team": _CODER,
     "purple-team": _REVIEWER,
+    # The expert (§2.3 "The expert") answers and posts: no card, no request of its own.
+    "expert": ("project:read", "events:post"),
 }
 ROLES = tuple(_ROLE_SCOPES)
 # What a project role may be built on (§2.3 "Project roles"): never `proxy`, `manager` or a
-# security team, whose scopes are already those of a base.
+# security team, whose scopes are already those of a base, and never `expert`, whose scopes
+# are fewer than any base's.
 BASES = ("coder", "reviewer", "tester", "designer", "ops", "writer")
 # Where the hub resolves a built-in role to find who holds done authority, whom a change
 # waits for the owner's go, a substitute (§6.12), a security team counts as the role whose
@@ -116,6 +119,12 @@ def _granted(trust: str, role: str) -> set[str]:
     if trust in ("owner", "admin"):
         granted |= set(GOVERNANCE)
     return granted
+
+
+def role_scopes(role: str) -> list[str]:
+    """A built-in role's own scopes in the contract's order, as the role table of §2.3 gives
+    them: no trust's and none a proxy is opened for (`_granted`)."""
+    return [scope for scope in SCOPES if scope in _ROLE_SCOPES[role]]
 
 
 def scopes_for(trust: str, role: str, kind: str) -> list[str]:

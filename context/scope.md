@@ -1035,12 +1035,12 @@ page offers an instance nobody has to host.
 The dashboard and the hub's own pages (the maintenance page,
 registration's link page, the join page in a browser) end with one small
 line (the other pages behind links in mails stand in the frame of the
-public pages and end with its footer instead, §16.13): the Maity icon, "Maity" and the current year, "Found a bug?" to the
-project's GitHub issues, "Found a vulnerability?" to the project's
-`SECURITY.md`, and "Made with ♥ by Oliver Zehentleitner on"
-two icons: GitHub's, linked to the maintainer's GitHub profile, and
-Maity's, linked to the maintainer's page on maity.team. The name itself
-is no link. It is part of the product and
+public pages and end with its footer instead, §16.13): the Maity icon, "Maity" and the current year, "Made with ♥ by
+Oliver Zehentleitner on" two icons (GitHub's, linked to the maintainer's
+GitHub profile, and Maity's, linked to the maintainer's page on
+maity.team), "Found a bug?" to the project's GitHub issues, and "Found a
+vulnerability?" to the project's `SECURITY.md`. The name itself is no
+link. The order is its own entry, below. It is part of the product and
 always shown, with no operator setting. The landing page, the legal
 pages, `/explore` and the public pages of §16.9 do not carry it.
 
@@ -1076,3 +1076,26 @@ name another account.
   only (`fill`), never a `style` attribute.
 - Loading the icons as image files: the link pages allow no image source
   at all, so the icons are inline SVG on every page.
+
+## The product line's credit stands right after the year
+
+**Id:** bfad1a5f-26fd-4891-b3c1-d5f7af201214
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the maintainer's decision of 2026-11-05, relayed by the lead on card tsk-76xrz7p1gaw0; contract `docs/api.md` §16.13
+**See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-05
+
+The parts of the product line stand in this order: the Maity icon with
+"Maity" and the year, then "Made with ♥ by Oliver Zehentleitner on
+GitHub & Maity", then "Found a bug?", then "Found a vulnerability?".
+Only the order changed: the words, the links and their accessible names
+stay as the entry above has them.
+
+**Reason:** unknown. The maintainer set the order without giving a
+reason.
+
+**Rejected alternatives:**
+- The credit last, after the two links (the order of 2026-11-03 and
+  2026-11-04): replaced by the maintainer's order; why it lost was not
+  given.

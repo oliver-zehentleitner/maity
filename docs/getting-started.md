@@ -17,7 +17,7 @@ On maity.team, choose **Create your account**. On your own hub, the quickstart h
 
 ## Create a project
 
-1. Choose **+ New project**.
+1. In the header's **+** menu, choose **Project**.
 2. Give it a name and a slug. The slug is part of its address and cannot be changed later.
 3. Give it a repository if you have one. You can add it later.
 4. Under **Project memory**, Keep the Why is preselected. Choose **None** if you do not want it.

@@ -622,11 +622,108 @@ def glossary_duplicates(text):
     return found
 
 
+# Terms the glossary keeps `unchanged` in every language that a check cannot hold to it:
+# `resume` is translated as an ordinary verb (glossary.md, below its row).
+GLOSSARY_NOT_CHECKED = {"resume"}
+# The other form of address, for the address glossary.md names: a word of it in a text is a
+# finding. German "Sie" and "Ihr…" count only inside a sentence, where they cannot be "she",
+# "they" or "her"; Dutch "u" not after a number, where it is hours. Japanese and Korean name
+# a register, not words, so nothing is checked there. Chinese is unchecked by a slip, not as a
+# register (web/context KtW 7d49c1e3): its pattern would be ("zh-Hans", "你"): "您". An address
+# this table does not know is itself a finding, so a change to the glossary's table cannot pass
+# unseen.
+GLOSSARY_OTHER_ADDRESS = {
+    ("de", "du"): re.compile(r"(?<![.!?:]\s)(?<!^)\b(?:Sie|Ihr|Ihre|Ihrem|Ihren|Ihrer|Ihres)\b|\bIhnen\b"),
+    ("fr", "vous"): re.compile(r"\b(?:tu|toi|tes)\b", re.I),
+    ("es", "tú"): re.compile(r"\b(?:usted|ustedes)\b", re.I),
+    ("it", "tu"): re.compile(r"\b(?:Lei|Suo|Sua|Suoi|Sue)\b"),
+    ("pt", "você"): re.compile(r"\b(?:teu|teus|tua|tuas|contigo|ti|tu)\b", re.I),
+    ("nl", "je"): re.compile(r"\buw\b|(?<![\d}]\s)(?<![\d}+])\bu\b(?!\+)", re.I),
+    ("ja", "です・ます"): None,
+    ("ko", "해요체"): None,
+    ("zh-Hans", "你"): None,
+}
+# What a text says beside its words: code spans and placeholders (`{harness}` is no harness).
+# A placeholder reads as a number, as it mostly is one ("{count} u" is hours in Dutch).
+GLOSSARY_CODE = re.compile(r"`[^`]*`")
+
+
+def glossary_words(text):
+    return PLACEHOLDER.sub("0", GLOSSARY_CODE.sub(" ", text))
+
+
+def glossary_rules(text):
+    """What glossary.md fixes mechanically: the terms every language keeps (a Words row
+    `unchanged` in all of them), and each language's address as its table names it."""
+    lines = text.splitlines()
+    rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in lines
+            if line.startswith("| ") and line.count("|") == 11]  # fmt: skip
+    fixed = []
+    for row in rows[1:]:
+        if row[1:] and all(cell == "unchanged" for cell in row[1:]):
+            fixed += [t.strip() for t in row[0].split(",") if t.strip() and t.strip() not in GLOSSARY_NOT_CHECKED]
+    address, inside = {}, False
+    for line in lines:
+        if line.startswith("## "):
+            inside = line.strip() == "## How the reader is addressed"
+        elif inside and line.startswith("| `"):
+            cells = [cell.strip() for cell in line.split("|")[1:-1]]
+            named = re.findall(r"`([^`]+)`", cells[1])
+            address[cells[0].strip("`")] = named[0] if named else cells[1].split()[0]
+    return fixed, address
+
+
+def glossary_term(term):
+    """A term with a space or a hyphen between its words: German writes Keep-the-Why-Export."""
+    return re.compile(r"[ \-]".join(re.escape(word) for word in term.split()), re.I)
+
+
+def glossary_problems(lang, data, english, fixed, address):
+    """A translation against glossary_rules: a fixed term translated, the other address used."""
+    problems = []
+    other = GLOSSARY_OTHER_ADDRESS.get((lang, address.get(lang)))
+    terms = [(term, glossary_term(term)) for term in fixed]
+    for key, entry in sorted(data.items()):
+        source = english.get(key)
+        if source is None or not well_formed(entry):
+            continue
+        texts = entry.values() if isinstance(entry, dict) else [entry]
+        sources = " ".join(source.values()) if isinstance(source, dict) else source
+        said = glossary_words(sources)
+        for text in texts:
+            words = glossary_words(text)
+            for term, pattern in terms:
+                if pattern.search(said) and not pattern.search(words):
+                    problems.append("%s: %r is translated; glossary.md keeps it unchanged" % (key, term))
+            found = other.search(words) if other else None
+            if found:
+                problems.append("%s: %r is not the address glossary.md names (%s)" % (key, found.group(0), address[lang]))
+    return sorted(set(problems))
+
+
 def check_glossary():
     path = os.path.join(I18N, "glossary.md")
-    if os.path.exists(path):
-        for language, word, things in glossary_duplicates(read(path)):
-            finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
+    if not os.path.exists(path):
+        return
+    text = read(path)
+    for language, word, things in glossary_duplicates(text):
+        finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
+    fixed, address = glossary_rules(text)
+    for lang, said in sorted(address.items()):
+        if (lang, said) not in GLOSSARY_OTHER_ADDRESS:
+            finding(path, 1, "%s: address %r is not in GLOSSARY_OTHER_ADDRESS of tools/check.py" % (lang, said))
+    words = os.path.join(os.path.dirname(ROOT), "hub", "src", "maity_hub", "words")
+    for folder in (I18N, words):
+        if not os.path.isdir(folder) or not os.path.exists(os.path.join(folder, "en.json")):
+            continue
+        english = load_catalog(os.path.join(folder, "en.json"))
+        for name in sorted(os.listdir(folder)):
+            lang = name[:-len(".json")]
+            if not name.endswith(".json") or name.endswith(I18N_META) or lang == "en" or english is None:
+                continue
+            data = load_catalog(os.path.join(folder, name))
+            for problem in glossary_problems(lang, data or {}, english, fixed, address):
+                finding(os.path.join(folder, name), 1, problem)
 
 
 def list_gaps(lang):
@@ -774,6 +871,143 @@ def check_error_words(english):
             finding(os.path.join(ROOT, "js", "errors.js"), 1, "error code %r of docs/api.md §1.3 has no words" % code)
 
 
+def entry_texts(entry):
+    return [entry] if isinstance(entry, str) else list(entry.values())
+
+
+def check_prefixes(english):
+    """A text that ends in ": " is a prefix: the code joins something after it, in English order
+    (tsk-0zbms0wwqhmm). The whole sentence goes into the catalog, with a placeholder where the
+    joined part stands: {reason} for a failure, or a node filled with M.tn."""
+    for key, entry in sorted(english.items()):
+        if any(text.endswith(": ") for text in entry_texts(entry)):
+            finding(os.path.join(I18N, "en.json"), 1, "key %r ends in \": \", a prefix: write the whole "
+                    "sentence with a placeholder ({reason} for a failure)" % key)
+
+
+def first_argument(code, start):
+    """The span of the call's first argument, from just after its "(" to its "," or ")"."""
+    depth = 0
+    for i in range(start, len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return start, i
+            depth -= 1
+        elif c == "," and depth == 0:
+            return start, i
+    return start, len(code)
+
+
+def check_fail_sentences(path, src, code, english):
+    """statusLine().fail(sentence, err) puts the reason where the sentence has {reason}: a catalog
+    text handed to it as its first argument has the placeholder (tsk-0zbms0wwqhmm)."""
+    for m in re.finditer(r"\.fail\(", code):
+        begin, end = first_argument(code, m.end())
+        for t in re.finditer(r"\b(?:M|Maity)\.t\(\s*", code[begin:end]):
+            # The sentence itself, not a text filled into it (M.t("x", { what: M.t("y") })).
+            part = code[begin:begin + t.start()]
+            if sum(part.count(c) for c in "([{") != sum(part.count(c) for c in ")]}"):
+                continue
+            at = begin + t.end()
+            quote = src[at] if at < len(src) else ""
+            close = src.find(quote, at + 1) if quote in ("\"", "'") else -1
+            key = src[at + 1:close] if close > 0 else None
+            if key in english and not all("{reason}" in text for text in entry_texts(english[key])):
+                finding(path, code.count("\n", 0, m.start()) + 1,
+                        "fail() puts the reason at {reason}: key %r has none" % key)
+
+
+def call_end(code, start):
+    """Where the call whose "(" ends at start closes: the index of its ")"."""
+    depth = 0
+    for i in range(start, len(code)):
+        if code[i] in "([{":
+            depth += 1
+        elif code[i] in ")]}":
+            if depth == 0:
+                return i
+            depth -= 1
+    return len(code)
+
+
+def callee_of(code, at):
+    """The name of the call whose argument list holds position at, or None."""
+    depth = 0
+    for i in range(at - 1, -1, -1):
+        c = code[i]
+        if c in ")]}":
+            depth += 1
+        elif c in "([{":
+            if depth == 0:
+                if c != "(":
+                    return None
+                m = re.search(r"([A-Za-z_$][\w$]*)\s*$", code[:i])
+                return m.group(1) if m else None
+            depth -= 1
+    return None
+
+
+def literal_keys(src, code, brace):
+    """The property names of the object literal whose "{" is at brace: `name: value`, `"name": value`
+    or the shorthand `name`. None where a name cannot be read here (a spread, a computed name)."""
+    end = call_end(code, brace + 1)
+    keys, depth, start = set(), 0, brace + 1
+    for i in range(brace + 1, end + 1):
+        c = code[i] if i < end else ","
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "," and depth == 0:
+            item = src[start:i].strip()
+            start = i + 1
+            if not item:
+                continue
+            m = re.match(r"""(?:"([^"]*)"|'([^']*)'|([A-Za-z_$][\w$]*))\s*(?::|$)""", item)
+            if item.startswith(("...", "[")) or not m:
+                return None
+            keys.add(m.group(1) or m.group(2) or m.group(3))
+    return keys
+
+
+def check_unfilled_placeholders(path, src, code, english):
+    """A text put on the page as M.t returns it has every placeholder filled: a failure's {reason}
+    left for status.fail is filled there, but put straight into an element (h, append), joined
+    with + or written to textContent it would read "{reason}" (tsk-0zbms0wwqhmm, #1498)."""
+    for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
+        at = m.end()
+        quote = src[at] if at < len(src) else ""
+        close = src.find(quote, at + 1) if quote in ("\"", "'") else -1
+        key = src[at + 1:close] if close > 0 else None
+        if key not in english:
+            continue
+        names = set(re.findall(r"\{([a-z][a-z0-9_]*)\}", "".join(entry_texts(english[key]))))
+        if not names:
+            continue
+        end = call_end(code, at)
+        values = code[close + 1:end]
+        # Values from a variable or a call (M.t(key, times)) are not read here: only none or a literal.
+        given = values.strip().lstrip(",").strip()
+        if given and not given.startswith("{"):
+            continue
+        keys = literal_keys(src, code, close + 1 + values.index("{")) if given else set()
+        if keys is None:
+            continue
+        missing = sorted(names - keys)
+        if not missing:
+            continue
+        before = code[:m.start()].rstrip()
+        after = code[end + 1:].lstrip()
+        shown = (callee_of(code, m.start()) in ("h", "append") or before.endswith("+") or after.startswith("+")
+                 or re.search(r"textContent\s*=$", before))
+        if shown:
+            finding(path, code.count("\n", 0, m.start()) + 1,
+                    "key %r is shown with {%s} unfilled" % (key, "}, {".join(missing)))
+
+
 def check_i18n(write, release=False, notes=None):
     catalogs = {}
     names = sorted(f for f in os.listdir(I18N) if f.endswith(".json") and not f.endswith(I18N_META)) if os.path.isdir(I18N) else []
@@ -808,6 +1042,7 @@ def check_i18n(write, release=False, notes=None):
         finding(os.path.join(I18N, "en.json"), 1, "missing: English is the catalog every language follows")
         return
     check_translations(catalogs, write, release, notes if notes is not None else [])
+    check_prefixes(english)
     used = set()
     counts = {}
     for f in sorted(os.listdir(os.path.join(ROOT, "js"))):
@@ -832,6 +1067,8 @@ def check_i18n(write, release=False, notes=None):
             used.add(key)
             if key not in english:
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
+        check_fail_sentences(path, src, code, english)
+        check_unfilled_placeholders(path, src, code, english)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text, before in literals if prose(text, before))
     check_error_words(english)

@@ -181,7 +181,7 @@ window.Maity = window.Maity || {};
           status.done();
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
-          status.fail(M.t("attach.not_attached_named", { name: p.name }), said(err, file.size));
+          status.fail((reason) => M.t("attach.not_attached_named", { name: p.name, reason }), said(err, file.size));
           // Off on the hub: the chooser goes, the line above says why.
           if (isOff(err)) { offer(false); el.hidden = false; draw(); break; }
           // Over the pending cap: show what waits, so it can be sent or removed.
@@ -298,6 +298,11 @@ window.Maity = window.Maity || {};
     append(li, h("span", { class: "muted" }, named ? M.t("attach.removed", { name: named.textContent }) : M.t("attach.removed.unnamed")));
   }
 
+  // The project's stored bytes against its limit; `quota` is null under no limit (§8.7).
+  const storedLine = (a) => (a.quota === null
+    ? M.t("attach.admin.stored_unlimited", { used: sizeOf(a.used) })
+    : M.t("attach.admin.stored", { used: sizeOf(a.used), quota: sizeOf(a.quota) }));
+
   // Project settings: the pending uploads of everyone, for an owner or admin.
   // Another member's shows only its size, uploader and expiry (§8.7).
   function pendingPanel(ctx) {
@@ -305,7 +310,7 @@ window.Maity = window.Maity || {};
     status.el.setAttribute("tabindex", "-1");
     const list = h("ul", { class: "attach-admin" });
     const box = h("div", { class: "attach-admin-box" }, h("h2", { class: "panel-title" }, M.t("attach.admin.title")),
-      ctx.project.attachments ? h("p", { class: "muted" }, M.t("attach.admin.stored", { used: sizeOf(ctx.project.attachments.used), quota: sizeOf(ctx.project.attachments.quota) })) : null,
+      ctx.project.attachments ? h("p", { class: "muted" }, storedLine(ctx.project.attachments)) : null,
       list, status.el);
     async function load() {
       const none = () => { clear(list); append(list, h("li", { class: "muted" }, M.t("attach.admin.off"))); };

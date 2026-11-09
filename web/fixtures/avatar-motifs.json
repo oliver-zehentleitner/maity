@@ -1,0 +1,10 @@
+{
+  "version": "1",
+  "motifs": [
+    { "name": "fox", "theme": "classic", "label": "Fox", "alt": "A fox face, orange on teal", "url": "/api/v1/avatars/public/73880339f1ff49f8aeabdfba2a82f696" },
+    { "name": "comet", "theme": "classic", "label": "Comet", "alt": "A yellow comet with a warm tail on a night sky", "url": "/api/v1/avatars/public/d294c991e39cf8af8b33884af13f152a" },
+    { "name": "owl", "theme": "classic", "label": "Owl", "alt": "A brown owl with big round eyes on dark blue", "url": "/api/v1/avatars/public/503c95636aaec3e53247512467736122" },
+    { "name": "office-coder", "theme": "office", "label": "Office robot, coder", "alt": "A robot in a green jacket with round glasses, smiling, on pale yellow", "url": "/api/v1/avatars/public/853053f82593dd07aee0bc681274bc01" },
+    { "name": "office-reviewer", "theme": "office", "label": "Office robot, reviewer", "alt": "A robot in a purple suit with reading glasses and a stern look, on pink", "url": "/api/v1/avatars/public/110a19e5f890e84ee959f75f0b03d411" }
+  ]
+}

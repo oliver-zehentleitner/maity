@@ -347,6 +347,14 @@
     "en": "d9954ef211d54ced",
     "text": "89b01eb6580c32b2"
   },
+  "notify.restricted_set": {
+    "en": "355d0f2e9e6067cf",
+    "text": "b3f20a2fda8638fd"
+  },
+  "notify.restricted_text": {
+    "en": "801fe79d8edfbe65",
+    "text": "5f94d9bcf7111e0f"
+  },
   "notify.sign_in": {
     "en": "a01714534ab0e36a",
     "text": "6f401fa7adcc526c"
@@ -538,5 +546,9 @@
   "sign_in.subject": {
     "en": "c08c2ebbb2993e1d",
     "text": "272f2430762220be"
+  },
+  "subagents.instruction": {
+    "en": "4d2045bab88c0a61",
+    "text": "619864de67e80bc9"
   }
 }

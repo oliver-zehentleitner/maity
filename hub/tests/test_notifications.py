@@ -35,7 +35,7 @@ def bell(who: flow.Human, **query: Any) -> dict[str, Any]:
 
 def second_session(make_client: ClientFactory, owner: flow.Human) -> flow.Human:
     client = make_client(peer="198.51.100.30")
-    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(client, "maintainer")
     return flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], owner.id)
 
 
@@ -231,7 +231,7 @@ def test_a_changed_instance_key_invalidates_positions(
 ) -> None:
     old = bell(owner, limit=0)["next_after"]
     keyed = make_client(secret_key=b"k" * 32)
-    keyed.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    factory.login_handle(keyed, "maintainer")
     csrf = keyed.get("/api/v1/auth/session").json()["csrf_token"]
     response = keyed.get(f"/api/v1{N}", params={"after": old}, headers={"X-CSRF-Token": csrf})
     assert response.json()["error"]["details"]["fields"] == {"after": "position"}

@@ -83,6 +83,14 @@ window.Maity = window.Maity || {};
     if (err.code === "forbidden" && err.details && err.details.reason === "agent_owner") {
       return { message: M.t("bridges.refused.agent_owner") };
     }
+    // §3.1 "The owner changes the role": a role a member join may not give, or an
+    // owner who could not create a join for the agent now.
+    if (err.code === "forbidden" && err.details && err.details.reason === "member_join_limit" && err.details.field === "role") {
+      return { message: M.t("members.owner_role.refused_limit") };
+    }
+    if (err.code === "forbidden" && err.details && err.details.reason === "join_rule") {
+      return { message: M.t("members.owner_role.refused_join_rule") };
+    }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
     const said = Object.entries(fields).map(([f, reason]) => (Object.hasOwn(REFUSALS, f + ":" + reason) ? REFUSALS[f + ":" + reason]()
@@ -157,7 +165,7 @@ window.Maity = window.Maity || {};
       try {
         answer = await call();
       } catch (err) {
-        status.fail(M.t("members.act.failed", { action: label }), refusal(err));
+        status.fail((reason) => M.t("members.act.failed", { action: label, reason }), refusal(err));
         return false;
       }
       if (settled) settled();
@@ -165,7 +173,7 @@ window.Maity = window.Maity || {};
         await reload();
         redraw(focusKey);
       } catch (err) {
-        status.fail(M.t("members.act.refresh_failed", { done }), err);
+        status.fail((reason) => M.t("members.act.refresh_failed", { done, reason }), err);
         return isConsent(answer) ? "consent" : true;
       }
       status.done();
@@ -261,7 +269,7 @@ window.Maity = window.Maity || {};
       if (known && !known.then) { fill(known); return slot; }
       append(slot, h("p", { class: "muted" }, M.t("members.picture.reading")));
       const reading = known || ownProfile(m.id)
-        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source, handle: a.handle || m.handle, memberships: a.memberships || [] }), (error) => ({ error }))
+        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source, avatar_motif: a.avatar_motif || null, handle: a.handle || m.handle, memberships: a.memberships || [] }), (error) => ({ error }))
         .then((got) => { profileOf.set(m.id, got); return got; });
       profileOf.set(m.id, reading);
       reading.then((got) => { if (slot.isConnected !== false) fill(got); });
@@ -392,6 +400,9 @@ window.Maity = window.Maity || {};
         class: "inline-form member-lift",
         onsubmit: (e) => {
           e.preventDefault();
+          // The end of an isolation can bring the agent into the restricted-access set (§6.1).
+          const ahead = M.restricted ? M.restricted.ahead(ctx, (members) => members.map((x) => (x.id === m.id ? Object.assign(x, { isolated: null }) : x))) : null;
+          if (ahead && !window.confirm(ahead + "\n\n" + M.t("members.ahead.confirm"))) return;
           const done = hide.checked ? M.t("members.isolate.lifted_hidden", { name: m.display_name }) : M.t("members.isolate.lifted", { name: m.display_name });
           act(M.t("members.isolate.lifting"), done,
             () => (hide.checked ? M.api.del(isoPath, { hide_isolation_events: true }) : M.api.del(isoPath)), "isolate-reason:" + m.id,
@@ -457,9 +468,10 @@ window.Maity = window.Maity || {};
 
     // Whom one's own agent reports to, for its human owner whatever their
     // trust and role (§2.3): nobody, the owner (where a member here), or
-    // another of the owner's agents in the project; only reports_to is
-    // sent. A boss of another owner is not offered (that edge needs both
-    // owners' consent, §6.2), and one set already stays chosen, marked,
+    // another of the owner's agents in the project, which apply at once;
+    // or a member of another owner, a cross-owner edge that waits for the
+    // other side's consent (§6.2, "Own consent"), marked in its option. Only
+    // reports_to is sent. A boss the list leaves out stays chosen, marked,
     // so that saving does not end it unasked.
     function reportsToPart(m, memberPath) {
       if (!ownAgent(m) || m.removed_at) return null;
@@ -476,10 +488,13 @@ window.Maity = window.Maity || {};
         return false;
       };
       // Never a guest (§2.3), never one that would close a circle.
-      const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !M.trust.guest(x) && !circle(x.id));
+      const offered = members.filter((x) => !x.removed_at && x.id !== m.id && !M.trust.guest(x) && !circle(x.id));
+      const mine = offered.filter((x) => x.id === ctx.me.id || ownAgent(x));
+      const others = offered.filter((x) => !mine.includes(x));
       const options = [["", M.t("members.reports.nobody")]].concat(mine.map((x) => [x.id, x.id === ctx.me.id
         ? M.t("members.reports.you", { name: x.display_name })
-        : M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]));
+        : M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]),
+      others.map((x) => [x.id, M.t("members.reports.cross", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]));
       if (m.reports_to && !options.some(([v]) => v === m.reports_to)) {
         options.push([m.reports_to, M.t("members.reports.other_owner", { name: ctx.nameOf(m.reports_to) })]);
       }
@@ -495,11 +510,67 @@ window.Maity = window.Maity || {};
           save.disabled = true;
           await act(M.t("members.reports.saving"), to ? M.t("members.reports.saved", { name: m.display_name, boss: ctx.nameOf(to) })
             : M.t("members.reports.saved_nobody", { name: m.display_name }),
-            () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id);
+            () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id, null, () => ({ owner: m.owner_id }));
           save.disabled = false;
         },
       }, h("label", { for: id }, M.t("members.reports.label")), pick, save,
       h("p", { class: "hint" }, M.t("members.reports.hint")));
+    }
+
+    // The role of one's own agent, as its owner without members:admin sets it
+    // (§3.1 "The owner changes the role"): while they could create a join for it
+    // now (trust member, member_agents on, the membership within the member
+    // limits), to a role a member join could give, a project role on such a base
+    // included. Otherwise, and for its areas always, the line says who sets them.
+    const projectRoles = [];
+    let rolesAsked = false;
+    let rolesKnown = false;
+    // Every picker drawn before the roles arrive takes them in when they do.
+    const roleFills = new Set();
+    function rolePart(m, memberPath) {
+      if (!ownAgent(m) || m.removed_at || ctx.canAdmin) return null;
+      const id = "owner-role-" + m.id;
+      const policy = (ctx.project && ctx.project.policy) || {};
+      const within = M.trust.MEMBER_TRUSTS.includes(m.trust) && M.trust.MEMBER_ROLES.includes(m.role_base || m.role);
+      const may = ctx.trust === "member" && policy.member_agents !== "off" && within;
+      const areas = h("p", { class: "muted owner-role-areas" }, (m.areas || []).length
+        ? M.t("members.owner_role.areas", { areas: M.fmt.list(m.areas) }) : M.t("members.owner_role.no_areas"));
+      if (!may) {
+        return h("div", { class: "owner-role" },
+          h("p", { class: "muted owner-role-fixed" }, M.t("members.owner_role.fixed", { role: M.trust.roleLabel(m.role) })), areas);
+      }
+      const pick = keyed("owner-role:" + m.id, h("select", { id }));
+      const fill = () => {
+        const offered = M.trust.MEMBER_ROLES.concat(projectRoles.filter((r) => !M.trust.MEMBER_ROLES.includes(r)));
+        if (!offered.includes(m.role)) offered.push(m.role);
+        M.trust.fillRoles(pick, offered, pick.value || m.role, m.role);
+      };
+      const help = M.trust.roleHint(pick);
+      fill();
+      // The project's own roles on a base a member join may give (§2.3), read once.
+      if (!rolesKnown) roleFills.add(fill);
+      if (!rolesAsked) {
+        rolesAsked = true;
+        const settle = () => { rolesKnown = true; const waiting = [...roleFills]; roleFills.clear(); return waiting; };
+        M.api.get(ctx.base + "/roles").then((r) => {
+          ((r && r.custom) || []).filter((x) => M.trust.MEMBER_ROLES.includes(x.base)).forEach((x) => projectRoles.push(x.name));
+          const waiting = settle();
+          if (projectRoles.length) waiting.forEach((f) => f());
+        }).catch(settle);
+      }
+      const save = h("button", { type: "submit", class: "small" }, M.t("members.owner_role.save"));
+      return h("form", {
+        class: "inline-form owner-role",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          if (pick.value === m.role) { status.done(); append(status.el, h("span", null, M.t("members.owner_role.unchanged"))); return; }
+          save.disabled = true;
+          await act(M.t("members.owner_role.saving"), M.t("members.owner_role.saved", { name: m.display_name, role: M.trust.roleLabel(pick.value) }),
+            () => M.api.patch(memberPath, { role: pick.value }), "owner-role:" + m.id);
+          save.disabled = false;
+        },
+      }, h("label", { for: id }, M.t("members.owner_role.label")), pick, save, help,
+      h("p", { class: "hint" }, M.t("members.owner_role.hint")), areas);
     }
 
     // Bridges (§2.3 "The bridge"): the connections that serve this agent and those it
@@ -567,7 +638,7 @@ window.Maity = window.Maity || {};
       try {
         answer = await M.api.post(memberPath + "/bridges", { bridge: bridgeId, purpose });
       } catch (err) {
-        status.fail(M.t("members.act.failed", { action: label }), refusal(err));
+        status.fail((reason) => M.t("members.act.failed", { action: label, reason }), refusal(err));
         return;
       }
       const draft = edits.get(m.id);
@@ -577,7 +648,7 @@ window.Maity = window.Maity || {};
         await reload();
         redraw("bridge-pick:" + m.id);
       } catch (err) {
-        status.fail(M.t("members.act.refresh_failed", { done }), err);
+        status.fail((reason) => M.t("members.act.refresh_failed", { done, reason }), err);
         return;
       }
       status.done();
@@ -586,7 +657,7 @@ window.Maity = window.Maity || {};
         : h("span", { class: "ok" }, done));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, bridgesPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, rolePart, bridgesPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -655,7 +726,7 @@ window.Maity = window.Maity || {};
       // preferences switch.
       if (!ctx.canAdmin) {
         return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
-          P.reportsToPart(m, memberPath),
+          P.reportsToPart(m, memberPath), P.rolePart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
       }
@@ -768,6 +839,11 @@ window.Maity = window.Maity || {};
           const capList = kept.concat(caps.filter((c) => c.box.checked).map((c) => c.cap));
           if ([...capList].sort().join() !== [...(m.capabilities || [])].sort().join()) body.capabilities = capList;
           if (!Object.keys(body).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("members.unchanged"))); return; }
+          // A guest raised enters the restricted-access set, and its agents with it: said
+          // before the change is sent (§6.1 "Every way into the set").
+          const ahead = body.trust && M.restricted
+            ? M.restricted.ahead(ctx, (members) => members.map((x) => (x.id === m.id ? Object.assign(x, { trust: body.trust }) : x))) : null;
+          if (ahead && !window.confirm(ahead + "\n\n" + M.t("members.ahead.confirm"))) return;
           const said = { trust: () => M.t("members.edit.said.trust"), role: () => M.t("members.edit.said.role"), reports_to: () => M.t("members.edit.said.reports_to"),
             areas: () => M.t("members.edit.said.areas"), capabilities: () => M.t("members.edit.said.capabilities") };
           save.disabled = true;

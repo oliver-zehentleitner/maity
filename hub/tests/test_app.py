@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -139,6 +140,166 @@ def test_built_files_are_served_under_assets(client: TestClient, web_dir: Path) 
     # The old place of a file is not a file any more: it is a dashboard path, the shell.
     old = client.get("/js/app.js")
     assert old.status_code == 200 and "<title>dashboard</title>" in old.text
+
+
+GZIP = {"Accept-Encoding": "gzip"}
+IDENTITY = {"Accept-Encoding": "identity"}
+
+
+def _css(web_dir: Path) -> str:
+    # Above 1024 bytes, so it has a gzip form (serving.md 5cfd29b6, c6768529).
+    content = "body{}\n" * 300
+    (web_dir / "css").mkdir()
+    (web_dir / "css" / "app.css").write_text(content)
+    return content
+
+
+def test_a_built_file_is_revalidated_by_the_etag_of_its_content(
+    client: TestClient, web_dir: Path
+) -> None:
+    # docs/api.md §1 and §16.11 (req-s246xb6k1mpp): `no-cache`, a content ETag, 304 on a match.
+    content = _css(web_dir)
+    plain = client.get("/assets/css/app.css", headers=IDENTITY)
+    assert plain.status_code == 200 and plain.text == content
+    assert "content-encoding" not in plain.headers
+    assert plain.headers["cache-control"] == "no-cache"
+    assert plain.headers["vary"] == "Accept-Encoding"
+    etag = plain.headers["etag"]
+    assert etag.startswith('"') and not etag.startswith("W/") and len(etag) == 34
+    assert "last-modified" not in plain.headers
+    again = client.get("/assets/css/app.css", headers={"If-None-Match": etag} | IDENTITY)
+    assert again.status_code == 304 and again.content == b""
+    assert again.headers["etag"] == etag and again.headers["cache-control"] == "no-cache"
+    assert again.headers["vary"] == "Accept-Encoding"
+    other = client.get("/assets/css/app.css", headers={"If-None-Match": '"0"'} | IDENTITY)
+    assert other.status_code == 200 and other.headers["etag"] == etag
+    # Only the ETag decides: a date alone never answers 304.
+    dated = client.get(
+        "/assets/css/app.css",
+        headers={"If-Modified-Since": "Fri, 01 Jan 2100 00:00:00 GMT"} | IDENTITY,
+    )
+    assert dated.status_code == 200
+
+
+def test_the_gzip_form_has_its_own_etag(client: TestClient, web_dir: Path) -> None:
+    content = _css(web_dir)
+    plain = client.get("/assets/css/app.css", headers=IDENTITY)
+    packed = client.get("/assets/css/app.css", headers=GZIP)
+    assert packed.status_code == 200 and packed.headers["content-encoding"] == "gzip"
+    assert packed.text == content  # gzipped once: the client's one decoding gives the file
+    assert int(packed.headers["content-length"]) < len(content)
+    assert packed.headers["vary"] == "Accept-Encoding"  # the middleware added nothing
+    tag = packed.headers["etag"]
+    assert tag == plain.headers["etag"][:-1] + '-gzip"'
+    assert client.get("/assets/css/app.css", headers=GZIP).headers["etag"] == tag  # stable
+    match = client.get("/assets/css/app.css", headers={"If-None-Match": tag} | GZIP)
+    assert match.status_code == 304 and match.content == b""
+    assert match.headers["vary"] == "Accept-Encoding" and match.headers["etag"] == tag
+    # Each form's tag validates only that form.
+    crossed = client.get("/assets/css/app.css", headers={"If-None-Match": tag} | IDENTITY)
+    assert crossed.status_code == 200 and crossed.text == content
+    crossed = client.get(
+        "/assets/css/app.css", headers={"If-None-Match": plain.headers["etag"]} | GZIP
+    )
+    assert crossed.status_code == 200 and crossed.headers["content-encoding"] == "gzip"
+    refused = client.get("/assets/css/app.css", headers={"Accept-Encoding": "gzip;q=0"})
+    assert (
+        "content-encoding" not in refused.headers
+        and refused.headers["etag"] == plain.headers["etag"]
+    )
+
+
+def test_a_range_is_selected_by_the_etag_alone(client: TestClient, web_dir: Path) -> None:
+    content = _css(web_dir)
+    etag = client.get("/assets/css/app.css", headers=IDENTITY).headers["etag"]
+    asked = {"Range": "bytes=0-9"} | IDENTITY
+    part = client.get("/assets/css/app.css", headers={"If-Range": etag} | asked)
+    assert part.status_code == 206 and part.text == content[:10]
+    assert part.headers["content-range"] == f"bytes 0-9/{len(content)}"
+    for stale in ('"0"', "Fri, 01 Jan 2100 00:00:00 GMT", "W/" + etag):
+        whole = client.get("/assets/css/app.css", headers={"If-Range": stale} | asked)
+        assert whole.status_code == 200 and whole.text == content, stale
+    assert client.get("/assets/css/app.css", headers=asked).status_code == 206
+
+
+def test_a_small_file_has_one_form(client: TestClient, web_dir: Path) -> None:
+    (web_dir / "js").mkdir()
+    (web_dir / "js" / "app.js").write_text("// small")
+    for headers in (GZIP, IDENTITY):
+        response = client.get("/assets/js/app.js", headers=headers)
+        assert response.status_code == 200 and response.text == "// small"
+        assert "content-encoding" not in response.headers and "vary" not in response.headers
+        assert response.headers["cache-control"] == "no-cache"
+        assert not response.headers["etag"].endswith('-gzip"')
+
+
+def test_a_changed_file_with_the_same_time_and_size_gets_a_new_etag(
+    client: TestClient, web_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub import shell
+
+    target = web_dir / "js" / "app.js"
+    target.parent.mkdir()
+    target.write_text("// one")
+    old = client.get("/assets/js/app.js").headers["etag"]
+    stamp = target.stat().st_mtime_ns
+    target.write_text("// two")
+    os.utime(target, ns=(stamp, stamp))
+    # A new image with normalised file times starts a new process: nothing is remembered.
+    monkeypatch.setattr(shell, "_FORMS", {})
+    response = client.get("/assets/js/app.js", headers={"If-None-Match": old})
+    assert response.status_code == 200 and response.text == "// two"
+    assert response.headers["etag"] != old
+
+
+def test_the_middleware_leaves_the_dashboards_files_to_assetfiles() -> None:
+    from maity_hub import compression, shell
+
+    assert {path.split("/")[2] for path in compression.OWN_ENCODING} == shell.ASSET_DIRS
+    assert not compression.compressed("GET", "/assets/js/app.js")
+    assert compression.compressed("GET", "/assets/landing/landing.css")
+    assert compression.compressed("GET", "/api/v1/health")
+    for accepted in ("gzip", "br, gzip;q=0.5", "*", "GZIP ; Q=1.000", "gzip;q=0, gzip;q=1"):
+        assert compression.accepts_gzip(accepted), accepted
+    # An explicit refusal wins over `*` wherever it stands (RFC 9110 §12.5.3); a weight
+    # outside the grammar accepts nothing.
+    for refused in (
+        "gzip;q=0",
+        "identity",
+        "",
+        "gzip;q=0, *",
+        "*;q=1, gzip;q=0",
+        "*;q=0",
+        "gzip;q=2",
+        "gzip;q=inf",
+        "gzip;q=NaN",
+        "gzip;q=-1",
+        "gzip;q=0.0001",
+        "gzip;q=bogus",
+        "gzip;q=0.\u0661",  # an Arabic-Indic digit one
+        "gzip;q=0.\uff11",  # a full-width digit one
+    ):
+        assert not compression.accepts_gzip(refused), refused
+
+
+def test_a_refused_gzip_is_not_sent_even_beside_a_wildcard(
+    client: TestClient, web_dir: Path
+) -> None:
+    content = _css(web_dir)
+    for header in ("gzip;q=0, *", "*;q=1, gzip;q=0", "gzip;q=2"):
+        response = client.get("/assets/css/app.css", headers={"Accept-Encoding": header})
+        assert response.status_code == 200 and response.text == content, header
+        assert "content-encoding" not in response.headers, header
+        assert not response.headers["etag"].endswith('-gzip"'), header
+    wanted = client.get("/assets/css/app.css", headers={"Accept-Encoding": "br;q=1, *;q=0.5"})
+    assert wanted.headers["content-encoding"] == "gzip"
+
+
+def test_only_the_built_files_leave_no_store(client: TestClient, web_dir: Path) -> None:
+    assert client.get("/api/v1/health").headers["cache-control"] == "no-store"
+    missing = client.get("/assets/js/none.js")
+    assert missing.status_code == 404 and missing.headers["cache-control"] == "no-store"
+    assert "etag" not in missing.headers
 
 
 @pytest.mark.parametrize(

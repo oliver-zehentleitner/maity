@@ -94,6 +94,9 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "card_notes",
         "jour_fixe_answers",
         "pinned_conversations",
+        "contacts",
+        "contact_of",
+        "restricted_texts",
         "cross_chats",
     }
     account = body["account"]
@@ -395,3 +398,22 @@ def test_the_interface_language_is_in_the_export(owner: flow.Human) -> None:
     assert export(owner).json()["account"]["interface_language"] is None
     assert owner.patch("/me", {"interface_language": "de"}).status_code == 200
     assert export(owner).json()["account"]["interface_language"] == "de"
+
+
+def test_the_public_profile_fields_are_in_the_export_public_stats_among_them(
+    owner: flow.Human,
+) -> None:
+    account = export(owner).json()["account"]
+    assert (account["public_profile"], account["public_presence"]) == (True, True)
+    assert (account["public_stats"], account["public_bio"]) == (False, None)
+    assert account["public_agents"] == "public_projects"
+    changed = {"public_stats": True, "public_bio": "hi", "public_agents": "all"}
+    assert owner.patch("/me", changed).status_code == 200
+    account = export(owner).json()["account"]
+    assert (account["public_stats"], account["public_bio"]) == (True, "hi")
+    assert account["public_agents"] == "all"
+    assert (account["website"], account["social"], account["links_visible"]) == (
+        None,
+        {},
+        "private",
+    )

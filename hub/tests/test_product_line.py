@@ -32,10 +32,10 @@ from tests.test_join_host import create, join_client, token_of
 from tests.test_mail_links import link, mail_hub, stored
 
 LINKS = [
-    "https://github.com/oliver-zehentleitner/maity/issues",
-    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
     "https://github.com/oliver-zehentleitner",
     "https://maity.team/oliver-zehentleitner",
+    "https://github.com/oliver-zehentleitner/maity/issues",
+    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
 ]
 
 
@@ -54,8 +54,8 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
     line = product_line.html("en")
     assert text_of(line) == (
-        "Maity 2031 · Found a bug? · Found a vulnerability? · "
-        "Made with ♥ by Oliver Zehentleitner on &"
+        "Maity 2031 · Made with ♥ by Oliver Zehentleitner on & · "
+        "Found a bug? · Found a vulnerability?"
     )  # the year from the hub's clock, never a fixed one
     assert re.findall(r'<a href="([^"]+)"', line) == LINKS  # absolute, the Maity page without @
     assert line.count('target="_blank" rel="noopener noreferrer"') == 4
@@ -63,10 +63,30 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     assert '<span role="img" aria-label="love">♥</span>' in line
     # Three icons and the three separators, which are drawn, not read.
     assert line.count("<svg") == 3 and line.count('aria-hidden="true"') == 6
-    assert line.count('<span aria-hidden="true"> · </span>') == 3
+    assert line.count('<span class="product-sep" aria-hidden="true"> · </span>') == 3
     # Presentation attributes only: the pages' policies allow no inline style (§16.13).
     for forbidden in ("style=", "<style", "<use", "<title", "<img"):
         assert forbidden not in line
+
+
+def test_at_phone_width_the_line_is_its_first_part() -> None:
+    # §16.13: at most 600 CSS pixels wide, only "Maity <year>" with its mark; the separators
+    # and the other three parts are not shown. Four parts, three separators between them, in
+    # that order, and the rule that hides all but the first in the block the policy allows.
+    clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
+    line = product_line.html("en")
+    inner = re.search(r"<small>(.*)</small>", line)
+    assert inner is not None
+    pieces = re.findall(r'<span class="(product-part|product-sep)"', inner[1])
+    assert pieces == ["product-part", "product-sep"] * 3 + ["product-part"]
+    first = re.search(r'<span class="product-part">(.*?)</span><span class="product-sep"', line)
+    assert first is not None and text_of(first[1]) == "Maity 2031" and "<svg" in first[1]
+    assert (
+        "@media (max-width:600px){.product-line .product-sep,"
+        ".product-line .product-part~.product-part{display:none}}"
+    ) in product_line.STYLE
+    # The strict pages carry the rule in the hashed block, the registration page in its sheet.
+    assert f"<style>{product_line.STYLE}</style>" == product_line.HEAD
 
 
 def test_the_line_is_in_the_pages_language() -> None:

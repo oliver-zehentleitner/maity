@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import json
 import logging
 import re
 import time
@@ -91,6 +92,11 @@ PUBLIC_PATHS = re.compile(
     r"|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
+# A picture a public page shows (§6.10): its address changes with the picture, so a browser
+# keeps it a day; a shared cache no longer than a public page, so it goes within a minute
+# once the picture stops being public.
+PUBLIC_AVATARS = re.compile(r"/api/v1/avatars/public/[^/]+")
+PUBLIC_AVATARS_CACHE = b"public, max-age=86400, s-maxage=60"
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # The landing page's own files (§16.7): a file asked for under its digest may be cached for good;
@@ -138,6 +144,8 @@ class HubMiddleware:
         if not on_join_host and scope.get("method") in ("GET", "HEAD"):
             if PUBLIC_PATHS.fullmatch(path):
                 public = b"public, max-age=60"
+            elif PUBLIC_AVATARS.fullmatch(path):
+                public = PUBLIC_AVATARS_CACHE
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
             elif LANDING_FILES.fullmatch(path):
@@ -146,7 +154,7 @@ class HubMiddleware:
                 # A public page may be cached; only the stored page's answer asks for it, the
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
-        send = _with_headers(send, public=public)
+        send = _noting_refusal(_with_headers(send, public=public), scope["state"])
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
@@ -381,13 +389,81 @@ def _access(scope: Scope, status: int) -> None:
     held = scope.get("state", {}).get("held", False)  # set by `deps.wait_of`
     request_stats.WINDOW.record(status, ms, str(scope.get("method")), "" if held else route)
     access.info(
-        "%s %s %s ms=%d route=%s",
+        "%s %s %s ms=%d route=%s%s",
         scope.get("method"),
         _logged_path(scope),
         status,
         ms,
         route,
+        _refusal_tail(scope, status),
     )
+
+
+# What a refusal adds to its request log line (§1.1): its code, and its `details.reason` or
+# `details.scope`, so a refused call can be told apart in the log. Only short code tokens are
+# written; anything else is `?`, so a reason that carries text never reaches the log.
+_LOG_TOKEN = re.compile(r"[a-z0-9][a-z0-9_.:-]{0,63}")
+# An error envelope is small; a larger body is not read for the log.
+_REFUSAL_BODY_MAX = 16 * 1024
+
+
+def _refusal_tail(scope: Scope, status: int) -> str:
+    """` error=<code>` with ` reason=<r>` and ` scope=<s>` for a 403, and for another 4xx that
+    names a reason or a scope; "" for anything else."""
+    if not 400 <= status < 500:
+        return ""
+    refusal = scope.get("state", {}).get("refusal")
+    if not refusal:
+        return ""
+    named = [f" {key}={_log_token(refusal[key])}" for key in ("reason", "scope") if key in refusal]
+    if status != 403 and not named:
+        return ""
+    return f" error={_log_token(refusal['code'])}" + "".join(named)
+
+
+def _log_token(value: object) -> str:
+    return value if isinstance(value, str) and _LOG_TOKEN.fullmatch(value) else "?"
+
+
+def _noting_refusal(send: Send, state: dict[str, Any]) -> Send:
+    """Notes a 4xx answer's code (its `Maity-Error` header) and its `details.reason` and
+    `details.scope` in `state["refusal"]` for the request log; every message passes on as it
+    came, and nothing else of the body is kept."""
+    body: bytearray | None = None
+
+    async def wrapped(message: MutableMapping[str, Any]) -> None:
+        nonlocal body
+        if message["type"] == "http.response.start":
+            body = None
+            headers = {k.lower(): v for k, v in message.get("headers", [])}
+            code = headers.get(b"maity-error")
+            if 400 <= message["status"] < 500 and code is not None:
+                state["refusal"] = {"code": code.decode("latin-1")}
+                if b"content-encoding" not in headers:
+                    body = bytearray()
+        elif message["type"] == "http.response.body" and body is not None:
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > _REFUSAL_BODY_MAX:
+                body = None  # never copied past the cap: the body is not read for the log
+            else:
+                body += chunk
+                if not message.get("more_body", False):
+                    state["refusal"].update(_named(bytes(body)))
+                    body = None
+        await send(message)
+
+    return wrapped
+
+
+def _named(body: bytes) -> dict[str, object]:
+    """`reason` and `scope` from an error envelope's details, where it has them."""
+    try:
+        details = json.loads(body)["error"]["details"]
+    except (ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(details, dict):
+        return {}
+    return {key: details[key] for key in ("reason", "scope") if details.get(key) is not None}
 
 
 def _logged_path(scope: Scope) -> str:

@@ -459,3 +459,34 @@ unreachable URL through `safe_url` like the other hub errors.
   whole (review of #792); a wrong host in a rare message is the smaller harm.
 - `safe_url` for remotes as well: it also drops the query and an scp-like `git@host:path`
   is not a URL to it; a remote is shown as written, minus the credential.
+
+## A join that fails leaves the directories it created; no cleanup removes them by path
+
+**Id:** 67799d78-62bf-4637-a10f-e7f512b56234
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
+**Revisit when:** a platform maity supports gains a directory removal bound to an open handle, or a leftover directory turns out to break a retry
+
+A `maity join` that fails before anything is kept (an expired or wrong code, a refused hub)
+leaves the state directory and the parents it created where they are. They are empty and private,
+and a retry finds and reuses them (`prepare_for_join` takes an existing empty directory of this
+user's and tightens it to 0700).
+
+**Reason:** removing them safely would need the removal bound to the directory this join created,
+and no platform maity runs on has that: `rmdir` works by path (on POSIX also with `dir_fd`, still
+by name), so between any identity check and the removal another process can swap the directory, or
+a parent for a link or a junction, and the removal then hits its directory. Every check (device,
+inode, change time, reparse attribute, stopping at the first doubt) only narrowed that window. An
+empty leftover directory is harmless; removing someone else's is not.
+
+**Rejected alternatives:**
+- Recording the missing paths before the join and removing the empty directories there afterwards:
+  another process's directory created or swapped in meanwhile would go too (#1478, 399x).
+- Recording what this join's own `mkdir` created, with device, inode and change time, and removing
+  only what still matches, deepest first, stopping at the first doubt: the time between the check
+  and the removal stays open, and the identity can only be read after `mkdir`, so a swap in either
+  window still removes another process's directory (#1478 delta, 399x).
+- Removing only the leaf, never the parents: smaller exposure, the same open window.
+

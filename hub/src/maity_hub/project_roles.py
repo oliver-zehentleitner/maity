@@ -22,7 +22,6 @@ NAME = re.compile(r"[a-z][a-z0-9-]{1,23}", re.ASCII)
 # are refused as well.
 RESERVED = ("owner", "admin", "member", "guest", "team", "all", "proxy", "lead", "null", "none")
 DESCRIPTION_MAX = 200
-GUIDE_MAX = 500
 
 
 def of(project: Any) -> list[dict[str, Any]]:
@@ -49,13 +48,15 @@ def on_base(project: Any, base: str) -> list[str]:
 
 
 def view(project: Any) -> dict[str, Any]:
-    """`GET …/roles`: `{custom: [{name, base, description, guide, guide_by}]}`."""
+    """The `custom` half of `GET …/roles`: `{custom: [{name, base, description, guide,
+    guide_by}]}`; the built-in roles are `guide.builtin`."""
     return {"custom": of(project)}
 
 
 def parse(raw: Any) -> list[dict[str, Any]]:
     """The `custom` list of a `PUT …/roles`, checked; `invalid` names every bad field as
-    `custom[<i>].<field>`."""
+    `custom[<i>].<field>`. A role's guide is set with the project's briefings (§6.28): a
+    `guide` in any entry is `custom[].guide: "moved"`, unindexed as the contract names it."""
     from maity_hub.errors import invalid
 
     if not isinstance(raw, list):
@@ -71,10 +72,12 @@ def parse(raw: Any) -> list[dict[str, Any]]:
             errors[at] = "not_an_object"
             continue
         for key in item:
-            if key not in ("name", "base", "description", "guide"):
+            if key == "guide":
+                errors["custom[].guide"] = "moved"
+            elif key not in ("name", "base", "description"):
                 errors[f"{at}.{key}"] = "unknown_field"
         name, base = item.get("name"), item.get("base")
-        description, guide = item.get("description", ""), item.get("guide", "")
+        description = item.get("description", "")
         if not isinstance(name, str) or not NAME.fullmatch(name):
             errors[f"{at}.name"] = "format"
         elif name in ROLES or name in RESERVED:
@@ -87,9 +90,7 @@ def parse(raw: Any) -> list[dict[str, Any]]:
             errors[f"{at}.base"] = "unknown"
         if not isinstance(description, str) or len(description) > DESCRIPTION_MAX:
             errors[f"{at}.description"] = "too_long" if isinstance(description, str) else "format"
-        if not isinstance(guide, str) or len(guide) > GUIDE_MAX:
-            errors[f"{at}.guide"] = "too_long" if isinstance(guide, str) else "format"
-        parsed.append({"name": name, "base": base, "description": description, "guide": guide})
+        parsed.append({"name": name, "base": base, "description": description})
     if errors:
         raise invalid(errors)
     return parsed

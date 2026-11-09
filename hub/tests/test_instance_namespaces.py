@@ -216,7 +216,21 @@ def test_the_operators_owner_create_may_take_a_listed_name(
     monkeypatch.setattr(handles, "_instance_names", frozenset({"acme-org"}))
     assert main(["migrate"]) == 0
     monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
-    assert main(["owner", "create", "--handle", "acme-org", "--display-name", "Acme"]) == 0
+    assert (
+        main(
+            [
+                "owner",
+                "create",
+                "--handle",
+                "acme-org",
+                "--display-name",
+                "Acme",
+                "--email",
+                "acme-org@example.org",
+            ]
+        )
+        == 0
+    )
 
 
 def test_the_start_names_held_and_former_names(
@@ -448,3 +462,37 @@ def test_a_project_outside_the_namespaces_gets_no_instance_reader_for_named_repo
     assert named.token is None and named.granted is None
     granted = forge.Forge("owner-grant", granted="owner_token", repository=REPO.lower())
     assert ktw_reads.named_reader(base, granted).token is None, "an owner's project: anonymous"
+
+
+def test_the_owner_of_a_suspended_organisation_creates_nothing_with_a_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    """A suspended organisation takes no new project (§6.26): its owner is refused before the
+    operator's token looks at the repository, though the organisation is listed (§11.4)."""
+    from tests.test_orgs import add_member
+    from tests.test_reports import report
+
+    admin = flow.human(make_client, migrated)  # the earliest account: the instance admin
+    founded = admin.post("/orgs", {"handle": "free-org", "display_name": "Org"})
+    assert founded.status_code == 201, founded.text
+
+    def listing_it(**overrides: Any) -> Any:  # a hub that lists the organisation
+        return make_client(forge_instance_namespaces=OWN | {"free-org"}, **overrides)
+
+    boss = flow.human(listing_it, migrated, "boss")
+    add_member(migrated, founded.json()["id"], boss.id, "owner")
+    made = boss.post("/projects", {"slug": "shop", "name": "Shop", "owner": "free-org"})
+    assert made.status_code == 201, made.text
+    pat = flow.human(listing_it, migrated, "pat")
+    factory.membership(migrated, made.json()["id"], "member", human_id=pat.id)
+    filed = report(pat, {"type": "project", "id": "free-org/shop"}, "spam")
+    assert filed.status_code == 201, filed.text
+    resolved = admin.post(f"/admin/reports/{filed.json()['id']}/resolve", {"action": "suspend"})
+    assert resolved.status_code == 200, resolved.text
+    fake.sent.clear()
+    refused = boss.post(
+        "/projects",
+        {"slug": "thing", "name": "Thing", "owner": "free-org", "repository": {"url": URL}},
+    )
+    assert refused.status_code == 403, refused.text
+    assert fake.sent == []

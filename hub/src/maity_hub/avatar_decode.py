@@ -33,6 +33,7 @@ from __future__ import annotations
 import io
 import resource
 import sys
+from collections.abc import Callable
 from typing import Any
 
 SIDE = 4096  # at most this many pixels on either side, in the header and decoded
@@ -178,6 +179,27 @@ def process(data: bytes, content_type: str) -> bytes:
     return out.getvalue()
 
 
+SIZES = (32, 64, 128)  # the smaller sizes of a stored picture (docs/api.md §6.10, `?s=`)
+
+
+def process_size(data: bytes, side: int) -> bytes:
+    """A stored picture at `side` pixels (`size<side>` as the fourth argument): the stored
+    PNG takes the avatar path again, with every check of an upload, and is then scaled down
+    to `side`, never up, and encoded from raw pixels as the stored image is."""
+    if side not in SIZES:
+        raise Refused("undecodable", f"size {side} is not one of {SIZES}")
+    from PIL import Image
+
+    square: Any = Image.open(io.BytesIO(process(data, "image/png")), formats=["PNG"])
+    square.load()
+    if square.size[0] > side:
+        square = square.resize((side, side), Image.Resampling.LANCZOS)
+    clean = Image.frombytes("RGBA", square.size, square.convert("RGBA").tobytes())
+    out = io.BytesIO()
+    clean.save(out, format="PNG")
+    return out.getvalue()
+
+
 def webp_lossless(data: bytes) -> bool:
     """Whether a WebP's (first) image is lossless: a `VP8L` chunk, at the top or in the
     first animation frame."""
@@ -288,11 +310,21 @@ def _limit(memory: int, seconds: int) -> None:
 
 
 def main() -> int:
-    """`python -I avatar_decode.py <content type> <memory bytes> <cpu seconds> [attachment]`:
-    the image on stdin; the stored PNG on stdout and exit 0, or the reason on stdout and
-    `REFUSED` with a detail for the log on stderr."""
+    """`python -I avatar_decode.py <content type> <memory bytes> <cpu seconds> [mode]`, the
+    mode `attachment` or `size<side>`: the image on stdin; the stored PNG on stdout and exit
+    0, or the reason on stdout and `REFUSED` with a detail for the log on stderr."""
     content_type, memory, seconds = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-    handle = process_file if sys.argv[4:] == ["attachment"] else process
+    mode = sys.argv[4] if len(sys.argv) > 4 else "avatar"
+    handle: Callable[[bytes, str], bytes] = process
+    if mode == "attachment":
+        handle = process_file
+    elif mode.startswith("size") and mode[4:].isdigit():
+        side = int(mode[4:])
+
+        def sized(data: bytes, kind: str) -> bytes:
+            return process_size(data, side)
+
+        handle = sized
     try:
         from PIL import Image, ImageCms, ImageOps, PngImagePlugin  # noqa: F401  before the limits
 

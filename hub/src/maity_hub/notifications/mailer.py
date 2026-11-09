@@ -22,7 +22,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import UTC, datetime, time, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -225,10 +225,14 @@ def for_human(
             # The capped immediate items of the hour go with the hour's digest (§18.5).
             due += [i for i in mailable if _mode(i, modes) == "hourly"] + immediate
             clocks["hourly_at"] = now
-        today = datetime.combine(local.date(), time.fromisoformat(prefs["daily_at"]), tzinfo=zone)
+        # As an instant: a wall time compares by its digits within one zone, so a `daily_at`
+        # in the hour the clocks skip would fall due twice (once by its digits, once by UTC).
+        today = datetime.combine(
+            local.date(), time.fromisoformat(prefs["daily_at"]), tzinfo=zone
+        ).astimezone(UTC)
         if state.daily_at is None:
             clocks["daily_at"] = now
-        elif local >= today and state.daily_at < today:
+        elif now >= today and state.daily_at < today:
             due += [i for i in mailable if _mode(i, modes) == "daily"]
             clocks["daily_at"] = now
         week = _last_weekly(local, prefs["daily_at"], prefs["weekly_on"], zone)
@@ -261,13 +265,17 @@ def for_human(
 
 
 def _last_weekly(local: datetime, daily_at: str, weekly_on: str, zone: tzinfo) -> datetime:
-    """The latest `weekly_on` at `daily_at` not after `local`: a pass that missed the
-    moment (the hub was down) still sends the week's digest at its next pass."""
+    """The latest `weekly_on` at `daily_at` not after `local`, as an instant in UTC: a pass
+    that missed the moment (the hub was down) still sends the week's digest at its next pass.
+    Compared as a wall time, a `daily_at` the clocks skip fell due twice."""
     back = (local.weekday() - preferences.WEEKDAYS.index(weekly_on)) % 7
-    at = datetime.combine(
-        local.date() - timedelta(days=back), time.fromisoformat(daily_at), tzinfo=zone
-    )
-    return at if at <= local else at - timedelta(days=7)
+    day = local.date() - timedelta(days=back)
+    at = datetime.combine(day, time.fromisoformat(daily_at), tzinfo=zone).astimezone(UTC)
+    if at <= local:
+        return at
+    return datetime.combine(
+        day - timedelta(days=7), time.fromisoformat(daily_at), tzinfo=zone
+    ).astimezone(UTC)
 
 
 def _mode(item: Item, modes: dict[str, str]) -> str:
