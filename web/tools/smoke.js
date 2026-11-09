@@ -4464,6 +4464,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
   }
 
+  // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is
+  // open, it is moved open → proposed, then the open group answers without it. The read of the cards changed
+  // since the reads began puts it on the board, once, in proposed.
+  {
+    const mvAll = win.Maity.api.getAll, mvHeld = [];
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=")
+      ? new Promise((res, rej) => { mvHeld.push({ p, go: () => mvAll(p).then(res, rej) }); }) : mvAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const mvGroup = (g) => mvHeld.find((x) => x.p.includes("status=" + g + "&") || x.p.endsWith("status=" + g));
+    mvGroup("proposed").go(); for (let k = 0; k < 2; k++) await tick();
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "proposed" });
+    mvHeld.filter((x) => x !== mvGroup("proposed")).forEach((x) => x.go()); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.getAll = mvAll;
+    const mvWhere = main.querySelectorAll("section.column").filter((col) => col.querySelectorAll("article.card").some((a) => a.attrs["data-card"] === "tsk-0006"))
+      .map((col) => col.getAttribute("data-status"));
+    const mvCopies = main.querySelectorAll("article.card").filter((a) => a.attrs["data-card"] === "tsk-0006").length;
+    expect(mvCopies === 1 && JSON.stringify(mvWhere) === JSON.stringify(["proposed"]),
+      "board: a card moved between two group reads is on the board once, where it is now " + JSON.stringify([mvCopies, mvWhere]));
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "open" });
+  }
+
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
   const cfLs = win.localStorage;
@@ -10577,7 +10598,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ktReport = (why) => ({ summary: "Done.", mentions: [], reported_at: "2026-10-22T13:10:00Z", verification: "signed", code: true, head: ktHead,
     pr: null, pr_status: "none", observed: null, mismatch: false, why });
   const ktWhys = { "tsk-0005": { ref: "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" }, "tsk-0006": { none: "a mechanical rename" }, "tsk-0007": { ref: "../secret.md#x" } };
-  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? ktGetAll(p).then((r) => ({ ...r, items: r.items.map((c) => (ktWhys[c.id] ? { ...c, report: ktReport(ktWhys[c.id]) } : c)) })) : ktGetAll(p));
+  const ktDress = (r) => ({ ...r, items: r.items.map((c) => (ktWhys[c.id] ? { ...c, report: ktReport(ktWhys[c.id]) } : c)) });
+  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? ktGetAll(p).then(ktDress) : ktGetAll(p));
+  // The board's read of the cards changed during its reads (order=updated) is a list of cards too.
+  win.Maity.api.get = (p) => (p.includes("/tasks?") ? ktGet(p).then(ktDress) : ktGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
   const ktCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
   const ktLink = ktCard("tsk-0005").querySelector(".report-why a");
@@ -10587,7 +10611,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ktCard("tsk-0006").querySelector(".report-why")) === "No why: a mechanical rename"
     && !ktCard("tsk-0007").querySelector(".report-why a") && text(ktCard("tsk-0007").querySelector(".report-why")).includes("../secret.md"),
     "keep the why: no why says the reason; a path out of the repository stays text");
-  win.Maity.api.getAll = ktGetAll;
+  win.Maity.api.getAll = ktGetAll; win.Maity.api.get = ktGet;
   // Since 2026-10-26 the owner's notice is a personal request in the inbox (§6.23, §18.1): no kind of its own.
   // A personal request of a project the reader is no member of carries project.member false (§7, §18.2):
   // its notification leads to /all, also once by_project no longer lists that project.

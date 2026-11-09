@@ -1707,9 +1707,21 @@ with `closed_after`), page after page, each page waiting for the one
 before. It now asks five groups at once: `proposed`, `open`,
 `in_progress`, `blocked,review`, and `done,cancelled` with the closed
 window. Each group follows its own pages. The board orders every column
-itself, so the groups may answer in any order; a card that moved between
-two reads is kept once. The reload after a write reads the same groups; the
-hub search still asks one list over every status (`status=all&q=`).
+itself, so the groups may answer in any order. Five reads are not one
+snapshot: a card moved from a group not yet answered into one already
+answered would be in neither, and one moved the other way in both. So once
+all five have answered, the board reads the cards changed since the reads
+began (`status=all` with the window and `order=updated`, newest first, a
+page of 50, further pages only while every card on one is that new), and
+each replaces or adds its card. The start is taken on the hub's clock with
+a minute's margin. What is guaranteed: every card that did not change
+during the reads is shown as its group read it, and every card that did
+is shown once, as that last read has it. A change after that last read is
+the board's usual news, offered as a reload. The reload after a write reads
+the same way; the hub search still asks one list over every status
+(`status=all&q=`). The cost is bounded: at most four more requests than
+one list for the same cards (one per group that holds a page or less),
+plus the read of changed cards, with at most five in flight at once.
 
 **Reason:** the pages were the board's longest wait, and nothing in one
 page depends on another. Side by side, the wait is the longest group,
@@ -1723,6 +1735,12 @@ not the sum.
   the reader.
 - One request per status: seven instead of five, for groups (`blocked`,
   `review`; `done`, `cancelled`) that are small next to the rest.
+- Reconciling from the project's event feed (the cards a task event names
+  during the reads): a reader who is neither owner nor admin is in few
+  events' audiences (§6.11), so a move could stay unseen. The changed-cards
+  read depends on no audience.
+- One list again whenever the board fits a page: the first page decides,
+  so every larger board waits for it before its groups start.
 
 The group lists name the contract's seven statuses (§6.4). A status the
 contract adds would not be read until the board names it; the board's

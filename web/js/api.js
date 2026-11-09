@@ -3956,6 +3956,8 @@ window.Maity = window.Maity || {};
           return { ...card, match };
         }).filter((card) => card.match.length);
       }
+      // `order=updated` (§6): the old updated_at desc order, as the board's reconciling read asks it.
+      if (query.get("order") === "updated") items = items.slice().sort((a, b) => (Date.parse(b.updated_at || 0) || 0) - (Date.parse(a.updated_at || 0) || 0));
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and

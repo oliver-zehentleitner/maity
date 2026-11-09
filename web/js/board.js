@@ -15,6 +15,10 @@ window.Maity = window.Maity || {};
   const CLOSED_WINDOW_DAYS = 14;
   // The open column groups the board reads side by side; the closed one, with its window, after them.
   const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
+  // The read of the cards changed while the groups were read (below): a page of the newest, and how
+  // far before the reads began it looks.
+  const RECENT_PAGE = 50;
+  const RECONCILE_MARGIN_MS = 60000;
   // The overview counts closed cards over the same window (js/overview.js).
   M.boardWindowDays = CLOSED_WINDOW_DAYS;
 
@@ -671,14 +675,33 @@ window.Maity = window.Maity || {};
     // The cards in column groups read side by side, each following its own pages, instead of one
     // list of every status paged one after the other (tsk-d61rvjm6gteh: six pages in a row on a
     // project of 1,135 cards). The closed window applies to the closed group alone. Each column is
-    // ordered by the board itself (byOrder), so the groups may answer in any order; a card that moved
-    // between two reads is kept once. The statuses are the contract's seven (§6.4).
+    // ordered by the board itself (byOrder), so the groups may answer in any order. The statuses are
+    // the contract's seven (§6.4).
+    // The groups are five snapshots, not one: a card moved from a group not yet answered into one
+    // already answered would be in neither (review of #1536). So, once they have all answered, the
+    // cards changed since the reads began are read again, newest first (`order=updated`, §6), until
+    // the first one older than that; each replaces or adds its card. Whatever moved during the reads
+    // is then on the board once, as it is now. The start is taken on the hub's clock (M.api.now)
+    // with a margin, so a skew of the clocks reads a little more, never less.
     const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g)
       .concat([ctx.base + "/tasks?status=done,cancelled&closed_after=" + encodeURIComponent(since)]);
+    const recentPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since) + "&order=updated&limit=" + RECENT_PAGE;
     const readList = async () => {
+      const began = M.api.now() - RECONCILE_MARGIN_MS;
       const parts = await Promise.all(listPaths.map((path) => M.api.getAll(path)));
-      const seen = new Set();
-      return parts.flatMap((r) => r.items).filter((t) => (seen.has(t.id) ? false : seen.add(t.id)));
+      const cards = new Map();
+      parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
+      for (let cursor = null; ;) {
+        const page = await M.api.get(recentPath + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+        let older = false;
+        page.items.forEach((t) => {
+          if ((Date.parse(t.updated_at) || 0) >= began) cards.set(t.id, t);
+          else older = true;
+        });
+        if (older || !page.next_cursor) break;
+        cursor = page.next_cursor;
+      }
+      return [...cards.values()];
     };
     let items = await readList();
     let boardItems = items;
