@@ -161,9 +161,11 @@ if [ -n "$body_file" ]; then
   [ -f "$body_file" ] && [ -r "$body_file" ] || die "cannot read the body file $body_file"
   # The fixed list, at a line's start after anything but letters and digits (spaces, emoji,
   # symbols, `>`, emphasis, link markup), in any case; emphasis and a link's closing `](url)` may
-  # come before the colon (`**Co-Authored-By**:`, `[Claude-Session](https://...):`). In the C
-  # locale every byte of an emoji is such a character.
-  attribution='^[^[:alnum:]]*(generated[[:space:]]+(with|by)([^[:alnum:]]|$)|(co-authored-by|claude-session)[*_]*(\]\([^)]*\))?[*_]*:)'
+  # come before the colon (`**Co-Authored-By**:`, `[Claude-Session](https://...):`), the link's
+  # destination with backslash-escaped or one level of balanced parentheses, as CommonMark
+  # allows (`(https://x/a(b))`, `(https://x/a\)b)`). In the C locale every byte of an emoji is such
+  # a character.
+  attribution='^[^[:alnum:]]*(generated[[:space:]]+(with|by)([^[:alnum:]]|$)|(co-authored-by|claude-session)[*_]*(\]\(([^()\\]|\\.|\([^()\\]*\))*\))?[*_]*:)'
   found=$(LC_ALL=C grep -Ein -m 1 -- "$attribution" "$body_file")
   status=$?
   case $status in
