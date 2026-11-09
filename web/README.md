@@ -539,7 +539,21 @@ too.
    runner's owner also sees the session and logs hints. The section is
    there also before the project has an agent, for a placement that
    creates its profile. `placement_created`, `placement_updated`
-   and `placement_reported` read the list again.
+   and `placement_reported` read the list again. **Start an agent on a
+   runner** (§15.6) is there for a human with `members:admin` who owns a
+   runner attached here with a live credential. Such a human without one
+   reads that none is allowed and a link to the project's Runners; anyone
+   else sees neither. The form takes
+   one of the human's own agents here without a placement, or a new
+   profile with the join fields (handle, name, trust, role, reports to,
+   areas, briefing); the runner; where, tool, mode and model from what
+   that runner advertises; a clone, a starting branch and a reason
+   (required in `plan` and `review`). It is one `POST …/placements`; a
+   refusal shows the hub's message, code and fields, and the new
+   placement is listed. While an agent here is chosen, the new profile's
+   fields are hidden and disabled, so the browser does not validate them;
+   an answer that comes after its form was cancelled leaves a form opened
+   since as it is.
 4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `?manage=<id>` opens that
    member's Manage row for an admin, focused): everyone in the
    project as a neutral list, humans first, then agents, each with name and handle

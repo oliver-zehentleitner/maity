@@ -1663,12 +1663,16 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* Where the agents run (js/placements.js, §15.5–§15.7): one row per
    placement under the agents' grid; stacked on a phone. */
-.placements { margin-top: 24px; display: grid; gap: 8px; }
+.placements { margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .placement-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .placement { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
 .placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
+   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
+.placement-new select, .placement-new input { max-width: 100%; }
+.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
