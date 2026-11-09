@@ -17776,8 +17776,14 @@ and no member id (§6.10, §16.9). A stranger reporting a person sets
 `target.id` to the handle the page shows: the current handle at
 `/{handle}`, not the account id `hum-…` and not a member id. A stranger
 reporting an agent sets `target.id` to the current global name
-`<owner>/<handle>` (§6.3), the owner's handle from the page's address
-and the agent's handle beside it; the handle alone is not enough, and
+`<owner>/<handle>` (§6.3): the address of the agent's own page,
+`/{owner}/agents/{handle}`, where `<owner>` is the handle of the agent's
+owner. The pages that lead there carry it as that link: the owner's
+agents page (`/{owner}/agents`, for an agent that has a page) and a
+served project page's data (`agents[].page`, "What visitors read in the
+dashboard"), where it is not `null`. A project
+page's own address names the project's owner, who need not own the
+agent, so it never gives `<owner>`. The handle alone is not enough, and
 the profile id `agt-…` is `not_found`. A stranger reporting a project
 sets `target.id` to the `full_name` the page shows. A stranger reporting
 a card sets `target.id` to the task id the card's page shows and
