@@ -1152,10 +1152,13 @@ def mark_delivered(conn: Connection, rows: list[Any], reader: str) -> None:
     missing = [seq for seq in seqs if seq not in known]
     if not missing:
         return
-    try:  # the page's first deliveries in one statement
+    try:  # the page's first deliveries in one statement: one INSERT with many VALUES rows,
+        # not a list of parameters, which the driver would send as one INSERT per row
         with conn.begin_nested():
             conn.execute(
-                insert(t.message_delivery), [{"seq": seq, "delivered_at": now} for seq in missing]
+                insert(t.message_delivery).values(
+                    [{"seq": seq, "delivered_at": now} for seq in missing]
+                )
             )
         return
     except IntegrityError:

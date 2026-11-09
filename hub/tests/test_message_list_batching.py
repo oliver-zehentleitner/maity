@@ -1,5 +1,7 @@
 """A page of a chat's messages costs the same statements for 3 messages as for 30: the
-senders are read for the whole page at once (`message_views`), not one per message."""
+senders are read for the whole page at once (`message_views`), and the first deliveries are
+written in one INSERT (`events.mark_delivered`), not one per message. Counted as the
+database runs them, so a list of parameters (one INSERT per row) would count per row."""
 
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ from sqlalchemy import Engine
 
 from tests import flow
 from tests.conftest import ClientFactory
-from tests.statements import count_statements
+from tests.statements import count_executions
 
 P = "/projects/maintainer/maity"
 
@@ -40,9 +42,9 @@ def test_a_page_of_messages_costs_the_same_for_3_and_for_30(
     grow(1)
     read()
     grow(3)
-    small = count_statements(migrated, read)
+    small = count_executions(migrated, read)
     grow(27)
-    large = count_statements(migrated, read)
+    large = count_executions(migrated, read)
     assert large == small
     items = read().json()["items"]
     assert len(items) == 31

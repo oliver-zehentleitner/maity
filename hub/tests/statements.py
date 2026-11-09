@@ -20,3 +20,21 @@ def count_statements(engine: Engine, call: Any) -> int:
     finally:
         event.remove(engine, "before_cursor_execute", counted)
     return seen[0]
+
+
+def count_executions(engine: Engine, call: Any) -> int:
+    """Like `count_statements`, but a list of parameters (`executemany`) counts once per row,
+    as the database runs it: one INSERT with many VALUES rows counts once."""
+    seen = [0]
+
+    def counted(
+        conn: Any, cursor: Any, statement: Any, parameters: Any, context: Any, many: bool
+    ) -> None:
+        seen[0] += len(parameters) if many else 1
+
+    event.listen(engine, "before_cursor_execute", counted)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", counted)
+    return seen[0]
