@@ -138,10 +138,12 @@ def must_enrol(
     )
 
 
-def asks(conn: Connection, hub: Settings, human_id: str) -> bool:
+def asks(conn: Connection, hub: Settings, human_id: str, *, current: str | None = None) -> bool:
     """Whether a sign-in of this human has a second step: TOTP when enrolled, and under
-    `email` the mail for everyone else who has, or once had, an address (§2.8.8)."""
-    current = policy(conn, hub)
+    `email` the mail for everyone else who has, or once had, an address (§2.8.8). `current`
+    is the policy when the caller has read it already."""
+    if current is None:
+        current = policy(conn, hub)
     if current == "off":
         return False
     if enrolled(factor_of(conn, human_id)):
@@ -190,7 +192,7 @@ def state(conn: Connection, hub: Settings, row: Any) -> str:
     if not row.sign_in_complete:  # an enrolment session (§2.8.5)
         if off:
             return "ended"
-        if asks(conn, hub, row.human_id):
+        if asks(conn, hub, row.human_id, current=current):
             # The human enrolled elsewhere meanwhile, or the policy came to ask for a factor
             # they have (the mail): this sign-in never gave a code, so it ends rather than
             # becoming a full session without one.
@@ -208,8 +210,8 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
     side effect of the route (§2.8.2, §2.8.5)."""
     if caller.kind != "human" or caller.human_session is None:
         return
-    # The row authentication read in this transaction; `_session` only for a caller built
-    # without it.
+    # The row authentication read in this transaction, after its writes locked it; `_session`
+    # only for a caller built without it.
     row = caller.session_row
     if row is None:
         row = _session(conn, caller.human_session)

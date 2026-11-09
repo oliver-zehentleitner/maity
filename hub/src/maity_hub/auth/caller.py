@@ -101,9 +101,9 @@ class Caller:
     runner_id: str | None = None
     bridge: Bridged | None = None  # a bridge calling as this agent (`Maity-For`, §2.3)
     on_request: OnRequest | None = None  # a proxy's go for this call, signed (§2.3)
-    # A cookie call's session row and account status as authentication read them, so that
-    # the second-factor gate and the pending check do not read them again on every call
-    # (tsk-6srccd2r1h62). The row is the one before this call's `last_seen_at`/`ip` update.
+    # A cookie call's session row and account status as authentication read them, after
+    # its presence writes locked both rows, so that the second-factor gate and the pending
+    # check do not read them again on every call (tsk-6srccd2r1h62).
     session_row: Any = field(default=None, compare=False, repr=False)
     account_status: str | None = field(default=None, compare=False)
 
@@ -203,7 +203,35 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
-    # The session and its human in one statement: this runs before every dashboard call.
+    # The presence writes come first, and only on a live session: they take the row locks of
+    # the session and its human, in the order they always did. The one read after them then
+    # sees what the gate's and the pending check's own reads used to see after these writes,
+    # under READ COMMITTED too (#1540 review), and it runs once instead of three times
+    # (tsk-6srccd2r1h62). A refusal below rolls the writes back with the transaction.
+    owner = (
+        select(t.human_session.c.human_id)
+        .where(t.human_session.c.id_hash == id_hash)
+        .scalar_subquery()
+    )
+    touched = conn.execute(
+        update(t.human_session)
+        .where(
+            t.human_session.c.id_hash == id_hash,
+            t.human_session.c.ended_at.is_(None),
+            # session_alive(): before its end and within the idle time
+            t.human_session.c.expires_at > now,
+            t.human_session.c.last_seen_at > now - SESSION_IDLE,
+        )
+        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
+    )
+    if touched.rowcount != 1:
+        raise unauthenticated("the session has ended or expired")
+    conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
+        .values(last_seen_at=now)
+    )
     row = conn.execute(
         select(
             t.human_session,
@@ -212,26 +240,13 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         )
         .join(t.human, t.human.c.id == t.human_session.c.human_id)
         .where(t.human_session.c.id_hash == id_hash)
-    ).first()
-    if row is None or row.ended_at is not None or not session_alive(row, now):
-        raise unauthenticated("the session has ended or expired")
+    ).one()
     if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
     if facts.method in UNSAFE_METHODS:
         token = facts.headers.get(CSRF_HEADER, "")
         if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
             raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
-    conn.execute(
-        update(t.human_session)
-        .where(t.human_session.c.id_hash == id_hash)
-        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
-    )
-    conn.execute(update(t.human).where(t.human.c.id == row.human_id).values(last_seen_at=now))
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.human_id == row.human_id, t.membership.c.removed_at.is_(None))
-        .values(last_seen_at=now)
-    )
     if renew:
         # A human holder works in the dashboard; its calls renew its leases too (§6.5). Only
         # the memberships that hold an open claim have a lease to renew: reading the rest
