@@ -314,6 +314,36 @@ def test_a_claim_in_flight_takes_no_card_once_its_member_became_an_expert(
     assert owner.get(f"{PROJECT}/tasks/{card}").json()["claim"] is None
 
 
+def test_a_request_in_flight_files_none_once_its_member_became_an_expert(
+    make_client: ClientFactory,
+    owner: flow.Human,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§2.3 "The expert": the request read its membership as a coder; the role change to
+    expert commits before the request takes the project lock. Under the lock the request
+    reads its row again and has no `requests:ask`, so no request is stored (#1531)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import requests as requests_route
+
+    coder = flow.agent(make_client, owner)
+    reached, release = _paused(monkeypatch, "_locked", requests_route)
+    asked = _in_thread(
+        lambda: coder.post(f"{PROJECT}/requests", {"class": "info", "title": "Why?", "to": "owner"})
+    )
+    try:
+        assert reached.wait(10), "the request never reached the lock"
+        changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+        assert changed.status_code == 200, changed.text  # no card, nothing in the way
+    finally:
+        release.set()
+    refused = asked.result(timeout=10)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "requests:ask"}
+    assert owner.get(f"{PROJECT}/requests").json()["items"] == []
+
+
 def test_a_role_change_to_expert_waits_for_a_claim_in_flight_and_then_refuses(
     make_client: ClientFactory,
     owner: flow.Human,

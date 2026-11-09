@@ -186,6 +186,34 @@ def test_only_a_proxy_sets_action(owner: flow.Human, make_client: ClientFactory)
     assert refused.json()["error"]["details"]["fields"]["action"] == "proxy_only"
 
 
+def test_an_action_request_in_flight_is_refused_once_its_proxy_became_a_coder(
+    owner: flow.Human,
+    proxy: Proxy,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§7: only a proxy sets `action`. The request read its membership as a proxy; the
+    role change to coder commits before the request takes the project lock. The check
+    runs on the row read under the lock, so the request is refused (#1568)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from tests.test_expert import _in_thread, _paused
+
+    reached, release = _paused(monkeypatch, "_locked", requests)
+    sent = _in_thread(proxy.ask)
+    try:
+        assert reached.wait(10), "the request never reached the lock"
+        member = f"{PROJECT}/members/{proxy.agent.agent_id}"
+        changed = owner.patch(member, {"trust": "member", "role": "coder"})
+        assert changed.status_code == 200, changed.text
+    finally:
+        release.set()
+    refused = sent.result(timeout=10)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"]["action"] == "proxy_only"
+    assert owner.get(f"{PROJECT}/requests").json()["items"] == []
+
+
 def test_a_signature_without_the_header_line_does_not_verify(proxy: Proxy) -> None:
     refused = proxy.call("POST", TICKER, ITEM, on_request="req-a", signed_as="req-b")
     assert refused.headers["Maity-Error"] == "signature_invalid"
