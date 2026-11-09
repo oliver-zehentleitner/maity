@@ -512,6 +512,10 @@ def routed(conn: Connection, membership_id: int | None) -> tuple[int | None, dic
     if row.cover_state != "covered" or row.cover_by is None:
         return membership_id, None
     sub = conn.execute(select(t.membership).where(t.membership.c.id == row.cover_by)).one()
+    if sub.role == "expert":
+        # An expert takes no cards (§2.3 "The expert"); the role change waits while the cover
+        # runs, so this is a backstop: the card goes to the covered member, as without cover.
+        return membership_id, None
     return sub.id, {
         "for": _principal(row),
         "by": _principal(sub),
