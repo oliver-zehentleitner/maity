@@ -62,6 +62,42 @@ def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_
     assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
+def test_claude_code_interactive_records_the_clone_as_trusted_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    """Claude Code 2.1.319 asked "Is this a project you created or one you trust?" on its first
+    start in a fresh clone and waited, so the agent never ran `maity resume` (the first runner
+    test, 2026-11-09). The placement is the trust decision: the clone's entry is recorded in
+    the agents' Claude Code configuration, the rest of the file stays as it was."""
+    home = Path.home()  # the test's own (conftest)
+    before = {"numStartups": 3, "projects": {"/other": {"hasTrustDialogAccepted": False}}}
+    (home / ".claude.json").write_text(json.dumps(before))
+    ctx = context(tmp_path)
+    ctx.clone.mkdir(parents=True)
+    adapters.launch(ctx)
+    after = json.loads((home / ".claude.json").read_text())
+    assert after == {**before, "projects": {
+        "/other": {"hasTrustDialogAccepted": False},
+        str(ctx.clone.resolve()): {"hasTrustDialogAccepted": True},
+    }}  # fmt: skip
+
+
+def test_claude_code_supervised_records_no_trust(tmp_path: Path) -> None:
+    """Headless (`-p`), Claude Code 2.1.319 asks for no folder trust and records none."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": "supervised"})
+    adapters.launch(ctx)
+    assert not (Path.home() / ".claude.json").exists()
+
+
+def test_claude_code_does_not_start_when_the_trust_cannot_be_recorded(tmp_path: Path) -> None:
+    """A session waiting at the trust question would pass for `running`: the start fails
+    instead, with the cause in the runner's log, and the file is left as it was."""
+    (Path.home() / ".claude.json").write_text("not json")
+    with pytest.raises(OSError, match="not JSON"):
+        adapters.launch(context(tmp_path))
+    assert (Path.home() / ".claude.json").read_text() == "not json"
+
+
 def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) -> None:
     """A grant that reached the adapters without the configuration's check: of its rules,
     only the plain command reaches either harness's settings."""

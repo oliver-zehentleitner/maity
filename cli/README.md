@@ -934,6 +934,11 @@ maity runner serve            # in the foreground; as a service: `maity runner u
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
 ```
 
+`status` shows each placement's state as the supervisor last recorded
+it. For a placement that is `starting` or `running` it adds the line to
+attach to its session (`attach` in `--json`), the same text the hub
+shows as its session hint.
+
 With `[backend] kind = "local"` the service supervises the agents itself.
 Every five seconds it compares the placements with the sessions of its
 own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
@@ -986,7 +991,14 @@ project's own harness configuration is never loaded:
   by the runner outside the clone (`maity`, `git`, the repository's
   `allow` list, file tools inside the clone only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
-  configuration. Where bubblewrap and socat are on the agents' `PATH`,
+  configuration. Before an `interactive` start the runner marks the
+  clone as trusted in the agents' Claude Code configuration
+  (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
+  Code's own saves take; see `cli/context/runner.md` for the one case in
+  which a concurrent write can be lost), so the
+  first start in a fresh clone does not wait at the folder-trust
+  question; a start whose entry cannot be written fails with the cause in
+  the log. Where bubblewrap and socat are on the agents' `PATH`,
   its OS sandbox is switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the

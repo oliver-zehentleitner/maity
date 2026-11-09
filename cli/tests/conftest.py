@@ -72,8 +72,13 @@ def fake_maity(bin_dir: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test sees the developer's git config or a MAITY_STATE_DIR from the shell."""
+def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test sees the developer's git config or a MAITY_STATE_DIR from the shell, and none
+    writes into the developer's home: an interactive Claude Code launch records the clone's
+    folder trust in ~/.claude.json (runner/trust.py)."""
+    home = tmp_path / "isolated-home"  # not `home`: tests make their own
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")

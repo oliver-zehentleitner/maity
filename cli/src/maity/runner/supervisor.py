@@ -853,6 +853,7 @@ class Supervisor:
             private=private,
             workspaces=target.workspaces.resolve() if target.as_user.here else target.workspaces,
             as_user=target.as_user,
+            agent_path=target.agent_path,
         )
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
