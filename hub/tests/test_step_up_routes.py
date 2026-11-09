@@ -1,0 +1,234 @@
+"""The routes that ask for the second factor (docs/api.md §2.8.4) are the ones the dashboard
+knows: web/tools/step-up-routes.json, which web/tools/check.py holds the dashboard's calls to
+(tsk-6dk86ej9s0fq). The hub's set is read from its source: every route whose handler reaches
+`second_factor.require_step_up`, directly, in a lambda it hands on, or through the hub's own
+functions it calls."""
+
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+
+SRC = Path(__file__).resolve().parents[1] / "src" / "maity_hub"
+LIST = Path(__file__).resolve().parents[2] / "web" / "tools" / "step-up-routes.json"
+METHODS = {"get", "post", "put", "patch", "delete"}
+
+Key = tuple[str, str]  # (module, function)
+
+
+def _module_name(path: Path) -> str:
+    parts = path.relative_to(SRC.parent).with_suffix("").parts
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def _aliases(tree: ast.Module, module: str) -> dict[str, str]:
+    """Each name a module imports another hub module as: `from maity_hub.auth import
+    second_factor` gives second_factor -> maity_hub.auth.second_factor."""
+    found: dict[str, str] = {}
+    package = module.rsplit(".", 1)[0]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                base = ".".join(
+                    package.split(".")[: len(package.split(".")) - node.level + 1]
+                    + ([base] if base else [])
+                )
+            for alias in node.names:
+                found[alias.asname or alias.name] = f"{base}.{alias.name}"
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                found[alias.asname or alias.name.split(".")[0]] = (
+                    alias.name if alias.asname else alias.name.split(".")[0]
+                )
+    return found
+
+
+def _callee(call: ast.Call, module: str, aliases: dict[str, str]) -> Key | None:
+    """The function a call names: `f`, `f` imported from a module under any name, or a chain of
+    attributes from an imported name, `second_factor.require_step_up` as well as
+    `maity_hub.auth.second_factor.require_step_up`. A function reached otherwise (assigned to
+    another name, taken by `getattr`, called on an object) is not followed."""
+    fn = call.func
+    if isinstance(fn, ast.Name):
+        target = aliases.get(fn.id)
+        if target and "." in target:  # `from maity_hub.x import f`
+            mod, name = target.rsplit(".", 1)
+            return (mod, name)
+        return (module, fn.id)
+    chain: list[str] = []
+    node: ast.expr = fn
+    while isinstance(node, ast.Attribute):
+        chain.insert(0, node.attr)
+        node = node.value
+    if isinstance(node, ast.Name) and node.id in aliases and chain:
+        return (".".join([aliases[node.id], *chain[:-1]]), chain[-1])
+    return None
+
+
+# The gate itself. A call is resolved to it through the module's imports (see `_callee` for the
+# forms that are followed), whatever name or module path it is called by.
+GATE: Key = ("maity_hub.auth.second_factor", "require_step_up")
+
+
+def hub_step_up_routes(extra: dict[str, str] | None = None) -> set[str]:
+    """The routes that reach the gate, from the hub's source and `extra` (module name to source,
+    for a test's stand-in)."""
+    sources = {
+        _module_name(path): path.read_text(encoding="utf-8") for path in sorted(SRC.rglob("*.py"))
+    }
+    sources |= extra or {}
+    calls: dict[Key, set[Key]] = {}
+    routes: list[tuple[Key, str, str]] = []
+    for module, text in sources.items():
+        tree = ast.parse(text)
+        aliases = _aliases(tree, module)
+        # The prefix of each router the module makes: `router = APIRouter(prefix="/auth")`.
+        prefixes: dict[str, str] = {}
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id == "APIRouter"
+            ):
+                prefix = next(
+                    (
+                        k.value.value
+                        for k in node.value.keywords
+                        if k.arg == "prefix" and isinstance(k.value, ast.Constant)
+                    ),
+                    "",
+                )
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        prefixes[target.id] = str(prefix)
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            key = (module, node.name)
+            calls[key] = set()
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Call):
+                    callee = _callee(inner, module, aliases)
+                    if callee:
+                        calls[key].add(callee)
+            for deco in node.decorator_list:
+                if (
+                    isinstance(deco, ast.Call)
+                    and isinstance(deco.func, ast.Attribute)
+                    and deco.func.attr in METHODS
+                    and isinstance(deco.func.value, ast.Name)
+                    and deco.func.value.id in prefixes
+                    and deco.args
+                    and isinstance(deco.args[0], ast.Constant)
+                ):
+                    routes.append(
+                        (
+                            key,
+                            deco.func.attr.upper(),
+                            prefixes[deco.func.value.id] + str(deco.args[0].value),
+                        )
+                    )
+    asking = {GATE}
+    while True:
+        more = {key for key, callees in calls.items() if key not in asking and callees & asking}
+        if not more:
+            break
+        asking |= more
+    return {f"{method} {path}" for key, method, path in routes if key in asking}
+
+
+def listed_routes() -> set[str]:
+    return {entry["route"] for entry in json.loads(LIST.read_text(encoding="utf-8"))["routes"]}
+
+
+def test_the_dashboards_list_is_the_hubs_step_up_routes() -> None:
+    hub = hub_step_up_routes()
+    listed = listed_routes()
+    assert hub - listed == set(), "asks for the factor, missing in web/tools/step-up-routes.json"
+    assert listed - hub == set(), "listed in web/tools/step-up-routes.json, the hub does not ask"
+
+
+def test_the_reading_finds_a_route_through_a_helper() -> None:
+    """The ones only a helper module asks for are found too: account deletion, the second
+    factor's own routes, an instance admin's reset."""
+    hub = hub_step_up_routes()
+    assert {
+        "POST /me/deletion",
+        "POST /auth/second-factor/totp",
+        "DELETE /auth/second-factor",
+        "POST /admin/users/{human_id}/second-factor/reset",
+        "POST /requests/{request_id}/answer",
+    } <= hub
+    assert "GET /me" not in hub and "GET /runners/enrollments" not in hub
+
+
+PROBE = """
+from fastapi import APIRouter
+from maity_hub.auth import second_factor
+from maity_hub.auth.second_factor import require_step_up as require_factor
+from maity_hub import account_deletion
+import maity_hub.auth.second_factor
+import maity_hub.auth.second_factor as gate
+
+router = APIRouter(prefix="/probe")
+
+
+def _helper(conn, hub, caller):
+    require_factor(conn, hub, caller)
+
+
+@router.get("/aliased")
+def aliased(conn, hub, caller):
+    require_factor(conn, hub, caller)
+
+
+@router.get("/attribute")
+def attribute(conn, hub, caller):
+    second_factor.require_step_up(conn, hub, caller)
+
+
+@router.post("/helper")
+def through_helper(conn, hub, caller):
+    _helper(conn, hub, caller)
+
+
+@router.post("/module")
+def through_module(conn, hub, caller):
+    account_deletion.request(conn, hub, caller, "x")
+
+
+@router.post("/dotted")
+def dotted(conn, hub, caller):
+    maity_hub.auth.second_factor.require_step_up(conn, hub, caller)
+
+
+@router.post("/module-alias")
+def module_alias(conn, hub, caller):
+    gate.require_step_up(conn, hub, caller)
+
+
+@router.get("/plain")
+def plain(conn):
+    return None
+"""
+
+
+def test_the_gate_is_found_by_any_name_it_is_imported_as() -> None:
+    """Review of #1547: an alias (`import require_step_up as require_factor`), a module imported
+    under another name, and the module's full dotted path are the same gate."""
+    found = {
+        r
+        for r in hub_step_up_routes({"maity_hub.routes.probe": PROBE})
+        if r.split(" ")[1].startswith("/probe/")
+    }
+    assert found == {
+        "GET /probe/aliased",
+        "GET /probe/attribute",
+        "POST /probe/helper",
+        "POST /probe/module",
+        "POST /probe/dotted",
+        "POST /probe/module-alias",
+    }

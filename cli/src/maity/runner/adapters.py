@@ -202,7 +202,9 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         "--setting-sources", "user",  # the project's .claude/ is not loaded, hooks included
         "--settings", str(settings),
         "--permission-mode", "dontAsk",
-        "--strict-mcp-config", "--mcp-config", str(mcp),
+        # `=`: `--mcp-config` takes several values, and in interactive mode the start
+        # prompt comes next, which Claude Code would read as a second configuration file.
+        "--strict-mcp-config", f"--mcp-config={mcp}",
     ]  # fmt: skip
     model = ctx.placement.get("model")
     if model:

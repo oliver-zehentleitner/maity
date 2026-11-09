@@ -366,6 +366,10 @@ def _agent_values(
             raise invalid({"agent.id": "not_a_member"}) from None
         if member.agent_id is None:
             raise invalid({"agent.id": "not_an_agent"})
+        if _profile_owner(conn, member.agent_id) != _callers_human(conn, mine):
+            # A human places only a profile they own, an agent only one its own human owns,
+            # as a join names only the caller's own agent (§15.6, §3.1).
+            raise invalid({"agent.id": "not_yours"}, "a placement names one of your own agents")
         allowed_projects.refuse(conn, member.agent_id, mine.project)  # §6.3
         _exists(conn, t.placement.c.membership_id == member.id)
         handle: str = conn.execute(
@@ -420,6 +424,18 @@ def _agent_values(
         "briefing": body.briefing or None,
     }
     return {"new_handle": body.agent.handle, "new_profile": profile}, body.agent.handle
+
+
+def _profile_owner(conn: Connection, agent_id: str) -> str:
+    owner: str = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar_one()
+    return owner
+
+
+def _callers_human(conn: Connection, mine: Membership) -> str:
+    """The calling human, or the human who owns the calling agent's profile."""
+    return mine.principal_id if mine.kind == "human" else _profile_owner(conn, mine.principal_id)
 
 
 def _file(

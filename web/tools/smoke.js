@@ -2057,7 +2057,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("form.pair-form")).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("pair-name").getAttribute("aria-describedby") === "pair-name-rule",
     "runners: the name's rule is said up front");
   byId("pair-name").value = "new-laptop";
-  main.querySelector("form.pair-form").dispatch("submit"); await tick(); await tick(); await tick();
+  // Pairing mints a credential (§2.8.4): the fixture hub refuses until the factor is given, and the
+  // page asks for it before it shows the line (tsk-6dk86ej9s0fq).
+  win.MAITY_FIXTURE_STEP_UP = Date.now();
+  main.querySelector("form.pair-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("step-up-step_up_required") && text(main).includes("Pairing a runner needs your second factor") && !main.querySelector(".pair-steps"),
+    "runners: pairing asks for the second factor, the line waits");
+  byId("step-up-step_up_required").value = "123456"; main.querySelector("form.step-up").dispatch("submit");
+  for (let k = 0; k < 8; k++) await tick();
+  win.MAITY_FIXTURE_STEP_UP = false;
+  expect(!byId("step-up-step_up_required") && rWrites.filter((w) => w[1] === "/runners/enrollments").length === 2,
+    "runners: the code given, the pairing is asked for again");
   expect(JSON.stringify(rWrites[0]) === JSON.stringify(["POST", "/runners/enrollments", { name: "new-laptop", ttl_seconds: 900, attach: ["maintainer/maity", "maintainer/sample"] }]),
     "runners: pairing asks for an enrollment that allows the chosen projects");
   const steps = main.querySelector(".pair-steps");
@@ -7016,6 +7026,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(pwPosts[0][1]) === JSON.stringify({ current: "initial-generated", new: "a long new password" })
     && text(main).includes("Password changed. Every other session of yours was signed out") && byId("password-current").value === "",
     "password: changed, the fields cleared, the other sessions named");
+  // A change is a sensitive call (§2.8.4): the question comes, and what was checked is what is sent again,
+  // a field edited while it waits included (review of #1547).
+  win.MAITY_FIXTURE_STEP_UP = Date.now();
+  // The same password again, so that the sign-ins below still hold.
+  byId("password-current").value = "a long new password"; byId("password-new").value = "a long new password"; byId("password-repeat").value = "a long new password";
+  pwSubmit(); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("step-up-step_up_required") && text(main).includes("Changing your password needs your second factor"), "password: the change asks for the second factor");
+  byId("password-new").value = "edited, never repeated";
+  byId("step-up-step_up_required").value = "123456"; main.querySelector("form.step-up").dispatch("submit");
+  for (let k = 0; k < 8; k++) await tick();
+  win.MAITY_FIXTURE_STEP_UP = false;
+  const pwAgain = pwPosts.filter((w) => w[0] === "/auth/password").slice(-2);
+  expect(pwAgain.length === 2 && pwAgain.every((w) => w[1].new === "a long new password") && text(main).includes("Password changed."),
+    "password: the code given, the checked password is sent again, not one edited meanwhile " + JSON.stringify(pwAgain.map((w) => w[1].new)));
   byId("password-current").value = "not the current one"; byId("password-new").value = "another long password"; byId("password-repeat").value = "another long password";
   pwSubmit(); await tick(); await tick();
   expect(text(byId("password-current-error")) === "This is not your current password." && byId("password-current").getAttribute("aria-invalid") === "true",
@@ -11103,12 +11127,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelector(".me").childNodes[3].querySelector(".settings-menu") && /bell-box/.test(meOrder[4])
     && header.querySelector(".me").childNodes[5].querySelector(".profile-menu") && header.querySelector(".me").childNodes.length === 6,
     "header: Chat, Lead, \"+\", the gear, Notifications, the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
-  // "+" offers an agent and a person: the agents page and the invitations page.
+  // "+" offers an agent, a person, a runner and a project, in that order (tsk-45fhe2yrwzb7).
   const addBtn = header.querySelector(".add-menu");
   addBtn.click(); await tick();
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
-  expect(addBtn.getAttribute("aria-label") === "Add a project, an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Project=#/new", "Agent=#/agents", "User=#/invite"]),
-    "header: the + menu leads to the create form, the agents page and the invitations page " + JSON.stringify(addItems));
+  expect(addBtn.getAttribute("aria-label") === "Add an agent, a person, a runner or a project"
+    && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite", "Runner=#/runners", "Project=#/new"]),
+    "header: the + menu leads to the agents page, the invitations page, the runners page and the create form " + JSON.stringify(addItems));
   // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
   expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
     "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));
