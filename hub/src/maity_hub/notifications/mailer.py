@@ -45,7 +45,7 @@ IMMEDIATE_PER_HOUR = 10
 DIGEST_MAX = 50
 SUBJECT_MAX = 120
 CONTENT_MAX = 500
-MAILED_KINDS = ("inbox", "chat", "mention")
+MAILED_KINDS = ("inbox", "chat", "mention", "invitation")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
 # The alert of a new sign-in: a security mail of its own while `security` is immediate, an

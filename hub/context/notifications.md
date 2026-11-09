@@ -942,3 +942,32 @@ instances an owner ever saw.
   quadratic in that history without an index of its own.
 - Choosing among sessions with an equal start by id alone: ids are random, so an ended
   session could stand for a live one after a resume within one tick.
+
+## An invitation by handle has a notification kind of its own, mailed at once by default
+
+**Id:** 11617fa3-6098-4383-b70d-b46115fe4356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4
+**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-09
+**Revisit when:** another personal request (an organisation's invitation) is to join the kind, or the kind defaults are decided again
+
+The consent request an invitation by handle files is an item of the kind `invitation`, not
+`inbox` (`items._personal_kind`, from the request's proposal kind). The kind has its own
+browser switch and mail mode, `immediate` by default, so the person may keep invitations on
+the platform only (`daily` or `off`) without touching the inbox's mail. The counts do not
+change: an open request counts in `inbox` whatever its item's kind, and the five keys stay.
+
+**Reason:** the maintainer wanted the invitation's mail switchable on its own and at once by
+default. The general rule of 2026-11-02, that a kind added later mails as a daily digest, is
+for informing kinds against filled mailboxes; an invitation waits for an answer and expires.
+
+**Rejected alternatives:**
+- Leaving it under `inbox`: its mail could only be turned off with every other request's.
+- `daily` by default, as the rule for later kinds says: the invitation would often expire in a
+  digest before the person saw it.
+- A count of its own: the counts' five keys are a contract the dashboard's badges read; the
+  request is an open request like any other.
+- Moving an organisation's invitation into the kind too: not decided, left to a later card.
+

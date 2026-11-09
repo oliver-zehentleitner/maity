@@ -34,7 +34,7 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 from maity_hub.ratelimit import Attempt
 
-KINDS = ("inbox", "chat", "mention", "security")
+KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
 DIGESTS = ("hourly", "daily", "weekly")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -56,7 +56,13 @@ _HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
-        "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
+        "kinds": {
+            "inbox": True,
+            "chat": True,
+            "mention": True,
+            "security": True,
+            "invitation": True,
+        },
     },
     "email": {
         "language": "en",
@@ -71,6 +77,9 @@ DEFAULTS: dict[str, Any] = {
             "chat": {"mode": "daily", "content": False},
             "mention": {"mode": "daily", "content": False},
             "security": {"mode": "immediate"},
+            # An invitation by handle at once, like the inbox (tsk-8xsrzjv7f0yr, part 4);
+            # `daily` or `off` keeps it on the platform only.
+            "invitation": {"mode": "immediate"},
         },
         "sign_in_link": True,
         "daily_at": "08:00",
