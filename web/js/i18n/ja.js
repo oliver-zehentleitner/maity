@@ -4637,6 +4637,7 @@ window.MAITY_I18N["ja"] = {
   "users.column.admin": "管理者",
   "users.column.agents": "エージェント",
   "users.column.created": "作成日",
+  "users.column.email": "メールアドレス",
   "users.column.last_seen": "最終確認",
   "users.column.last_signin": "最終サインイン",
   "users.column.name": "名前",
@@ -4648,6 +4649,10 @@ window.MAITY_I18N["ja"] = {
   "users.count_more": {
     "other": "アカウント {count} 件以上"
   },
+  "users.email.copied": "コピーしました",
+  "users.email.copy": "コピー",
+  "users.email.copy_failed": "コピーできませんでした",
+  "users.email.copy_label": "{name} のメールアドレスをコピー",
   "users.filter.active": "有効",
   "users.filter.all": "すべてのアカウント",
   "users.filter.disabled": "無効",
@@ -4681,7 +4686,7 @@ window.MAITY_I18N["ja"] = {
   "users.reset.sent": "{name} へのメールを送信しました。リンクは {when} まで使えます。",
   "users.reset.title": "{name} の2要素サインインをリセット",
   "users.reset.what": "人の2要素サインインのリセット",
-  "users.search": "ハンドルまたは名前で検索",
+  "users.search": "ハンドル、名前、またはメールアドレスで検索",
   "users.show": "表示",
   "users.state.active": "有効",
   "users.state.disabled": "無効",

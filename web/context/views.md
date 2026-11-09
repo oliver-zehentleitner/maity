@@ -4655,7 +4655,7 @@ A refusal `second_factor_enrolment_required` draws the setup through `render()`;
 **Evidence:** inferred
 **Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
 
-Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
 
 **Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
 
