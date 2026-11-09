@@ -10500,12 +10500,16 @@
     "text": "8fb79ac01b33fb50"
   },
   "menu.add.label": {
-    "en": "f6a991eb7a84e22b",
-    "text": "72199166d77382ef"
+    "en": "6bf76f0ed4b00e1b",
+    "text": "ed526ed720817417"
   },
   "menu.add.project": {
     "en": "6c6b7df3070f112f",
     "text": "ef78c5b0393e3d85"
+  },
+  "menu.add.runner": {
+    "en": "e98aef21e99228bc",
+    "text": "3b213ea182425a77"
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
