@@ -4,7 +4,10 @@ written for that stay. The hub writes it with each nudge, under the project lock
 with the stay; finding the open cycle in the event log instead could not be both bounded and
 exact across worker processes (review of #1512). The upgrade fills it from the nudges already
 written: for each, the open stay of its recipient in its chat takes the highest `newest_seq`.
-The downgrade drops the column; the hub before it reads the cycle from the log again.
+Its cost: per project with an agent, one index range over that project's `chat_unread` events
+(about one per agent and chat per read cycle), two lookup maps held in memory (agent
+memberships and open stays), and one UPDATE per open stay that has a nudge. It is idempotent.
+The downgrade drops the column only; the hub before it reads the cycle from the log again.
 
 Revision ID: 20261109140000_nudged_through
 Revises: 20261108230000_expert_role
@@ -76,21 +79,27 @@ def upgrade() -> None:
             ).where(_participant.c.here.is_(True))
         )
     }
+    # Project by project, so the read is the index range (project_id, kind, seq) of each
+    # project's nudges, not a scan of the whole event table; one UPDATE per open stay that has
+    # a nudge. Setting the highest `newest_seq` again gives the same value: idempotent.
     newest: dict[int, int] = {}
-    nudges = conn.execute(
-        sa.select(
-            _event.c.project_id, _event.c.subject_id, _event.c.audience, _event.c.payload
-        ).where(_event.c.kind == "chat_unread", _event.c.subject_type == "conversation")
-    )
-    for row in nudges:
-        seq = int((_json(row.payload) or {}).get("newest_seq") or 0)
-        for token in _json(row.audience) or []:
-            if not isinstance(token, str) or not token.startswith("member:"):
-                continue
-            membership = agents.get((row.project_id, token.removeprefix("member:")))
-            stay = stays.get((row.subject_id, membership)) if membership else None
-            if stay is not None:
-                newest[stay] = max(newest.get(stay, 0), seq)
+    for project_id in sorted({project for project, _ in agents}):
+        nudges = conn.execute(
+            sa.select(_event.c.subject_id, _event.c.audience, _event.c.payload).where(
+                _event.c.project_id == project_id,
+                _event.c.kind == "chat_unread",
+                _event.c.subject_type == "conversation",
+            )
+        )
+        for row in nudges:
+            seq = int((_json(row.payload) or {}).get("newest_seq") or 0)
+            for token in _json(row.audience) or []:
+                if not isinstance(token, str) or not token.startswith("member:"):
+                    continue
+                membership = agents.get((project_id, token.removeprefix("member:")))
+                stay = stays.get((row.subject_id, membership)) if membership else None
+                if stay is not None:
+                    newest[stay] = max(newest.get(stay, 0), seq)
     for stay, seq in newest.items():
         conn.execute(
             _participant.update().where(_participant.c.id == stay).values(unread_nudged_through=seq)

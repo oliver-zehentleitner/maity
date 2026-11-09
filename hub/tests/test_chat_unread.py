@@ -18,6 +18,7 @@ from sqlalchemy import event as sqlalchemy_event
 
 from maity_hub import chat_unread, clock, listening, not_listening
 from maity_hub import tables as t
+from maity_hub.events import emit, transaction
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -1175,3 +1176,77 @@ def test_the_upgrade_fills_the_open_cycle_from_the_nudges_written(room: Room) ->
     r.at(25)
     chat_unread.sweep(r.engine)
     assert len(r.nudges(first)) == 1  # the cycle is still open: no second nudge
+
+
+def test_a_second_workers_nudge_behind_a_budget_of_title_events_is_seen(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1512, delta 4 (4hch, 98267), at the production budget: 2100 of the other
+    agent's nudges make a log-reading open-cycle check fall behind for a pass (they are about
+    the chat, not in its message range), a second worker process writes this agent's nudge,
+    and 2000 title events commit before this process's call takes the lock. One nudge."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("a second process on the same database needs PostgreSQL")
+    assert chat_unread.SCAN_BUDGET == 2000  # unchanged constants
+    first, second = r.agents
+    said = [r.say(r.owner, f"line {k}") for k in range(3)]
+    r.read(second)  # only the first agent's nudge is under test
+    r.at(1)
+    chat_unread.sweep(r.engine)  # reads all three, before the delay
+    with transaction(r.engine) as conn:
+        project_id = conn.execute(
+            select(t.conversation.c.project_id).where(t.conversation.c.id == r.chat)
+        ).scalar_one()
+        others = emit(
+            conn,
+            project_id,
+            "chat_unread",
+            [f"member:{second.id}"],
+            {"conversation": {"id": r.chat}, "unread": 1, "oldest_seq": 1, "newest_seq": 1},
+            subject=("conversation", r.chat),
+        )
+    _clone(r.engine, others, 2099)
+    renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": "renamed"})
+    assert renamed.status_code == 200, renamed.text
+    with r.engine.connect() as conn:
+        title_event = conn.execute(
+            select(t.event.c.seq)
+            .where(t.event.c.kind == "conversation_updated", t.event.c.subject_id == r.chat)
+            .order_by(t.event.c.seq.desc())
+            .limit(1)
+        ).scalar_one()
+    real_check = chat_unread.check
+    moment = r.now + timedelta(minutes=12)
+    written: list[str] = []
+
+    def other_worker_first(engine: Engine, conversation_id: str, membership_id: int) -> Any:
+        if not written:
+            url = engine.url.render_as_string(hide_password=False)
+            done = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _OTHER_WORKER,
+                    url,
+                    conversation_id,
+                    str(membership_id),
+                    moment.isoformat(),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=300,
+            )
+            written.append(done.stdout.strip())
+            _clone(r.engine, title_event, 2000)  # after the other's nudge, before this lock
+        return real_check(engine, conversation_id, membership_id)
+
+    monkeypatch.setattr(chat_unread, "check", other_worker_first)
+    for minute in (11, 12, 13):
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    assert written and written[0], "the other process wrote no nudge"
+    [nudge] = r.nudges(first)
+    assert int(nudge.seq) == int(written[0])
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, said[0])
