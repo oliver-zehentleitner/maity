@@ -29,8 +29,10 @@ on:
         options: [hand, ci]
 
 # What the run list shows, and what decide reads to tell a start from ci (automatic) from a hand start: both are a
-# workflow_dispatch event, the title is the only difference the run list carries.
-run-name: hub-mariadb ${{ github.event_name == 'workflow_dispatch' && ((inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && 'ci' || 'hand') || github.event_name }}
+# workflow_dispatch event, the title is the only difference the run list carries. A hand start names the commit it
+# tests (`hub-mariadb hand <sha>`, or `hand head` for the head of the ref), since its head_sha is the ref's head, not
+# the sha input: tools/release_gate.py reads it to find a green run for a release tag.
+run-name: hub-mariadb ${{ github.event_name == 'workflow_dispatch' && ((inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && 'ci' || format('hand {0}', inputs.sha || 'head')) || github.event_name }}
 
 permissions:
   contents: read
