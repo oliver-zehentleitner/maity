@@ -396,12 +396,20 @@ read-only token and lets the tag through only when:
 - for the hub and its image also: the newest hub-mariadb run that
   actually ran the suite on a commit of main with the same files the
   suite reads as the tag (the list `decide` compares; `git diff`) is
-  green. A run that skipped the suite counts for nothing.
+  green. A run that skipped the suite counts for nothing. Only runs of
+  main's own workflow file count: the run's ref is main and the commit
+  it ran is on main, since a dispatch on another ref runs that ref's
+  copy of `hub-mariadb.yml`, which could keep the title and the job's
+  name and drop the suite. A newer matching run that is still going is
+  waited for, and a commit the checkout cannot get or compare stops the
+  gate, so an older green run never stands in for a newer one.
 
 While those are still queued or running it waits, so a tag right after
-a merge works. Otherwise the job stops before `build`'s artifact is
-uploaded or the image is built, and says what is missing and what to do.
-`build`, with its proof of the files, is unchanged: it tests the
+a merge works. Otherwise the job fails and says what is missing and what
+to do: `publish` needs it, so nothing goes to PyPI, and on a tag the
+image is not built. `build` runs beside it and keeps its files only as
+the workflow's artifact. `build`, with its proof of the files, is
+unchanged: it tests the
 product itself, not the code. A hand start of hub-mariadb now names its
 commit in its title (`hub-mariadb hand <sha>`, or `hand head`): its
 head_sha is the head of the ref it ran on, not the `sha` it tested, and
@@ -428,6 +436,12 @@ the tag lacks.
   would always fail first and need a re-run of the job.
 - Counting old hand runs (`hub-mariadb hand`): the run list cannot say
   which commit they tested.
+- Trusting a hand run by its title alone (the first version of the pull
+  request): a run dispatched on a branch uses the branch's workflow
+  file; found in review.
+- Skipping a run whose commit cannot be compared, or one still running
+  (the first version): an older green run then decides although a newer
+  one may be red; found in review.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 

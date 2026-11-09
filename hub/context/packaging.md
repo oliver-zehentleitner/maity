@@ -289,7 +289,8 @@ is the only place it is written (`__version__` reads the package
 metadata). Versions are pre-releases (`0.1.0a1`, …) before the beta, as
 the CLI's are. As in the CLI's release, a `check` job (which ran the
 hub's checks with the hashed dev lock until 2026-11-09 and now holds the
-tag to ci's and hub-mariadb's result on its commit, the entry
+tag to ci's result on its commit and to a green hub-mariadb run on a
+commit of main with the same hub files, the entry
 ea58fdd2-6e3f-45df-ae48-4ce6825cafde in the root context), a `build` job installs only
 `hub/requirements/release.txt` (build, twine and hatchling, compiled
 with the `build.txt` pins as constraints) into a fresh environment and

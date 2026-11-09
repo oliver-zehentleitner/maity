@@ -1,4 +1,4 @@
-"""Tests for release_gate.py against a faked API; no network, no git."""
+"""Tests for release_gate.py against a faked API and history; no network, no git."""
 
 from __future__ import annotations
 
@@ -53,8 +53,20 @@ class FakeApi:
         return {"jobs": [{"name": n, "conclusion": c} for n, c in self.jobs.get(rid, {}).items()]}
 
 
-def same(a, b):
-    return {a, b} <= {TAG, LATER}
+BRANCH = "d" * 40  # a commit only on a branch
+UNKNOWN = "e" * 40  # a commit the checkout cannot get
+
+
+class FakeGit:
+    """TAG and LATER share the hub files; OTHER differs; BRANCH is not on main."""
+
+    def on_main(self, sha):
+        return None if sha == UNKNOWN else sha != BRANCH
+
+    def same(self, a, b):
+        if UNKNOWN in (a, b):
+            return None
+        return {a, b} <= {TAG, LATER}
 
 
 def gate(api, mariadb=True, wait=0.0, looks=None):
@@ -67,7 +79,9 @@ def gate(api, mariadb=True, wait=0.0, looks=None):
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        code = g.gate(api, TAG, mariadb, wait, 60, sleep=sleep, clock=lambda: clock[0], same=same)
+        code = g.gate(
+            api, TAG, mariadb, wait, 60, sleep=sleep, clock=lambda: clock[0], git=FakeGit()
+        )
     return code, out.getvalue()
 
 
@@ -225,6 +239,147 @@ class MariaDb(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(len(looks), 2)
         self.assertIn("start it by hand", out)
+
+
+class Provenance(unittest.TestCase):
+    """Only main's own hub-mariadb.yml can vouch for a commit."""
+
+    def api(self, runs, jobs):
+        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs})
+
+    def test_hand_run_dispatched_on_a_branch_is_refused(self):
+        # The branch's copy of the workflow keeps the title and the job name.
+        r = run(
+            5,
+            sha=BRANCH,
+            event="workflow_dispatch",
+            title="hub-mariadb hand " + TAG,
+            branch="x/no-suite",
+        )
+        code, out = gate(self.api([r], {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 1)
+        self.assertIn("no hub-mariadb run tested", out)
+
+    def test_hand_run_on_a_ref_called_main_that_is_not_main_is_refused(self):
+        # A tag named main, say: head_branch says main, the commit is not on it.
+        r = run(5, sha=BRANCH, event="workflow_dispatch", title="hub-mariadb hand " + TAG)
+        code, out = gate(self.api([r], {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 1, out)
+
+    def test_hand_run_from_main_is_accepted(self):
+        r = run(5, sha=OTHER, event="workflow_dispatch", title="hub-mariadb hand " + TAG)
+        code, out = gate(self.api([r], {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 0, out)
+
+    def test_commit_that_cannot_be_compared_stops_instead_of_being_skipped(self):
+        # A newer red run on a commit the checkout lacks must not be passed over for an older
+        # green one: neither when its own commit is unknown nor when the commit it tested is.
+        green = {5: {"hub-mariadb": "success"}}
+        for newer, message in (
+            (
+                maria(6, UNKNOWN, "hub-mariadb schedule", "schedule"),
+                "cannot tell whether " + UNKNOWN,
+            ),
+            (
+                maria(6, OTHER, "hub-mariadb hand " + UNKNOWN),
+                "cannot compare the hub files of " + UNKNOWN,
+            ),
+        ):
+            code, out = gate(
+                self.api([newer, maria(5, TAG)], {6: {"hub-mariadb": "failure"}, **green})
+            )
+            self.assertEqual(code, 1, out)
+            self.assertIn("::error::" + message, out)
+
+    def test_newer_matching_run_still_going_is_waited_for(self):
+        states = iter(
+            [
+                [maria(6, LATER, "hub-mariadb hand " + TAG, status="in_progress"), maria(5, TAG)],
+                [maria(6, LATER, "hub-mariadb hand " + TAG), maria(5, TAG)],
+            ]
+        )
+        jobs = {6: {"hub-mariadb": "failure"}, 5: {"hub-mariadb": "success"}}
+        looks = []
+        code, out = gate(self.api(lambda: next(states), jobs), wait=600, looks=looks)
+        self.assertEqual(code, 1)
+        self.assertEqual(looks, [60])
+        self.assertIn("is in_progress", out)
+        self.assertIn("::error::hub-mariadb is failure", out)
+
+    def test_newer_run_on_other_files_still_going_is_not_waited_for(self):
+        runs = [maria(6, OTHER, status="in_progress"), maria(5, TAG)]
+        code, out = gate(self.api(runs, {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 0, out)
+
+
+class RealGit(unittest.TestCase):
+    """Git against a throwaway repository with an origin."""
+
+    def setUp(self):
+        import subprocess
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.origin, self.work = root / "origin", root / "work"
+
+        def git(cwd, *args):
+            return subprocess.run(
+                ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                cwd=cwd,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+        self.git = git
+        self.origin.mkdir()
+        git(self.origin, "init", "-q", "-b", "main")
+        (self.origin / "hub").mkdir()
+        (self.origin / "hub" / "a.py").write_text("1\n")
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-q", "-m", "one")
+        self.one = git(self.origin, "rev-parse", "HEAD")
+        (self.origin / "web.txt").write_text("web\n")
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-q", "-m", "web only")
+        self.web = git(self.origin, "rev-parse", "HEAD")
+        git(self.origin, "clone", "-q", str(self.origin), str(self.work))
+        (self.origin / "hub" / "a.py").write_text("2\n")
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-q", "-m", "hub change, after the clone")
+        self.hub = git(self.origin, "rev-parse", "HEAD")
+        git(self.origin, "checkout", "-q", "-b", "side", self.one)
+        (self.origin / "side.txt").write_text("x\n")
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-q", "-m", "side")
+        self.side = git(self.origin, "rev-parse", "HEAD")
+        git(self.origin, "checkout", "-q", "main")
+        git(self.origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+
+    def check(self):
+        cwd = Path.cwd()
+        import os
+
+        os.chdir(self.work)
+        self.addCleanup(os.chdir, cwd)
+        return g.Git()
+
+    def test_same_fetches_a_commit_the_checkout_lacks(self):
+        git = self.check()
+        self.assertIs(git.same(self.one, self.web), True)
+        self.assertIs(git.same(self.web, self.hub), False)  # self.hub was fetched for this
+
+    def test_unknown_commit_is_none_not_different(self):
+        git = self.check()
+        self.assertIsNone(git.same(self.one, "f" * 40))
+        self.assertIsNone(git.on_main("f" * 40))
+
+    def test_on_main_reads_the_fetched_main(self):
+        git = self.check()
+        self.assertIs(git.on_main(self.hub), True)  # newer than the clone
+        self.assertIs(git.on_main(self.side), False)
 
 
 class Workflows(unittest.TestCase):

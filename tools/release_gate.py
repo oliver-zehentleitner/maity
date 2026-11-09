@@ -11,11 +11,14 @@ writes:
   a commit of main with the same files the suite reads as the tagged commit
   (the list `decide` in hub-mariadb.yml compares, MARIADB_PATHS below). The
   newest such run must have passed. A run that skipped the suite counts for
-  nothing.
+  nothing, and only main's own workflow file counts: the run's ref is main
+  and the commit it ran is on main.
 
 While the ci run, or a hub-mariadb run, is still queued or running, it waits
-(up to --wait-minutes), so a tag pushed right after a merge works. Anything
-else missing or red stops the release with a message naming what to do.
+(up to --wait-minutes), so a tag pushed right after a merge works; a newer
+matching MariaDB run still going is waited for even when an older one is
+green. Anything missing, red or impossible to compare stops the release with
+a message naming what to do.
 Standard library only; the token is the job's own, read-only.
 """
 
@@ -115,15 +118,15 @@ def tested(run: dict) -> str | None:
     Automatic runs (the clock, a start from ci) test the head of main they
     ran on. A hand run tests its `sha` input, which only its title carries
     (`hub-mariadb hand <sha>`, or `hand head` without one); older hand runs,
-    titled `hub-mariadb hand`, cannot be told and are left out.
+    titled `hub-mariadb hand`, cannot be told and are left out. Whether the
+    run's own workflow file can be trusted is `trusted`'s question.
     """
     title = run.get("display_title") or ""
-    on_main = run.get("head_branch") == "main"
-    if run["event"] == "schedule" and on_main:
+    if run["event"] == "schedule":
         return run["head_sha"]
     if run["event"] != "workflow_dispatch":
         return None
-    if title == "hub-mariadb ci" and on_main:
+    if title == "hub-mariadb ci":
         return run["head_sha"]
     hand = HAND.fullmatch(title)
     if hand:
@@ -131,45 +134,110 @@ def tested(run: dict) -> str | None:
     return None
 
 
-def same_files(a: str, b: str) -> bool:
-    """True when a and b hold the same MARIADB_PATHS (both must be fetched)."""
-    diff = subprocess.run(
-        ["git", "diff", "--quiet", a, b, "--", *MARIADB_PATHS],
-        capture_output=True,
-        check=False,
-    )
-    return diff.returncode == 0
+class Git:
+    """The checkout's history; a commit it lacks is fetched before it is judged."""
+
+    def __init__(self) -> None:
+        # main moves while the gate waits: one fetch per look (gate makes a Git per look).
+        self.main_fetched = False
+
+    @staticmethod
+    def _run(*args: str) -> int:
+        return subprocess.run(["git", *args], capture_output=True, check=False).returncode
+
+    def _have(self, sha: str) -> bool:
+        if self._run("cat-file", "-e", f"{sha}^{{commit}}") == 0:
+            return True
+        self._run("fetch", "--quiet", "--no-tags", "origin", sha)
+        return self._run("cat-file", "-e", f"{sha}^{{commit}}") == 0
+
+    def on_main(self, sha: str) -> bool | None:
+        """Whether sha is on main; None when that cannot be told."""
+        if not self.main_fetched:
+            main = "+refs/heads/main:refs/remotes/origin/main"
+            if self._run("fetch", "--quiet", "--no-tags", "origin", main) != 0:
+                return None
+            self.main_fetched = True
+        if not self._have(sha):
+            return None
+        code = self._run("merge-base", "--is-ancestor", sha, "refs/remotes/origin/main")
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
+
+    def same(self, a: str, b: str) -> bool | None:
+        """Whether a and b hold the same MARIADB_PATHS; None when that cannot be told."""
+        if not (self._have(a) and self._have(b)):
+            return None
+        code = self._run("diff", "--quiet", a, b, "--", *MARIADB_PATHS)
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
 
 
-def mariadb_state(api: Api, sha: str, same: Callable[[str, str], bool] = same_files) -> State:
-    """The newest hub-mariadb run that tested the tagged commit's hub files."""
+def mariadb_state(api: Api, sha: str, git: Git) -> State:
+    """The newest hub-mariadb run that tested the tagged commit's hub files.
+
+    Only runs of main's own workflow file count: a dispatch on another ref
+    runs that ref's version of hub-mariadb.yml, which could keep the title
+    and the job's name and drop the suite. So the run's ref must be main and
+    the commit it ran (head_sha, whose workflow file it used) must be on
+    main. A newer matching run that is still going is waited for, and a
+    commit that cannot be compared stops the gate, so an older green run
+    never stands in for a newer one.
+    """
     runs = api.get("actions/workflows/hub-mariadb.yml/runs", per_page=50)["workflow_runs"]
-    pending = [r for r in runs if r["status"] != DONE]
     for run in runs:
         commit = tested(run)
-        if run["status"] != DONE or commit is None or not same(commit, sha):
+        if commit is None or run.get("head_branch") != "main":
             continue
+        trusted = git.on_main(run["head_sha"])
+        if trusted is None:
+            return State(
+                "fail",
+                f"cannot tell whether {run['head_sha']} is on main ({run['html_url']}):"
+                " re-run this job",
+            )
+        if not trusted:
+            continue
+        same = git.same(commit, sha)
+        if same is None:
+            return State(
+                "fail",
+                f"cannot compare the hub files of {commit} with {sha} ({run['html_url']}):"
+                " re-run this job",
+            )
+        if not same:
+            continue
+        if run["status"] != DONE:
+            return State(
+                "wait",
+                f"hub-mariadb on {commit}, same hub files as {sha}, is {run['status']}:"
+                f" {run['html_url']}",
+            )
         suite = job(api, run, "hub-mariadb")
         result = suite["conclusion"] if suite else None
         if result not in RAN:
             continue
         if result == "success":
             return State(
-                "ok", f"hub-mariadb passed on {commit}, same hub files as {sha}: {run['html_url']}"
+                "ok",
+                f"hub-mariadb passed on {commit}, same hub files as {sha}: {run['html_url']}",
             )
         return State(
             "fail",
-            f"hub-mariadb is {result} on {commit}, same hub files as {sha} ({run['html_url']}):"
-            " fix main and tag again, or if it was a flake start hub-mariadb by hand"
-            f" (Actions, hub-mariadb, Run workflow, sha {sha}) and re-run this job when it is green",
-        )
-    if pending:
-        return State(
-            "wait", f"no finished hub-mariadb run for {sha} yet; {len(pending)} running or queued"
+            f"hub-mariadb is {result} on {commit}, same hub files as {sha}"
+            f" ({run['html_url']}): fix main and tag again, or if it was a flake start"
+            f" hub-mariadb by hand from main (Actions, hub-mariadb, Run workflow, sha {sha})"
+            " and re-run this job when it is green",
         )
     return State(
         "fail",
-        f"no hub-mariadb run tested the hub files of {sha}: start it by hand"
+        f"no hub-mariadb run tested the hub files of {sha}: start it by hand from main"
         f" (Actions, hub-mariadb, Run workflow, sha {sha}) and re-run this job when it is green",
     )
 
@@ -182,7 +250,7 @@ def gate(
     interval: float,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
-    same: Callable[[str, str], bool] = same_files,
+    git: Git | None = None,
 ) -> int:
     """0 when every check passed, 1 when one failed or the wait ran out."""
     end = clock() + wait
@@ -192,7 +260,7 @@ def gate(
     while True:
         states = [ci_state(api, sha)]
         if mariadb and states[0].kind == "ok":
-            state = mariadb_state(api, sha, same)
+            state = mariadb_state(api, sha, git or Git())
             if (
                 state.kind == "fail"
                 and "no hub-mariadb run" in state.text
