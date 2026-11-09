@@ -4548,21 +4548,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? (() => { const items = plFeed; plFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 30000, superseded: false }); })()
     : plGet(p));
   const plCreds = [];
+  // While this check runs, agt-a's placements are left out of the list, so one agent of one's own has none
+  // and a read of its credentials would show (the fixture places every own agent since #1558).
+  let plHideA = true;
+  const plList = (p) => plGetAll(p).then((r) => (plHideA ? { ...r, items: r.items.filter((x) => !(x.agent && x.agent.id === "agt-a")) } : r));
   win.Maity.api.getAll = (p) => {
-    if (p === "/projects/maintainer/maity/placements") plReads += 1;
+    if (p === "/projects/maintainer/maity/placements") { plReads += 1; return plList(p); }
     if (/\/members\/[^/]+\/credentials$/.test(p)) plCreds.push(p.split("/")[5]);
     return plGetAll(p);
   };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick();
   // The credentials are read for one's own agents placed here only, once each (tsk-d61rvjm6gteh), not for every agent of one's own.
   {
-    const placed = new Set((await plGetAll("/projects/maintainer/maity/placements")).items.map((x) => x.agent && x.agent.id).filter(Boolean));
+    const placed = new Set((await plList("/projects/maintainer/maity/placements")).items.map((x) => x.agent && x.agent.id).filter(Boolean));
     const me = (await plGet("/me")).member.id;
     const own = (await plGetAll("/projects/maintainer/maity/members")).items.filter((m) => m.kind === "agent" && m.owner_id === me && !m.removed_at).map((m) => m.id);
     const want = own.filter((id) => placed.has(id)).sort();
     expect(JSON.stringify(plCreds.slice().sort()) === JSON.stringify(want) && own.length > want.length,
       "placements: the Agents page reads the credentials of its own placed agents only " + JSON.stringify({ read: plCreds, own, placed: [...placed] }));
   }
+  plHideA = false;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick();
   await openAgentCards();
   const plBox = () => main.querySelector("section.placements");
   const plRow = (id) => plBox().querySelectorAll("li.placement").find((li) => li.attrs["data-placement"] === id);
