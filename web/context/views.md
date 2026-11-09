@@ -1730,22 +1730,16 @@ own pages that the board always had. A change after the last read is the
 board's usual news, offered as a reload. The reload after a write reads the
 same way; the hub search still asks one list over every status
 (`status=all&q=`).
-When the board falls back to the one list: when three passes in a row
-each followed a cursor. A pass follows one when the cards at or after its
-start fill its first page and the window holds more cards after them. That
-happens when cards keep changing while the passes read, and also with no
-change at all when the cards sharing the newest `updated_at` fill a page
-and older cards follow in the window (one change of many cards in the same
-second), since every pass then takes those ties again.
-The cost is bounded: at most four more requests than one list for the same
-cards (one per group that holds a page or less), plus the changed-cards
-read. A pass reads pages until it meets a card older than its start, or
-the window ends: one page when its cards and that older one fit on it,
-and otherwise as many pages as its cards fill plus possibly one more to
-find that older card. There are at most three passes, and where all three
-followed a cursor, every page of the one list as well. At most five
-requests are in flight at once. The wait is the longest group plus those
-pages, one after the other, not the sum of every page.
+When the board falls back to the one list: when all three passes followed
+a cursor, that is, when cards keep changing while the passes read, or when
+the cards at or after a pass's start fill its first page and more cards
+follow in the window (for example many cards changed in the same second).
+The cost: one request per group, each following its own pages, then the
+changed-cards read, whose passes each read pages until a card older than
+their start or the end of the window, and where all three passes followed
+a cursor, the one list with all its pages. At most five requests are in
+flight at once. The wait is the longest group plus the changed-cards
+read's pages, one after the other, not the sum of every page.
 
 **Reason:** the pages were the board's longest wait, and nothing in one
 page depends on another. Side by side, the wait is the longest group,
