@@ -592,8 +592,9 @@ index added (a partial index on open cards is not portable to MariaDB).
 The minute pass keeps, per agent stay in an open group chat, how far that stay's unread
 messages have been read and the counted ones' number, first and last (`_Scan`), in this
 process's memory and nowhere else. Each call reads only rows after the last one read, at most
-`SCAN_BUDGET` (2000) per stay, in batches of `SCAN_BATCH` (500), selecting only seq, time and the
-mentions projected from the payload. The nudge goes out only once a read reached its bound, so
+`SCAN_BUDGET` (2000) event rows of the chat per stay, in batches of `SCAN_BATCH` (500),
+selecting only seq, time, kind, the redacted flag, the author's human id and the mentions
+projected from the payload. The nudge goes out only once a read reached its bound, so
 its counts cover every message up to it. A moved read mark, or a redaction of a message in the
 range already read (found through its `event_redacted`, below), starts the read over; entries of
 stays that ended are dropped each pass.
@@ -601,9 +602,10 @@ stays that ended are dropped each pass.
 **Updated 2026-11-08 (tsk-tgh0st6p2zag):** the two limits below that were left as P3s are
 closed, and the paragraph after this one describes the state before. The database work of a
 pass is now bounded per stay and call by the budget, not by the unread history: at most
-`SCAN_BUDGET` message rows, at most `SCAN_BUDGET` of the project's `event_redacted` rows, and
-one-row index reads (the read mark, the open cycle, the chat's newest seq, the project's newest
-redaction); the aggregates `_counts` and `_oldest_human` are gone, and the delay is checked on
+`SCAN_BUDGET` of the chat's event rows of any kind, at most `SCAN_BUDGET` of the project's
+`event_redacted` rows, at most `SCAN_BUDGET` events about the chat for the open cycle (both of
+the last as corrected by the R1 note below), and one-row index reads (the read mark, the
+chat's newest seq, the project's newest redaction); the aggregates `_counts` and `_oldest_human` are gone, and the delay is checked on
 the oldest counted message the read found. A redaction is found through the `event_redacted`
 event every redaction path writes in the same transaction: a read keeps a cursor on the
 project's redaction events, and one that names a message of this chat inside the range already
@@ -632,6 +634,19 @@ further (`lagging`), or it would fall behind again. Tested on PostgreSQL: with a
 the first pass over 50 and over 400 events touches as many event rows for mentions, agents'
 messages, redacted messages and another agent's nudges (the PR head before: 6/9, 52/405,
 53/403, 103/803); later redactions at 2 and 3 a pass no longer keep the nudge back.
+
+**Updated 2026-11-08 (review of #1512, delta 1):** the open-cycle check counted a full batch
+as open, so two title changes a pass (`conversation_updated` shares the chat as subject), or
+other agents' nudges, held it open forever and no nudge came. It now has the same bound as the
+other reads: the chat's newest subject event when the check had caught up, growing only once
+the check reached it, with the cycle counted open while it is behind, and the `lagging` rule
+for the call under the lock. No nudge of this agent can lie above that bound, since it is
+written only after a call that reached its bound. And the contract's exactness sentence
+promised more than the code: after a call whose redaction look began behind, a redaction
+committed before the pass may stay counted. The sentence in `docs/api.md` §9.2 is narrowed to
+that, in the same separate commit as the budget sentence, so both go to the maintainer
+together; removing the exception instead would bring back the starvation under a stream of
+redactions.
 
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database

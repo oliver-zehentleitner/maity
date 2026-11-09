@@ -987,3 +987,27 @@ def test_later_redactions_do_not_keep_the_read_from_finishing(
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, originals[0])
     assert nudge.payload["newest_seq"] == originals[-1]
+
+
+def test_events_about_the_chat_do_not_hold_the_cycle_open_and_no_nudge_comes_twice(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1512, delta 1 (fmzu): two title changes before every pass fill the open-cycle
+    check's batch (`conversation_updated` shares the chat as subject). It used to count as open
+    on every full batch, so no nudge ever came; now the check's bound waits for its read, the
+    nudge comes, and the passes after it send no second one."""
+    r = room
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    said = r.say(r.owner, "a question for whoever reads it")
+    for n in range(10):
+        for k in range(2):
+            renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": f"go/no-go {n}.{k}"})
+            assert renamed.status_code == 200, renamed.text
+        r.read(second)  # only the first agent's nudge is under test
+        r.at(11 + n)
+        chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, said)

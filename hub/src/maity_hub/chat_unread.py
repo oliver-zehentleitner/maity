@@ -29,12 +29,14 @@ What holds (the lead's boundary for #1490 and tsk-tgh0st6p2zag; hub/context/even
   on from where it stopped), and one-row index reads (the read mark, the chat's newest seq,
   the project's newest redaction). A pass makes one call outside the lock and, for a stay
   whose nudge is due, one under it. Every unread human message without a mention leads to
-  one nudge at any rate of new messages or redactions: a read's bound grows only once a call
-  has reached it and the redaction look has caught up, and the look's bound only once the
-  look has reached it, so neither keeps the other from finishing. A redaction committed before
+  one nudge at any rate of new messages, redactions or events about the chat: a read's bound
+  grows only once a call has reached it and the redaction look has caught up, the look's
+  bound only once the look has reached it, and the open-cycle check's bound only once the
+  check has reached it, so none keeps the others from finishing. A redaction committed before
   a pass starts is left out of the nudge, unless the project wrote SCAN_BUDGET or more
   redactions since the read's previous call: then the look catches up over several calls,
-  and those committed meanwhile are held to the concurrent case below;
+  and those committed meanwhile are held to the concurrent case below (docs/api.md §9.2 says
+  the same);
 - beyond that, a redaction that commits while a pass runs is caught by the call under the
   project lock on both routes known from the review (a first read, and an earlier read whose
   bound grows; each tested on PostgreSQL). Exactness against a concurrent redaction is not
@@ -108,6 +110,12 @@ class _Cycle:
     start: int
     cursor: int
     newest: int = 0
+    # The read's bound: the chat's newest subject event when the read had caught up; it grows
+    # only once the read reached it, so events arriving faster than the budget cannot keep the
+    # read from finishing (review of #1512, delta 1). `lagging` as for `_Scan`.
+    upto: int = 0
+    reached: bool = True
+    lagging: bool = False
 
 
 _SCANS: dict[tuple[int, str], _Scan] = {}
@@ -381,43 +389,63 @@ def _scanned(conn: Connection, stay: Any, mark: int, extend: bool = True) -> _Sc
     return scan if complete and scan.redactions_reached else None
 
 
-def _cycle_open(conn: Connection, stay: Any, mark: int) -> bool:
+def _cycle_open(conn: Connection, stay: Any, mark: int, extend: bool = True) -> bool:
     """Whether a `chat_unread` for this agent and chat counted a message above its read mark:
     the read cycle it opened is still open (§9.2). Its own seq is no measure: the nudge is
     written after the messages it counts, so reading exactly those leaves the mark below it.
     A nudge whose `newest_seq` is above the mark has a seq above it too, so the read starts at
     the mark. It goes on from where the last call stopped (`_Cycle`), over every event whose
     subject is the chat, at most SCAN_BUDGET per call, and the recipient and kind are checked
-    here: the other agents' nudges are read once, not each minute (tsk-tgh0st6p2zag). While
-    the read has not reached the end, the cycle counts as open: no nudge yet. An index range
-    (project_id, subject_type, subject_id, seq)."""
+    here: the other agents' nudges are read once, not each minute (tsk-tgh0st6p2zag).
+
+    The read goes up to a bound, the chat's newest subject event when the read had caught up,
+    and the bound grows only once the read reached it; until then the cycle counts as open, so
+    no nudge goes out on a partial read, and the read still finishes while `conversation_updated`
+    or other agents' nudges keep coming (review of #1512, delta 1). No nudge of this agent can
+    lie above the bound: it is written only after a call that reached its bound, and the next
+    call outside the lock takes a new one. After a call outside the lock that began behind
+    (`lagging`), the call under the lock confirms without taking a new bound, or it would fall
+    behind again. Index reads (project_id, subject_type, subject_id, seq): one row for the
+    bound, at most SCAN_BUDGET for the read."""
     key = (stay.membership_id, stay.conversation_id)
     with _SCANS_LOCK:
         cycle = _CYCLES.get(key)
     if cycle is None or mark < cycle.start:
-        cycle = _Cycle(start=mark, cursor=mark)
+        cycle = _Cycle(start=mark, cursor=mark, upto=mark)
+    if extend:
+        cycle.lagging = not cycle.reached
     e = t.event.c
-    rows = list(
-        conn.execute(
-            select(e.seq, e.kind, e.audience, e.payload["newest_seq"].label("newest_seq"))
-            .where(
-                e.project_id == stay.project_id,
-                e.subject_type == "conversation",
-                e.subject_id == stay.conversation_id,
-                e.seq > cycle.cursor,
-            )
-            .order_by(e.seq)
-            .limit(SCAN_BUDGET)
-        )
+    subject = (
+        e.project_id == stay.project_id,
+        e.subject_type == "conversation",
+        e.subject_id == stay.conversation_id,
     )
-    token = f"member:{stay.agent_id}"
-    for row in rows:
-        if row.kind == KIND and token in (row.audience or []):
-            cycle.newest = max(cycle.newest, int(row.newest_seq or 0))
-        cycle.cursor = int(row.seq)
+    if cycle.reached and (extend or not cycle.lagging):
+        newest = conn.execute(
+            select(e.seq).where(*subject).order_by(e.seq.desc()).limit(1)
+        ).scalar()
+        cycle.upto = max(cycle.cursor, int(newest or 0))
+        cycle.reached = cycle.upto == cycle.cursor
+    if not cycle.reached:
+        rows = list(
+            conn.execute(
+                select(e.seq, e.kind, e.audience, e.payload["newest_seq"].label("newest_seq"))
+                .where(*subject, e.seq > cycle.cursor, e.seq <= cycle.upto)
+                .order_by(e.seq)
+                .limit(SCAN_BUDGET)
+            )
+        )
+        token = f"member:{stay.agent_id}"
+        for row in rows:
+            if row.kind == KIND and token in (row.audience or []):
+                cycle.newest = max(cycle.newest, int(row.newest_seq or 0))
+            cycle.cursor = int(row.seq)
+        if len(rows) < SCAN_BUDGET:
+            cycle.cursor = cycle.upto
+            cycle.reached = True
     with _SCANS_LOCK:
         _CYCLES[key] = cycle
-    return len(rows) == SCAN_BUDGET or cycle.newest > mark
+    return not cycle.reached or cycle.newest > mark
 
 
 def due(
@@ -439,7 +467,7 @@ def due(
     if not listening_now:
         return None
     mark = _mark(conn, stay)
-    if _cycle_open(conn, stay, mark):
+    if _cycle_open(conn, stay, mark, extend):
         return None
     scan = _scanned(conn, stay, mark, extend)
     if scan is None or not scan.count or scan.oldest_at is None:
