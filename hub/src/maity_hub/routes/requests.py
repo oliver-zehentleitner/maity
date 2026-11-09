@@ -1210,15 +1210,19 @@ def _status_moved(conn: Connection, card_id: str | None, actor: Any) -> None:
 
 def _unblock(conn: Connection, row: Any) -> str | None:
     """After `row` was answered or withdrawn: the card stays blocked while any other
-    waiting request of its holder on it is open, naming the oldest; when none is
-    left, the remembered status comes back (§7). Returns the card whose status moved, for
-    `_status_moved` after the caller's event."""
+    waiting request of its holder on it, filed under the current claim, is open, naming the
+    oldest; when none is left, the remembered status comes back (§7). Returns the card whose
+    status moved, for `_status_moved` after the caller's event."""
     if row.task_id is None:
         return None
     card = conn.execute(select(t.card).where(t.card.c.id == row.task_id)).one()
     if card.status != "blocked":
         return None
     holder = card.claim_holder
+    # A wait filed before this claim blocked nothing when it was filed (an unheld card is
+    # nobody's to block), so it keeps nothing blocked now. Every change of holder sets
+    # `claim_since`, a renewal does not; a claim without it counts every wait, as before.
+    since = [] if card.claim_since is None else [t.request.c.created_at >= card.claim_since]
     still_waiting = conn.execute(
         select(t.request.c.id)
         .where(
@@ -1228,6 +1232,7 @@ def _unblock(conn: Connection, row: Any) -> str | None:
             t.request.c.personal.is_(False),  # never a card's blocker: its id stays hidden (§7)
             t.request.c.id != row.id,
             (t.request.c.asked_by == holder) | (t.request.c.on_behalf_of == holder),
+            *since,
         )
         .order_by(t.request.c.created_at, t.request.c.id)
     ).first()

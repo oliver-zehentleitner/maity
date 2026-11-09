@@ -57,7 +57,7 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 
 **Id:** 3d44b07f-3ab6-41be-8bd0-a799eb11c530
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08
 **Revisit when:** a request needs to block a card without the asker holding it, or `_unblock` needs to tell blocking requests from waiting ones that blocked nothing
@@ -85,6 +85,36 @@ status and the restore on the last answer stay as they were. `maity ask --wait` 
   there, and the restore on answer would be lost.
 - `proceed_provisionally` for every class: a consent must wait, and its validation
   (`consent_waits`) would refuse every bare consent.
+
+## Only a wait filed under the current claim keeps its card blocked
+
+**Id:** 47e9ac62-d08b-4f23-a664-5aa31c8b553a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** hub roll-up note nte-bprq62a9m3bc (a review finding on #1494, card tsk-b7mtzr8xybp5); the lead's go for roll-up part 3, 2026-11-09
+**See:** requests.md#a-question-blocks-its-card-only-when-it-says-it-waits-while_opens-default-follows-the-class — 3d44b07f-3ab6-41be-8bd0-a799eb11c530 — as of 2026-11-09
+**Revisit when:** a change of holder stops setting `card.claim_since`, or a renewal starts to set it
+
+`_unblock` (routes/requests.py) counts the other open waits of the holder on the card only
+when they were filed at or after `card.claim_since`. A wait filed before the claim blocked
+nothing when it was filed, since an unheld card is nobody's to block, so it no longer keeps
+the card blocked after a later wait is answered. The request itself stays open. A claim
+without `claim_since` counts every wait, as before.
+
+**Reason:** every change of holder (claim, the expired claim's move to the assignee, a
+takeover) sets `claim_since`, a renewal does not, and a release clears the block. So the
+claim's start already tells which waits could have blocked. No column and no migration are
+needed.
+
+**Rejected alternatives:**
+- A stored marker on the request ("this one blocked the card"): the same answer from a new
+  column, with a migration and a slot in the migration order; 3d44b07f had already turned
+  down a stored `block` field for that cost.
+- Blocking the card at the claim when its claimer has an open wait: that changes what a claim
+  does, and §7 says only a wait filed by the holder blocks.
+- Leaving it: conservative, it never releases work that must wait, but it kept a card
+  `blocked` until a wait that never blocked it was answered.
 
 ## A request listing sorts and pages light entries and builds full views only for its page
 
