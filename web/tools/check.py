@@ -1525,8 +1525,14 @@ def innermost_block(blocks, at):
 def declaration_of(code, blocks, name, at):
     """Where the `const` or `let` binding of name that is seen at position at is declared (the
     index of the name), walking out from the block around at; None where none is."""
-    found = [(d.start(1), innermost_block(blocks, d.start(1)))
-             for d in re.finditer(r"\b(?:const|let)\s+(" + re.escape(name) + r")\s*=", code)]
+    return nearest_in_scope(blocks, [d.start(1) for d in re.finditer(r"\b(?:const|let)\s+(" + re.escape(name) + r")\s*=", code)], at)
+
+
+def nearest_in_scope(blocks, positions, at):
+    """Of the declarations whose names stand at positions, the one seen at position at: walking out
+    from the block around at, the first block that declares it, there the last before at, else the
+    first (a function declaration is seen in its whole block); None where none is."""
+    found = [(pos, innermost_block(blocks, pos)) for pos in positions]
     block = innermost_block(blocks, at)
     while True:
         here = [pos for pos, b in found if b == block]
@@ -1578,8 +1584,16 @@ def asks_first(code, at, src=None):
         return bool(reads) and all(at_ in handed for at_ in reads) and not (unpacked or bracketed or computed)
     fn = callee_of(code, m.start())
     if fn:
-        d = re.search(r"(?:function\s+" + re.escape(fn) + r"\s*\(([^)]*)\)|\b(?:const|let)\s+" + re.escape(fn)
-                      + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{", code)
+        # The helper is the binding of that name seen at the call, by the blocks around it, not
+        # the first definition of the name in the file (4hv7 at #1566). Any `function`, `const` or
+        # `let` of the name counts for scope; only a helper of this form can hand the call on.
+        name = re.escape(fn)
+        starts = {(x.start(1) if x.group(1) else x.start(2)): x.start() for x in re.finditer(
+            r"\bfunction\s+(" + name + r")\s*\(|\b(?:const|let)\s+(" + name + r")\s*=", code)}
+        seen = nearest_in_scope(brace_blocks(code), list(starts), m.start())
+        helper = re.compile(r"(?:function\s+" + name + r"\s*\(([^)]*)\)|(?:const|let)\s+" + name
+                            + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{")
+        d = helper.match(code, starts[seen]) if seen is not None else None
         if d:
             body = code[d.end():call_end(code, d.end())]
             params = [x.strip() for x in (d.group(1) or d.group(2) or "").split(",")]
