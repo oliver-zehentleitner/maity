@@ -4299,12 +4299,45 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
 
 def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     """Agents → Start an agent on a runner (docs/api.md §15.6, tsk-dsp6htj4c686) against the hub:
-    the paired runner allowed here is offered, as the hub lists it; it has not reported what it can
-    do, so there is no tool to choose and nothing to send."""
-    run.step("placements: the paired runner allowed here is offered to start an agent on, no tool yet")
+    E2E Alpha has no repository, so no runner can start an agent in it and no form is offered
+    (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
+    the runner's with it among its repositories: the paired runner allowed here is offered; it has
+    not reported what it can do, so there is no tool to choose and nothing to send."""
+    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     section = page.locator("main section.placements")
+    expect(section.locator(".placement-new-none")).to_have_text(
+        "A runner starts an agent in a clone of the project's repository, and this project has none.")
     open_form = section.get_by_role("button", name="Start an agent on a runner", exact=True)
+    expect(open_form).to_have_count(0)
+    project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
+    runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
+
+    def with_repository(route) -> None:
+        body = route.fetch().json()
+        body["repository"] = {"url": "https://github.com/owner/e2e-alpha", "default_branch": "main", "required_check": None,
+                              "forge": "github", "probe_configured": False, "probe_via": None, "owner_confirmed": False, "confirmed_by": None}
+        route.fulfill(json=body)
+
+    def offering_it(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            item["runner"]["capabilities"] = {**(item["runner"].get("capabilities") or {}), "repositories": ["github.com/owner/*"]}
+        route.fulfill(json=body)
+
+    page.route(project_read, with_repository)
+    page.route(runners_read, offering_it)
+    try:
+        start_on_runner_open(run, page, name, section, open_form)
+    finally:
+        page.unroute(project_read, with_repository)
+        page.unroute(runners_read, offering_it)
+    no_problems(run, "start on a runner")
+
+
+def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:
+    """The form opened over the answers start_on_runner_form gives the project's and runners' reads."""
+    page.reload()
     expect(open_form).to_be_visible()
     open_form.click()
     form = section.locator("form.placement-new")
@@ -4334,7 +4367,6 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     form.get_by_role("button", name="Cancel", exact=True).click()
     expect(form).to_have_count(0)
     expect(open_form).to_be_focused()
-    no_problems(run, "start on a runner")
 
 
 def notifications_step(run: Run, page: Page) -> None:

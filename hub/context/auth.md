@@ -582,3 +582,35 @@ remove it.
 - Relying on `known` to ignore old rows: the same retention, and a copy of the database shows the
   pseudonyms.
 
+
+## The session sweep `forget_expired_addresses` gets no index until prod numbers show its cost
+
+**Id:** 87cd9a5c-af3b-4a06-a007-6898feadc9f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the measurement on tsk-6srccd2r1h62 (step 1, local PostgreSQL), the lead's decision on its PR 4
+**See:** events.md — 483be046-dbf5-4c2f-a9d4-cc18dfb09469 — as of 2026-11-09
+**Revisit when:** the `maity_hub.timing` line of a prod password login or session list shows a `db_ms` worth a look; the line is the request's total over all its statements, so the sweep's share needs a statement-level measurement on prod data (EXPLAIN ANALYZE of the sweep) before an index is built
+
+`auth/sessions.forget_expired_addresses` is one UPDATE over the sessions of every human on the
+instance: `ended_at IS NULL`, past `expires_at` or idle past `SESSION_IDLE`, with an address or a
+source still set. It runs on every password login (`POST /auth/login`, `routes/auth.py`) and
+every session list (`sessions.listing`); the device-code and mail sign-ins do not call it. It has no `human_id` filter, so no index on the human serves it. Run
+through EXPLAIN with `enable_seqscan=off` on local PostgreSQL, it was the one statement of the four
+measured routes with no index path: a scan that grows with all sessions on the instance. No index
+was added.
+
+**Reason:** the one index that would serve the sweep's filter without also covering the ended
+sessions is partial, and a partial index is not portable to MariaDB: the hub has none (no
+`postgresql_where` in `tables.py` or the migrations). A PostgreSQL-only index would split the
+schema by dialect and leave MariaDB and SQLite on the scan. A plain index over `ended_at` and the
+two times is portable, but locally the whole session list spends about 2 ms in the database over
+its 17 statements, the sweep included, and only prod has the session counts that could make the
+sweep matter. So it is built when prod numbers show the cost, not
+before.
+
+**Rejected alternatives:**
+- A partial index on open sessions (PostgreSQL): the dialect split above.
+- A plain index now, without numbers: a migration and a write cost on every session row, for a
+  cost not shown.
