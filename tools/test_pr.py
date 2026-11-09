@@ -135,14 +135,33 @@ class PrTool(unittest.TestCase):
         self.assertIn("#7 https://github.com/acme/widget/pull/7", done.stdout)
         self.assertIn(self.head, done.stdout)
 
-    def test_the_body_is_sent_byte_for_byte(self) -> None:
-        # Line endings as written: what is checked is what is sent (review of #1507, delta 5).
+    def test_the_body_is_sent_with_its_line_endings_made_lf(self) -> None:
+        # The check reads what is sent (review of #1507, delta 5): one reading for both.
         raw = "## Summary\r\n\r\nWindows lines.\r\nOld Mac\rlines.\n"
         self.body.write_bytes(raw.encode())
         self.answers["POST repos/acme/widget/pulls"] = self.answer(7, self.head)
         done = self.run_pr("open", "--title", "T", "--body-file", str(self.body))
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(json.loads(str(self.calls()[0]["stdin"]))["body"], raw)
+        sent = json.loads(str(self.calls()[0]["stdin"]))["body"]
+        self.assertEqual(sent, "## Summary\n\nWindows lines.\nOld Mac\nlines.\n")
+
+    def test_an_attribution_line_ended_by_a_carriage_return_is_refused(self) -> None:
+        # Markdown starts a line at a lone CR or a CRLF, and so does the check now.
+        self.answers["GET repos/acme/widget/pulls/7"] = self.answer(7, self.head)
+        bodies = [
+            "Summary\r\rCo-Authored-By: Someone\r",
+            "Summary\r\n\r\nCo-Authored-By: Someone\r\n",
+            "Summary\rClaude-Session: https://example.com/s",
+        ]
+        for raw in bodies:
+            with self.subTest(body=raw):
+                self.body.write_bytes(raw.encode())
+                done = self.run_pr("open", "--title", "T", "--body-file", str(self.body))
+                self.assertEqual(done.returncode, 1, done.stderr)
+                self.assertIn("attribution line", done.stderr)
+                done = self.run_pr("edit", "7", "--body-file", str(self.body))
+                self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertEqual([c for c in self.calls() if "-X" in c["args"]], [])
 
     def test_open_as_draft_on_another_base(self) -> None:
         self.answers["POST repos/acme/widget/pulls"] = self.answer(8, self.head)
