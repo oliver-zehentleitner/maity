@@ -938,6 +938,48 @@ the agents' side.
   macOS that is the read that fails anyway, and elsewhere it would keep
   two ways of reading alive. No exit code is the safe answer.
 
+## The runner records Claude Code's folder trust for the clone before an interactive start
+
+**Id:** 71f94925-ab96-4e3e-81e6-3ea0cbaf9356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-2ekq5dsy8anz (the first live runner test, 2026-11-09: Claude Code 2.1.319 in a fresh clone waited at "Is this a project you created or one you trust?" and the agent never came online); the team lead's card; the key, file, lock and lookup checked against the installed 2.1.319 and by starting it with and without the entry
+**Revisit when:** Claude Code changes where or how it records an accepted trust dialog, gains a flag that trusts a folder for an interactive start, or the runner starts sessions with `CLAUDE_CODE_IGNORE_PERSISTED_TRUST` or `CLAUDE_CONFIG_DIR` set
+**See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-09
+
+Before an `interactive` Claude Code session starts, the runner sets
+`projects[<the clone's real path>].hasTrustDialogAccepted: true` in the
+agents' Claude Code configuration: `~/.claude/.config.json` when that is
+a non-empty file, otherwise `~/.claude.json`. It holds `<file>.lock`,
+the directory Claude Code's own saves take, so a running session neither
+loses the entry nor has its write lost. Nothing else in the file
+changes. In the `agent_user` and `ssh` layouts the runner's own module
+(`maity.runner.trust`) does this on the agents' side, as for the limit
+file. When the entry cannot be written, the start fails with the cause
+in the log. `supervised` sets nothing: headless (`-p`), Claude Code asks
+for no trust and records none.
+
+**Reason:** the placement is the owner's trust decision, made before the
+runner starts anything. Without the entry, every placement in a fresh
+clone sat at the question while the runner reported `running`. A start
+that fails with a cause is better than that.
+
+**Rejected alternatives:**
+- Answering the question in the pane with tmux keys: it reads a screen
+  whose wording can change, and types into a session the agent then owns.
+- A Claude Code configuration directory per placement
+  (`CLAUDE_CONFIG_DIR`, as Codex gets its own home): the operator's
+  login and the session history live there, so it is a larger change
+  than the trust record the card asks for.
+- One entry for the workspaces root: in 2.1.319 the lookup walks up from
+  the working directory only as far as the git root, so a parent entry
+  is not read for a clone, and it would trust every later clone too.
+- Writing the file without the lock: a session saving at the same time
+  could drop the entry, or lose its own change.
+- Starting anyway when the entry cannot be written: the session waits at
+  the question and passes for `running`, the failure this fixes.
+
 ## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
 
 **Id:** 2718b0d9-cf5b-4758-9fca-a143fafce1d3

@@ -518,3 +518,41 @@ def test_a_maintenance_window_is_slept_out_without_counting_as_a_failure(tmp_pat
     assert clock.slept == [1800 + 0.5 * hub.MAINTENANCE_JITTER]  # Retry-After plus jitter
     status = json.loads((tmp_path / "st" / serve.STATUS_FILE).read_text())
     assert status["connected"] is True  # the second hello
+
+
+def test_status_prints_the_attach_line_of_a_running_placement(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first live runner test (2026-11-09): the supervisor kept `session_hint`, but
+    `status` showed no way to reach the session."""
+    from maity.runner import supervisor
+
+    path = paired(tmp_path, fake)
+    hint = "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux attach -t maity_a_3"
+    state.save_state(
+        tmp_path / "st",
+        {"pid": None, "placements": [
+            {"id": "plc-0003", "project": "oliver/maity", "generation": 2, "desired": "running"},
+            {"id": "plc-0004", "project": "oliver/maity", "generation": 1, "desired": "running"},
+            {"id": "plc-0005", "project": "oliver/maity", "generation": 1, "desired": "running"},
+        ]},
+        name=serve.STATUS_FILE,
+    )  # fmt: skip
+    state.save_state(
+        tmp_path / "st",
+        {"plc-0003": {"state": "running", "session_hint": hint},
+         "plc-0004": {"state": "failed", "session_hint": "stale attach line"},
+         "plc-0005": {"state": "starting", "session_hint": "tmux attach \x1b]8;;evil\x07"}},
+        name=supervisor.ACTUAL_FILE,
+    )  # fmt: skip
+    capsys.readouterr()
+    assert cli.main(["runner", "status", "--config", str(path)]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    at = lines.index(next(line for line in lines if "plc-0003" in line))
+    assert "state running" in lines[at] and lines[at + 1] == f"  attach   {hint}"
+    failed = lines.index(next(line for line in lines if "plc-0004" in line))
+    assert "state failed" in lines[failed] and "stale attach line" not in "\n".join(lines)
+    assert "\x1b" not in "\n".join(lines) and "\x07" not in "\n".join(lines)
+    assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)["placements"]
+    assert [(p["state"], p["attach"]) for p in shown][:2] == [("running", hint), ("failed", None)]
