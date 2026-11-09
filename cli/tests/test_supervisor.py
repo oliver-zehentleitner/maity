@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -465,6 +465,7 @@ def _forbidden(reason: str) -> hub.HubError:
         (_forbidden("member_agents_max\n"), "forbidden"),
         (hub.HubError("lf", code="instance_quota\n", status=409), None),
         (hub.HubError("odd", code="Some Text", status=409), None),
+        (hub.HubError("int", code=cast(Any, 409), status=409), None),  # no string: not a crash
     ],
 )
 def test_a_refused_pickup_reports_the_hubs_code_in_code_form(
@@ -1279,6 +1280,7 @@ def test_the_clone_allows_only_https_and_ssh(
         ((409, None, {}, "x\nmaity-error: dummysecret"), None),
         ((409, "Not A Code", {}, f"x\nmaity-error {FORGED}: dummysecret"), None),
         ((409, None, {}, "x\nmaity-error 0123456789abcdef0123456789abcdef: dummysecret"), None),
+        ((409, 409, {}, "m"), None),  # a code that is no string
     ],
 )
 def test_run_join_reads_the_real_clis_error_line(
