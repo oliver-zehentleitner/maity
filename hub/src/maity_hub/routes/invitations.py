@@ -26,6 +26,7 @@ from maity_hub import (
     paging,
     project_roles,
     registration,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
@@ -122,6 +123,18 @@ def create_invitation(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
+        # Counted before the handle is looked at, so that a refused handle costs an attempt
+        # too, and probing handles is held to the same rate as issuing (§3.4).
+        wait = invitations.PER_PROJECT.hit(mine.project.id)
+        if wait:
+            raise rate_limited(wait)
+        person_id = None
+        if body.handle is not None:
+            # The person's account lock, shared, before the project's lock, in the order
+            # `write_guard` gives every human transaction: a deletion of the account takes it
+            # first, so the issue and the deletion go in turn (`invitations.invitee`).
+            person_id = invitations.bound(conn, body.handle)
+            write_guard.share(conn, person_id)
         # Under the lock `PUT …/roles` holds, so a role it removes is never invited to.
         project = events.lock_project(conn, mine.project.id)
         if project_roles.base_of(project, body.role) is None:
@@ -136,13 +149,8 @@ def create_invitation(
                 {"reason": "owner_only"},
             )
         person = (
-            invitations.invitee(conn, body.handle, mine.project.id)
-            if body.handle is not None
-            else None
+            invitations.invitee(conn, person_id, mine.project.id) if person_id is not None else None
         )
-        wait = invitations.PER_PROJECT.hit(mine.project.id)
-        if wait:
-            raise rate_limited(wait)
         if person is not None:
             invitations.check_invitee_rate(conn, person.id)
         token = new_token()  # an invitation by handle keeps one too, which nobody is given

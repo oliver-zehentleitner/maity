@@ -359,7 +359,10 @@ the withdrawal that follows runs in a transaction of its own. Re-reading the mem
 issuer's authority there gives the same end as the accept route's would. The withdrawal reason is
 a free text when the person withdraws the request themselves, so it cannot decide. The withdrawal
 after a stale `go` takes the project's lock before the request's (`answer_personal`): that is the
-order a revocation takes them in.
+order a revocation takes them in. The issue takes the person's `account_lock` shared before the
+project's lock, the order `write_guard` gives every human transaction, so a deletion of that
+account (which takes it exclusively first, and scans the invitations once) and the issue go in
+turn: the issue commits first and the scan voids it, or waits and reads the account deleted.
 
 **Rejected alternatives:**
 - Deciding from the request's `withdraw_reason`: a text is a poor key (the organisation's entry
@@ -368,6 +371,38 @@ order a revocation takes them in.
   written, and the person would be left with a request that fails every time.
 - A `/me/invitations` route of its own: dropped in the plan for the personal request, which the
   organisation's invitation (§6.26) already answers in the same inbox.
+- Scanning the invitations again after the deletion has removed the person: an issue that commits
+  between the scan and the deletion's commit would still be missed; only a shared lock orders them.
 
 **Known limit:** the request reaches the person under the notification kind `inbox`, like every
 personal request. The kind `invitation` of §18.4 is the card's next PR.
+
+## An invitation by handle tells an active person from every other name, as adding a contact does
+
+**Id:** 810c8189-95d8-4b6c-be3b-4ef7f425490c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's ruling on tsk-8xsrzjv7f0yr (note nte-v65gsgedg2av), applying the maintainer's confirmed contact design (the root context's members.md, entry 9012bf86-7111-40eb-93b1-4a01da266af1); the review of the card's hub PR #1570; docs/api.md §3.4 "By handle" and §6.29
+**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-09
+**Revisit when:** the maintainer reopens "handles are public", or `PUT /people/{handle}/contact` changes what it tells apart
+
+An invitation by handle answers like `PUT /people/{handle}/contact` (§6.29): any approved, active
+person qualifies, whether or not their profile shows the inviter anything; a deleted, pending or
+suspended account, a deleted organisation and an agent's bare handle are the `unknown` of a name
+nobody has; a live organisation is `not_a_person`. Every attempt counts against the project's
+twenty an hour before the handle is looked at.
+
+**Reason:** handles are public in the maintainer's contact design, so telling an active person from
+every other name is no secret; the card's "must not reveal whether an account exists beyond what
+public profiles already show" is read in that sense. Without public pages (the default) a stricter
+rule would keep anyone from inviting by handle a person they share no project with, even one who
+added them as a contact so that they may.
+
+**Rejected alternatives:**
+- Telling handles apart only as far as `GET /people/{handle}` shows the person to the inviter
+  (asked in the review): against the confirmed contact design, which says the opposite for the
+  same lookup; reopening it is the maintainer's call.
+- `not_a_person` for every agent handle across all owners and for a deleted organisation: an
+  oracle for names `GET /people` and the contact route answer `not_found` for.
+- Counting only issued invitations against the rate: refused probes would be free.

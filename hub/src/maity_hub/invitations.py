@@ -163,6 +163,7 @@ def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> 
         t.invitation.c.used_at.is_(None),
         t.invitation.c.revoked_at.is_(None),
         t.invitation.c.voided_at.is_(None),
+        t.invitation.c.declined_at.is_(None),
         t.invitation.c.expires_at > now,
     )
     if lock:
@@ -371,27 +372,48 @@ def _open_by_handle(conn: Connection, project_id: str, human_id: str) -> list[An
 # --- issuing by handle ---------------------------------------------------------------------
 
 
-def invitee(conn: Connection, handle: str, project_id: str) -> Any:
-    """The approved, active human whose handle or live alias is `handle` (§6.24), for an
-    invitation by handle; else `invalid` with `details.fields.handle` (§3.4): `format`,
-    `unknown` (nobody, or a deleted, pending or suspended account, as `GET /people` answers
-    `not_found` for those, §6.27), `not_a_person` (an organisation's or an agent's handle),
-    `member` (already a member of the project) or `invited` (an open invitation of this
-    project already names this person)."""
+def bound(conn: Connection, handle: str) -> str:
+    """The id of the person an invitation by `handle` binds: the approved, active human whose
+    handle or live alias it is (§6.24); else `invalid` with `details.fields.handle` (§3.4):
+    `format`, `unknown` (nobody, a deleted, pending or suspended account, a deleted
+    organisation, or an agent's handle, which is unique only within its owner's profiles and
+    names nobody here) or `not_a_person` (a live organisation's handle). As `PUT
+    /people/{handle}/contact` answers (§6.29): handles are public, so telling an active person
+    from every other name is no secret, and nothing tells a deleted, pending or suspended
+    account from a name that is nobody's."""
     from maity_hub import handles
 
     if not _HANDLE.fullmatch(handle):
         raise invalid({"handle": "format"}, "not a valid handle")
     human_id = handles.human_id_of(conn, handle)
     if human_id is None:
-        agent = conn.execute(
-            select(t.agent_profile.c.id)
-            .where(t.agent_profile.c.handle == handle, t.agent_profile.c.deleted_at.is_(None))
-            .limit(1)
-        ).first()
-        if handles.org_id_of(conn, handle) is not None or agent is not None:
+        org_id = handles.org_id_of(conn, handle)
+        org = (
+            None
+            if org_id is None
+            else conn.execute(select(t.org.c.deleted_at).where(t.org.c.id == org_id)).first()
+        )
+        if org is not None and org.deleted_at is None:
             raise invalid({"handle": "not_a_person"}, "this handle is not a person's")
         raise invalid({"handle": "unknown"}, "no person has this handle")
+    found = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
+    if (
+        found.deleted_at is not None
+        or found.account_status != "active"
+        or found.suspended_at is not None
+    ):
+        raise invalid({"handle": "unknown"}, "no person has this handle")
+    return str(human_id)
+
+
+def invitee(conn: Connection, human_id: str, project_id: str) -> Any:
+    """The person `bound` found, read again under the person's `account_lock` (shared,
+    taken before the project's lock, in the order `write_guard` gives every human
+    transaction) and the project's lock: still an approved, active account (else `unknown`,
+    as above), not a member of the project (`member`) and not named by an open invitation of
+    it (`invited`). The account lock makes the issue and a deletion of the account go in
+    turn: the deletion either waits for this transaction and its cleanup then voids the new
+    invitation (`invitee_deleted`), or has committed, and the row read here says deleted."""
     found = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
     if (
         found.deleted_at is not None
@@ -541,8 +563,14 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
             {"reason": "invitation_void"},
         )
         raise _stale(s.request.id, error, "invitation_void")
-    via = s.closer.via if s.closer is not None else None
-    admit(conn, row, human_id, via, lambda membership_id: Actor(membership_id, via=via))
+    # In the answerer's name, as an accept by token writes it: their session, credential and
+    # `via` on the membership and its events; the hub's own close has no answerer.
+    caller = s.answerer
+    if caller is not None:
+        admit(conn, row, human_id, caller.via, caller.actor)
+    else:
+        via = s.closer.via if s.closer is not None else None
+        admit(conn, row, human_id, via, lambda membership_id: Actor(membership_id, via=via))
 
 
 def _the_invitee(conn: Connection, request: Any, mine: Any) -> str | None:

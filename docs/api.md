@@ -3048,7 +3048,9 @@ What deletion does:
   their membership yet are closed (§15.6), and invitations it issued
   that are still open are voided (§3.4), with the requests of those by
   handle; open invitations by handle to the account are voided with the
-  reason `invitee` (§3.4); and it leaves the private
+  reason `invitee` (§3.4), one issued at the same moment included, since
+  the issue takes the account's lock before anything else and so either
+  commits first or waits and is refused; and it leaves the private
   lists of the restricted-text events (§6.4). Its open personal requests
   (§7) and the open cross-owner consents that name it on either side
   (§6.2) are withdrawn, and so are open invitations to an organisation
@@ -3689,21 +3691,30 @@ person, one project and one trust and role, it is used once, and it expires.
   `details.fields.handle: "with_address"`): a person's handle or one of
   its live aliases (§6.24). Only an approved, active human qualifies;
   anything else is `invalid` with `details.fields.handle`: `format`,
-  `unknown` (nobody has it, or a deleted, pending or suspended account,
-  as `GET /people/{handle}` answers `not_found` for those, §6.27),
-  `not_a_person` (an organisation's or an agent's handle), `member`
-  (already a member of the project) or `invited` (an open invitation of
-  this project already names this person), and nothing is created.
-  Handles are public, so this answer reveals nothing a profile does not.
-  The invitation is bound to that account at issue, and a rename keeps
-  it. The hub files a personal `consent` request to that person (§7),
+  `unknown` (nobody has it, a deleted, pending or suspended account, a
+  deleted organisation, or an agent's handle, which is its owner's and
+  names nobody here, §6.24), `not_a_person` (a live organisation's
+  handle), `member` (already a member of the project) or `invited` (an
+  open invitation of this project already names this person), and
+  nothing is created. As for a contact (§6.29), the person need not show
+  the inviter anything: handles are public, so telling an active person
+  from every other name is no secret, and nothing tells a deleted,
+  pending or suspended account from a name that is nobody's. Each
+  refused handle counts against the project's rate as an issued
+  invitation does (below). The invitation is bound to that account at
+  issue, and a rename keeps it. The issue takes the person's account
+  lock before the project's, as every write of a human does (§2.9): it
+  either commits before a deletion of that account, whose cleanup then
+  voids it, or waits for the deletion and is answered `unknown`. The hub
+  files a personal `consent` request to that person (§7),
   in the inviter's name, answered in their inbox: `go` accepts as below,
   `no` declines (`declined_at`), and the person's own withdrawal counts
   as `no`. Such an invitation has no `url` and no page, and no mail goes
   out for it beyond the person's notifications of the request (§18.1).
   The answer carries `invitee: {handle, display_name}`, the person as
-  they are now; the item's `handle` is the handle at issue, and the
-  `GET` list shows the bound account's current handle.
+  they are now; the item's `handle` is the account's handle at issue
+  (the current one an alias resolved to, not the alias), and the `GET`
+  list shows the bound account's current handle.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
@@ -3815,7 +3826,8 @@ the address, the handle or the token. The ticker (§17) announces a new human me
 announces every join.
 
 **Limits and secrecy.** Twenty invitations per project per hour
-(`rate_limited`), ten invitations by handle to one person in 24 hours
+(`rate_limited`; every attempt counts, a refused handle too, before the
+handle is looked at), ten invitations by handle to one person in 24 hours
 across the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
 under the join exchange's per-source limit. An unknown, used, expired
 or revoked token is one uniform `not_found` on the page and on accept,

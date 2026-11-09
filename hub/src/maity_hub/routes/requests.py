@@ -2463,6 +2463,7 @@ def answer_personal(
             actor,
             reply_id=body.reply_id,
             hub=settings_of(request),
+            answerer=caller,
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
