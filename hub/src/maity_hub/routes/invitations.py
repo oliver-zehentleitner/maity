@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, and_, insert, or_, select, update
+from sqlalchemy import Connection, and_, insert, or_, select
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
@@ -26,8 +26,6 @@ from maity_hub import (
     paging,
     project_roles,
     registration,
-    restricted,
-    start_tabs,
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
@@ -42,7 +40,6 @@ from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
-from maity_hub.views import member_view
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -53,6 +50,7 @@ class InvitationIn(Strict):
     trust: Literal["owner", "admin", "member", "guest"] = "member"
     role: str = "coder"  # a built-in role or one of the project's (§2.3)
     address: str | None = None
+    handle: str | None = None  # a person's handle or live alias, instead of `address` (§3.4)
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
     via: Literal["join", "public"] | None = None
@@ -60,6 +58,8 @@ class InvitationIn(Strict):
 
 def _check(body: InvitationIn) -> None:
     errors: dict[str, str] = {}
+    if body.handle is not None and body.address is not None:
+        errors["handle"] = "with_address"
     if body.address is not None and not address.valid(body.address.strip()):
         errors["address"] = "invalid"
     if not invitations.TTL_MIN <= body.ttl_seconds <= invitations.TTL_MAX:
@@ -92,9 +92,21 @@ def _url(request: Request, via: str, token: str) -> str:
 
 
 def _load(conn: Connection, invitation_id: str) -> dict[str, Any]:
+    """The invitation as created, for a replay and a revocation's answer: an invitation by
+    handle with its `invitee` as the person is now."""
     row = conn.execute(select(t.invitation).where(t.invitation.c.id == invitation_id)).one()
     slug = namespace.name_of(conn, row.project_id)
-    return invitations.view(row, str(slug))
+    found = invitations.view(row, str(slug))
+    if row.invitee_id is not None:
+        found["invitee"] = _invitee_view(conn, row.invitee_id)
+    return found
+
+
+def _invitee_view(conn: Connection, human_id: str) -> dict[str, Any]:
+    person = conn.execute(
+        select(t.human.c.handle, t.human.c.display_name).where(t.human.c.id == human_id)
+    ).one()
+    return {"handle": person.handle, "display_name": person.display_name}
 
 
 idempotency.LOADERS["invitation"] = idempotency.plain(_load)
@@ -123,13 +135,28 @@ def create_invitation(
                 "only an owner grants trust owner or admin, or the role proxy",
                 {"reason": "owner_only"},
             )
+        person = (
+            invitations.invitee(conn, body.handle, mine.project.id)
+            if body.handle is not None
+            else None
+        )
         wait = invitations.PER_PROJECT.hit(mine.project.id)
         if wait:
             raise rate_limited(wait)
-        token = new_token()
+        if person is not None:
+            invitations.check_invitee_rate(conn, person.id)
+        token = new_token()  # an invitation by handle keeps one too, which nobody is given
         now = clock.now()
         invitation_id = new_id("invitation")
         given = body.address.strip() if body.address is not None else None
+        name = namespace.full_name(conn, mine.project)
+        request_id = (
+            invitations.file_request(
+                conn, mine, caller, invitation_id, person, name, body.trust, body.role, body.note
+            )
+            if person is not None
+            else None
+        )
         conn.execute(
             insert(t.invitation).values(
                 id=invitation_id,
@@ -144,20 +171,22 @@ def create_invitation(
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
                 via=via,
+                handle=person.handle if person is not None else None,
+                invitee_id=person.id if person is not None else None,
+                request_id=request_id,
             )
         )
         row = conn.execute(select(t.invitation).where(t.invitation.c.id == invitation_id)).one()
         invitations.announce(conn, "invitation_created", row, caller.actor(mine.id))
+        if person is not None:  # answered in the person's inbox, never by link (§3.4)
+            return idempotency.Outcome(201, "invitation", invitation_id, _load(conn, row.id))
         url = _url(request, via, token)
         if given is not None:
             invitation_mail.send(
                 conn, invitation_id=invitation_id, to=given, url=url, hub=settings_of(request)
             )
         return idempotency.Outcome(
-            201,
-            "invitation",
-            invitation_id,
-            invitations.view(row, namespace.full_name(conn, mine.project), url),
+            201, "invitation", invitation_id, invitations.view(row, name, url)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -184,10 +213,12 @@ def list_invitations(
                 c.used_at >= since,
                 c.revoked_at >= since,
                 c.voided_at >= since,
+                c.declined_at >= since,
                 and_(
                     c.used_at.is_(None),
                     c.revoked_at.is_(None),
                     c.voided_at.is_(None),
+                    c.declined_at.is_(None),
                     c.expires_at >= since,
                 ),
             ),
@@ -201,7 +232,8 @@ def list_invitations(
         page = rows[:limit]
         next_cursor = paging.cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
         name = namespace.full_name(conn, mine.project)
-        items = [invitations.view(r, name) for r in page]
+        current = invitations.handles_now(conn, page)
+        items = [invitations.view(r, name, handle=current.get(r.id)) for r in page]
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
@@ -231,24 +263,19 @@ def revoke_invitation(
                 {"from": found, "to": "revoked"},
             )
         if found == "open":
-            conn.execute(
-                update(t.invitation)
-                .where(t.invitation.c.id == row.id)
-                .values(revoked_at=clock.now())
-            )
-            after = conn.execute(select(t.invitation).where(t.invitation.c.id == row.id)).one()
-            invitations.announce(conn, "invitation_revoked", after, caller.actor(mine.id))
+            invitations.revoke(conn, row, caller.actor(mine.id))
         return idempotency.Outcome(200, "invitation", row.id, _load(conn, row.id))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
 def _open(conn: Connection, token: str) -> Any:
-    """The open invitation behind a token, or the uniform `not_found`."""
+    """The open invitation behind a token, or the uniform `not_found`. An invitation by
+    handle has a token that nobody was given, and is answered in the person's inbox only."""
     row = conn.execute(
         select(t.invitation).where(t.invitation.c.token_hash == digest(token))
     ).first()
-    if row is None or invitations.state(row) != "open":
+    if row is None or row.invitee_id is not None or invitations.state(row) != "open":
         raise not_found()
     return row
 
@@ -362,65 +389,14 @@ def _accept(
     ).scalar()
     if already is not None:
         if row.address_normalized is not None:  # for this person alone: used up
-            _use(conn, row, caller.human_id, caller.actor(already))
+            invitations.use(conn, row, caller.human_id, caller.actor(already))
         return invalid({"token": "already_member"}, "you are a member already"), None
     if not invitations.issuer_holds(conn, row):
         invitations.void(conn, row, outsider)
         return _refused("invitation_void", "the inviter can no longer grant this invitation")
-    now = clock.now()
-    in_set_before = restricted.resolve(conn, project)  # who enters is told to the set (§6.4)
-    result = conn.execute(
-        insert(t.membership).values(
-            project_id=row.project_id,
-            human_id=caller.human_id,
-            trust=row.trust,
-            role=row.role,
-            # A role still named by an open invitation cannot be removed (§2.3).
-            role_base=project_roles.base_of(
-                conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one(),
-                row.role,
-            ),
-            areas=[],
-            capabilities=[],
-            joined_at=now,
-            last_seen_at=now,
-            changed_via=caller.via,
-        )
-    )
-    key = result.inserted_primary_key
-    assert key is not None
-    membership_id = int(key[0])
-    start_tabs.append(conn, caller.human_id, row.project_id)  # it opens as the last tab (§5.1)
-    actor = caller.actor(membership_id)
-    _use(conn, row, caller.human_id, actor)
-    new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
-    view = member_view(conn, new)
-    events.emit(
-        conn,
-        row.project_id,
-        "member_joined",
-        ["all"],
-        view,
-        actor=actor,
-        subject=("member", caller.human_id),
-    )
-    restricted.entered(
-        conn, row.project_id, in_set_before, "joined", restricted.person(conn, membership_id), actor
-    )
+    view = invitations.admit(conn, row, caller.human_id, caller.via, caller.actor)
     return None, view
 
 
 def _refused(reason: str, message: str) -> tuple[ApiError, None]:
     return ApiError(403, "forbidden", message, {"reason": reason}), None
-
-
-def _use(conn: Connection, row: Any, human_id: str, actor: Actor) -> None:
-    used = conn.execute(
-        update(t.invitation)
-        .where(t.invitation.c.id == row.id, t.invitation.c.used_at.is_(None))
-        .values(used_at=clock.now(), used_by=human_id)
-    ).rowcount
-    if used != 1:  # under the project's lock this cannot happen; never two uses
-        raise not_found()
-    after = conn.execute(select(t.invitation).where(t.invitation.c.id == row.id)).one()
-    invitations.announce(conn, "invitation_used", after, actor)

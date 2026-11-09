@@ -332,3 +332,42 @@ means a runner never picks up a code that can only fail later.
 - Storing the hand-over's text on the membership: a second copy of something already readable, with its own readers to decide.
 - Reading the member's handle at every packet: the line would change or vanish with the other member's removal.
 - Moving the other member's cards and claims with the join: the contract leaves that to an admin or its owner (§6.19, §6.2); a join must never move work.
+
+## An invitation by handle is a personal consent request, and its settlement decides an open row from the facts, not from the withdrawal's reason
+
+**Id:** 02273831-24de-4fa6-8c5d-8a2ac2f7203b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §3.4 "By handle"; the plan on tsk-8xsrzjv7f0yr (parts 4 and 5, decided by the maintainer); the implementation of its hub PR
+**See:** orgs.md#an-invitation-is-closed-by-whoever-closes-it-with-its-reason-the-answer-only-closes-one-that-is-still-open — 506a6ea2-4f34-4174-a86f-09c3c5c66200 — as of 2026-11-09
+
+An invitation with `handle` is bound to one approved, active account at issue (`invitee_id`) and
+files a personal `consent` request to it (`request_id`, the proposal kind `invitation`). It has no
+link: its token is stored like any other and given to nobody, and the page and accept by token
+answer it `not_found`. Whoever ends it on purpose ends the row first and then withdraws the
+request (`invitations.end_request`): a revocation, a void (the issuer, or `invitee` when the
+person's account is deleted), its use (the person accepted another invitation, or got an
+organisation owner's seat), and the minute pass for expiry. `invitations.settle` then finds the
+row ended and changes nothing. Only a row still open is settled there, which happens on the
+person's own answer or withdrawal and on a `go` that no longer applies (`proposals.Stale`). That
+row is decided from what is true now: a member already, it is used up; an issuer without the
+authority, it is voided; neither, it is declined. An expired row is left as it is.
+
+**Reason:** a stale `go` rolls its transaction back, so a void or a use written there is lost, and
+the withdrawal that follows runs in a transaction of its own. Re-reading the membership and the
+issuer's authority there gives the same end as the accept route's would. The withdrawal reason is
+a free text when the person withdraws the request themselves, so it cannot decide. The withdrawal
+after a stale `go` takes the project's lock before the request's (`answer_personal`): that is the
+order a revocation takes them in.
+
+**Rejected alternatives:**
+- Deciding from the request's `withdraw_reason`: a text is a poor key (the organisation's entry
+  says the same), and the person's own withdrawal could name any reason.
+- Refusing a stale `go` with an error and leaving the request open: a void or a use would never be
+  written, and the person would be left with a request that fails every time.
+- A `/me/invitations` route of its own: dropped in the plan for the personal request, which the
+  organisation's invitation (§6.26) already answers in the same inbox.
+
+**Known limit:** the request reaches the person under the notification kind `inbox`, like every
+personal request. The kind `invitation` of §18.4 is the card's next PR.

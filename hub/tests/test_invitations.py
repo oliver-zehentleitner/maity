@@ -139,6 +139,7 @@ def test_an_owner_issues_one_and_its_url_is_shown_once(
         "trust": "member",
         "role": "coder",
         "address_bound": True,
+        "handle_bound": False,
     }
     assert created.audience == [f"member:{owner.id}"]
 
@@ -600,6 +601,7 @@ def test_an_issuer_who_lost_the_authority_voids_it(
         "trust": "member",
         "role": "coder",
         "address_bound": False,
+        "handle_bound": False,
     }
     assert accept(guest, token_of(made)).status_code == 404
 

@@ -2484,8 +2484,15 @@ def answer_personal(
         return idempotency.run(engine_of(request), request, caller, action)
     except proposals.Stale as stale:
         # The go no longer applies (an expired invitation): the request is withdrawn and the
-        # kind's own clean-up runs, nothing else changes, as on the project route.
+        # kind's own clean-up runs, nothing else changes, as on the project route. Under its
+        # project's lock first, as the answer took it: the clean-up of a project's invitation
+        # (§3.4) writes the invitation as a revocation does, project before request.
         with events.transaction(engine_of(request)) as conn:
+            project_id = conn.execute(
+                select(t.request.c.project_id).where(t.request.c.id == stale.request_id)
+            ).scalar()
+            if project_id is not None:
+                lock_project(conn, project_id)
             close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
         raise stale.error from None
 
