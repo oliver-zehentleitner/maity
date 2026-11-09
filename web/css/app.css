@@ -893,8 +893,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 :is(.view-members, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
 :is(.view-members, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
 .view-agents .profile { border-radius: var(--r-card); }
-/* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card. */
-.placement button:not(:disabled) { border-color: var(--field); }
+/* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
+.placement button:not(:disabled):not(.primary) { border-color: var(--field); }
 @media (max-width: 600px) {
   .view-members .table-wrap { background: none; border: 0; box-shadow: none; }
   :is(.view-members, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
