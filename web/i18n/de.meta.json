@@ -9091,13 +9091,13 @@
     "en": "e94338cd48280ff4",
     "text": "711fde81cc06a83c"
   },
-  "mail.timezone.empty": {
-    "en": "0c62b16cf8d8d4e9",
-    "text": "fc026a9369220420"
+  "mail.timezone.elsewhere": {
+    "en": "60803fb990286a75",
+    "text": "92b037e7b57fd9c9"
   },
-  "mail.timezone.hint": {
-    "en": "b0c175e699f53d2d",
-    "text": "225f22ea45523c41"
+  "mail.timezone.none": {
+    "en": "90b2d862dc6a7d01",
+    "text": "7e3e80fcde38c13b"
   },
   "mail.timezone.unknown": {
     "en": "c7da8217bded281c",
@@ -19266,5 +19266,33 @@
   "why.type.workaround": {
     "en": "9ca98a86c44a2b28",
     "text": "0f135bb6ab72585a"
+  },
+  "zone.clear": {
+    "en": "a0ad069ca4547708",
+    "text": "a3015299c8f0f479"
+  },
+  "zone.failed": {
+    "en": "8a4e6729f6600fa6",
+    "text": "b4fa1161372f321a"
+  },
+  "zone.hint": {
+    "en": "52e0639696d92e93",
+    "text": "abedf4324982d11d"
+  },
+  "zone.label": {
+    "en": "91f17ca8d5393ecd",
+    "text": "9609ba92753e03be"
+  },
+  "zone.save": {
+    "en": "3c51cc5d58d2c162",
+    "text": "9bb20f8937c66e71"
+  },
+  "zone.saved": {
+    "en": "14a5a33abf1fd6c1",
+    "text": "9ff108f6550c808c"
+  },
+  "zone.unset": {
+    "en": "461326dce459223a",
+    "text": "7eace75a4af871ca"
   }
 }

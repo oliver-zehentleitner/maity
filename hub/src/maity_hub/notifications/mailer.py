@@ -164,7 +164,7 @@ def for_human(
     moved = json.dumps([listing.stamp(conn, human_id), prefs, row.verified_at], default=str)
     if state.stamp == moved and not state.waiting and state.held_since is None:
         return 0
-    zone = ZoneInfo(prefs["timezone"])
+    zone = preferences.mail_zone(prefs)
     now = clock.now()
     local = now.astimezone(zone)
     where = items.scope(conn, human_id, public_url)

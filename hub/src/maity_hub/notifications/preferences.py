@@ -60,7 +60,9 @@ DEFAULTS: dict[str, Any] = {
     },
     "email": {
         "language": "en",
-        "timezone": "UTC",
+        # The account's time zone, `null` until the human sets one (§18.4): the dashboard then
+        # shows the browser's, and the mails use UTC (`mail_zone`).
+        "timezone": None,
         "kinds": {
             "inbox": {"mode": "immediate"},
             # A digest by default against filled mailboxes; the inbox and security at once
@@ -265,7 +267,7 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
             else:
                 errors[name] = "invalid"
         elif key == "timezone":
-            if _zone(value):
+            if value is None or _zone(value):
                 out[key] = value
             else:
                 errors[name] = "invalid"
@@ -341,6 +343,11 @@ def _check_not_listening(given: Any, errors: dict[str, str]) -> dict[str, Any]:
     if "minutes" in given and not minutes_valid(given["minutes"]):
         errors["not_listening.minutes"] = "invalid"
     return dict(given)
+
+
+def mail_zone(email: dict[str, Any]) -> ZoneInfo:
+    """The zone the mails use: the account's, or UTC while the human has set none (§18.4)."""
+    return ZoneInfo(email.get("timezone") or "UTC")
 
 
 def _zone(value: Any) -> bool:
