@@ -2836,6 +2836,8 @@ reporting line that is not there.
 **Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); the maintainer's request relayed by the coordinator on the card tsk-ttywzxsaj1ht, 2026-10-31 (Agents right after Members, Jour fixe between Why and Settings); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
 
+2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
 member and a **Chat** per entry (one's own agent: its direct chat;
@@ -3900,6 +3902,8 @@ taken, and the rule for what holds is the contract's. The icons as
 **Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (the Overview too full, split into tabs; the org chart on the Team/Members page as its own tab, not on the Overview; the swarm may stay or become a tab, the implementer's proposal); docs/api.md §16.11 (`organisation` is a project view); the split of the panels into the three tabs is the implementer's
 **Supersedes:** d7ee1073-1752-4134-9e51-878c5c28f2c2
 **Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
+
+2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
 
 The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
 **Swarm** (`overview/swarm`) and **Project** (`overview/project`), as

@@ -5523,9 +5523,10 @@ _FAILED_CODE: list[str | None] = [None]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """The command, and under `MAITY_ERROR_LINE=<nonce>` its machine line after a failure it
-    handles (not after a crash, or when stderr cannot be written), written last:
-    `maity-error <nonce>: <code>`, or `-` when no code applies."""
+    """The command, and under `MAITY_ERROR_LINE=<nonce>` its machine line after every failure,
+    unless stderr cannot be written: `maity-error <nonce>: <code>`, or `-` when no code
+    applies. It comes last after a failure this function handles; after a crash it comes
+    before the traceback, so a reader that takes only the last line gets no code."""
     nonce = os.environ.get(hub.ERROR_LINE_ENV) or ""
     if not hub.ERROR_LINE_NONCE.fullmatch(nonce):
         return _main(argv)

@@ -50,10 +50,10 @@ _ERROR_LINE = re.compile(
 def join_detail(code: str | None, reason: Any = None) -> str | None:
     """The `join_failed` detail for a hub refusal: its error code, or for `forbidden` the
     `details.reason` that says which rule refused (`member_join_limit`, `member_agents_max`,
-    §3.1). None when neither has the form of a code."""
+    §3.1). None when neither has the form of a code, or `code` is no string at all."""
     if code == "forbidden" and isinstance(reason, str) and DETAIL_CODE.fullmatch(reason):
         return reason
-    return code if code is not None and DETAIL_CODE.fullmatch(code) else None
+    return code if isinstance(code, str) and DETAIL_CODE.fullmatch(code) else None
 
 
 class Retry(Exception):
