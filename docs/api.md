@@ -16303,7 +16303,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 
 | Query | Meaning |
 |---|---|
-| `q` | 1–64 characters; case-insensitive substring of `handle`, an alias (§6.24) or `display_name`; otherwise `invalid` |
+| `q` | 1–64 characters; case-insensitive substring of `handle`, an alias (§6.24), `display_name` or `email`; otherwise `invalid` |
 | `disabled` | `true` or `false`; omitted: both |
 | `account_status` | `active` or `pending` (§2.7.5); omitted: both |
 | `limit`, `cursor` | §1.4 |
@@ -16312,6 +16312,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 {
   "items": [
     { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
+      "email": "maintainer@example.org",
       "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7",
       "instance_admin": true, "disabled": false, "account_status": "active",
       "created_at": "2026-10-21T07:45:00Z", "last_login_at": "2026-10-22T08:02:11Z",
@@ -16322,6 +16323,10 @@ runner credential is `forbidden`. The humans of the instance, paged
 }
 ```
 
+- `email` is the human's sign-in address: the address `POST /auth/login`
+  takes (§18.4), verified or `disabled` after delivery failures (§18.7);
+  `null` when there is none. A change that waits for its link
+  (`pending_address`) is not shown.
 - `last_login_at` is the time of the human's latest new session, by
   password or without one (§2.1, §2.6), `null` when none; `last_seen_at` is the one every call
   renews (§2.1).
@@ -16335,8 +16340,6 @@ runner credential is `forbidden`. The humans of the instance, paged
   accounts design). There is no endpoint that disables an account yet.
 - Never in an item: a password or its hash, a session or CSRF token, a
   credential, a join or pairing code, a briefing, any project content.
-  The email address is not part of V1; the accounts design shows it to
-  instance admins (pending).
 - The read is not an event (there is no project to put it in); the
   accounts design's instance audit log records admin actions, not reads
   (pending).
