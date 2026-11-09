@@ -3384,9 +3384,9 @@ for an agent that has never heard of Maity and has no tool installed:
    creator) is an active member above `guest`, and the mode names the
    agent — its id listed under `nobody_except`; not listed under
    `all_except`, where its owner must be in the set as well. Nothing
-   for a set that names nobody and nothing for a join of an agent that
-   is an active member already (a new instance or a replacement, §6.17:
-   it enters nothing), and never how many cards have a text, since
+   when the set would not hold that membership, whoever the set holds
+   now, and nothing for a join of an agent that is an active member
+   already (a new instance or a replacement, §6.17: it enters nothing), and never how many cards have a text, since
    whoever holds the URL reads the page. The setting may change
    between the page and the exchange; the set learns who entered from
    the exchange's `restricted_changed` (§3.3), not from the page.
@@ -3699,12 +3699,15 @@ every new member above `guest` enters that set. It is `false` for
 `nobody_except`, for no setting and for trust `guest`. Like
 `registration` it is computed from the project and the invitation
 alone, never from who reads, so the page does not name a person the
-setting lists, and in two cases it says what the accept will not do:
-a former member whose id an `all_except` list still holds does not
-enter, though the page says they will read the texts; a former member
-whose id a `nobody_except` list still holds enters, though the page
-says nothing. Either way the set learns who entered from the accept,
-which writes its `restricted_changed` with `cause: joined` (§6.4).
+setting lists, and for an invitation above `guest` it is wrong in two
+cases: a former member whose id an `all_except` list still holds does
+not enter, though the page says they will read the texts; a former
+member whose id a `nobody_except` list still holds enters, though the
+page says nothing. The set learns who did enter from the accept: when
+the new membership puts anyone into the set, the human or an agent of
+theirs entering with them, the accept writes the set's
+`restricted_changed` with `cause: joined` (§6.4); when nobody enters,
+it writes none.
 The answer carries no token in the body and no handle of anyone. It
 is rate limited per source address as the join exchange is (§3.3, 10
 per minute); the answer is identical for every reader.
