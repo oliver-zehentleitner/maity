@@ -317,6 +317,29 @@ def test_a_hub_answer_becomes_a_hub_error_with_a_string_code_or_none(
     assert err.code == code and str(err) == shown and err.status == 502
 
 
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        (b'{"error": "a proxy\'s text"}', "conflict"),  # no error object: the header's code
+        (b'{"error": {"code": [], "message": "m"}}', None),  # the body's code wins, is none
+    ],
+)
+def test_a_maity_error_header_names_the_code_only_when_the_body_has_no_code_field(
+    body: bytes, code: str | None
+) -> None:
+    """The header fallback (#1565 R2, 4hv7): an answer without an error object keeps the code
+    the `Maity-Error` header names; a body `code` that is no string is still no code."""
+    import email.message
+    import io
+    import urllib.error
+
+    headers = email.message.Message()
+    headers["Maity-Error"] = "conflict"
+    raw = urllib.error.HTTPError("https://h/x", 409, "Conflict", headers, io.BytesIO(body))
+    err = hub._error_from(raw, "x")
+    assert err.code == code and hub.error_code(err) == code
+
+
 def test_a_maintenance_refusal_ends_with_the_error_line(
     clone: Path,
     fake: fakehub.FakeHub,
