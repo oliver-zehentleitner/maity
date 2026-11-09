@@ -2166,6 +2166,17 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
+    // one after the other. Their answers are handled in the old order, the window first. /me still
+    // waits for the session: asked before it, /me fails by design for a session that owes the
+    // second factor and for a session cookie that outlived its session.
+    // Not for the invitation and registration pages, which read the session themselves (review
+    // of #1524): an early read there was one more, and its late answer could still set a language.
+    let first = null;
+    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    const early = reuse || ownRead ? null : M.api.get("/auth/session");
+    if (early) early.catch(() => {});
     await M.maintenance.fresh();
     if (seq !== renderSeq) return;
     try {
@@ -2175,7 +2186,7 @@ window.Maity = window.Maity || {};
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
-        session = reuse ? reuse.session : await M.api.get("/auth/session");
+        session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
