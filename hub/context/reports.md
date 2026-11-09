@@ -74,7 +74,7 @@ snapshot, or close the request with the report still open.
 
 **Id:** 442bb50d-5a43-44f2-85c3-24a3fd39878f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29
 **See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
@@ -94,10 +94,11 @@ The id is the one the page shows. A person is the current handle, never
 the account id or a member id: a public URL names no account (§6.10,
 §16.9). An agent is the current global name `<owner>/<handle>`, a
 project the current `full_name`, a card the task id the page shows with
-the project's current `full_name`. A former name or an alias does not
-resolve. `GET /me/reports` then shows that current public name while the
-page is still served, and a neutral word (`person`, `agent`, `project`,
-`card`) once it is not, so the list never keeps an old name or an alias.
+the project's current `full_name`. By §16.8 a former name or an alias
+does not resolve, and `GET /me/reports` shows that current public name
+while the page is still served and a neutral word (`person`, `agent`,
+`project`, `card`) once it is not, so the list never keeps an old name or
+an alias.
 
 A caller who already reads the target inside a membership may still name
 a profile by the id that read uses. The hub stores a project and a
@@ -108,9 +109,13 @@ Until 2026-10-30 an agent was also readable while a project's public
 swarm page showed it (`swarm_public: on`). The page and the flag went
 with contract #697 (§6.22). The public pages of §16.9 are what brings
 the stranger's report back, by the rule above (tsk-pqbjrr4a1n5a). The
-hub's `reports.target` still walks the membership reads; it does not yet
-accept the handle or a served card. That gap is the implementation, not
-a second rule.
+hub does not do this yet. `reports.target` still walks the membership
+reads, so `_profile` and `_project` admit no stranger for a served page,
+and a handle or a served card is not accepted. `_member` and
+`_agent_by_name` still resolve an alias, and `GET /me/reports` still
+shows the stored `{type, id}`. That gap is the implementation, the hub
+part of tsk-pqbjrr4a1n5a, not a second rule. This entry stays
+`needs-review` until it lands.
 
 **Reason:** a report that refused a person, a project or a card the page
 already shows would be narrower than the page, and accepting an account
