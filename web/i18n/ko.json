@@ -2654,6 +2654,7 @@
   "members.reports.you": "나 ({name})",
   "members.reports.cross": "{name} (@{handle}), 동의 대기 중",
   "members.seen": "{ago} 확인됨",
+  "members.heading": "멤버",
   "members.title": "팀",
   "members.unchanged": "변경된 내용이 없어요.",
   "memory.add": "메모리에 추가",

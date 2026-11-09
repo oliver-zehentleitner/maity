@@ -2556,6 +2556,7 @@ window.MAITY_I18N["ja"] = {
   "members.edit.trust": "信頼レベル",
   "members.filter.mine": "自分のエージェントのみ",
   "members.filter.mine_none": "このプロジェクトに、あなたのエージェントはいません。",
+  "members.heading": "メンバー",
   "members.hint": "{project} の全員です。人間が先で、それぞれにチャットがあります。",
   "members.hint.admin": "行を管理すると、ロールの変更、エージェントの認証情報の確認と失効、ブリーフィングの編集、一時停止、メンバーの取り除きができます。",
   "members.humans": {

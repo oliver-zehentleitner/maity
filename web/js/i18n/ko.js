@@ -2556,6 +2556,7 @@ window.MAITY_I18N["ko"] = {
   "members.edit.trust": "신뢰 수준",
   "members.filter.mine": "내 에이전트만",
   "members.filter.mine_none": "이 프로젝트에 내 에이전트가 없어요.",
+  "members.heading": "멤버",
   "members.hint": "{project}의 모든 사람, 사람이 먼저이고 각각 채팅이 있어요.",
   "members.hint.admin": "행을 관리해 역할을 바꾸고, 에이전트의 자격 증명을 보거나 폐기하고, 브리핑을 편집하고, 일시 중지하거나 멤버를 제거하세요.",
   "members.humans": {

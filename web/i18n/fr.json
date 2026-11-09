@@ -2712,6 +2712,7 @@
   "members.reports.you": "vous ({name})",
   "members.reports.cross": "{name} (@{handle}), attend le consentement",
   "members.seen": "vu {ago}",
+  "members.heading": "Membres",
   "members.title": "Équipe",
   "members.unchanged": "Rien n'a changé.",
   "memory.add": "Ajouter à la mémoire",

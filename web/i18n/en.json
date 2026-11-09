@@ -2714,6 +2714,7 @@
   "members.reports.you": "you ({name})",
   "members.reports.cross": "{name} (@{handle}), waits for consent",
   "members.seen": "seen {ago}",
+  "members.heading": "Members",
   "members.title": "Team",
   "members.unchanged": "Nothing changed.",
   "memory.add": "Add to the memory",

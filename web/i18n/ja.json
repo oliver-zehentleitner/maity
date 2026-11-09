@@ -2654,6 +2654,7 @@
   "members.reports.you": "あなた ({name})",
   "members.reports.cross": "{name} (@{handle})、同意待ち",
   "members.seen": "最終確認 {ago}",
+  "members.heading": "メンバー",
   "members.title": "チーム",
   "members.unchanged": "変更はありません。",
   "memory.add": "メモリに追加",

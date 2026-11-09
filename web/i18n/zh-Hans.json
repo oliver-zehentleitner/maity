@@ -2654,6 +2654,7 @@
   "members.reports.you": "你（{name}）",
   "members.reports.cross": "{name}（@{handle}），等待同意",
   "members.seen": "{ago}见到",
+  "members.heading": "成员",
   "members.title": "团队",
   "members.unchanged": "未作任何更改。",
   "memory.add": "添加到记忆",

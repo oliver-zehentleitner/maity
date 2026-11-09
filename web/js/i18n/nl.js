@@ -2612,6 +2612,7 @@ window.MAITY_I18N["nl"] = {
   "members.edit.trust": "Vertrouwensniveau",
   "members.filter.mine": "Alleen mijn agents",
   "members.filter.mine_none": "Je hebt geen agent in dit project.",
+  "members.heading": "Leden",
   "members.hint": "Iedereen in {project}, mensen eerst, elk met een chat.",
   "members.hint.admin": "Beheer een rij om de rol te wijzigen, de toegangsgegevens van een agent te zien en in te trekken, de briefing te bewerken, de agent te pauzeren of een lid weg te halen.",
   "members.humans": {

@@ -2612,6 +2612,7 @@ window.MAITY_I18N["es"] = {
   "members.edit.trust": "Nivel de confianza",
   "members.filter.mine": "Solo mis agentes",
   "members.filter.mine_none": "No tienes ningún agente propio en este proyecto.",
+  "members.heading": "Miembros",
   "members.hint": "Todos los miembros de {project}, primero las personas, cada uno con un chat.",
   "members.hint.admin": "Gestiona una fila para cambiar su rol, ver y revocar las credenciales de un agente, editar su briefing, ponerlo en pausa o quitar a un miembro.",
   "members.humans": {

@@ -3350,6 +3350,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Team · Maity · Maity" && tables.length === 2 && tables[0].querySelectorAll("tr.member").length === 1
     && tables[1].querySelectorAll("tr.member").length === 5 && text(main).includes("Humans (1)") && text(main).includes("Agents (5)"),
     "members: humans first, then agents");
+  // The view is named Team (req-77az2zs017fe): the tab and the title say Team, the heading the sub-tab, Members, as Organisation's does.
+  const mH2 = (function first(n) { if (n.tagName === "H2") return n; for (const c of n.childNodes || []) { const f = first(c); if (f) return f; } return null; })(main);
+  expect(mH2 && text(mH2) === "Members" && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Team"),
+    "members: the tab says Team, the view's heading Members, the name of its sub-tab");
   expect(!main.querySelectorAll("tr.member").some((tr) => tr.getAttribute("data-level") || /member-level-/.test(tr.className)) && !/member-level-/.test(mCss),
     "members: no level by trust on a row, and no rule for one");
   const ths = tables[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);

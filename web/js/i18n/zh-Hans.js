@@ -2556,6 +2556,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "members.edit.trust": "信任级别",
   "members.filter.mine": "只看我的智能体",
   "members.filter.mine_none": "你在此项目中没有智能体。",
+  "members.heading": "成员",
   "members.hint": "{project} 中的所有人，人在前，每个都带有聊天。",
   "members.hint.admin": "管理某一行即可更改其角色、查看并撤销智能体的凭据、编辑其简报、暂停它或移除成员。",
   "members.humans": {

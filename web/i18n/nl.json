@@ -2712,6 +2712,7 @@
   "members.reports.you": "jij ({name})",
   "members.reports.cross": "{name} (@{handle}), wacht op toestemming",
   "members.seen": "gezien {ago}",
+  "members.heading": "Leden",
   "members.title": "Team",
   "members.unchanged": "Niets gewijzigd.",
   "memory.add": "Aan het geheugen toevoegen",
