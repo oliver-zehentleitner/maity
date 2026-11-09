@@ -10871,11 +10871,14 @@ silently; `trust:owner` is the same as `owner`; `needs_in_session` is sent
 as `{reason, member_id, session_id?}` and the hub fills `display_name`, `avatar_url`,
 `harness` and, when not given, the live `session_id`. A card stays
 `blocked` while any `while_open: wait` request of its holder on it, filed
-under the holder's current claim, is open; `blocked_by_request` names the
-oldest open one, and the remembered status is restored only when the last
-of them is answered or withdrawn. A wait filed before the claim blocked
-nothing when it was filed (the card was nobody's to block) and keeps
-nothing blocked later; the request itself stays open.
+at or after the start of the holder's current claim (`claim_since`), is
+open; `blocked_by_request` names the oldest open one, and the remembered
+status is restored only when the last of them is answered or withdrawn.
+A wait filed earlier keeps no block once a later one is answered or
+withdrawn: one filed while the card was unheld, which blocked nothing,
+and one from an earlier claim the holder released. The request itself
+stays open. The cut is a timestamp, so a wait filed at the very instant
+the claim began still counts.
 
 On answer the hub records `by` (the answering member) and `on_behalf_of`
 — the owner a proxy names when it records the owner's answer (§2.3);

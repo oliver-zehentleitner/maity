@@ -60,7 +60,7 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 **Status:** active
 **Evidence:** confirmed
 **Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08; re-checked by the project lead in Maity message seq 100432, 2026-11-09, after its second trigger fired, which 47e9ac62 now answers
-**See:** requests.md#only-a-wait-filed-under-the-current-claim-keeps-its-card-blocked — 47e9ac62-d08b-4f23-a664-5aa31c8b553a — as of 2026-11-09
+**See:** requests.md#only-a-wait-filed-since-the-current-claim-began-keeps-its-card-blocked — 47e9ac62-d08b-4f23-a664-5aa31c8b553a — as of 2026-11-09
 **Revisit when:** a request needs to block a card without the asker holding it
 
 A request without `while_open` takes the class's default:
@@ -87,7 +87,7 @@ status and the restore on the last answer stay as they were. `maity ask --wait` 
 - `proceed_provisionally` for every class: a consent must wait, and its validation
   (`consent_waits`) would refuse every bare consent.
 
-## Only a wait filed under the current claim keeps its card blocked
+## Only a wait filed since the current claim began keeps its card blocked
 
 **Id:** 47e9ac62-d08b-4f23-a664-5aa31c8b553a
 **Type:** decision
@@ -98,20 +98,29 @@ status and the restore on the last answer stay as they were. `maity ask --wait` 
 **Revisit when:** a change of holder stops setting `card.claim_since`, or a renewal starts to set it
 
 `_unblock` (routes/requests.py) counts the other open waits of the holder on the card only
-when they were filed at or after `card.claim_since`. A wait filed before the claim blocked
-nothing when it was filed, since an unheld card is nobody's to block, so it no longer keeps
-the card blocked after a later wait is answered. The request itself stays open. A claim
-without `claim_since` counts every wait, as before.
+when they were filed at or after `card.claim_since`. An earlier wait no longer keeps the card
+blocked once a later wait is answered or withdrawn. That covers a wait filed while the card
+was unheld, which blocked nothing, and one from an earlier claim the holder released, whose
+block the release ended. The request itself stays open. A claim without `claim_since`
+counts every wait, as before.
+
+Two limits remain. The cut is a timestamp, not the claim's identity, so a wait filed at the
+very instant the claim began still counts: only a frozen clock produces that tie. And a card
+taken over while blocked keeps the previous holder's blocker until an answer or withdrawal
+runs `_unblock`, as before this change.
 
 **Reason:** every change of holder (claim, the expired claim's move to the assignee, a
 takeover) sets `claim_since`, a renewal does not, and a release clears the block. So the
-claim's start already tells which waits could have blocked. No column and no migration are
-needed.
+claim's start separates the waits of this claim from the earlier ones, up to the exact tie
+above. No column and no migration are needed.
 
 **Rejected alternatives:**
-- A stored marker on the request ("this one blocked the card"): the same answer from a new
-  column, with a migration and a slot in the migration order; 3d44b07f had already turned
-  down a stored `block` field for that cost.
+- A stored marker on the request ("this one blocked the card", or the claim it was filed
+  under): it would also settle the exact tie, but needs a new column, a migration and a slot
+  in the migration order; 3d44b07f had already turned down a stored `block` field for that
+  cost, and the tie needs a frozen clock.
+- `>` instead of `>=`: it would drop a real wait filed at the claim's very instant, the other
+  side of the same tie.
 - Blocking the card at the claim when its claimer has an open wait: that changes what a claim
   does, and §7 says only a wait filed by the holder blocks.
 - Leaving it: conservative, it never releases work that must wait, but it kept a card

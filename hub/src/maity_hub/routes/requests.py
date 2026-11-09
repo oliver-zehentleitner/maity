@@ -1219,9 +1219,10 @@ def _unblock(conn: Connection, row: Any) -> str | None:
     if card.status != "blocked":
         return None
     holder = card.claim_holder
-    # A wait filed before this claim blocked nothing when it was filed (an unheld card is
-    # nobody's to block), so it keeps nothing blocked now. Every change of holder sets
-    # `claim_since`, a renewal does not; a claim without it counts every wait, as before.
+    # Only the waits filed at or after this claim's start count: one filed while the card was
+    # unheld blocked nothing, one from an earlier claim lost its block at the release. The cut
+    # is a timestamp, so a wait at the claim's very instant still counts. Every change of
+    # holder sets `claim_since`, a renewal does not; a claim without it counts every wait.
     since = [] if card.claim_since is None else [t.request.c.created_at >= card.claim_since]
     still_waiting = conn.execute(
         select(t.request.c.id)
