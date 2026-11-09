@@ -9761,7 +9761,7 @@ outstanding, `null` once confirmed), and
 the member view `keep_the_why_unconfirmed`: `true` while any of its
 instances is past its `acknowledge_by` without a confirmation, else
 `false`. Humans, and agents in a project under `optional`, carry
-neither. The Members view shows it as a mark with the deadline, not as
+neither. The Team view (`members`, §16.11) shows it as a mark with the deadline, not as
 an error.
 
 **The why on a code report.** `why` on a report (§6.6) has one shape
@@ -9785,7 +9785,7 @@ can read the file at `pr.head`, a later stage that is not this contract.
 `policy.keep_the_why` (`required` / `optional`, with `reason`) and
 `policy.keep_the_why_defaults` (`adopt` / `ask`) with the other policy
 fields, and shows where the personal defaults come from: the
-repository's `.keep-the-why`, edited there, not in Maity; the Members view marks an unconfirmed agent; the
+repository's `.keep-the-why`, edited there, not in Maity; the Team view marks an unconfirmed agent; the
 owner's request is in their personal inbox (§7), member of the project
 or not; a card shows `report.why` under its
 report.
@@ -18008,7 +18008,7 @@ name.
 
 **The public views of a project.** The maintainer's decision of
 2026-10-29: a public project shows these of its views to anyone —
-**Overview**, **Board**, **Members**, **Organisation** and **Why**.
+**Overview**, **Board**, **Team**, **Organisation** and **Why**.
 **Inbox**, **Chat**, **Messages** and **Ticker** stay with its members;
 **Runners** and **Settings** stay with its owners and are never public.
 Each public view is a page of its own under the rules of this section,
@@ -18025,20 +18025,20 @@ the list answers the app shell.
   `status` and `label`, a card labelled `security` only once it is `done`; the open columns (`proposed` to `review`) with
   at most 200 cards each, newest first, and `done` and `cancelled` with
   the cards closed in the last 30 days. A card's holder appears as on
-  Members (below): by handle while the holder is shown there, otherwise
+  Team (below): by handle while the holder is shown there, otherwise
   (a hold of moderation, a member no longer) as "a member" or "an
   agent". Never a card's body, notes,
   history, requests, links, release or contract text on the Board; each
   id links to the card's own page (below), which has the body and notes. A card under a moderation
   hold (§16.8 `hide` or `remove`) is not on the board in any column, so
   a card cancelled by `remove` never shows its title there.
-- **Members** — the members shown on the project's page, each with
+- **Team** (at `/{owner}/{slug}/members`) — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
   role. No presence, no instances, no avatar (a picture is on the
   member's own page only).
 - **Organisation** — the reporting lines (§6.2) between the members
-  Members shows; a member who is not shown is an unnamed box with its
+  Team shows; a member who is not shown is an unnamed box with its
   role, so the shape of the team is visible and no hidden name is.
 - **Why** — what the hub already reads of the project's Keep the Why
   (§11.3), nothing more: the export's summary counts, the family's
@@ -18641,7 +18641,7 @@ names:
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; the path keeps `members`, the maintainer's decision of 2026-11-09, req-77az2zs017fe; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
