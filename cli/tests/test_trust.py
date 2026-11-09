@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -401,4 +402,79 @@ def test_a_file_that_is_not_utf8_is_a_trust_error_and_left_as_it_is(tmp_path: Pa
     with pytest.raises(trust.TrustError, match="not UTF-8"):
         trust.record(home, clone)
     assert path.read_bytes() == b"\xff"
+    assert sorted(p.name for p in home.iterdir()) == [".claude.json"]
+
+
+def test_text_that_cannot_be_written_as_utf8_is_a_trust_error_and_left_as_it_is(
+    tmp_path: Path,
+) -> None:
+    """An escaped lone surrogate reads as JSON but fails to encode: a UnicodeEncodeError, no
+    OSError (#1560 R4)."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    home.mkdir()
+    path = home / ".claude.json"
+    original = b'{"existing": "\\ud800"}'
+    path.write_bytes(original)
+    with pytest.raises(trust.TrustError, match="cannot be written as UTF-8"):
+        trust.record(home, clone)
+    assert path.read_bytes() == original
+    assert sorted(p.name for p in home.iterdir()) == [".claude.json"]
+
+
+@pytest.mark.parametrize("step", ["read_text", "loads", "dump"])
+def test_any_exception_while_recording_is_a_trust_error_and_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """Every Exception, of any type, becomes a TrustError with the cause; the lock, the temp
+    file and the renewal thread are cleaned up and the file is left as it is (#1560 R4)."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    home.mkdir()
+    path = home / ".claude.json"
+    path.write_text('{"projects": {}}')
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("broken step")
+
+    if step == "read_text":
+        monkeypatch.setattr(Path, "read_text", broken)
+    else:
+        monkeypatch.setattr(json, step, broken)
+    threads = threading.active_count()
+    with pytest.raises(trust.TrustError, match="RuntimeError: broken step") as caught:
+        trust.record(home, clone)
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    monkeypatch.undo()
+    assert json.loads(path.read_text()) == {"projects": {}}
+    assert sorted(p.name for p in home.iterdir()) == [".claude.json"]
+    assert threading.active_count() == threads
+
+
+def test_keyboard_interrupt_passes_through_and_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    home.mkdir()
+
+    def interrupted(*args: Any, **kwargs: Any) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(json, "dump", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        trust.record(home, clone)
+    monkeypatch.undo()
+    assert sorted(p.name for p in home.iterdir()) == []
+
+
+def test_json_nested_past_the_recursion_limit_is_a_trust_error_and_left_as_it_is(
+    tmp_path: Path,
+) -> None:
+    """json.loads raises RecursionError, no ValueError, for deep nesting (#1560 R4)."""
+    home, clone = tmp_path / "h", _clone(tmp_path)
+    home.mkdir()
+    path = home / ".claude.json"
+    original = b"[" * 100_000 + b"]" * 100_000
+    path.write_bytes(original)
+    with pytest.raises(trust.TrustError, match="not JSON"):
+        trust.record(home, clone)
+    assert path.read_bytes() == original
     assert sorted(p.name for p in home.iterdir()) == [".claude.json"]

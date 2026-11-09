@@ -26,9 +26,11 @@ its global configuration file. Checked against Claude Code 2.1.319:
   again on its next start.
 
 Nothing else in the file changes, no other project and no other key of this one, apart from
-that boundary. A file that is not UTF-8 text holding a JSON object is left as it is. Every
-failure (such a file, a lock held past WAIT_SECONDS, a stale lock that cannot be removed, a
-lost lock, a read or write that fails) raises TrustError with the cause.
+that boundary. A file that is not UTF-8 text holding a JSON object, or whose text cannot be
+written back as UTF-8 (an escaped lone surrogate), is left as it is. Every failure (such a
+file, a lock held past WAIT_SECONDS, a stale lock that cannot be removed, a lost lock, a read
+or write that fails), whatever its exception type, raises TrustError with the cause: `record`
+converts every Exception; only KeyboardInterrupt and SystemExit pass through.
 
 The runner runs this in its own process when the agents are its own user; through sudo or on an
 ssh host it starts this module there (`python -I -m maity.runner.trust HOME CLONE`, `maity
@@ -171,24 +173,38 @@ def record(
     sleep: Callable[[float], None] = time.sleep,
 ) -> bool:
     """Mark `clone` trusted in the Claude Code configuration under `home`; False when it
-    already was. Raises TrustError, with the cause, whenever it cannot."""
+    already was. Raises TrustError, with the cause, whenever it cannot: every Exception from
+    the file choice, the lock, the read, the JSON or the write becomes one, so the promise in
+    the module docstring holds by construction. KeyboardInterrupt and SystemExit pass."""
+    try:
+        return _record(home, clone, now, sleep)
+    except TrustError:
+        raise
+    except OSError as exc:
+        raise TrustError(f"cannot record trust under {home}: {exc.strerror or exc}") from exc
+    except Exception as exc:
+        raise TrustError(f"cannot record trust under {home}: {type(exc).__name__}: {exc}") from exc
+
+
+def _record(
+    home: Path,
+    clone: Path,
+    now: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> bool:
     path = config_file(home)
     key = os.path.realpath(clone)
     lock = _lock(path, now, sleep)
     try:
         lease = _Lease(lock)
-    except OSError as exc:
+    except BaseException:
         try:
             lock.rmdir()
         except OSError:
             pass
-        raise TrustError(f"cannot hold {lock}: {exc.strerror or exc}") from exc
+        raise
     try:
         return _write(path, key, lease)
-    except TrustError:
-        raise
-    except OSError as exc:
-        raise TrustError(f"cannot write {path}: {exc.strerror or exc}") from exc
     finally:
         lease.release()
 
@@ -203,7 +219,7 @@ def _write(path: Path, key: str, lease: _Lease) -> bool:
         raise TrustError(f"{path} is not UTF-8 text; left as it is") from None
     try:
         data: Any = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise TrustError(f"{path} is not JSON; left as it is") from None
     projects = data.get("projects", {}) if isinstance(data, dict) else None
     entry = projects.get(key, {}) if isinstance(projects, dict) else None
@@ -217,7 +233,12 @@ def _write(path: Path, key: str, lease: _Lease) -> bool:
     fd, temp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
+            try:
+                json.dump(data, fh, indent=2, ensure_ascii=False)
+            except UnicodeEncodeError:
+                raise TrustError(
+                    f"{path} holds text that cannot be written as UTF-8; left as it is"
+                ) from None
             fh.flush()
             os.fsync(fh.fileno())
         os.chmod(temp, mode)

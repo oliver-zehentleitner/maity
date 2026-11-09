@@ -962,9 +962,10 @@ fails. Nothing is put inside the lock directory, which must stay
 removable with `rmdir`. In the `agent_user` and `ssh` layouts the
 runner's own module (`maity.runner.trust`) does this on the agents'
 side, as for the limit file. When the entry cannot be written (a file
-that is not UTF-8 text holding a JSON object, a lock held past 15 s, a stale lock that
-cannot be removed, a lost lock, a failed read or write), the start fails
-with the cause in the log. `supervised` sets nothing: headless (`-p`),
+that is not UTF-8 text holding a JSON object or whose text cannot be
+written back as UTF-8, a lock held past 15 s, a stale lock that
+cannot be removed, a lost lock, a failed read or write, any other
+exception on the way), the start fails with the cause in the log. `supervised` sets nothing: headless (`-p`),
 Claude Code asks for no trust and records none.
 
 Apart from the clone's entry nothing in the file changes, with one
