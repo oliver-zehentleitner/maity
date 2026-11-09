@@ -2681,7 +2681,7 @@ window.Maity = window.Maity || {};
       const d = query.get("disabled");
       if (d !== null && d !== "true" && d !== "false") fail(400, "invalid", "disabled is true or false", path, { fields: { disabled: "not_boolean" } });
       const all = fixtures()["admin-users.json"].items
-        .filter((u) => !q || (u.handle + "\n" + u.display_name).toLowerCase().includes(q.toLowerCase()))
+        .filter((u) => !q || (u.handle + "\n" + u.display_name + "\n" + (u.email || "")).toLowerCase().includes(q.toLowerCase()))
         .filter((u) => d === null || String(u.disabled) === d)
         .sort((a, b) => a.handle.localeCompare(b.handle));
       // §1.4: limit 1–200, the cursor one this list gave out.
