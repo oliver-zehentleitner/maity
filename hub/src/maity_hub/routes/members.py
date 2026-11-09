@@ -446,11 +446,30 @@ def change_of(mine: Membership, caller: Caller, *, line: bool = False) -> Change
 
 
 def _cards_on_the_way(conn: Connection, target: Any) -> bool:
-    """Whether the member holds a card, is the receiver of an open takeover (§6.19) or has
-    cards out with a substitute that a cover's end gives back to it (§6.12)."""
+    """Whether the member holds a card or is assigned an open one, is the receiver of an
+    open takeover (§6.19), has cards out with a substitute that a cover's end gives back to
+    it, or is the substitute of a running cover, to which area routing hands new cards
+    (§6.12, `cover.routed`)."""
     from maity_hub import takeovers
 
     if conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first():
+        return True
+    if conn.execute(
+        select(t.card.c.id)
+        .where(t.card.c.assigned_to == target.id, t.card.c.status.not_in(cards.CLOSED))
+        .limit(1)
+    ).first():
+        return True
+    if conn.execute(
+        select(t.membership.c.id)
+        .where(
+            t.membership.c.project_id == target.project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.cover_state == "covered",
+            t.membership.c.cover_by == target.id,
+        )
+        .limit(1)
+    ).first():
         return True
     if conn.execute(
         select(t.takeover.c.id)
@@ -468,8 +487,9 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
 
 
 def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:
-    """An expert takes no cards (§2.3 "The expert"): what the member holds, what an open
-    takeover would move to it and what a cover would give back to it are settled first.
+    """An expert takes no cards (§2.3 "The expert"): what the member holds or is assigned,
+    what an open takeover would move to it, what a cover would give back to it and a cover
+    it runs as substitute are settled first.
     Checked when the PATCH arrives and again when a deferred change is written, each time
     under the project lock that every writer of `claim_holder`/`assigned_to` holds when it
     reads the receiver (`tasks._locked`, `cover`, `takeovers.transfer`): a claim in flight

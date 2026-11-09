@@ -212,6 +212,23 @@ def test_the_receiver_of_an_open_takeover_does_not_become_an_expert(
     assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
 
 
+def test_a_member_assigned_an_open_card_does_not_become_an_expert(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """§2.3 "The expert": an assignment without a claim is a card too; it goes elsewhere
+    first."""
+    coder = flow.agent(make_client, owner)
+    card = _card(owner, assigned_to=coder.id)
+    assert card.status_code == 201, card.text
+    changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+    done = owner.patch(f"{PROJECT}/tasks/{card.json()['id']}", {"status": "cancelled"})
+    assert done.status_code == 200, done.text
+    changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+    assert changed.status_code == 200, changed.text
+
+
 def test_a_takeover_to_a_member_that_became_an_expert_moves_nothing(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
@@ -236,16 +253,18 @@ def test_a_takeover_to_a_member_that_became_an_expert_moves_nothing(
     assert held["claim"]["holder"] == holder.id and held["assigned_to"] != receiver.id
 
 
-def _paused(monkeypatch: pytest.MonkeyPatch, where: str) -> tuple[Any, Any]:
-    """Pause the first call of `routes.tasks.<where>` until released; returns (reached,
-    release), two events. The route runs in the app's worker thread, so the pause holds
-    that request's transaction open at exactly that point."""
+def _paused(monkeypatch: pytest.MonkeyPatch, where: str, module: Any = None) -> tuple[Any, Any]:
+    """Pause the first call of `<module>.<where>` (`routes.tasks` by default) until
+    released; returns (reached, release), two events. The route runs in the app's worker
+    thread, so the pause holds that request's transaction open at exactly that point."""
     import threading
 
     from maity_hub.routes import tasks as tasks_route
 
+    if module is None:
+        module = tasks_route
     reached, release = threading.Event(), threading.Event()
-    real = getattr(tasks_route, where)
+    real = getattr(module, where)
     armed = [True]
 
     def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -255,7 +274,7 @@ def _paused(monkeypatch: pytest.MonkeyPatch, where: str) -> tuple[Any, Any]:
             assert release.wait(10), "never released"
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(tasks_route, where, wrapper)
+    monkeypatch.setattr(module, where, wrapper)
     return reached, release
 
 
@@ -340,3 +359,37 @@ def test_a_role_change_to_expert_waits_for_a_claim_in_flight_and_then_refuses(
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["details"] == {"reason": "holds_cards"}
     assert written == []  # refused at the check, never written and rolled back
+
+
+def test_a_takeover_in_flight_to_its_caller_opens_none_once_the_caller_became_an_expert(
+    make_client: ClientFactory,
+    owner: flow.Human,
+    monkeypatch: pytest.MonkeyPatch,
+    migrated: Engine,
+) -> None:
+    """§2.3 "The expert", §6.19: a takeover without `to` goes to the caller itself. The
+    route read the caller's membership as a coder; the role change to expert commits before
+    the route takes the project lock. Under the lock the route reads the row again and has
+    no `tasks:write`, so no takeover opens to an expert."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub import takeovers
+
+    holder = flow.agent(make_client, owner)
+    caller = flow.agent(make_client, owner)
+    card = _card(owner).json()["id"]
+    assert holder.post(f"{PROJECT}/tasks/{card}/claim", {}).status_code == 200
+    reached, release = _paused(monkeypatch, "settle", takeovers)  # before the lock
+    opened = _in_thread(
+        lambda: caller.post(f"{PROJECT}/tasks/{card}/takeover", {"reason": "silent for hours"})
+    )
+    try:
+        assert reached.wait(10), "the takeover never reached the lock"
+        changed = owner.patch(f"{PROJECT}/members/{caller.id}", {"role": "expert"})
+        assert changed.status_code == 200, changed.text  # nothing on the way yet
+    finally:
+        release.set()
+    refused = opened.result(timeout=10)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
+    assert owner.get(f"{PROJECT}/takeovers").json()["items"] == []

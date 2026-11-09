@@ -709,9 +709,10 @@ alone, is the one edit of a card it makes, and every other `PATCH` of a
 card is `forbidden` (`details.scope: "tasks:write"`). No cover gives it a
 card (§6.12) and no takeover moves one to it (§6.19). A role change to `expert` is `409
 conflict` with `details.reason: holds_cards` while the member holds a
-card, is the receiver of an open takeover (§6.19) or has cards with a
-substitute that the cover's end would give back (§6.12), until each is
-settled. Where a card would still reach a member that is an expert,
+card or is assigned an open one, is the receiver of an open takeover
+(§6.19), has cards with a substitute that the cover's end would give
+back, or is the substitute of a running cover, to which area routing
+sends the covered member's new cards (§6.12), until each is settled. Where a card would still reach a member that is an expert,
 the write checks the role and leaves it: a takeover to it is cancelled
 (`outcome.how: "cancelled"`) and the card stays with its holder, and a
 covered card stays with the substitute, as one it touched does; and checkpoint

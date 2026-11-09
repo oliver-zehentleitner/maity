@@ -739,6 +739,28 @@ def test_a_covered_member_becomes_an_expert_only_after_its_cards_are_settled(
     assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
 
 
+def test_the_substitute_of_a_running_cover_does_not_become_an_expert(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert", §6.12: while a cover runs, area routing hands the covered
+    member's new cards to its substitute, so the substitute's role change waits until the
+    cover ends."""
+    covered = flow.agent(make_client, owner, areas=["hub/"])
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=1))
+    assert events(migrated, "cover_started")
+    changed = owner.patch(f"/projects/maintainer/maity/members/{sub.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+    covered.resume()  # back: the cover ends
+    changed = owner.patch(f"/projects/maintainer/maity/members/{sub.id}", {"role": "expert"})
+    assert changed.status_code == 200, changed.text
+    assert task(owner, area="hub/")["assigned_to"] == covered.id
+
+
 def test_a_covered_claim_does_not_go_back_to_a_member_that_became_an_expert(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:
