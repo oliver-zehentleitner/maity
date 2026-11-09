@@ -1148,3 +1148,43 @@ work, not a property of the agent.
   `subagents`, so one rule says which owner may still configure their
   agent, and what an admin raised beyond the member limits stays the
   admins'.
+
+## A contact is one-way consent to be contacted, private to the two, with no way to remove someone who added you
+
+**Id:** 9012bf86-7111-40eb-93b1-4a01da266af1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's design of 2026-10-29 on card tsk-w9rajk5m96m4; his answers of 2026-11-08 to req-ne8adzmv0cdw, req-f6fjxm353gdx and req-x0va57a71221 (card tsk-sgtnf846er2s, design parts 1–5); the API name agreed with the lead the same day; `docs/api.md` §6.29
+**Revisit when:** people ask to see who has them as a contact beyond their own list, or the spam report proves not enough as a way out
+
+A human adds another human to their contacts (`PUT /people/{handle}/contact`)
+to say "this person may contact me". It goes one way, the person added
+is not asked, and nothing announces it: no event, no notification, no
+count, no public list. Each side sees only its own list (`/me/contacts`,
+`/me/contact-of`), and `GET /people/{handle}` says only whether the
+person is one of the caller's contacts. The sections that use it (an
+invitation by handle without the per-person limits, the chat rules
+between people) say what it allows. Anyone can be added by handle,
+without a shared project or a public page, because handles are public.
+Only humans take part.
+
+**Reason:** the relation exists to give consent, not reach: an inviter
+or writer needs the invitee's permission, not an audience. Public counts
+or lists would be a social-network feature nobody asked for, and would
+show who works with whom. A notification per added contact would itself
+be a channel for spam.
+
+**Rejected alternatives:**
+- A follower removal (`DELETE /me/followers/{handle}`): rejected by the
+  maintainer. Someone who adds you trusts you, and that is all; the way
+  out of unwanted contact is the spam report.
+- The name "follow": it reads as a feed or reach, which this is not.
+- "Connect": it reads as mutual (both confirm), but the relation is
+  one-way and the chat rule depends on that direction.
+- "Trust": an invitation already has a `trust` field (§3.4), and two
+  meanings of one word would confuse.
+
+The dashboard says what the relation allows: "May contact me" / "Can
+contact" ("Darf mich kontaktieren" / "Darf ich kontaktieren"), the
+maintainer's choice on req-x0va57a71221; the API says `contacts`.
