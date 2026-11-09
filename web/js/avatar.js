@@ -67,28 +67,37 @@ window.Maity = window.Maity || {};
 
   // Load the picture once its place is near the screen: a page with many avatars (the
   // board) never waits for the ones nobody sees. Without IntersectionObserver, at once.
-  // A place that was on the page and left it before it was seen is let go at the next
-  // avatar drawn, so a view drawn again and again keeps no old places observed.
-  const waiting = new Map(); // placeholder -> start
-  const placed = new WeakSet(); // placeholders the observer has seen on the page
+  // A placeholder that is not on the page 10 s after it was drawn is let go, whether or
+  // not the observer ever saw it: a view drawn again (and again) leaves none observed. A
+  // view that is put on the page later than that keeps the generated picture.
+  const UNPLACED_MS = 10000;
+  const waiting = new Map(); // placeholder -> { start, born }
   let observer = null;
+  let sweepTimer = null;
+  function release(el) {
+    waiting.delete(el);
+    if (observer) observer.unobserve(el);
+  }
+  function sweep(now) {
+    waiting.forEach((w, el) => { if (el.isConnected === false && now - w.born >= UNPLACED_MS) release(el); });
+    if (waiting.size && sweepTimer === null) {
+      sweepTimer = window.setTimeout(() => { sweepTimer = null; sweep(Date.now()); }, UNPLACED_MS);
+    }
+  }
   function whenSeen(el, start) {
     if (typeof window.IntersectionObserver !== "function") { start(); return; }
     if (!observer) {
       observer = new window.IntersectionObserver((entries) => entries.forEach((e) => {
-        if (e.target.isConnected !== false) placed.add(e.target);
-        if (!e.isIntersecting || !waiting.has(e.target)) return;
-        const go = waiting.get(e.target);
-        waiting.delete(e.target);
-        observer.unobserve(e.target);
-        go();
+        const w = waiting.get(e.target);
+        if (!w || !e.isIntersecting) return;
+        release(e.target);
+        w.start();
       }), { rootMargin: "200px" });
     }
-    waiting.forEach((_, old) => {
-      if (placed.has(old) && old.isConnected === false) { waiting.delete(old); observer.unobserve(old); }
-    });
-    waiting.set(el, start);
+    const now = Date.now();
+    waiting.set(el, { start, born: now });
     observer.observe(el);
+    sweep(now);
   }
 
   // The picture for a placeholder that is still waiting for it (smoke tests only).
@@ -121,6 +130,9 @@ window.Maity = window.Maity || {};
     return shown;
   };
   M.avatar.picture = (placeholder) => pending.get(placeholder) || null;
+  // Smoke tests only: how many placeholders wait, and a sweep at a given time.
+  M.avatar.waiting = () => waiting.size;
+  M.avatar.sweep = sweep;
   M.avatar.sized = sized;
   M.avatar.cells = cells;
   M.avatar.hueOf = hueOf;

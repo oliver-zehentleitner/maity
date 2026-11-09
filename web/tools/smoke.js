@@ -2885,7 +2885,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && AV.sized("/api/v1/avatars/public/0123456789abcdef0123456789abcdef", 24) === "/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=32"
     && AV.sized("/api/v1/avatars/agt-a?v=abc&s=64", 16) === "/api/v1/avatars/agt-a?v=abc&s=64",
     "avatars: the smallest size the hub serves that covers the shown size (§6.10, Sizes)");
-  expect(win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=64") && win.Maity.dom.isOwnImage("/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=128")
+  expect(["32", "64", "128", "256"].every((side) => win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=" + side)
+      && win.Maity.dom.isOwnImage("/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=" + side))
     && !win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=48") && !win.Maity.dom.isOwnImage("/api/v1/avatars/agt-a?v=abc&s=64&x=1"),
     "avatars: a sized avatar address is the hub's own image; any other size or parameter is not");
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
@@ -8172,6 +8173,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   avFailing.dispatch("error");
   expect(avFailing.attrs.src === "/api/v1/avatars/agt-a?v=abc&s=64" && avBox2.querySelector("svg") === avShown2 && !avBox2.querySelector("img") && !win.Maity.avatar.picture(avShown2),
     "picture: an avatar that does not load leaves the generated picture");
+  // Near the screen only, and no placeholder kept observed once it is gone (#1541 R1): a fake
+  // IntersectionObserver that says when a target is seen, and the fake DOM's `isConnected`.
+  const ioLive = new Set();
+  let ioSee = null;
+  win.IntersectionObserver = class {
+    constructor(cb) { ioSee = (el) => cb([{ target: el, isIntersecting: true }]); }
+    observe(el) { ioLive.add(el); }
+    unobserve(el) { ioLive.delete(el); }
+  };
+  Object.defineProperty(Node_.prototype, "isConnected", { configurable: true,
+    get() { for (let n = this; n; n = n.parentNode) if (n === body) return true; return false; } });
+  const ioBox = document.createElement("div");
+  body.appendChild(ioBox);
+  const ioUrl = { id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" };
+  const ioSeen = win.Maity.avatar(ioUrl, 24);
+  ioBox.appendChild(ioSeen);
+  const ioAway = win.Maity.avatar(ioUrl, 24);
+  ioBox.appendChild(ioAway);
+  const notYet = !win.Maity.avatar.picture(ioSeen) && ioLive.has(ioSeen) && ioLive.has(ioAway);
+  ioSee(ioSeen);
+  expect(notYet && win.Maity.avatar.picture(ioSeen) && !ioLive.has(ioSeen) && !win.Maity.avatar.picture(ioAway),
+    "picture: an avatar's picture loads only once its place is seen; one off the screen waits");
+  // Discarded before the observer ever saw them (a view drawn twice at once), and one put on
+  // the page late: let go only once they have been off the page for 10 s.
+  const ioGone = [];
+  for (let k = 0; k < 20; k++) { const g = win.Maity.avatar(ioUrl, 24); ioBox.appendChild(g); ioBox.removeChild(g); ioGone.push(g); }
+  const ioLate = win.Maity.avatar(ioUrl, 24);
+  win.Maity.avatar.sweep(Date.now() + 9000);
+  const keptWhileYoung = ioGone.every((g) => ioLive.has(g)) && ioLive.has(ioLate);
+  ioBox.appendChild(ioLate);
+  ioBox.removeChild(ioAway);
+  win.Maity.avatar.sweep(Date.now() + 10001);
+  expect(keptWhileYoung && ioGone.every((g) => !ioLive.has(g)) && !ioLive.has(ioAway) && ioLive.has(ioLate),
+    "picture: placeholders off the page are let go after 10 s, seen by the observer or not; one on the page stays observed");
+  body.removeChild(ioBox);
+  win.Maity.avatar.sweep(Date.now() + 10001);
+  expect(win.Maity.avatar.waiting() === 0 && ioLive.size === 0, "picture: nothing stays observed once every placeholder has left the page");
+  delete Node_.prototype.isConnected;
+  delete win.IntersectionObserver;
 
   // sign out, sign in
   profileButton().click(); await tick();
