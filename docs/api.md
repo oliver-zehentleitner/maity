@@ -8085,7 +8085,7 @@ human's too:
 A `PATCH` names any of the three; a field not named keeps its value. The
 codes in `details.fields` are keyed `availability_policy.<field>`:
 `on_unavailable` `unknown`; `grace_minutes` `out_of_range`; `substitutes`
-`self`, `not_a_member`, `guest`, `proxy`, `expert`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
+`self`, `not_a_member`, `expert`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
 `required` (`substitute` with an empty list).
 
 Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`
