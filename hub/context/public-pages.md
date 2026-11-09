@@ -183,7 +183,7 @@ It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profi
 existing account on; an instance that upgrades later has its accounts of that moment switched the same
 way, so its operator tells their users first (the changelog says so). `public_people.served` no longer reads it: every active account that is not suspended
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
-pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
+pages of its open projects, by handle, on the Overview, Board, Team (at /members), Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
 counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
 this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
@@ -450,6 +450,7 @@ moment.
 ## The Board, Members and Organisation are a second kind of page that follows the cards at once
 
 **Id:** 6b0e2f4a-7d51-4c38-9a6e-3f1c8d5b2e97
+2026-11-09: the Members view is named Team (req-77az2zs017fe); its path stays /members.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
