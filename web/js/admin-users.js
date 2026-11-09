@@ -1,7 +1,8 @@
 // Users of this hub, the Users section of /admin (docs/api.md §16.1;
 // js/instance-admin.js shows it to the instance admin only): the humans of the
-// instance for its admin — counts and times, never content. Searchable by
-// handle or name and filterable by disabled; paged by the hub's cursor.
+// instance for its admin — counts and times, never content. Each shows its
+// sign-in address (§16.1, `email`), with a copy button. Searchable by handle,
+// name or address and filterable by disabled; paged by the hub's cursor.
 // "Reset two-factor sign-in" (§2.8.3, §2.8.7) mails the person a link; only
 // their press on its button changes anything.
 // Being the instance admin opens no project: this view links nowhere into
@@ -104,10 +105,21 @@ window.Maity = window.Maity || {};
       return button;
     }
 
+    // The sign-in address with a copy button; "—" when the
+    // account has none.
+    function emailCell(user) {
+      if (!user.email) return "—";
+      const copy = h("button", { type: "button", class: "small",
+        "aria-label": M.t("users.email.copy_label", { name: user.display_name }), onclick: async () => {
+          try { await navigator.clipboard.writeText(user.email); copy.textContent = M.t("users.email.copied"); } catch (err) { copy.textContent = M.t("users.email.copy_failed"); }
+        } }, M.t("users.email.copy"));
+      return [h("span", { class: "user-email" }, user.email), " ", copy];
+    }
+
     function draw() {
       const n = rows.length;
       const col = {
-        name: M.t("users.column.name"), admin: M.t("users.column.admin"), status: M.t("users.column.status"), created: M.t("users.column.created"),
+        name: M.t("users.column.name"), email: M.t("users.column.email"), admin: M.t("users.column.admin"), status: M.t("users.column.status"), created: M.t("users.column.created"),
         last_signin: M.t("users.column.last_signin"), last_seen: M.t("users.column.last_seen"), projects: M.t("users.column.projects"), agents: M.t("users.column.agents"),
       };
       append(clear(box),
@@ -115,12 +127,13 @@ window.Maity = window.Maity || {};
         n ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": M.t("users.table") },
           h("table", { class: "users card-table", role: "table", "aria-label": M.t("users.table") },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
-              [col.name, col.admin, col.status, col.created, col.last_signin, col.last_seen, col.projects, col.agents, M.t("users.reset.column")]
+              [col.name, col.email, col.admin, col.status, col.created, col.last_signin, col.last_seen, col.projects, col.agents, M.t("users.reset.column")]
                 .map((t) => h("th", { scope: "col", role: "columnheader" }, t)))),
             h("tbody", { role: "rowgroup" }, rows.map((u) => h("tr", { role: "row", class: u.disabled ? "disabled" : "" },
               h("th", { scope: "row", role: "rowheader", "data-label": col.name, tabindex: "-1" },
                 h("span", { class: "user-name" }, u.display_name), h("span", { class: "muted" }, " @" + u.handle),
                 u.id === ctx.me.id ? h("span", { class: "muted" }, " " + M.t("users.you")) : null),
+              h("td", { role: "cell", "data-label": col.email }, emailCell(u)),
               h("td", { role: "cell", "data-label": col.admin }, u.instance_admin ? M.t("users.instance_admin") : "—"),
               h("td", { role: "cell", "data-label": col.status }, u.disabled ? M.t("users.state.disabled") : M.t("users.state.active")),
               h("td", { role: "cell", "data-label": col.created }, formatTime(u.created_at)),
