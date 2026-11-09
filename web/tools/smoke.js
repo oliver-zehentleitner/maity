@@ -11228,6 +11228,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".chats-lead .lead-button").length === 1 && header.querySelectorAll(".lead-button").length === 1
     && main.querySelector(".chats-lead .lead-button").getAttribute("aria-label") === header.querySelector(".lead-button").getAttribute("aria-label"),
     "chats: the page carries the header's Lead, once, for a phone where the header hides it");
+  // First in its row (#1422 beside main's tsk-qgy2tb3w3x93): on a phone that is the left edge, where its menu opens on screen.
+  expect(main.querySelector(".chat-list-pane .toolbar-actions").firstChild.classList.contains("chats-lead"),
+    "chats: the Lead is the first of the list's actions, before New chat across agents");
   // All projects has two pages, Inbox and Chats (tsk-gw59z3w3fenf), each with the hub's count for it.
   const apPages = () => header.querySelectorAll("nav.views a");
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
