@@ -665,18 +665,15 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
-def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int | None] | None:
+def _stored(
+    conn: Connection, project: Any, request: Request, mine: Membership | None = None
+) -> dict[str, int | None] | None:
     """The project's attachment bytes against its limit `max_attachment_storage_per_project`
     (`quota`, None under `unlimited`), for a caller with `project:admin` in it (§8.7); anyone
-    else gets None."""
-    caller = getattr(request.state, "caller", None)
-    if caller is None:
-        return None
-    try:
-        mine = membership(conn, caller, namespace.full_name(conn, project))
-    except ApiError:
-        return None
-    if not mine.may("project:admin"):
+    else gets None. `mine` is the caller's membership when the route has read it already."""
+    if mine is None:
+        mine = _reader(conn, project, request)
+    if mine is None or not mine.may("project:admin"):
         return None
     return {
         "used": attachments.used(conn, project.id),
@@ -684,7 +681,15 @@ def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int |
     }
 
 
-def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
+def _view(
+    conn: Connection, project: Any, request: Request, mine: Membership | None = None
+) -> dict[str, Any]:
+    """The project as `GET` answers it. A route that has the caller's membership passes it as
+    `mine`, so that the view does not resolve the project and the membership again for the
+    storage figures and the restricted setting (tsk-6srccd2r1h62); without it, each reads
+    the caller's membership itself."""
+    if mine is None:
+        mine = _reader(conn, project, request)
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
     aliases = namespace.aliases_of(conn, project.id)
@@ -695,13 +700,13 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
         shown,
         _export(project, request),
         aliases,
-        _stored(conn, project, request),
+        _stored(conn, project, request, mine),
         confirmed_by_of(conn, [project])[project.id],
     )
     held = moderation.view(moderation.hold(conn, "project", project.id))
     if held is not None:  # only while a hold stands (§16.8)
         view["moderation"] = held
-    _serve_restricted(conn, project, request, view)
+    _serve_restricted(conn, project, request, view, mine)
     return view
 
 
@@ -716,13 +721,17 @@ def _reader(conn: Connection, project: Any, request: Request) -> Membership | No
 
 
 def _serve_restricted(
-    conn: Connection, project: Any, request: Request, view: dict[str, Any]
+    conn: Connection,
+    project: Any,
+    request: Request,
+    view: dict[str, Any],
+    mine: Membership | None = None,
 ) -> dict[str, Any]:
     """`settings.restricted_access` per reader (§6.1 "Reading the setting"): `null` without
     the key, `{mode, members, included, cards_with_text}` to a human with `project:admin` and
     to a member in the set, `{mode, included}` to every other."""
     view["settings"]["restricted_access"] = restricted.served(
-        conn, project, _reader(conn, project, request)
+        conn, project, mine if mine is not None else _reader(conn, project, request)
     )
     return view
 
@@ -951,7 +960,7 @@ def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(_view(conn, mine.project, request))
+        return JSONResponse(_view(conn, mine.project, request, mine))
 
 
 @router.patch("/projects/{owner}/{slug}")
