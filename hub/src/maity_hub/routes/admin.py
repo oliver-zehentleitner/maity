@@ -54,15 +54,19 @@ def list_users(
             needle = q.casefold()
             everyone = conn.execute(query).all()
             given_up = handles.aliases(conn, [r.id for r in everyone])  # an alias finds it (§6.24)
+            addresses = _sign_in_addresses(conn, [r.id for r in everyone])
             rows = [
                 row
                 for row in everyone
                 if needle in row.handle.casefold()
                 or needle in row.display_name.casefold()
                 or any(needle in alias.casefold() for alias in given_up[row.id])
+                or needle in addresses.get(row.id, "").casefold()
             ][: limit + 1]
         page = rows[:limit]
         ids = [r.id for r in page]
+        if q is None:
+            addresses = _sign_in_addresses(conn, ids)
         memberships = _counts(
             conn,
             select(t.membership.c.human_id, func.count())
@@ -81,6 +85,7 @@ def list_users(
                 "id": r.id,
                 "handle": r.handle,
                 "display_name": r.display_name,
+                "email": addresses.get(r.id),
                 "avatar_url": pictures[r.id],
                 "instance_admin": r.id == admin,
                 "disabled": False,
@@ -94,6 +99,23 @@ def list_users(
         ]
         next_cursor = page[-1].handle if len(rows) > limit else None
         return JSONResponse({"items": items, "next_cursor": next_cursor})
+
+
+def _sign_in_addresses(conn: Any, ids: list[str]) -> dict[str, str]:
+    """The sign-in address of each human that has one (§16.1): the address `POST /auth/login`
+    takes, verified or `disabled` after delivery failures (§18.7); a pending change is not one.
+    One query for all of them."""
+    if not ids:
+        return {}
+    ns = t.notification_settings
+    rows = conn.execute(
+        select(ns.c.human_id, ns.c.address).where(
+            ns.c.human_id.in_(ids),
+            ns.c.address.is_not(None),
+            ns.c.address_status.in_(("verified", "disabled")),
+        )
+    ).all()
+    return {human_id: address for human_id, address in rows}
 
 
 def _counts(conn: Any, query: Any) -> dict[str, int]:
