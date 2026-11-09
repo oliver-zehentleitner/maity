@@ -1,5 +1,7 @@
-"""A dashboard call's authentication reads the session, the human and the instance settings
-once each (tsk-6srccd2r1h62). It runs before every route of a signed-in human, so each
+"""A dashboard call's authentication sends one standalone SELECT each for the session (with
+its human) and for the instance settings (tsk-6srccd2r1h62). The presence UPDATEs before it
+also read `human_session` in a scalar subquery (auth/caller.py `owner`); those embedded reads
+are not counted here. It runs before every route of a signed-in human, so each
 statement it repeats is paid on every call."""
 
 from __future__ import annotations
@@ -18,8 +20,8 @@ from tests.conftest import ClientFactory
 
 # A route whose own work reads neither the sessions nor the settings, and the human table
 # once: the project's owner by handle (namespace.resolve). Every other read counted is the
-# authentication's. Reads are counted by the first table after FROM, so the session read,
-# which joins its human, counts as `human_session`.
+# authentication's. Standalone SELECTs are counted by the first table after FROM, so the session
+# read, which joins its human, counts as `human_session`; a subquery inside an UPDATE is not.
 TASKS = "/projects/maintainer/maity/tasks"
 NOTIFICATIONS = "/me/notifications"  # one of the calls a moved session keeps (§2.8.5)
 _FROM = re.compile(r"^\s*SELECT\b.*?\bFROM\s+(\w+)", re.IGNORECASE | re.DOTALL)
