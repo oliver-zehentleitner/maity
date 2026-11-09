@@ -28,10 +28,13 @@ _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "red-team": _TESTER,
     "blue-team": _CODER,
     "purple-team": _REVIEWER,
+    # The expert (§2.3 "The expert") answers and posts: no card, no request of its own.
+    "expert": ("project:read", "events:post"),
 }
 ROLES = tuple(_ROLE_SCOPES)
 # What a project role may be built on (§2.3 "Project roles"): never `proxy`, `manager` or a
-# security team, whose scopes are already those of a base.
+# security team, whose scopes are already those of a base, and never `expert`, whose scopes
+# are fewer than any base's.
 BASES = ("coder", "reviewer", "tester", "designer", "ops", "writer")
 # Where the hub resolves a built-in role to find who holds done authority, whom a change
 # waits for the owner's go, a substitute (§6.12), a security team counts as the role whose
