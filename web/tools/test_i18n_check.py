@@ -272,6 +272,8 @@ for text, outside in [
     ("(@agent-d)", False),
     ("English (Pseudo-Accents)", False),
     ("Remove decade", True),
+    ("Agent D, member", False),
+    ("Agent D, Untranslated", True),
 ]:
     expect(pseudo_run.unmarked(text, data, "take over the lab notes today, please") is outside, "pseudo: %r outside the catalog: %s" % (text, outside))
 real = pseudo_run.fixture_strings()

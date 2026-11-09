@@ -1469,6 +1469,143 @@ window.Maity = window.Maity || {};
     if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(trustIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
+  // §9.5 cross-project group chats. fixtures/cross-chats.json, keyed by id.
+  // Messages are rows of the chat, not project events. The owner starts in the
+  // chat; leaving closes it, and they keep reading it.
+  const CROSS_CAP = 12;
+  const CROSS_OPEN = 200;
+  function crossChats() {
+    const all = fixtures();
+    if (!all["cross-chats.json"]) all["cross-chats.json"] = {};
+    return all["cross-chats.json"];
+  }
+  function crossChatOf(id, path) {
+    const c = crossChats()[id];
+    if (!c) fail(404, "not_found", "Not found", path);
+    return c;
+  }
+  function crossProfile(id) {
+    return (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === id) || null;
+  }
+  function crossPerson(id) {
+    if (id === me().member.id) return { member_id: id, kind: "human", handle: me().member.handle, owner_id: null, projects: null };
+    const agent = crossProfile(id);
+    if (!agent) return null;
+    return { member_id: id, kind: "agent", handle: agent.handle, name: agent.name, owner_id: agent.owner_id,
+      projects: (agent.memberships || []).map((m) => m.project).slice().sort() };
+  }
+  function crossAccess(c) {
+    const id = me().member.id;
+    if (c.participants.some((p) => p.member_id === id)) return "participant";
+    if (c.owner_id === id && c.closed_at) return "owner";
+    return null;
+  }
+  function crossReadable(c, path) {
+    const access = crossAccess(c);
+    if (!access) fail(404, "not_found", "Not found", path);
+    return access;
+  }
+  function crossOwnerOnly(path) {
+    if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+    return me().member.id;
+  }
+  function crossRequireOwner(c, path) {
+    if (crossOwnerOnly(path) !== c.owner_id) fail(404, "not_found", "Not found", path);
+  }
+  function crossRefuseClosed(c, path) {
+    if (c.closed_at) fail(409, "conversation_closed", "the chat is closed", path, { closed_reason: c.closed_reason });
+  }
+  // The contract's check order: the owner's own id is dropped, then agents_only,
+  // not_found, deleted, no_membership, the counts.
+  function crossChecked(raw, path, minimum, room) {
+    const owner = me().member.id;
+    const ids = [];
+    (Array.isArray(raw) ? raw : []).forEach((id) => { if (id !== owner && !ids.includes(id)) ids.push(id); });
+    if (ids.some((id) => /^hum-/.test(id))) fail(400, "invalid", "agents only", path, { fields: { participants: "agents_only" } });
+    ids.forEach((id) => {
+      const agent = crossProfile(id);
+      if (!agent || agent.owner_id !== owner) fail(404, "not_found", "Not found", path);
+    });
+    ids.forEach((id) => { if (crossProfile(id).deleted_at) fail(400, "invalid", "deleted", path, { fields: { participants: "deleted" } }); });
+    ids.forEach((id) => {
+      if (!(crossProfile(id).memberships || []).length) fail(400, "invalid", "no membership", path, { fields: { participants: "no_membership" }, member_id: id });
+    });
+    if (minimum && ids.length < 2) fail(400, "invalid", "too few", path, { fields: { participants: "too_few" } });
+    if (ids.length > room) fail(400, "invalid", "too many", path, { fields: { participants: "too_many" } });
+    return ids;
+  }
+  // Some project the owner can create a group chat in already holds every agent.
+  function crossShares(agentIds) {
+    return me().projects.filter((p) => p.trust !== "guest" && p.state !== "archived").some((p) => agentIds.every((id) => {
+      const agent = crossProfile(id);
+      return agent && (agent.memberships || []).some((m) => m.project === p.full_name);
+    }));
+  }
+  function crossView(c, path) {
+    const access = crossReadable(c, path);
+    return {
+      id: c.id, kind: "cross", title: c.title || null, created_by: c.created_by, created_at: c.created_at,
+      participants: c.participants.map((stay) => {
+        const person = crossPerson(stay.member_id);
+        if (!person) return null;
+        const shown = { member_id: person.member_id, kind: person.kind, handle: person.handle, owner_id: person.owner_id, joined_at: stay.joined_at };
+        if (person.kind === "agent") { shown.name = person.name; shown.projects = person.projects || []; }
+        return shown;
+      }).filter(Boolean),
+      observers: [], closed_at: c.closed_at || null, closed_reason: c.closed_reason || null, access,
+    };
+  }
+  function crossMessage(c, row) {
+    const show = me().member.id === c.owner_id;
+    const mark = row.redacted && row.redaction ? Object.assign({}, row.redaction) : null;
+    if (mark && !show) mark.reason = null;
+    return {
+      id: row.id, seq: row.seq, conversation_id: c.id, from: row.from, to: c.id,
+      body: row.redacted ? null : row.body, sent_at: row.sent_at,
+      mentions: row.redacted ? [] : (row.mentions || []),
+      from_instance: row.from_instance || null, to_instance: null,
+      redacted: !!row.redacted, redaction: mark,
+    };
+  }
+  function crossListItem(c) {
+    if (!crossAccess(c)) return null;
+    const id = me().member.id;
+    const stay = c.participants.find((p) => p.member_id === id);
+    const after = stay ? stay.joined_seq || 0 : 0;
+    const win = c.items.filter((x) => x.seq > after);
+    const last = win.length ? win[win.length - 1] : null;
+    const readTo = (c.read && c.read[id]) || 0;
+    const theirs = win.filter((x) => x.from !== id && x.seq > readTo);
+    return {
+      id: c.id, kind: "cross", title: c.title || null, created_at: c.created_at,
+      participants: c.participants.map((p) => {
+        const person = crossPerson(p.member_id);
+        if (!person) return null;
+        const shown = { member_id: person.member_id, kind: person.kind, handle: person.handle };
+        if (person.kind === "agent") shown.name = person.name;
+        return shown;
+      }).filter(Boolean),
+      observers: [], access: crossAccess(c), closed_at: c.closed_at || null,
+      last_message_at: last ? last.sent_at : null,
+      unread: theirs.length,
+      mentions_unread: theirs.filter((x) => !x.redacted && (x.mentions || []).some((m) => m.member_id === id)).length,
+      last_message: last ? { seq: last.seq, from: last.from, body: last.redacted ? null : [...(last.body || "")].slice(0, 200).join(""), sent_at: last.sent_at, redacted: !!last.redacted } : null,
+    };
+  }
+  function crossMentions(body, people, author) {
+    const out = [];
+    const seen = {};
+    const re = /(?:^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])/g;
+    let found;
+    while ((found = re.exec(body))) {
+      const handle = found[1];
+      const person = people.find((p) => p.handle === handle && p.member_id !== author);
+      if (!person || seen[person.member_id]) continue;
+      seen[person.member_id] = true;
+      out.push({ member_id: person.member_id, handle, field: "body", offset: found.index + found[0].lastIndexOf("@"), length: handle.length + 1 });
+    }
+    return out;
+  }
   // §18.2 counts, overall and per project. Items from events carry seq,
   // those from account records record "acr-<n>"; a position is "a.b".
   // §18.1 since 2026-10-26: only what the human must react to.
@@ -4909,6 +5046,120 @@ window.Maity = window.Maity || {};
       banded(items, at);
       return { items, next_cursor: null,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
+    }],
+    // §9.5. Not part of GET /me/conversations: this chat has no project.
+    ["GET", /^\/me\/cross-chats$/, () => {
+      const items = Object.values(crossChats()).map(crossListItem).filter(Boolean);
+      items.sort((a, b) => {
+        const at = (c) => c.last_message_at || c.created_at || "";
+        if (at(a) !== at(b)) return at(a) < at(b) ? 1 : -1;
+        return a.id < b.id ? 1 : -1;
+      });
+      return { items, next_cursor: null };
+    }],
+    ["POST", /^\/me\/cross-chats$/, (m, body, path) => {
+      const owner = crossOwnerOnly(path);
+      if (!Array.isArray(body.participants)) fail(400, "invalid", "participants", path, { fields: { participants: "missing" } });
+      const agents = crossChecked(body.participants, path, true, CROSS_CAP - 1);
+      if (crossShares(agents)) fail(400, "invalid", "use a project group chat", path, { fields: { participants: "use_group" } });
+      const open = Object.values(crossChats()).filter((c) => c.owner_id === owner && !c.closed_at).length;
+      if (open >= CROSS_OPEN) fail(409, "conversation_quota", "too many open chats", path, { max: CROSS_OPEN, scope: "owner" });
+      const id = localId("xch");
+      const now = nowIso();
+      const chat = {
+        id, title: body.title ? String(body.title) : null, created_by: owner, owner_id: owner, created_at: now,
+        closed_at: null, closed_reason: null, read: {}, items: [],
+        participants: [{ member_id: owner, joined_at: now, joined_seq: 0 }].concat(agents.map((agent) => ({ member_id: agent, joined_at: now, joined_seq: 0 }))),
+      };
+      crossChats()[id] = chat;
+      return crossView(chat, path);
+    }],
+    ["GET", /^\/me\/cross-chats\/([^/]+)$/, (m, body, path) => crossView(crossChatOf(decodeURIComponent(m[1]), path), path)],
+    ["PATCH", /^\/me\/cross-chats\/([^/]+)$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossRequireOwner(chat, path);
+      crossRefuseClosed(chat, path);
+      chat.title = body.title ? String(body.title) : null;
+      return crossView(chat, path);
+    }],
+    ["POST", /^\/me\/cross-chats\/([^/]+)\/participants$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossRequireOwner(chat, path);
+      crossRefuseClosed(chat, path);
+      if (chat.participants.some((p) => p.member_id === body.member_id)) return crossView(chat, path);
+      const agents = crossChecked([body.member_id], path, false, CROSS_CAP - chat.participants.length);
+      if (agents.length) {
+        const seq = chat.items.reduce((n, row) => Math.max(n, row.seq), 0);
+        chat.participants.push({ member_id: agents[0], joined_at: nowIso(), joined_seq: seq });
+      }
+      return crossView(chat, path);
+    }],
+    ["DELETE", /^\/me\/cross-chats\/([^/]+)\/participants\/([^/]+)$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      const memberId = decodeURIComponent(m[2]);
+      const reader = me().member.id;
+      crossReadable(chat, path);
+      if (reader !== chat.owner_id && reader !== memberId) fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (reader === memberId && reader !== chat.owner_id && me().member.kind !== "agent") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      crossRefuseClosed(chat, path);
+      const at = chat.participants.findIndex((p) => p.member_id === memberId);
+      if (at < 0) fail(404, "not_found", "Not found", path);
+      const gone = chat.participants.splice(at, 1)[0];
+      const now = nowIso();
+      if (memberId === chat.owner_id) { chat.closed_at = now; chat.closed_reason = "no_human"; }
+      return { conversation_id: chat.id, member_id: memberId, joined_at: gone.joined_at, left_at: now, by: reader, reason: reader === memberId ? "left" : "removed" };
+    }],
+    ["GET", /^\/me\/cross-chats\/([^/]+)\/messages$/, (m, body, path, query) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossReadable(chat, path);
+      if (query.get("after") !== null && query.get("before") !== null) fail(400, "invalid", "after or before", path, { fields: { before: "invalid" } });
+      const limit = Math.min(200, Number(query.get("limit") || 50) || 50);
+      const stay = chat.participants.find((p) => p.member_id === me().member.id);
+      const windowAfter = stay ? stay.joined_seq || 0 : 0;
+      let rows;
+      if (query.get("before") !== null) rows = chat.items.filter((x) => x.seq < Number(query.get("before"))).slice(-limit);
+      else {
+        const start = Math.max(Number(query.get("after") || 0), windowAfter);
+        rows = chat.items.filter((x) => x.seq > start).slice(0, limit);
+        if (rows.length) chat.read[me().member.id] = Math.max(chat.read[me().member.id] || 0, rows[rows.length - 1].seq);
+      }
+      const first = rows.length ? rows[0].seq : null;
+      return {
+        items: rows.map((row) => crossMessage(chat, row)),
+        cursor: rows.length && query.get("before") === null ? rows[rows.length - 1].seq : 0,
+        earlier: first !== null && chat.items.some((x) => x.seq < first) ? first : null,
+      };
+    }],
+    ["POST", /^\/me\/cross-chats\/([^/]+)\/messages$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      const access = crossReadable(chat, path);
+      crossRefuseClosed(chat, path);
+      if (access !== "participant") fail(404, "not_found", "Not found", path);
+      if (body.attachments != null) fail(400, "invalid", "no attachment", path, { fields: { attachments: "not_in_cross_chat" } });
+      if (body.to_instance != null) fail(400, "invalid", "direct chat only", path, { fields: { to_instance: "direct_chat_only" } });
+      if ("mentions" in body) fail(400, "invalid", "mentions are read only", path, { fields: { mentions: "read_only" } });
+      const text = typeof body.body === "string" ? body.body : "";
+      if (!text.trim()) fail(400, "invalid", "empty", path, { fields: { body: "missing" } });
+      const seq = chat.items.reduce((n, row) => Math.max(n, row.seq), 0) + 1;
+      const people = chat.participants.map((p) => crossPerson(p.member_id)).filter(Boolean);
+      const row = { id: localId("xmsg"), seq, from: me().member.id, body: text, sent_at: nowIso(),
+        mentions: crossMentions(text, people, me().member.id), from_instance: null, redacted: false, redaction: null };
+      chat.items.push(row);
+      chat.read[me().member.id] = seq;
+      return crossMessage(chat, row);
+    }],
+    ["POST", /^\/me\/cross-chats\/([^/]+)\/messages\/([^/]+)\/redact$/, (m, body, path) => {
+      const chat = crossChatOf(decodeURIComponent(m[1]), path);
+      crossRequireOwner(chat, path);
+      crossReadable(chat, path);
+      const row = chat.items.find((x) => x.id === decodeURIComponent(m[2]));
+      if (!row) fail(404, "not_found", "Not found", path);
+      if (row.redacted) fail(400, "invalid", "already redacted", path, { reason: "already_redacted" });
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (!reason) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      row.redacted = true;
+      row.redaction = { at: nowIso(), by: me().member.id, reason };
+      return crossMessage(chat, row);
     }],
     // §9.3 pins: human only, idempotent, at most 20 across projects.
     ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {

@@ -1,0 +1,43 @@
+{
+  "xch-0001": {
+    "id": "xch-0001",
+    "title": "Across the projects",
+    "created_by": "hum-maintainer",
+    "owner_id": "hum-maintainer",
+    "created_at": "2026-11-04T09:00:00Z",
+    "closed_at": null,
+    "closed_reason": null,
+    "participants": [
+      { "member_id": "hum-maintainer", "joined_at": "2026-11-04T09:00:00Z", "joined_seq": 0 },
+      { "member_id": "agt-a", "joined_at": "2026-11-04T09:00:00Z", "joined_seq": 0 },
+      { "member_id": "agt-s1", "joined_at": "2026-11-04T09:00:00Z", "joined_seq": 0 }
+    ],
+    "read": { "hum-maintainer": 1 },
+    "items": [
+      {
+        "id": "xmsg-0001",
+        "seq": 1,
+        "from": "hum-maintainer",
+        "body": "Both of you, a look across the projects.",
+        "sent_at": "2026-11-04T09:05:00Z",
+        "mentions": [],
+        "from_instance": null,
+        "redacted": false,
+        "redaction": null
+      },
+      {
+        "id": "xmsg-0002",
+        "seq": 2,
+        "from": "agt-s1",
+        "body": "@maintainer done on my side",
+        "sent_at": "2026-11-04T09:12:00Z",
+        "mentions": [
+          { "member_id": "hum-maintainer", "handle": "maintainer", "field": "body", "offset": 0, "length": 11 }
+        ],
+        "from_instance": "wqe2",
+        "redacted": false,
+        "redaction": null
+      }
+    ]
+  }
+}

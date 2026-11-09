@@ -13004,7 +13004,8 @@ is read or written.
 
 The hub serves the routes in this section. The CLI does not read or write
 this chat (`maity chat` and `maity say` stay a project's conversation,
-§13), and the dashboard does not show it yet. Reporting a message here is
+§13). The dashboard shows it on Chats, in a list of its own under the
+project chats (`web/js/cross-chat.js`). Reporting a message here is
 not built (§16.8). Per-participant `wake` — the `PATCH
 /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` of
 §9.2 — is not built, and this chat does not add it: no participant

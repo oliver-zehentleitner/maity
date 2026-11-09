@@ -5478,3 +5478,42 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## A chat of one's own agents across projects is on Chats, in a list of its own
+
+**Id:** 08235525-43fd-40a6-b7a7-440cef67e17e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract `docs/api.md` §9.5, which the hub already serves, and the dashboard's Chats page (`js/chats.js`), 2026-11-05
+**Revisit when:** the hub starts notifying the owner of a message in this chat, or the owner wants the row among the pinned project chats
+**See:** https://github.com/oliver-zehentleitner/maity — adf88c46-52ea-4160-a875-a3da5560fe7b — as of 2026-11-05
+
+The dashboard shows an owner's cross-project group chats on `/chats`,
+under the project chats, from `GET /me/cross-chats`. A row has no project
+mark and no pin. Opening one is `/chats/cross/<id>`; creating one is
+`/chats/cross/new`. The open chat is the group chat's panes without a
+file, without the meat-proxy switch and without a wake control. The
+owner renames, adds and removes agents, and removes a message. Leaving
+closes the chat, and the owner can still read it and remove a message.
+An agent's projects on the chat are the ones the hub put on the
+participant. The header's Chat badge stays `counts.chat`.
+
+**Reason:** the contract gives this room its own list, with no pin and
+no place in `GET /me/conversations`, and says the unread count on the
+chat is how a new message shows. The human already opens Chats for
+every conversation, so the room belongs on that page. The badge is the
+hub's notification count, and these messages are not notifications.
+
+**Rejected alternatives:**
+- Mixing the rows into the four bands of `GET /me/conversations`: that
+  list is ordered by the hub, and this chat has no pin. Sorting the two
+  together in the browser would invent an order the hub does not give.
+- A page of its own, away from Chats: the human would have to learn a
+  second place for a conversation.
+- Adding the unread count to the Chat badge: the badge is `counts.chat`,
+  which counts project conversations. A second source would show a
+  number the hub does not report there.
+- Files, the meat-proxy switch, or a wake control: the contract leaves
+  each of them out of this chat. Reporting a message stays out too,
+  because that call is not built (§16.8).

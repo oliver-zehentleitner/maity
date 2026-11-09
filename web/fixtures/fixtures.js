@@ -1083,6 +1083,69 @@ window.MAITY_FIXTURES = {
     ],
     "version": "1"
   },
+  "cross-chats.json": {
+    "xch-0001": {
+      "closed_at": null,
+      "closed_reason": null,
+      "created_at": "2026-11-04T09:00:00Z",
+      "created_by": "hum-maintainer",
+      "id": "xch-0001",
+      "items": [
+        {
+          "body": "Both of you, a look across the projects.",
+          "from": "hum-maintainer",
+          "from_instance": null,
+          "id": "xmsg-0001",
+          "mentions": [],
+          "redacted": false,
+          "redaction": null,
+          "sent_at": "2026-11-04T09:05:00Z",
+          "seq": 1
+        },
+        {
+          "body": "@maintainer done on my side",
+          "from": "agt-s1",
+          "from_instance": "wqe2",
+          "id": "xmsg-0002",
+          "mentions": [
+            {
+              "field": "body",
+              "handle": "maintainer",
+              "length": 11,
+              "member_id": "hum-maintainer",
+              "offset": 0
+            }
+          ],
+          "redacted": false,
+          "redaction": null,
+          "sent_at": "2026-11-04T09:12:00Z",
+          "seq": 2
+        }
+      ],
+      "owner_id": "hum-maintainer",
+      "participants": [
+        {
+          "joined_at": "2026-11-04T09:00:00Z",
+          "joined_seq": 0,
+          "member_id": "hum-maintainer"
+        },
+        {
+          "joined_at": "2026-11-04T09:00:00Z",
+          "joined_seq": 0,
+          "member_id": "agt-a"
+        },
+        {
+          "joined_at": "2026-11-04T09:00:00Z",
+          "joined_seq": 0,
+          "member_id": "agt-s1"
+        }
+      ],
+      "read": {
+        "hum-maintainer": 1
+      },
+      "title": "Across the projects"
+    }
+  },
   "guestlab/conversations.json": {},
   "guestlab/group-chats.json": {
     "cnv-0301": {

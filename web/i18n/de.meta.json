@@ -3267,6 +3267,22 @@
     "en": "7b28776e1ef7c163",
     "text": "7f7391aba6eea214"
   },
+  "chats.cross_failed": {
+    "en": "fea410b7c90d4093",
+    "text": "1ccdc2d5ccc1c9ef"
+  },
+  "chats.cross_heading": {
+    "en": "3e93ce7e8dc33a62",
+    "text": "853867c69114b3e9"
+  },
+  "chats.cross_label": {
+    "en": "81f010f425555bbe",
+    "text": "43bd7f69bdb0ea09"
+  },
+  "chats.cross_new": {
+    "en": "4a32d1b7bebd97cc",
+    "text": "d7932807e07bb53d"
+  },
   "chats.hint": {
     "en": "cb974a193ba98130",
     "text": "5fdfd2db510a7dbe"
@@ -3446,6 +3462,106 @@
   "contract.why.unset": {
     "en": "b3a08e514e8cded4",
     "text": "27ecd1cce517906b"
+  },
+  "cross.compose.no_files": {
+    "en": "a81918be31d096e4",
+    "text": "125bcb40b8ca3c71"
+  },
+  "cross.manage.leave": {
+    "en": "3b4d701ec63b9aa1",
+    "text": "6af6d67e18f071a6"
+  },
+  "cross.manage.leave_confirm": {
+    "en": "906b46ee9b612772",
+    "text": "dbc8b4c9fcf8d094"
+  },
+  "cross.manage.left": {
+    "en": "e33cc9729fbd0941",
+    "text": "8a59906492c212db"
+  },
+  "cross.missing": {
+    "en": "21546bbdccef0e94",
+    "text": "6a5720362fcb9e70"
+  },
+  "cross.new.failed": {
+    "en": "bb3af839c1c8d031",
+    "text": "04c9d2d80de62628"
+  },
+  "cross.new.hint": {
+    "en": "37627f5fc13f8dd3",
+    "text": "f176e3b7029fb3fc"
+  },
+  "cross.new.no_project": {
+    "en": "9b68f94058a3ecc8",
+    "text": "51a85b62b50aed1f"
+  },
+  "cross.new.none": {
+    "en": "aa162babb8bf9e3e",
+    "text": "8d1b2d83babf7bcc"
+  },
+  "cross.new.title": {
+    "en": "4a32d1b7bebd97cc",
+    "text": "d7932807e07bb53d"
+  },
+  "cross.new.title_hint": {
+    "en": "2275dc7fb1e5f770",
+    "text": "9f9882893102d8ad"
+  },
+  "cross.pane": {
+    "en": "60b7931c0a46e475",
+    "text": "727bf091f93bfa67"
+  },
+  "cross.people": {
+    "en": "0ce43107e483ea1b",
+    "text": "a8f9d4d287eb5c99"
+  },
+  "cross.readonly.closed": {
+    "en": "7c09758ac494537c",
+    "text": "4329b1f336949b4e"
+  },
+  "cross.refused.agents_only": {
+    "en": "5b3b096280eed8d5",
+    "text": "6e7c5422897e077b"
+  },
+  "cross.refused.already": {
+    "en": "ce87d35e20653079",
+    "text": "bcc2a3569127ee4e"
+  },
+  "cross.refused.closed": {
+    "en": "4a9e2eb427f96a88",
+    "text": "a16538a51f4e3a36"
+  },
+  "cross.refused.deleted": {
+    "en": "9c50a2f75bfcc1e8",
+    "text": "a542a9c36cfbd9cb"
+  },
+  "cross.refused.no_membership": {
+    "en": "f50751c50229b64f",
+    "text": "92bd0715ced8de76"
+  },
+  "cross.refused.not_found": {
+    "en": "f291c3f1e320a94c",
+    "text": "cd132c6b9b76f330"
+  },
+  "cross.refused.quota": {
+    "en": "06578ab52dca14ce",
+    "text": "808007ce9459ec5a"
+  },
+  "cross.refused.too_few": {
+    "en": "2fe570dc8d220c94",
+    "text": "3f437750af5a02e8"
+  },
+  "cross.refused.too_many": {
+    "en": "965c1f121ea6f9f4",
+    "text": "09c6d6e1001ef8aa"
+  },
+  "cross.refused.use_group": {
+    "en": "ae879720968c522d",
+    "text": "96e9daf21f62b9e9"
+  },
+  "cross.untitled": {
+    "en": "6da25ac295f94823",
+    "text": "818b198e975c8e02"
   },
   "data.delete.asking": {
     "en": "8a7441d71753b3f2",

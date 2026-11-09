@@ -3,9 +3,13 @@
 // conversation, on a phone the list its own screen. The list merges each
 // project's direct and group chats (docs/api.md §9.3, GET /me/conversations),
 // in the hub's order (four bands: pinned with unread, unpinned with unread,
-// quiet pinned, the rest), each with its project; a human pins one here too. A conversation opens
-// in place (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
-// context. Going from one chat to another changes the pane alone: the page, the
+// quiet pinned, the rest), each with its project; a human pins one here too.
+// Cross-project group chats (docs/api.md §9.5, GET /me/cross-chats) follow
+// in a list of their own: they have no project and no pin, and the hub does
+// not put them in the four bands. A project conversation opens in place
+// (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
+// context; a cross-project one at /chats/cross/<id> (js/cross-chat.js).
+// Going from one chat to another changes the pane alone: the page, the
 // list and every project's context stay, and the pane being left stands dimmed until
 // the next is drawn.
 //
@@ -36,19 +40,30 @@ window.Maity = window.Maity || {};
   }
 
   // The merged list. pctxs: full name -> the project's context; opened: what
-  // gives the open conversation's {slug: its project's full name, id}, or null. Shaped as chat.js's own list.
-  function globalList(pctxs, opened) {
+  // gives the open conversation, a project's {slug, id} or a cross chat's
+  // {cross: id}; me: the signed-in human, for the cross-chat list. Shaped as chat.js's own list.
+  function globalList(pctxs, opened, me) {
     const P = M.chatParts;
     const ul = h("ul", { class: "chat-list" });
+    const crossHead = h("h3", { class: "cross-heading" }, M.t("chats.cross_heading"));
+    const crossUl = h("ul", { class: "cross-chat-list" });
     const status = M.statusLine();
     const failed = h("div");
+    const crossFailed = h("div");
     const none = h("p", { class: "muted" }, M.t("chats.none"));
     none.hidden = true;
-    // slug -> { chats, groups } as last read.
+    // slug -> { chats, groups } as last read. Cross chats stay in the hub's
+    // order (newest activity first); they are not folded into the four bands.
     const read = {};
+    let crossItems = [];
+    const named = (p) => {
+      const found = Object.keys(pctxs).map((slug) => pctxs[slug].memberById && pctxs[slug].memberById[p.member_id]).find(Boolean);
+      return found || { id: p.member_id, display_name: p.handle ? "@" + p.handle : p.member_id, kind: p.kind, handle: p.handle };
+    };
     const draw = () => {
       const open = opened();
-      const currentKey = open ? open.slug + "/" + open.id : null;
+      const currentKey = open && open.slug ? open.slug + "/" + open.id : null;
+      const currentCross = open && open.cross && open.cross !== "new" ? open.cross : null;
       // A redraw keeps the keyboard on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
@@ -70,9 +85,36 @@ window.Maity = window.Maity || {};
         if (a) append(a, h("span", { class: "visually-hidden" }, ", ", M.t("chats.in_project", { project: name })));
         append(ul, li);
       });
-      none.hidden = all.length > 0 || Object.keys(read).length === 0;
+      none.hidden = all.length > 0 || Object.keys(read).length === 0 || crossItems.length > 0;
+      const crossFocused = document.activeElement && crossUl.contains && crossUl.contains(document.activeElement)
+        ? document.activeElement.getAttribute("href") : null;
+      clear(crossUl);
+      const crossCtx = {
+        me, slug: "cross",
+        link: (view, id) => (view === "chat" ? (id ? "/chats/cross/" + encodeURIComponent(id) : "/chats") : "/chats"),
+      };
+      crossItems.forEach((item) => {
+        const others = item.participants.filter((p) => p.member_id !== me.id).map(named);
+        const chat = {
+          id: item.id, kind: "cross",
+          title: item.title || M.fmt.list(others.map((p) => p.display_name)) || M.t("cross.untitled"),
+          participants: others, unread: item.unread || 0, mentions: item.mentions_unread || 0,
+          closed: !!item.closed_at, last_message_at: item.last_message_at || item.created_at || null,
+          last_message: item.last_message || null,
+        };
+        const li = P.listItem(crossCtx, chat, item.id === currentCross ? item.id : null, null);
+        const who = li.querySelector(".conv-sub");
+        if (who) append(who, " · ", h("span", { class: "conv-cross" }, M.t("chats.cross_label")));
+        if (chat.closed && who) append(who, " · ", h("span", { class: "conv-cross" }, M.t("group.closed_flag")));
+        append(crossUl, li);
+      });
+      crossHead.hidden = crossItems.length === 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);
+        if (again) again.focus();
+      }
+      if (crossFocused) {
+        const again = Array.from(crossUl.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === crossFocused);
         if (again) again.focus();
       }
     };
@@ -100,8 +142,21 @@ window.Maity = window.Maity || {};
       Object.keys(pctxs).forEach((slug) => take(slug, bySlug[slug] || []));
       clear(failed);
     }
+    async function readCross() {
+      let list;
+      try {
+        list = await M.api.getAll("/me/cross-chats");
+      } catch (err) {
+        crossItems = [];
+        append(clear(crossFailed), h("p", { class: "send-status failed" }, M.t("chats.cross_failed", { reason: err.message })));
+        return;
+      }
+      crossItems = list.items || [];
+      clear(crossFailed);
+    }
     async function readAll() {
       await readOnce();
+      await readCross();
       draw();
       status.done();
     }
@@ -119,16 +174,24 @@ window.Maity = window.Maity || {};
       return reading;
     };
     const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chats.conversations") },
-      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title")), h("span", { class: "chats-lead" })),
+      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title")),
+        // The Lead first: on a phone it is the row's left edge, where its menu opens on screen.
+        h("span", { class: "toolbar-actions" },
+          h("span", { class: "chats-lead" }),
+          me.kind === "human" ? h("a", { class: "button small new-cross", href: "/chats/cross/new" }, M.t("chats.cross_new")) : null)),
       h("p", { class: "muted" }, M.t("chats.hint")),
-      none, failed, ul, status.el);
-    const shown = (open) => (open && read[open.slug]) || { chats: [], groups: [], items: [] };
+      none, failed, ul, crossHead, crossFailed, crossUl, status.el);
+    const shown = (open) => (open && open.slug && read[open.slug]) || { chats: [], groups: [], items: [] };
     return { el, refresh, draw, groups: () => shown(opened()).groups, conversations: () => shown(opened()).items,
-      knows: (x) => shown(x).chats.some((c) => c.id === x.id) };
+      knows: (x) => (x && x.cross ? x.cross === "new" || crossItems.some((c) => c.id === x.cross) : shown(x).chats.some((c) => c.id === x.id)),
+      crossItem: (id) => crossItems.find((c) => c.id === id) || null };
   }
 
   M.views.chats = async function (ctx, root, args) {
-    const chatAt = ([owner, name, id] = []) => (owner && name && id ? { slug: owner + "/" + name, id } : null);
+    // /chats/cross/<id> is two segments; a project's chat is three, so a
+    // namespace whose handle is "cross" still opens as a project chat.
+    const chatAt = (parts = []) => (parts[0] === "cross" && parts.length === 2 && parts[1] ? { cross: parts[1] }
+      : parts[0] && parts[1] && parts[2] ? { slug: parts[0] + "/" + parts[1], id: parts[2] } : null);
     let open = chatAt(args);
     // Each project's context, read once when the view opens; one that fails is said, the rest shown.
     const pctxs = {};
@@ -143,7 +206,7 @@ window.Maity = window.Maity || {};
       .filter((p) => pctxs[p.full_name] && pctxs[p.full_name].memberById && pctxs[p.full_name].memberById[memberId])
       .map((p) => ({ slug: p.full_name, name: p.name || p.full_name, view: (ctx.projectViews || {})[p.full_name] }));
     Object.values(pctxs).forEach((x) => { x.projectsOf = projectsOf; });
-    const list = globalList(pctxs, () => open);
+    const list = globalList(pctxs, () => open, ctx.me);
     // The pane on screen: its project's context with timers and listeners of its own.
     let pane = null;
     let paneSeq = 0;
@@ -164,7 +227,8 @@ window.Maity = window.Maity || {};
           .then((r) => { M.withMembers(x, r.items); }, () => null)));
       }
       if (pane) {
-        const changed = [{ kind: "message", seq: Number.MAX_SAFE_INTEGER, actor: { member_id: open.id }, payload: { type: "chat", conversation_id: open.id } },
+        const id = open.cross || open.id;
+        const changed = [{ kind: "message", seq: Number.MAX_SAFE_INTEGER, actor: { member_id: id }, payload: { type: "chat", conversation_id: id } },
           { kind: M.chatParts.RESYNC }];
         await Promise.all(pane.ctx.listeners.map((fn) => Promise.resolve(fn(changed)).catch(() => null)));
       }
@@ -225,6 +289,38 @@ window.Maity = window.Maity || {};
       if (pane) pane.close();
       pane = null;
       Array.from(layout.childNodes).filter((c) => c !== list.el).forEach((c) => { c.setAttribute("inert", ""); c.setAttribute("aria-busy", "true"); });
+      if (open && open.cross) {
+        const timers = [];
+        const sub = {
+          me: ctx.me, projects: ctx.projects, projectViews: ctx.projectViews, pctxs, listeners: [],
+          onEvents: (fn) => { sub.listeners.push(fn); },
+          every: (ms, fn) => { if (!stale()) timers.push(window.setInterval(fn, ms)); },
+          stale, refresh: () => ctx.refresh(),
+          link: (view, id) => {
+            if (view !== "members" || !id) return "/chats";
+            const slug = Object.keys(pctxs).find((s) => pctxs[s].memberById && pctxs[s].memberById[id]);
+            return slug ? "/" + M.api.projectPath(slug) + "/members/" + encodeURIComponent(id) : "/chats";
+          },
+        };
+        pane = { ctx: sub, close: () => timers.forEach((t) => window.clearInterval(t)) };
+        let drawn = false;
+        const paneList = Object.assign({}, list, { refresh: (...a) => (drawn ? list.refresh(...a) : Promise.resolve()) });
+        const holder = h("div");
+        const parts = Object.assign({}, M.chatParts, { fitToScreen: () => {} });
+        try {
+          if (open.cross === "new") await M.crossChat.create(sub, holder);
+          else await M.crossChat.open(sub, holder, paneList, open.cross, parts);
+        } catch (err) {
+          if (stale()) return false;
+          throw err;
+        }
+        if (stale()) return false;
+        place(Array.from(holder.childNodes));
+        drawn = true;
+        if (!fitted) { fitted = true; M.chatParts.fitToScreen(layout); }
+        list.refresh();
+        return true;
+      }
       const pctx = open ? pctxs[open.slug] : null;
       if (!pctx) {
         place(open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
