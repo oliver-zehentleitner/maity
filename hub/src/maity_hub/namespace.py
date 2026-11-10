@@ -69,7 +69,7 @@ def route_words(paths: Iterable[str]) -> frozenset[str]:
 # word stays reserved even if its route were ever left out of the schema.
 ROUTE_WORDS = frozenset(
     {
-        "attachments", "banner", "conversations", "credentials", "events", "forge",
+        "attachments", "banner", "claims", "conversations", "credentials", "events", "forge",
         "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "me", "members", "memory",
         "messages", "placements", "probe", "repository", "requests", "roles", "rules", "runners",
         "swarm", "takeovers", "tasks", "ticker", "transfer",

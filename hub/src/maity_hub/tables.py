@@ -1451,6 +1451,9 @@ card = Table(
     # The `lease_until` the last `claim_expired` named (§6.5): a claim counts once per expiry,
     # and a renewed lease, a new value, counts again.
     Column("lease_expiry_reported", UtcDateTime),
+    # The `lease_until` the last `claim_lease_expiring` named (§6.5): a claim is warned once
+    # per lease period, and every write of a new `lease_until` arms the warning again.
+    Column("lease_warning_reported", UtcDateTime),
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),

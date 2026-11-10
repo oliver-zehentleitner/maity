@@ -67,6 +67,10 @@ def waits_for(
     watched: frozenset[int] = frozenset(),
 ) -> bool:
     """Whether the event waits for this instance (§5.3)."""
+    if row.kind == "claim_lease_expiring":
+        # It wakes its holder and waits for nobody (§5.3): a holder that does not answer is
+        # reported when the lease runs out (`claim_expired`), not twice for one outage.
+        return False
     dormant = credential.dormant_since is not None  # only its own token counts (§6.17)
     if events.wakes(
         row,
@@ -278,8 +282,8 @@ def sweep(engine: Engine) -> None:
 
 
 class Worker:
-    """Runs `sweep` every minute (§5.3), then the lease expiry's `claim_expired` (§6.5) and
-    the group chats' unread nudge (§9.2)."""
+    """Runs `sweep` every minute (§5.3), then the lease expiry's `claim_expired` and the lease
+    warning's `claim_lease_expiring` (§6.5), and the group chats' unread nudge (§9.2)."""
 
     def __init__(self, engine: Engine, interval: float | None = None) -> None:
         self.engine = engine
@@ -303,7 +307,7 @@ class Worker:
                     continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
-                        from maity_hub import chat_unread, holder_stalled
+                        from maity_hub import chat_unread, holder_stalled, lease_warning
 
                         # Each step its own try: a failure in one does not skip the others.
                         try:
@@ -315,6 +319,10 @@ class Worker:
                             holder_stalled.expire(self.engine)  # `claim_expired` (§6.5)
                         except Exception:
                             log.exception("the lease expiry failed")
+                        try:
+                            lease_warning.warn(self.engine)  # `claim_lease_expiring` (§6.5)
+                        except Exception:
+                            log.exception("the lease warning failed")
                         try:
                             chat_unread.sweep(self.engine)  # the unread nudge (§9.2)
                         except Exception:
