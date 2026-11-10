@@ -5901,8 +5901,10 @@ unknown. A hub search keeps its own results, closed cards and counts
 included, as before: all of this is the board's own state without one.
 Then the board draws again with every card (with the search's results
 where one is active). The element in the columns that had the focus, a
-card's title link included, keeps it, after a failed read too, and a board
-left from a closed card finds that card now. A reload after a write
+card's title link included, keeps it, after a failed read too, where it
+still stands in a column; a card now folded under a parent that came with
+the closed cards, or gone from the columns, hands the focus to the status
+line. A board left from a closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
 answer has been.
 

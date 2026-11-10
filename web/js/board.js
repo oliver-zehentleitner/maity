@@ -1224,7 +1224,9 @@ window.Maity = window.Maity || {};
     let markedCard = draw();
     // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
     // search filters it too; a hub search keeps its own results), and the focus put back on the
-    // element in the columns that had it (focusSpot), after a failed read too. A board left from a
+    // element in the columns that had it (focusSpot), after a failed read too, where that element
+    // still stands in a column. One whose card is now folded under a parent that came with the closed
+    // cards, or is gone from the columns, hands the focus to the status line. A board left from a
     // closed card finds that card only now, and its title takes the focus if nothing else took it
     // meanwhile. A reload drawn meanwhile supersedes it.
     const markedFirst = !!markedCard;
