@@ -5082,6 +5082,39 @@ def project_links_step(run: Run, page: Page) -> None:
     page.set_viewport_size({"width": 360, "height": 780})
     tops = page.evaluate("Array.from(document.querySelectorAll('header .project-links > a')).map((a) => Math.round(a.getBoundingClientRect().top))")
     assert len(set(tops)) == 1, f"the project's links wrap at 360 px: {tops}"
+    # With a GitHub repository the row holds Repository, Actions and Pull Requests before the own
+    # links (tsk-kdkdy864q11r). The e2e project has none, so the project's read is answered with
+    # one for this check alone; still one row at 390 and 360 px, light and dark.
+    project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha$")
+
+    def with_repo(route) -> None:
+        body = route.fetch().json()
+        body["repository"] = {**(body.get("repository") or {}), "url": "https://github.com/owner/e2e-alpha", "forge": "github"}
+        route.fulfill(json=body)
+
+    page.route(project_read, with_repo)
+    try:
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            for width in (390, 360):
+                page.set_viewport_size({"width": width, "height": 780})
+                page.reload()
+                actions = page.locator("header .project-links a.header-link", has_text="Actions")
+                expect(actions).to_have_attribute("href", "https://github.com/owner/e2e-alpha/actions")
+                expect(actions).to_have_attribute("aria-label", "Actions on GitHub (opens in a new tab)")
+                row = page.evaluate("""() => Array.from(document.querySelectorAll('header .project-links > a'))
+                  .map((a) => [a.textContent.trim(), Math.round(a.getBoundingClientRect().top)])""")
+                assert [t for t, _ in row][:4] == ["Repository", "Actions", "Pull Requests", "Issues"], f"the links' order at {width} px {scheme}: {row}"
+                assert len({top for _, top in row}) == 1, f"the project's links wrap at {width} px {scheme}: {row}"
+                width_now = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+                assert width_now[0] <= width_now[1], f"the page scrolls sideways at {width} px {scheme}: {width_now}"
+        run.shot(page, "project-links-actions-phone")
+        run.a11y(page, "project links with Actions")
+    finally:
+        page.unroute(project_read, with_repo)
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 360, "height": 780})
+        page.reload()
     # With an absence beside the state it needs more room than the row leaves, so it wraps under
     # the row; the row keeps a usable width and nothing scrolls the page sideways (spq4 at #1271).
     # The absence is set here and ended after the check, so the steps after see none.
