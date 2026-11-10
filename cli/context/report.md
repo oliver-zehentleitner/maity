@@ -318,3 +318,59 @@ contradict: the refusals that rest on facts keep no override.
 - Checking whether the branch already belongs to another card: the hub has no lookup of cards by
   branch or pull request before a merge (linked cards are computed at the merge, §17.4); a
   client-side half check would read as a guarantee it is not. Left as a known gap.
+
+## A branch that tracks main is set to track its own branch before the report
+
+**Id:** f841de3c-127b-486d-96b2-46b2599f3252
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8qwmbw5xydpw from the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg): `report` refused with exit 4 and the fix was two `git config` lines, which agents hit repeatedly; the lead's assignment (Maity notice 104980, "contract first" where a contract line is needed); reproduced on main 126b030c with a branch cut by `git switch -c <b> --track origin/main` and pushed without `-u` ("origin/main is at …, local HEAD is at …; push or pull until they agree"); the boundaries (default branch only, only when the remote has the branch) are the author's, put to review in PR for tsk-8qwmbw5xydpw; `cli/src/maity/gitfacts.py` `track_own_branch`
+**See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-10
+**See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-10
+**Revisit when:** agents report from branches that deliberately track another branch than their own and want it kept, or a refusal shows that the default branch could not be told (no `origin/HEAD` and a remote whose `HEAD` is not readable)
+
+A branch cut from main (`git switch -c <b> origin/main`, a worktree made
+with `-b <b> origin/main`) has `branch.<b>.merge` set to
+`refs/heads/main`. Pushed with a plain `git push origin <b>`, it keeps
+that upstream, and `report` compared the local head with main's and
+refused. Now, before it reads the facts, `report` sets
+`branch.<b>.merge` to `refs/heads/<b>` (the remote stays) when the
+upstream is the remote's default branch, the branch is not that branch
+itself, and the remote has a branch `<b>`; it says so on standard error.
+The default branch is what `refs/remotes/<remote>/HEAD` names, else what
+the remote's `HEAD` names (`ls-remote --symref`). When the remote has no
+`<b>`, nothing changes and the report is refused (exit 4) naming
+`git push -u <remote> <b>`. Any other upstream is left as it is. The
+upstream is checked as before (4f4e8ada) before git is asked anything.
+`--no-code` reads no git and changes nothing.
+
+No hub contract change: the report's body and the hub's checks are the
+same; the CLI mapping row of §13 says what `report` now does locally.
+
+**Reason:** a branch's upstream on the default branch is git's default
+for a branch cut from it, not a choice the agent made, and it is never
+the branch a report is about: the report names the branch and its pull
+request, and the pull request's head is that branch's. Setting the merge
+ref is the fix every agent typed by hand; doing it here keeps every fact
+read from git (66da7721 holds: nothing is overridden, the remote head of
+the branch itself is still compared with the local one), and leaves
+`git push` and `git pull` pointing where the report looked. Only the
+default branch is retracked because that is the case the card names and
+the one that is never meant: a branch tracking another branch, as a
+stacked one tracking the branch below it, may be meant, and maity cannot
+tell. Only a branch the remote has is set, so an upstream never points
+at a branch that does not exist.
+
+**Rejected alternatives:**
+- A better refusal that prints the two `git config` lines: the card's
+  reject case; agents already knew the fix and still hit the refusal.
+- Reading the remote branch of the same name without writing the
+  configuration: the report would then describe another upstream than
+  the one git uses for `push` and `pull`, and every later git command
+  would still go to main.
+- Retracking any upstream whose name differs from the branch: changes
+  a stacked branch's deliberate upstream.
+- Setting the merge ref before the branch is pushed: the upstream would
+  name a branch the remote does not have, and the report would refuse
+  anyway, with the fix (`git push -u`) less visible.
