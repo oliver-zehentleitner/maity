@@ -176,7 +176,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
