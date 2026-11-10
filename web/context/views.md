@@ -869,7 +869,7 @@ tell from the request today; the Revisit when names it.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"
+**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
 
 A project's pill counts its open requests, unread chats and unread mentions (§18.2 `by_project`),
@@ -879,6 +879,11 @@ reads both filters from its address and asks the hub with them (§18.2). Its hea
 ("Mentions in Maity"), a link leads back to all notifications, and Mark all read sends the same
 `kind` and `project` with `up_to` (§18.3), so it marks nothing outside the filter. The line is
 filled again with every count read, so it follows the pill.
+
+The line is left out on the Chat tab, on its list and in an open chat: there the chat list already
+marks each chat with a mention (its @), visible at once, so the line only repeated it; the
+maintainer asked for it gone there (tsk-sesdq48m9ewk, 2026-11-10). It stays on the project's other
+tabs, where the chat list is not in view.
 
 **Reason:** a count on a project should lead to what it counts in one step, and mentions have no
 place in the project: the inbox is the requests alone (see 2ff6afe9). The hub already filters

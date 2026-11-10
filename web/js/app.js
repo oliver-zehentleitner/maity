@@ -1722,7 +1722,8 @@ window.Maity = window.Maity || {};
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null,
-      ctx.scope === "project" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+      // Not on the Chat tab, where each chat's @ in the list already says it (the maintainer, tsk-sesdq48m9ewk).
+      ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
