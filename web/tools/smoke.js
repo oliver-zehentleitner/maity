@@ -926,6 +926,76 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   ohHold = true;
   win.Maity.api.getAll = ohGet;
+  // An answer that comes back after its inbox was left draws nothing and keeps the selection of the inbox that
+  // stands (web roll-up 3, nte-m2sa9prk3d48). The answer is held and comes back as the request answered; nothing
+  // is written to the fixture. The control: no answer comes while the next inbox stands. The control runs first
+  // (#1574 review): on main a late answer leaves the inbox's module state changed (the request it answered loses its
+  // buttons, the selection moves), which is the fault itself, so a round after it would not start clean there.
+  for (const anLate of [false, true]) {
+    const anPost = win.Maity.api.post, anGet = win.Maity.api.get;
+    let anFree = null;
+    win.Maity.api.post = (p, b) => (/\/answer$/.test(p)
+      ? new Promise((res) => { anFree = () => anGet(p.replace(/\/answer$/, "")).then((r) => res(Object.assign({}, r, { status: "answered" }))); })
+      : anPost(p, b));
+    await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+    if (byId("inbox-project") && byId("inbox-project").value) { byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick(); }
+    // Each round selects the request itself: only the current entry draws its body, so the entries are opened in
+    // list order until one shows an answer button outside a hidden pane ("Edit" opens a proposal's editor, whose
+    // own buttons stand hidden until then). What the round before left current decides nothing (#1574 review).
+    const anShown = (b, li) => { for (let n = b; n && n !== li; n = n.parentNode) if (n.hidden) return false; return true; };
+    const anButton = (li) => li.querySelectorAll("button").slice(1).find((b) => !["Later", "Talk", "Send", "Withdraw", "Edit"].includes(b.textContent) && !b.disabled && anShown(b, li));
+    const anById = (id) => main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === id);
+    let anTarget = null;
+    for (const id of main.querySelectorAll("li.entry").map((li) => li.getAttribute("data-request"))) {
+      if (!anById(id).className.split(" ").includes("current")) { anById(id).querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick(); }
+      if (anById(id) && anButton(anById(id))) { anTarget = id; break; }
+    }
+    const anCur = main.querySelector("li.entry.current");
+    const anReply = anCur && anCur.getAttribute("data-request") === anTarget && anButton(anCur);
+    if (anReply) { anReply.click(); for (let k = 0; k < 2; k++) await tick(); }
+    const anHeld = !!anFree;
+    await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+    const anEntries = main.querySelectorAll("li.entry");
+    const anAnswered = anCur && anCur.getAttribute("data-request");
+    const anPick = anEntries.filter((li) => li.getAttribute("data-request") !== anAnswered).pop();
+    const anId = anPick && anPick.getAttribute("data-request");
+    anPick.querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick();
+    if (anLate && anFree) { anFree(); for (let k = 0; k < 8; k++) await tick(); }
+    byId("inbox-group").checked = true; byId("inbox-group").dispatch("change"); await tick();
+    byId("inbox-group").checked = false; byId("inbox-group").dispatch("change"); await tick();
+    const anAfter = (main.querySelector("li.entry.current") || { getAttribute: () => null }).getAttribute("data-request");
+    expect(anHeld && anEntries.length >= 2 && anAfter === anId,
+      "inbox: " + (anLate ? "an answer coming back after its inbox was left" : "no answer after its inbox was left")
+      + " keeps the open inbox's selection " + JSON.stringify([anHeld, anEntries.length, anId, anAfter]));
+    // The control's answer never comes back: released after it, it would be a late answer itself, and on main put
+    // the inbox into the fault before the round that tests it.
+    win.Maity.api.post = anPost;
+  }
+  // A project joined elsewhere, brought by /me on the counts round, draws the inbox again when it follows the
+  // tabs (grouped or filtered to open tabs), not only the switcher (web roll-up 3, nte-frngr2nrvm2n). The new
+  // project has no open request, so the counts stay; the control: a round that brings no project draws nothing.
+  {
+    const tjGet = win.Maity.api.get;
+    let tjExtra = false;
+    win.Maity.api.get = (p, ...r) => (p === "/me" && tjExtra
+      ? tjGet(p, ...r).then((m) => ({ ...m, projects: m.projects.concat([{ ...m.projects.find((x) => x.slug === "maity"),
+        id: "prj-joined", slug: "joined", name: "Joined", full_name: "maintainer/joined", open_requests: 0 }]) }))
+      : tjGet(p, ...r));
+    await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+    byId("inbox-group").checked = true; byId("inbox-group").dispatch("change"); await tick();
+    const tjFirst = () => main.querySelector("li.entry");
+    const tjNode0 = tjFirst();
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const tjSameQuiet = tjFirst() === tjNode0;
+    tjExtra = true;
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const tjRedrawn = !!tjFirst() && tjFirst() !== tjNode0;
+    tjExtra = false;
+    win.Maity.api.get = tjGet;
+    byId("inbox-group").checked = false; byId("inbox-group").dispatch("change"); await tick();
+    expect(tjSameQuiet && tjRedrawn, "inbox: a counts round that brings a new project draws the grouped inbox again, one that brings none does not " + JSON.stringify([tjSameQuiet, tjRedrawn]));
+  }
+  await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const obGet = win.Maity.api.getAll, obReads = [];
   win.Maity.api.getAll = (p, ...r) => { if (/\/projects\/maintainer\/maity\/requests\?/.test(p)) obReads.push(p.split("?")[1]); return obGet(p, ...r); };
   await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
@@ -4642,6 +4712,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "placements: a placement created and one updated while the section still reads are shown once it stands "
       + JSON.stringify([suHeld, !!plBox(), plBox() && plBox().querySelectorAll("li.placement").map((li) => li.attrs["data-placement"])]));
   }
+  // An event while a re-read runs asks for one more read after it (web roll-up 3, nte-62e9vfx18rk3): the first
+  // re-read is held after it fetched the list, plc-0001 is stopped meanwhile and its event delivered, then released.
+  {
+    const drGetAll = win.Maity.api.getAll;
+    let drHold = false, drFree = null, drReads = 0, drStopped = false;
+    win.Maity.api.getAll = (p) => {
+      if (p !== "/projects/maintainer/maity/placements") return drGetAll(p);
+      drReads += 1;
+      const early = drGetAll(p).then((r) => (drStopped ? { ...r, items: r.items.map((x) => (x.id === "plc-0001" ? { ...x, desired: "stopped" } : x)) } : r));
+      if (drHold) { drHold = false; return new Promise((res, rej) => { drFree = () => early.then(res, rej); }); }
+      return early;
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+    const drBefore = plFacts("plc-0001");
+    drReads = 0; drHold = true;
+    plFeed = [{ seq: 30010, kind: "placement_reported", at: "2026-10-22T14:20:00Z", actor: { kind: "runner", id: "rnr-0002" }, payload: { placement_id: "plc-0002", state: "running" } }];
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const drHeld = !!drFree;
+    drStopped = true;
+    plFeed = [{ seq: 30011, kind: "placement_updated", at: "2026-10-22T14:21:00Z", actor: { kind: "member", member_id: "hum-maintainer" }, payload: { placement_id: "plc-0001" } }];
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    if (drFree) drFree(); for (let k = 0; k < 10; k++) await tick();
+    win.Maity.api.getAll = drGetAll;
+    expect(drHeld && drBefore.includes("Wantedrunning") && drReads === 2 && plFacts("plc-0001").includes("Wantedstopped"),
+      "placements: an event during a running re-read reads the list once more after it " + JSON.stringify([drHeld, drReads, plFacts("plc-0001").slice(0, 60)]));
+  }
   // A runner listed for a project one administers but owned by someone else gives no rights over it.
   const plRunner = (owner) => Promise.resolve({ items: [{ id: "rnr-0002", name: "home-laptop", owner_id: owner }], next_cursor: null });
   win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")
@@ -5161,6 +5257,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const unsetChanged = await unset.i18n.frame("de");
     expect(unset.i18n.language === "en" && unset.asked.length === 0 && unsetChanged === false,
       "visitor language: a signed-in account without interface_language keeps the browser's rule, no frame read " + [unset.i18n.language, unset.asked]);
+    // Signed in, then the session ends (a 401): the account decides no more and the frame applies again (web roll-up
+    // 3, nte-cgjhgnxq8v0w). Without the reset the 401 would still be read as an account's.
+    const reset = visitor({ languages: ["en-US"], answer: frame(() => "de") });
+    await reset.i18n.follow(null, true);
+    const resetSigned = await reset.i18n.frame("de");
+    await reset.i18n.follow(null);
+    expect(resetSigned === false && reset.i18n.language === "de",
+      "visitor language: after a 401 that ends a signed-in session the frame decides again " + [resetSigned, reset.i18n.language]);
     // A newer address with a ?lang= that has no catalog here ends a pick made on the page.
     const sv2 = visitor({ languages: ["en-US"], answer: frame(hubPage(["en", "fr"], "en", ["en-US"])) });
     await sv2.i18n.follow(null);
@@ -7962,6 +8066,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-0001", "jfs-0002"]) && text(jfItem("jfs-0001")).includes("Weekly on Monday at 09:00 (Europe/Vienna)")
       && text(jfItem("jfs-0001")).includes("on schedule") && text(jfItem("jfs-0002")).includes("paused") && text(jfItem("jfs-0002")).includes("My agents: how the queue feels")
       && !jfForm() && btn(main, "New series"), "jour fixe: the settings list the series with their topic, circle, state and schedule; no form until one is asked for");
+    // A new series proposes the reader's zone (web roll-up 3, #1574 review): the account's when one is set, the
+    // browser's while none is; each form opened afresh, closed with Cancel.
+    const jfZones = [];
+    for (const account of [null, "Asia/Tokyo"]) {
+      win.Maity.i18n.setZone(account);
+      btn(main, "New series").click(); await tick();
+      jfZones.push(byId("jfs-timezone").value);
+      btn(jfForm(), "Cancel").click(); await tick();
+    }
+    win.Maity.i18n.setZone(null);
+    const jfBrowser = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    expect(JSON.stringify(jfZones) === JSON.stringify([jfBrowser, "Asia/Tokyo"]) && jfBrowser !== "Asia/Tokyo" && !jfForm(),
+      "jour fixe: a new series proposes the account's time zone, the browser's while none is set " + JSON.stringify([jfZones, jfBrowser]));
     btn(main, "New series").click(); await tick();
     expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden
       && byId("jfs-enabled").parentNode.querySelector("label") && text(byId("jfs-enabled").parentNode.querySelector("label")) === " Activated"
@@ -8979,6 +9096,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
     "invite: the page sets <meta name=referrer content=no-referrer>, once");
   expect(productLine.querySelectorAll("a").length === 4, "invite: the page ends with the product line");
+  // A token with a broken escape still gets the policy: the check decodes the first segment on its own and asks
+  // only that a token follows, so a broken escape in the token does not undo it (web roll-up 3, nte-2e1kq5r85vaj);
+  // before, parseRoute() threw on the whole path and the swallowed error set nothing.
+  head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
+  await go("#/invite/%E0%A4%A"); for (let k = 0; k < 4; k++) await tick();
+  expect(ivNoRef(), "invite: an invitation address with a broken escape still sets the no-referrer policy");
+  // parseRoute() decodes each segment, so an escaped first segment is an invitation as well (#1574 review): the policy
+  // stands before every request, the maintenance read included, with a valid token and with a broken one.
+  const ivEncAsked = [];
+  for (const addr of ["#/%69nvite/open-xxxxxxxxxxxxxxxx1", "#/%69nvite/%E0%A4%A"]) {
+    await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+    head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
+    // The drawing asks maintenance.fresh() first, which reads GET /maintenance unless a read is recent: the policy is
+    // taken at that call, so the case needs no shifted clock (which would leave the read stamped ahead for later cases).
+    const asked = [], ivFresh = win.Maity.maintenance.fresh;
+    const onInvite = () => win.Maity.route.current().path.startsWith("/%69nvite/");
+    win.Maity.maintenance.fresh = () => { if (onInvite()) asked.push("fresh=" + ivNoRef()); return ivFresh(); };
+    win.Maity.api.get = (p) => { if (onInvite()) asked.push(p + "=" + ivNoRef()); return ivRefGet(p); };
+    await go(addr); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.get = ivRefGet; win.Maity.maintenance.fresh = ivFresh;
+    ivEncAsked.push(asked.includes("fresh=true") && asked.every((a) => a.endsWith("=true")) ? "ok" : JSON.stringify(asked));
+  }
+  expect(ivEncAsked.every((r) => r === "ok"), "invite: an escaped first segment sets the no-referrer policy before any request, valid token or broken " + JSON.stringify(ivEncAsked));
+  await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
   const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
   expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
@@ -11777,6 +11918,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
   expect(!gxRenamedEarly && text(main.querySelector("section.group-chat")).includes("Release 0.2: go"),
     "chats: a group chat renamed elsewhere shows its new title on the 30-second round, not on a stream answer without a chat");
+  // A group chat read along as an agent's owner brings no chat item and no count (§9.3): while it is open, the
+  // counts read (every 15 s) still reads it again; the same chat as a participant waits for its counts (web roll-up 3).
+  for (const raAccess of ["observer", "participant"]) {
+    const raAll = win.Maity.api.getAll, raReads = [];
+    win.Maity.api.getAll = (p) => {
+      if (/^\/me\/conversations\?/.test(p)) {
+        raReads.push(p);
+        return raAll(p).then((r) => ({ ...r, items: r.items.map((c) => (c.id === "cnv-0007" && raAccess === "observer" ? { ...c, access: "observer", unread: null, mentions_unread: null } : c)) }));
+      }
+      return raAll(p);
+    };
+    await go("#/chats"); await go("#/chats/maintainer/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
+    // Opening it read it, which moved the counts: one counts read takes that in before the test proper.
+    win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 8; k++) await tick();
+    raReads.length = 0;
+    win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 8; k++) await tick();
+    const raRead = raReads.length;
+    win.Maity.api.getAll = raAll;
+    expect(raAccess === "observer" ? raRead >= 1 : raRead === 0,
+      "chats: a counts read " + (raAccess === "observer" ? "reads an open read-along group chat again" : "leaves an open group chat one takes part in to its counts") + " " + JSON.stringify(raRead));
+  }
   await go("#/chats/someone/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No project of yours named someone/nowhere."), "chats: an unknown project is said");
   // In the global chat an agent's message names the projects it is in, by logo with the name on
@@ -12323,6 +12485,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.i18n.setZone("Australia/Lord_Howe");
     expect(win.Maity.fmt.toWall(win.Maity.fmt.fromWall("2026-10-04T02:15")) === "2026-10-04T02:45",
       "time zone: in a half-hour gap a skipped time moves forward by half an hour");
+    // A date that does not exist is unreadable, not rolled into the next month (web roll-up 3, nte-db7s2s1mf13a).
+    expect(win.Maity.fmt.fromWall("2026-11-31T10:00") === null && win.Maity.fmt.fromWall("2026-02-30T10:00") === null
+      && win.Maity.fmt.fromWall("2026-11-30T24:00") === null && win.Maity.fmt.fromWall("2026-11-30T10:00") !== null
+      && win.Maity.fmt.fromWall("2028-02-29T10:00") !== null,
+      "time zone: the 31st of November, the 30th of February and hour 24 are unreadable; the 29th of February in a leap year is read");
     win.Maity.i18n.setZone("Asia/Tokyo");
     await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
     expect(text(main.querySelector(".mail-timezone-link")).startsWith("The digests and quiet hours follow your time zone, Asia/Tokyo"),
@@ -13873,6 +14040,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The optional eyebrow and tile label (§16.7): over the limit refused at the path, by the same check as the hub's.
   const leLong = await win.Maity.api.post("/admin/settings/landing/preview", { pages: { en: { title: "T", sections: [{ type: "opensource", enabled: true, eyebrow: "x".repeat(41), title: "O", tiles: [{ label: "x".repeat(41), title: "T", text: "t" }] }] } } }).catch((err) => err.details.fields);
   expect(leLong["pages.en.sections.0.eyebrow"] && leLong["pages.en.sections.0.tiles.0.label"], "landing editor: an eyebrow or a tile label over 40 is refused " + JSON.stringify(leLong));
+  // A header label of blanks is refused, as the hub's text rule does (1–24 characters once trimmed), and counts for
+  // nothing toward the four links (web roll-up 3, nte-m2e51amspdtr 2).
+  const leBlank = await win.Maity.api.post("/admin/settings/landing/preview", { pages: { en: { title: "T", sections: [{ type: "opensource", enabled: true, nav_label: "   ", title: "O", tiles: [] }] } } }).catch((err) => err.details.fields);
+  expect(leBlank && leBlank["pages.en.sections.0.nav_label"] === "invalid", "landing editor: a header label of blanks is refused " + JSON.stringify(leBlank));
   leFill("lp-pages-en-sections-5-eyebrow", "Open source · MIT"); leFill("lp-pages-en-sections-5-tiles-0-label", "laptop");
   leFill("lp-pages-en-sections-5-title", "Open source"); leFill("lp-pages-en-sections-5-tiles-0-title", "MIT"); leFill("lp-pages-en-sections-5-tiles-0-text", "Yours.");
   btn(leOss(), "Add link").click(); await tick();
@@ -14328,6 +14499,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const apShown = (panel) => apKept.some((sel) => !!panel.querySelector(sel));
     expect(apRule && !!apNote.panel.querySelector(".note") && apShown(apNote.panel) && !apShown(apFailed.panel),
       "pitch: on a phone a panel with only a note stays, one with the seat alone is hidden " + JSON.stringify(apKept));
+    // Every part the pitch draws is one the rule names (web roll-up 3, nte-4y5314r5x7nc): a pitch with every key set,
+    // and each child of the panel but the seat meets one of the rule's :has() parts, so dropping one from the rule, or
+    // a new part drawn but not named there, turns this red.
+    await win.Maity.api.patch("/admin/settings/auth-pages", { default_language: "en", pages: { sign_in: { en: { title: "All", subline: "Sub",
+      point_1: "One", point_2: "Two", point_3: "Three", note: "A note" } }, sign_up: {} } });
+    const apAll = win.Maity.authPages.pitch("sign_in", "Sign in");
+    for (let k = 0; k < 4; k++) await tick();
+    const apParts = apAll.panel.childNodes.filter((c) => c.tagName && !c.matches(".seat"));
+    const apUnnamed = apParts.filter((c) => !apKept.some((sel) => c.matches(sel) || !!c.querySelector(sel))).map((c) => c.tagName + "." + (c.className || ""));
+    expect(apParts.length >= 3 && !apUnnamed.length && apKept.length >= 3,
+      "pitch: every part a full pitch draws in the panel is one the narrow-screen rule names " + JSON.stringify([apParts.length, apUnnamed, apKept]));
     btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();

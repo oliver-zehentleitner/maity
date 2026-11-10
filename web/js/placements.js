@@ -383,18 +383,25 @@ window.Maity = window.Maity || {};
           p.logs_hint ? command({ name: M.t("placements.logs"), region: M.t("placements.logs.region"), copy: M.t("placements.logs.copy") }, p.logs_hint) : null) : null)));
     }
 
+    // One read at a time; an event that comes while one runs asks for one more after it, since that
+    // read may have fetched the list before the change (web roll-up 3, after #1533's startup fix).
     let reading = null;
+    let again = false;
     async function reread() {
-      if (reading) return reading;
+      if (reading) { again = true; return reading; }
       reading = (async () => {
         try {
-          items = (await M.api.getAll(ctx.base + "/placements")).items;
-          await credentialsFor(items);
+          do {
+            again = false;
+            items = (await M.api.getAll(ctx.base + "/placements")).items;
+            await credentialsFor(items);
+          } while (again);
           if (!busy.size) draw();
         } catch (err) {
           status.fail(M.t("placements.read_failed"), err);
         } finally {
           reading = null;
+          again = false;
         }
       })();
       return reading;

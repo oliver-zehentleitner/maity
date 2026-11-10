@@ -194,9 +194,14 @@ window.Maity = window.Maity || {};
     };
     let seenCounts = chatCounts();
     const CHATTY = new Set(["chat", "mention"]);
+    // A group chat read along as an agent's owner brings no chat item and no count (§9.3, `unread`
+    // null for an observer): while one is open, the counts read every NOTICE_MS still nudges, as it did
+    // before the counts decided (web roll-up 3, gb8w's post-merge P3 on #1527).
+    const readAlong = () => !!open && list.groups().some((g) => g.id === open.id && g.access === "observer");
     const nudge = (items) => {
       const now = chatCounts();
-      if (now === seenCounts && !(items || []).some((x) => x && CHATTY.has(x.kind))) return;
+      const countsRead = items === undefined;
+      if (now === seenCounts && !(countsRead && readAlong()) && !(items || []).some((x) => x && CHATTY.has(x.kind))) return;
       seenCounts = now;
       window.clearTimeout(settle);
       settle = window.setTimeout(() => run(false), SETTLE_MS);

@@ -287,6 +287,10 @@ window.Maity = window.Maity || {};
   function fromWall(text) {
     const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(text || ""));
     if (!m) return null;
+    // A date that does not exist (the 31st of November, the 30th of February) or an hour past 23 is
+    // unreadable, not rolled over into the next day or month (web roll-up 3).
+    const day0 = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    if (day0.getUTCMonth() !== +m[2] - 1 || day0.getUTCDate() !== +m[3] || +m[4] > 23 || +m[5] > 59) return null;
     const wanted = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
     const offset = (t) => { const w = wall(new Date(t)); return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second) - t; };
     // The zone's offsets a day before and after cover both sides of any clock change.
