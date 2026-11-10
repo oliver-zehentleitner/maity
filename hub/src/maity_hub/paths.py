@@ -51,9 +51,9 @@ def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
 # no view since the Team view moved to `team`, and stays reserved (the maintainer, 2026-11-10).
 PROJECT_VIEWS = frozenset(
     {
-        "agents", "board", "chat", "contract", "inbox", "jour-fixe", "members", "memory",
-        "message", "messages", "organisation", "overview", "runners", "settings", "tasks",
-        "team", "ticker", "why",
+        "agents", "board", "chat", "contract", "events", "inbox", "jour-fixe", "members",
+        "memory", "message", "messages", "organisation", "overview", "runners", "settings",
+        "tasks", "team", "ticker", "why",
     }
 )  # fmt: skip
 

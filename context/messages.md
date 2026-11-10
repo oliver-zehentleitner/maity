@@ -602,3 +602,86 @@ member up.
   `review_result` are read by the maintainer too, so the lead ruled
   that the rule covers everything a human reads, with the addresses the
   hub reads left out (2026-11-02, seq 39831).
+
+## One event is read by its seq under the event list's rule, and a hidden one answers as a missing one
+
+**Id:** 90a7c56b-199c-496f-87da-a06dbe0c7a69
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's ask that "seq N" in text link to that message, 2026-11-04, card tsk-6g2h8dag2fkg (the route, its visibility and the not-found rule are the card's); contract `docs/api.md` §8.9, 2026-11-10; the maintainer's acceptance that §8.9 states openly that time is not closed, request req-r6hmhaszf4e6 (option o1), 2026-11-10, and that the residual covers a hidden event's kind class and an agent in a group chat's audience, request req-3gfnkas6bv8b (option o1), 2026-11-10; the alternatives and the reasons below are the implementer's
+**Revisit when:** the readable set of `GET /events` changes shape (a new exception in §8.2 has to be checked here too), links to events in another project or in a cross-project chat are wanted, the maintainer withdraws req-r6hmhaszf4e6 or req-3gfnkas6bv8b and wants the time channel closed, or a later participant's links to a group chat's earlier messages should open them
+
+`GET /projects/{owner}/{slug}/events/{seq}` answers one event, with
+exactly the readable set of `GET /events` and the shape it serves, plus
+the `conversation_id` the hub recorded at write time, given only to a
+caller who reads that conversation now, so a client can open the event
+where it lives. Whoever may not read it gets the `not_found` of a `seq`
+nobody has, the same bytes; only the response time may differ, which the
+contract states. The dashboard links `seq 68216` and `seq-68216` by
+shape (a lone one in a code span too, as a lone id) to its page
+`/<owner>/<slug>/events/<seq>`, which reads the route only when opened.
+
+**Reason:** a link has to open the event without the client scanning the
+log, and the event list's one read rule (§8.2) is the only one every
+exception is already written into; a second rule would drift from it.
+The card requires that the route not reveal whether an event exists, so
+every difference between a hidden and a missing event is named in §8.9
+and all but one are closed there (status, details, body length,
+parsing, project, redaction, headers, side effects, limits). Time is
+not: a found row costs the process its checks, and a row of certain
+shapes makes the read rule read further rows before it decides (an
+`event_redacted`'s subject, a jour fixe round or series, a ticker
+decision's request, a watcher list, the restricted-access set, whether a
+group chat is a jour fixe round's thread, the agents its event names),
+so a caller may tell by response time that this project has an event at
+that `seq` it may not read, roughly its kind class (which check the row needed), and for a
+group chat's event whether its audience names an agent; never its
+author or content. §8.9 says so plainly rather than claim a closure it
+does not have; that this is narrower than the card's wording the
+maintainer accepted (req-r6hmhaszf4e6), the kind class and the agent
+in a group chat's audience included (req-3gfnkas6bv8b).
+Who gets `conversation_id` is who may open the conversation, not who
+reads the event: the admin of a blind redaction reads its
+`event_redacted` in a closed group chat without reading the chat
+(§8.5), and the field must not name a chat to them. Two group-chat
+consequences of keeping the event list's one rule are accepted: a
+participant added later reads earlier messages in the chat's history
+but gets `not_found` here for those the event list does not serve it
+(the history's rule is §9.2's, not the event list's; a rejoining former
+participant still reads its earlier stay's, the owner of an agent a
+message names reads that one along except in the thread of an owner
+round whose `circle_owner` it is not, §20.5), and a former participant
+reads the events it was there for but, unless it reads along as the
+owner of an agent participant, no longer the chat, so it gets them
+with `conversation_id: null` and opens them outside the chat. A link
+is an ordinary `href` to a dashboard path, as an id's is, so it opens
+in a new tab, copies and reloads.
+
+**Rejected alternatives:**
+- `GET /events?after=<seq − 1>&limit=1` from the client: for an agent's
+  session it acknowledges `after` and moves its cursor (§8.3), and it
+  returns the next readable event, so a hidden one would show its
+  successor instead.
+- An instance-wide `GET /events/{seq}` that finds the project itself:
+  the text a link stands in always belongs to one project, every project
+  route answers `not_found` for another project's event (§1.3), and
+  looking across the caller's memberships would be a read rule of its
+  own.
+- `403 forbidden` for a hidden event: it tells that the event exists,
+  which the card rules out.
+- Closing the time channel by making a missing row walk the same reads
+  as a found one: a second path that copies every lookup of the read
+  rule and must follow each new exception of §8.2, and still not
+  constant time, since a lookup that finds a row costs more than one that
+  finds none. A fixed minimum time under every answer would delay every
+  link opened. The maintainer chose to state the limit instead
+  (req-r6hmhaszf4e6); both reopen only if that is withdrawn.
+- `conversation_id` to every reader of the event: it would name a
+  closed chat to the admin of a blind redaction (§8.5).
+- A link with no `href` that reads the route on click: it could not be
+  opened in a new tab, copied or reloaded, unlike every id link.
+- Looking every `seq` up while the text is shown, to link only those
+  that resolve: a read per number per text, rejected for ids already
+  (`web/context/rendering.md`, "Ids in text are linked by their shape
+  alone").
