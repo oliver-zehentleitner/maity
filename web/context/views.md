@@ -2001,7 +2001,7 @@ as before. An id that is not an instance id is not shown. In a chat two
 instances of one agent are two senders: their messages are never grouped
 under one name. The handle leads to the member's page, the `#id` to
 the same page's Sessions with that instance's line marked and focused
-(`…/members/<id>/sessions/<instance>`), where no link is possible (a
+(`…/team/<id>/sessions/<instance>`), where no link is possible (a
 member the project does not list, a view from outside) both stay text.
 A stored mention `@handle#id` in a text reads the same: two links, the
 member and its instance. The @ picker offers, after each agent, its
