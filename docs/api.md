@@ -12610,8 +12610,7 @@ Scope `project:read`, cookie sessions included: the callers of
 `GET /events` (§8.3), with the same `Maity-For` rule (§2.3). It answers
 one event, the one with that `seq`, so that a text which says "seq
 68216" can open what it names (the dashboard's rule is below) without
-scanning the log. Not built yet (tsk-6g2h8dag2fkg); the hub follows in
-its own pull request.
+scanning the log.
 
 **Who sees what.** Exactly the readable set of `GET /events` with
 `wait=0` (§8.2, "Readable"), judged at the read, and nothing besides:
