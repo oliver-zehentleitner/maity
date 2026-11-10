@@ -877,30 +877,30 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* Team (the members view) and Agents in the refreshed look (design refresh step 6): the table
    as a panel, quiet head cells, rows with room and a hover ground, Chat and Manage as pills, the
    runner cards as cards. Styling only: the selectors the checks use stay as they are. */
-:is(.view-members, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
-:is(.view-members, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
+:is(.view-team, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
+:is(.view-team, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-card); box-shadow: var(--shadow); }
-:is(.view-members, .view-agents) .members th, :is(.view-members, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
-:is(.view-members, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+:is(.view-team, .view-agents) .members th, :is(.view-team, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
+:is(.view-team, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--muted); padding-block: var(--s2); }
-:is(.view-members, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
+:is(.view-team, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
 /* A light hover ground, so the warn text in a row keeps AA on it (4.6:1 light, 6.2:1 dark). */
-:is(.view-members, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
-:is(.view-members, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
-:is(.view-members, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
+:is(.view-team, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
+:is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
   border: 1px solid var(--field); background: transparent; padding: 4px 12px; }
 /* The open Manage row (members: .member-manage, Agents: .agent-manage) on the same light ground as the hover. */
-:is(.view-members, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
-:is(.view-members, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
+:is(.view-team, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
 .view-agents .profile { border-radius: var(--r-card); }
 /* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
 .placement button:not(:disabled):not(.primary) { border-color: var(--field); }
 @media (max-width: 600px) {
-  .view-members .table-wrap { background: none; border: 0; box-shadow: none; }
-  :is(.view-members, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
-  :is(.view-members, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
-  :is(.view-members, .view-agents) .members tr.member:hover > * { background: none; }
-  :is(.view-members, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
+  .view-team .table-wrap { background: none; border: 0; box-shadow: none; }
+  :is(.view-team, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
+  :is(.view-team, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
+  :is(.view-team, .view-agents) .members tr.member:hover > * { background: none; }
+  :is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
 }
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
