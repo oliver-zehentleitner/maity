@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -407,17 +408,39 @@ def test_a_remote_branch_whose_name_only_ends_in_the_branch_is_not_the_branch(
     assert any("does not exist" in p for p in gitfacts.mismatches(facts))
 
 
+def _recording(
+    calls: list[tuple[str, ...]], real: Callable[..., str | None]
+) -> Callable[..., str | None]:
+    """`real` (gitfacts' `_git` or `_git_required`), noting each call's arguments in `calls`."""
+
+    def record(cwd: Path, *args: str) -> str | None:
+        calls.append(args)
+        return real(cwd, *args)
+
+    return record
+
+
 @posix
-def test_the_upstream_is_checked_before_the_retrack_asks_the_remote(clone: Path) -> None:
+@pytest.mark.parametrize("set_head", [True, False], ids=["origin-HEAD", "ls-remote"])
+def test_the_upstream_is_checked_before_the_retrack_asks_the_remote(
+    clone: Path, monkeypatch: pytest.MonkeyPatch, set_head: bool
+) -> None:
     """A second URL naming a helper: `ls-remote` would use the first, valid one and the retrack
-    would go through; the check refuses before any question to the remote, nothing is set."""
-    _track_main(clone, set_head=True)
+    would go through; the check refuses before any question to the remote, nothing is set.
+    Every git call is recorded: a refusal raised only after an `ls-remote` (the default branch's
+    without origin/HEAD, the own branch's with it) fails here, not only one that never comes."""
+    _track_main(clone, set_head=set_head)
     marker = clone.parent / "ran"
     helper = "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS)
     git(clone, "config", "--add", "remote.origin.url", helper)
     before = git(clone, "config", "--list", "--local")
+    calls: list[tuple[str, ...]] = []
+    for name in ("_git", "_git_required"):
+        monkeypatch.setattr(gitfacts, name, _recording(calls, getattr(gitfacts, name)))
     with pytest.raises(gitfacts.FactsError, match="upstream"):
         gitfacts.track_own_branch(clone)
+    assert ("config", "--get-all", "remote.origin.url") in calls  # the recorder saw the check
+    assert not [c for c in calls if c[0] in ("ls-remote", "fetch", "remote")], calls
     assert git(clone, "config", "--list", "--local") == before
     assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
     assert not marker.exists()
