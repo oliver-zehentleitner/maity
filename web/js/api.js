@@ -1559,23 +1559,48 @@ window.Maity = window.Maity || {};
   // those from account records record "acr-<n>"; a position is "a.b".
   // §18.1 since 2026-10-26: only what the human must react to.
   const KINDS = ["inbox", "chat", "mention", "security"];
+  // The kinds an item may have (§18.1): the counted ones and `invitation`, which counts in
+  // `inbox` as the open request it is and has no count of its own (§18.2).
+  const ITEM_KINDS = KINDS.concat(["invitation"]);
   function notificationCounts() {
     const counts = {};
     KINDS.forEach((k) => { counts[k] = 0; });
     const byProject = {};
     const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security").map((k) => ({ [k]: 0 }))));
     me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.full_name).inbox += n; });
+    // Every open personal request addressed to the human (§7, §18.2), member of its project or
+    // not, counts once in inbox and on its project's entry, member false when one is no member
+    // of it: the fixtures hold them in personal-requests.json, and /me never carries them. It
+    // counts while it is open, whether its item is read or not, since it falls when it is
+    // answered or withdrawn; the consent request of an invitation by handle is one of them
+    // (`invitation`). An item of a project one is no member of whose request the fixtures do
+    // not hold counts while it is unread. The projects' own requests come from /me (`openFor`).
+    const memberOf = (fullName) => me().projects.some((p) => p.full_name === fullName);
+    const personalCounted = new Set();
+    const personal = (fullName) => {
+      counts.inbox += 1;
+      if (!fullName) return;
+      of(fullName).inbox += 1;
+      if (!memberOf(fullName)) of(fullName).member = false;
+    };
+    personalRequests().forEach((r) => {
+      if (r.status !== "open" || (/^human:/.test(r.to || "") && r.to !== "human:" + me().member.id)) return;
+      personalCounted.add(r.id);
+      personal(r.project && r.project.full_name);
+    });
     fixtures()["notifications.json"].items.forEach((x) => {
       // A pending registration or a disabled address counts until the matter
       // is closed, read or not (§18.2).
       if (x.kind === "inbox" && x.open_matter) { counts.inbox += 1; return; }
-      if (x.read) return;
-      // A personal request of a project one is no member of (§7): counted
-      // in inbox, on an entry with member false; the rest come from /me.
-      if (x.kind === "inbox") {
-        if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false; }
+      if (x.kind === "inbox" || x.kind === "invitation") {
+        const id = x.target && x.target.type === "request" ? x.target.id : null;
+        if (id && personalRequests().some((r) => r.id === id)) return;
+        if (x.read || !x.project || x.project.member !== false || (id && personalCounted.has(id))) return;
+        if (id) personalCounted.add(id);
+        personal(x.project.full_name);
         return;
       }
+      if (x.read) return;
       counts[x.kind] += 1;
       if (x.project && x.kind !== "security") of(x.project.full_name)[x.kind] += 1;
     });
@@ -1857,6 +1882,7 @@ window.Maity = window.Maity || {};
       const ttl = body.ttl_seconds === undefined ? 86400 : body.ttl_seconds;
       if (!(ttl >= 60 && ttl <= 604800)) fields.ttl_seconds = "out_of_range";
       if (body.address !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address))) fields.address = "invalid";
+      if (body.handle !== undefined && body.address !== undefined) fields.handle = "with_address";
       if (body.note !== undefined && utf8Bytes(String(body.note)) > 1024) fields.note = "too_long";
       // §3.4 `via`: the join host's link by default where one is configured, else the public one.
       const joinUrl = fixtures()["auth-session.json"].join_url || null;
@@ -1865,12 +1891,28 @@ window.Maity = window.Maity || {};
       else if (via === "join" && !joinUrl) fields.via = "no_join_host";
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const list = invitationsOf(m[1]);
+      // §3.4 by handle: a person's handle or live alias (fixtures/people.json); an organisation's
+      // is not_a_person, any other name unknown; a member, or one an open invitation names, too.
+      let person = null;
+      if (body.handle !== undefined) {
+        const name = String(body.handle);
+        const refuse = (why) => fail(400, "invalid", "the request does not validate", path, { fields: { handle: why } });
+        if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(name)) refuse("format");
+        person = ((fixtures()["people.json"] || { items: [] }).items).find((x) => x.kind === "human" && (x.handle === name || (x.aliases || []).includes(name)))
+          || (me().member.handle === name ? me().member : null); // the caller is a person too, as GET /people says
+        if (!person) refuse(orgsData().items.some((o) => o.handle === name || (o.aliases || []).includes(name)) ? "not_a_person" : "unknown");
+        if (((fixtures()[m[1] + "/members.json"] || { items: [] }).items).some((x) => x.kind === "human" && x.handle === person.handle)) refuse("member");
+        if (list.some((x) => x.handle === person.handle && !x.used_at && !x.revoked_at && !x.voided_at && !x.declined_at && Date.parse(x.expires_at) > Date.now())) refuse("invited");
+      }
       const token = "fx" + String(list.length + 1).padStart(20, "0");
       const at = nowIso();
-      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null, note: body.note || null,
+      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null,
+        handle: person ? person.handle : null, note: body.note || null,
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
-        used_at: null, used_by: null, revoked_at: null, voided_at: null, via };
+        used_at: null, used_by: null, revoked_at: null, voided_at: null, declined_at: null, via };
       list.push(made);
+      // An invitation by handle has no link: the person answers the request in their inbox.
+      if (person) return Object.assign({}, made, { invitee: { handle: person.handle, display_name: person.display_name } });
       return Object.assign({}, made, { url: via === "join" ? joinUrl.replace(/\/+$/, "") + "/i/" + token
         : window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
     }],
@@ -2074,7 +2116,7 @@ window.Maity = window.Maity || {};
       const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
       (kinds || []).forEach((k) => {
-        if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
+        if (!ITEM_KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       });
       const projects = query.get("project") ? query.get("project").split(",") : null;
       const view = (x) => {
@@ -2117,8 +2159,8 @@ window.Maity = window.Maity || {};
       if ("include_security" in body && ("ids" in body || typeof body.include_security !== "boolean")) {
         fail(400, "invalid", "the request does not validate", path, { fields: { include_security: "invalid" } });
       }
-      // A kind outside the four, one removed earlier included, is unknown (§18.3).
-      if ("kind" in body && !KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
+      // A kind outside the five, one removed earlier included, is unknown (§18.3).
+      if ("kind" in body && !ITEM_KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       // up_to reaches a security item only with include_security; each one
       // only from a session allowed to, the rest named in `skipped`. Reading
       // one confirms nothing (§18.3).

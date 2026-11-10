@@ -6432,17 +6432,17 @@ window.MAITY_FIXTURES = {
       {
         "actor": {
           "avatar_url": null,
-          "display_name": "LV Agent",
-          "member_id": "agt-l1"
+          "display_name": "Agent Q",
+          "member_id": "agt-q"
         },
         "at": "2026-10-22T12:55:00Z",
         "id": "ntf-acr-6",
         "kind": "inbox",
         "project": {
-          "full_name": "lv/lasteverlm",
+          "full_name": "ada/elsewhere",
           "member": false,
-          "name": "lasteverLM",
-          "slug": "lasteverlm"
+          "name": "Elsewhere",
+          "slug": "elsewhere"
         },
         "read": false,
         "record": "acr-6",
@@ -6451,7 +6451,7 @@ window.MAITY_FIXTURES = {
           "id": "req-p001",
           "type": "request"
         },
-        "title": "LV Agent asks you: May I take over tsk-77?",
+        "title": "Agent Q asks you: Agent Q proposes a change to its soul",
         "url": "https://maity.team/requests/req-p001"
       },
       {
@@ -6485,6 +6485,7 @@ window.MAITY_FIXTURES = {
         "kinds": {
           "chat": true,
           "inbox": true,
+          "invitation": true,
           "mention": true,
           "security": true
         }
@@ -6509,6 +6510,9 @@ window.MAITY_FIXTURES = {
           "inbox": {
             "mode": "immediate"
           },
+          "invitation": {
+            "mode": "immediate"
+          },
           "mention": {
             "content": false,
             "mode": "daily"
@@ -6529,7 +6533,8 @@ window.MAITY_FIXTURES = {
         "inbox",
         "chat",
         "mention",
-        "security"
+        "security",
+        "invitation"
       ],
       "mail_available": true,
       "not_listening": {

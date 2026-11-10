@@ -211,7 +211,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Every field that asks for a handle explains the word (tsk-srzrkf2parzt): a hint the input names
   // in its aria-describedby. Which kinds of field smoke saw, and any without the hint.
   const HANDLE_FIELDS = [["own", /^handle-[a-z0-9]{1,8}$/], ["agent-new", /^agent-new-handle$/], ["agent-edit", /^agent-handle-/],
-    ["join", /^join-handle$/], ["org-new", /^org-new-handle$/], ["org-invite", /^org-invite-handle$/], ["org-rename", /^org-handle$/]];
+    ["join", /^join-handle$/], ["org-new", /^org-new-handle$/], ["org-invite", /^org-invite-handle$/], ["org-rename", /^org-handle$/], ["invite", /^invite-handle$/]];
   const handleSeen = new Set(), handleBare = new Map();
   function checkHandleHints(at) {
     main.querySelectorAll("input").forEach((input) => {
@@ -314,11 +314,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
-  // The total also holds a personal request of a project the human is no member of (member: false), on no project's pill.
-  expect(chipCount("All projects") === "11" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 11 / 9 / 1");
-  expect(document.title.startsWith("(11) "), "the tab title starts with what asks for the human");
+  // The total also holds the open personal requests addressed to the human (§18.2): two of ada/elsewhere, which
+  // the human is no member of (a soul proposal and a preference proposal), and two reports with no project, on no
+  // project's pill.
+  expect(chipCount("All projects") === "14" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 14 / 9 / 1");
+  expect(document.title.startsWith("(14) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
-  expect(allChip.getAttribute("aria-label") === "9 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
+  expect(allChip.getAttribute("aria-label") === "12 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
   expect(main.querySelectorAll(".project-label").length === 12, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
@@ -344,14 +346,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
   expect(cur && text(cur).includes("Argon2id"), "Later moves to the next entry without answering");
-  expect(chipCount("All projects") === "11", "Later sends nothing, counts unchanged");
+  expect(chipCount("All projects") === "14", "Later sends nothing, counts unchanged");
   // Answers as the page sends them (§7): the text goes along with a reply or Talk, alone with Send.
   const ansCalls = [];
   const ansPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/answer")) ansCalls.push([p, b]); return ansPost(p, b); };
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ reply_id: "sha" }]), "answer: only a reply, no text key " + JSON.stringify(ansCalls));
-  expect(chipCount("All projects") === "10" && chipCount("Maity") === "8", "answer re-reads /me counts");
+  expect(chipCount("All projects") === "13" && chipCount("Maity") === "8", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   const sortLabels = main.querySelectorAll(".project-label").map((el) => el.textContent);
   expect(sortLabels[0].startsWith("Personal") && sortLabels.find((t) => !t.startsWith("Personal")).startsWith("Maity"), "sort by project: the personal requests first, then the projects");
@@ -11608,6 +11610,51 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ivBox().querySelector("form.invite-form").dispatch("submit"); await tick();
   expect(ivPosts.length === ivBefore && text(ivBox()).includes("the note is longer than 1 KiB"), "invite: a note over 1 KiB in bytes is said before sending");
   byId("invite-note").value = "";
+  // By handle (§3.4, tsk-8xsrzjv7f0yr): the handle first, the address beside it labelled as an email address.
+  const ivLabels = ivBox().querySelector("form.invite-form").querySelectorAll("label").map((l) => l.getAttribute("for"));
+  expect(ivLabels.indexOf("invite-handle") >= 0 && ivLabels.indexOf("invite-handle") + 1 === ivLabels.indexOf("invite-address")
+    && text(ivBox().querySelector('label[for="invite-handle"]')) === "Handle" && text(ivBox().querySelector('label[for="invite-address"]')) === "Email address"
+    && /^handle-explain-\d+$/.test(byId("invite-handle").getAttribute("aria-describedby") || "")
+    && text(byId(byId("invite-handle").getAttribute("aria-describedby"))) === win.Maity.t("handles.explain.person"),
+    "invite: the handle field comes first with the person's handle explained, the address after it as Email address " + JSON.stringify(ivLabels));
+  // A handle set: the address and the join host's link step back, since a handle excludes both.
+  byId("invite-address").value = "ben@example.org"; byId("invite-handle").value = "@wolf"; byId("invite-handle").dispatch("input");
+  expect(byId("invite-address").disabled && byId("invite-via-join").disabled, "invite: a handle disables the address and the link choice");
+  const ivByHandle = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const ivSent = ivBox().querySelector(".invite-issued");
+  expect(ivPosts[ivByHandle] && JSON.stringify(ivPosts[ivByHandle][1]) === JSON.stringify({ trust: "member", role: "coder", ttl_seconds: 86400, handle: "wolf" })
+    && text(ivSent).includes("Invitation sent") && text(ivSent).includes("Wolfgang (@wolfgang)") && !byId("invite-url")
+    && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("for @wolfgang") && !text(ivBox().querySelectorAll("li.invite-item")[0]).includes("via ")
+    && byId("invite-handle").value === "" && !byId("invite-address").disabled && !byId("invite-via-join").disabled,
+    "invite: by handle, without @, address or via; no link, the person named, the list shows @handle, the form free again " + JSON.stringify(ivPosts[ivByHandle]));
+  // Each refusal of the hub in words, the handle field focused for another try.
+  const ivRefusals = [];
+  for (const [name, said] of [["wolfgang", "An open invitation names this person already."], ["maintainer", "This person is a member already."],
+    ["oz-team", "This handle is an organisation's, not a person's."], ["nobody-here", "No person has this handle."], ["Not A Handle", "That is not a handle."]]) {
+    byId("invite-handle").value = name; byId("invite-handle").dispatch("input");
+    ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    if (!text(ivBox()).includes(said)) ivRefusals.push(name);
+  }
+  expect(!ivRefusals.length, "invite: the hub's refusals of a handle in words " + JSON.stringify(ivRefusals));
+  byId("invite-handle").value = ""; byId("invite-handle").dispatch("input");
+  expect(win.Maity.invite.stateOf({ declined_at: "2026-11-10T10:00:00Z", expires_at: "2099-01-01T00:00:00Z" }) === "declined",
+    "invite: an invitation by handle the person said no to is declined");
+  // Drawn in the list: declined, with the time it was declined, not its expiry.
+  {
+    const dcGetAll = win.Maity.api.getAll;
+    const dcRow = { id: "inv-dec1", project: "maintainer/maity", trust: "member", role: "coder", address: null, handle: "wolfgang", note: null,
+      created_by: "hum-maintainer", created_at: "2026-11-09T09:00:00Z", expires_at: "2099-01-01T00:00:00Z", used_at: null, used_by: null,
+      revoked_at: null, voided_at: null, declined_at: "2026-11-10T10:00:00Z", via: "public" };
+    win.Maity.api.getAll = (p) => dcGetAll(p).then((r) => (p.endsWith("/invitations") ? Object.assign({}, r, { items: [dcRow].concat(r.items) }) : r));
+    await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+    const dcLi = ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-dec1");
+    win.Maity.api.getAll = dcGetAll;
+    expect(dcLi && text(dcLi.querySelector(".invite-state")) === "declined" && text(dcLi).includes(win.Maity.dom.formatTime(dcRow.declined_at))
+      && !text(dcLi).includes(win.Maity.dom.formatTime(dcRow.expires_at)) && !btn(dcLi, "Revoke"),
+      "invite: a declined invitation is listed as declined, with the time it was declined, and no Revoke " + (dcLi ? text(dcLi) : "none"));
+    await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+  }
   btn(ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-0003"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
   expect(ivDels[0] === "/projects/maintainer/maity/invitations/inv-0003" && ivItems().includes("inv-0003:revoked") && text(ivBox()).includes("Revoked; the link no longer works."),
     "invite: an open invitation revoked, said so");
@@ -12223,8 +12270,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
     && byId("notify-kind-chat").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
   const ksKinds = () => main.querySelectorAll("input").filter((i) => (i.getAttribute("id") || "").startsWith("notify-kind-")).map((i) => i.getAttribute("id").slice(12));
-  expect(JSON.stringify(ksKinds()) === JSON.stringify(["inbox", "chat", "mention", "security"]),
-    "notifications: the switches are the four kinds a human reacts to " + JSON.stringify(ksKinds()));
+  expect(JSON.stringify(ksKinds()) === JSON.stringify(["inbox", "chat", "mention", "security", "invitation"]),
+    "notifications: the switches are the five kinds a human reacts to " + JSON.stringify(ksKinds()));
   // Settings stored before 2026-10-26 may still name removed kinds (§18.4): no switch for them; a kind the hub does not list, none either.
   const ksGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me/notification-settings"
@@ -12257,6 +12304,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? nGet(p).then((a) => Object.assign(a, { next_after: headNow })) : nPoll(p));
   polls.length = 0;
   fresh.push(Object.assign({}, { id: "ntf-5004", seq: 5004, kind: "chat", at: "2026-10-22T15:03:00Z", project: { slug: "maity", full_name: "maintainer/maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "x".repeat(300) }));
+  // The invitation kind has its own browser switch (§18.4, tsk-8xsrzjv7f0yr).
+  expect(byId("notify-kind-invitation") && byId("notify-kind-invitation").checked && text(main.querySelector('label[for="notify-kind-invitation"]')).includes("Invitations to a project"),
+    "notifications: the kind invitation has its browser switch");
   byId("notify-kind-inbox").checked = false; byId("notify-kind-inbox").dispatch("change"); for (let k = 0; k < 8; k++) await tick();
   expect(polls.length >= 1 && /after=4300\.7&wait=55/.test(polls[0]), "notifications: a restart reads from the hub's head of now, nothing replayed");
   expect(shownNotes.length === 1 && shownNotes[0][1].body === "Maity", "notifications: one notification per new item, who and where, never a message's text");
@@ -12472,7 +12522,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const mmForm = () => main.querySelector("form.mail-modes-form");
     const mmSubmit = async () => { mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
     const mmLast = () => maPatches[maPatches.length - 1][1];
-    expect(mmForm() && ["inbox", "chat", "mention", "security"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate"
+    expect(mmForm() && ["inbox", "chat", "mention", "security", "invitation"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate,immediate"
+      && text(main.querySelector('label[for="mail-mode-invitation"]')) === "Invitations to a project" && !byId("mail-content-invitation")
       && byId("mail-mode-chat").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "immediate,hourly,daily,weekly,off"
       && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && !byId("mail-timezone")
       && text(main.querySelector(".mail-timezone-link")).startsWith("No time zone is set, so the digests and quiet hours follow UTC.")
@@ -13699,6 +13750,67 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
+
+  // The mock counts an unread invitation as the open personal request it is (§18.2): in inbox, on an
+  // entry with member false for a project one is no member of, and the counts keep their five keys.
+  {
+    const icFixtures = win.MAITY_FIXTURES;
+    const icRead = async () => (await win.Maity.api.get("/me/notifications?limit=0"));
+    // Both reads from the fixtures as shipped, the mock loaded afresh: the steps above have read and answered items.
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    const icBase = await icRead();
+    const icF = JSON.parse(JSON.stringify(icFixtures));
+    icF["notifications.json"].items.push({ id: "ntf-4401", kind: "invitation", at: "2026-10-22T13:51:00Z",
+      project: { slug: "lab2", full_name: "olga/lab2", name: "Lab 2", member: false }, title: "Olga asks you: Join olga/lab2 as coder (member)",
+      target: { type: "request", id: "req-iv02" }, read: false, redacted: false });
+    // Its consent request, open and personal: the count follows the request, not the item's read flag.
+    icF["personal-requests.json"].items.push({ id: "req-iv02", class: "consent", title: "Join olga/lab2 as coder (member)",
+      summary: null, tried: null, options: [], replies: [{ id: "accept", label: "Accept" }, { id: "decline", label: "Decline" }],
+      priority: "normal", to: "human:" + icFixtures["me.json"].member.id,
+      asked_by: { member_id: "hum-olga", display_name: "Olga", trust: "admin", role: "owner", session_id: null },
+      on_behalf_of: null, task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null, report: null,
+      personal: true, status: "open", answer: null, created_at: "2026-10-22T13:51:00Z", answered_at: null,
+      project: { slug: "lab2", full_name: "olga/lab2", name: "Lab 2", state: "build" } });
+    // A personal request of a project the human is a member of, with its item: it counts once too, there,
+    // and the entry keeps member true (§18.2: "member of its project or not").
+    icF["notifications.json"].items.push({ id: "ntf-4402", kind: "inbox", at: "2026-10-22T13:52:00Z",
+      project: { slug: "maity", full_name: "maintainer/maity", name: "Maity", member: true }, title: "Agent A asks you: Keep the deploy notes",
+      target: { type: "request", id: "req-iv03" }, read: false, redacted: false });
+    icF["personal-requests.json"].items.push(Object.assign(JSON.parse(JSON.stringify(icF["personal-requests.json"].items.find((r) => r.id === "req-iv02"))),
+      { id: "req-iv03", title: "Keep the deploy notes", replies: [{ id: "go", label: "Go" }], while_open: "proceed_provisionally",
+        asked_by: { member_id: "agt-a", display_name: "Agent A", trust: "member", role: "coder", session_id: null },
+        project: { slug: "maity", full_name: "maintainer/maity", name: "Maity", state: "build" } }));
+    // An open personal request with no item counts as well: the count follows the requests, not the items.
+    icF["personal-requests.json"].items.push(Object.assign(JSON.parse(JSON.stringify(icF["personal-requests.json"].items.find((r) => r.id === "req-iv02"))),
+      { id: "req-iv04", title: "Join olga/lab3 as coder (member)", project: { slug: "lab3", full_name: "olga/lab3", name: "Lab 3", state: "build" } }));
+    win.MAITY_FIXTURES = icF;
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    const icWith = await icRead();
+    // Reading the invitation's notification leaves its request open, so both counts stay.
+    await win.Maity.api.post("/me/notifications/read", { ids: ["ntf-4401", "ntf-4402"] });
+    const icAfterRead = await icRead();
+    win.MAITY_FIXTURES = icFixtures;
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    const icLab = (icWith.by_project || {})["olga/lab2"];
+    const icMaity = (icWith.by_project || {})["maintainer/maity"], icMaityBase = (icBase.by_project || {})["maintainer/maity"];
+    expect(JSON.stringify(Object.keys(icWith.counts).sort()) === JSON.stringify(Object.keys(icBase.counts).sort())
+      && icWith.counts.inbox === icBase.counts.inbox + 3 && icWith.counts.total === icBase.counts.total + 3
+      && icLab && icLab.member === false && icLab.inbox === 1 && !("invitation" in icLab),
+      "notifications: the mock counts an unread invitation in inbox (with the member request and the one without an item below), on its project with member false, with the five keys "
+      + JSON.stringify([icBase.counts, icWith.counts, icLab]));
+    const icLabRead = (icAfterRead.by_project || {})["olga/lab2"];
+    expect(icAfterRead.counts.inbox === icWith.counts.inbox && icLabRead && icLabRead.member === false && icLabRead.inbox === 1,
+      "notifications: an invitation read while its request is open still counts, in inbox and on its project "
+      + JSON.stringify([icWith.counts, icAfterRead.counts, icLabRead]));
+    const icMaityRead = (icAfterRead.by_project || {})["maintainer/maity"];
+    expect(icMaity && icMaityBase && icMaity.member === true && icMaity.inbox === icMaityBase.inbox + 1
+      && icMaityRead && icMaityRead.member === true && icMaityRead.inbox === icMaity.inbox,
+      "notifications: a personal request of a project one is a member of counts once, there, read or not, and member stays true "
+      + JSON.stringify([icMaityBase, icMaity, icMaityRead]));
+    const icLab3 = (icWith.by_project || {})["olga/lab3"];
+    expect(icLab3 && icLab3.member === false && icLab3.inbox === 1,
+      "notifications: an open personal request without an item counts, in inbox and on its project " + JSON.stringify(icLab3));
+  }
 
   // An invitation by handle is its own kind (§18.1 `invitation`, tsk-8xsrzjv7f0yr): the bell lists it,
   // /notifications lists it and filters by it, and a browser notification shows it when its switch is on.

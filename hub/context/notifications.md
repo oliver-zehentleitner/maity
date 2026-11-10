@@ -1031,8 +1031,8 @@ possible kinds is stated here, next to the sources.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4; the web part in the same change: the lead's decision in the change's review (2026-11-10)
-**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-09
+**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4; the web part in the same change: the lead's decision in the change's review (2026-11-10); the settings page's rows: the card's web part (scope point 3)
+**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-10
 **Revisit when:** another personal request (an organisation's invitation) is to join the kind, or the kind defaults are decided again
 
 The consent request an invitation by handle files is an item of the kind `invitation`, not
@@ -1049,7 +1049,9 @@ for informing kinds against filled mailboxes; an invitation waits for an answer 
 The web learns the kind in the same change (the bell, the notifications page and its filter,
 the browser notifications): it drops an item of a kind it does not know, so a hub with the kind
 and a web without it would hide every invitation from the bell. Shipping the web part with the
-later Members change instead was rejected: it ties the two to one deploy.
+later Members change instead was rejected: it ties the two to one deploy. The settings page's
+rows for the kind, its browser switch and mail mode, came with that Members change; until it
+shipped, the kind's settings could be changed only through the API (§18.4).
 
 **Rejected alternatives:**
 - Leaving it under `inbox`: its mail could only be turned off with every other request's.

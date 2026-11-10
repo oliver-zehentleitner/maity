@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
-from maity_hub import avatars, catalog, clock, events, inbox, namespace
+from maity_hub import avatars, catalog, clock, events, inbox, invitations, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
@@ -676,7 +676,7 @@ def _personal_kind(request: Any) -> str:
     an invitation by handle files (§3.4), so that its bell, push and mail follow that kind's
     settings (§18.4); `inbox` for every other."""
     proposal = request.proposal if isinstance(request.proposal, dict) else {}
-    return "invitation" if proposal.get("kind") == "invitation" else "inbox"
+    return "invitation" if proposal.get("kind") == invitations.KIND else "inbox"
 
 
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:
