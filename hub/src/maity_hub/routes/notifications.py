@@ -145,12 +145,19 @@ async def list_notifications(
             found = _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
             return found, listing.stamp(conn, human_id)
 
-    def unchanged(seen: tuple[Any, ...]) -> bool:
-        """Whether nothing an answer reads moved since `seen`: a few aggregates, not
-        the derivation of every item."""
+    def unchanged(seen: tuple[Any, ...]) -> tuple[bool, tuple[Any, ...]]:
+        """Whether nothing an answer reads moved since `seen`, and the stamp to compare
+        with next: a few aggregates, not the derivation of every item. Heads moved only by
+        rows that make no item of the human (`listing.quietly_moved`) count as unchanged,
+        and the new stamp is the one seen from then on."""
         with engine_of(request).begin() as conn:
             _require_live(conn, session)
-            return listing.stamp(conn, human_id) == seen
+            now = listing.stamp(conn, human_id)
+            if now == seen:
+                return True, seen
+            if listing.quietly_moved(conn, human_id, seen, now):
+                return True, now
+            return False, seen
 
     def still_live() -> None:
         with engine_of(request).begin() as conn:
@@ -214,7 +221,8 @@ async def list_notifications(
             if _holding.get(session) is not token:
                 await run_in_threadpool(still_live)
                 return JSONResponse({**first, "superseded": True})
-            if await run_in_threadpool(unchanged, seen):
+            same, seen = await run_in_threadpool(unchanged, seen)
+            if same:
                 continue
             again, seen = await _limited(request, answer)
             if moved(again):

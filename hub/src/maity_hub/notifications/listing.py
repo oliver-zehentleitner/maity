@@ -10,14 +10,15 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
 from maity_hub import clock, conversation_list, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.auth import sessions
+from maity_hub.notifications import items as derived
 from maity_hub.notifications import records
-from maity_hub.notifications.items import EVENT_KINDS, Item, Scope
+from maity_hub.notifications.items import EVENT_KINDS, REQUEST_EVENTS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.routes.me import open_requests
 
@@ -150,6 +151,68 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
         tuple(reads),
         tuple(chats),
     )
+
+
+def quietly_moved(
+    conn: Connection, human_id: str, seen: tuple[Any, ...], now: tuple[Any, ...]
+) -> bool:
+    """Whether a stamp moved by nothing but rows that can make no item of the human: the same
+    memberships, account records and read marks, and in each project whose head moved only
+    rows past the seen head that `items.derive_page` would leave out in SQL. A held long-poll
+    then keeps holding with `now` as its stamp instead of deriving everything again (§18.2):
+    agents writing to each other move the heads all the time and are no item of the human's
+    (tsk-a5pxwgkgr73e).
+
+    The look is a superset of the derive's own rows, so it never skips a row that makes an
+    item: a request's event unless its request is personal or another member's alone
+    (`_may_concern`), a message only where its text may mention the human (`_names`) or its
+    audience names them in a chat (`_addressed`), every other kind that makes items. It reads
+    one bounded range per moved project, `(seen head, new head]`: within a project `seq`
+    follows commit order (`events.emit` inserts under `lock_project`), so no row below a
+    visible head is still to commit, the argument the held events wait rests on
+    (hub/context/events.md, 2263cf0a)."""
+    members, heads = now[0], now[1]
+    if members != seen[0] or now[2:] != seen[2:]:
+        return False
+    before = dict(seen[1])
+    if len(dict(heads)) != len(heads) or set(before) - {p for p, _ in heads}:
+        return False
+    member_of = {project_id: member_id for member_id, project_id in members}
+    ranges = []
+    for project_id, top in heads:
+        floor = before.get(project_id)
+        if floor == top:
+            continue
+        if project_id not in member_of:
+            return False
+        e = t.event.c
+        ranges.append(
+            and_(
+                e.project_id == project_id,
+                e.seq > (floor if floor is not None else 0),
+                e.seq <= top,
+                or_(
+                    e.kind.notin_(REQUEST_EVENTS), derived.may_concern_member(member_of[project_id])
+                ),
+            )
+        )
+    if not ranges:
+        return True
+    e = t.event.c
+    found = conn.execute(
+        select(e.seq)
+        .where(
+            or_(*ranges),
+            e.kind.in_(EVENT_KINDS),
+            or_(
+                e.kind != "message",
+                derived.names(human_id),
+                and_(e.conversation_id.is_not(None), derived.addressed(human_id)),
+            ),
+        )
+        .limit(1)
+    ).first()
+    return found is None
 
 
 def head(conn: Connection, where: Scope) -> Position:
