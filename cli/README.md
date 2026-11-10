@@ -308,7 +308,11 @@ Every request is signed as `docs/api.md` §2.2 specifies. The headers are
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
 and `PATCH`, except the resume, carries an `Idempotency-Key`. A
-`timestamp_skew` answer is corrected once from the hub's time. A redirect
+`timestamp_skew` answer is corrected once from the hub's time. A `GET`
+answered with `nonce_reused` is signed again with a new nonce and sent
+once more, within what is left of its timeout: the request usually reached
+the hub twice through something in between, and the hub refused the copy. A write
+is never sent again on it. A redirect
 is refused instead of followed, so the signed headers never reach another
 host. Plain HTTP is refused except to a hub on loopback. That holds even
 when the hub runs with `MAITY_ALLOW_PLAIN_HTTP`, and the CLI has no flag
