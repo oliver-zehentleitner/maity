@@ -256,7 +256,8 @@ def _answer(
     # A page needs `limit` items and to know whether one more follows, so every source is
     # derived only as far as the page reaches; the counts read their own few items.
     # `limit=0` lists nothing, and its cursor and position need no item (below), so it
-    # derives none: the dashboard asks for the counts alone on every page.
+    # derives no page; the counts and the pinned alerts below are derived as always. The
+    # dashboard asks for the counts alone on every page.
     found = (
         items.derive_page(
             conn, where, count=limit + 1, newest_first=since is None, wanted=wanted, since=since

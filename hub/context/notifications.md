@@ -474,7 +474,7 @@ page's size, which reads less for a quiet bell but takes more chunks, each with 
 the more read items lie in front, so it grows with the history the load test guards. The load
 test measures one project; a human in many projects is not measured yet.
 
-## The bell's scans pick in SQL the rows that can be an item of the human's; `limit=0` derives none
+## The bell's scans pick their candidate rows in SQL, leaving out the agents' traffic among themselves; `limit=0` derives no page
 
 **Id:** 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6
 **Type:** decision
@@ -492,7 +492,8 @@ about 6 statements per chunk of 200 rows, so the cost grew with the agents' traf
 also true for `limit=0`, the counts the dashboard reads on every page, whose page is empty.
 
 Now:
-- `limit=0` derives no item. Its cursor and position need none.
+- `limit=0` skips `derive_page`: its page is empty, and its cursor and position need no item. The counts
+  (`count_items`) and the pinned alerts are derived as before.
 - `_chats` reads only messages of a conversation whose audience text holds the human's
   `member:` token.
 - Request events are read only where the request may concern the member (`_may_concern`):
@@ -501,8 +502,10 @@ Now:
   - covered by someone;
   - or asked by the member.
 
-Both conditions are supersets of the exact test, which stays in `_classify`. A row they let
-through is classified as before, and a row they leave out could never have been an item.
+Both conditions only pick candidates: they are supersets of the exact test, which stays in
+`_classify`. They admit rows it rejects (a request to a role the member does not hold, a cover
+by someone else); those are classified and dropped as before. A row they leave out could never
+have been an item.
 
 **Reason:** the answer is unchanged, and the cost follows what concerns the human, not the
 project's traffic. Supersets keep one place deciding (`_classify`, `inbox.addressed_to`)
