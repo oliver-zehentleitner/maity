@@ -301,9 +301,9 @@ that of the mail settings and cannot be repaired by setting the variable again.
 **See:** kubernetes.md#mail-the-signing-key-and-the-smtp-password-come-from-secrets-by-reference-the-rest-are-plain-values — f1c9c8ad-96ad-408d-b536-fdf027c5fe35 — as of 2026-10-29
 **Revisit when:** the store moves to an object store (`s3`), or fourteen tars and dumps no longer fit comfortably on the node's disk (the volume holds more than a few GiB)
 
-`deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath` and
-an optional `quotaBytes`), mounts it into the hub and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every
-start. The quota stays at the hub's default of 1 GiB per project.
+`deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath`),
+mounts it into the hub and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every start. What one project may store is
+the admin limit `max_attachment_storage_per_project` (default 1 GiB, `context/attachments.md` 24123f11), not a chart value.
 
 The files are not in the database, so the nightly backup takes them along: an init container of the backup Job, running as the hub's user (10001), tars
 the volume into `maity-<time stamp>.attachments.tar` and hands the time stamp to the dump container, which writes `maity-<time stamp>.dump`, rotates
@@ -326,6 +326,10 @@ The restore extracts with `--strip-components=1`: the tar's first entry, `./`, i
 and not to the restoring user, so tar's attempt to set its time and mode failed with exit 2 after the files were back. A cut-off tar is found by
 listing it before the volume is emptied.
 
+Changed on 2026-11-04: the files are now encrypted, `maity-<time stamp>.dump.gpg` and `.attachments.tar.gpg`, and the restore streams the tar,
+decrypted and listed off the instance, into a Job that waits for it ("The k3s backups are encrypted with gpg", below). The `dump ok:` line keeps
+its shape, with the encrypted sizes first, so `helm-upgrade.sh` reads it as before.
+
 Changed on 2026-11-01: the migrate Job used to mount the claim too, only because it shares the hub's environment and `MAITY_ATTACHMENT_DIR` must name a
 writable directory. No migration reads the store. On a two-node cluster the Job landed on the other node than the running hub, the `ReadWriteOnce` claim
 gave a Multi-Attach error and the upgrade ran into its deadline, so the Job now has neither the variable nor the mount. A wrong directory is now found
@@ -345,6 +349,69 @@ when the hub starts, after the migration, not before it, and the hub is down unt
 - Making the backup claim bigger: local-path cannot expand a bound claim (the apply of the manifest would fail) and does not enforce the 5 GiB anyway;
   the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
+
+## The k3s backups are encrypted with gpg to a public key in a Secret, and the Job fails without it
+
+**Id:** f6cd5dc1-f718-4490-92fc-285f88085514
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04); the tool and the failure rule chosen by the team lead on the plan, 2026-11-04; `deploy/k3s-single/backup.yaml`, `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md
+**See:** kubernetes.md#attachments-on-the-k3s-setup-a-volume-the-chart-mounts-and-a-tar-in-the-same-backup-run — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-11-04
+**Revisit when:** the postgres image stops shipping gnupg, the backups move to an object store with its own encryption, or `age` ships in an image the setup already trusts
+
+Both containers of the backup Job pipe their output (`pg_dump -Fc`, the
+tar of the attachment volume) through `gpg --encrypt --recipient-file`
+under `umask 077`, so the night's files are `maity-<ts>.dump.gpg` and
+`maity-<ts>.attachments.tar.gpg`, mode 0600, and nothing unencrypted
+reaches the disk. The public key comes from the Secret
+`maity-backup-key` (`backup.pub`), mounted as optional. The init
+container checks it first: missing, a private key, or no public key
+ends the Job as failed with a `backup failed:` line, before anything
+is written. A restore decrypts where the private key is: the dump is
+decrypted to a file there and read whole with `pg_restore -f /dev/null`
+before it goes to `pg_restore --clean` over `kubectl exec` (a listing reads
+only the start and passes a cut-off dump), and the tar is checked to
+read without an error and to reach its end-of-archive block (`tar -tR`
+with GNU tar, its listing written to a file since `sh` has no
+`pipefail`; a plain listing passes a tar cut off between two files)
+and streamed with its SHA-256
+into a restore Job that waits for it. Both run as one block each that
+stops before the cluster when the decryption or the check of the file
+fails. The Job keeps the stream in a scratch volume and empties the
+attachment volume only when what arrived has that digest, so a wrong
+key, a backup cut off or a stream cut off on the way leaves the files
+in place. Backups written before encryption
+are left alone and counted in every night's log.
+
+**Reason:** a backup holds the verifiers of every agent credential, and
+it sits on the node next to the database and is copied elsewhere. With
+the private key off the cluster, neither the node's disk nor a copy
+can be read. gpg is already in the pinned `postgres:17.10` image, so no
+other image enters the backup path. A backup must never stop silently:
+a volume for a missing Secret would leave the pod waiting with no
+failed Job, so the volume is optional and the script refuses instead.
+`dd` counts the bytes before encryption, since an encrypted empty
+stream is not empty. The shell has no `pipefail`, so a failure before
+gpg leaves a mark the script checks.
+
+**Rejected alternatives:**
+- `age`: not in the postgres image, and there is no official image of
+  it. A second step would bring in a third-party image or an install
+  at run time.
+- A symmetric key or passphrase in a Secret: the key to read the
+  backups would then be on the node they protect against.
+- Deleting the old unencrypted backups automatically: it removes what
+  might be the only copy of a night. The operator deletes them after
+  copying them off.
+- A restore Job that reads the private key from a temporary Secret:
+  simpler to run, but it puts the private key on the cluster.
+- Checking only the tar's first header in the Job before emptying the
+  volume: a tar or stream cut off between two files still unpacks
+  without an error, so the volume ends up with part of the files.
+- Staging the stream in the attachment volume itself: the volume
+  would need room for its contents twice; the scratch volume uses the
+  node's disk once.
 
 ## The ingress lets a 10 MiB upload through: 11m for ingress-nginx, a buffered route of its own on Traefik
 
@@ -389,3 +456,70 @@ then waits at Traefik, and reaches the hub whole and at once.
   host-wide value.
 - **A 2m host-wide limit plus 11m for the upload path:** the same second
   object for limits the hub already enforces itself.
+
+## The general request limit is the ingress's: one per client address, off until every agent's `maity wait` retries a 429
+
+**Id:** a4438713-f4a6-47da-ae40-1d580e68126f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision on card tsk-h238y7cpk23m and the plan the team lead approved, 2026-11-04 (the decision and the values are confirmed); Traefik's source (v3.3, `rate_limiter.go`, oxy `connlimit`) for the 429 and its `Retry-After`; ingress-nginx's documentation for its 503 default and its count per controller replica; the count per Traefik router, the count per spelling of the host and the cap's place after the buffering were reproduced in review on a local Traefik v3.3.7, not on a cluster
+**Revisit when:** a CLI release whose `maity wait` retries a 429 is installed on every agent (then the limit can be on by default), the chart ships a Gateway API route, the k3s setup moves off Traefik or runs more than one Traefik, or the hub's attachment cap or memory limit changes
+**See:** kubernetes.md#the-ingress-lets-a-10-mib-upload-through-11m-for-ingress-nginx-a-buffered-route-of-its-own-on-traefik — 5eb8e035-d2f3-4eed-872b-7e21bd473792 — as of 2026-11-04
+
+The hub has no general request budget. Its own limits are per route,
+among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
+reads. The general limit
+sits at the ingress, one per client address for every request:
+- **Chart:** `ingress.requestLimit`, off by default, renders ingress-nginx's
+  `limit-rps`, `limit-burst-multiplier` (the burst divided by the rate,
+  rounded up) and `limit-connections`.
+- **k3s setup:** `deploy/k3s-single/request-limit.yaml` holds Traefik
+  middlewares for the same limit, with IPv6 counted per /64, plus two that
+  apply only on the upload route: 4 open uploads per address and 10 for the
+  whole host. The caps per address come before the buffering, so an upload
+  they refuse is never read. The cap for the host comes after it, so it counts
+  only the bodies on their way to the hub, and it counts on one spelling of
+  the host name, which a `headers` middleware sets. The lines that switch them on are comments in `hub-values.yaml` and
+  `uploads.yaml`.
+- **Values:** 50 requests a second, bursts of 200, 100 open at a time per
+  address.
+
+**Reason:** the ingress refuses a flood before the hub spends anything
+on it, and the controller already knows the client's address. The values
+are high because every agent on one machine shares that machine's address:
+a machine running a team's agents, each holding a 55-second long-poll and
+making bursts of calls, has to stay well under the limit, and the limit is
+there to stop floods. The upload gets caps of its own because the hub holds
+each upload, up to 10 MiB, in memory while it checks it: 100 open uploads
+would be about 1 GiB against the chart's 512 MiB memory limit, and 10 in all
+are 100 MiB. Off by default, because a `maity wait` from before the CLI
+release that retries a 429 ends with exit 1 on the first one, and an agent
+loop that stops on exit 1 stops listening; the chart's defaults go live with
+any chart update, so switching the limit on is the operator's step once
+every agent runs that release.
+
+The ingress-nginx annotations cannot set the status code: its controller
+ConfigMap does (`limit-req-status-code`, `limit-conn-status-code`, 503 by
+default), and the chart does not own the controller, so the README
+recommends 429. ingress-nginx counts each IPv6 address on its own, and the
+one Ingress cannot give the upload path limits of its own; the README names
+both, and that ingress-nginx counts in each controller replica. Traefik keeps
+a count per router: the upload route and the join host each count apart from
+the rest of the host, so one address may reach the values once on each.
+
+**Rejected alternatives:**
+- **The cap for the host before the buffering, like the caps per address:**
+  uploads whose bodies are still arriving would take the slots while the
+  hub holds none of them, and the cap would then count more than the memory
+  it is there for.
+- **Counting the host as the client sent it:** Traefik groups by the raw
+  `Host` header while the route's host match ignores case, so each spelling
+  would get 10 of its own.
+- **A general per-address budget in the hub:** every request would cost a
+  count, either a row in PostgreSQL shared across replicas or one count per
+  pod, and the hub would have read and parsed the request first. The ingress
+  refuses it earlier and for nothing.
+- **The limit on by default:** the first chart update would switch it on for
+  agents whose `maity wait` still ends on a 429.
+- **The host's 100 open requests for uploads too:** that is the 1 GiB above.

@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests with the oldest one's time (`oldest_open_at`) and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
 **Revisit when:** the ticker's merge items are added to `reports`, or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{owner}/{slug}`: name,
@@ -411,7 +411,7 @@ hands out instructions and a path, and the settings stay in
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
-**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: `hub/src/maity_hub/namespace.py` resolves an owner's handle to a human or an organisation (`resolve_owner`; a project stores which one in `owner_human_id` or `owner_org_id`), as the paragraph below and the organisation entry (33f520b9) say; addressing stays `<owner>/<slug>`
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: `hub/src/maity_hub/namespace.py` resolves an owner's handle to a human or an organisation (`resolve_owner`; a project stores which one in `owner_human_id` or `owner_org_id`, beside `owner_id`, the one id every reader uses and `resolve` compares), as the paragraph below and the organisation entry (33f520b9) say; addressing stays `<owner>/<slug>`
 **Revisit when:** the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6), or a third kind of namespace owner is added
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
@@ -544,8 +544,10 @@ placements, and any address. A card's notes were never public at first;
 since 2026-11-02 they are, on the card's own page in an open project
 (`hub/context/public-pages.md`, 9e1bb9f3). The
 owner's address `/<owner>` (the path-routing decision of 2026-10-29,
-e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
-public projects and their own agents with presence.
+e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: name, public
+projects and their own agents; the picture since 2026-11-05, while the
+person's `public_profile` is on (`members.md`, 294d6f7b). Presence is
+not on it (§16.9 shows none).
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where work is public by default and found by what it does; the
@@ -701,6 +703,57 @@ owner.
 - Only a personal value: a member cannot treat a busy project
   differently from a quiet one.
 
+## The dashboard's tabs belong to the browser; the account keeps only a start set, as project ids on `/me`
+
+**Id:** 6e21a45a-26a7-46a0-b7c4-f7213718225b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-06 (request req-6zp8zjwabmds, "a mix"), relayed on card tsk-p6aye59z0k7g; the field's place, chosen by the contract author as the card asked; contract `docs/api.md` §5.1 "Start tabs"
+**Revisit when:** a human wants their open tabs to follow them from device to device, or the tab row gets a second account-level setting (groups, pinned tabs)
+
+The project tabs in the dashboard's header can be reordered, closed and
+opened. Which tabs a browser has open and in which order, and the cross-project inbox's
+filter to open tabs, stay in that browser and are never sent, so two
+devices may differ. The account holds one thing: `start_tabs` on the
+human's `member` in `GET /me`, an ordered list of project ids that
+seeds a browser with no tabs of its own yet. `null` opens every
+membership, as before. A membership made later goes to the end of the
+list, so a project joined after the list was set still opens, as the
+last tab. The human sets it from a project's own settings (Mine) or
+saves the current tab row in one go, and `PATCH /me` always takes the
+whole list.
+
+**Reason:** the maintainer chose the mix: tabs per device, and a start
+set in the account so that a new sign-in on a new device does not begin
+empty. Three choices of form were the contract author's:
+- The set is one ordered list on `/me` because its order runs across
+  projects. The dashboard reads `/me` before it draws the header, so a
+  fresh browser has the set without a further request.
+- It names projects by their fixed id, not their full name, because a
+  rename or a transfer must not drop a project from the set. That is
+  what the id is for (§6.25).
+- The hub appends a new membership itself, because a browser cannot
+  tell a project joined since the set was saved from one the human
+  took out.
+
+A whole-list write means two tabs changing it at the same moment keep
+the later write. That is accepted for a setting changed by hand.
+
+**Rejected alternatives:**
+- A per-project switch in the membership's own settings
+  (`/projects/{owner}/{slug}/me/settings`, b880260a): the order across
+  projects would need a position on every membership, and a fresh
+  browser would read every project's settings before drawing the header.
+- The notification settings (`/me/notification-settings`): the set is
+  not about notifications.
+- Full names in the list: a rename or a transfer would silently drop the
+  project from it.
+- Only browser storage, as for the theme: a new device starts with every
+  project open, which the maintainer wants to avoid.
+- Open tabs kept in the account, the same on every device: the
+  maintainer wants devices to differ.
+
 ## A change of the hub's own rules text bumps every project's rules version once
 
 **Id:** bea10667-bbe1-4cf3-a93b-7eeabe50eb1c
@@ -786,9 +839,11 @@ A project sets `settings.role_rules`: per role (`coder`, `reviewer`,
 `tester`) a switch that adds the subagent line to that role's rules,
 and for reviewers and testers a checklist whose items become rule
 lines. A security team or a project role gets the lines of its base.
-Only a human with `project:admin` sets them. A change bumps
-`rules_version`, so a running agent reads the new lines at its next
-resume. The hub cannot see a subagent or a ticked item; these are
+Only a human with `project:admin` sets them. A change of the lines
+bumps `rules_version`, so a running agent reads the new lines at its
+next resume. A value that adds no line (`false`, an empty checklist) is
+stored as given and announced, but moves no version: the rules text is
+the same. The hub cannot see a subagent or a ticked item; these are
 rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
@@ -818,5 +873,10 @@ checklist they reach every reviewer through the rules they already read.
 - Dropping an unknown role or an empty item silently: a typo would
   leave a role without its rules and nobody told; the hub refuses
   instead.
+- Dropping a value that adds no line (`false`, `[]`) before storing it:
+  it is valid input, and a `GET` would not show back what was sent; the
+  hub filters nothing silently. Bumping the version for it, as the first
+  version did, had every running agent re-read unchanged rules
+  (`{}` → `false` → `[]` went from version 1 to 4; reviewer finding at #1279).
 - The hub enforcing either rule: it sees neither the subagent nor the
   checklist being worked through.

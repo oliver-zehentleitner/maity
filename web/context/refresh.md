@@ -127,6 +127,46 @@ included, as the bell did at first: one click on the alert would confirm
 the sign-in.
 
 
+## The restricted-access set's notice is a project's setting, read by a read mark, though its target says `settings`
+
+**Id:** aefe70f5-509b-47ea-9768-02623c68016a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 ("When the set changes without the setting": the notice links to the project's restricted-access setting), §18.1 and §19 (the notice goes to the humans in the set); the review of #1448 (2026-11-07), which found that such a member was led to a page without the setting; the hub's notification item for `restricted_changed` (`hub/src/maity_hub/notifications/items.py`, target `{type: "settings", id: "restricted_access"}`); card tsk-g8ts5vxhj1md, 2026-11-06
+**Revisit when:** the hub gives the set's notice a target type of its own, or another notice points at a project's setting
+
+The bell treats a target `{type: "settings"}` as one's own notification
+settings: it links to `/account/notifications` and never reads as read by
+opening or Mark all read, because the hub's `mail_disabled` notice there
+is an open matter. The restricted-access set's notice carries the same
+type with `id: "restricted_access"`, and is an ordinary notice about a
+project: the bell links it to that project's settings and lets a read mark
+read it, as any notice. `notify.js` tells the two apart by the id.
+
+The notice also reaches members in the set who may not change the setting
+(§19). The project's settings send such a member to `settings/mine`, and
+that page shows them the setting to read (`js/app.js`): its mode, that they
+are in the set, and the set and the count, which the hub serves to every
+member in the set (§6.1 "Reading the setting"). One link then works for both
+kinds of reader, and only a human with `project:admin` changes the setting.
+
+**Reason:** read as one's own settings, the set's notice would open the
+wrong page and stay unread for 30 days, since no matter of the human's
+closes it. The contract says what the notice links to, not which target
+type it carries, and the hub already ships that target.
+
+**Rejected alternatives:**
+- A target type of its own from the hub (for example `project_settings`):
+  cleaner, but a hub change for one notice whose meaning the id already
+  carries, and the dashboard would still need this rule until a deploy.
+- A link of its own for members who may not administer the project (a
+  route only for the read-only setting): a second address for the same
+  setting, and the bell would have to know the reader's rights. The
+  existing redirect to `settings/mine` already sends exactly those members
+  there.
+
+
 ## The bell pins the unread security alerts, and Mark all read takes them only after asking
 
 **Id:** 643600cd-dd61-4291-85d7-025e322f4c81
@@ -267,7 +307,12 @@ reads it within 5 seconds, once; the events from the cursor. Its chat
 lists catch up at the next 30-second round. Actions and events still
 re-read `/me` at once. `/chats`, which has no project feed, reads the
 notification counts (`/me/notifications?limit=0`, not `/me`) every 15
-seconds while it is shown: a reply in the open chat comes in by them.
+seconds while it is shown. Those counts bring a reply in the open chat
+at once only where they move: a message from someone else to a party or
+participant. A group chat read along as an agent's owner moves no count
+(§9.3), so while one is open, each counts read refreshes it anyway;
+one's own message from another tab moves none either and comes with the
+30-second round.
 
 **Reason:** the 15-second round in every open tab was a large share of
 the hub's load: each round with an unread sign-in alert also read the
@@ -289,3 +334,50 @@ between tabs, for the case of several tabs shown at once, which the
 visibility check does not cover. Re-reading the banner's sessions only
 when the count of unread alerts changes: the banner must go when its
 session ends elsewhere with the count unchanged, which only a read finds.
+
+## A page switch draws from the session, /me and project it kept, and reads them again behind the view
+
+**Id:** f71932e2-191d-492b-aef9-02a274a8855c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-hn2wa8a7e2eq (measured waterfalls of a page switch) and the owner's choice of what to build from that report, 2026-11-06
+**Revisit when:** the hub offers a session, /me and the project in one read, or the dashboard gains a shared request cache
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-06
+**See:** views.md#the-view-being-left-is-inert-until-the-next-one-is-drawn — 1d888f69-9233-40b4-b9f3-cd679825ef82 — as of 2026-11-06
+
+A change of the address inside the dashboard draws the next view from
+`/auth/session`, `/me` and, inside the same project, its project and
+members as the last drawing read them, for at most 60 seconds. The
+project's event head is read again every time, before the view's data.
+Behind the drawn view the same four reads are made again. A change in
+who is signed in, the second step, the memberships with their trust and
+role, a maintenance window or one's own limit draws the view again from
+what was read; a 401 of the session check draws the page afresh. Counts,
+members and the project only refresh what is kept for the next switch,
+and only the read behind the drawing that stands does, whether it
+answers or fails: an older one answering or failing first would leave
+the current one nothing to compare. A project entered from outside is
+kept as that drawing read it, so the next switch inside it waits for
+neither. Any
+write of the tab (a POST, PATCH, PUT or DELETE through `M.api`), a
+sign-out, an ended session, a refresh and a maintenance change drop what
+is kept. While the next view loads, the view being left is also
+`aria-busy` and dimmed, and a bar above it, in the page's top padding,
+shows the click was taken.
+
+**Reason:** every switch read the session, then /me, then the project's
+reads, then the view's data, one after another: four round trips before
+anything showed (694 ms for the board at 150 ms latency, more on prod).
+Keeping the first three leaves two. That the owner chose this is
+confirmed; the 60 seconds, the fields that draw again and dropping on
+writes are this implementation's reading of what must stay as fresh as
+before, not yet confirmed by review.
+
+**Rejected alternative:** reusing the previous view's event cursor as
+well, for one round trip: events between that cursor and the new view's
+read would be offered as a reload of what the view already shows.
+Redrawing on any difference in /me or the members: the counts and
+presence move all the time, so nearly every switch would be drawn twice.
+Keeping until the next read without a time limit: a membership changed
+by someone else would stand until something else read /me.

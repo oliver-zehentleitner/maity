@@ -98,6 +98,11 @@ the cluster.
 {{- if not .Values.config.trustedProxies -}}
 {{- fail "config.trustedProxies is required with the Ingress enabled: the ingress controller's pod network, so the hub believes its X-Forwarded-For and X-Forwarded-Proto" -}}
 {{- end -}}
+{{- with .Values.ingress.requestLimit -}}
+{{- if and .enabled (lt (int .burst) (int .perSecond)) -}}
+{{- fail "ingress.requestLimit.burst must be at least perSecond: ingress-nginx takes the burst as a multiple of the rate" -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Values.ingress.joinHost (eq .Values.ingress.joinHost .Values.ingress.host) -}}
 {{- fail "ingress.joinHost must be another host name than ingress.host" -}}
 {{- end -}}
@@ -274,11 +279,5 @@ and with `local` they are there for the copy, which runs before the store is swi
 {{- if $a.existingClaim }}
 - name: MAITY_ATTACHMENT_DIR
   value: {{ $a.mountPath | quote }}
-{{- end }}
-{{- if or $s3 $a.existingClaim }}
-{{- with $a.quotaBytes }}
-- name: MAITY_ATTACHMENT_QUOTA
-  value: {{ . | int64 | toString | quote }}
-{{- end }}
 {{- end }}
 {{- end }}

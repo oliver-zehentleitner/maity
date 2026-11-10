@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
 from maity_hub import attachment_store as blobs
-from maity_hub import attachments, avatars, clock, group_chats, idempotency, paging
+from maity_hub import attachments, avatars, clock, group_chats, idempotency, limits, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of, settings_of
@@ -198,12 +198,16 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
 
 
 def _check_room(conn: Connection, mine: Any, settings: Any, size: int | None) -> None:
-    """The project's quota and the membership's pending bounds (§8.7) for `size` more bytes;
-    with `size` None only the count of pending uploads."""
+    """The project's limit, the membership's pending bounds and the instance's storage
+    (§8.7, §16.5) for `size` more bytes; with `size` None only the count of pending uploads.
+    The instance's total is read under the project's lock only, not under one lock for the
+    instance: concurrent uploads into different projects may pass it by at most the sizes of
+    the other uploads in flight when the last of them to be accepted was checked (§8.7)."""
     if size is not None:
+        quota = limits.of(conn, settings, limits.PROJECT_STORAGE)
         used = attachments.used(conn, mine.project.id)
-        if used + size > settings.attachment_quota:
-            raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
+        if quota is not None and used + size > quota:
+            raise attachments.quota_error("project", used=used, quota=quota)
     count, held = attachments.pending_of(conn, mine.id)
     if count + 1 > attachments.PENDING_COUNT or held + (size or 0) > attachments.PENDING_BYTES:
         raise attachments.quota_error(
@@ -213,6 +217,10 @@ def _check_room(conn: Connection, mine: Any, settings: Any, size: int | None) ->
             count=count,
             max=attachments.PENDING_COUNT,
         )
+    if size is not None:
+        cap = limits.of(conn, settings, limits.STORAGE)
+        if cap is not None and attachments.used_total(conn) + size > cap:
+            raise attachments.quota_error("instance")
 
 
 def _discard_unless_committed(

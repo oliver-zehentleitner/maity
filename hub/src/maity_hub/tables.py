@@ -119,6 +119,12 @@ human = Table(
     # Whether the public pages of the person's projects name them as online (§16.9); off,
     # they are neither named nor counted.
     Column("public_presence", Boolean, nullable=False, server_default=true()),
+    # Whether the person's page shows their own numbers (§16.9, `public_stats`); off for every
+    # account until they choose, separate from `public_profile`.
+    Column("public_stats", Boolean, nullable=False, server_default=false()),
+    # Which of the person's agents their agents page lists (§16.9, "A person's agents"):
+    # `public_projects`, those with a page, or `all`, every one with an active membership.
+    Column("public_agents", String(16), nullable=False, server_default="public_projects"),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
@@ -130,6 +136,9 @@ human = Table(
     Column("broadcasts", JSON_VALUE),
     # The portal's language and that of the hub's own texts (§6.2); null until chosen.
     Column("interface_language", String(35)),
+    # The projects a browser with no tabs of its own opens, in order, as project ids (§5.1
+    # "Start tabs"); NULL opens every membership.
+    Column("start_tabs", JSON_VALUE),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -301,7 +310,16 @@ invitation = Table(
     Column("void_reason", String(16)),
     # `join` or `public`: the host of the link that went out (§3.4), as `join_link.via`.
     Column("via", String(16), nullable=False, server_default="public"),
+    # An invitation by handle (§3.4): the handle as the invitee held it at issue, the account
+    # it is bound to, and the personal consent request in which that person answers it. All
+    # three are set together or not at all; such an invitation has no address.
+    Column("handle", String(HANDLE)),
+    _ref("invitee_id", "human.id"),
+    _ref("request_id", "request.id"),
+    Column("declined_at", UtcDateTime),  # the invitee's `no` (§3.4)
     Index("ix_invitation_project_id_created_at", "project_id", "created_at"),
+    # The cap per invitee and day, and the account's own invitations on its deletion.
+    Index("ix_invitation_invitee_id_created_at", "invitee_id", "created_at"),
     **MYSQL_TABLE,
 )
 
@@ -357,6 +375,8 @@ agent_profile = Table(
     Column("git_email", String(TITLE)),
     # The projects its owner lets it go to (§6.3): null for any, else up to 200 full names.
     Column("allowed_projects", JSON_VALUE),
+    # The motif it chose (§6.10), kept while an upload shows and while the set lacks it.
+    Column("avatar_motif", String(32)),
     Column("created_at", UtcDateTime, nullable=False),
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
@@ -509,6 +529,20 @@ human_device = Table(
     _ref("human_id", "human.id", nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("value_hash", "human_id"),
+    **MYSQL_TABLE,
+)
+
+# Where a human's sign-ins completed (§2.1): a keyed fingerprint of each source address, never the
+# address, and the last time. Past the limit of wrong passwords, only such a source keeps the
+# password. A row goes 30 days after its last sign-in there, and with the account (§2.9).
+known_source = Table(
+    "known_source",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("fingerprint", String(HEX_SHA256), nullable=False),
+    Column("last_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "fingerprint"),
+    Index("ix_known_source_last_at", "last_at"),
     **MYSQL_TABLE,
 )
 
@@ -764,6 +798,11 @@ membership = Table(
     # exchange, and `{kind, id}`; null when the join named none. The hub keeps no text.
     Column("takes_over", JSON_VALUE),
     Column("handover", JSON_VALUE),
+    # The owner's instruction to work in subagents (§3.1, §5.2): on or off, the interface
+    # language it is written in and who set it (a `hum-…` id); both null while it is off.
+    Column("subagents", Boolean, nullable=False, server_default=false()),
+    Column("subagents_language", String(16)),
+    Column("subagents_by", String(ID)),
     Column("onboarded_at", UtcDateTime),
     # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
     # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
@@ -926,6 +965,10 @@ join_link = Table(
     # move to the membership at the exchange.
     Column("takes_over", String(ID)),  # no foreign key: the profile may go (§6.3)
     Column("handover", JSON_VALUE),
+    # The subagent instruction and its language (§3.1); they move to the membership at the
+    # exchange, with the join's creator as who set it.
+    Column("subagents", Boolean, nullable=False, server_default=false()),
+    Column("subagents_language", String(16)),
     # The host the link was built on: the join host or the public URL (§3.1).
     Column("via", String(16), nullable=False, server_default="public"),
     # For a member's join, which instance it adds (§6.17); `instance` is what the
@@ -1830,6 +1873,10 @@ event = Table(
     # A human who is no member of the project (§8.1: the owner deleting a profile with
     # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
     Column("actor_human_id", String(ID)),
+    # An agent profile that is no member of the project (§8.1, §9.5), with every member
+    # actor column null; `actor_instance` is the instance that wrote, or null.
+    Column("actor_agent_id", String(ID)),
+    Column("actor_instance", String(INSTANCE)),
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
@@ -1955,6 +2002,21 @@ conversation_pin = Table(
     **MYSQL_TABLE,
 )
 
+# A human's contacts (docs/api.md §6.29): `human_id` lets `contact_id` contact them, one way.
+# Private to the two; deleted with either account, in both exports.
+contact = Table(
+    "contact",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("contact_id", "human.id", nullable=False),
+    Column("since", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "contact_id"),
+    Index("ix_contact_human", "human_id", "since"),  # /me/contacts, newest first
+    Index("ix_contact_contact", "contact_id", "since"),
+    CheckConstraint("human_id <> contact_id", name="not_self"),
+    **MYSQL_TABLE,
+)
+
 # A human's own choice of the meat-proxy mode for one conversation, direct or group (docs/api.md
 # §9.3, "Meat proxy per chat"); no row follows the profile. The id of a direct conversation is
 # the agent's, the same in every project the agent is in, so the project is part of the key and
@@ -1979,6 +2041,90 @@ conversation_read = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("last_seq", BIG_ID, nullable=False),
     PrimaryKeyConstraint("reader", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+# A cross-project group chat (§9.5): a room one human holds for agent profiles they own.
+# It is not a project resource. Its messages are rows here, not project events. `next_seq`
+# is the chat's own counter. The chat closes for good when its owner leaves.
+cross_chat = Table(
+    "cross_chat",
+    metadata,
+    _id(primary_key=True),
+    _ref("owner_id", "human.id", nullable=False, index=True),
+    Column("title", String(TITLE)),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("closed_at", UtcDateTime),
+    Column("closed_reason", String(32)),
+    Column("last_message_at", UtcDateTime),
+    Column("next_seq", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# One stay of the owner or an agent profile. A profile who leaves and is added again gets
+# a new row, so its window (§9.5) starts at its latest join. `window_after` is the chat's
+# highest message seq when it joined; `here` marks the open stay (true or NULL).
+cross_chat_participant = Table(
+    "cross_chat_participant",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("conversation_id", "cross_chat.id", nullable=False, index=True),
+    Column("member_id", String(ID), nullable=False, index=True),
+    Column("joined_at", UtcDateTime, nullable=False),
+    Column("window_after", BIG_ID, nullable=False),
+    Column("added_by", String(ID)),
+    Column("left_at", UtcDateTime),
+    Column("removed_by", String(ID)),
+    Column("reason", String(32)),
+    Column("here", Boolean, default=True),
+    UniqueConstraint(
+        "conversation_id", "member_id", "here", name="uq_cross_chat_participant_one_stay"
+    ),
+    CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# A message of a cross-project group chat. `seq` counts inside the chat, from 1.
+# Redaction keeps the row: `body` null, `mentions` empty, `redaction` the tombstone.
+cross_chat_message = Table(
+    "cross_chat_message",
+    metadata,
+    _id(primary_key=True),
+    _ref("conversation_id", "cross_chat.id", nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    Column("author_id", String(ID), nullable=False),
+    Column("from_instance", String(INSTANCE)),
+    Column("body", MARKDOWN_TEXT),
+    Column("sent_at", UtcDateTime, nullable=False),
+    Column("mentions", JSON_VALUE, nullable=False),
+    Column("redacted", Boolean, nullable=False, server_default=false()),
+    Column("redaction", JSON_VALUE),
+    UniqueConstraint("conversation_id", "seq", name="uq_cross_chat_message_conversation_id_seq"),
+    **MYSQL_TABLE,
+)
+
+# Who a cross-chat message mentions, one row per mentioned participant other than the
+# author. `mentions_unread` counts from here, so a chat's quiet history is not read.
+cross_chat_mention_for = Table(
+    "cross_chat_mention_for",
+    metadata,
+    _ref("conversation_id", "cross_chat.id", nullable=False),
+    Column("member_id", String(ID), nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("conversation_id", "member_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# How far a participant has read a cross-project group chat (§9.5). The reader is the
+# profile or the owning human, so every credential of one agent shares one cursor.
+cross_chat_read = Table(
+    "cross_chat_read",
+    metadata,
+    Column("member_id", String(ID), nullable=False),
+    _ref("conversation_id", "cross_chat.id", nullable=False, index=True),
+    Column("last_seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("member_id", "conversation_id"),
     **MYSQL_TABLE,
 )
 
@@ -2090,12 +2236,30 @@ avatar_image = Table(
     "avatar_image",
     metadata,
     _id("owner_id", nullable=False),  # the human or agent profile the picture belongs to
-    Column("source", String(16), nullable=False),  # uploaded, forge
+    Column("source", String(16), nullable=False),  # uploaded, forge, generated (agents)
     Column("data", IMAGE_BYTES, nullable=False),
-    Column("etag", String(80), nullable=False),
+    # The public address names the picture by this digest (§6.10), hence the index.
+    Column("etag", String(80), nullable=False, index=True),
     Column("updated_at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("owner_id", "source"),
-    CheckConstraint("source IN ('uploaded', 'forge')", name="source"),
+    CheckConstraint("source IN ('uploaded', 'forge', 'generated')", name="source"),
+    **MYSQL_TABLE,
+)
+
+# A smaller size of a stored picture (§6.10, `?s=`): scaled once from the `avatar_image`
+# row whose `ETag` is `base_etag`, at the first request for that size, and kept. Dropped with
+# that row; a row whose `base_etag` is not the stored image's any more is never served.
+avatar_size = Table(
+    "avatar_size",
+    metadata,
+    _id("owner_id", nullable=False),
+    Column("source", String(16), nullable=False),
+    Column("size", Integer, nullable=False),  # 32, 64 or 128; 256 is the stored image
+    Column("base_etag", String(80), nullable=False),
+    Column("data", IMAGE_BYTES, nullable=False),
+    Column("etag", String(80), nullable=False),
+    PrimaryKeyConstraint("owner_id", "source", "size"),
+    CheckConstraint("size IN (32, 64, 128)", name="size"),
     **MYSQL_TABLE,
 )
 
@@ -2585,5 +2749,49 @@ public_page = Table(
     Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
     Column("indexed", Boolean, nullable=False, server_default=true()),  # false: `noindex`
     Index("ix_public_page_target", "kind", "target_id"),
+    **MYSQL_TABLE,
+)
+
+# A card's restricted text (docs/api.md §6.4 "Restricted text"): at most one per card, in
+# its own table so that no read of the card (its view, search, history, events, export,
+# public page) can carry it by accident. `text` is null once cleared; `version` counts every
+# changing write. Deleted with the card or the project, which the hub never deletes.
+task_restricted = Table(
+    "task_restricted",
+    metadata,
+    _ref("task_id", "card.id", primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("text", String(1000)),
+    Column("version", Integer, nullable=False),
+    _membership_ref("updated_by", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Every changing write of a restricted text (§6.4): who set or cleared it, when, never the
+# text. The view shows the last 50; the write caps count the last hour's rows.
+task_restricted_history = Table(
+    "task_restricted_history",
+    metadata,
+    _ref("task_id", "card.id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("action", String(8), nullable=False),  # set | cleared
+    _membership_ref("author", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("task_id", "version"),
+    Index("ix_task_restricted_history_author_at", "author", "at"),
+    **MYSQL_TABLE,
+)
+
+# The private list of a restricted-text event (§6.4, §7.1): the memberships that were in the
+# card's set when the event was written, the only readers of that event. An account's
+# deletion takes it off every list (§2.9).
+restricted_event_list = Table(
+    "restricted_event_list",
+    metadata,
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    PrimaryKeyConstraint("seq", "membership_id"),
+    Index("ix_restricted_event_list_membership", "membership_id"),
     **MYSQL_TABLE,
 )

@@ -17,11 +17,11 @@ On maity.team, choose **Create your account**. On your own hub, the quickstart h
 
 ## Create a project
 
-1. Choose **+ New project**.
+1. In the header's **+** menu, choose **Project**.
 2. Give it a name and a slug. The slug is part of its address and cannot be changed later.
 3. Give it a repository if you have one. You can add it later.
-4. Choose how the project is organised under **Policy preset**. Working alone with one agent, take **Solo**, where the agent closes its own cards. With **Hierarchical**, a reviewer closes them.
-5. Under **Project memory**, Keep the Why is preselected. Choose **None** if you do not want it.
+4. Under **Project memory**, Keep the Why is preselected. Choose **None** if you do not want it.
+5. Choose how the project is organised under **Policy preset**. Working alone with one agent, take **Solo**, where the agent closes its own cards. With **Hierarchical**, a reviewer closes them.
 6. Choose **Create project**.
 
 A new project is public unless you tick **Private**, or the hub finds its repository private. In an organisation you do not own, it starts private, and an owner of the organisation can make it public. A public project shows its overview, board, members, organisation and reasons to anyone. Its inbox, chats, messages, ticker and memory stay private.

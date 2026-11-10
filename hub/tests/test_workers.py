@@ -319,7 +319,8 @@ def test_several_replicas_are_refused_with_a_local_attachment_directory(tmp_path
     assert "local attachment directory" in (serving.refusal(local) or "")
     assert serving.refusal(replace(local, replicas=1)) is None
     assert serving.refusal(replace(local, attachment_dir=None)) is None  # attachments off
-    assert serving.refusal(replace(local, attachment_store="s3")) is None
+    s3 = _settings(MAITY_ATTACHMENT_STORE="s3", MAITY_ATTACHMENT_S3_BUCKET="maity-files")
+    assert serving.refusal(replace(s3, attachment_dir=tmp_path, replicas=2)) is None
 
 
 def test_the_connection_budget_counts_every_pod_and_process() -> None:

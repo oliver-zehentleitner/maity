@@ -149,6 +149,8 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
         target = member_row(conn, mine.project.id, principal)
     except ApiError:
         raise invalid({"to": "not_a_member"}) from None
+    if target.role == "expert":  # an expert takes no cards (§2.3 "The expert")
+        raise invalid({"to": "expert"})
     if named is None and target.agent_id is not None and target.distribution == "round_robin":
         chosen = instances.round_robin(conn, target)
         if chosen is not None:
@@ -259,6 +261,23 @@ def transfer(
     values: dict[str, Any] = {"status": "transferred", "outcome": outcome, "closed_at": now}
     if override is not None:
         values["override"] = override
+    # The receiver's role is read under the project lock, which a role change to expert
+    # takes too (`members._check_no_cards_for_expert`); `settle` and the routes hold it
+    # already, a decision through the requests answer may not.
+    lock_project(conn, row.project_id)
+    receiver_role = conn.execute(
+        select(t.membership.c.role).where(t.membership.c.id == row.to_member)
+    ).scalar()
+    if receiver_role == "expert":
+        # An expert takes no cards (§2.3 "The expert"): the takeover ends without a move,
+        # as when the card left `from` some other way (below).
+        conn.execute(
+            update(t.takeover)
+            .where(t.takeover.c.id == row.id, t.takeover.c.status.in_(OPEN))
+            .values(status="cancelled", outcome={**outcome, "how": "cancelled"}, closed_at=now)
+        )
+        _closed(conn, load(conn, row.id), actor)
+        return False
     closed = conn.execute(
         update(t.takeover)
         .where(t.takeover.c.id == row.id, t.takeover.c.status.in_(OPEN))

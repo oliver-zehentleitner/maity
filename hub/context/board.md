@@ -279,3 +279,157 @@ able to close a card.
 **Rejected alternatives:** for the downgrade, `admin` loosens nothing, but only admins could close a card then; it was
 named in review, and leaving the team unable to close weighs more for a downgrade that is an emergency step. The others are
 unknown: they were the first reading, not chosen against others.
+
+## The restricted-text routes check access before the body and before an idempotent replay
+
+**Id:** 7ff16130-3082-4fd9-b8f6-87a83cb4db5b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part A), on the check order of docs/api.md §6.4 and the coordinator's go on the plan
+**See:** https://github.com/oliver-zehentleitner/maity — b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9 — as of 2026-11-05
+**Revisit when:** the contract lets a caller outside the set learn anything about a card's restricted text, or idempotency replays move into the middleware
+
+`GET`, `PUT` and `DELETE` on `…/tasks/{id}/restricted` resolve the
+card, refuse a bridged call, check that the caller is in the set and,
+for a human, that the session is in good standing, before they read the
+body. The body is parsed by hand after those checks, not by a pydantic
+model on the route, so a caller outside the set gets the same
+`restricted` answer for any body and whether or not a text exists. On
+`PUT` and `DELETE` the access check runs in its own transaction before
+`idempotency.run`, so a stored answer is replayed only to a caller who
+is still in the set; a key used before leaving the set replays nothing.
+Inside the write the project lock comes first and the access check runs
+again under it, so a set or membership change committed before the lock
+is seen and a caller it removed writes nothing.
+
+**Reason:** the text is the one value on a card some members must not
+learn; a validation error, a `404` against a `200`, or a replayed
+answer that carries the text would each tell an outsider something
+about it.
+
+**Rejected alternatives:**
+- A pydantic body model on the route: FastAPI validates it before the
+  handler runs, so an outsider would see `invalid` details first.
+- Leaving the check to the handler inside `idempotency.run`: a replay
+  answers before the handler runs and would hand the stored text to a
+  member who has since left the set.
+- Admitting before the project lock and writing under it: a removal
+  committed between the two still wrote (review of #1401, 2026-11-05).
+
+## The restricted-text write caps count the text's own history rows
+
+**Id:** b316fc8a-66b3-4fcd-b718-6a596864ee4f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part A), on the caps of docs/api.md §6.4 (20 writes an hour per membership, 10 sets an hour per card)
+**See:** https://github.com/oliver-zehentleitner/maity — b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9 — as of 2026-11-05
+**Revisit when:** the history is trimmed to fewer than an hour of writes, or the hub gets a general rate limiter the caps can use
+
+Every set and every clear writes a row to `task_restricted_history`
+(author, action, time) in the same transaction as the text. The caps
+count those rows of the last hour — set and cleared per membership, set
+only per card — and `Retry-After` is the time until the oldest counted
+row leaves the hour. No separate counter is kept.
+
+**Reason:** the history is already written for every change and has an
+index on author and time; counting it keeps the cap exact across
+replicas and restarts and in the same transaction as the write, with no
+second table to keep in step.
+
+**Rejected alternatives:**
+- An in-memory limiter: wrong as soon as two replicas serve the hub, and
+  reset by every restart.
+- A counter table per membership and card: a second write per change
+  that says nothing the history does not.
+
+## A restricted-text event is read through a hidden token checked before the see-all
+
+**Id:** 28c7398c-c12e-48fd-b809-22dc2cc59ff6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part B), on the read rule of docs/api.md §6.4 "The change event" and the coordinator's split of the hub work
+**See:** https://github.com/oliver-zehentleitner/maity — b5b1218b-e4e1-422e-86cb-ef5d41c9a4d9 — as of 2026-11-05
+**Revisit when:** another kind of event needs a private list read against a live condition, or the see-all of owners and admins changes
+
+`restricted_changed` stores its private list in `restricted_event_list`
+and names only `restricted:<task id>` (or `restricted:set`) as its
+audience. `events.hidden_redactions` computes, once per batch, the seqs
+of such events the reader is on the list for while it is in the set as
+it resolves at that read, and `readable_by` answers for this kind from
+that token alone, before the actor rule and before the see-all branch.
+The wake rule has its own branch: a card's change wakes as a `member:`
+token would, never the writer's own membership, and a change of the set
+wakes nobody; the list goes into the team-wake choice like a watcher
+list, and the served `wakes` keep only the reader's own entry.
+
+**Reason:** the contract decides who reads the event again at every read
+(list intersected with the set) and leaves out the see-all and the
+actor once out of the set; a check at write time alone, or any path
+through the general audience rules, would keep showing a member who left
+the set that a text exists and who changes it.
+
+**Rejected alternatives:**
+- Reusing `event_watcher` and the `watching:` token: its readers keep
+  reading after a change of the set, and owners and admins read it
+  through the see-all.
+- An audience of member tokens written at write time: the general rules
+  would then let every listed member read it for good.
+
+## The restricted-text notices are account records written once, read only while the event is
+
+**Id:** 472bd04b-a492-485e-b3fb-85c39d2b1c69
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part B), on the notices of docs/api.md §6.4 and §18.1 (at most one per card and human, and per human and project for the set, in 10 minutes)
+**See:** board.md — 28c7398c-c12e-48fd-b809-22dc2cc59ff6 — as of 2026-11-05
+**Revisit when:** the bell derives its items from stored marks instead of reading them, or the 10-minute gap goes
+
+When a change writes `restricted_changed`, the hub writes one account
+record `restricted_changed` `{project_id, task_id, seq}` (`task_id`
+null for the set) for each human on the event's list but the writer, or
+but the members a set event names, unless that human already has one for
+the same card (or project, for the set) from the last 10 minutes. The
+bell lists such a record as an `inbox` notice, read by a read mark like
+`moderation_applied` and counted in no `inbox` count, only while the
+human reads the event it names now: on its list and in the set.
+
+**Reason:** "at most one is made" is a decision about the moment of the
+change; made at write time it holds for the bell, the mail and the push
+alike, whatever page or chunk a later read covers. The read check keeps
+the contract's rule that the notice drops out when the human leaves the
+set.
+
+**Rejected alternatives:**
+- Deriving the notice from the events at read, skipping those within 10
+  minutes of an earlier one: the bell reads events in chunks and pages, so
+  which change counts as the first would depend on the page read.
+- A notified flag on the event's private list: a migration for a fact the
+  account records already hold, and still a read check on top.
+
+## A set event's `by` is the member or human whose call let the members in
+
+**Id:** 6d6730fb-914e-468a-853b-623fa6bb448a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-05 (card tsk-g8ts5vxhj1md, hub part B), on `by` of docs/api.md §6.4 "When the set changes without the setting", which names it for an organisation's owner and the owner change only
+**See:** board.md — 28c7398c-c12e-48fd-b809-22dc2cc59ff6 — as of 2026-11-05
+**Revisit when:** the contract names `by` for a join or an invitation
+
+For the ways the contract does not spell out, `by` is whoever made the
+call that let the members in: the human who created an agent's join, the
+human who accepts an invitation, the member who raises a guest, lifts an
+isolation or changes the setting. Each is `{kind, id, handle}`, as a
+history entry names its author; `"hub"` only for the owner change.
+
+**Reason:** the set is told so that it knows who reads with it and whose
+decision that was; for a join that is the member who issued it, not the
+agent that used it.
+
+**Rejected alternatives:** the event's actor everywhere (for an agent's
+join that is the agent itself, which decided nothing); alternatives beyond
+that are unknown.

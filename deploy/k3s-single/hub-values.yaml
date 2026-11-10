@@ -33,6 +33,9 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-send-timeout: null
     nginx.ingress.kubernetes.io/proxy-buffering: null
     nginx.ingress.kubernetes.io/proxy-body-size: null  # uploads.yaml bounds the upload instead
+    # The request limit (request-limit.yaml), off until every agent's `maity`
+    # retries a 429 in `maity wait`:
+    # traefik.ingress.kubernetes.io/router.middlewares: maity-request-rate@kubernetescrd,maity-request-inflight@kubernetescrd
   tls:
     enabled: true
     secretName: maity-tls                # filled by cert.yaml's Certificate

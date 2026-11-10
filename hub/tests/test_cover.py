@@ -142,6 +142,86 @@ def test_a_substitute_takes_the_work_and_gives_back_what_it_did_not_touch(
     assert sub.get("/projects/maintainer/maity/requests?to=me").json()["items"] == []
 
 
+def wait_on(who: Any, card_id: str, to: str) -> dict[str, Any]:
+    body = {"class": "decision", "title": "May I?", "to": to, "task_id": card_id}
+    response = who.post("/projects/maintainer/maity/requests", {**body, "while_open": "wait"})
+    assert response.status_code == 201, response.text
+    created: dict[str, Any] = response.json()
+    return created
+
+
+def blocked(owner: flow.Human, card_id: str) -> tuple[str, str | None]:
+    card = card_of(owner, card_id)
+    return card["status"], card["blocked_by_request"]
+
+
+def test_a_wait_the_substitute_filed_before_the_cover_keeps_no_block(
+    owner: flow.Human, make_client: ClientFactory, now: list[datetime]
+) -> None:
+    """The cover's move is a change of holder: `claim.since` becomes the move, so a wait the
+    substitute filed before it, which blocked nothing, holds no later block (§6.12, §7)."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    held = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{held['id']}/claim", {})
+    now[0] += timedelta(seconds=1)
+    early = wait_on(sub, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("in_progress", None)  # not the holder: no block
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    now[0] += timedelta(seconds=1)
+    limit(covered, now[0] + timedelta(hours=2))
+    moved = card_of(owner, held["id"])
+    assert moved["claim"]["holder"] == sub.id and moved["claim"]["since"] == z(now[0])
+    now[0] += timedelta(seconds=1)
+    later = wait_on(sub, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("blocked", later["id"])
+    answered = owner.post(
+        f"/projects/maintainer/maity/requests/{later['id']}/answer", {"text": "yes"}
+    )
+    assert answered.status_code == 200, answered.text
+    assert blocked(owner, held["id"]) == ("in_progress", None)
+    assert owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()["status"] == (
+        "open"
+    )
+
+
+def test_a_wait_the_member_filed_during_its_cover_keeps_no_block_after_the_return(
+    owner: flow.Human, make_client: ClientFactory, now: list[datetime]
+) -> None:
+    """The return is a change of holder too: a wait the covered member filed while the
+    substitute held the card holds no block once the card is back (§6.12, §7)."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    held = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{held['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    now[0] += timedelta(seconds=1)
+    limit(covered, now[0] + timedelta(hours=2))
+    assert card_of(owner, held["id"])["claim"]["holder"] == sub.id
+    now[0] += timedelta(seconds=1)
+    early = wait_on(covered, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("in_progress", None)  # not the holder: no block
+    now[0] += timedelta(minutes=30)
+    covered.resume()  # back: the untouched claim returns
+    back = card_of(owner, held["id"])
+    assert back["claim"]["holder"] == covered.id and back["claim"]["since"] == z(now[0])
+    now[0] += timedelta(seconds=1)
+    later = wait_on(covered, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("blocked", later["id"])
+    answered = owner.post(
+        f"/projects/maintainer/maity/requests/{later['id']}/answer", {"text": "yes"}
+    )
+    assert answered.status_code == 200, answered.text
+    assert blocked(owner, held["id"]) == ("in_progress", None)
+    assert owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()["status"] == (
+        "open"
+    )
+
+
 def test_a_substitute_answers_on_the_covered_members_behalf(
     owner: flow.Human, make_client: ClientFactory, now: list[datetime]
 ) -> None:
@@ -450,13 +530,13 @@ def test_a_substitute_who_could_not_answer_a_proposals_kind_is_skipped(
 # --- the rights of a substitute, on trust and role (§6.12, §2.3) ------------------------------
 
 
-def test_an_entry_that_became_a_guest_or_a_proxy_does_not_cover(
+def test_an_entry_that_became_a_guest_a_proxy_or_an_expert_does_not_cover(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:
     """The policy was valid when it was set; the walk checks every entry as it is now."""
     covered = flow.agent(make_client, owner)
-    guest, proxy, sub = (flow.agent(make_client, owner) for _ in range(3))
-    for agent in (covered, guest, proxy, sub):
+    guest, proxy, expert, sub = (flow.agent(make_client, owner) for _ in range(4))
+    for agent in (covered, guest, proxy, expert, sub):
         agent.resume()
     card = task(owner)
     owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": covered.id})
@@ -464,13 +544,14 @@ def test_an_entry_that_became_a_guest_or_a_proxy_does_not_cover(
         owner,
         covered.id,
         on_unavailable="substitute",
-        substitutes=[guest.id, proxy.id, sub.id],
+        substitutes=[guest.id, proxy.id, expert.id, sub.id],
         grace_minutes=0,
     )
     with migrated.begin() as conn:
         for agent, values in (
             (guest, {"trust": "guest"}),
             (proxy, {"role": "proxy", "role_base": "proxy"}),
+            (expert, {"role": "expert", "role_base": "expert"}),  # takes no cards (§2.3)
         ):
             conn.execute(
                 update(t.membership).where(t.membership.c.agent_id == agent.id).values(**values)
@@ -716,3 +797,95 @@ def test_a_security_team_covers_for_the_role_it_is_built_on(
             )
             order = [m.agent_id for m in cover.cover_order(conn, project, row)]
         assert order == sorted(expected, key=lambda agent_id: handles[agent_id])
+
+
+def test_a_covered_member_becomes_an_expert_only_after_its_cards_are_settled(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert": a cover's end would give the cards back to the member, so the
+    role change waits until no substitute holds a card for it."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    [started] = events(migrated, "cover_started")
+    assert started.payload["tasks"] == [card["id"]]
+    changed = owner.patch(f"/projects/maintainer/maity/members/{covered.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+
+
+def test_the_substitute_of_a_running_cover_does_not_become_an_expert(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert", §6.12: while a cover runs, area routing hands the covered
+    member's new cards to its substitute, so the substitute's role change waits until the
+    cover ends."""
+    covered = flow.agent(make_client, owner, areas=["hub/"])
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=1))
+    assert events(migrated, "cover_started")
+    changed = owner.patch(f"/projects/maintainer/maity/members/{sub.id}", {"role": "expert"})
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+    covered.resume()  # back: the cover ends
+    changed = owner.patch(f"/projects/maintainer/maity/members/{sub.id}", {"role": "expert"})
+    assert changed.status_code == 200, changed.text
+    assert task(owner, area="hub/")["assigned_to"] == covered.id
+
+
+def test_area_routing_sends_no_card_to_a_substitute_that_became_an_expert(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert", §6.12: `cover.routed` checks the substitute's role when it routes;
+    written past the API here, as the role change itself waits for the cover to end. The
+    card goes to the covered member, as without cover."""
+    covered = flow.agent(make_client, owner, areas=["hub/"])
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=1))
+    assert events(migrated, "cover_started")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == sub.id)
+            .values(role="expert", role_base="expert")
+        )
+    routed = task(owner, area="hub/")
+    assert routed["assigned_to"] == covered.id
+    assert routed["cover"] is None
+
+
+def test_a_covered_claim_does_not_go_back_to_a_member_that_became_an_expert(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The expert": the return checks the member's role when it writes; written past
+    the API here, as the role change itself waits for the cover to end."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == covered.id)
+            .values(role="expert", role_base="expert")
+        )
+    now[0] += timedelta(minutes=30)
+    covered.resume()
+    [ended] = events(migrated, "cover_ended")
+    assert ended.payload["kept"] == [card["id"]] and ended.payload["returned"] == []
+    assert card_of(owner, card["id"])["claim"]["holder"] == sub.id

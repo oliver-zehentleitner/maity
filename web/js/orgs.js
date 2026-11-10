@@ -57,8 +57,9 @@ window.Maity = window.Maity || {};
 
   // The list and the form for a new one.
   async function listPage(ctx, root) {
-    const heading = h("h2", { id: "orgs-heading", tabindex: "-1" }, M.t("orgs.title"));
-    append(root, heading, h("p", { class: "hint" }, M.t("orgs.intro")));
+    // A tab of the account (js/account.js): its heading and tab row first.
+    const heading = h("h3", { id: "orgs-heading", tabindex: "-1" }, M.t("orgs.title"));
+    append(root, M.accountTabs.head(ctx, "orgs"), heading, h("p", { class: "hint" }, M.t("orgs.intro")));
     const { items } = await M.api.get("/orgs");
     append(root, items.length
       ? h("ul", { class: "org-list" }, items.map((o) => h("li", { class: "org-item" },
@@ -90,7 +91,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("h3", null, M.t("orgs.new.title")),
-    h("label", { for: "org-new-handle" }, M.t("orgs.handle")), handle,
+    h("label", { for: "org-new-handle" }, M.t("orgs.handle")), handle, M.handles.explain("org", handle),
     h("p", { class: "hint" }, M.t("orgs.new.hint")),
     h("label", { for: "org-new-name" }, M.t("orgs.name")), name,
     go, status.el);
@@ -112,6 +113,13 @@ window.Maity = window.Maity || {};
         ROLES.filter((r) => mine === "owner" || r !== "owner").map((r) => h("option", { value: r }, M.trust.trustWord(r))));
       pick.value = m.role;
       pick.addEventListener("change", async () => {
+        // An owner holds trust owner in every project of the organisation (§6.26), which
+        // can bring them into a restricted-access set: said before (§6.1 "Every way into the set").
+        if (pick.value === "owner" && m.role !== "owner" && M.restricted
+          && !window.confirm(M.restricted.aheadOrg("@" + org.handle, "@" + m.handle) + "\n\n" + M.t("orgs.member.ahead_confirm"))) {
+          pick.value = m.role;
+          return;
+        }
         pick.disabled = true;
         status.busy(M.t("orgs.member.changing"));
         try {
@@ -170,7 +178,7 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    h("label", { for: "org-invite-handle" }, M.t("orgs.handle")), handle,
+    h("label", { for: "org-invite-handle" }, M.t("orgs.handle")), handle, M.handles.explain("person", handle),
     h("label", { for: "org-invite-role" }, M.t("orgs.role")), role, go, status.el);
     const rows = invitations.map((x) => {
       const line = M.statusLine();
@@ -240,7 +248,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: "org-name" }, M.t("orgs.name")), name,
-    h("label", { for: "org-handle" }, M.t("orgs.handle")), handle,
+    h("label", { for: "org-handle" }, M.t("orgs.handle")), handle, M.handles.explain("org", handle),
     h("p", { class: "hint" }, held ? M.t("orgs.settings.held") : M.t("orgs.settings.rename_hint")),
     h("p", { class: "check" }, create, h("label", { for: "org-members-create" }, " " + M.t("orgs.settings.members_create"))),
     h("p", { class: "check" }, page, h("label", { for: "org-public-page" }, " " + M.t("orgs.settings.public_page"))),

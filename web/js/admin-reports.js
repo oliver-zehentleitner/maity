@@ -62,7 +62,7 @@ window.Maity = window.Maity || {};
       body ? h("pre", { class: "report-body" }, body) : null];
   }
 
-  // `openId0`: a report to open at once, from /admin/reports/<id> (a report_open notification).
+  // `openId0`: a report to open at once, from /admin/reports/<id> (the admin's report request, §16.8).
   async function section(ctx, root, openId0) {
     const status = M.statusLine();
     const list = h("div", { class: "reports-box" });

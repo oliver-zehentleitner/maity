@@ -577,3 +577,90 @@ or a missed event. A lease renewed before the next pass is never reported (the m
 grain). The pass filters closed cards in its query, but no index serves that filter, so the
 database scans every card with a holder, closed ones included, each minute; not measured, and no
 index added (a partial index on open cards is not portable to MariaDB).
+
+## The unread nudge scans each stay incrementally in process memory; exactness against a concurrent redaction is not promised
+
+**Id:** 56357b6b-ff4b-40a2-b9d9-e1a073db80fc
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race and its later go for the one-statement check, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
+**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, a chat sees `SCAN_BUDGET` or more new human messages a minute, or another route by which a redaction stays counted turns up
+**See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
+
+The minute pass keeps, per agent stay in an open group chat, how far that stay's unread
+messages have been read and the counted ones' number, first and last (`_Scan`), in this
+process's memory and nowhere else. Each call reads only rows after the last one read, at most
+`SCAN_BUDGET` (2000) per stay, in batches of `SCAN_BATCH` (500), selecting only seq, time and the
+mentions projected from the payload. The nudge goes out only once a read reached its bound, so
+its counts cover every message up to it. A moved read mark or a changed count of redacted
+messages in the range starts the read over; entries of stays that ended are dropped each pass.
+
+What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
+per stay and call), while the one-row aggregates go over the stay's unread range in the database
+each minute, a cost that grows with unread history; every unread human message without a
+mention leads to one nudge once the read has caught up. Each call moves the read's bound up to
+the newest message and reads at most `SCAN_BUDGET` rows, and a read finishes only on a short
+batch: while `SCAN_BUDGET` or more new human messages arrive in the chat between passes it may
+never finish; with fewer, each pass gains on the backlog until a call reaches the end. A
+redaction committed before a pass starts is left out. Bounded
+database work and a catch-up that holds under any arrival rate are P3s for the hub roll-up. Beyond that, the check of the range already read, the bound and the
+redaction count for an extension come from one statement (`_counts`, one snapshot even under
+READ COMMITTED), taken before the rows under the bound; the call under the project lock compares
+again, and a redaction takes the same lock. That closes the two routes the review found (a
+redaction during a first read, and one while an earlier read's bound grows), each tested on
+PostgreSQL. Exactness against a concurrent redaction is still not promised: the lead set that
+boundary, since the nudge only wakes the agent, which then reads the chat, and the chat shows a
+redacted message only as its tombstone (`docs/api.md` §8.5), never its body. Another route, should one turn up, is a P3 for the hub roll-up.
+
+**Reason:** an offline agent's growing backlog, and a backlog that all mentions the agent and
+so never leads to a nudge, were each read in full every minute (the first reviews); reading
+only what came since, within a budget, removes that without a table or a migration. A restart,
+or the worker moving to another replica, costs one fresh read per stay. Further rounds on the
+race would have held the PR back for a count the agent does not rely on.
+
+**Rejected alternatives:**
+- Excluding the mentions in SQL, with JSON queries per dialect, so one aggregate gives the exact
+  counts: a SQLite and a PostgreSQL branch for the first read only.
+- A row limit with counts exact up to the bound: the contract would have to weaken its counts.
+- Storing the scan in a table: a migration for state that one fresh read rebuilds.
+- Taking the extension's count in a second statement after the check: a redaction committing
+  between the two was adopted into the new count while its message stayed counted (review of
+  #1490, delta 3).
+
+## A held wait's later pass looks at the project's head before it reads; the runner's stream does not
+
+**Id:** 2263cf0a-7f4d-44e8-9264-352005a8390f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-x1rsd4r6htcv (step 1 of its design note, and the conditions its design review set); prod timing 2026-11-10 (an idle held wait about 2.5 statements a second, almost all from the two-second fallback; 46 % of the calls held 55 s, about 138 statements each); `tests/test_event_quiet_passes.py`, its cost pins red on main
+**See:** events.md — 6310ef59-6010-4fa5-95d5-30f20bc00117 — as of 2026-11-10
+**Revisit when:** `seq` stops following commit order within a project (an insert outside `lock_project`, another engine), the read starts to depend on something besides the rows past its cursor, or step 2 (a longer fallback) is decided on the measured numbers
+
+A held `GET …/events?wait=N` reads in full on its first pass. A later pass, woken by a notice
+or by the fallback, first looks at the project's highest `seq`, with the reader's own checks in
+the same statement or before it: an agent's row present and not isolated, a bridge's
+connection still carrying the agent. Nothing past the cursor and the checks hold: the pass
+answers nothing and keeps the cursor, as the read would have. Anything else reads in full.
+
+The look is safe because the read reads only rows with `seq > since`, and within one project
+`seq` follows commit order: `events.emit` inserts under `lock_project` (`SELECT … FOR UPDATE`
+on the server engines, SQLite's write lock at BEGIN) held to the commit. The waiter's event is
+cleared before the look, so an event committed after it still wakes the pause. Counting
+neither SQLite's `BEGIN IMMEDIATE` nor the wait's `long_poll` row, a skipped pass costs one
+statement where the read cost four for an agent, two where it cost four for a bridge (its
+carrying check stays) and one where it cost two for a human.
+
+**Reason:** an idle wait's cost was its fallback re-reads, not its wakes. The look keeps the
+fallback and every end of a wait (supersession, a disconnect, the shutdown, the deadline,
+isolation, a bridge's end) exactly where they were, and needs no state between passes.
+
+**Rejected alternatives:**
+- The same look for the runner's stream (`/runner/events`): it reads several projects, and
+  `seq` is one counter across them, so a lower `seq` of one project can still be uncommitted
+  while another's higher one is visible. A look at the maximum could skip it.
+- Keeping the highest `seq` per project in memory: another replica's commits would not move
+  it, and the look would answer nothing for rows that exist.
+- A longer fallback alone (step 2): left until this step's prod numbers are in.

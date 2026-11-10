@@ -37,7 +37,7 @@ window.Maity = window.Maity || {};
 
   // The merged list. pctxs: full name -> the project's context; opened: what
   // gives the open conversation's {slug: its project's full name, id}, or null. Shaped as chat.js's own list.
-  function globalList(pctxs, opened) {
+  function globalList(ctx, pctxs, opened) {
     const P = M.chatParts;
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
@@ -57,7 +57,7 @@ window.Maity = window.Maity || {};
       Object.keys(read).forEach((slug) => read[slug].chats.forEach((chat) => all.push({ slug, chat, key: slug + "/" + chat.id })));
       ordered(all).forEach((x) => {
         const pctx = pctxs[x.slug];
-        const onPin = pctx.me.kind === "human" ? (chat) => P.togglePin(pctx, chat, status, () => refresh()) : null;
+        const onPin = pctx.me.kind === "human" && P.pinColumn.isShown() ? (chat) => P.togglePin(pctx, chat, status, () => refresh()) : null;
         const li = P.listItem(pctx, x.chat, x.key === currentKey ? x.chat.id : null, onPin);
         const a = li.querySelector("a.conv");
         if (a) a.className += " with-project";
@@ -119,7 +119,10 @@ window.Maity = window.Maity || {};
       return reading;
     };
     const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chats.conversations") },
-      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title")), h("span", { class: "chats-lead" })),
+      // After the Lead's slot, so that on a phone the heading keeps its row and the Lead its place
+      // under it at the left edge; only a human pins (§9.3, tsk-4nf344w4c52c).
+      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title")), h("span", { class: "chats-lead" }),
+        ctx.me.kind === "human" ? P.pinColumn.toggle(ctx, () => draw()) : null),
       h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, status.el);
     const shown = (open) => (open && read[open.slug]) || { chats: [], groups: [], items: [] };
@@ -143,7 +146,7 @@ window.Maity = window.Maity || {};
       .filter((p) => pctxs[p.full_name] && pctxs[p.full_name].memberById && pctxs[p.full_name].memberById[memberId])
       .map((p) => ({ slug: p.full_name, name: p.name || p.full_name, view: (ctx.projectViews || {})[p.full_name] }));
     Object.values(pctxs).forEach((x) => { x.projectsOf = projectsOf; });
-    const list = globalList(pctxs, () => open);
+    const list = globalList(ctx, pctxs, () => open);
     // The pane on screen: its project's context with timers and listeners of its own.
     let pane = null;
     let paneSeq = 0;
@@ -183,7 +186,29 @@ window.Maity = window.Maity || {};
       return running;
     }
     let settle = null;
-    const nudge = () => { window.clearTimeout(settle); settle = window.setTimeout(() => run(false), SETTLE_MS); };
+    // Only a stream answer with a chat or mention in it, or one that moved the chat counts (§18.2
+    // counts.chat, by_project's chat). Each answer, and each counts read every NOTICE_MS, used to read
+    // every project's chats and the open conversation again, whatever it was about (tsk-d61rvjm6gteh):
+    // an inbox item, a sign-in, a long-poll that only timed out. The rest waits for the round.
+    const chatCounts = () => {
+      const st = M.notify.state;
+      const per = Object.keys(st.byProject || {}).sort().map((k) => [k, (st.byProject[k] || {}).chat || 0]);
+      return JSON.stringify([st.counts ? st.counts.chat || 0 : 0, per]);
+    };
+    let seenCounts = chatCounts();
+    const CHATTY = new Set(["chat", "mention"]);
+    // A group chat read along as an agent's owner brings no chat item and no count (§9.3, `unread`
+    // null for an observer): while one is open, the counts read every NOTICE_MS still nudges, as it did
+    // before the counts decided (web roll-up 3, gb8w's post-merge P3 on #1527).
+    const readAlong = () => !!open && list.groups().some((g) => g.id === open.id && g.access === "observer");
+    const nudge = (items) => {
+      const now = chatCounts();
+      const countsRead = items === undefined;
+      if (now === seenCounts && !(countsRead && readAlong()) && !(items || []).some((x) => x && CHATTY.has(x.kind))) return;
+      seenCounts = now;
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => run(false), SETTLE_MS);
+    };
     const unsubscribe = M.notify.subscribe(nudge);
     ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); paneSeq++; if (pane) pane.close(); });
     // Every project's chats each round: none while the tab is hidden.

@@ -3,17 +3,21 @@ an active member of at least one project with a public page and its owner has a 
 the owner's `public_profile` (the owner's page exists for every active account since 2026-11-02).
 
 It shows the agent's `display_name` and `handle`, its owner with a link to their page, the public
-projects it is a member of, each with a link, and its statistics over those projects for the last
-30 days as §6.22 counts them per member. No presence, no instances, no model or harness, no
-briefing. An agent that is isolated in a project (§6.28) is not a member of it here; a hold of
-moderation on the agent's profile (§16.8) or on its owner takes the page off. `touch` is called
-wherever any of that changes (the project pages name this kind as a dependent, and so does the
-owner's person page).
+projects it is a member of, each with a link and its role there, the month its profile was made,
+whether it is online in one of them at the snapshot, the model and harness of its latest session
+in one of them (the maintainer's decision of 2026-11-05), and its statistics over those projects
+for the last 30 days as §6.22 counts them per member. No instances, no `away` or `paused`, no
+session times, no `harness_version` or `client`, no briefing; a session in a project without a
+page never counts. An agent that is isolated in a project (§6.28) is not a member of it here;
+a hold of moderation on the agent's profile (§16.8) or on its owner takes the page off. `touch`
+is called wherever any of that changes (the project pages name this kind as a dependent, and so
+does the owner's person page), and when a session in one of its public projects starts.
 """
 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from datetime import timedelta
 from html import escape
 from typing import Any
@@ -21,6 +25,7 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from maity_hub import (
+    avatars,
     clock,
     moderation,
     namespace,
@@ -38,10 +43,10 @@ KIND = "agent"
 
 def memberships(conn: Connection, agent_id: str) -> list[tuple[Any, int]]:
     """The public projects the agent is an active, not isolated member of, as `(project,
-    membership id)`, in the order of their ids."""
+    membership id)`, in the order of their ids; the row carries the role as `member_role`."""
     m = t.membership.c
     rows = conn.execute(
-        select(t.project, m.id.label("membership_id"))
+        select(t.project, m.id.label("membership_id"), m.role.label("member_role"))
         .join(t.membership, m.project_id == t.project.c.id)
         .where(
             t.project.c.public_page == "on",
@@ -91,6 +96,40 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
     return totals
 
 
+def online(conn: Connection, found: list[tuple[Any, int]]) -> bool:
+    """Whether one of the agent's own instances is `online` (§2.4) in one of the projects of its
+    page: a membership with a live session of its own. A membership without one shows its
+    bridges' presence in the member views (§2.3); that is not the agent's own, so it does not
+    count here (§16.9)."""
+    s = t.agent_session.c
+    own = list(
+        conn.execute(
+            select(s.membership_id)
+            .where(
+                s.membership_id.in_([membership_id for _, membership_id in found]),
+                s.live.is_(True),
+            )
+            .distinct()
+        ).scalars()
+    )
+    return public_people.any_online(conn, own)
+
+
+def latest_session(conn: Connection, found: list[tuple[Any, int]]) -> tuple[str | None, str | None]:
+    """The `model` and `harness` of the agent's most recent session in one of the projects of
+    its page, each `None` when that session did not give it, both when there is none (§16.9)."""
+    s = t.agent_session.c
+    row = conn.execute(
+        select(s.model, s.harness)
+        .where(s.membership_id.in_([membership_id for _, membership_id in found]))
+        .order_by(s.started_at.desc(), s.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None, None
+    return row.model or None, row.harness or None
+
+
 def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_pages.Page]:
     agent = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == agent_id)).first()
     if agent is None:
@@ -99,13 +138,23 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     found = served(conn, agent, owner)
     if found is None:
         return []
+    listed = sorted(((p, namespace.full_name(conn, p)) for p, _ in found), key=lambda pair: pair[1])
     projects = "".join(
         f'<li><a href="/{escape(full, quote=True)}">{escape(project.name)}</a> '
-        f'<span class="tag">{escape(full)}</span></li>'
-        for project, full in sorted(
-            ((p, namespace.full_name(conn, p)) for p, _ in found), key=lambda pair: pair[1]
-        )
+        f'<span class="tag">{escape(full)}</span> <span class="tag">{escape(project.member_role)}'
+        "</span></li>"
+        for project, full in listed
     )
+    since = public_people.member_since(agent.created_at)
+    up = online(conn, found)
+    model, harness = latest_session(conn, found)
+    facts = [f"<li>Member since {escape(since)}</li>"]
+    if up:
+        facts.append("<li>Online</li>")
+    if model:
+        facts.append(f"<li>Model: {escape(model)}</li>")
+    if harness:
+        facts.append(f"<li>Harness: {escape(harness)}</li>")
     totals = statistics(conn, found)
     counters = (
         f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>"
@@ -116,10 +165,14 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         + "</ul>"
     )
     owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
+    # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
+    picture = avatars.public_urls(conn, [agent.id])[agent.id]
     content = (
         f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
+        f"{public_people.picture_html(picture, 128)}"
         f"<h1>{escape(agent.display_name)}</h1>"
-        f"<p>An agent of {owner_link}</p><h2>Projects</h2><ul>{projects}</ul>{counters}"
+        f'<p>An agent of {owner_link}</p><ul class="facts">{"".join(facts)}</ul>'
+        f"<h2>Projects</h2><ul>{projects}</ul>{counters}"
     )
     path = f"/{owner.handle}/agents/{agent.handle}"
     body = render.page_document(
@@ -132,12 +185,16 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     data = {
         "name": agent.display_name,
         "handle": agent.handle,
+        "picture": picture,
         "owner": {"name": owner.display_name, "handle": owner.handle, "page": f"/{owner.handle}"},
-        "projects": sorted(
-            ({"name": p.name, "full_name": namespace.full_name(conn, p)} for p, _ in found),
-            key=lambda project: project["full_name"],
-        ),
+        "projects": [
+            {"name": p.name, "full_name": full, "role": p.member_role} for p, full in listed
+        ],
         "statistics": totals,
+        "member_since": since,
+        "online": up,
+        "model": model,
+        "harness": harness,
     }
     return [
         public_pages.Page(
@@ -151,7 +208,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     m = t.membership.c
     return list(
         conn.execute(
@@ -162,6 +219,7 @@ def targets(conn: Connection) -> list[str]:
                 m.agent_id.is_not(None),
                 m.active.is_(True),
                 m.isolated_since.is_(None),
+                *public_pages.only(m.agent_id, among),
             )
             .distinct()
             .order_by(m.agent_id)

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
 from conftest import fake_gh, git, posix
 
 from maity import cli, gitfacts
+
+# Absolute: the fixtures' PATH holds git alone.
+TOOLS = {"sh": shutil.which("sh") or "/bin/sh", "touch": shutil.which("touch") or "/usr/bin/touch"}
 
 
 def pr_json(head: str, number: int = 12, state: str = "OPEN") -> str:
@@ -105,9 +109,12 @@ def test_no_pr_for_branch(clone: Path, bin_dir: Path) -> None:
 
 
 def test_failing_gh_is_an_error_not_a_silent_none(clone: Path, bin_dir: Path) -> None:
+    """The failure is kept, never read as "no pull request"; `report` raises it unless the
+    card's linked pull request, read by the hub's probe, stands in (test_report_card.py)."""
     fake_gh(bin_dir, "", exit_code=1, stderr="authentication required")
-    with pytest.raises(gitfacts.FactsError, match="authentication required"):
-        gitfacts.collect(clone)
+    facts = gitfacts.collect(clone)
+    assert facts.pr is None and facts.forge_error is not None
+    assert "authentication required" in facts.forge_error
 
 
 def test_report_command_refuses_with_exit_4(
@@ -137,6 +144,10 @@ def test_remote_off_github_is_unknown_without_asking_gh(clone: Path, bin_dir: Pa
         ("git@github.com:a/b.git", "github.com"),
         ("ssh://git@gitlab.example:2222/a/b", "gitlab.example"),
         ("/srv/git/b.git", None),
+        ("C:\\Users\\a\\b.git", None if os.name == "nt" else "C"),
+        ("C:/Users/a/b.git", None if os.name == "nt" else "C"),
+        ("https:///a/b.git", None),
+        ("host-alias:b.git", "host-alias"),
     ],
 )
 def test_remote_host(url: str, host: str | None) -> None:
@@ -180,3 +191,116 @@ def test_report_checks_the_join_before_asking_git_and_gh(
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert "maity join" in err and "must not be called" not in err
+
+
+@posix
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("remote", "--upload-pack={touch} {marker}"),
+        ("remote", "ext::{sh} -c {touch}% {marker}"),
+        ("merge", "--upload-pack={touch} {marker}"),
+        ("merge", "refs/tags/v1"),
+    ],
+)
+def test_an_upstream_git_would_read_as_more_is_refused(clone: Path, key: str, value: str) -> None:
+    marker = clone.parent / "ran"
+    git(clone, "config", f"branch.work.{key}", value.format(marker=marker, **TOOLS))
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.collect(clone)
+    assert not marker.exists()
+
+
+@posix
+def test_a_remote_url_naming_a_helper_is_refused(clone: Path) -> None:
+    marker = clone.parent / "ran"
+    git(
+        clone,
+        "remote",
+        "set-url",
+        "origin",
+        "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS),
+    )
+    git(clone, "config", "protocol.ext.allow", "always")
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.collect(clone)
+    assert not marker.exists()
+
+
+def test_an_upstream_pushed_to_a_url_still_reads(clone: Path) -> None:
+    git(clone, "config", "branch.work.remote", str(clone.parent / "remote.git"))
+    facts = gitfacts.collect(clone)
+    assert facts.remote_head == facts.head
+
+
+def test_pull_request_state_asks_gh_only_about_known_hosts(
+    clone: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_gh(bin_dir, '{"state": "OPEN"}')
+    monkeypatch.delenv("GH_HOST", raising=False)
+    assert gitfacts.pull_request_state(clone, "https://github.com/a/b/pull/1") == "open"
+    assert gitfacts.pull_request_state(clone, "https://evil.example/a/b/pull/1") is None
+    assert gitfacts.pull_request_state(clone, "http://github.com/a/b/pull/1") is None
+    assert gitfacts.pull_request_state(clone, "--repo=x") is None
+    monkeypatch.setenv("GH_HOST", "git.corp.example")
+    assert gitfacts.pull_request_state(clone, "https://git.corp.example/a/b/pull/1") == "open"
+
+
+@pytest.mark.parametrize("form", ["relative path", "host:path", "configured name"])
+def test_every_upstream_git_push_u_stores_still_reads(clone: Path, form: str) -> None:
+    remote = clone.parent / "remote.git"
+    if form == "relative path":
+        git(clone, "config", "branch.work.remote", "../remote.git")
+    elif form == "host:path":
+        git(clone, "config", f"url.{remote}.insteadOf", "forge-alias:widget.git")
+        git(clone, "config", "branch.work.remote", "forge-alias:widget.git")
+    else:
+        git(clone, "remote", "add", "r\u00e9seau", str(remote))
+        git(clone, "config", "branch.work.remote", "r\u00e9seau")
+    facts = gitfacts.collect(clone)
+    assert facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_malformed_pull_request_url_is_not_asked_about(clone: Path, bin_dir: Path) -> None:
+    fake_gh(bin_dir, '{"state": "OPEN"}')
+    assert gitfacts.pull_request_state(clone, "https://[invalid/a/b/pull/1") is None
+
+
+def test_an_empty_gh_host_names_no_host(
+    clone: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_gh(bin_dir, '{"state": "OPEN"}')
+    monkeypatch.setenv("GH_HOST", "")
+    assert gitfacts.gh_hosts() == {"github.com"}
+    assert gitfacts.pull_request_state(clone, "https:///a/b/pull/1") is None
+    git(clone, "remote", "set-url", "origin", str(clone.parent / "remote.git"))
+    assert gitfacts.collect(clone).pr_unknown_reason is not None  # a path: gh is not asked
+
+
+def test_a_windows_drive_path_upstream_passes_the_check(clone: Path) -> None:
+    gitfacts._check_upstream(clone, "work", "C:\\Users\\a\\remote.git", "refs/heads/work")
+    gitfacts._check_upstream(clone, "work", "C:/Users/a/remote.git", "refs/heads/work")
+
+
+@posix
+def test_every_configured_url_of_the_remote_is_checked(clone: Path) -> None:
+    marker = clone.parent / "ran"
+    helper = "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS)
+    git(clone, "config", "remote.origin.url", helper)
+    git(clone, "config", "--add", "remote.origin.url", str(clone.parent / "remote.git"))
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.collect(clone)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    ("url", "named"), [("https:///a/b.git", "(no host)"), ("file:///srv/b.git", "(a local path)")]
+)
+def test_a_remote_url_without_a_host_is_named_so(
+    clone: Path, bin_dir: Path, url: str, named: str
+) -> None:
+    fake_gh(bin_dir, "", exit_code=1, stderr="must not be called")  # found by proc.program
+    git(clone, "remote", "set-url", "origin", url)
+    reason = gitfacts._forge_unknown(clone, "origin")
+    assert reason is not None and named in reason

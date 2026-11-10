@@ -20,6 +20,7 @@ from maity_hub import (
     maintenance,
     moderation,
     namespace,
+    start_tabs,
 )
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
@@ -28,6 +29,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticated
 from maity_hub.models import Strict
+from maity_hub.notifications import preferences
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import agent_member, human_member, isolated, meat_proxy_member, owner_handles
 
@@ -57,6 +59,7 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                     ),
                     "aliases": handles.aliases(conn, [agent.id])[agent.id],
                     **avatars.state(conn, agent.id),
+                    "avatar_motif": agent.avatar_motif,
                 },
                 "projects": _agent_project(conn, caller),
                 "membership": {"isolated": _isolated(conn, caller)},
@@ -70,6 +73,8 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
 def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
     """A human's `/me` without `server_time`; also the answer of `POST /me/limit`."""
     human = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
+    # A pending account is a member of nothing (§2.7.5).
+    projects = _human_projects(conn, human.id) if human.account_status == "active" else []
     return {
         "member": {
             **human_member(human, avatar_url=None),
@@ -80,12 +85,17 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             # The person's own page, whatever it shows to others (§16.9).
             "public_profile": human.public_profile,
             "public_presence": human.public_presence,
+            "public_stats": human.public_stats,
+            "public_agents": human.public_agents,
             "public_bio": human.public_bio,
             "website": human.website,
             "social": human.social or {},
             "links_visible": human.links_visible,
             "account_status": human.account_status,
             "interface_language": human.interface_language,
+            # The account's time zone, the one value of §18.4; `null` until set (§5.1).
+            "timezone": preferences.preferences(conn, human.id)["email"]["timezone"],
+            "start_tabs": start_tabs.visible(human.start_tabs, (p["id"] for p in projects)),
             "terms": (
                 {
                     "version": human.terms_version,
@@ -103,8 +113,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
                 else {}
             ),
         },
-        # A pending account is a member of nothing (§2.7.5).
-        "projects": _human_projects(conn, human.id) if human.account_status == "active" else [],
+        "projects": projects,
         # A deletion waiting for its confirmation by mail (§2.9).
         "deletion": account_deletion.view(account_deletion.pending(conn, human.id)),
     }
@@ -152,10 +161,12 @@ def limit_view(human: Any) -> dict[str, Any] | None:
 
 
 def _project_row(
-    project: Any, trust: str, role: str, shown: dict[str, Any], full_name: str
+    project: Any, project_id: str, trust: str, role: str, shown: dict[str, Any], full_name: str
 ) -> dict[str, Any]:
     logo = shown["logo"]
     return {
+        # The fixed id: a client keeps its tabs by it across a rename (§5.1, §6.25).
+        "id": project_id,
         "slug": project.slug,
         "full_name": full_name,
         "name": project.name,
@@ -186,7 +197,14 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     names = namespace.full_names(conn, [row.project_id for row in rows])
     return [
         {
-            **_project_row(row, row.trust, row.role, shown[row.project_id], names[row.project_id]),
+            **_project_row(
+                row,
+                row.project_id,
+                row.trust,
+                row.role,
+                shown[row.project_id],
+                names[row.project_id],
+            ),
             "open_requests": open_requests(conn, row.id),
         }
         for row in rows
@@ -206,7 +224,7 @@ def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
         .where(t.membership.c.id == caller.membership_id)
     ).one()
     shown = images.views(conn, [row.id])[row.id]
-    return [_project_row(row, row.trust, row.role, shown, namespace.name_of(conn, row.id))]
+    return [_project_row(row, row.id, row.trust, row.role, shown, namespace.name_of(conn, row.id))]
 
 
 def open_requests(conn: Connection, membership_id: int) -> int:

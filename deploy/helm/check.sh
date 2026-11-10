@@ -95,10 +95,23 @@ elif [ -n "$bytes" ] && [ -n "$cap" ] && [ "$bytes" -gt $(( cap * 1024 * 1024 ))
 else
     bad "ingress: proxy-body-size '$size' not above the hub's attachment cap '${cap}' MiB"
 fi
+grep -q "nginx.ingress.kubernetes.io/limit-" <<<"$out" && bad "ingress: a request limit while it is off" \
+    || ok "ingress: no request limit by default"
+expect "ingress: the request limit on, as ingress-nginx annotations" \
+    "$(render -f "$ingress" --set ingress.requestLimit.enabled=true)" \
+    'nginx.ingress.kubernetes.io/limit-rps: "50"' 'nginx.ingress.kubernetes.io/limit-burst-multiplier: "4"' \
+    'nginx.ingress.kubernetes.io/limit-connections: "100"' "cert-manager.io/cluster-issuer: letsencrypt"
+expect "ingress: a burst that is no multiple of the rate rounds up" \
+    "$(render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.burst=120)" \
+    'nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"'
+render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.burst=10 >/dev/null 2>&1 \
+    && bad "ingress: a burst below the rate accepted" || ok "ingress: a burst below the rate refused"
+render -f "$ingress" --set ingress.requestLimit.enabled=true --set ingress.requestLimit.inFlight=0 >/dev/null 2>&1 \
+    && bad "ingress: no open request allowed accepted" || ok "ingress: inFlight below 1 refused"
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
-expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \
-    "name: MAITY_ATTACHMENT_DIR" 'value: "/data/attachments"' 'value: "5368709120"' 'claimName: "maity-attachments"' \
+expect "ingress: the attachment volume, its mount and the directory" "$out" \
+    "name: MAITY_ATTACHMENT_DIR" 'value: "/data/attachments"' 'claimName: "maity-attachments"' \
     'mountPath: "/data/attachments"'
 expect "ingress: the instance key from a Secret by reference" "$out" "name: MAITY_SECRET_KEY" "key: secret-key"
 expect "ingress: mail from Secrets by reference and plain values" "$out" \
@@ -117,13 +130,15 @@ out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
     && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
     && ok "the attachment volume reaches the hub once, at the default path" \
     || bad "the attachment volume is not in the hub exactly once"
-out_ee="$(render -f "$minimal" --set attachments.existingClaim=c --set attachments.quotaBytes=5000 --set "extraEnv[0].name=MAITY_ATTACHMENT_QUOTA" --set-string "extraEnv[0].value=9000" --show-only templates/deployment.yaml)"
-[ "$(grep -A1 'name: MAITY_ATTACHMENT_QUOTA' <<<"$out_ee" | grep 'value:' | tail -1 | tr -d ' ')" = 'value:"9000"' ] \
+out_ee="$(render -f "$minimal" --set attachments.existingClaim=c --set "extraEnv[0].name=MAITY_ATTACHMENT_DIR" --set-string "extraEnv[0].value=/elsewhere" --show-only templates/deployment.yaml)"
+[ "$(grep -A1 'name: MAITY_ATTACHMENT_DIR' <<<"$out_ee" | grep 'value:' | tail -1 | tr -d ' "')" = 'value:/elsewhere' ] \
     && ok "extraEnv still overrides the attachment settings" || bad "extraEnv no longer overrides the attachment settings"
 # A ReadWriteOnce claim in the Job blocks an upgrade on a second node (Multi-Attach).
 grep -q "MAITY_ATTACHMENT\|claimName\|name: attachments" <<<"$(render -f "$minimal" --set attachments.existingClaim=c --show-only templates/migrate-job.yaml)" \
     && bad "the migrate Job has the attachment volume or its settings" || ok "the migrate Job has no attachment volume or settings"
-grep -q "MAITY_ATTACHMENT_QUOTA" <<<"$out_att" && bad "no quota set but MAITY_ATTACHMENT_QUOTA rendered" || ok "no quota unless set"
+# A project's attachment storage is the hub's limit max_attachment_storage_per_project (docs/api.md §16.5): set
+# under Limits, or by MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT in extraEnv; the chart has no value of its own.
+grep -q "MAITY_ATTACHMENT_QUOTA" <<<"$out_att" && bad "the removed MAITY_ATTACHMENT_QUOTA rendered" || ok "no MAITY_ATTACHMENT_QUOTA"
 out_s3="$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --set attachments.s3.endpoint=https://s3.example \
     --set attachments.s3.region=r --set attachments.s3.existingSecret=maity-s3 --show-only templates/deployment.yaml)"
 expect "s3: the store, the bucket, the endpoint and the credentials by reference" "$out_s3" \
@@ -143,7 +158,7 @@ render -f "$minimal" --set attachments.store=tape >/dev/null 2>&1 && bad "an unk
 grep -q "MAITY_ATTACHMENT" <<<"$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --show-only templates/migrate-job.yaml)" \
     && bad "the migrate Job has the s3 settings" || ok "the migrate Job has no s3 settings"
 render -f "$minimal" --set attachments.mountPath=relative >/dev/null 2>&1 && bad "a relative attachments.mountPath is accepted" || ok "a relative attachments.mountPath is refused by the schema"
-render -f "$minimal" --set attachments.quotaBytes=10 >/dev/null 2>&1 && bad "a quota below 1024 bytes is accepted" || ok "a quota below 1024 bytes is refused by the schema"
+render -f "$minimal" --set attachments.quotaBytes=5000 >/dev/null 2>&1 && bad "the removed attachments.quotaBytes is accepted" || ok "the removed attachments.quotaBytes is refused by the schema"
 out_nopw="$(render -f "$ingress" --set mail.passwordSecret.existingSecret=)"
 grep -q "MAITY_SMTP_PASSWORD" <<<"$out_nopw" && bad "ingress: a password without a Secret" || ok "ingress: no password env without a Secret"
 out_nohost="$(render -f "$ingress" --set mail.host=)"

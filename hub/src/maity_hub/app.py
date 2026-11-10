@@ -30,11 +30,13 @@ from maity_hub import (
     forge_access,
     handles,
     images,
+    invitations,  # also registers the proposal of an invitation by handle (§3.4)
     join_line,
     landing_files,
     languages,
     listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    motifs,
     namespace,
     not_listening,
     not_listening_digest,
@@ -51,16 +53,20 @@ from maity_hub import (
     registration_accounts,
     reports,
     request_stats,
+    route_limits,
     rules,
     shared_budget,
     shared_counts,
     takeovers,
+    timing,
     wakeups,
     write_guard,
 )
+from maity_hub import admin as instance_admin
 from maity_hub.auth import device_codes as codes
-from maity_hub.auth import mail_factor
+from maity_hub.auth import known_sources, mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
+from maity_hub.compression import Compression
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
     APPLICATION_SERVING,
@@ -88,6 +94,7 @@ from maity_hub.routes import (
     briefing_view,
     contract_text,
     conversations,
+    cross_chats,
     device_codes,
     email_sign_in,
     forge_links,
@@ -141,6 +148,7 @@ from maity_hub.routes import people as people_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
+from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
@@ -192,6 +200,12 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "served only under its current handle (§11.4)",
                 name,
             )
+        # Not a refusal: a session of theirs may still set one.
+        if instance_admin.without_address(conn):
+            log.warning(
+                "the instance admin has no verified address, so their password signs them in "
+                "nowhere (docs/api.md §2.1); give the account one"
+            )
         try:
             mail.check_at_startup(conn, settings.mail, settings.secret_key)
         except MailConfigError as error:
@@ -214,6 +228,9 @@ def start_once(engine: Engine, settings: Settings) -> None:
         # The hub's own generated text is a rules input: a start with other text bumps
         # every project that has not counted it, once (§6.9).
         rules.sync_text(conn)
+    # The agents' motifs, read and checked before a page shows one (§6.10): a set that fails
+    # the check is logged here and not served. Each worker reads it again on its first use.
+    motifs.current()
     # Every public page again before any is served (§16.9), then the safety net's worker.
     public_pages.startup(engine, settings)
     with engine.begin() as conn:
@@ -285,6 +302,7 @@ def create_app(
     )
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
+    known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -320,9 +338,15 @@ def create_app(
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)
         reports_worker.start()
+        # A known source's fingerprint goes after 30 days, sign-ins or not (§2.1).
+        sources_worker = known_sources.Worker(engine)
+        sources_worker.start()
         # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
         invitations_worker = org_invitations.Worker(engine)
         invitations_worker.start()
+        # So does a project's invitation by handle, whose request is withdrawn (§3.4).
+        handle_invitations_worker = invitations.Worker(engine)
+        handle_invitations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -375,7 +399,9 @@ def create_app(
         takeover_worker.stop()
         jour_fixe_clock.stop()
         reports_worker.stop()
+        sources_worker.stop()
         invitations_worker.stop()
+        handle_invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()
@@ -450,12 +476,14 @@ def create_app(
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(board.router, prefix=prefix)
+    app.include_router(restricted_routes.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
     app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(overview.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(cross_chats.router, prefix=prefix)
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
@@ -485,7 +513,16 @@ def create_app(
             "links in /help use %s",
             settings.public_url,
         )
+    # Resolved once the routes are in: a limit on a route the hub lacks stops it (§1.7).
+    app.state.route_limits = route_limits.resolve(app.routes, settings.route_limits)
+    public_pages.BY_ADDRESS.configure(*settings.public_page_limit)
+    badges.BY_ADDRESS.configure(*settings.badge_limit)
+    # Inside HubMiddleware, so its request line and stats count the compressed answer's time.
+    app.add_middleware(Compression)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
+    # Outermost: an answer's statements and time, the hub's own checks included.
+    timing.install(engine, shared_engine, health_engine)
+    app.add_middleware(timing.ServerTiming)
     if settings.allow_plain_http:
         log.warning(
             "MAITY_ALLOW_PLAIN_HTTP is set: bearer credentials and cookies travel over plain "

@@ -73,7 +73,7 @@ production.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02
+**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02; card tsk-zhypjk5k6h60 (jour fixe proposal req-grd7hspd3ke5, adopted 2026-11-05) for the 202 answers and value forms
 **Revisit when:** the hub declares response models on its routes — then the check can read the models' schema instead of a recorded file
 
 `hub/tests/test_web_shapes.py` seeds a project, sends the requests listed
@@ -85,7 +85,13 @@ again. `tools/check.py` sends the same requests to the fixture hub
 (`tools/fixture_answers.js`, which runs `js/api.js` on the fixtures) and
 reports every difference that is not in
 `tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
-does not, a key the hub has and the fixture lacks, another type. The
+does not, a key the hub has and the fixture lacks, another type. A
+request may name the `status` the hub must answer it with, so a listed
+`202` is a consent filed instead of the change, never the change itself;
+and `forms`, paths where a string is compared by its value with every id
+written `<id>`, so a request's `to` of `owner` and one of `human:<id>`
+differ (they reach different people) while two ids of either side do not.
+A `{placeholder}` in a body is filled like one in a path. The
 baseline holds today's differences; for a request already listed it only
 shrinks (`make fixtures` drops what no longer differs); a request added
 to the list has its differences written into the baseline by hand, since
@@ -109,7 +115,11 @@ unchanged and compares what each side actually answers.
 above. Comparing the fixture JSON files with `docs/api.md` — the
 contract is prose, and the files are not the answers. Treating every
 missing key as a finding at once — about 80 today; the baseline lets the
-check land and the fixtures catch up route by route.
+check land and the fixtures catch up route by route. Comparing every
+string by its value — ids, times and texts differ between any two seeds,
+so nearly every string would differ. Keys and types alone — they cannot
+tell a consent the fixture addresses to `owner` from the hub's to
+`human:<id>`, a string either way, the case the card names.
 
 **Consequence:** a key the hub sends only in some states is missing
 from the record when the seed lacks that state, and an empty list says
@@ -129,3 +139,22 @@ said hello, is attached and runs an agent in a project whose
 `on_runner_revoke` is `stop`, as the fixture project's is, so a runner's
 `capabilities` and `projects` and the `DELETE`'s `still_running` and
 `on_runner_revoke` (with `stopped`) are compared with their items.
+
+## A web change that adds a hub route or a non-admin caller path brings its fixture route and smoke cases in the first push
+
+**Id:** 482e14f4-f255-4a94-b8e2-9affae1b91a5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, proposal r7, adopted by the maintainer as req-xe7zx286qefx); card tsk-4npgz5hvsx3e; `CONTRIBUTING.md` ("Before the first review")
+**Revisit when:** the smoke derives its caller paths from the fixtures or the hub's routes by itself
+
+A web pull request that adds a hub route or a non-admin caller path adds, in its first push, the route to the
+fixtures and one smoke case per caller path (the in-memory "mock as an owner with trust `member`" pattern from
+#1472). Its review request names the caller paths the smoke covers.
+
+**Reason:** #1472 needed three review rounds for fixture gaps rather than product code, and #1479 had a gate
+test that could not fail.
+
+**Rejected alternatives:**
+- The reviewers finding the gaps in round one, as before: the extra rounds above.

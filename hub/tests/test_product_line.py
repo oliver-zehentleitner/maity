@@ -32,10 +32,10 @@ from tests.test_join_host import create, join_client, token_of
 from tests.test_mail_links import link, mail_hub, stored
 
 LINKS = [
-    "https://github.com/oliver-zehentleitner/maity/issues",
-    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
     "https://github.com/oliver-zehentleitner",
     "https://maity.team/oliver-zehentleitner",
+    "https://github.com/oliver-zehentleitner/maity/issues",
+    "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
 ]
 
 
@@ -54,8 +54,8 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
     line = product_line.html("en")
     assert text_of(line) == (
-        "Maity 2031 · Found a bug? · Found a vulnerability? · "
-        "Made with ♥ by Oliver Zehentleitner on &"
+        "Maity 2031 · Made with ♥ by Oliver Zehentleitner on & · "
+        "Found a bug? · Found a vulnerability?"
     )  # the year from the hub's clock, never a fixed one
     assert re.findall(r'<a href="([^"]+)"', line) == LINKS  # absolute, the Maity page without @
     assert line.count('target="_blank" rel="noopener noreferrer"') == 4
@@ -63,10 +63,48 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     assert '<span role="img" aria-label="love">♥</span>' in line
     # Three icons and the three separators, which are drawn, not read.
     assert line.count("<svg") == 3 and line.count('aria-hidden="true"') == 6
-    assert line.count('<span aria-hidden="true"> · </span>') == 3
+    assert line.count('<span class="product-sep" aria-hidden="true"> · </span>') == 3
     # Presentation attributes only: the pages' policies allow no inline style (§16.13).
     for forbidden in ("style=", "<style", "<use", "<title", "<img"):
         assert forbidden not in line
+
+
+def test_at_phone_width_the_line_is_its_first_part() -> None:
+    # §16.13: at most 600 CSS pixels wide, only "Maity <year>" with its mark; the separators
+    # and the other three parts are not shown. Four parts, three separators between them, in
+    # that order, and the rule that hides all but the first in the block the policy allows.
+    clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
+    line = product_line.html("en")
+    inner = re.search(r"<small>(.*)</small>", line)
+    assert inner is not None
+    pieces = re.findall(r'<span class="(product-part|product-sep)"', inner[1])
+    assert pieces == ["product-part", "product-sep"] * 3 + ["product-part"]
+    first = re.search(r'<span class="product-part">(.*?)</span><span class="product-sep"', line)
+    assert first is not None and text_of(first[1]) == "Maity 2031" and "<svg" in first[1]
+    assert (
+        "@media (max-width:600px){.product-line .product-sep,"
+        ".product-line .product-part~.product-part{display:none}}"
+    ) in product_line.STYLE
+    # The strict pages carry the rule in the hashed block, the registration page in its sheet.
+    assert f"<style>{product_line.STYLE}</style>" == product_line.HEAD
+
+
+def test_every_link_has_the_dashboards_target_size() -> None:
+    # §16.13 "Target size" (WCAG 2.5.8), as web/css/app.css draws it: every link 24 px high,
+    # the two icon links 24 px wide, no link wrapped inside itself. The block is the hashed one.
+    line = product_line.html("en")
+    assert re.findall(r'<a [^>]*class="product-icon" aria-label="([^"]+)"', line) == [
+        "GitHub",
+        "Maity",
+    ]
+    assert line.count('class="product-icon"') == 2  # the text links are no icons
+    assert (
+        ".product-line a{color:inherit;margin:0;display:inline-flex;align-items:center;"
+        "justify-content:center;min-height:24px;white-space:nowrap}"
+    ) in product_line.STYLE
+    assert ".product-line .product-icon{min-width:24px;vertical-align:middle}" in (
+        product_line.STYLE
+    )
 
 
 def test_the_line_is_in_the_pages_language() -> None:
@@ -161,17 +199,75 @@ def test_the_registration_link_page_ends_with_the_line() -> None:
     assert "Einen Fehler gefunden?" in german  # in the page's language
 
 
-def test_a_mail_page_ends_with_the_line_in_its_language(
+def test_a_mail_link_page_stands_in_the_frame_in_the_humans_language(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
+    # §16.7.5, §18.6: the frame and its footer instead of the product line; words as before.
     client = make_client(mail=mail_hub().mail)
-    assert "Found a bug?" in strict(client.get("/mail/unsubscribe/garbage"))
+    dead = client.get("/mail/unsubscribe/garbage")
+    assert dead.status_code == 404
+    assert "<h1>This link no longer works.</h1>" in framed(dead) and "<form" not in dead.text
     human_id = factory.human(migrated, "maintainer")
     stored(migrated, human_id, {"email": {"language": "de"}})
-    page = strict(client.get(f"/mail/unsubscribe/{link(human_id)}"))
-    assert "Einen Fehler gefunden?" in page and "Found a bug?" not in page
+    page = framed(client.get(f"/mail/unsubscribe/{link(human_id)}"))
+    assert '<html lang="de">' in page and "Einen Fehler gefunden?" not in page
+    # The one explicit button, in the door's look; the GET changed nothing (§18.6).
+    assert page.count("<form") == 1 and page.count("<button") == 1
+    assert '<form method="post"><button type="submit" class="btn btn-primary">' in page
     stored_dead = client.get(f"/mail/unsubscribe/{link(human_id, epoch=7)}")
-    assert stored_dead.status_code == 404 and "Einen Fehler gefunden?" in strict(stored_dead)
+    assert stored_dead.status_code == 404 and '<html lang="de">' in framed(stored_dead)
+    done = client.post(f"/mail/unsubscribe/{link(human_id)}")
+    assert done.status_code == 200 and "<form" not in framed(done)
+
+
+# The mail link pages' one policy, written out: a change to it is a change to this line
+# (tsk-w62n5p0v9d47). Only the hub's own sheets, fonts and images, the fallback by its hash.
+PINNED = (
+    "default-src 'none'; style-src 'self' 'sha256-{fallback}'; font-src 'self'; "
+    "img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+)
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("get", "/mail/verify/garbage"),
+        ("post", "/mail/verify/garbage"),
+        ("get", "/mail/unsubscribe/garbage"),
+        ("post", "/mail/unsubscribe/garbage"),
+        ("get", "/mail/second-factor-reset/garbage"),
+        ("post", "/mail/second-factor-reset/garbage"),
+        ("get", "/mail/account-deletion/garbage"),
+        ("post", "/mail/account-deletion/garbage"),
+        ("get", "/mail/sign-in/garbage"),
+    ],
+)
+def test_every_mail_link_page_answers_the_pinned_policy_and_its_sheets_load_under_it(
+    make_client: ClientFactory, method: str, path: str
+) -> None:
+    fallback = base64.b64encode(hashlib.sha256(render.STYLE.encode()).digest()).decode()
+    assert PINNED.format(fallback=fallback) == render.DOOR_CSP
+    client = make_client(mail=mail_hub().mail)
+    response = getattr(client, method)(path)
+    assert response.status_code == 404
+    assert response.headers["Content-Security-Policy"] == PINNED.format(fallback=fallback)
+    page = framed(response)
+    # Each stylesheet is the hub's own, same origin ('self'), and is served as a stylesheet.
+    sheets = re.findall(r'<link rel="stylesheet" href="([^"]+)">', page)
+    assert [s.split("?")[0] for s in sheets] == [
+        "/assets/landing/landing.css",
+        "/assets/landing/public-pages.css",
+    ]
+    for sheet in sheets:
+        served = client.get(unescape(sheet))
+        assert served.status_code == 200, sheet
+        assert served.headers["content-type"].startswith("text/css")
+        assert served.headers["x-content-type-options"] == "nosniff"
+        # What the sheet loads is the hub's own as well: font-src and img-src 'self', which a
+        # `data:` url does not match either.
+        for url in re.findall(r"url\(([^)]+)\)", served.text):
+            url = url.strip("'\"")
+            assert not re.match(r"[a-z]+:|//", url), url
 
 
 def test_a_page_whose_words_the_language_lacks_has_an_english_line(

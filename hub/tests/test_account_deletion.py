@@ -313,6 +313,45 @@ def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
     assert [tuple(r) for r in rows] == [("withdrawn", "initiator_deleted")] * len(rows) != []
 
 
+def test_the_start_tabs_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The start tabs are the person's choice (§5.1): a deleted account keeps none, not even
+    an empty list, which is a choice too."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    assert pat.patch("/me", {"start_tabs": []}).status_code == 200
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.human.c.start_tabs).where(t.human.c.id == pat.id)).scalar()
+    assert kept == []
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        gone = conn.execute(select(t.human.c.start_tabs).where(t.human.c.id == pat.id)).one()
+    assert gone.start_tabs is None
+
+
+def test_the_kept_sizes_of_the_picture_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The smaller sizes of the person's picture (§6.10) are their picture too: the deletion
+    takes them with the stored image."""
+    from tests.test_avatars import image, put_human
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    url = put_human(pat, "/me/avatar", image()).json()["avatar_url"]
+    assert pat.client.get(f"{url}&s=32").status_code == 200
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.avatar_size.c.owner_id)).scalars().all()
+    assert kept == [pat.id]
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.avatar_size)).first() is None
+        assert conn.execute(select(t.avatar_image)).first() is None
+
+
 def test_the_confirmation_of_a_deleted_account_ends_with_its_grants(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
@@ -497,9 +536,7 @@ def test_the_deletion_does_what_the_contract_lists(
     assert "deleted" in done.text
     # Access ends at once: the old cookie, the password, the agent's credential.
     assert pat.get("/me").status_code == 401
-    login = make_client().post(
-        "/api/v1/auth/login", json={"handle": "pat", "password": factory.PASSWORD}
-    )
+    login = factory.login_handle(make_client(), "pat")
     assert login.status_code == 401
     assert agent.get("/me").status_code == 401
     assert press(pat, token).status_code == 404  # used

@@ -45,9 +45,7 @@ def admin(make_client: ClientFactory, engine: Engine, hub: Settings) -> flow.Hum
     if human_id is None:
         human_id = factory.human(engine, "maintainer")
     client = make_client(mail=hub.mail, secret_key=hub.secret_key)
-    response = client.post(
-        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
-    )
+    response = factory.login_handle(client, "maintainer")
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return flow.Human(client, csrf, human_id)
@@ -253,7 +251,9 @@ def test_a_refused_patch_names_each_field_and_changes_nothing(
     assert response.json()["error"]["details"]["fields"] == fields
     with migrated.begin() as conn:
         assert conn.execute(select(t.instance_setting)).all() == []
-        assert conn.execute(select(t.instance_secret)).all() == []
+        # The admin's login made the address lock's pepper (§2.1); no mail secret is stored.
+        stored = [r.name for r in conn.execute(select(t.instance_secret))]
+        assert stored in ([], [address.LOCK_PEPPER])
 
 
 def test_tls_none_stays_tied_to_a_loopback_host(

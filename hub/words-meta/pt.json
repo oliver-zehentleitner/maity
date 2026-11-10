@@ -67,6 +67,14 @@
     "en": "1d0610cdac8612da",
     "text": "2f8b680ce1abf6fa"
   },
+  "frame.instances": {
+    "en": "468a5f1b13f3feda",
+    "text": "a95c2954fa04b4c6"
+  },
+  "frame.instances_online": {
+    "en": "74a65479137b8f26",
+    "text": "31ce231fa376418c"
+  },
   "frame.language": {
     "en": "1fa24b4905737a8d",
     "text": "406f12a0dc0b476d"
@@ -339,6 +347,14 @@
     "en": "d9954ef211d54ced",
     "text": "fc013b946cb3ff2f"
   },
+  "notify.restricted_set": {
+    "en": "355d0f2e9e6067cf",
+    "text": "1857a4a094641f32"
+  },
+  "notify.restricted_text": {
+    "en": "801fe79d8edfbe65",
+    "text": "b3f559e2b7cca2ea"
+  },
   "notify.sign_in": {
     "en": "a01714534ab0e36a",
     "text": "2c28f8c8c43ce2fa"
@@ -471,6 +487,10 @@
     "en": "8adcb6a3d0c1f216",
     "text": "78701616047f5bfe"
   },
+  "register_page.public": {
+    "en": "cadac7d45f2c3f4f",
+    "text": "8579611c75140dee"
+  },
   "register_page.terms": {
     "en": "738f3cd4cd578c5c",
     "text": "cef96b02d7e30c8c"
@@ -526,5 +546,9 @@
   "sign_in.subject": {
     "en": "c08c2ebbb2993e1d",
     "text": "a9d173c5e2412766"
+  },
+  "subagents.instruction": {
+    "en": "4d2045bab88c0a61",
+    "text": "d37721d7e11e67ab"
   }
 }

@@ -33,6 +33,15 @@ with engine.connect() as connection:
             configure()
             context.run_migrations()
         else:
+            if not sqlite:
+                # PostgreSQL: the whole chain stays one transaction, so a run that fails leaves
+                # the schema the running hub expects; `db.migrate` runs it again. A lock the chain
+                # cannot have within this long ends the attempt instead of queueing every request
+                # for that table behind it (hub/context/persistence.md). A session setting: the
+                # commit ends the transaction the SET began, and it outlives it.
+                lock_timeout = context.config.attributes.get("lock_timeout", 0)
+                connection.exec_driver_sql(f"SET lock_timeout = {round(lock_timeout * 1000)}")
+                connection.commit()
             with connection.begin():
                 configure()
                 context.run_migrations()
@@ -43,3 +52,6 @@ with engine.connect() as connection:
     finally:
         if raw is not None:
             raw.execute("PRAGMA foreign_keys=ON")  # the pooled connection goes back as it came
+        elif connection.dialect.name == "postgresql":
+            connection.exec_driver_sql("RESET lock_timeout")  # nor does the pool keep the timeout
+            connection.commit()

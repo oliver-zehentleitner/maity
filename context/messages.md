@@ -509,11 +509,14 @@ under `Ran`.
 **Evidence:** inferred
 **Source:** the maintainer's decision of 2026-11-02 in chat (seq 37102) on the jour fixe proposal r1, card tsk-w52ds51rpxs0; contract `docs/api.md` §8.4
 **Revisit when:** reviews of a card come from several teams often enough that the author's lead and the reviewer's lead should be one coordinator, or a forge's own review notifications replace these messages
+**See:** members.md#a-boss-of-another-owner-is-sent-only-session_paused — 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a — as of 2026-11-04
 
 A `review_result` reaches, without the reviewer naming them, the author of
 the reviewed work, the member the reviewer reports to and the member the
 author reports to; each once, a part that resolves to nobody dropped, and
-what the reviewer addresses or mentions still added. The author's instance
+what the reviewer addresses or mentions still added. A boss of another
+owner is not added for either `reports_to`. A `to` or a mention can
+still put that boss in the audience. The author's instance
 replaces the author's member id where `to` or a mention put it in the
 audience, and is added even when `to` is `all`; `to` itself stays as
 written.
@@ -524,6 +527,9 @@ idle while the lead who merges did not know. The three who act on a result
 are known to the hub, so the reviewer does not have to remember them.
 
 The rule and its three recipients are the maintainer's decision (confirmed).
+The exception for a boss of another owner is the later contract
+(members.md, 8abdbd28), not part of that decision: that boss is not
+added for either `reports_to`.
 How the hub finds the author is this contract's choice (inferred): the card
 `task_id` names, else the card whose latest report names the pull request
 `#<n>` when `review.subject` is exactly that, and there the holding
@@ -557,7 +563,7 @@ one from prose.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
 
-## Agents name members to humans by handle, never by instance suffix or id alone
+## In what a human reads, agents name members by handle, never by instance suffix or id alone
 
 **Id:** e0eac636-6163-49b5-8ed7-9ad702c48111
 **Type:** decision

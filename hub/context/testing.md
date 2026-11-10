@@ -142,7 +142,8 @@ identity, through `pg_depend`: `RESTART IDENTITY` locks them too, and a session 
 number holds the `TRUNCATE` up; the tables resolved as the unqualified `TRUNCATE` resolves them,
 quoted and through `search_path`, not only in `current_schema()`), with state and last statement from `pg_stat_activity`, ends them
 with `pg_terminate_backend` and fails that one test with `LeakedConnection`. When it finds none,
-the message says so instead of claiming an end, since the next cleanup will wait again. Only client
+the message says so instead of claiming an end, since the next cleanup may wait again (unless that
+session ends first). Only client
 sessions of the suite's own role in this database count; one that cannot be ended is named with
 the reason, and the others are still ended. The next
 test's cleanup goes through.
@@ -242,3 +243,74 @@ directory left to debug from.
 **Rejected alternative:** leave the default `all` and delete `/tmp/pytest-of-*`
 from the workflow only. The copies still exist for the whole suite, which is
 the disk the measurement found, and a local run keeps them too.
+
+## `test_public_why` starts no public-pages worker: the renders it reads come from the app's start and from `touch`
+
+**Id:** 2be5f10f-49f7-4dae-80c4-bf72205aa584
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tb5a42f4r5dj, pull request #1453 (b2ec5b31) and its review; the fixture comment in `hub/tests/test_public_why.py` (`world`)
+**Revisit when:** a test of that file needs the worker's own re-render, or `public_pages.configure` also reaches a running worker
+
+The `world` fixture patches `public_pages.Worker.start` to a no-op. A worker
+renders with the settings its app started with, and these tests change them
+through `public_pages.configure` alone; a worker's start-up render, late on a
+loaded runner, wrote the Why page back as the old settings showed it, and the
+test read that page (flaky, reproduced in #1453).
+
+**Reason:** what the tests check is the page as the current settings render it,
+and that render comes from the app's start and from `touch`; the worker adds
+only a second, late writer with stale settings.
+
+**Rejected alternatives:**
+- Updating `Worker.hub` after `configure`: a test-only path into the worker's
+  state, and still a race with a render already under way.
+- Waiting for the worker before reading: the late render can start after the wait.
+- Marking the test `xfail`, or retrying it: both hide a real failure; the card
+  ruled them out.
+
+## GET answers are checked against hand-listed contract keys, each anchored to a line of docs/api.md
+
+**Id:** 4e114a53-b5e1-417d-a29d-62af96440a74
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, adopted by the maintainer as req-7y4mfywt9cmn); card tsk-x4c4v639trrv and its plan note, approved by the lead, 2026-11-08; `hub/tests/test_contract_shapes.py`
+**Revisit when:** docs/api.md gives every answer's shape in one machine-readable form, or `PENDING` is empty and the hub gains response models
+
+`hub/tests/test_contract_shapes.py` holds, per GET route, the top-level keys the contract
+names for its answer, and an anchor: a line of docs/api.md after which, before the next
+heading, each key must be named. A real answer from the test client on a fresh project must
+carry every listed key. Every GET route under `/api/v1/` is in `SHAPES`, in `PENDING` (one per
+line, sorted) or in `OUTSIDE` with its reason (`/openapi.json`); a new route in none of them, an
+entry that is no route, and an entry in two fail. The routes come from the app's router, its
+included routers and their prefixes walked, not from the OpenAPI document, so a route left
+out of the schema (`include_in_schema=False`) counts too.
+A key the contract names and the hub does not send yet goes into `KNOWN_GAPS` with the card
+that adds it; the test fails once the hub sends it, so the entry leaves with that card.
+
+Only missing keys fail. Keys the hub sends beyond the contract, nested shapes, types and
+values are not checked. The anchor check runs one way: a listed key must be named in the
+contract, but a key the contract names that the list leaves out is not found by the test; the
+list is kept whole by hand, from the anchor's whole section (in #1499's review the project's
+list first lacked `public_page` and `public_about`, which §6.1 names below its example).
+
+**Reason:**
+- `GET …/roles` answered `custom` only, while the contract promised `builtin` too, and no
+  test noticed. A test per route that compares the keys catches that kind of gap.
+- docs/api.md gives shapes as JSON examples, as braces in a sentence and as tables. A parser
+  would have to guess which of these is the answer of which route. A hand-kept list with an
+  anchor that must still be in the contract, and keys that must be named after it, fails when
+  the contract drops or renames a listed key.
+- `web/tools/hub-shapes.json` records the hub's own answers for the dashboard's fixtures. It
+  says what the hub sends, not what the contract promises, so it cannot find this gap.
+
+**Rejected alternatives:**
+- Parsing the shapes out of docs/api.md: three forms, and no marker of which route an
+  example belongs to.
+- Comparing key sets for equality: the contract does not list every key the hub sends (the
+  account deletion on `GET /me` is named in a table elsewhere), so equality would fail on
+  documentation gaps of the other direction first; that direction is a later step.
+- Fixing the roles gap in the same change: it is product work (descriptions, guides per
+  §6.28, scopes) with its own card.

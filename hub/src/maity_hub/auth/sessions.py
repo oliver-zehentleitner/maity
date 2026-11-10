@@ -19,6 +19,7 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import clock, ids
 from maity_hub import tables as t
+from maity_hub.auth import known_sources
 from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
     SESSION_IDLE,
@@ -37,12 +38,27 @@ YOUNG = timedelta(hours=1)
 
 # What a browser says about itself, matched in this order: Edge and Opera name Chrome
 # too, Chrome names Safari, and every iOS browser is Safari underneath.
+_VERSION = re.compile(r"\bVersion/[\d.]")
+_SAFARI = re.compile(r"\bSafari/")
+
+
+def _safari(text: str) -> object:
+    """`Version/<digits or dots>` and, later on the same line, `Safari/`: two searches per
+    line, so the work grows with the header's length. The single pattern it replaces,
+    `\\bVersion/[\\d.]+.*\\bSafari/`, tried every split between its two runs."""
+    for line in text.split("\n"):
+        version = _VERSION.search(line)
+        if version and _SAFARI.search(line, version.end()):
+            return True
+    return None
+
+
 _BROWSERS = (
-    ("Edge", re.compile(r"\bEdg(?:e|A|iOS)?/")),
-    ("Opera", re.compile(r"\bOPR/|\bOpera\b")),
-    ("Firefox", re.compile(r"\b(?:Firefox|FxiOS)/")),
-    ("Chrome", re.compile(r"\b(?:Chrome|CriOS|Chromium)/")),
-    ("Safari", re.compile(r"\bVersion/[\d.]+.*\bSafari/")),
+    ("Edge", re.compile(r"\bEdg(?:e|A|iOS)?/").search),
+    ("Opera", re.compile(r"\bOPR/|\bOpera\b").search),
+    ("Firefox", re.compile(r"\b(?:Firefox|FxiOS)/").search),
+    ("Chrome", re.compile(r"\b(?:Chrome|CriOS|Chromium)/").search),
+    ("Safari", _safari),
 )
 _SYSTEMS = (
     ("iOS", re.compile(r"\b(?:iPhone|iPad|iPod)\b")),
@@ -58,7 +74,7 @@ def describe(user_agent: str | None) -> tuple[str | None, str | None]:
     """(browser, operating system) from a `User-Agent`, each None when unknown. A name
     from the list only, never text from the header: the list is shown to the human."""
     text = user_agent or ""
-    browser = next((name for name, pattern in _BROWSERS if pattern.search(text)), None)
+    browser = next((name for name, found in _BROWSERS if found(text)), None)
     system = next((name for name, pattern in _SYSTEMS if pattern.search(text)), None)
     return browser, system
 
@@ -261,7 +277,7 @@ def create(
         raise unauthenticated("this account was deleted")
     if account is not None and account.suspended_at is not None:
         # and none for a suspended one, answered as a wrong password is (§16.8).
-        raise unauthenticated("handle or password is wrong")
+        raise unauthenticated("address or password is wrong")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)
@@ -301,6 +317,7 @@ def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -
         select(t.human_session).where(t.human_session.c.public_id == public_id)
     ).one()
     conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_login_at=now))
+    known_sources.remember(conn, human_id, row.source)  # a known source from now on (§2.1)
     # Every new session tells its human, whichever the method (§2.6.5).
     data: dict[str, Any] = {
         "session_id": public_id,

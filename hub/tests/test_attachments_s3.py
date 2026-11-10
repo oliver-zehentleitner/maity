@@ -450,6 +450,40 @@ def test_an_unreadable_folder_on_the_volume_fails_alone(
     assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 1}
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a folder without permissions")
+def test_a_folder_no_project_has_is_left_alone_not_failed(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    """`lost+found` on an ext4 volume is no project's: like the sweep, the copy leaves it alone
+    before reading its keys, so a clean run ends with 0 (c47w at #1299)."""
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    (tmp_path / "lost+found").mkdir(mode=0o000)
+    try:
+        done = attachment_store.copy_local_to_s3(
+            source,
+            S3Store(config),
+            apply=True,
+            live=lambda project: {"att-1"} if project == "prj-1" else None,
+        )
+    finally:
+        (tmp_path / "lost+found").chmod(0o700)
+    assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
+
+
+def test_the_live_attachments_of_a_folder_no_project_has_are_none(
+    make_client: ClientFactory, migrated: Engine, tmp_path: Path
+) -> None:
+    from maity_hub import cli
+
+    owner = flow.human(lambda **kw: make_client(attachment_dir=tmp_path, **kw), migrated)
+    flow.project(owner, "maity")
+    kept = put(owner, "a.txt", b"one").json()["id"]
+    (folder,) = [p.parent for p in tmp_path.glob(f"*/{kept}")]
+    assert cli._live_attachments(migrated, folder.name) == {kept}
+    assert cli._live_attachments(migrated, "lost+found") is None
+
+
 def test_a_blob_without_the_hubs_digest_is_copied_again(
     config: AttachmentS3, tmp_path: Path
 ) -> None:
@@ -656,3 +690,27 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     assert "failed: 2" in out.out and SECRET not in out.out + out.err  # the copy and the clean
     monkeypatch.setenv("MAITY_ATTACHMENT_STORE", "local")
     assert cli.main(["attachments", "copy-to-s3"]) == cli.EXIT_CONFIG  # no target
+
+
+def test_the_sweep_reads_nothing_in_a_folder_no_project_has(
+    migrated: Engine, config: AttachmentS3
+) -> None:
+    """A folder no project has is skipped before its keys: no HEAD and no lock per object of
+    it (attachments.sweep), only the one warning."""
+    store = attachment_store.S3Store(config)
+    raw(config).put_object(Bucket=config.bucket, Key="prj-unknown/att-foreign", Body=b"x")
+    heads: list[str] = []
+    head = store.client.head_object
+
+    def counted(**kwargs: Any) -> Any:
+        heads.append(kwargs["Key"])
+        return head(**kwargs)
+
+    store.client.head_object = counted
+    try:
+        attachments.sweep(migrated, store)
+    finally:
+        store.client.head_object = head
+    assert not [k for k in heads if "prj-unknown/" in k], heads
+    assert raw(config).head_object(Bucket=config.bucket, Key="prj-unknown/att-foreign")
+    raw(config).delete_object(Bucket=config.bucket, Key="prj-unknown/att-foreign")

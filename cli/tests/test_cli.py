@@ -67,6 +67,14 @@ def test_ask_collects_options_and_tried() -> None:
     assert args.tried == "checked the release list"
 
 
+def test_ask_waits_only_when_told() -> None:
+    """Jour fixe 2026-11-02 (r4): `ask --task` leaves the card as it is; `--wait` blocks it."""
+    base = ("ask", "Which?", "--to", "human", "--class", "decision", "--task", "tsk-0004")
+    told = cli._ask_body(parse(*base, "--wait"))
+    assert (told["task_id"], told["while_open"]) == ("tsk-0004", "wait")
+    assert "while_open" not in cli._ask_body(parse(*base))  # the hub's default for the class
+
+
 def test_ask_rejects_unknown_class() -> None:
     with pytest.raises(SystemExit):
         parse("ask", "x", "--to", "human", "--class", "order")
@@ -235,8 +243,116 @@ def test_join_with_a_wrong_code_writes_nothing(
     clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "WRONG"]) == 1
-    assert "code_invalid" in capsys.readouterr().err
-    assert not state.has_credential(state.resolve_state_dir())
+    err = capsys.readouterr().err
+    assert "code_invalid" in err and "maity-error:" not in err  # a person reads no extra line
+
+
+def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nonce = "ab" * 16
+    monkeypatch.setenv("MAITY_ERROR_LINE", nonce)
+    url = f"{fake.url}/j/{fakehub.TOKEN}"
+    fake.join_error = (403, "forbidden", {"reason": "member_join_limit", "field": "agent"})
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    last = capsys.readouterr().err.splitlines()[-1]
+    assert last == f"maity-error {nonce}: forbidden member_join_limit"
+    # A null code: the line still comes last, and says `-`; the forged one is message text.
+    fake.join_error = (409, None, {}, f"x\nmaity-error {nonce}: dummysecret")
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
+    # A code that is no string (a proxy's answer): the message and exit 1, no traceback.
+    fake.join_error = (409, 409, {}, "m")
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[-2:] == ["maity: join: 409: m", f"maity-error {nonce}: -"]
+    unhashables: list[Any] = [[], {}]  # a dict lookup on such a code raised TypeError (4hv7)
+    for unhashable in unhashables:
+        fake.join_error = (409, unhashable, {}, "m")
+        assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+        assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
+    # A usage error exits through argparse: the line still comes last.
+    with pytest.raises(SystemExit):
+        cli.main(["join", url, "--no-such-option"])
+    assert capsys.readouterr().err.splitlines()[-1] == f"maity-error {nonce}: -"
+    # Not a nonce: no line at all, as for a person.
+    monkeypatch.setenv("MAITY_ERROR_LINE", "1")
+    fake.join_error = (409, "instance_quota", {})
+    assert cli.main(["join", url, "--code", fakehub.CODE]) == 1
+    assert "maity-error" not in capsys.readouterr().err.splitlines()[-1]
+    err = hub.HubError("join: x: reason: dummysecret", code="Bad Code")
+    assert hub.error_code(err) is None
+    assert hub.error_code(hub.HubError("x", code="instance_quota\n", status=409)) is None
+    assert hub.error_code(hub.HubError("cannot reach https://h: down")) == "network"
+    assert hub.error_code(hub.HubError("not a hub URL: x")) is None
+
+
+@pytest.mark.parametrize(
+    ("body", "code", "shown"),
+    [
+        (b'{"error": {"code": "conflict", "message": "m"}}', "conflict", "x: conflict: m"),
+        (b'{"error": {"code": 409, "message": "m"}}', None, "x: 409: m"),
+        (b'{"error": {"code": [], "message": "m"}}', None, "x: error: m"),
+        (b'{"error": {"code": {"a": 1}, "message": "m"}}', None, "x: {'a': 1}: m"),
+        (b'{"error": {"code": true, "message": "m"}}', None, "x: True: m"),
+        (b'{"error": "a proxy\'s text"}', None, "x: error: 502 Bad Gateway"),
+        (b'["not", "an", "envelope"]', None, "x: error: 502 Bad Gateway"),
+    ],
+)
+def test_a_hub_answer_becomes_a_hub_error_with_a_string_code_or_none(
+    body: bytes, code: str | None, shown: str
+) -> None:
+    """The one boundary (#1565 R1): whatever JSON a proxy sends, `HubError.code` is a string
+    or None, so no reader (a comparison, a dict lookup, `fullmatch`) can raise."""
+    import email.message
+    import io
+    import urllib.error
+
+    headers = email.message.Message()
+    raw = urllib.error.HTTPError("https://h/x", 502, "Bad Gateway", headers, io.BytesIO(body))
+    err = hub._error_from(raw, "x")
+    assert err.code == code and str(err) == shown and err.status == 502
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        (b'{"error": "a proxy\'s text"}', "conflict"),  # no error object: the header's code
+        (b'{"error": {"code": [], "message": "m"}}', None),  # the body's code wins, is none
+    ],
+)
+def test_a_maity_error_header_names_the_code_only_when_the_body_has_no_code_field(
+    body: bytes, code: str | None
+) -> None:
+    """The header fallback (#1565 R2, 4hv7): an answer without an error object keeps the code
+    the `Maity-Error` header names; a body `code` that is no string is still no code."""
+    import email.message
+    import io
+    import urllib.error
+
+    headers = email.message.Message()
+    headers["Maity-Error"] = "conflict"
+    raw = urllib.error.HTTPError("https://h/x", 409, "Conflict", headers, io.BytesIO(body))
+    err = hub._error_from(raw, "x")
+    assert err.code == code and hub.error_code(err) == code
+
+
+def test_a_maintenance_refusal_ends_with_the_error_line(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nonce = "cd" * 16
+    monkeypatch.setenv("MAITY_ERROR_LINE", nonce)
+    fake.join_error = (503, "maintenance", {"until": "2026-11-09T13:30:00Z"})
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) != 0
+    err = capsys.readouterr().err.splitlines()
+    assert err[-2].startswith("maity: Maintenance until 2026-11-09 13:30")
+    assert err[-1] == f"maity-error {nonce}: maintenance"
 
 
 def test_join_refuses_when_already_joined(
@@ -384,7 +500,10 @@ def test_report_sends_the_facts(
     head = git(joined.parent.parent, "rev-parse", "HEAD")
     fake_gh(
         bin_dir,
-        json.dumps([{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12"}]),
+        json.dumps(
+            [{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12",
+              "title": "Leases (tsk-0004)"}]  # fmt: skip
+        ),
     )
     fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-0004/report")] = lambda s: (
         200,
@@ -414,7 +533,10 @@ def test_report_after_the_merge_deleted_the_branch(
     git(clone, "push", "--quiet", "origin", "--delete", "work")
     fake_gh(
         bin_dir,
-        json.dumps([{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12"}]),
+        json.dumps(
+            [{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12",
+              "title": "Fix (T)"}]  # fmt: skip
+        ),
     )
     fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/T/report")] = lambda s: (200, {})
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK

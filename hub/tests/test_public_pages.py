@@ -60,7 +60,9 @@ def test_a_visitor_gets_the_stored_page_with_the_headers_of_the_contract(
     assert "<h1>OZ Team</h1>" in got.text
     assert got.headers["content-type"].startswith("text/html")
     assert got.headers["cache-control"] == "public, max-age=60"
-    assert got.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert got.headers["content-security-policy"] == (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
+    )
     assert got.headers["x-content-type-options"] == "nosniff"
     assert got.headers["vary"] == "Cookie"
     assert "set-cookie" not in got.headers
@@ -162,12 +164,9 @@ def test_a_page_stored_again_replaces_the_one_before(
 
 
 def test_the_page_is_rate_limited_by_source_address(
-    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+    make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from maity_hub.ratelimit import Limiter
-
-    monkeypatch.setattr(public_pages, "BY_ADDRESS", Limiter(2, 60, name="public_pages.BY_ADDRESS"))
-    client = visitor(make_client)
+    client = visitor(make_client, public_page_limit=(2, 60))  # MAITY_PUBLIC_PAGE_LIMIT
     store(migrated)
     assert [client.get(PATH).status_code for _ in range(3)] == [200, 200, 429]
     # the shell is not counted

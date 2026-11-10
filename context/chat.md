@@ -27,7 +27,8 @@ direct ones. Inside a group chat:
 
 - agents are woken only by a message that mentions them; humans by
   every message of the others (`wake: all` per agent participation also
-  wakes on human messages, bbb35462);
+  wakes on human messages, bbb35462; what humans wrote unmentioned
+  reaches an agent once per read cycle as `chat_unread`, f257b1f9);
 - someone added later starts fresh from their join (resume packet,
   unread counts and wake-ups count only from there) and reads the
   earlier history on demand by paging back through the chat;
@@ -372,6 +373,62 @@ keeps busy chats from crowding the packet.
 - `all` waking on agents' messages too — two agents with `all` would
   answer each other without end, the loop c1af6c8f excluded.
 
+## An agent in a group chat gets one delayed nudge per read cycle for what humans wrote without mentioning it (`chat_unread`)
+
+**Id:** f257b1f9-2af2-4d86-a7be-7277ae27b5e7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's adoption at the jour fixe of 2026-11-02 (the card tsk-xemkg9x1kwt8); the mechanism is the plan on that card, approved by the team lead on 2026-11-08; contract `docs/api.md` §9.2 "The unread nudge", §8.2, §9.4
+**Revisit when:** agents are woken by `chat_unread` so often that it costs more than the missed chats did, `wake: all` gets built and changes how often an agent in a chat is woken, or the 10-minute delay is asked to become a setting
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-11-08
+**See:** chat.md#an-agent-participant-can-be-woken-by-every-human-message-in-a-group-chat-wake-all-opt-in-per-chat — bbb35462-3880-423a-932e-de46cc440fcb — as of 2026-11-08
+
+Messages that human participants write in a group chat without
+mentioning an agent participant reach it without its next resume. The
+hub's worker sends it one `chat_unread` for the chat once the oldest
+such message has waited 10 minutes. It sends it only while an instance
+of the agent that is neither dormant nor paused listens, and only if
+no earlier `chat_unread` for that chat has a `newest_seq` above the
+read mark (none at all, before the first). Reading the chat, or posting in it, moves the mark and
+re-arms the nudge.
+
+Not sent:
+- for a paused or isolated membership;
+- in a closed chat;
+- in a jour fixe round's thread, where each step wakes its members
+  once;
+- in a direct conversation, where every message wakes the agent;
+- in a cross-project chat, where a mention is the only wake;
+- for a participation with `wake: all`, whose human messages wake it
+  already.
+
+Evidence is split. That unmentioned messages should wake the agent is
+the maintainer's decision. The delay, the cycle, the human-only count
+and the listening condition are the lead-approved plan, not stated by
+the maintainer.
+
+**Reason:** agents missed group chats between mentions. The only
+catch-up was the CLI's unread line when a `wait` timed out (cli
+1e40f4fb), and the same card makes waits longer, which would widen that
+gap. The cost that made mentions the only wake (c1af6c8f: a model run
+per message under a supervised runner, and two agents looping) stays
+bounded:
+- at most one wake per chat per read cycle, never sooner than the delay;
+- agents' messages never count, so no loop;
+- nothing is sent while nobody listens, since the resume already counts
+  unread chats.
+
+**Rejected alternatives:**
+- Waking on every unmentioned message: per-message cost, and the loop
+  through agents' messages that c1af6c8f excluded.
+- Building only `wake: all` (bbb35462): it is opt-in per chat, so a chat
+  nobody configured stays missed, and it wakes per human message.
+- Emitting at write time: a burst of messages cannot be coalesced there.
+  The worker's minute pass with a delay sends one nudge for the burst.
+- A new table for "already nudged": the existing read mark and the
+  event table already say it, so no migration was needed.
+
 ## A human pins chats; a pin keeps a chat on top only while nothing newer waits elsewhere
 
 **Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
@@ -483,6 +540,15 @@ because the owner added it. The owner is a participant and reads every
 message. An agent is woken only when a message mentions it.
 Per-participant `wake` — the participation `PATCH` of a project group
 chat — is not built, and this chat does not add it.
+How many of those mentions a participant has not read is rows of its
+own (`cross_chat_mention_for`), one per mentioned participant other
+than the author, counted in the database. Counting by reading the
+chat's messages would read the quiet history as well, and that history
+is what grows.
+An instance mention whose membership is isolated is written as a
+mention of the profile, in the one non-isolated membership that
+resumed most recently. The isolated project is not woken, and the
+mention is not dropped while another membership can take it.
 
 The lead confirmed those boundaries, and on review confirmed four
 more: a participant's projects are shown only where the reader shares
@@ -550,3 +616,10 @@ leaves its old owner's cross-project group chats with
   future cross-owner chat; its details are decided when that is built.
 - The profile stays in the chat under its new owner: another owner's
   agent would then keep reading the room.
+- Counting unread mentions by reading each unread message: a chat of
+  quiet messages would be read in full on every list and every resume.
+  The count is the mention rows alone.
+- Writing nothing when the named instance's membership is isolated:
+  the profile still has a membership that can take the mention, and
+  dropping it would hide a mention the author made. The mention is
+  written there as a mention of the profile.

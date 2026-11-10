@@ -1,4 +1,4 @@
-// A member's page (/<owner>/<slug>/members/<id>[/<tab>], the designer's
+// A member's page (/<owner>/<slug>/team/<id>[/<tab>], the designer's
 // handover #6484, the read-only cut of the coordinator, 2026-10-30): a
 // breadcrumb back to Members, a header — the 64 px avatar with its presence,
 // the name and @handle, pills for trust and role, whose agent it is, whom it
@@ -6,7 +6,7 @@
 // cards it holds, Chat where one may — and tabs: Activity, Cards, Briefing,
 // Sessions & credentials (Briefing only for an admin and the agent's owner, §6.2).
 // Every action stays where it is done (#643): the
-// Actions menu only leads there, Manage on Members for an admin, Manage on
+// Actions menu only leads there, Manage on Team for an admin, Manage on
 // Agents for the agent's owner.
 "use strict";
 
@@ -60,6 +60,8 @@ window.Maity = window.Maity || {};
     task_reported: () => M.t("memberpage.kind.task_reported"), request_created: () => M.t("memberpage.kind.request_created"),
     request_answered: () => M.t("memberpage.kind.request_answered"), message: () => M.t("memberpage.kind.message"),
     member_joined: () => M.t("memberpage.kind.member_joined"), member_updated: () => M.t("memberpage.kind.member_updated"),
+    // A card's restricted text, or the set, changed (§6.4): never the text, never its length.
+    restricted_changed: () => M.t("memberpage.kind.restricted_changed"),
   };
 
   const ownAgentOf = (ctx, m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
@@ -96,7 +98,7 @@ window.Maity = window.Maity || {};
       : ownAgentOf(ctx, m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
     // Actions lead to where each one is done (#643): nothing is done here.
     const actions = [];
-    if (ctx.canAdmin && m.id !== ctx.me.id) actions.push({ label: M.t("memberpage.manage_members"), href: ctx.link("members") + "?manage=" + encodeURIComponent(m.id) });
+    if (ctx.canAdmin && m.id !== ctx.me.id) actions.push({ label: M.t("memberpage.manage_members"), href: ctx.link("team") + "?manage=" + encodeURIComponent(m.id) });
     if (ownAgentOf(ctx, m)) actions.push({ label: M.t("memberpage.manage_agents"), href: ctx.link("agents", m.id) });
     const menu = actions.length ? M.menuButton({
       label: M.t("memberpage.actions.label", { name: m.display_name }),
@@ -254,7 +256,7 @@ window.Maity = window.Maity || {};
 
   async function page(ctx, root, id, tab, instanceId) {
     const m = (ctx.members || []).find((x) => x.id === id);
-    const crumb = h("nav", { class: "breadcrumb", "aria-label": M.t("memberpage.breadcrumb") }, h("a", { href: ctx.link("members") }, M.t("members.title")), " / ",
+    const crumb = h("nav", { class: "breadcrumb", "aria-label": M.t("memberpage.breadcrumb") }, h("a", { href: ctx.link("team") }, M.t("members.title")), " / ",
       h("span", { "aria-current": "page" }, m ? "@" + M.dom.handleOf(ctx, m) : id));
     if (!m) {
       append(root, crumb, h("p", { class: "error", role: "alert" }, M.t("members.no_such", { id })));
@@ -266,7 +268,7 @@ window.Maity = window.Maity || {};
     const claims = (m.instances || []).some((i) => typeof i.claims === "number")
       ? (m.instances || []).filter((i) => !i.revoked_at).reduce((n, i) => n + (i.claims || 0), 0) : null;
     const tabs = h("nav", { class: "member-tabs", "aria-label": M.t("memberpage.sections") }, offered.map(([k, label]) =>
-      h("a", { href: ctx.link("members", m.id, k), class: "member-tab", "aria-current": k === chosen ? "page" : null }, label())));
+      h("a", { href: ctx.link("team", m.id, k), class: "member-tab", "aria-current": k === chosen ? "page" : null }, label())));
     const body = h("section", { class: "member-section", "aria-label": TABS.find(([k]) => k === chosen)[1]() });
     const head = header(ctx, m, claims);
     append(root, crumb, head.el, tabs, body);

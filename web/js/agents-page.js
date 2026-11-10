@@ -60,7 +60,8 @@ window.Maity = window.Maity || {};
       },
     },
     h("h3", null, M.t("agents.new.title")),
-    h("label", { for: "agent-new-handle" }, M.t("agents.handle")), handle, h("p", { class: "hint" }, HANDLE.text),
+    h("label", { for: "agent-new-handle" }, M.t("agents.handle")), handle,
+    M.handles.explain("agent", handle), h("p", { class: "hint" }, HANDLE.text),
     h("label", { for: "agent-new-name" }, M.t("agents.display_name")), name,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: cancel }, M.t("agents.new.cancel")), go), status.el);
   }
@@ -167,6 +168,7 @@ window.Maity = window.Maity || {};
     },
     h("label", { for: key("name") }, M.t("agents.display_name")), name,
     h("label", { for: key("handle") }, M.t("agents.handle")), handle,
+    M.handles.explain("agent", handle),
     h("p", { class: "hint" }, HANDLE.text + " " + M.t("agents.edit.handle_hint")),
     h("label", { for: key("git-name") }, M.t("agents.edit.git_name")), gitName,
     h("label", { for: key("git-email") }, M.t("agents.edit.git_email")), gitMail,
@@ -465,6 +467,27 @@ window.Maity = window.Maity || {};
   // as on /agents; the open joins stand under the cards, where the agents run (js/placements.js) after them.
   // args: ["join"] (the panel open, ?agent=<id> choosing the profile), [<id>]
   // (that card marked), [<id>, "rulebook"] (at its rulebook, a join's quota refusal).
+  // The Agents page's tabs, as the Team page's (js/members.js): the list, and one's own fleet as a
+  // tree (js/org.js, tsk-q989pagmk2x9), each at its own path.
+  const agentsTabs = (ctx, chosen) => h("nav", { class: "view-tabs agents-tabs", "aria-label": M.t("agents.tabs.label") },
+    [[null, M.t("agents.tab.list")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
+      h("a", { href: k ? ctx.link("agents", k) : ctx.link("agents"), class: "view-tab", "aria-current": (k || "list") === chosen ? "page" : null }, label)));
+
+  // One's own agents here as a tree under oneself, drawn again when a member changes.
+  function fleetView(ctx, root) {
+    const status = M.statusLine();
+    const box = h("div", { class: "org-box fleet-box" });
+    const draw = () => append(clear(box), M.org.drawFleet(ctx));
+    append(root, agentsTabs(ctx, "organisation"), h("h2", null, M.t("agents.fleet.title")),
+      h("p", { class: "muted" }, M.t("agents.fleet.intro")), status.el, box);
+    draw();
+    ctx.onEvents((events) => {
+      if (!events.some((e) => /^member_/.test(e.kind))) return;
+      M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(); status.done(); },
+        (err) => status.fail(M.t("org.reread_failed"), err));
+    });
+  }
+
   M.views.projectAgents = async function (ctx, root, args) {
     // The value the creation's answer returned (§6.1): a private repository keeps a project private.
     const created = M.projectCreated;
@@ -477,6 +500,7 @@ window.Maity = window.Maity || {};
       append(root, h("h2", null, M.t("agents.project.title")), h("p", null, M.t("agents.project.humans_only")));
       return;
     }
+    if (args && args[0] === "organisation" && M.org) { fleetView(ctx, root); return; }
     const joinAsked = !!(args && args[0] === "join");
     const wanted = joinAsked ? null : (args && args[0]) || null;
     const rulebookAsked = !!(wanted && args[1] === "rulebook");
@@ -525,6 +549,8 @@ window.Maity = window.Maity || {};
         M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
         // Whom it reports to, as its owner sets it (§2.3); an admin also on Members.
         P.reportsToPart(m, memberPath),
+        // Its role, as its owner sets it within a member join's roles (§3.1).
+        P.rolePart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
         // Its owner puts an instance to rest or wakes it (§6.17).
@@ -637,7 +663,7 @@ window.Maity = window.Maity || {};
       opening: () => { if (J) J.close(false); },
     });
     const placementsSlot = h("div", { class: "placements-slot" });
-    append(root, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null,
+    append(root, M.org ? agentsTabs(ctx, "list") : null, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null,
       h("div", { class: "agents-head-actions" }, addProfile.button, mayAdd ? addButton : null)),
       h("p", { class: "hint" }, (() => {
         const values = { name: ctx.project.name || ctx.slug, link: h("a", { href: "/agents" }, M.t("agents.title")) };
@@ -677,12 +703,15 @@ window.Maity = window.Maity || {};
         else reload().then(() => redraw(), () => {});
       });
     }
-    // Where the agents run (js/placements.js);
-    // the credentials (for a restart's new join) are read for one's own only.
+    // Where the agents run (js/placements.js); the credentials (for a restart's new join) are
+    // read for one's own agents only, and of those only for the ones placed here, once the
+    // placements are known (tsk-d61rvjm6gteh: one list per agent of the project at once was the
+    // page's slowest part).
     if (M.placements && M.agentParts) {
-      const agentsNow = items.filter((m) => P.ownAgent(m) && !m.removed_at);
-      Promise.all(agentsNow.map((m) => M.agentParts.loadCredentials(ctx, m)))
-        .then((creds) => M.placements.section(ctx, Object.fromEntries(agentsNow.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]))))
+      const own = new Map(items.filter((m) => P.ownAgent(m) && !m.removed_at).map((m) => [m.id, m]));
+      const credentialsOf = (ids) => Promise.all(ids.filter((id) => own.has(id)).map((id) => M.agentParts.loadCredentials(ctx, own.get(id))
+        .then((got) => [id, (got.list && got.list.items) || []]))).then((pairs) => Object.fromEntries(pairs));
+      M.placements.section(ctx, credentialsOf)
         .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});
     }
     // A card asked for by the URL: its title, or its rulebook, takes the

@@ -1,4 +1,4 @@
-// Sessions (docs/api.md §2.6.5, §2.6.7; /account/sessions): where the
+// Sessions (docs/api.md §2.6.5, §2.6.7; /account/security/sessions): where the
 // human is signed in, with "This was me" for a sign-in alert, End per
 // session and End all other sessions, which passed the second factor (§2.8.7),
 // the ended ones of the last 30 days,
@@ -126,9 +126,12 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     const body = h("div");
+    // Approving a held address change is a sensitive call (§2.8.4): the second factor is asked
+    // for here, outside the list a redraw replaces.
+    const stepSlot = h("div", { class: "step-up-slot", hidden: true });
     append(box, heading,
       h("p", { class: "muted" }, M.t("sessions.hint")),
-      body, status.el);
+      body, stepSlot, status.el);
 
     // A change, then the list again; the status line says what happened.
     // done is the words, or a function of what was read afterwards.
@@ -137,6 +140,7 @@ window.Maity = window.Maity || {};
       try {
         await fn();
       } catch (err) {
+        if (err.code === "cancelled") { status.done(); return; }
         // A change replaced meanwhile: the one that replaced it is shown.
         if (err.code === "conflict") await draw();
         status.fail(M.t("sessions.not_done"), said(err));
@@ -207,7 +211,7 @@ window.Maity = window.Maity || {};
         ended.length ? h("details", { class: "sessions-ended" },
           h("summary", null, M.t("sessions.ended_list", { count: ended.length })),
           h("ul", null, ended.map(endedRow))) : null,
-        await addressChange(ctx, cur, sessions, act));
+        await addressChange(ctx, cur, sessions, act, stepSlot));
       return data;
     }
     // Crossing an hour or a day of age changes what this session may do
@@ -227,7 +231,7 @@ window.Maity = window.Maity || {};
   // session at least a day old, reject good standing; both name the change.
   // Which session asked is said: the 24-hour rule exists for a change filed
   // from a session that is not confirmed.
-  async function addressChange(ctx, cur, sessions, act) {
+  async function addressChange(ctx, cur, sessions, act, stepSlot) {
     let settings;
     try {
       settings = await M.api.get("/me/notification-settings");
@@ -247,9 +251,9 @@ window.Maity = window.Maity || {};
           : askedFrom(held, from))),
       h("div", { class: "actions" },
         h("button", { type: "button", class: "small", disabled: why ? true : null,
-          onclick: () => act(M.t("sessions.address.approving"), () => M.api.post("/me/notification-settings/email/address-change/approve", names), M.t("sessions.address.approved")) }, M.t("sessions.address.approve")),
+          onclick: () => act(M.t("sessions.address.approving"), () => M.stepUp.run(() => M.api.post("/me/notification-settings/email/address-change/approve", names), stepSlot, M.t("sessions.address.step_up")), M.t("sessions.address.approved")) }, M.t("sessions.address.approve")),
         h("button", { type: "button", class: "small", disabled: !cur || !cur.good_standing ? true : null,
-          onclick: () => act(M.t("sessions.address.rejecting"), () => M.api.post("/me/notification-settings/email/address-change/reject", names), M.t("sessions.address.rejected")) }, M.t("sessions.address.reject"))),
+          onclick: () => act(M.t("sessions.address.rejecting"), () => M.stepUp.run(() => M.api.post("/me/notification-settings/email/address-change/reject", names), stepSlot, M.t("sessions.address.step_up")), M.t("sessions.address.rejected")) }, M.t("sessions.address.reject"))),
       why ? h("p", { class: "hint" }, why) : null);
   }
 

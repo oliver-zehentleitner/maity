@@ -107,15 +107,14 @@ def test_report_sends_the_upstream_without_the_token(
 
 def test_a_gh_error_that_repeats_the_url_loses_the_token(clone: Path, bin_dir: Path) -> None:
     fake_gh(bin_dir, "", exit_code=1, stderr=f"could not read {TOKEN_URL}")
-    with pytest.raises(gitfacts.FactsError) as raised:
-        gitfacts.collect(clone)
-    assert "could not read https://github.com/acme/widget.git" in str(raised.value)
-    assert SECRET not in str(raised.value)
+    error = gitfacts.collect(clone).forge_error  # kept for `report`, which raises it as is
+    assert error is not None and "could not read https://github.com/acme/widget.git" in error
+    assert SECRET not in error
 
 
 def test_a_git_error_that_repeats_the_url_loses_the_token(clone: Path) -> None:
     git(clone, "config", "branch.work.remote", TOKEN_URL)  # no insteadOf: ls-remote fails
-    git(clone, "config", "protocol.https.allow", "never")  # without touching the network
+    git(clone, "config", "http.proxy", "http://127.0.0.1:9")  # without touching the network
     with pytest.raises(gitfacts.FactsError) as raised:
         gitfacts.collect(clone)
     assert str(raised.value).startswith("git ls-remote failed:")

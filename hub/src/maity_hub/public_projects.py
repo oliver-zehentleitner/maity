@@ -11,6 +11,7 @@ deleted. Whatever changes one of these calls `public_pages.touch` in its transac
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -137,8 +138,8 @@ def agent_statistics(
     """The project's statistics reduced for the public (§16.9, §6.22): the last 30 days over
     the agents only, so that no human's contribution appears. `totals` (with
     `cards_done_per_day`) count every agent that is not isolated; `members` has a row, with its
-    counters, for each agent the page names (a public owner profile, no hold). `named` is what
-    `team` found, when the caller has it already."""
+    counters, for each agent the page names (no hold on its profile, an owner not suspended, not
+    isolated: `team`). `named` is what `team` found, when the caller has it already."""
     m = t.membership.c
     rows = conn.execute(
         select(m.id, m.agent_id).where(
@@ -387,10 +388,12 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
-            select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
+            select(t.project.c.id)
+            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
+            .order_by(t.project.c.id)
         ).scalars()
     )
 

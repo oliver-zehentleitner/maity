@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Engine, func, select
 
-from maity_hub import CLI_VERSION, guide
+from maity_hub import CLI_VERSION, catalog, guide
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -30,6 +30,7 @@ PACKET = {
     "ticker",
     "events",
     "conversations",  # §5.2, §9.2
+    "cross_chats",  # §5.2, §9.5
     "peers",
     "preferences",  # §19.4
     "operations",
@@ -104,6 +105,15 @@ def test_the_packet_has_every_part_of_the_contract(
             "updated_at": None,
         },
         "owner_preferences": None,  # §19.4: not given
+        # A coder's join without `subagents` gives its owner's instruction (§3.1, §5.2).
+        "subagents": {
+            "on": True,
+            "language": "en",
+            "by": {"kind": "human", "id": owner.id, "handle": "maintainer"},
+            "instruction": catalog.section("subagents", "en")["instruction"].replace(
+                "{owner}", "maintainer"
+            ),
+        },
         "availability_policy": {"on_unavailable": "wait", "substitutes": [], "grace_minutes": 15},
         "covering": [],
         # Nobody reports to it: zero counts, and `maity resume` prints no lead line (§5.2).

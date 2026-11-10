@@ -6,8 +6,8 @@ import base64
 import hashlib
 import json
 import logging
-from collections.abc import Callable
-from dataclasses import replace
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
@@ -97,7 +97,7 @@ class RequestCreate(Written):
     priority: str = "normal"
     to: str | None = None
     task_id: str | None = None
-    while_open: str = "wait"
+    while_open: str | None = None  # absent: what the class says (`_while_open`)
     needs_in_session: NeedsInSessionIn | None = None
     on_behalf_of: str | None = None
     ktw_ref: str | None = Field(default=None, max_length=255)
@@ -132,18 +132,138 @@ def klass(row: Any) -> str:
 # --- views -------------------------------------------------------------------------
 
 
-def _person(conn: Connection, membership_id: int | None, session_id: str | None) -> Any:
+@dataclass(frozen=True)
+class _Known:
+    """What the views of a page read of other tables, each in one query for all its rows
+    (`request_views`): a single read is a page of one."""
+
+    memberships: dict[int, Any]
+    agent_names: dict[str, str | None]
+    humans: dict[str, Any]
+    avatars: dict[str, str | None]
+    instances: dict[tuple[str, int], str | None]
+    cards: dict[str, Any]
+    reports: dict[str, Any]
+    needs: dict[str, Any]
+
+    def principal(self, membership_id: int) -> str:
+        row = self.memberships[membership_id]
+        found: str = row.agent_id or row.human_id
+        return found
+
+
+def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -> _Known:
+    """`members`: memberships to show besides the rows' own (`_needs_in_session`)."""
+    membership_ids = {
+        i
+        for r in rows
+        for i in (r.asked_by, r.on_behalf_of, r.holder_member, r.to_member)
+        if i is not None
+    } | set(members)
+    memberships = (
+        {
+            m.id: m
+            for m in conn.execute(
+                select(t.membership).where(t.membership.c.id.in_(membership_ids))
+            ).all()
+        }
+        if membership_ids
+        else {}
+    )
+    missing = membership_ids - memberships.keys()
+    if missing:
+        raise LookupError(f"membership rows {sorted(missing)} do not exist")
+    agent_ids = {m.agent_id for m in memberships.values() if m.agent_id}
+    human_ids = {m.human_id for m in memberships.values() if not m.agent_id}
+    human_ids |= {r.asked_by_human for r in rows if r.asked_by is None and r.asked_by_human}
+    agent_names: dict[str, str | None] = (
+        dict(
+            conn.execute(
+                select(t.agent_profile.c.id, t.agent_profile.c.display_name).where(
+                    t.agent_profile.c.id.in_(agent_ids)
+                )
+            ).all()
+        )
+        if agent_ids
+        else {}
+    )
+    humans = (
+        {
+            h.id: h
+            for h in conn.execute(
+                select(t.human.c.id, t.human.c.display_name, t.human.c.deleted_at).where(
+                    t.human.c.id.in_(human_ids)
+                )
+            ).all()
+        }
+        if human_ids
+        else {}
+    )
+    # A stored `needs_in_session` with a deleted account in the deleted shape (§2.9).
+    stored = [r for r in rows if r.needs_in_session is not None]
+    shaped = shape_deleted(conn, [r.needs_in_session for r in stored])
+    needs = dict(zip([r.id for r in stored], shaped, strict=True))
+    pictured = agent_ids | human_ids
+    pictured |= {n["member_id"] for n in needs.values() if not n.get("deleted")}
+    sessions = {r.asked_session_id for r in rows if r.asked_session_id is not None}
+    instances: dict[tuple[str, int], str | None] = (
+        {
+            (found.id, found.membership_id): found.instance
+            for found in conn.execute(
+                select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
+                .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
+                .where(t.agent_session.c.id.in_(sessions))
+            ).all()
+        }
+        if sessions
+        else {}
+    )
+    task_ids = {r.task_id for r in rows if r.task_id is not None}
+    cards = (
+        {
+            c.id: c
+            for c in conn.execute(
+                select(t.card.c.id, t.card.c.title, t.card.c.status).where(
+                    t.card.c.id.in_(task_ids)
+                )
+            ).all()
+        }
+        if task_ids
+        else {}
+    )
+    report_ids = {r.report_id for r in rows if r.report_id is not None}
+    reports = (
+        {
+            found.id: found
+            for found in conn.execute(
+                select(
+                    t.abuse_report.c.id, t.abuse_report.c.reason, t.abuse_report.c.target_type
+                ).where(t.abuse_report.c.id.in_(report_ids))
+            ).all()
+        }
+        if report_ids
+        else {}
+    )
+    return _Known(
+        memberships=memberships,
+        agent_names=agent_names,
+        humans=humans,
+        avatars=avatars.urls(conn, pictured),
+        instances=instances,
+        cards=cards,
+        reports=reports,
+        needs=needs,
+    )
+
+
+def _person(known: _Known, membership_id: int | None, session_id: str | None) -> Any:
     if membership_id is None:
         return None
-    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    row = known.memberships[membership_id]
     if row.agent_id:
-        name = conn.execute(
-            select(t.agent_profile.c.display_name).where(t.agent_profile.c.id == row.agent_id)
-        ).scalar()
+        name = known.agent_names.get(row.agent_id)
     else:
-        human = conn.execute(
-            select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == row.human_id)
-        ).one()
+        human = known.humans[row.human_id]
         if deleted(human):  # §2.9: the field's shape, without the person
             return {
                 "member_id": row.human_id,
@@ -157,25 +277,23 @@ def _person(conn: Connection, membership_id: int | None, session_id: str | None)
     return {
         "member_id": member_id,
         "display_name": name,
-        "avatar_url": avatars.urls(conn, [member_id])[member_id],
+        "avatar_url": known.avatars[member_id],
         "trust": row.trust,
         "role": row.role,
         "session_id": session_id,
     }
 
 
-def _inviter(conn: Connection, human_id: str) -> dict[str, Any]:
+def _inviter(known: _Known, human_id: str) -> dict[str, Any]:
     """A human who asks without a membership: the one who invites to an organisation. The
     shape of a member's, without a trust or a role: there is no project."""
-    human = conn.execute(
-        select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == human_id)
-    ).one()
+    human = known.humans[human_id]
     shown = (
         deleted_person()
         if deleted(human)
         else {
             "display_name": human.display_name,
-            "avatar_url": avatars.urls(conn, [human_id])[human_id],
+            "avatar_url": known.avatars[human_id],
         }
     )
     return {
@@ -188,36 +306,40 @@ def _inviter(conn: Connection, human_id: str) -> dict[str, Any]:
     }
 
 
-def _asker(conn: Connection, row: Any) -> Any:
+def _asker(known: _Known, row: Any) -> Any:
     """`asked_by` with the agent instance that asked (§7, §6.17): the instance of the
     credential whose session filed it; `null` for a human, and for a request the hub
     files on an agent's behalf, which has no session. The owner's digest (§5.3) has no
     asker at all: `null`."""
     if row.asked_by is None and row.asked_by_human is not None:
-        return _inviter(conn, row.asked_by_human)  # an organisation's invitation (§6.26)
+        return _inviter(known, row.asked_by_human)  # an organisation's invitation (§6.26)
     if row.asked_by is None:
         return None
-    person = _person(conn, row.asked_by, row.asked_session_id)
-    return {**person, "instance": _asking_instance(conn, row)}
+    person = _person(known, row.asked_by, row.asked_session_id)
+    # The instance of the credential whose session filed it (`_asking_instance`).
+    instance = (
+        None
+        if row.asked_session_id is None
+        else known.instances.get((row.asked_session_id, row.asked_by))
+    )
+    return {**person, "instance": instance}
 
 
-def _with_avatar(conn: Connection, needs: dict[str, Any] | None) -> dict[str, Any] | None:
+def _with_avatar(known: _Known, row: Any) -> dict[str, Any] | None:
     """The stored `needs_in_session` with the member's current `avatar_url` (§6.10)."""
-    if needs is None:
+    if row.needs_in_session is None:
         return None
-    member_id = needs["member_id"]
-    [shaped] = shape_deleted(conn, [needs])  # a deleted account as one (§2.9)
+    shaped = known.needs[row.id]  # a deleted account as one (§2.9)
     if shaped.get("deleted"):
         return dict(shaped)
-    return {**needs, "avatar_url": avatars.urls(conn, [member_id])[member_id]}
+    member_id = row.needs_in_session["member_id"]
+    return {**row.needs_in_session, "avatar_url": known.avatars[member_id]}
 
 
-def _task(conn: Connection, task_id: str | None) -> dict[str, Any] | None:
+def _task(known: _Known, task_id: str | None) -> dict[str, Any] | None:
     if task_id is None:
         return None
-    card = conn.execute(
-        select(t.card.c.id, t.card.c.title, t.card.c.status).where(t.card.c.id == task_id)
-    ).one()
+    card = known.cards[task_id]
     return {"id": card.id, "title": card.title, "status": card.status}
 
 
@@ -235,11 +357,35 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
     """A request as §7 shows it; also the payload of its events (a personal request's
     events excepted: `_payload`). `with_proposal` adds the fields a proposal's kind shows
     (`proposals.view`): only `GET …/requests/{id}` asks for them, never an event, a list
-    or a resume packet (§19.1, §19.3)."""
-    task = _task(conn, row.task_id)
+    or a resume packet (§19.1, §19.3). A page of one: the same path as `request_views`."""
+    view = _view(conn, row, _known(conn, [row]))
+    shown = proposals.view(conn, row) if with_proposal else {}
+    if with_proposal and "agent_change" not in shown:
+        # The request read carries it; a list and an event do not (§6.2, §7).
+        shown = {**shown, "agent_change": None}
+    if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
+        raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
+    # A deleted account in the stored mentions or answer is shown as one (§2.9).
+    [shaped] = shape_deleted(conn, [view | shown])
+    return dict(shaped)
+
+
+def request_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """The views of a page of requests, as `request_view` shows each: what they read of
+    other tables is read once for all of them (`_known`), so a page costs the same for 5
+    rows as for 200. The one exception is a placement's request, whose placement summary
+    is still read per row (`placements.request_summary`)."""
+    if not rows:
+        return []
+    known = _known(conn, rows)
+    return [dict(v) for v in shape_deleted(conn, [_view(conn, r, known) for r in rows])]
+
+
+def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
+    task = _task(known, row.task_id)
     if row.personal and row.status != "open" and row.task_snapshot is not None:
         task = row.task_snapshot  # the card as it was when the request closed (§7)
-    view = {
+    return {
         "id": row.id,
         "class": klass(row),
         "title": row.title,
@@ -249,13 +395,13 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "options": row.options,
         "replies": replies(klass(row), row.options, action=row.action is not None),
         "priority": row.priority,
-        "to": inbox.addressee_of(row).text(conn),
-        "asked_by": _asker(conn, row),
-        "on_behalf_of": _person(conn, row.on_behalf_of, None),
+        "to": _to(known, row),
+        "asked_by": _asker(known, row),
+        "on_behalf_of": _person(known, row.on_behalf_of, None),
         "task_id": row.task_id,
         "task": task,
         "while_open": row.while_open,
-        "needs_in_session": _with_avatar(conn, row.needs_in_session),
+        "needs_in_session": _with_avatar(known, row),
         "ktw_ref": row.ktw_ref,
         "jour_fixe": row.jour_fixe,
         "status": row.status,
@@ -265,32 +411,37 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "placement": placements.request_summary(conn, row.placement_id),
         "personal": bool(row.personal),
         "filed_by": row.filed_by,
-        "holder": _holder(conn, row),
+        "holder": _holder_of(known, row),
         "forwarding": row.forwarding or [],
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
         "action": _action_view(row),
-        "report": _report_view(conn, row),  # set by the hub only (§16.8)
+        "report": _report_view(known, row),  # set by the hub only (§16.8)
     }
-    shown = proposals.view(conn, row) if with_proposal else {}
-    if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
-        raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
-    # A deleted account in the stored mentions or answer is shown as one (§2.9).
-    [shaped] = shape_deleted(conn, [view | shown])
-    return dict(shaped)
 
 
-def _report_view(conn: Connection, row: Any) -> dict[str, Any] | None:
+def _to(known: _Known, row: Any) -> str:
+    """`inbox.Addressee.text` with the member id from the page's memberships."""
+    to = inbox.addressee_of(row)
+    return to.shown(known.principal(to.member) if to.member is not None else None)
+
+
+def _holder_of(known: _Known, row: Any) -> str:
+    """`_holder` with the member id from the page's memberships."""
+    if row.holder_member is not None:
+        return known.principal(row.holder_member)
+    if row.holder_pool:
+        return "trust:admin"
+    return _to(known, row)
+
+
+def _report_view(known: _Known, row: Any) -> dict[str, Any] | None:
     """`{id, reason, type}` of the report a report request stands for (§7, §16.8): ids and
     kinds, never its content."""
     if row.report_id is None:
         return None
-    found = conn.execute(
-        select(t.abuse_report.c.reason, t.abuse_report.c.target_type).where(
-            t.abuse_report.c.id == row.report_id
-        )
-    ).one()
+    found = known.reports[row.report_id]
     return {"id": row.report_id, "reason": found.reason, "type": found.target_type}
 
 
@@ -326,10 +477,29 @@ def _is_agent(conn: Connection, membership_id: int | None) -> bool:
 
 
 def load_request(conn: Connection, request_id: str) -> dict[str, Any]:
+    """The request as a read returns it, and as an answer's `200` replays (§1.5).
+
+    The member PATCH that files the owner's consent uses `load_member_patch`. That `202`
+    is the only body that lists a cross-owner pair filed beside it (§6.2)."""
     return request_view(conn, _row(conn, request_id))
 
 
+def load_member_patch(conn: Connection, request_id: str) -> dict[str, Any]:
+    """The `202` of `PATCH …/members/{id}` when it files the owner's consent.
+
+    When that change also filed a cross-owner pair, the body lists those ids. A later
+    read of the request, and a replay of the owner's answer, do not (§6.2)."""
+    row = _row(conn, request_id)
+    view = request_view(conn, row)
+    proposal = row.proposal or {}
+    pair = proposal.get("cross_owner_reports_to")
+    if proposal.get("kind") == "foreign_agent_change" and pair:
+        view = {**view, "cross_owner_reports_to": list(pair)}
+    return view
+
+
 idempotency.LOADERS["request"] = idempotency.plain(load_request)
+idempotency.LOADERS["member_patch"] = idempotency.plain(load_member_patch)
 
 
 def _row(conn: Connection, request_id: str) -> Any:
@@ -417,7 +587,7 @@ def _needs_in_session(
             == _member_id(conn, mine, needs.member_id, "needs_in_session.member_id")
         )
     ).one()
-    person = _person(conn, member.id, None)
+    person = _person(_known(conn, [], [member.id]), member.id, None)
     sessions = select(t.agent_session.c.id, t.agent_session.c.harness).where(
         t.agent_session.c.membership_id == member.id
     )
@@ -436,6 +606,14 @@ def _needs_in_session(
     }
 
 
+def _while_open(body: RequestCreate) -> str:
+    """What the asker does meanwhile: as given, else `wait` for a consent and
+    `proceed_provisionally` for any other class (§7)."""
+    if body.while_open is not None:
+        return body.while_open
+    return "wait" if body.class_ == "consent" else "proceed_provisionally"
+
+
 def _validate(body: RequestCreate, mine: Membership) -> None:
     errors: dict[str, str] = {}
     if body.class_ not in inbox.CLASSES:
@@ -444,9 +622,9 @@ def _validate(body: RequestCreate, mine: Membership) -> None:
         errors["priority"] = "unknown"
     elif body.priority == "urgent" and not mine.may("requests:answer"):
         errors["priority"] = "urgent_needs_requests_answer"
-    if body.while_open not in inbox.WHILE_OPEN:
+    if _while_open(body) not in inbox.WHILE_OPEN:
         errors["while_open"] = "unknown"
-    elif body.class_ == "consent" and body.while_open != "wait":
+    elif body.class_ == "consent" and _while_open(body) != "wait":
         errors["while_open"] = "consent_waits"
     if body.class_ in ("decision", "consent") and len(body.options) == 1:
         errors["options"] = "none_or_two_or_more"
@@ -510,8 +688,12 @@ def create_request(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("requests:ask")
-        _validate(body, mine)
         mine = _locked(conn, mine)
+        # Again on the row read under the lock: a role change to expert that committed
+        # since the first read leaves no `requests:ask` (§2.3 "The expert"), and the
+        # checks that read the trust or the role (`urgent`, `action`) see the same row.
+        mine.require("requests:ask")
+        _validate(body, mine)
         on_behalf = None
         if body.on_behalf_of is not None and body.on_behalf_of != mine.principal_id:
             mine.require("requests:answer")
@@ -561,7 +743,7 @@ def create_request(
                     "asked_session_id": caller.session_id,
                     "on_behalf_of": on_behalf,
                     "task_id": body.task_id,
-                    "while_open": body.while_open,
+                    "while_open": _while_open(body),
                     "needs_in_session": _needs_in_session(conn, mine, body.needs_in_session),
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
@@ -577,7 +759,7 @@ def create_request(
         blocked: str | None = None
         if (
             card is not None
-            and body.while_open == "wait"
+            and _while_open(body) == "wait"
             and holder is not None  # an unheld card is nobody's to block
             and holder in (mine.id, on_behalf)
             and card.status not in ("blocked", *CLOSED)
@@ -620,7 +802,16 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    return replace(mine, project=lock_project(conn, mine.project.id))
+    """The caller's membership with the project row and its own row as read under the
+    project lock, as `tasks._locked`: a role change takes the same lock, so a scope checked
+    on what this returns holds until the write commits (§2.3 "The expert")."""
+    project = lock_project(conn, mine.project.id)
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
+    ).first()
+    if row is None:  # the membership ended meanwhile
+        raise not_found()
+    return replace(mine, project=project, row=row)
 
 
 def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
@@ -706,7 +897,14 @@ def _payload(row: Any, view: dict[str, Any], **extra: Any) -> dict[str, Any]:
 
 def _snapshot(conn: Connection, row: Any) -> dict[str, Any]:
     """What a personal request keeps when it closes: its card as it was (§7)."""
-    return {"task_snapshot": _task(conn, row.task_id)} if row.personal else {}
+    if not row.personal:
+        return {}
+    if row.task_id is None:
+        return {"task_snapshot": None}
+    card = conn.execute(
+        select(t.card.c.id, t.card.c.title, t.card.c.status).where(t.card.c.id == row.task_id)
+    ).one()
+    return {"task_snapshot": {"id": card.id, "title": card.title, "status": card.status}}
 
 
 # --- reading -------------------------------------------------------------------------
@@ -794,7 +992,7 @@ def _page(
     sort: str,
     limit: int,
     cursor: str | None,
-    render: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    render: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Keyset paging: the cursor carries the last entry's position, so an entry that
     left the list (answered) shifts nothing behind it. With `render`, the entries are
@@ -818,7 +1016,7 @@ def _page(
         token = json.dumps({"s": sort, "k": _key(page[-1], sort)})
         next_cursor = base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
     if render is not None:
-        page = [render(entry) for entry in page]
+        page = render(page)
     for view in page:
         view.pop("_asker_handle", None)
         view.pop("_created", None)
@@ -888,18 +1086,20 @@ def _in_project(inline: dict[str, Any]) -> Callable[[Any], dict[str, Any]]:
     return lambda _row: {"project": inline}
 
 
-def _render(conn: Connection) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """An entry of `_entries` as its full view, the inline `project` kept."""
+def _render(conn: Connection) -> Callable[[list[dict[str, Any]]], list[dict[str, Any]]]:
+    """The entries of a page (`_entries`) as their full views, built in one batch
+    (`request_views`), the inline `project` kept."""
 
-    def render(entry: dict[str, Any]) -> dict[str, Any]:
-        view = request_view(conn, entry.pop("_row"))
-        if "project" in entry:
-            view["project"] = entry["project"]
-        if "org" in entry:  # a personal request's organisation, or null (§7, §6.26)
-            view["org"] = entry["org"]
-        view["_asker_handle"] = entry["_asker_handle"]
-        view["_created"] = entry["_created"]
-        return view
+    def render(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        views = request_views(conn, [entry.pop("_row") for entry in entries])
+        for entry, view in zip(entries, views, strict=True):
+            if "project" in entry:
+                view["project"] = entry["project"]
+            if "org" in entry:  # a personal request's organisation, or null (§7, §6.26)
+                view["org"] = entry["org"]
+            view["_asker_handle"] = entry["_asker_handle"]
+            view["_created"] = entry["_created"]
+        return views
 
     return render
 
@@ -1023,15 +1223,22 @@ def _status_moved(conn: Connection, card_id: str | None, actor: Any) -> None:
 
 def _unblock(conn: Connection, row: Any) -> str | None:
     """After `row` was answered or withdrawn: the card stays blocked while any other
-    waiting request of its holder on it is open, naming the oldest; when none is
-    left, the remembered status comes back (§7). Returns the card whose status moved, for
-    `_status_moved` after the caller's event."""
+    waiting request of its holder on it, filed at or after the current claim's start
+    (`claim_since`), is open, naming the oldest; when none is left, the remembered status
+    comes back (§7). Returns the card whose status moved, for `_status_moved` after the
+    caller's event."""
     if row.task_id is None:
         return None
     card = conn.execute(select(t.card).where(t.card.c.id == row.task_id)).one()
     if card.status != "blocked":
         return None
     holder = card.claim_holder
+    # Only the waits filed at or after this claim's start count: one filed while the card was
+    # unheld blocked nothing, one from an earlier claim lost its block at the release. The cut
+    # is a timestamp, so a wait at the claim's very instant still counts. Every change of
+    # holder sets `claim_since` (a claim, the expired claim's move, a takeover, a cover's move
+    # and its return), a renewal does not; a claim without it counts every wait.
+    since = [] if card.claim_since is None else [t.request.c.created_at >= card.claim_since]
     still_waiting = conn.execute(
         select(t.request.c.id)
         .where(
@@ -1041,6 +1248,7 @@ def _unblock(conn: Connection, row: Any) -> str | None:
             t.request.c.personal.is_(False),  # never a card's blocker: its id stays hidden (§7)
             t.request.c.id != row.id,
             (t.request.c.asked_by == holder) | (t.request.c.on_behalf_of == holder),
+            *since,
         )
         .order_by(t.request.c.created_at, t.request.c.id)
     ).first()
@@ -2276,6 +2484,7 @@ def answer_personal(
             actor,
             reply_id=body.reply_id,
             hub=settings_of(request),
+            answerer=caller,
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
@@ -2297,8 +2506,15 @@ def answer_personal(
         return idempotency.run(engine_of(request), request, caller, action)
     except proposals.Stale as stale:
         # The go no longer applies (an expired invitation): the request is withdrawn and the
-        # kind's own clean-up runs, nothing else changes, as on the project route.
+        # kind's own clean-up runs, nothing else changes, as on the project route. Under its
+        # project's lock first, as the answer took it: the clean-up of a project's invitation
+        # (§3.4) writes the invitation as a revocation does, project before request.
         with events.transaction(engine_of(request)) as conn:
+            project_id = conn.execute(
+                select(t.request.c.project_id).where(t.request.c.id == stale.request_id)
+            ).scalar()
+            if project_id is not None:
+                lock_project(conn, project_id)
             close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
         raise stale.error from None
 

@@ -27,7 +27,8 @@ export MAITY_DATABASE_URL="sqlite:///${work}/hub.db" MAITY_BIND="127.0.0.1:${por
 export MAITY_PUBLIC_URL="$hub"
 step "hub: migrate, owner, serve on $hub"
 maity-hub migrate >/dev/null 2>&1
-printf 'smoke owner password\n' | maity-hub owner create --handle owner --display-name Owner
+printf 'smoke owner password\n' | maity-hub owner create --handle owner --display-name Owner \
+    --email owner@smoke.example
 maity-hub serve >"$work/serve.log" 2>&1 &
 server_pid=$!
 for _ in $(seq 50); do curl -sf "$hub/api/v1/health" >/dev/null && break; sleep 0.2; done
@@ -35,7 +36,7 @@ for _ in $(seq 50); do curl -sf "$hub/api/v1/health" >/dev/null && break; sleep 
 step "human: login, project, two join links"
 jar="$work/cookies"
 curl -sS --fail -c "$jar" -o /dev/null -H 'Content-Type: application/json' \
-    -d '{"handle":"owner","password":"smoke owner password"}' "$hub/api/v1/auth/login"
+    -d '{"email":"owner@smoke.example","password":"smoke owner password"}' "$hub/api/v1/auth/login"
 csrf="$(curl -sS --fail -b "$jar" "$hub/api/v1/auth/session" | json 'd["csrf_token"]')"
 human() { curl -sS --fail -b "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' "$@"; }
 human -o /dev/null -d '{"slug":"smoke","name":"Smoke test"}' "$hub/api/v1/projects"

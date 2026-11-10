@@ -265,3 +265,35 @@ the time the table is added.
 - Counting only foreign keys and `human_id`: principal ids in plain
   strings (`paused_by`, `caller`, `actor_human_id`) and addresses passed
   through unseen.
+
+## The instance admin's user list shows each human's sign-in address
+
+**Id:** 13ef66bf-3ee3-497f-8864-a1813a5654ea
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's request (Oliver, Maity message 94251, 2026-11-08: "I would like to see users' email addresses in the admin area"), the card tsk-q7t7g34z0rpd and its plan note nte-fbffkr8q896t; docs/api.md §16.1
+**Revisit when:** a second read gives one human's address to another, or the accounts design adds an instance audit log of admin reads
+
+`GET /admin/users` (`routes/admin.py`) gives each item `email`: the
+address in `notification_settings` while its status is `verified` or
+`disabled`, the same address `POST /auth/login` takes; otherwise
+`null`. A pending change (`pending_address`) is never shown. One
+query reads the addresses of the page's humans, and with `q` of
+every listed human, so the list costs the same statements for 3 users
+and for 30. `q` matches the address as it matches handle and name.
+
+**Reason:** the owner asked for it; §16.1 had said the address was not
+part of V1 and left it to the accounts design. The sign-in address is
+what the admin can write to; an address that bounced (`disabled`)
+still signs in, so it is still the account's address. A pending
+change has not been proven to belong to the person, so it is not shown.
+It stays behind `instance:admin` for a human session, as the list does
+(the pending registrations of §16.4 already show their address to the
+same admin); the privacy statement's sentence is the owner's to add.
+
+**Rejected alternatives:**
+- Showing the pending address too: not proven, and it might be a typo
+  or someone else's.
+- A per-row query for the address: the list's cost would grow with the
+  page.

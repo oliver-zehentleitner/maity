@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 CONTRACT = Path(__file__).parents[2] / "docs" / "api.md"
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
@@ -14,32 +17,21 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # and path, its reason on the same line: a pull request adding or removing an entry touches only
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
-    ("DELETE", "/me/cross-chats/{}/participants/{}"),  # §9.5, not built: tsk-fvh80q02772c
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
-    ("DELETE", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/me/cross-chats"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("GET", "/me/cross-chats/{}"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("GET", "/me/cross-chats/{}/messages"),  # contract only, §9.5, not built: tsk-fvh80q02772c
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("PATCH", "/me/cross-chats/{}"),  # contract only, §9.5, not built: tsk-fvh80q02772c
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
-    ("POST", "/me/cross-chats"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("POST", "/me/cross-chats/{}/messages"),  # contract only, §9.5, not built: tsk-fvh80q02772c
-    ("POST", "/me/cross-chats/{}/messages/{}/redact"),  # §9.5, not built: tsk-fvh80q02772c
-    ("POST", "/me/cross-chats/{}/participants"),  # contract only, §9.5, not built: tsk-fvh80q02772c
+    ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
-    ("PUT", "/projects/{}/{}/tasks/{}/restricted"),  # contract first: tsk-g8ts5vxhj1md
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an
@@ -59,10 +51,16 @@ def _index() -> set[tuple[str, str]]:
         cells = line.split(" | ")
         methods = [m.strip() for m in cells[0].strip("| ").split(",")]
         if len(cells) < 3 or not set(methods) <= set(METHODS):
+            # Only the table's head and its rule may go unread: a row of another form names
+            # no route the test would check, so it fails here instead of passing unseen.
+            head = line.startswith("| Method |") or re.fullmatch(r"\|[-| ]+\|", line)
+            assert not line.startswith("|") or head, f"a §12 row that does not parse: {line}"
             continue
         if cells[1].endswith("(outside the API)"):
             continue
-        for path in re.findall(r"`([^`]*)`", re.sub(r"\([^)]*\)", "", cells[1])):
+        paths = re.findall(r"`([^`]*)`", re.sub(r"\([^)]*\)", "", cells[1]))
+        assert paths, f"a §12 row that names no path: {line}"  # else it would check nothing
+        for path in paths:
             rows |= {(method, _plain(path)) for method in methods}
     return rows
 
@@ -79,6 +77,25 @@ def _routes(openapi: dict[str, Any]) -> set[tuple[str, str]]:
         for method in operations
         if method.upper() in METHODS
     }
+
+
+@pytest.mark.parametrize(
+    "row", ["| UNKNOWN | `/x` | what |", "| GET | /not-real | without its backticks |"]
+)
+def test_a_row_the_index_cannot_read_fails_it(
+    row: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row that names no route the test can read fails here, instead of checking nothing
+    (fmzu at #1482)."""
+    contract = tmp_path / "api.md"
+    contract.write_text(
+        "## 12. Endpoint index\n\n| Method | Path | What |\n|---|---|---|\n"
+        f"| GET | `/me` | the caller |\n{row}\n\n## 13. Next\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "CONTRACT", contract)
+    with pytest.raises(AssertionError, match="§12 row that"):
+        _index()
 
 
 def test_the_index_and_the_routes_name_the_same_endpoints(client: Any) -> None:

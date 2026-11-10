@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
+import json
+import shutil
+import stat
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,6 +14,19 @@ import pytest
 from maity import cli
 from maity.runner import capabilities, config, operate, supervisor, tmux
 from maity.runner.asuser import AsUser
+
+
+def skip_unless_maity_is_installed() -> None:
+    """Skip a test whose agents' side runs `python -I` with maity: `-I` ignores PYTHONPATH, so a
+    run from the source tree without an installed maity cannot pass it (cd cli && make dev)."""
+    import sys
+
+    isolated = subprocess.run([sys.executable, "-I", "-c", "import maity"], check=False,
+                              capture_output=True)  # fmt: skip
+    if isolated.returncode != 0:
+        pytest.skip(f"maity is not installed for {sys.executable}; -I ignores PYTHONPATH "
+                    "(cd cli && make dev)")  # fmt: skip
+
 
 CONFIG = """\
 [hub]
@@ -87,7 +104,57 @@ def test_tmux_runs_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
     assert calls[0][:7] == ["sudo", "-n", "-u", "maity-agent", "--", "env", "-i"]
     assert all(call[:5] == ["sudo", "-n", "-u", "maity-agent", "--"] for call in calls)
     assert (home / "tmux.conf").read_text().startswith("set -g update-environment")
-    assert "install -D -m 600 /dev/stdin" in fake_sudo.read_text()
+    assert "maity-agent -- sh -c mkdir -p" in fake_sudo.read_text()
+
+
+def test_a_file_for_the_agents_side_is_written_without_gnu_install(
+    tmp_path: Path, fake_sudo: Path
+) -> None:
+    """A host whose `install` refuses `-D` and whose `chmod` reads no options after the mode,
+    as on one macOS host, still gets the file: 0600, in a new 0700 directory, replacing a link
+    planted at the path (to a file or a directory) instead of writing through it, and refusing
+    a directory at the path."""
+    bsd = fake_sudo.parent / "sbin" / "install"  # first on the fixture's PATH
+    bsd.write_text('#!/bin/sh\ncase " $* " in *" -D "*) echo "install: illegal option -- D" >&2;'
+                   ' exit 64;; esac\nexec /usr/bin/install "$@"\n')  # fmt: skip
+    bsd.chmod(0o755)
+    # BSD `chmod` reads options only up to the mode; a `--` after the mode is a file to it.
+    bsd_chmod = fake_sudo.parent / "sbin" / "chmod"
+    bsd_chmod.write_text(
+        "#!/bin/sh\n"
+        "check() { while [ $# -gt 0 ]; do case $1 in --) shift; break;; -?*) shift;;"
+        ' *) break;; esac; done; shift; for f; do [ "$f" = -- ] && return 1; done; return 0; }\n'
+        'check "$@" || { echo "chmod: --: No such file or directory" >&2; exit 1; }\n'
+        f'exec {shutil.which("chmod")} "$@"\n'
+    )
+    bsd_chmod.chmod(0o755)
+    as_user = AsUser("maity-agent")
+    target = tmp_path / "agent" / "new" / "file"
+    assert as_user.write(target, "one\n") == target
+    assert target.read_text() == "one\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert stat.S_IMODE(target.parent.stat().st_mode) == 0o700
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.write_text("keep\n")
+    target.unlink()
+    target.symlink_to(elsewhere)
+    as_user.write(target, "two\n")
+    assert not target.is_symlink() and target.read_text() == "two\n"
+    assert elsewhere.read_text() == "keep\n"
+    assert [p.name for p in target.parent.iterdir()] == ["file"]  # no temporary file left
+    linked_dir = tmp_path / "linked-dir"
+    linked_dir.mkdir()
+    target.unlink()
+    target.symlink_to(linked_dir)
+    as_user.write(target, "three\n")
+    assert not target.is_symlink() and target.read_text() == "three\n"
+    assert list(linked_dir.iterdir()) == []
+    target.unlink()
+    target.mkdir()
+    with pytest.raises(OSError, match="is a directory"):
+        as_user.write(target, "four\n")
+    assert target.is_dir() and list(target.iterdir()) == []
+    assert [p.name for p in target.parent.iterdir()] == ["file"]
 
 
 def test_the_runner_files_stay_the_runners(
@@ -156,6 +223,8 @@ def test_check_passes_the_agent_user_prerequisites(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:  # fmt: skip
+    # `runner check` asks the agents' side for `python -I -c "import maity"`.
+    skip_unless_maity_is_installed()
     load(tmp_path, monkeypatch)
     (tmp_path / "ws").mkdir()
     (tmp_path / "agent-home").mkdir()
@@ -299,7 +368,13 @@ def test_a_partial_clone_listing_refuses_the_start(
         locked.chmod(0o700)
 
 
-def test_the_sandbox_tools_are_found_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
+def test_the_sandbox_tools_are_found_as_the_agents_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """Claude Code's sandbox only on Linux (bubblewrap and socat); elsewhere, macOS among
+    them, it is off whatever the agents' PATH holds."""
+    import sys
+
     agent_bin = tmp_path / "agent-home" / ".local" / "bin"
     agent_bin.mkdir(parents=True)
     for name in ("codex", "bwrap", "socat"):
@@ -309,19 +384,39 @@ def test_the_sandbox_tools_are_found_as_the_agents_user(tmp_path: Path, fake_sud
     as_user = AsUser("maity-agent")
     assert capabilities.which("codex", path, as_user) == str(agent_bin / "codex")
     claude = config.Harness("claude-code", ("interactive",), "interactive", binary="claude")
-    assert capabilities.sandbox_available(claude, path, as_user)
+    linux = sys.platform.startswith("linux")
+    assert capabilities.sandbox_available(claude, path, as_user) is linux
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     assert capabilities.sandbox_available(codex, path, as_user)  # `codex sandbox -- true`
     assert "command -v" in fake_sudo.read_text()
+    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: off, bwrap and socat or not
+    assert not capabilities.sandbox_available(claude, path, as_user)
+
+
+def bsd_dd(bin_dir: Path) -> None:
+    """A `dd` first on PATH that refuses every `iflag`, as macOS's does (`dd: unknown iflag
+    nofollow`, exit 1, nothing on stdout)."""
+    script = bin_dir / "dd"
+    script.write_text(
+        '#!/bin/sh\ncase " $* " in *" iflag="*) echo "dd: unknown iflag ${*##*iflag=}" >&2;'
+        f' exit 1;; esac\nexec {shutil.which("dd")} "$@"\n'
+    )  # fmt: skip
+    script.chmod(0o755)
 
 
 def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
 ) -> None:
+    """Read as the agents' user by the runner's own module, so a host whose `dd` has no
+    `iflag` (macOS) still gives the exit code; never through a link, never from a FIFO."""
+    import os
+
     from test_supervisor import FakeTmux
 
     from maity.runner import adapters
 
+    skip_unless_maity_is_installed()  # the module runs as `python -I -m maity.runner.limitread`
+    bsd_dd(fake_sudo.parent / "sbin")
     cfg = load(tmp_path, monkeypatch)
     assert cfg.local is not None
     sup = supervisor.Supervisor(cfg, FakeTmux(), None, print, {})  # type: ignore[arg-type]
@@ -329,9 +424,37 @@ def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
     path.parent.mkdir(parents=True)
     path.write_text('{"exit_code": 75}')
     assert sup._limit_exit_code("plc-0003", sup.targets["local"]) == 75
-    assert "iflag=nofollow,nonblock" in fake_sudo.read_text()
+    assert "-m maity.runner.limitread" in fake_sudo.read_text()
     path.unlink()
     path.symlink_to("/dev/zero")
     assert (
         sup._limit_exit_code("plc-0003", sup.targets["local"]) is None
     )  # a link is never followed
+    path.unlink()
+    os.mkfifo(path)
+    assert sup._limit_exit_code("plc-0003", sup.targets["local"]) is None  # nor a FIFO
+
+
+def test_the_agents_user_records_it_through_sudo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """As the agents' user, by the runner's own module (`python -I -m maity.runner.trust`),
+    in their home."""
+    from test_adapters import context
+    from test_trust import KEY
+
+    from maity.runner import adapters
+
+    skip_unless_maity_is_installed()
+    home = tmp_path / "agent-home"
+    home.mkdir()
+    monkeypatch.setattr(AsUser, "home", lambda self: home)
+    ctx = dataclasses.replace(context(tmp_path), as_user=AsUser("maity-agent"))
+    ctx.clone.mkdir(parents=True)
+    adapters.trust_clone(ctx)
+    assert "-u maity-agent -- " in fake_sudo.read_text()
+    assert "-I -m maity.runner.trust" in fake_sudo.read_text()
+    assert json.loads((home / ".claude.json").read_text())["projects"] == {
+        str(ctx.clone.resolve()): {KEY: True}
+    }
+    assert not (Path.home() / ".claude.json").exists()  # never the runner's own

@@ -8,6 +8,13 @@ name: release-cli
 # short-lived OIDC token, so no PyPI token is stored in this repository. The
 # PyPI project names this repository, this file and the `pypi` environment as
 # its publisher; the environment is where a required approval can be set.
+# The tests are not run again here: `check` lets the tag through only when
+# ci already passed on its commit (ci-ok of the push to main, which holds the
+# cli and cli-windows jobs; tools/release_gate.py, read-only), and waits while
+# that run is still going. The sdist and wheel come from a separate job
+# that installs only cli/requirements/release.txt, pinned with hashes, and
+# builds without isolation, so no unpinned package reaches what is uploaded. The interpreter
+# setup-python provides, with the pip it bundles, is the trusted base.
 on:
   push:
     tags: ["cli-v*"]
@@ -20,6 +27,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ci's result on the tagged commit instead of the suite again: ci-ok of the
+  # push to main (tools/release_gate.py). A tag on a commit without it stops
+  # here, before `publish`. Nothing from this job is uploaded.
+  check:
+    runs-on: ubuntu-latest
+    # ci takes about an hour: the wait covers a tag pushed right after its merge.
+    timeout-minutes: 120
+    permissions:
+      actions: read # the ci run of the tagged commit
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/release_gate.py --sha "$GITHUB_SHA" --wait-minutes 110
+
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -50,19 +80,10 @@ jobs:
           print(f"version {tag}")
           EOF
 
-      # The same checks as the cli job of ci.yml, on the tagged commit.
-      - name: Check
+      # A fresh environment with only the hashed lock; sdist and wheel to ../dist.
+      - name: Build and check sdist and wheel
         working-directory: cli
-        run: |
-          python -m pip install -e ".[dev]"
-          make check
-
-      - name: Build sdist and wheel
-        working-directory: cli
-        run: |
-          python -m pip install build twine
-          python -m build --outdir ../dist
-          python -m twine check --strict ../dist/*
+        run: make release-build
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -71,13 +92,13 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/project/maity/
     permissions:
-      id-token: write # trusted publishing; no other job in this repository has it
+      id-token: write # trusted publishing: the short-lived token PyPI checks
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

@@ -52,6 +52,8 @@ from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
 from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
+from maity_hub.mail import address as addresses
+from maity_hub.notifications import preferences
 
 EXIT_FAILURE = 1
 EXIT_CONFIG = 2
@@ -71,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     create.add_argument("--handle", required=True)
     create.add_argument("--display-name", required=True)
+    create.add_argument(
+        "--email",
+        required=True,
+        help="the account's address, stored as verified: the password signs in with it",
+    )
     factor = commands.add_parser("second-factor", help="the second factor of a human account")
     factor_commands = factor.add_subparsers(dest="factor_command", required=True)
     reset = factor_commands.add_parser(
@@ -113,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     quick.add_argument("--handle", help="the first account's handle (default: your login name)")
     quick.add_argument("--display-name", help="its display name (default: the handle)")
+    quick.add_argument(
+        "--email", help="its address, the one you sign in with (asked for when not given)"
+    )
     args = parser.parse_args(argv)
 
     if args.command in ("serve", "quickstart"):
@@ -127,13 +137,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "migrate":
         return _migrate(settings)
     if args.command == "owner":
-        return _owner_create(settings, args.handle, args.display_name)
+        return _owner_create(settings, args.handle, args.display_name, args.email)
     if args.command == "second-factor":
         return _second_factor_reset(settings, args.handle)
     if args.command == "account":
         return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
-        return _quickstart(settings, args.handle, args.display_name)
+        return _quickstart(settings, args.handle, args.display_name, args.email)
     if args.command == "attachments":
         return _copy_to_s3(settings, apply=args.apply)
     if args.command == "loadtest" and args.load_command == "purge":
@@ -199,9 +209,12 @@ def _clean_bucket(engine: Any, target: attachment_store.S3Store, *, apply: bool)
     return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
 
 
-def _live_attachments(engine: Any, project: str) -> set[str]:
-    """The attachments of a project that have a row and are not deleted, for the copy."""
+def _live_attachments(engine: Any, project: str) -> set[str] | None:
+    """The attachments of a project that have a row and are not deleted, for the copy; None
+    for a folder no project has."""
     with engine.connect() as conn:
+        if conn.execute(select(t.project.c.id).where(t.project.c.id == project)).first() is None:
+            return None
         rows = conn.execute(
             select(t.attachment.c.id).where(
                 t.attachment.c.project_id == project, t.attachment.c.deleted_at.is_(None)
@@ -293,8 +306,10 @@ def _read_password() -> str | None:
 
 
 def _owner_create(
-    settings: Settings, handle: str, display_name: str, *, first: bool = False
+    settings: Settings, handle: str, display_name: str, email: str, *, first: bool = False
 ) -> int:
+    """The account with its address as verified (docs/api.md §2.1): the password signs in
+    by it, with no mail sent, on an instance that has none set up yet."""
     if not HANDLE.fullmatch(handle):
         return _fail(
             "--handle: lower-case letters, digits and '-', 2 to 63 characters", EXIT_CONFIG
@@ -303,6 +318,10 @@ def _owner_create(
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
+    email = email.strip()
+    if not addresses.valid(email):
+        return _fail("--email: one address, local-part@domain (docs/api.md §18.4)", EXIT_CONFIG)
+    normalized = addresses.normalized(email)
     password = _read_password()
     if not password:
         return _fail("no password given, or the two entries differ", EXIT_CONFIG)
@@ -316,6 +335,7 @@ def _owner_create(
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        addresses.prepare(engine, settings.secret_key)  # before the lock's transaction
         with engine.begin() as conn:
             human_id = new_id("human")
             values = {
@@ -355,18 +375,28 @@ def _owner_create(
                 conn.execute(insert(t.human).values(**values))
                 if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
                     raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
+            if not preferences.claim_verified(
+                conn, normalized, human_id, secret_key=settings.secret_key
+            ):
+                raise _AddressTaken  # another account's address: the account rolls back
     except _HandleTaken:
         return _fail(f"the handle {handle!r} was taken meanwhile", EXIT_FAILURE)
+    except _AddressTaken:
+        return _fail(f"another account has the address {normalized}", EXIT_FAILURE)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
-    print(f"maity-hub: created {handle} ({human_id})")
+    print(f"maity-hub: created {handle} ({human_id}), signing in as {normalized}")
     return 0
 
 
 class _HandleTaken(Exception):
     """The register refused the new account's handle after the checks: roll it back."""
+
+
+class _AddressTaken(Exception):
+    """Another account holds the address as its verified one: roll the new account back."""
 
 
 def _second_factor_reset(settings: Settings, handle: str) -> int:
@@ -452,7 +482,20 @@ def _migrate(settings: Settings) -> int:
                 EXIT_FAILURE,
             )
         before = current_revision(engine)
-        migrate(engine)
+        try:
+            migrate(engine)
+        except SQLAlchemyError:
+            # Where the run left the schema, after the last attempt (db.migrate): on PostgreSQL
+            # the chain is one transaction and this is `before`; MariaDB commits per step.
+            try:
+                now = current_revision(engine) or "empty"
+            except SQLAlchemyError:
+                now = "unknown"
+            print(
+                f"maity-hub: schema stays at {now}, head {head_revision(engine)} not reached",
+                file=sys.stderr,
+            )
+            raise
         print(f"maity-hub: schema {before or 'empty'} -> {head_revision(engine)}")
     except SQLAlchemyError as error:
         return _database_error(settings, error)
@@ -471,7 +514,16 @@ def _default_handle() -> str:
     return login if HANDLE.fullmatch(login) and not paths.handle_reserved(login) else "owner"
 
 
-def _quickstart(settings: Settings, handle: str | None, display_name: str | None) -> int:
+def _read_email() -> str | None:
+    """From the terminal; standard input stays the password's (`_read_password`)."""
+    if not sys.stdin.isatty():
+        return None
+    return input("email address (you sign in with it): ").strip() or None
+
+
+def _quickstart(
+    settings: Settings, handle: str | None, display_name: str | None, email: str | None
+) -> int:
     """`migrate` on a new SQLite database, `owner create` while there is no human, then
     `serve`. New means no tables at all: a file with tables but no schema version, or a
     database behind the current schema, is refused, because migrations never run
@@ -515,10 +567,15 @@ def _quickstart(settings: Settings, handle: str | None, display_name: str | None
         print("maity-hub: this hub has accounts; sign in with yours")
     else:
         handle = handle or _default_handle()
-        created = _owner_create(settings, handle, display_name or handle, first=True)
+        email = email or _read_email()
+        if email is None:
+            return _fail(
+                "--email: the first account's address, the one it signs in with", EXIT_CONFIG
+            )
+        created = _owner_create(settings, handle, display_name or handle, email, first=True)
         if created != 0:
             return created
-        banner.append(f"maity-hub: sign in as {handle}")
+        banner.append(f"maity-hub: sign in as {addresses.normalized(email.strip())}")
     return _serve(settings, banner)
 
 

@@ -1,6 +1,15 @@
 /* Maity dashboard. Light and dark through prefers-color-scheme; every
    colour is a token on :root. */
 
+/* The brand's faces, beside this file in css/fonts/ with their SIL OFL texts (copies of the
+   landing page's, hub/src/maity_hub/landing_assets/fonts/). Relative, so they load served from
+   /assets/css/ (same origin, `default-src 'self'`) and from file:// in fixture mode alike. */
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url("fonts/inter-600.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("fonts/inter-700.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 700; font-display: swap; src: url("fonts/space-grotesk-700.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400 500; font-display: swap; src: url("fonts/jetbrains-mono-500.woff2") format("woff2"); }
+
 :root {
   --bg: #f7f7f5;
   --surface: #ffffff;
@@ -19,8 +28,8 @@
   --route: #b54708; /* an event's route on Paths: 5.43:1 on --surface, 4.75:1 on --surface-2 (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
-  --flag-bg: #fff6dd;
-  --error-bg: #fde8e7;
+  --flag-bg: var(--warn-soft);
+  --error-bg: var(--bad-soft);
   /* A preferences diff (js/preferences.js): lines removed and added. */
   --diff-del-bg: #fde8e7;
   --diff-add-bg: #e3f4e8;
@@ -30,8 +39,27 @@
   --avatar-l: 40%;
   --radius: 8px;
   --gap: 16px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --display: "Space Grotesk", "Inter", system-ui, sans-serif; /* titles: h1, h2, panel and column heads */
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The design refresh (tsk-89mqceyxhbpv, step 1): soft grounds for states, a field edge,
+     spacing steps, radii and a shadow. Text on a soft ground is --text or the state's own
+     colour mixed a fifth of the way to --text (as --ktw-warn), never the bare state colour. */
+  --accent-soft: #e6effc;
+  --ok-soft: #e3f4e8;
+  --warn-soft: #fff6dd;
+  --bad-soft: #fde8e7;
+  --field: #7d8691; /* an input's edge: 3.69:1 on --surface, 3.44:1 on --bg, 3.23:1 on --surface-2 (WCAG 1.4.11) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --r-card: 14px;
+  --r-field: 10px;
+  --r-pill: 999px;
+  --shadow: 0 1px 2px rgba(20, 24, 29, 0.04), 0 6px 18px rgba(20, 24, 29, 0.06);
 }
 
 /* Dark: by the system's choice unless this browser picked Light, or when it
@@ -56,13 +84,19 @@
     --route: #f79009;
     --warn: #d29922;
     --bad: #ff7b72;
-    --flag-bg: #2d2610;
-    --error-bg: #3a1716;
+    --flag-bg: var(--warn-soft);
+    --error-bg: var(--bad-soft);
     --diff-del-bg: #3a1716;
     --diff-add-bg: #14301d;
     --out-bg: #1b3050;
     --avatar-bg: #2a3138;
     --avatar-l: 66%;
+    --accent-soft: #17263f;
+    --ok-soft: #14301d;
+    --warn-soft: #2d2610;
+    --bad-soft: #3a1716;
+    --field: #737c86; /* 3.92:1 on --surface, 4.36:1 on --bg, 3.43:1 on --surface-2 */
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
   }
 }
 :root[data-theme="dark"] {
@@ -83,13 +117,19 @@
   --route: #f79009;
   --warn: #d29922;
   --bad: #ff7b72;
-  --flag-bg: #2d2610;
-  --error-bg: #3a1716;
+  --flag-bg: var(--warn-soft);
+  --error-bg: var(--bad-soft);
   --diff-del-bg: #3a1716;
   --diff-add-bg: #14301d;
   --out-bg: #1b3050;
   --avatar-bg: #2a3138;
   --avatar-l: 66%;
+  --accent-soft: #17263f;
+  --ok-soft: #14301d;
+  --warn-soft: #2d2610;
+  --bad-soft: #3a1716;
+  --field: #737c86; /* 3.92:1 on --surface, 4.36:1 on --bg, 3.43:1 on --surface-2 */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -106,6 +146,14 @@
   --ktw-muted: var(--muted);
   --ktw-line: var(--border);
   --ktw-accent: var(--accent);
+  /* the library's text on its accent (0.11.44) is Maity's own pair: --accent-text on --accent,
+     5.32:1 light, 6.0:1 dark. Its accent-coloured text (links, counts, the type pill) is the
+     accent a fifth of the way to --text, as --ktw-warn: --accent itself is only 4.11:1 light and
+     3.98:1 dark on the type pill's 18% tint; the mix is 4.84:1 at least on --bg, --surface and
+     that tint over either, in both themes (WCAG AA) */
+  --ktw-accent-fill: var(--accent);
+  --ktw-on-accent: var(--accent-text);
+  --ktw-accent-text: color-mix(in srgb, var(--accent) 80%, var(--text));
   /* text in the plan's and the warning's hue, a fifth of the way to --text: 4.95:1 at least
      on --bg, --surface, --surface-2 and the type pill's accent tint in light, 5.16:1 in dark
      (axe color-contrast, WCAG AA); --plan and --warn themselves are 3.95:1 and 4.26:1 there */
@@ -118,25 +166,36 @@
   --ktw-inferred: var(--ktw-warn);
   --ktw-unknown: var(--muted);
   --ktw-status-active: var(--ok);
+  --ktw-status-active-text: var(--ok); /* a host that sets the active Status sets its text too */
   --ktw-status-open: var(--accent);
   --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
   --ktw-status-superseded: var(--muted);
+  /* the library's state text (0.11.45): each state colour above still draws borders, dots and
+     the graph; its -text twin draws the words, on the pills' solid --ktw-surface2 and on
+     --ktw-surface and --ktw-bg, never on a tint. So they take Maity's text-on-plain-ground
+     values: the state colour where it passes there, else its mix a fifth of the way to --text
+     (--accent is 4.53:1 dark on --surface-2). Lowest pair 5.00:1 (--ok on light --surface-2),
+     every other one higher in both themes (WCAG AA). */
+  --ktw-ok-text: var(--ok);
+  --ktw-confirmed-text: var(--ok);
+  --ktw-warn-text: var(--ktw-warn);
+  --ktw-inferred-text: var(--ktw-warn);
+  --ktw-bad-text: var(--bad);
+  --ktw-unknown-text: var(--muted);
+  --ktw-info-text: var(--ktw-accent-text);
+  --ktw-status-needs-review-text: var(--ktw-warn);
+  --ktw-status-open-text: var(--ktw-accent-text);
+  --ktw-status-pending-confirmation-text: var(--ktw-accent2);
+  --ktw-status-superseded-text: var(--muted);
+  /* the library's faint lines and marks (0.11.45: grid, rules, a superseded card's grey); the
+     faint text stays --ktw-fg3. Both were --muted before, so nothing shifts; --seat would be
+     2.5:1, under the 3:1 a mark needs (WCAG 1.4.11) */
+  --ktw-fg3-line: var(--muted);
   --ktw-radius: var(--radius);
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
 }
-/* The library writes #fff on its accent in its selected controls: 3.2:1 on the dark theme's
-   --accent; Maity's own text for its accent passes in both themes (5.32:1 light, 6.0:1 dark).
-   Every such rule of ktw-views.css, so one the views mount later is covered too. */
-.ktw-root .ktw-search-scope a.ktw-on,
-.ktw-root .ktw-mode button.ktw-on,
-.ktw-root.ktw-aside .ktw-mini .ktw-mini-seg button.ktw-on,
-.ktw-root.ktw-aside .ktw-thought-min button.ktw-on,
-.ktw-root.ktw-aside .ktw-pane-width button.ktw-on,
-.ktw-root .ktw-thought-reader .ktw-timeline-bar .ktw-tick,
-.ktw-root .ktw-stage-wrap .ktw-stage-seg button.ktw-on,
-.ktw-root .ktw-stage-card .ktw-stage-card-held:hover { color: var(--accent-text); }
 
 .why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
 .why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }
@@ -167,6 +226,7 @@ body {
 
 a { color: var(--accent); }
 
+h1, h2 { font-family: var(--display); letter-spacing: -0.01em; }
 h2 { font-size: 1.25rem; margin: 0 0 12px; }
 h3 { font-size: 1rem; margin: 4px 0; }
 h4, h3.sub { font-size: 0.85rem; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -185,7 +245,7 @@ button, select, textarea, input {
 button {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-field);
   padding: 6px 12px;
   cursor: pointer;
 }
@@ -196,8 +256,8 @@ button.danger { color: var(--bad); }
 
 select, textarea, input {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--field);
+  border-radius: var(--r-field);
   padding: 6px 8px;
 }
 
@@ -245,6 +305,16 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
   opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
 .page-loading .maity-loader { width: 48px; height: 48px; }
 @keyframes page-loading-shows { to { opacity: 1; } }
+/* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
+   A bar and the dimmed view say at once that the click was taken. The bar stands in main's top
+   padding, under the header and above the sign-in banner, and its margins give back the 3 px, so
+   nothing moves; sticky, it stays in sight on a page scrolled down. */
+main:has(> [inert])::before { content: ""; display: block; position: sticky; top: 0; height: 3px; z-index: 10;
+  margin: calc(-1 * var(--main-pad)) 0 calc(var(--main-pad) - 3px); background: var(--accent); transform-origin: left;
+  pointer-events: none; animation: view-switching 1.2s ease-out infinite; }
+main > [inert] { opacity: 0.6; transition: opacity 0.15s; }
+@keyframes view-switching { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { main:has(> [inert])::before { animation: none; } main > [inert] { transition: none; } }
 /* A calm block, not an alarm: the mark at rest, a plain title, what to do,
    the reason folded away, Try again at the right edge. */
 .page-failed { display: grid; gap: 8px; max-width: 28rem; width: 100%; margin: 24px auto; text-align: start; box-sizing: border-box; }
@@ -310,8 +380,22 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
    right, behind a separator, the project's state and absence; on a narrow
    screen that block goes under the chips. */
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
-.switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
-.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; }
+/* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
+   a project's state keeps the far end of the row. */
+.switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
+/* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
+.tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
+.tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }
+.switcher a[draggable="true"] { cursor: grab; }
+/* Where a dragged tab will go: an upright line in the gap before or after the tab under it (js/app.js
+   dragTab). Placed absolutely, it moves nothing; the row keeps room for the line after its last tab. */
+.switcher a[draggable="true"] { position: relative; }
+.switcher a.drop-before::before, .switcher a.drop-after::after { content: ""; position: absolute; top: 2px; bottom: 2px; width: 3px;
+  border-radius: 2px; background: var(--accent); pointer-events: none; }
+.switcher a.drop-before::before { inset-inline-start: -5px; }
+.switcher a.drop-after::after { inset-inline-end: -5px; }
+.switcher-row nav.switcher { padding-inline-end: 6px; }
+.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; margin-inline-start: auto; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -346,7 +430,7 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
-main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
+main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; margin: 0 auto; }
 
 .error {
   background: var(--error-bg);
@@ -360,10 +444,10 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .error:empty { display: none; }
 
 .flag {
-  background: var(--flag-bg);
+  background: var(--warn-soft);
   border-left: 3px solid var(--warn);
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: var(--r-field);
 }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -387,11 +471,16 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
 }
 
-.entry.current { border-color: var(--accent); }
-.entry.done { opacity: 0.75; }
+/* The open entry: an accent edge and its head on the accent's soft ground. */
+.entry.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.entry.current .entry-head { background: var(--accent-soft); border-radius: calc(var(--r-card) - 1px) calc(var(--r-card) - 1px) 0 0; }
+/* An answered entry: quieter by its title and no shadow, not by opacity, so every text keeps AA. */
+.entry.done { box-shadow: none; }
+.entry.done .entry-head .title { color: var(--muted); }
 .entry.empty, .empty { padding: 16px; color: var(--muted); list-style: none; }
 .first-hint { max-width: 40rem; margin: 6px 0 12px; font-size: 0.88rem; color: var(--muted); }
 
@@ -404,11 +493,11 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
   text-align: left;
   background: none;
   border: 0;
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  border-radius: calc(var(--r-card) - 1px);
+  padding: var(--s3) var(--s4);
 }
 
-.entry-head .title { font-weight: 600; flex: 1 1 16rem; }
+.entry-head .title { font-weight: 600; font-size: 0.94rem; line-height: 1.35; flex: 1 1 16rem; }
 
 /* Agent-written tokens (paths, hashes, URLs) can be long and unbroken. */
 .entry-head .title, .entry-body, .card, .profile, .msg, .org-node, .joins li { overflow-wrap: anywhere; min-width: 0; }
@@ -422,7 +511,10 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
 .entries-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .entry-group { margin: 6px 0 0; }
-.entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.entry-group h3 { margin: 0 0 var(--s2); font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--s2); }
+.entry-group h3 .count { border: 0; background: var(--surface-2); color: var(--muted); font-family: var(--font); letter-spacing: 0; }
+/* The inbox's own menus as pills, like the board's filter: Sort and Show in a project, Sort and Project on /all. */
+.toolbar :is(#inbox-sort, #inbox-show, #inbox-project) { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 .members-filter { margin: 4px 0 8px; }
 .members-filter label.check { display: inline-flex; align-items: center; gap: 6px; }
@@ -431,8 +523,21 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .prio-normal { color: var(--normal); }
 .prio-low { color: var(--low); }
 .kind { color: var(--muted); font-weight: 400; }
+/* In an entry's head: the priority on its state's soft ground, the kind neutral; no outlines. */
+.entry-head .prio, .entry-head .kind { border: 0; }
+/* Urgent is the one filled pill: the high colour as its ground. */
+.entry-head .prio-urgent { background: var(--high); color: var(--bg); }
+.entry-head .prio-high { background: var(--bad-soft); }
+.entry-head .prio-normal { background: var(--warn-soft); }
+.entry-head .prio-low, .entry-head .kind { background: var(--surface-2); }
+.entry.current .entry-head .prio-low, .entry.current .entry-head .kind { background: var(--surface); }
 
-.entry-body { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.entry-body { padding: 0 var(--s4) var(--s4); border-top: 1px solid var(--border); }
+.entry-body .facts { grid-template-columns: minmax(6rem, max-content) 1fr; column-gap: var(--s4); }
+.entry-body .facts dt { font-size: 0.88rem; }
+/* The options it sees: rows with a rule at their start. */
+.entry-body .options { list-style: none; padding: 0; display: grid; gap: var(--s2); }
+.entry-body .options > li { border-inline-start: 3px solid var(--border); padding: 2px 0 2px var(--s3); }
 .request-action code { overflow-wrap: anywhere; }
 .request-action mark.hidden-char { background: var(--surface-2); color: var(--bad); border: 1px solid currentColor; border-radius: 3px; padding: 0 2px; }
 .request-action-body { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 8px; border-radius: 4px; font-family: var(--mono); font-size: 0.85rem; }
@@ -443,7 +548,13 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .replies { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 /* A row of buttons: at the right edge, secondary ones before the primary one. */
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
-.reply { min-width: 5rem; }
+.reply { min-width: 5rem; border-radius: var(--r-pill); }
+/* An answer one can press has an edge of 3:1 or more (--field); a disabled one keeps the base look. */
+.reply:not(:disabled) { border-color: var(--field); }
+/* Send, once there are words to send, is the main button; Later and Talk stay quiet. */
+.reply.send:not(:disabled) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.reply.send:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 80%, var(--text)); border-color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.reply.later, .reply.talk { background: transparent; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
 
@@ -469,13 +580,26 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
   align-items: start;
 }
 
-.column { display: grid; gap: 8px; }
-.column-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
+.column { display: grid; gap: var(--s2); align-content: start; min-width: 0;
+  background: var(--surface-2); border-radius: var(--r-card); padding: var(--s3); }
+/* The column's name in the display face, a dot in its state's colour, the count as a pill. */
+.column-head { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s1); color: var(--text);
+  font: 700 0.95rem/1.2 var(--display); letter-spacing: -0.01em; }
+.column-head::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.column[data-status="open"] .column-head::before { background: var(--accent); }
+.column[data-status="in_progress"] .column-head::before { background: var(--plan); }
+.column[data-status="blocked"] .column-head::before { background: var(--bad); }
+.column[data-status="review"] .column-head::before { background: var(--warn); }
+.column[data-status="done"] .column-head::before { background: var(--ok); }
+.column[data-status="cancelled"] .column-head::before { background: var(--seat); }
+.column-head .count { margin-inline-start: auto; border: 0; background: var(--surface); color: var(--muted);
+  font-family: var(--font); letter-spacing: 0; }
 
 .card, .profile {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
   padding: 10px 12px;
   min-width: 0;
 }
@@ -521,7 +645,11 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .card-assignee { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--muted); }
 .card-assignee.kind-human .avatar-svg, .card-assignee.kind-human .avatar-img { clip-path: circle(50%); }
 .card-assignee.kind-agent .avatar-svg, .card-assignee.kind-agent .avatar-img { clip-path: inset(0 round 4px); }
-.card h3 { font-size: 1rem; line-height: 1.3; margin: 6px 0 2px; }
+.card h3 { font-size: 0.94rem; font-weight: 600; line-height: 1.35; margin: var(--s2) 0 var(--s1); }
+.columns .card { padding: var(--s3) var(--s4); }
+/* "Waits for an answer" on a card: a quiet notice, no bar; its link in the text colour, underlined. */
+.card .flag { border-left: 0; color: var(--text); font-size: 0.88rem; }
+.card .flag a { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
 /* A checkpoint is two lines on the card; its title holds the rest. */
 .checkpoint .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .lease { color: var(--muted); }
@@ -554,6 +682,9 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 6px; }
 .icon-button .icon .icon-fill { fill: currentColor; }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
+/* A link that looks like the icon buttons: it opens a page, so it stays a link (the chat list's actions). */
+a.icon-button { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+a.icon-button:hover { border-color: var(--accent); }
 /* A phone's thumb: bigger targets; the arrows wrap onto their own line. */
 @media (max-width: 600px) {
   .icon-button, .card-actions .menu-button { min-width: 40px; min-height: 40px; }
@@ -561,18 +692,27 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 }
 .card.movable { cursor: grab; }
 .column.drop-ok { outline: 2px dashed var(--accent); outline-offset: 2px; }
-.column.drop-over { background: var(--surface-2); }
+.column.drop-over { background: var(--accent-soft); }
 /* Where a card dragged within its column lands: above or below this one. */
 .card.drop-before { box-shadow: 0 -3px 0 var(--accent); }
 .card.drop-after { box-shadow: 0 3px 0 var(--accent); }
 .column.drop-refused { opacity: 0.45; }
-.board-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+/* The filter: one panel; the search grows, the menus are pills, a menu that filters shows it. */
+.board-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin-bottom: var(--s4);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--s3); }
 .board-filter label { font-size: 0.85rem; color: var(--muted); }
+.board-filter #board-search { flex: 1 1 260px; min-width: 0; }
+.board-filter select { border-radius: var(--r-pill); min-height: 32px; padding-inline: var(--s3); }
+.board-filter select:has(option:checked:not([value=""])) { background: var(--accent-soft); border-color: var(--accent); }
+.board-filter label.check { color: var(--text); }
+.board-filter select { width: auto; max-width: 16rem; }
 .new-card { margin-bottom: 16px; }
 .new-card select[multiple] { min-height: 5rem; }
 .release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .checklist.editable label { color: inherit; }
+/* A checkbox the pointer finds: 16 px with 4 px around it, a 24 px target (WCAG 2.5.8). */
+.checklist.editable input[type="checkbox"] { inline-size: 16px; block-size: 16px; margin: 4px; flex: none; }
 .rows-form h4 { margin: 6px 0 4px; }
 .edit-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .edit-rows li { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -658,8 +798,8 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .pair-projects input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .project-private { display: grid; gap: 4px; }
 .outside-roles { border: 0; margin: 0; padding: 0; }
-.outside-roles .check { min-height: 28px; }
-.outside-roles input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
+.outside-roles .check, .restricted-members .check { min-height: 28px; }
+.outside-roles input[type=checkbox], .restricted-members input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
 .runner-config { max-height: 16rem; overflow: auto; background: var(--surface); padding: 8px; border-radius: 4px; font-size: 0.8rem; white-space: pre; }
@@ -676,6 +816,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .card-table tbody th { font-weight: normal; }
 .card-table tr.disabled { color: var(--muted); }
 .user-name { font-weight: 600; }
+.user-email { overflow-wrap: anywhere; }
 .users-filter { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; margin-bottom: 12px; }
 .users-filter label { font-size: 0.85rem; color: var(--muted); flex-basis: 100%; margin-bottom: -4px; }
 .users-filter label + input, .users-filter label + select { flex: 0 1 18rem; }
@@ -733,6 +874,34 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }
+/* Team (the members view) and Agents in the refreshed look (design refresh step 6): the table
+   as a panel, quiet head cells, rows with room and a hover ground, Chat and Manage as pills, the
+   runner cards as cards. Styling only: the selectors the checks use stay as they are. */
+:is(.view-team, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
+:is(.view-team, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-card); box-shadow: var(--shadow); }
+:is(.view-team, .view-agents) .members th, :is(.view-team, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
+:is(.view-team, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); padding-block: var(--s2); }
+:is(.view-team, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
+/* A light hover ground, so the warn text in a row keeps AA on it (4.6:1 light, 6.2:1 dark). */
+:is(.view-team, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
+:is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
+  border: 1px solid var(--field); background: transparent; padding: 4px 12px; }
+/* The open Manage row (members: .member-manage, Agents: .agent-manage) on the same light ground as the hover. */
+:is(.view-team, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
+.view-agents .profile { border-radius: var(--r-card); }
+/* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
+.placement button:not(:disabled):not(.primary) { border-color: var(--field); }
+@media (max-width: 600px) {
+  .view-team .table-wrap { background: none; border: 0; box-shadow: none; }
+  :is(.view-team, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
+  :is(.view-team, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
+  :is(.view-team, .view-agents) .members tr.member:hover > * { background: none; }
+  :is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
+}
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
 .why-entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -753,6 +922,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
 .role { color: var(--muted); }
+/* One's own fleet (Agents → Organisation, tsk-q989pagmk2x9): an instance a dot in its presence's
+   colour inside a 24 px target, the lead ringed, a dormant one hollow; a boss of someone else's a grey stub. */
+.fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
+.fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+.fleet-dot.online::before { background: var(--ok); }
+.fleet-dot.away::before { background: var(--warn); }
+.fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
+.fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
+.fleet-stub a { color: inherit; }
+.fleet-me { font-size: 1.02rem; }
+@media (max-width: 600px) {
+  .fleet-tree ul { padding-left: 12px; }
+}
 .org-faces, .paths-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .org-face[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .paths-chip { border-radius: 999px; padding: 4px 12px; }
@@ -867,6 +1051,12 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .chat-layout.open .chat-pane .messages { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
 .chat-layout.open .chat-pane .compose { flex: none; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
+/* Full screen (js/chat.js fullScreen, tsk-fnch2yxp2kk1): the open chat covers the window, over the
+   header, the list and the product line, on the page's own ground; the page under it does not
+   scroll. Its column is the window's height, whatever --chat-h says for the page. */
+html.chat-full body { overflow: hidden; }
+html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 20; height: 100dvh; margin: 0;
+  padding: 8px 12px; box-sizing: border-box; background: var(--bg); }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
 /* The pane being left, until the next one is drawn. */
@@ -874,7 +1064,16 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 @media (max-width: 720px) {
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .chat-layout.open .chat-list-pane, .chat-none { display: none; }
-  .chat-back { display: inline-block; margin-bottom: 8px; }
+  /* The back link's row is the chat head's top row; the full-screen button sits at its right
+     end, under the top bar's last entry, in a direct and a group chat (tsk-2a56j80p3p9h). The
+     button stays where js/chat.js puts it in the document, after the heading, for the keys. */
+  .chat-pane { position: relative; }
+  .chat-back { display: inline-flex; align-self: flex-start; align-items: center; min-height: 40px;
+    margin-bottom: 8px; margin-inline-end: 48px; }
+  .chat-pane .chat-full-toggle { position: absolute; top: 0; inset-inline-end: 0; }
+  html.chat-full .chat-pane.chat-full-pane .chat-full-toggle { top: 8px; inset-inline-end: 12px; }
+  /* The agent's session (`chat.session`) is a detail for a wide screen. */
+  .chat-pane .chat-session { display: none; }
 }
 
 /* Rows as tall as their message: in the open chat the list is given the pane's
@@ -975,13 +1174,13 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
-.panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--radius); }
+.panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--r-card); }
 /* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
 .inline-form, .login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 /* The settings panel sits under the page's h1: its sections are h2, styled small. */
-.panel-title { margin: 0; font-size: 1rem; }
+.panel-title { margin: 0; font-size: 1rem; font-family: var(--display); }
 .panel-sub { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
 .inline-form button, .login button { justify-self: end; }
@@ -1031,6 +1230,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jfa-triage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series .actions, .jf-participation .jf-part { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* The series' settings at the top of the jour fixe view, folded until opened (js/jour-fixe-series.js). */
+.jf-series-settings { margin: 8px 0 16px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.jf-series-settings > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+.jf-series-settings[open] > summary { margin-bottom: 8px; }
 .jf-series-block { margin: 12px 0; }
 .jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
 .jf-weekly[hidden], .jf-monthly[hidden], .jfs-owner[hidden] { display: none; }
@@ -1064,14 +1267,16 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .button-link:hover { border-color: var(--accent); }
 .message-form textarea { width: 100%; }
 a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text); text-decoration: none; }
-.switcher .new-project { color: var(--muted); }
 .reply.later { color: var(--muted); }
 .notice:empty { display: none; }
 
 /* ---- phone width ---------------------------------------------------- */
 
 @media (max-width: 600px) {
-  main { padding: 12px; }
+  main { --main-pad: 12px; }
+  /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
+     take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
+  .switcher-row .switcher { flex: 1 1 0; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
@@ -1091,6 +1296,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .compose > button, .compose-actions > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
   .release-edit .row > button, .pause > button, .runner-actions > button, .runner-actions .rename { flex: 1 1 100%; justify-self: stretch; }
   .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
+  /* A group chat on a phone (the owner's request, tsk-fnch2yxp2kk1): no "In it: …" line over the
+     messages, and the composer's label, which names the field, is read out but not shown. */
+  .group-people-line { display: none; }
+  .group-chat .compose-head > label[for="chat-text"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* No keys to press on a phone, mostly: the hint goes, the button is laid out as it was. */
   .compose-actions { flex-wrap: wrap; }
   /* On a phone the composer folds away for reading; the 2× or 3× chosen on a
@@ -1107,7 +1316,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .profiles { grid-template-columns: 1fr; }
   .facts { grid-template-columns: 1fr; }
   .facts dt { margin-top: 4px; }
-  .reply { flex: 1 1 100%; }
+  /* The answers two by two, a thumb's size; Send across the whole row. */
+  .replies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reply { min-height: 40px; min-width: 0; }
+  .reply.send, .reply:only-child { grid-column: 1 / -1; }
 }
 
 /* Pictures on the account (docs/api.md §6.10). */
@@ -1200,8 +1412,13 @@ a.member-chip:hover { border-color: var(--accent); }
 .chip-dot.presence-paused { background: var(--warn); }
 
 /* Group chats (js/group-chat.js). */
-.chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.chat-list-pane .new-group { white-space: nowrap; }
+/* The project's heading and its two icon actions in one row at every width (tsk-qgy2tb3w3x93):
+   the heading gives way and ellipsizes, the icons never move below it. The global list (js/chats.js)
+   keeps its phone layout: its lead control sits under the heading at the left edge, where its menu
+   opens on screen. */
+.chat-list-pane .toolbar.chat-actions { flex-wrap: nowrap; }
+.chat-list-pane .toolbar.chat-actions h2 { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-list-pane .toolbar.chat-actions .icon-button { flex: none; }
 .mention-count { background: var(--accent); color: var(--accent-text); }
 .group-people-line, .group-observers { margin: 0 0 4px; font-size: 0.85rem; overflow-wrap: anywhere; }
 .group-manage { margin: 4px 0 8px; }
@@ -1301,6 +1518,8 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-head { display: flex; align-items: center; gap: 8px; }
 .join-head h3 { margin: 0; }
 .join-head .join-close { margin-inline-start: auto; }
+/* A project's name and full name may be one long word (a 63-character slug). */
+.join-project { overflow-wrap: anywhere; }
 .join-columns { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
 .join-fields { flex: 1 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
 /* One column that a wide select cannot stretch, and rows at their own height: a taller neighbour in the row must not stretch the label and the control. */
@@ -1310,10 +1529,14 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; align-items: center; }
 .join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
 .join-fields [hidden], .join-briefing[hidden] { display: none; }
-.join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+/* One column no wider than the form: a long instance name in the select shrinks it, never the page (tsk-nbadjbr9zpg7, 390 px). */
+/* The profile's links under the agent's select: where they wrap, each link stands whole on its
+   own line, 8 px apart, so neither small target crowds the other (24 px spacing). */
+.join-profile-links { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.3em; row-gap: 8px; }
+.join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
 .join-instance legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
 .join-instance .hint { margin: 0; }
-.instance-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.instance-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
 .instance-choice label { color: var(--text); font-size: 0.9rem; }
 .instance-choice select { flex: 1 1 220px; min-width: 0; }
 .join-briefing { flex: 1 1 320px; min-width: 0; display: grid; gap: 4px; align-content: start; }
@@ -1480,12 +1703,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* Where the agents run (js/placements.js, §15.5–§15.7): one row per
    placement under the agents' grid; stacked on a phone. */
-.placements { margin-top: 24px; display: grid; gap: 8px; }
+.placements { margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .placement-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.placement { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
-.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.placement { border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--s3) var(--s4); display: grid; gap: 6px; min-width: 0;
+  background: var(--surface); box-shadow: var(--shadow); }
+.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 600; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
+   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
+.placement-new select, .placement-new input { max-width: 100%; }
+.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
@@ -1497,7 +1725,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A runner command in a box that scrolls, with Copy beside it. */
 .placement-hints { display: grid; gap: 4px; }
 .placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
-.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
+.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--r-field); background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
@@ -1521,7 +1749,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The frame of the pages without a session (js/site-chrome.js, docs/api.md §16.7.5): the hub's
    landing.css and public-pages.css, loaded after this file, lay out /login and /register; the
    shell's own spacing steps aside for them. */
-.public-frame #main { padding: 0; max-width: none; }
+.public-frame #main { --main-pad: 0px; max-width: none; }
 .public-frame .door-form .login, .public-frame .door-form .sign-in-options { margin: 0; max-width: none; }
 .public-frame .door-form .legal-links { text-align: start; }
 .landing-preview .landing { margin: 16px auto; }
@@ -1558,6 +1786,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The join dialog's three lines (js/join.js): one row each, so each reads as its own offer. */
 .join-offers { border: 0; padding: 0; margin: 8px 0; }
 .join-offer { min-height: 28px; display: flex; align-items: center; gap: 6px; }
+.join-instruction { margin: 8px 0; }
+.join-instruction p { margin: 0 0 4px; }
+.join-instruction-text { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 40rem; }
 
 /* The theme in Your account (js/account.js): three radios in a row. */
 .theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
@@ -1584,6 +1815,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .board-body.has-panel > .columns { flex: 1 1 auto; min-width: 0; }
 .card-panel { flex: 0 0 min(30rem, 42%); position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 12px 16px; }
+/* The panel's ground, --surface-2, takes the light --warn at only 4.26:1, so the panel has its own:
+   4.79:1 there (WCAG AA), the same amber. Both ways to dark give the panel :root's dark --warn back. */
+.card-panel { --warn: #8f6000; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card-panel { --warn: inherit; } }
+:root[data-theme="dark"] .card-panel { --warn: inherit; }
 /* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
 @media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1591,6 +1827,15 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
 /* The panel is the card: no frame inside the frame, no second id, no second title. */
 .card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
+/* A card's restricted text (docs/api.md §6.4): plain text, its line breaks kept, a long word wrapped. */
+.card-restricted { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.card-restricted h3 { margin-top: 0; }
+.restricted-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.card-restricted textarea { width: 100%; box-sizing: border-box; }
+.restricted-confirm { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+/* Before a way into the restricted-access set (§6.1): who will read the restricted texts. */
+.restricted-ahead { margin: 8px 0; padding: 6px 10px; border-left: 3px solid var(--border); }
+.restricted-ahead[hidden] { display: none; }
 .card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
 /* One style for the panel's section headings. */
 .card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
@@ -1614,6 +1859,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A phone: the open card is a page of its own; Close goes back to the board at the card. */
 @media (max-width: 600px) {
   .board-body.has-panel > .columns { display: none; }
+  /* A phone: the columns side by side, one at a time, swiped. */
+  .columns { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 84%;
+    overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding-bottom: var(--s2); }
+  .columns > .column { scroll-snap-align: start; }
+  /* Each label beside its menu; the two search buttons share a row. */
+  .board-filter { display: grid; grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr); align-items: center; }
+  .board-filter select { width: 100%; max-width: none; }
+  .board-filter label.check { grid-column: 1 / -1; }
 }
 
 /* Subtasks on a card (js/board.js): folded under the parent, a toggle with the counts. */
@@ -1718,6 +1971,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+/* The account's tabs (js/account.js): one row that scrolls sideways on a phone, not wrapped. */
+.view-tabs.account-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.account-tabs .view-tab { white-space: nowrap; flex: 0 0 auto; }
+.account-tabs .view-tab.later { color: var(--muted); cursor: default; }
+/* The row scrolls, so it clips what stands outside it: the focus ring drawn inside the tab. */
+.account-tabs .view-tab:focus-visible { outline-offset: -2px; }
+/* Security's own tabs, under the account's: smaller, no line of their own. */
+.view-tabs.security-tabs { border-bottom: none; margin-top: -4px; font-size: 0.92rem; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
 /* The instance an address's #id leads to (tsk-bczgjkfpw1wg). */
@@ -1750,6 +2011,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
 .meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+/* One's public page, right under the name and handle (js/account.js); empty while none is served. */
+.public-profile-link { margin: 4px 0 12px; }
+.public-profile-link:empty { display: none; }
 
 /* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
 .person-head { display: flex; align-items: center; gap: 14px; }
@@ -1762,9 +2026,34 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
 
+/* The person or organisation view in the refreshed look (design refresh step 4): the head as a
+   panel with a round picture, the name in the display face, links and the public page as pills,
+   the projects and members as rows. As on the public page mocks; no field more, none less. */
+/* A profile reads as one column, not a band across a wide screen. */
+.view-person { max-width: 46rem; }
+.view-person .person-head { gap: var(--s4); padding: var(--s4); margin-bottom: var(--s4);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); }
+.view-person .person-head > .avatar-img, .view-person .person-head > .person-picture-none { width: 80px; height: 80px; border-radius: 50%; }
+.view-person .person-name { font: 700 1.6rem/1.15 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.view-person a.button-link { display: inline-block; border-radius: var(--r-pill); border-color: var(--field); padding: 6px 14px; }
+.view-person .person-bio { font-size: 1.05rem; line-height: 1.6; max-width: 62ch; }
+.view-person .person-links { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0; }
+.view-person .person-links li { padding: 4px 12px; border: 1px solid var(--field); border-radius: var(--r-pill); font-size: 0.9rem; }
+.view-person h3 { font: 700 1.1rem/1.2 var(--display); letter-spacing: -0.01em; margin: var(--s5) 0 var(--s2); }
+.view-person .person-projects, .view-person .person-members { gap: 2px; }
+.view-person .person-projects li, .view-person .person-members li { padding: var(--s2); border-radius: var(--r-field); }
+.view-person .person-projects li:hover, .view-person .person-members li:hover { background: var(--surface-2); }
+.view-person .person-projects a { font-weight: 600; }
+.view-person .person-members .avatar-img, .view-person .person-members .person-picture-none { width: 28px; height: 28px; border-radius: 50%; }
+@media (max-width: 600px) {
+  .view-person .person-head { flex-wrap: wrap; }
+  .view-person .person-head > .avatar-img, .view-person .person-head > .person-picture-none { width: 64px; height: 64px; }
+}
+
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
+.handle-form .handle-explain { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1809,14 +2098,21 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
 
 /* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
-   never sticky, small and muted; at phone width it wraps between its parts, never sideways. */
+   never sticky, small and muted; wider than phone width it wraps between its parts, never sideways. */
 .product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
   padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .product-line:empty { display: none; }
+/* At phone width the line is only its first part, "Maity 2026" (§16.13; the owner's request,
+   tsk-fnch2yxp2kk1): the rest wrapped it over three rows. Less padding above and below keeps
+   the group chat inside the window at 390 x 844. */
+@media (max-width: 600px) {
+  .product-line { padding-top: 8px; padding-bottom: 12px; }
+  .product-line > .product-sep, .product-line > .product-part ~ .product-part { display: none; }
+}
 .product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
 .product-sep { white-space: pre; }
 /* 24 px high, the icons 24 px wide too: every link keeps the target size of WCAG 2.5.8 when the line
-   wraps at phone width, whatever stands on the row above or below it. */
+   wraps between its parts, wider than phone width, whatever stands on the row above or below it. */
 .product-line a { color: inherit; display: inline-flex; align-items: center; min-height: 24px; }
 .product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
 .product-icon { justify-content: center; min-width: 24px; border-radius: 3px; }

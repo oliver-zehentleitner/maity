@@ -68,8 +68,8 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
     cards = [c for col in board["data"]["columns"] for c in col["cards"]]
     assert cards and all(set(c) == {"id", "title", "label", "holder"} for c in cards)
 
-    members = read(world, f"{BASE}/members")
-    assert members["kind"] == "members" and set(members["data"]) == {"shown", "others"}
+    members = read(world, f"{BASE}/team")
+    assert members["kind"] == "team" and set(members["data"]) == {"shown", "others"}
     assert all(set(p) == PERSON | {"trust", "role"} for p in members["data"]["shown"])
     assert all(set(o) == {"role", "count"} for o in members["data"]["others"])
 
@@ -81,21 +81,27 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
 
     person = read(world, "maintainer")
     assert person["kind"] == "person"
-    assert {"name", "handle", "bio", "projects", "agents"} <= set(person["data"])
-    assert set(person["data"]) <= {
-        "name",
-        "handle",
-        "bio",
-        "website",
-        "social",
-        "projects",
-        "agents",
-    }
+    required = {"name", "handle", "picture", "bio", "projects", "agents", "member_since", "online"}
+    assert required | {"statistics"} <= set(person["data"])
+    assert set(person["data"]) <= required | {"statistics", "website", "social"}
+    assert all(set(p) == {"name", "full_name", "role"} for p in person["data"]["projects"])
 
     bot = project["data"]["agents"][0]
     agent = read(world, bot["page"].lstrip("/"))
     assert agent["kind"] == "agent"
-    assert set(agent["data"]) == {"name", "handle", "owner", "projects", "statistics"}
+    assert set(agent["data"]) == {
+        "name",
+        "handle",
+        "picture",
+        "owner",
+        "projects",
+        "statistics",
+        "member_since",
+        "online",
+        "model",
+        "harness",
+    }
+    assert all(set(p) == {"name", "full_name", "role"} for p in agent["data"]["projects"])
     assert set(agent["data"]["owner"]) == PERSON
 
 
@@ -114,7 +120,7 @@ def test_nothing_private_reaches_an_answer(world: World, migrated: Engine) -> No
         )
     world.card(status="open", title=f"{secret} security", label="security")
     world.touch()
-    for path in (BASE, f"{BASE}/board", f"{BASE}/members", f"{BASE}/organisation", "maintainer"):
+    for path in (BASE, f"{BASE}/board", f"{BASE}/team", f"{BASE}/organisation", "maintainer"):
         text = world.anyone.get(f"{ROUTE}/{path}").text
         assert secret not in text, path
         assert world.owner.id not in text, path
@@ -261,3 +267,9 @@ def test_explore_lists_only_what_the_pages_show(world: World, migrated: Engine) 
 def test_explore_is_the_shell_while_pages_are_off(make_client: ClientFactory) -> None:
     got = make_client(public_pages=False).get("/explore")
     assert got.status_code == 200 and "<title>dashboard</title>" in got.text
+
+
+def test_the_old_members_path_has_no_page(world: World) -> None:
+    world.touch()
+    assert read(world, f"{BASE}/team")["kind"] == "team"
+    assert world.anyone.get(f"{ROUTE}/{BASE}/members").status_code == 404

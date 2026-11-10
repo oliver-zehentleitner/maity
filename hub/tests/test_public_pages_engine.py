@@ -3,7 +3,9 @@ sitemap and `robots.txt`. A kind of page of the test's own stands in for the rea
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import threading
+from collections.abc import Collection, Iterator
+from concurrent.futures import Future
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -11,13 +13,19 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, public_pages
+from maity_hub import clock, db, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.routes import seo
+from tests.concurrency import Step, finished, waiting
 from tests.conftest import ClientFactory
 
 NOTE = "note"
+
+
+def keep(ids: list[str], among: Collection[str] | None) -> list[str]:
+    """`targets`'s `among`: only those of the ids, by the same rule."""
+    return ids if among is None else [i for i in ids if i in among]
 
 
 class Shown:
@@ -27,6 +35,7 @@ class Shown:
         self.targets: dict[str, tuple[str, bool, datetime]] = {}
         self.renders = 0
         self.fail = False
+        self.listed = 0  # the target ids every `targets` call returned, summed
 
 
 @pytest.fixture
@@ -52,8 +61,9 @@ def shown(settings: Settings) -> Iterator[Shown]:
             )
         ]
 
-    def targets(conn: Connection) -> list[str]:
-        return sorted(state.targets)
+    def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
+        state.listed += len(found := keep(sorted(state.targets), among))
+        return found
 
     saved = dict(public_pages.KINDS)
     public_pages.KINDS.clear()
@@ -191,6 +201,178 @@ def test_render_all_renders_what_exists_and_deletes_the_rest(
     shown.targets["c"] = ("C", True, clock.now())
     public_pages.render_all(migrated, config)
     assert set(rows(migrated)) == {"/a", "/c"}
+
+
+def test_the_cleanup_decides_each_candidate_with_a_keyed_read(
+    migrated: Engine, settings: Settings, shown: Shown
+) -> None:
+    """A page whose target went is decided by a read of that one target, not of every target
+    again (tsk-ay4htr4s4w88): a pass reads the whole list twice, the pass's own and the
+    cleanup's, and then nothing more per candidate, however many targets there are."""
+    config = hub(settings)
+    live = {f"t{n:02}": ("T", True, clock.now()) for n in range(20)}
+    gone = {f"g{n:02}": ("G", True, clock.now()) for n in range(10)}
+    shown.targets.update({**live, **gone})
+    public_pages.render_all(migrated, config)
+    for target_id in gone:
+        del shown.targets[target_id]
+    shown.listed = 0
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {f"/{i}" for i in live}
+    assert shown.listed == 2 * len(live), shown.listed
+
+
+def test_render_all_keeps_a_page_whose_target_became_public_during_the_pass(
+    migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A target that turns public after the pass read its targets, its page committed by
+    `on_change` meanwhile, keeps that page: the cleanup deletes only what is not public when
+    it runs, not what was missing from the pass's own list."""
+    config = hub(settings)
+    shown.targets["a"] = ("A", True, clock.now())
+    original = public_pages.refresh
+
+    def refresh(conn: Connection, hub: Settings, kind: str, target_id: str, **kw: Any) -> Any:
+        found = original(conn, hub, kind, target_id, **kw)
+        if target_id == "a":  # meanwhile another request makes "n" public and commits it
+            shown.targets["n"] = ("N", True, clock.now())
+            original(conn, hub, kind, "n")
+        return found
+
+    monkeypatch.setattr(public_pages, "refresh", refresh)
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+
+
+def test_render_all_keeps_a_page_whose_target_went_off_and_on_during_the_cleanup(
+    migrated: Engine, settings: Settings, shown: Shown
+) -> None:
+    """The interleaving of the #1509 review (fmzu, PostgreSQL under READ COMMITTED): the
+    cleanup read "n"'s page, then the targets while "n" was switched off, and "n" was switched
+    on again and rendered before the delete. The candidate is decided again under its lock,
+    so the page of a target that is public then stays."""
+    config = hub(settings)
+    shown.targets["a"] = ("A", True, clock.now())
+    shown.targets["n"] = ("N", True, clock.now())
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+    kind = public_pages.KINDS[NOTE]
+    calls = 0
+
+    def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # the cleanup's first read: "n" is off right now
+            listed = [i for i in sorted(shown.targets) if i != "n"]
+            # ... and on again, its page rendered and committed, before the delete
+            public_pages.refresh(conn, config, NOTE, "n")
+            return keep(listed, among)
+        return keep(sorted(shown.targets), among)
+
+    # Straight into the registry: the `shown` fixture restores it, and a monkeypatch undone
+    # after that fixture would put the test kind back for the tests that follow.
+    public_pages.KINDS[NOTE] = replace(kind, targets=targets)
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+
+
+def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction(
+    migrated: Engine, settings: Settings, shown: Shown
+) -> None:
+    """The same interleaving with two real transactions (PostgreSQL, READ COMMITTED): "n" is
+    rendered and committed by another connection after the cleanup's first read of the
+    targets, so the cleanup keeps its page; and a render that comes while the cleanup holds
+    "n"'s lock waits for it, so it cannot fall between the second read and the delete."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("SQLite writes one transaction at a time; the window is PostgreSQL's")
+    config = hub(settings)
+    shown.targets["a"] = ("A", True, clock.now())
+    shown.targets["n"] = ("N", True, clock.now())
+    public_pages.render_all(migrated, config)
+    kind = public_pages.KINDS[NOTE]
+    calls = 0
+    late: list[Step] = []
+
+    def render_n() -> None:
+        with migrated.begin() as other:
+            public_pages.refresh(other, config, NOTE, "n", fresh=True)
+
+    def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # off at this read, then on again and rendered by another request
+            render_n()
+            return keep([i for i in sorted(shown.targets) if i != "n"], among)
+        if calls == 3:  # the cleanup holds "n"'s lock: another render of "n" waits for it
+            started, future = threading.Event(), Future[None]()
+
+            def step() -> None:
+                started.set()
+                try:
+                    render_n()
+                    future.set_result(None)
+                except BaseException as error:
+                    future.set_exception(error)
+
+            threading.Thread(target=step, daemon=True).start()
+            late.append(Step(future, started, conn))
+            assert waiting(late[0])
+        return keep(sorted(shown.targets), among)
+
+    # Straight into the registry: the `shown` fixture restores it, and a monkeypatch undone
+    # after that fixture would put the test kind back for the tests that follow.
+    public_pages.KINDS[NOTE] = replace(kind, targets=targets)
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {"/a", "/n"}
+    assert len(late) == 1, "the cleanup read the targets again under the lock"
+    finished(late[0])
+    assert set(rows(migrated)) == {"/a", "/n"}
+
+
+def test_on_postgresql_the_cleanup_holds_one_targets_lock_at_a_time(
+    migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A writer may take several targets' locks in an order of its own across its transaction
+    (an organisation's suspension touches its projects one after the other, each with its
+    cards: the #1509 review, fmzu). Here one holds "y" and then waits for "x" while the cleanup
+    holds "x": had the cleanup kept "x" and gone on to "y", the two would wait for each other
+    and PostgreSQL would end one. With one lock per candidate, both finish."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("SQLite writes one transaction at a time; advisory locks are PostgreSQL's")
+    config = hub(settings)
+    shown.targets.update({t: (t.upper(), True, clock.now()) for t in ("a", "x", "y")})
+    public_pages.render_all(migrated, config)
+    del shown.targets["x"], shown.targets["y"]  # gone, their pages left: both are candidates
+    original = db.xact_lock
+    holds_y = threading.Event()
+    writer: list[Future[None]] = []
+
+    def other_writer() -> None:
+        with migrated.begin() as conn:
+            original(conn, f"public_page:{NOTE}:y")
+            holds_y.set()
+            original(conn, f"public_page:{NOTE}:x")
+
+    def xact_lock(conn: Connection, name: str) -> None:
+        original(conn, name)
+        if name == f"public_page:{NOTE}:x" and not writer:
+            future = Future[None]()
+
+            def step() -> None:
+                try:
+                    other_writer()
+                    future.set_result(None)
+                except BaseException as error:
+                    future.set_exception(error)
+
+            writer.append(future)
+            threading.Thread(target=step, daemon=True).start()
+            assert holds_y.wait(10)
+
+    monkeypatch.setattr(public_pages, "xact_lock", xact_lock)
+    public_pages.render_all(migrated, config)
+    writer[0].result(timeout=10)  # not ended as a deadlock's victim
+    assert set(rows(migrated)) == {"/a"}
 
 
 def test_startup_renders_every_page_again_before_any_is_served(

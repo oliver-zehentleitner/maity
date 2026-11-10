@@ -26,7 +26,6 @@ from maity_hub import clock, mentions, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 
-ALIAS_MAX = 8
 RENAME_LIMIT = 3
 RENAME_WINDOW = timedelta(hours=24)
 HUMANS = "human"  # the scope of every human's handle
@@ -232,22 +231,23 @@ def retire(conn: Connection, agent_id: str) -> None:
 
 
 class AliasLimit(ApiError):
-    def __init__(self, current: Sequence[str]) -> None:
+    def __init__(self, current: Sequence[str], limit: int) -> None:
         super().__init__(
             409,
             "alias_limit",
-            f"a handle keeps at most {ALIAS_MAX} aliases",
-            {"limit": ALIAS_MAX, "aliases": list(current)},
+            f"a handle keeps at most {limit} aliases",
+            {"limit": limit, "aliases": list(current)},
         )
 
 
 def rename(
-    conn: Connection, subject_id: str, owner_id: str | None, handle: str
+    conn: Connection, subject_id: str, owner_id: str | None, handle: str, *, alias_limit: int
 ) -> tuple[str, str] | None:
     """Give the human or the organisation (`owner_id` None) or the profile `subject_id` a new
     handle; the old one becomes an alias, an alias of its own taken back leaves the list.
     `(old, new)`, or `None` for the id's own current handle (§6.24: a no-op, nothing changes,
-    no event). The caller has checked who may rename."""
+    no event). The caller has checked who may rename and read `alias_limit` (`max_aliases`,
+    §16.5, `limits.aliases`)."""
     if not FORMAT.fullmatch(handle):
         raise invalid({"handle": "format"})
     org = subject_id.startswith("org-")
@@ -266,8 +266,10 @@ def rename(
     own = aliases(conn, [subject_id])[subject_id]
     back = handle in own
     ensure_free(conn, owner_id, handle, exclude=subject_id, own_alias=back)
-    if not back and len(own) >= ALIAS_MAX:
-        raise AliasLimit(own)
+    # Only a rename that adds an alias is refused: an id over a lowered value keeps them all,
+    # and taking one back adds none (§6.24, §16.5).
+    if not back and len(own) >= alias_limit:
+        raise AliasLimit(own, alias_limit)
     now = clock.now()
     recent = (
         conn.execute(

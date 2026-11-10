@@ -87,7 +87,9 @@ window.Maity = window.Maity || {};
           : M.t("mail.password.hint", { state: setOrNot(current.password) })),
         h("label", { class: "check", for: remove.id }, remove, " ", M.t("mail.password.remove")));
       const save = h("button", { type: "submit" }, M.t("mail.save"));
-      append(form, save);
+      // A sensitive call (§2.8.4: PATCH /admin/settings/*): the second factor asked for here when the hub wants it.
+      const stepSlot = h("div", { class: "step-up-slot", hidden: true });
+      append(form, stepSlot, save);
       form.addEventListener("submit", async (e) => {
         e.preventDefault(); if (save.disabled) return;
         const body = {};
@@ -107,8 +109,13 @@ window.Maity = window.Maity || {};
         }
         if (!Object.keys(body).length) { status.done(); append(status.el, h("span", null, M.t("mail.unchanged"))); return; }
         password.value = ""; save.disabled = true; status.busy(M.t("mail.saving"));
-        try { current = await M.api.patch(MAIL, body); status.done(); draw(); append(status.el, h("span", { class: "ok" }, M.t("mail.saved"))); }
-        catch (err) { status.fail(M.t("mail.save_failed"), mailError(err)); }
+        try {
+          current = await M.stepUp.run(() => M.api.patch(MAIL, body), stepSlot, M.t("mail.step_up"));
+          status.done(); draw(); append(status.el, h("span", { class: "ok" }, M.t("mail.saved")));
+        } catch (err) {
+          if (err.code === "cancelled") status.done();
+          else status.fail(M.t("mail.save_failed"), mailError(err));
+        }
         finally { delete body.password; save.disabled = false; }
       });
       append(settings, form, h("p", { class: "muted" }, M.t("mail.last_hour", {
@@ -172,7 +179,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, M.t("admin.section.pages")), fold, nav);
     const failed = (label, into) => (err) => {
       const status = M.statusLine();
-      status.fail(M.t("admin.section_failed", { section: label }), err);
+      status.fail((reason) => M.t("admin.section_failed", { section: label, reason }), err);
       append(into, status.el);
     };
     await M.siteIo.section(ctx, whole).catch(failed(M.t("admin.section.site"), whole));
@@ -224,7 +231,7 @@ window.Maity = window.Maity || {};
       const section = h("section", { class: "panel admin-section", "aria-label": label, id: "admin-" + key }); append(root, section);
       shown.push([label, section, path]);
       try { await load(section); }
-      catch (err) { const status = M.statusLine(); status.fail(M.t("admin.section_failed", { section: label }), err); append(section, status.el); }
+      catch (err) { const status = M.statusLine(); status.fail((reason) => M.t("admin.section_failed", { section: label, reason }), err); append(section, status.el); }
     }
     const buttons = shown.map(([label, section]) => h("button", { type: "button", "aria-controls": section.id, "aria-pressed": "false",
       onclick: () => pick(section) }, label));

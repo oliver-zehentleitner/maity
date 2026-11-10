@@ -18,6 +18,8 @@ raised on the card, not replaced in one place. Translations carry no note saying
 - **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words, the names in `role.*` such as `coder` and `reviewer`, stay English; a position in a team or a contract (`lead`, `arbiter`, `owner`) takes its row below. This counts for the label itself; the words around it follow **No gender guess** where they can (`die empfangende Person muss Besitzer sein`).
 - **Weekdays and months** take the language's own case: lower case in French, Spanish, Italian, Portuguese and Dutch.
 - **Plural forms:** those `PLURALS` in `web/tools/check.py` names for the language, each with its placeholder.
+- **Checked by `make check`:** a term the Words table keeps `unchanged` in every language, and a word of the other
+  form of address than the one the table below names (`web/tools/check.py`, `GLOSSARY_OTHER_ADDRESS`).
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
   language's neutral form where it has one that reads naturally.
 
@@ -54,6 +56,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | forge | Forge | forge | forja | forge | forge | forge | フォージ | 포지 | 代码托管平台 |
 | repository | Repository | dépôt | repositorio | repository | repositório | repository | リポジトリ | 저장소 | 仓库 |
 | pull request | Pull Request | pull request | pull request | pull request | pull request | pull request | プルリクエスト | 풀 리퀘스트 | 拉取请求 |
+| Actions (a forge's workflows, its product name) | Actions | Actions | Actions | Actions | Actions | Actions | Actions | Actions | Actions |
 | review | Review | revue | revisión | revisione | revisão | review | レビュー | 리뷰 | 评审 |
 | trust (level) | Vertrauensstufe | niveau de confiance | nivel de confianza | livello di fiducia | nível de confiança | vertrouwensniveau | 信頼レベル | 신뢰 수준 | 信任级别 |
 | role | Rolle | rôle | rol | ruolo | função | rol | ロール | 역할 | 角色 |

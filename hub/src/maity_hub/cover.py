@@ -72,7 +72,11 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     seen: set[int] = set()
     shown = []
     for member in order:
-        if member.trust == "guest" or member.role == "proxy" or member.isolated_since is not None:
+        if (
+            member.trust == "guest"
+            or member.role in ("proxy", "expert")  # an expert takes no cards (§2.3)
+            or member.isolated_since is not None
+        ):
             continue  # never a substitute, whatever the policy said when it was set
         if member.id != row.id and member.id not in seen:
             seen.add(member.id)
@@ -297,6 +301,8 @@ def _move_card(
     since: str,
     actor: Actor | None,
 ) -> None:
+    if sub.role == "expert":
+        return  # an expert takes no cards (§2.3 "The expert"); `cover_order` skips it too
     cover = {
         "for": _principal(covered),
         "by": _principal(sub),
@@ -309,11 +315,13 @@ def _move_card(
     values: dict[str, Any] = {"cover": cover, "updated_at": now}
     if holds:
         # Claims move, they are not dropped: holder and session change, the lease
-        # restarts, checkpoint and branch stay on the card.
+        # restarts, checkpoint and branch stay on the card. `claim_since` is the move: the
+        # start of the current holder, as on every change of holder (requests `_unblock`).
         values.update(
             claim_holder=sub.id,
             claim_instance=instance,
             claim_session_id=None,
+            claim_since=now,
             lease_until=now + timedelta(seconds=project.lease_seconds),
         )
     else:
@@ -419,7 +427,8 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if cover.get("touched") or card.status in CLOSED:
+        if cover.get("touched") or card.status in CLOSED or row.role == "expert":
+            # An expert takes no cards back (§2.3 "The expert"): the substitute keeps it.
             kept.append(card.id)
         else:
             returned.append(card.id)
@@ -429,6 +438,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
                     claim_holder=row.id,
                     claim_instance=cover.get("instance"),
                     claim_session_id=None,
+                    claim_since=now,  # the return is a change of holder too
                     lease_until=now + timedelta(seconds=project.lease_seconds),
                 )
             elif cover.get("moved") == "assignment":
@@ -505,6 +515,10 @@ def routed(conn: Connection, membership_id: int | None) -> tuple[int | None, dic
     if row.cover_state != "covered" or row.cover_by is None:
         return membership_id, None
     sub = conn.execute(select(t.membership).where(t.membership.c.id == row.cover_by)).one()
+    if sub.role == "expert":
+        # An expert takes no cards (§2.3 "The expert"); the role change waits while the cover
+        # runs, so this is a backstop: the card goes to the covered member, as without cover.
+        return membership_id, None
     return sub.id, {
         "for": _principal(row),
         "by": _principal(sub),

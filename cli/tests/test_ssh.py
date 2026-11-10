@@ -425,8 +425,10 @@ def real_host(tmp_path: Path, port: int, key: Path, known: Path) -> Ssh:
 def test_a_real_host_is_reached_and_every_word_arrives_as_it_is(
     tmp_path: Path, real_sshd: Any
 ) -> None:
+    import pwd  # POSIX only, as sshd is; HOME is the isolated one (conftest._isolate)
+
     host = real_host(tmp_path, *real_sshd)
-    assert host.home() == Path(os.path.expanduser("~"))
+    assert host.home() == Path(pwd.getpwuid(os.getuid()).pw_dir)
     words = ["a b", "$(id)", "x;y", "'q'"]
     done = host.run(["printf", "%s\n", *words])
     assert done.returncode == 0 and done.stdout.splitlines() == words
@@ -513,8 +515,19 @@ def test_check_counts_sshs_temporary_suffix_at_the_edge(
 def test_a_limit_on_a_host_is_read_there_and_keeps_its_slot_there(
     tmp_path: Path, fake_ssh: Path
 ) -> None:
+    import sys
+
+    from test_agent_user import bsd_dd, skip_unless_maity_is_installed
+
     from maity.runner import adapters, loop
 
+    # The host's `dd` has no `iflag` (macOS); its `maity`, on the agents' PATH, is this one,
+    # started with -I like the runner's own module.
+    skip_unless_maity_is_installed()
+    bsd_dd(fake_ssh.parent / "bin")
+    host_maity = tmp_path / "remote" / "bin" / "maity"
+    host_maity.write_text(f'#!/bin/sh\nexec {sys.executable} -I -m maity "$@"\n')
+    host_maity.chmod(0o755)
     sup, backends, reports, clock, _ = remote_world(tmp_path, fake_ssh)
     remote_clone(sup.cfg, "build-1", 3)
     remote_clone(sup.cfg, "build-1", 4)
@@ -529,7 +542,7 @@ def test_a_limit_on_a_host_is_read_there_and_keeps_its_slot_there(
     sup.tick()
     rec = sup.records["plc-0003"]
     assert (rec.state, rec.exit_code, rec.target) == ("rate_limited", 75, "build-1")
-    assert "dd if=" in fake_ssh.read_text()  # read on the host, never through a link
+    assert "maity runner limitread" in fake_ssh.read_text()  # on the host, never through a link
     sup.update([placement(3, target="build-1"), placement(4, target="build-1")])
     settle(sup)
     assert sup.records["plc-0004"].reason == "capacity"  # build-1 takes one agent

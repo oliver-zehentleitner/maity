@@ -8,10 +8,12 @@
    globalThis.KeepTheWhy.views.graph, listed in ktw-views.json, tested through the page (canvas-trace.mjs). */
 (function (root) {
 "use strict";
-const { plural, stepLayout, placeShown, seedLayout, carryNode, LAYOUT, linkExistsAt, hostOf, filterActive, entryMatches, fkey, linkFamily, seeDay, supersededDay, parseSupersededBy, readToken } = root.KeepTheWhy.core;
+const { stepLayout, placeShown, seedLayout, carryNode, LAYOUT, linkExistsAt, hostOf, filterActive, entryMatches, fkey, linkFamily, seeDay, supersededDay, parseSupersededBy, readToken } = root.KeepTheWhy.core;
 
-// One graph view per page: create({ scene, nav, prefs }) — the host's scene, navigation and settings.
-function create({ scene, nav, prefs }) {
+// One graph view per page: create({ scene, nav, prefs, words }) — the host's scene, navigation and settings, and its
+// hook for the UI text (ktw-ui.js words).
+function create({ scene, nav, prefs, words }) {
+const tw = root.KeepTheWhy.ui.words(words);
 const narrow = () => !!root.matchMedia?.("(max-width: 900px)").matches;
 const atClock = (e, ext = false) => scene.atClock(e, ext); // the scene's clock (ktw-scene.js)
 const statusNow = (e) => scene.statusNow(e);
@@ -209,7 +211,7 @@ function runGraph(canvas, g, opts = {}) {
       do stepLayout(g, { visible, linkOn }); while (g.alpha > LAYOUT.MIN_ALPHA && performance.now() - t0 < SETTLE_SLICE_MS);
       if (g.alpha > LAYOUT.MIN_ALPHA) {
         // still settling: the canvas says so instead of staying empty
-        publishLayout(g); ctx.clearRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.fillStyle = color("--ktw-fg2"); ctx.font = `13px ${color("--ktw-font") || "sans-serif"}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(`laying out ${plural(ns.length, "node")}…`, W / 2, H / 2);
+        publishLayout(g); ctx.clearRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.fillStyle = color("--ktw-fg2"); ctx.font = `13px ${color("--ktw-font") || "sans-serif"}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(tw("graph.layingOut", "laying out {n:node}…", { n: ns.length }), W / 2, H / 2);
         g.raf = canvas.isConnected ? requestAnimationFrame(step) : null; return;
       }
     } else if (g.alpha > LAYOUT.MIN_ALPHA) { const t0 = performance.now(); do stepLayout(g, { visible, linkOn }); while (g.alpha > LAYOUT.MIN_ALPHA && performance.now() - t0 < FRAME_LAYOUT_MS); }
@@ -246,7 +248,7 @@ function runGraph(canvas, g, opts = {}) {
       const a = g.nodes[l.s], b = g.nodes[l.t]; const hi = (focus && (a === focus || b === focus)) || onThought(l) || (sp && sp.has(a) && sp.has(b));
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
       ctx.lineWidth = (LW[l.kind] || 0.6) / V.scale; ctx.setLineDash((DASH[l.kind] || []).map((v) => v / V.scale));
-      const base = l.kind === "see" || l.kind === "xtopic" ? (l.color || color("--ktw-accent2")) : l.kind === "superseded" || l.kind === "family" || l.kind === "trail" || l.kind === "owner" ? color("--ktw-fg3") : color("--ktw-line");
+      const base = l.kind === "see" || l.kind === "xtopic" ? (l.color || color("--ktw-accent2")) : l.kind === "superseded" || l.kind === "family" || l.kind === "trail" || l.kind === "owner" ? color("--ktw-fg3-line") : color("--ktw-line");
       ctx.strokeStyle = hi ? (l.kind === "see" || l.kind === "xtopic" ? color("--ktw-fg") : color("--ktw-accent2")) : base; ctx.globalAlpha = (focus || th || sp) && !hi ? (th ? 0.12 : 0.25) : l.kind === "see" || l.kind === "xtopic" ? 0.85 : 1; if (onThought(l)) ctx.lineWidth = 3 / V.scale; ctx.stroke();
       // the path is the way walked, not a citation: an arrow at its middle points the way it went, toward where the reader is now
       if (l.kind === "trail") {
@@ -264,8 +266,8 @@ function runGraph(canvas, g, opts = {}) {
       ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
       if (n.kind === "project") { ctx.fillStyle = color("--ktw-bg"); ctx.fill(); ctx.lineWidth = 3.5 / V.scale; ctx.strokeStyle = n.color; if (n.chain) ctx.setLineDash([8 / V.scale, 3 / V.scale, 2 / V.scale, 3 / V.scale]); else if (n.friend) ctx.setLineDash([5 / V.scale, 3 / V.scale]); else if (n.trail) ctx.setLineDash([1.5 / V.scale, 3 / V.scale]); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.38, 0, Math.PI * 2); ctx.fillStyle = n.color; ctx.fill(); }
       else if (n.kind === "topic") { ctx.fillStyle = n.color || color("--ktw-accent"); ctx.fill(); }
-      else if (n.kind === "owner") { ctx.fillStyle = color("--ktw-bg"); ctx.fill(); ctx.lineWidth = 1.5 / V.scale; ctx.strokeStyle = color("--ktw-fg3"); ctx.stroke(); ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.72, 0, Math.PI * 2); ctx.stroke(); } // the inner ring in the graph's units: a radius from the zoom went negative far out, and the canvas throws on that
-      else { const st = statusNow(n.entry); const sup = st === "superseded"; ctx.fillStyle = sup ? color("--ktw-bg") : evColor[ev(n)] || color("--ktw-muted"); ctx.fill(); if (sup) { ctx.lineWidth = 1.2 / V.scale; ctx.strokeStyle = evColor[ev(n)] || color("--ktw-fg3"); ctx.stroke(); } if (st === "open" || st === "needs-review" || st === "pending-confirmation") { ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 2.5 / V.scale, 0, Math.PI * 2); ctx.lineWidth = 1.2 / V.scale; ctx.strokeStyle = color(`--ktw-status-${st}`); ctx.stroke(); } }
+      else if (n.kind === "owner") { ctx.fillStyle = color("--ktw-bg"); ctx.fill(); ctx.lineWidth = 1.5 / V.scale; ctx.strokeStyle = color("--ktw-fg3-line"); ctx.stroke(); ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.72, 0, Math.PI * 2); ctx.stroke(); } // the inner ring in the graph's units: a radius from the zoom went negative far out, and the canvas throws on that
+      else { const st = statusNow(n.entry); const sup = st === "superseded"; ctx.fillStyle = sup ? color("--ktw-bg") : evColor[ev(n)] || color("--ktw-muted"); ctx.fill(); if (sup) { ctx.lineWidth = 1.2 / V.scale; ctx.strokeStyle = evColor[ev(n)] || color("--ktw-fg3-line"); ctx.stroke(); } if (st === "open" || st === "needs-review" || st === "pending-confirmation") { ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 2.5 / V.scale, 0, Math.PI * 2); ctx.lineWidth = 1.2 / V.scale; ctx.strokeStyle = color(`--ktw-status-${st}`); ctx.stroke(); } }
       if (n === focus) { ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 4 / V.scale, 0, Math.PI * 2); ctx.lineWidth = 1.5 / V.scale; ctx.strokeStyle = color("--ktw-fg"); ctx.stroke(); }
       if (n === stepNode) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 7 / V.scale, 0, Math.PI * 2); ctx.lineWidth = 3 / V.scale; ctx.strokeStyle = color("--ktw-accent2"); ctx.stroke(); ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 12 / V.scale, 0, Math.PI * 2); ctx.lineWidth = 1 / V.scale; ctx.stroke(); }
     }
@@ -298,13 +300,13 @@ function runGraph(canvas, g, opts = {}) {
         ctx.font = hubName ? `600 ${(mini ? 12 : 13) / V.scale}px ${color("--ktw-font") || "sans-serif"}` : `${(mini ? 11 : 12) / V.scale}px ${color("--ktw-font") || "sans-serif"}`;
         const lbl = n.label.replace(/`/g, ""); const txt = lbl.length > maxLen ? lbl.slice(0, maxLen - 2) + "…" : lbl;
         const mark = hubName ? hostPath(n.canonical) : null; const iw = mark ? (mini ? 12 : 13) / V.scale : 0; const gap = mark ? 4 / V.scale : 0;
-        const tw = ctx.measureText(txt).width; const y = n.y + n.r + 3 / V.scale;
-        const left = n.x - (tw + iw + gap) / 2; const tx = left + iw + gap + tw / 2; // the mark before the name, the pair centred
-        const box = { x0: left - 3 / V.scale, y0: y - 1 / V.scale, x1: tx + tw / 2 + 3 / V.scale, y1: y + 15 / V.scale };
+        const textW = ctx.measureText(txt).width; const y = n.y + n.r + 3 / V.scale;
+        const left = n.x - (textW + iw + gap) / 2; const tx = left + iw + gap + textW / 2; // the mark before the name, the pair centred
+        const box = { x0: left - 3 / V.scale, y0: y - 1 / V.scale, x1: tx + textW / 2 + 3 / V.scale, y1: y + 15 / V.scale };
         if (!must && !free(box)) continue;
         placed.push(box);
         ctx.fillStyle = color("--ktw-bg"); ctx.globalAlpha = faded ? 0.4 : 0.75; ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, 15 / V.scale); ctx.globalAlpha = faded ? 0.5 : 1;
-        ctx.fillStyle = n.kind === "entry" ? color("--ktw-fg2") : hubName && n === hoverName ? color("--ktw-accent2") : color("--ktw-fg"); ctx.fillText(txt, tx, y);
+        ctx.fillStyle = n.kind === "entry" ? color("--ktw-fg2") : hubName && n === hoverName ? color("--ktw-accent-text") : color("--ktw-fg"); ctx.fillText(txt, tx, y);
         if (mark) { ctx.save(); ctx.translate(left, y + 0.5 / V.scale); ctx.scale(iw / 24, iw / 24); ctx.fill(mark); ctx.restore(); }
         if (hubName) {
           g.nameBoxes.push({ n, ...box });

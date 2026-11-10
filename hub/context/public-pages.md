@@ -42,21 +42,26 @@ place where "page or shell" can be decided without a second catch-all.
 
 **Id:** b7a13a49-7c56-49d6-bc18-4622b21d0077
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("How the pages are made", "Removing something is never left to the interval"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** a page kind needs inputs no write path can name, or the renders of one transaction become too slow to run inside it
+
+Its Revisit-when condition fired (the renders became too slow to run inside the writer's transaction):
+narrowed by deafb243-f385-4108-8de4-81fc8f9a7872, only the removal stays in the writer's transaction and the
+render follows the commit.
 
 Each kind of page (a person, a project and its views, an agent, an organisation) registers how to render the
 pages of one target and which targets exist (`public_pages.Kind`). The write paths that change an input call
 `public_pages.touch(conn, kind, target_id)` in their own transaction. `touch` renders the target again at once
 when the change takes anything off a page (`removal`, the default) under either mode, and under `on_change`
-every change does; under `interval` a new entry or a count (`removal=False`) waits for the next run. A
+every change does; under `interval` a new entry or a count (`removal=False`) waits for the next run. Where
+and when that render runs, and the time limits on it, are entry deafb243 below. A
 render that finds the inputs' digest unchanged leaves the row alone, so the ETag and the sitemap's `lastmod`
 move with the inputs and not with the safety net. A render that fails takes the target's pages off (in a
-savepoint, so the writer's own transaction goes on) instead of leaving a stale page. At start the hub clears
-every page and renders all again before it serves any; a worker repeats `render_all` every
-`MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
+savepoint, so the writer's own transaction goes on) instead of leaving a stale page. At start the hub renders
+all again before it serves any, taking up no further target after its startup budget (deafb243); a worker
+repeats `render_all` every `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
 (`public_pages.configure`), because the write paths do not carry them. The sitemap lists the stored rows
 with their `lastmod` and becomes an index with `/sitemap-<n>.xml` parts above 50,000 URLs or 50 MB;
 `robots.txt` closes every reserved first segment of §16.11 (as `/word/` and `/word`, so that a handle
@@ -74,6 +79,62 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
   twenty places.
 - Touching with the settings passed through every call: the writers (a profile, a card, a membership) have
   no reason to know the hub's settings.
+
+## A touched page is taken off in the writer's transaction and rendered after its commit; one render has a time limit, and a start takes up no target after its budget
+
+**Id:** deafb243-f385-4108-8de4-81fc8f9a7872
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04; the maintainer's yes to rendering outside the write transaction and to "page off" at a start the same day); the lead's answers on the card's plan (2026-11-04: dependents off with the target, 30 s and 2 s as settings, the contract sentence in the same change); `docs/api.md` §16.9; `public_pages.touch`, `_render_after_commit`, `refresh`, `render_all`, `startup`, `Worker._run`, `_unrendered`; `events.scratch`, `events.on_commit`; the review of #1364 (several workers per pod, a removal racing a render on PostgreSQL)
+**See:** public-pages.md#a-page-is-rendered-again-in-the-transaction-that-changed-its-input-by-a-registry-of-kinds — b7a13a49-7c56-49d6-bc18-4622b21d0077 — as of 2026-11-04
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-04
+**Revisit when:** a writer needs its page rendered before its answer returns, a render needs the writer's uncommitted state, or one target's render legitimately takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS`
+
+Inside an `events.transaction`, `touch` no longer renders. A change that takes anything off a page deletes the
+pages of the target and of its dependents in the writer's transaction, so nothing removed is served for a
+moment, and every touched target is queued in the transaction's `events.scratch`, each once. After the commit,
+`events.on_commit` renders each in a transaction of its own, in the same request, so the page is back when the
+answer arrives. A write that rolls back renders nothing, and its deletions roll back with it. A `touch` from a
+plain `engine.begin()` (no `on_commit` there) renders in that transaction as before. `refresh` treats a render of
+one target that takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS` (default 2) as a failed one: logged, the
+pages deleted. A starting process takes up no further target after `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default
+30), and the pages of the targets not reached by then are deleted. The check comes before a target's transaction
+and lock, so a target taken up before the budget ends is rendered all the same: it may first wait for its lock
+while another process renders it, and a running render cannot be interrupted from another thread; the render
+limit judges a render only once it ends. The budget therefore does not bound the whole start: listing the
+targets, those waits, the last render and the deletions come on top, and a render or a lock wait that hangs has
+no bound at all. The Helm chart's startup probe waits up to 60 seconds (`deploy/helm/maity-hub/values.yaml`,
+`probes.startup`); an operator sizes it from the start observed under load, with a margin. Each worker's first pass renders every target that has
+no stored page, before its prepared kinds, whichever process did the start: with `MAITY_WORKERS` above 1 the
+start runs in the supervisor's parent, which runs no worker and hands nothing to the spawned workers. A
+removal takes the per-target lock that `refresh` takes before it deletes, the targets in one order, so a render
+of the same target that is still running writes its page before the delete and not after it. On PostgreSQL the
+writer waits for the renders and removals of its targets that hold or wait for that lock before it: a render as
+long as it runs, a removal until its writer's transaction ends (SQLite writes one transaction at a time anyway).
+
+**Reason:** CPython holds the interpreter lock while a render runs, and a render inside the writer's transaction
+also held what that transaction holds: the project row, and on SQLite the database's one write lock, so every
+other write waited for it. A start that renders every page before it serves can outlast its startup probe, and
+a process killed there starts again in the same state. Deleting in the transaction keeps what §16.9 asks of a
+removal; only the render, which shows the state after the change, moves after the commit.
+
+**Rejected alternatives:**
+- A queue rendered by the worker thread: the answer would come before the page, and every test and client that
+  reads the page after a write would have to wait for it.
+- Rendering after the commit without deleting first (721bcdfa's rejected form): a removal would stay on the
+  page until the render, and a failed render would leave it there.
+- Deleting only the target's own pages on a removal, not its dependents: a removed name would stay on a card
+  page until that page is rendered again.
+- Stopping a render that runs too long: a running render cannot be interrupted from another thread; the limit
+  can only judge it once it ends.
+- Keeping the targets the start skipped in the starting process's memory for its worker: with several workers
+  per pod the start runs in the parent, and module state does not survive a spawn, so those pages stayed off
+  until the first interval pass. Handing the list on through the environment or a file was rejected too (a
+  worker the supervisor starts again would read a stale list), and so was a table (a second record of what
+  the missing rows already say).
+- Deleting without the per-target lock and accepting the window: on PostgreSQL a render already running when
+  a removal commits wrote the removed content back until the removal's own render ended.
 
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 
@@ -122,7 +183,7 @@ It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profi
 existing account on; an instance that upgrades later has its accounts of that moment switched the same
 way, so its operator tells their users first (the changelog says so). `public_people.served` no longer reads it: every active account that is not suspended
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
-pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
+pages of its open projects, by handle, on the Overview, Board, Team (at /team), Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
 counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
 this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
@@ -395,8 +456,13 @@ moment.
 **Source:** `docs/api.md` §16.9 ("The public views of a project"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** the Board's card events become a cost the busiest projects notice, or a view shows a count
 
+2026-11-09: the Members view is named Team (req-77az2zs017fe); its path stays /members.
+2026-11-10: the path follows the name: the view is at /team (the maintainer's decision, so that the name
+and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word of the project views, the
+maintainer's wish, so no slug or later view takes it; /members serves no page and redirects nowhere.
+
 `public_project_views` registers the kind `project_views`, one target per public project and three pages
-(`/board`, `/members`, `/organisation`). The kind `project` lists it as a dependent, so everything that
+(`/board`, `/team`, `/organisation`). The kind `project` lists it as a dependent, so everything that
 renders a project page (a switch, a hold, an archive, a rename, an owner's suspension, a member change) renders
 the views with it, and a person's page lists both kinds. The Board is the one part that follows the cards:
 `events.emit` touches `project_views` alone for a card event (`task_created` as an addition, the others as
@@ -738,7 +804,9 @@ write to the project waited behind it. Single-server setups are affected the sam
 - Dropping the at-once render and leaving every card change to the snapshot worker: a removal from a public page
   never waits for a timer (`docs/api.md` §16.9), and a hold or an imported `security` card still needs it.
 - Rendering after the commit, outside the lock: the removal belongs to the transaction that changed the input
-  (b7a13a49), and a second transaction after the commit could fail and leave the page stale.
+  (b7a13a49), and a second transaction after the commit could fail and leave the page stale. Taken up since in
+  a form that answers both (deafb243): the removal still deletes the pages in the writer's transaction, and
+  only the render follows the commit.
 
 The member events take the same path with one filter (tsk-2k10yf9w7kzw): a `member_updated` whose `changed`
 fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the language (one event per project of

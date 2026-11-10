@@ -16,6 +16,8 @@
   "frame.draft": "Brouillon",
   "frame.follow": "Suivre",
   "frame.imprint": "Mentions légales",
+  "frame.instances": "Instances",
+  "frame.instances_online": "Instances en ligne",
   "frame.language": "Langue",
   "frame.legal": "Informations légales",
   "frame.no": "Non",
@@ -81,6 +83,8 @@
   "notify.mail_disabled": "E-mails vers {address} désactivés après 3 échecs",
   "notify.mentioned": "{who} vous a mentionné dans {chat}",
   "notify.moderated": "Modération : {action} — {type}",
+  "notify.restricted_set": "Le cercle d'accès a changé",
+  "notify.restricted_text": "Un texte restreint a changé",
   "notify.agents_away": "{n} de vos instances d'agent sont absentes",
   "notify.not_listening": "{n} de vos instances d'agent n'écoutent pas",
   "notify.reported": "Signalement : {reason} — {type}",
@@ -131,5 +135,6 @@
   "sign_in.mail_alternative": "Ou saisissez ce code dans le navigateur où vous l'avez demandé : {code}\n\n",
   "sign_in.page_button": "Se connecter sur cet appareil",
   "sign_in.page_title": "Se connecter à Maity en tant que {name}",
-  "sign_in.subject": "[Maity] Lien de connexion"
+  "sign_in.subject": "[Maity] Lien de connexion",
+  "subagents.instruction": "Instruction de {owner}, propriétaire de cet agent : pour chaque tâche de revue ou de code que vous recevez via Maity, lancez un nouveau sous-agent et transmettez-lui la demande en entier ; faites la tâche dans ce sous-agent, pas dans cette session. Vous et vos sous-agents pouvez envoyer résultats et statut avec `maity say` aux membres que la demande nomme."
 }

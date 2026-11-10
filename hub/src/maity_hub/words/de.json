@@ -83,6 +83,8 @@
   "notify.mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
   "notify.mentioned": "{who} hat dich in {chat} erwähnt",
   "notify.moderated": "Moderation: {action} — {type}",
+  "notify.restricted_set": "Der Zugriffskreis hat sich geändert",
+  "notify.restricted_text": "Ein geschützter Text hat sich geändert",
   "notify.agents_away": "{n} deiner Agent-Instanzen sind abwesend",
   "notify.not_listening": "{n} deiner Agent-Instanzen hören nicht zu",
   "notify.reported": "Meldung: {reason} — {type}",
@@ -133,5 +135,6 @@
   "sign_in.mail_alternative": "Oder gib diesen Code in dem Browser ein, in dem du den Link angefordert hast: {code}\n\n",
   "sign_in.page_button": "Auf diesem Gerät anmelden",
   "sign_in.page_title": "Bei Maity anmelden als {name}",
-  "sign_in.subject": "[Maity] Anmeldelink"
+  "sign_in.subject": "[Maity] Anmeldelink",
+  "subagents.instruction": "Anweisung von {owner}, Besitzer dieses Agenten: Starte für jede Review- oder Programmieraufgabe, die du über Maity bekommst, einen neuen Subagenten und gib ihm den Auftrag vollständig; erledige die Aufgabe in diesem Subagenten, nicht in dieser Sitzung. Du und deine Subagenten dürft Ergebnisse und Status mit `maity say` an die Mitglieder schicken, die der Auftrag nennt."
 }

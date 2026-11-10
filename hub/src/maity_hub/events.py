@@ -15,18 +15,19 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, ticker_read
+from maity_hub import clock, restricted, ticker_read
 from maity_hub import tables as t
 from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
 _AFTER = "maity_after_commit"
+_SCRATCH = "maity_transaction_scratch"
 log = logging.getLogger(__name__)
 
 
@@ -41,6 +42,9 @@ class Actor:
     runner_id: str | None = None
     human_id: str | None = None  # a human who is no member of the project (§8.1)
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
+    # An agent profile that is no member of the project the event is written in (§8.1, §9.5).
+    agent_id: str | None = None
+    agent_instance: str | None = None
     # The bridge that made the call for the member (§2.3): `{member_id, instance, bridge_id}`.
     bridge: dict[str, str | None] | None = None
 
@@ -112,17 +116,20 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     pending: list[tuple[str, int]] = []
     undo: list[Callable[[], None]] = []
     after: list[Callable[[], None]] = []
+    scratch: dict[str, Any] = {}
     try:
         with engine.begin() as conn:
             conn.info[_PENDING] = pending
             conn.info[_UNDO] = undo
             conn.info[_AFTER] = after
+            conn.info[_SCRATCH] = scratch
             try:
                 yield conn
             finally:
                 conn.info.pop(_PENDING, None)
                 conn.info.pop(_UNDO, None)
                 conn.info.pop(_AFTER, None)
+                conn.info.pop(_SCRATCH, None)
     except BaseException:
         for step in reversed(undo):
             step()
@@ -134,6 +141,22 @@ def transaction(engine: Engine) -> Iterator[Connection]:
             step()
         except Exception:  # committed already: a failed clean-up is the sweep's to retry
             log.exception("a step after the commit failed")
+
+
+def in_transaction(conn: Connection) -> bool:
+    """Whether `conn` is the connection of an open `transaction`, so `on_commit` and
+    `scratch` may be used."""
+    return _AFTER in conn.info
+
+
+def scratch(conn: Connection) -> dict[str, Any]:
+    """A dict that lives as long as the caller's `transaction`: what a module gathers for its
+    `on_commit` step. Not `conn.info` itself, which belongs to the pooled connection and
+    outlives the transaction."""
+    found = conn.info.get(_SCRATCH)
+    if found is None:
+        raise RuntimeError("events.scratch outside events.transaction()")
+    return cast(dict[str, Any], found)
 
 
 def on_commit(conn: Connection, step: Callable[[], None]) -> None:
@@ -211,8 +234,11 @@ def emit(
     actor: Actor | None = None,
     subject: tuple[str, str] | None = None,
     conversation_id: str | None = None,
+    restricted_list: Sequence[int] | None = None,
 ) -> int:
-    """Append one event inside the caller's transaction; returns its `seq`."""
+    """Append one event inside the caller's transaction; returns its `seq`. A
+    `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
+    the event, never served, read again against the set at every read."""
     project = lock_project(conn, project_id)
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
@@ -244,11 +270,15 @@ def emit(
         from maity_hub.instances import team_wakes  # instances writes events itself
 
         wakes = team_wakes(
-            conn, project_id, audience, actor.membership_id if actor else None, watchers
+            conn,
+            project_id,
+            audience,
+            actor.membership_id if actor else None,
+            [*watchers, *(restricted_list or ())],
         )
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
-    # project's last event (§18.2, "at is monotonic per project").
+    # project's last event. The contract promises only `seq` (§8.1); this floor is the hub's own.
     last = conn.execute(
         select(t.event.c.at)
         .where(t.event.c.project_id == project_id)
@@ -270,6 +300,8 @@ def emit(
             actor_runner_id=actor.runner_id if actor else None,
             actor_human_id=actor.human_id if actor else None,
             actor_report_id=actor.report_id if actor else None,
+            actor_agent_id=actor.agent_id if actor else None,
+            actor_instance=actor.agent_instance if actor else None,
             actor_bridge=actor.bridge if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
@@ -288,6 +320,11 @@ def emit(
         conn.execute(
             insert(t.event_watcher),
             [{"seq": seq, "membership_id": watcher} for watcher in watchers],
+        )
+    if restricted_list:
+        conn.execute(
+            insert(t.restricted_event_list),
+            [{"seq": seq, "membership_id": member} for member in restricted_list],
         )
     if kind in {"message", "task_claimed"}:
         from maity_hub import onboarding
@@ -340,6 +377,21 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
+    if (
+        kind in MEMBER_KINDS
+        and project.public_page != "on"
+        and subject
+        and subject[0] == "member"
+        and _shown_member_change(kind, payload)
+    ):
+        # Under `public_agents: all` an agent's membership in any project lists it on its
+        # owner's agents page (§16.9, "A person's agents"); a public project's change reaches
+        # that page above, as a dependent of the project's page.
+        from maity_hub import public_people
+
+        public_people.touch_owner_of(
+            conn, subject[1], removal=kind != "member_joined", only_all=True
+        )
     return seq
 
 
@@ -415,6 +467,7 @@ HUMANS_ONLY_KINDS = frozenset(
         "invitation_revoked",
         "invitation_voided",
         "invitation_used",
+        "invitation_declined",
     }
 )
 
@@ -432,12 +485,15 @@ def hidden_redactions(
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
       chat's event in the batch names: the owner reads along (§9.2);
     - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4);
+    - with `membership`, `restricted:<seq>` for each `restricted_changed` it reads now: on
+      the event's private list and in the project's restricted-access set (§6.4);
     - `circle:<seq>` for each jour fixe event of a round or series with `circle: owner`:
       it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7);
     - `outside:<conversation>` for each thread of such a round whose `circle_owner` the
       human is not: owning an agent in it does not let them read along (§20.5)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     hidden |= {f"watching:{seq}" for seq in watched_seqs(conn, rows, membership)}
+    hidden |= {f"restricted:{seq}" for seq in restricted.readable_seqs(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
     hidden |= _owners_circles(conn, rows)
     hidden |= _outside_rounds(conn, rows, membership)
@@ -624,6 +680,10 @@ def readable_by(
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
         return False  # as if it had never been a member then, whatever its trust (§8.2)
+    if row.kind == restricted.KIND:
+        # Its private list intersected with the set at this read, and nothing else: not the
+        # see-all of owners and admins, not its actor once out of the set (§6.4).
+        return f"restricted:{row.seq}" in hidden
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden
@@ -639,6 +699,10 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
+    if row.kind in ("cross_chat_mention", "chat_unread"):
+        # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);
+        # the unread nudge names a group chat's title, which the see-all does not read (§9.2).
+        return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:
@@ -858,6 +922,13 @@ def wakes(
         if row.actor_membership == membership.id:
             return own and row.actor_credential_id != credential_id
         return own
+    if row.kind == restricted.KIND:
+        # A card's change wakes the agents on its list that are in the set, as a `member:`
+        # token does, never the writer's own; a change of the set wakes nobody (§6.4).
+        if (row.payload or {}).get("task_id") is None or row.actor_membership == membership.id:
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
     if row.kind == "member_not_listening":
@@ -1079,10 +1150,24 @@ def mark_delivered(conn: Connection, rows: list[Any], reader: str) -> None:
         ).scalars()
     )
     now = clock.now()
-    for seq in seqs:
-        if seq not in known:
-            try:
-                with conn.begin_nested():
-                    conn.execute(insert(t.message_delivery).values(seq=seq, delivered_at=now))
-            except IntegrityError:
-                pass  # another read delivered it a moment earlier: the first time stands
+    missing = [seq for seq in seqs if seq not in known]
+    if not missing:
+        return
+    try:  # the page's first deliveries in one statement: one INSERT with many VALUES rows,
+        # not a list of parameters, which sqlite3 and psycopg run as one INSERT per row
+        # (PyMySQL would fold such a list itself; this form needs no driver to do that)
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.message_delivery).values(
+                    [{"seq": seq, "delivered_at": now} for seq in missing]
+                )
+            )
+        return
+    except IntegrityError:
+        pass  # another read delivered one of them a moment earlier: each on its own
+    for seq in missing:
+        try:
+            with conn.begin_nested():
+                conn.execute(insert(t.message_delivery).values(seq=seq, delivered_at=now))
+        except IntegrityError:
+            pass  # another read delivered it a moment earlier: the first time stands

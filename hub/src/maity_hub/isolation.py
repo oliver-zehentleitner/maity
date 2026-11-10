@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, case, func, select, update
 
-from maity_hub import cards, clock, group_chats, longpoll, placements
+from maity_hub import cards, clock, group_chats, longpoll, placements, restricted
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit, lock_project, on_commit
@@ -136,6 +136,10 @@ def isolate(
     )
     released = release_claims(conn, target.id)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
+    if target.agent_id is not None:
+        from maity_hub import cross_chats
+
+        cross_chats.isolation_settled(conn, target.agent_id, human_id)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
     tell_released(conn, released, actor)
@@ -174,6 +178,7 @@ def lift(
     target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     if not is_isolated(target) or target.active is None:
         return
+    in_set_before = restricted.resolve(conn, project)
     windows = list(target.isolation_windows or [])
     to_seq = _head(conn, project.id)  # before the lift's own events: the agent reads those
     from_seq = target.isolated_from_seq
@@ -210,6 +215,15 @@ def lift(
             .values(acknowledged_seq=to_seq)
         )
     _announce(conn, project, target, actor)
+    # The end of an isolation is a way into the restricted-access set (§6.1).
+    restricted.entered(
+        conn,
+        project.id,
+        in_set_before,
+        "isolation_ended",
+        restricted.person(conn, actor.membership_id) if actor.membership_id else "hub",
+        actor,
+    )
     _tell_owner(
         conn,
         project,

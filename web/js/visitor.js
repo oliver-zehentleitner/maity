@@ -13,11 +13,11 @@ window.Maity = window.Maity || {};
   const VIEWS = [
     { path: "", get label() { return M.t("nav.overview"); } },
     { path: "/board", get label() { return M.t("nav.board"); } },
-    { path: "/members", get label() { return M.t("nav.members"); } },
+    { path: "/team", get label() { return M.t("nav.members"); } },
     { path: "/organisation", get label() { return M.t("nav.organisation"); } },
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
-  const PROJECT_KINDS = ["project", "board", "members", "organisation", "why", "card"];
+  const PROJECT_KINDS = ["project", "board", "team", "organisation", "why", "card"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
     get reviews_given() { return M.t("visitor.stat.reviews_given"); },
@@ -47,7 +47,27 @@ window.Maity = window.Maity || {};
     return safe ? h("a", { href: safe, rel: "nofollow ugc" }, label || url) : null;
   };
   const names = (people) => h("ul", null, people.map((p) => h("li", null, who(p), " (" + p.handle + ")")));
-  const projectList = (projects) => h("ul", null, projects.map((p) => h("li", null, h("a", { href: "/" + p.full_name }, p.name))));
+  // A person's or an agent's page names their role in each project (§16.9); a project's own
+  // lists carry none.
+  const projectList = (projects) => h("ul", null, projects.map((p) => h("li", null, h("a", { href: "/" + p.full_name }, p.name),
+    p.role ? [" ", h("span", { class: "label-tag" }, M.trust.roleLabel(p.role))] : null)));
+
+  // "YYYY-MM" as the month and year in the reader's language, never a day (§16.9). The 1st at
+  // noon UTC, so no time zone moves it into another month; an unreadable value stays as given.
+  function month(value) {
+    const found = /^(\d{4})-(\d{2})$/.exec(value || "");
+    if (!found) return String(value);
+    return M.fmt.when(new Date(Date.UTC(+found[1], +found[2] - 1, 1, 12)), { year: "numeric", month: "long", timeZone: "UTC" });
+  }
+  // Member since, online, and for an agent its model and harness: each only as the hub sends it.
+  function facts(d) {
+    const items = [];
+    if (d.member_since) items.push(h("li", null, M.t("visitor.member_since", { month: month(d.member_since) })));
+    if (d.online === true) items.push(h("li", null, M.t("visitor.online")));
+    if (d.model) items.push(h("li", null, M.t("visitor.model", { model: d.model })));
+    if (d.harness) items.push(h("li", null, M.t("visitor.harness", { harness: d.harness })));
+    return items.length ? h("ul", { class: "visitor-facts" }, items) : null;
+  }
 
   function statistics(totals) {
     return h("ul", { class: "visitor-stats" }, Object.keys(COUNTERS).filter((key) => totals[key] !== null && totals[key] !== undefined)
@@ -105,7 +125,7 @@ window.Maity = window.Maity || {};
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },
-    members(d) {
+    team(d) {
       return [
         h("ul", null, d.shown.map((p) => h("li", null, who(p), " (" + p.handle + ") ", h("span", { class: "muted" }, M.trust.roleLabel(p.role))))),
         d.others.length ? [h("h2", null, M.t("visitor.others")),
@@ -136,13 +156,17 @@ window.Maity = window.Maity || {};
         d.bio ? h("p", null, d.bio) : null,
         d.website ? h("p", null, external(d.website)) : null,
         d.social ? h("ul", null, Object.keys(d.social).map((net) => h("li", null, net + ": " + d.social[net]))) : null,
+        facts(d),
         d.projects.length ? [h("h2", null, M.t("visitor.projects")), projectList(d.projects)] : null,
+        // A person's own three counts, only while they chose to show them (`public_stats`).
+        d.statistics ? [h("h2", null, M.t("visitor.statistics.own")), statistics(d.statistics)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
       ];
     },
     agent(d) {
       return [
         h("p", null, who(d.owner)),
+        facts(d),
         h("h2", null, M.t("visitor.projects")), projectList(d.projects),
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics),
       ];
@@ -163,7 +187,7 @@ window.Maity = window.Maity || {};
     if (parts[1] === "agents") return parts.length === 3;
     if (parts[2] === "tasks") return parts.length === 4;
     if (parts[2] === "overview") return parts.length === 3 || (parts.length === 4 && ["project", "swarm"].includes(parts[3]));
-    return parts.length === 2 || (parts.length === 3 && ["board", "members", "organisation", "why"].includes(parts[2]));
+    return parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]));
   }
 
   // The member Overview's addresses (§16.11) read the project's own page, the public overview
@@ -177,7 +201,7 @@ window.Maity = window.Maity || {};
   }
 
   // Draws the page of `path` when the hub stores one; false when it stores none, for the
-  // caller's own answer (the login, or not_found).
+  // caller's own answer (the login, or not_found); null signed out when the read failed otherwise.
   async function page(main, header, where, path, { signedIn, brand, tools, head, live }) {
     if (!canBePublic(where, path)) return false;
     const stored = storedPath(path);
@@ -200,9 +224,13 @@ window.Maity = window.Maity || {};
     try {
       answer = await M.api.get("/public/pages/" + stored.replace(/^\/+/, ""));
     } catch (err) {
-      // No page: the caller's answer stands. Signed out, so does a failed read: the login is
-      // still a way on. Signed in, it is said as any failed page is.
-      if (err.status === 404 || !signedIn) return false;
+      // No page (404): false, and the caller's answer stands, the login at a dashboard route or
+      // "not found" at a handle or an unknown view word (app.js, showsVisitorNothing). Signed
+      // out, any other failed read is null: the caller keeps the login, which is still a way on,
+      // and never says "not found" for a page it could not read. Signed in, it is said as any
+      // failed page is.
+      if (err.status === 404) return false;
+      if (!signedIn) return null;
       throw err;
     }
     if (!live()) return true;

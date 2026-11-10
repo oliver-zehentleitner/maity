@@ -63,22 +63,24 @@ window.Maity = window.Maity || {};
   // Read only on purpose: a security alert by Mark read (§18.3), and an
   // item that asks for an action (a registration to decide, an address to
   // set again) closes with the matter, not by opening it (§18.1).
-  // The four open matters of §18.3 (registration_pending, mail_disabled,
-  // report_open, agents_not_listening), by their targets (registration,
-  // settings, report, agents), read as read only once the matter is closed,
-  // never by opening or marking them: the hub ignores their ids.
-  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings", "report", "agents"].includes((x.target || {}).type);
+  // The three open matters of §18.3 (registration_pending, mail_disabled,
+  // agents_not_listening), by their targets (registration, settings,
+  // agents), read as read only once the matter is closed, never by opening or
+  // marking them: the hub ignores their ids. A new abuse report is a personal
+  // request to the instance admin (§16.8, §7), listed in the inbox.
+  // The restricted-access set's notice (§6.4) points at a project's setting, not at
+  // one's own: read by a read mark as any notice.
+  const projectSetting = (t) => t.type === "settings" && t.id === "restricted_access";
+  const keepsUnread = (x) => x.kind === "security" || (["registration", "settings", "agents"].includes((x.target || {}).type) && !projectSetting(x.target || {}));
 
   function linkOf(item) {
     const t0 = item.target || {};
-    if (t0.type === "session" || item.kind === "security") return "/account/sessions";
-    if (t0.type === "settings") return "/account/notifications";
+    if (t0.type === "session" || item.kind === "security") return "/account/security/sessions";
+    if (t0.type === "settings" && !projectSetting(t0)) return "/account/notifications";
     // Agent instances not listening (agents_not_listening, §5.3): one's agents.
     if (t0.type === "agents") return "/agents";
-    // A registration waiting for the instance admin (§16.4): Admin → Registration;
-    // a new abuse report (§16.8): Admin → Reports with that report opened.
+    // A registration waiting for the instance admin (§16.4): Admin → Registration.
     if (t0.type === "registration") return "/admin/registration";
-    if (t0.type === "report") return "/admin/reports/" + encodeURIComponent(t0.id);
     const full = item.project && item.project.full_name;
     if (!full || item.project.member === false) return "/all";
     const base = "/" + M.api.projectPath(full) + "/";
@@ -86,6 +88,8 @@ window.Maity = window.Maity || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
     if (t.type === "request") return base + "inbox/" + encodeURIComponent(t.id);
+    // The restricted-access set changed (§6.4): the project's setting.
+    if (projectSetting(t)) return base + "settings";
     return base + "inbox";
   }
 
@@ -203,7 +207,7 @@ window.Maity = window.Maity || {};
       if (left.length) {
         // What the hub left, and why (§18.3), stays in the open panel.
         await after(null);
-        status.fail(M.t("bell.skipped", { count: left.length }), {
+        status.fail((reason) => M.t("bell.skipped", { count: left.length, reason }), {
           message: left.map((x) => {
             const found = pinned.find((y) => y.id === x.id);
             return (found ? found.title : x.id) + ": " + skippedWhy(x.reason);
@@ -331,7 +335,9 @@ window.Maity = window.Maity || {};
   let restartWanted = false;
   const watchers = new Set();
   const shown = new Set();
-  const changed = () => watchers.forEach((fn) => fn());
+  // items: what a long-poll answer brought (§18.2), for a watcher that only cares for some kinds;
+  // none from a counts read.
+  const changed = (items) => watchers.forEach((fn) => fn(items));
   const wanted = () => browserConfig || watchers.size;
 
   // The waiting view and browser pop-ups share one request, even while a
@@ -390,7 +396,7 @@ window.Maity = window.Maity || {};
         if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);
         // Refresh the snapshot, including removals/read flags; never insert a
         // long-poll item into a request form or assume its count is complete.
-        changed();
+        changed(items);
         const config = browserConfig;
         if (config && !loop.reset) items.forEach((x) => {
           const b = config.settings.browser;

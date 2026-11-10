@@ -12,7 +12,7 @@ its verifier, a join or enrollment token, a code hash, a nonce, a second factor'
 or recovery code. What the document shows is picked field by field; where a row is read
 whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
-Not in this hub yet, so not in the export: handle aliases (§6.24) and the public profile (§16.9).
+Not in this hub yet, so not in the export: handle aliases (§6.24).
 """
 
 from __future__ import annotations
@@ -23,7 +23,18 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, group_chats, inbox, maintenance, namespace, reports
+from maity_hub import (
+    avatars,
+    clock,
+    contacts,
+    cross_chats,
+    group_chats,
+    inbox,
+    maintenance,
+    namespace,
+    reports,
+    restricted,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import second_factor
@@ -82,6 +93,9 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "card_notes": _card_notes(conn, my_ids, names, titles),
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
         "pinned_conversations": _pinned_conversations(conn, human_id),
+        **contacts.exported(conn, human_id),  # `contacts`, `contact_of` (§6.29)
+        "restricted_texts": _restricted_texts(conn, readers, names),
+        "cross_chats": cross_chats.export_of(conn, human_id),
     }
 
 
@@ -234,6 +248,16 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         ),
         "addresses": addresses,
         "broadcasts": maintenance.choice(human.broadcasts),  # §16.12
+        # The public profile's fields as the person set them (§16.9), whatever the page shows.
+        "public_profile": human.public_profile,
+        "public_presence": human.public_presence,
+        "public_stats": human.public_stats,
+        "public_agents": human.public_agents,
+        "public_bio": human.public_bio,
+        "website": human.website,
+        "social": human.social or {},
+        "links_visible": human.links_visible,
+        "start_tabs": _start_tabs(conn, human.start_tabs),  # §5.1
         "preferences": (
             {
                 "markdown": prefs.markdown,
@@ -249,6 +273,16 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
             "not_listening": settings["not_listening"],
         },
     }
+
+
+def _start_tabs(conn: Connection, stored: list[str] | None) -> list[dict[str, str]] | None:
+    """The start tabs as stored, in order, each with the project's current full name. Only a
+    project that no longer exists is left out; one the human has left stays, as it is what the
+    hub keeps, while `GET /me` shows current memberships only (§5.1)."""
+    if stored is None:
+        return None
+    names = namespace.full_names(conn, list(stored))
+    return [{"id": pid, "full_name": names[pid]} for pid in stored if pid in names]
 
 
 def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:
@@ -954,6 +988,39 @@ def _card_notes(
         else:
             item.update(body=row.body, redacted=False)
         out.append(item)
+    return out
+
+
+def _restricted_texts(
+    conn: Connection, readers: dict[str, Membership], names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """The one exception for restricted text (§6.4, §2.9): the texts whose current version
+    the caller wrote, of projects whose set the caller is in now, with the project, the
+    card's id, the version and when. Never another member's text, never one of a project
+    whose set the caller left."""
+    out: list[dict[str, Any]] = []
+    for project_id, mine in sorted(readers.items()):
+        if not restricted.in_set(conn, mine.project, mine.id):
+            continue
+        rows = conn.execute(
+            select(t.task_restricted)
+            .where(
+                t.task_restricted.c.project_id == project_id,
+                t.task_restricted.c.updated_by == mine.id,
+                t.task_restricted.c.text.is_not(None),
+            )
+            .order_by(t.task_restricted.c.updated_at, t.task_restricted.c.task_id)
+        ).all()
+        out += [
+            {
+                "project": names.get(project_id),
+                "card_id": row.task_id,
+                "version": row.version,
+                "updated_at": ts(row.updated_at),
+                "text": row.text,
+            }
+            for row in rows
+        ]
     return out
 
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import avatar_generated, avatars, clock, images
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -107,13 +109,17 @@ def test_a_request_has_the_contract_shape_and_goes_to_the_agents_human(
     assert body["asked_by"] == {
         "member_id": agent.id,
         "display_name": "Agent B",
-        "avatar_url": None,
+        "avatar_url": generated(agent.id),  # an agent always has a picture (§6.10)
         "trust": "member",
         "role": "coder",
         "session_id": session,
         "instance": agent.instance,  # the instance that asked (§7, §6.17)
     }
-    assert (body["status"], body["answer"], body["while_open"]) == ("open", None, "wait")
+    assert (body["status"], body["answer"], body["while_open"]) == (
+        "open",
+        None,
+        "proceed_provisionally",  # a decision's default; a consent waits (§7)
+    )
     created = _events(migrated, "request_created")[-1]
     assert created.audience == [f"member:{owner.id}"]
     assert created.payload["id"] == body["id"] and created.payload["replies"] == body["replies"]
@@ -166,6 +172,37 @@ def test_urgent_is_for_answering_roles(owner: flow.Human, make_client: ClientFac
     assert ask(admin, priority="urgent").status_code == 201
 
 
+def test_an_urgent_request_in_flight_is_refused_once_its_admin_became_a_member(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§7: `urgent` needs `requests:answer`. The request read its membership as an admin;
+    the trust change to member commits before the request takes the project lock. The
+    check runs on the row read under the lock, so the request is refused (#1568)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import requests as requests_route
+    from tests.test_expert import _in_thread, _paused
+
+    admin = flow.agent(make_client, owner, role="admin")
+    reached, release = _paused(monkeypatch, "_locked", requests_route)
+    sent = _in_thread(lambda: ask(admin, priority="urgent"))
+    try:
+        assert reached.wait(10), "the request never reached the lock"
+        changed = owner.patch(f"/projects/maintainer/maity/members/{admin.id}", {"trust": "member"})
+        assert changed.status_code == 200, changed.text
+    finally:
+        release.set()
+    refused = sent.result(timeout=10)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {
+        "priority": "urgent_needs_requests_answer"
+    }
+    assert owner.get("/projects/maintainer/maity/requests").json()["items"] == []
+
+
 def test_a_consent_goes_only_to_a_role_that_may_answer_it(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -209,7 +246,7 @@ def test_needs_in_session_names_the_member_and_its_session(
         "display_name": "An agent",
         "session_id": session,
         "harness": "Claude Code",
-        "avatar_url": None,
+        "avatar_url": generated(agent.id),
     }
 
 
@@ -222,7 +259,7 @@ def test_waiting_on_a_request_blocks_the_card_and_the_answer_restores_it(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    request = asked(agent, task_id=card["id"])
+    request = asked(agent, task_id=card["id"], while_open="wait")
     blocked = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (blocked["status"], blocked["blocked_by_request"]) == ("blocked", request["id"])
     assert request["task"] == {"id": card["id"], "title": "A card", "status": "blocked"}
@@ -238,7 +275,7 @@ def test_a_request_after_the_report_restores_review(
     card = task(owner)
     _claim(agent, card)
     agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report())
-    request = asked(agent, task_id=card["id"])
+    request = asked(agent, task_id=card["id"], while_open="wait")
     agent.post(
         f"/projects/maintainer/maity/requests/{request['id']}/withdraw", {"reason": "found it"}
     )
@@ -258,12 +295,37 @@ def test_proceeding_provisionally_does_not_block(
     )
 
 
+def test_a_question_for_a_held_card_leaves_it_as_it_is_unless_it_says_it_waits(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    # Jour fixe 2026-11-02 (r4): a side question must not stop the card or its `done`.
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    request = asked(agent, task_id=card["id"])
+    assert request["while_open"] == "proceed_provisionally"
+    after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (after["status"], after["blocked_by_request"]) == ("in_progress", None)
+
+
+def test_a_consent_for_a_held_card_waits_without_saying_so(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    request = asked(agent, task_id=card["id"], **{"class": "consent"})
+    assert request["while_open"] == "wait"
+    after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (after["status"], after["blocked_by_request"]) == ("blocked", request["id"])
+
+
 def test_cancel_and_release_clear_the_block(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     first, second = task(owner), task(owner)
     for card in (first, second):
         _claim(agent, card)
-        asked(agent, task_id=card["id"])
+        asked(agent, task_id=card["id"], while_open="wait")
     cancelled = owner.patch(
         f"/projects/maintainer/maity/tasks/{first['id']}", {"status": "cancelled"}
     ).json()
@@ -565,8 +627,8 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    first = asked(agent, task_id=card["id"])
-    second = asked(agent, task_id=card["id"])
+    first = asked(agent, task_id=card["id"], while_open="wait")
+    second = asked(agent, task_id=card["id"], while_open="wait")
     assert (
         owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["blocked_by_request"]
         == first["id"]
@@ -577,6 +639,29 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     agent.post(f"/projects/maintainer/maity/requests/{second['id']}/withdraw", {})
     freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+
+
+def test_a_wait_filed_before_the_claim_keeps_nothing_blocked(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """A wait on an unheld card blocks nothing (below), so after the claim it does not hold the
+    block that a later wait set: answering that one restores the card (§7)."""
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    start = clock.now()
+    clock.set_source(lambda: start)
+    early = asked(agent, task_id=card["id"], while_open="wait")
+    clock.set_source(lambda: start + timedelta(seconds=1))
+    _claim(agent, card)
+    clock.set_source(lambda: start + timedelta(seconds=2))
+    later = asked(agent, task_id=card["id"], while_open="wait")
+    held = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (held["status"], held["blocked_by_request"]) == ("blocked", later["id"])
+    answer(owner, later, text="yes")
+    freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+    still = owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()
+    assert still["status"] == "open"  # the request itself stays as it is
 
 
 # --- review round ----------------------------------------------------------------------
@@ -592,7 +677,7 @@ def test_a_request_on_an_unheld_card_blocks_nothing(
         status="proposed" if state == "proposed" else "open",
         **({"assigned_to": agent.id} if state == "assigned" else {}),
     )
-    asked(agent, task_id=card["id"])
+    asked(agent, task_id=card["id"], while_open="wait")
     after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (after["status"], after["blocked_by_request"]) == (card["status"], None)
     if state != "proposed":
@@ -608,7 +693,7 @@ def test_done_on_a_blocked_card_clears_the_block(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    asked(agent, task_id=card["id"])
+    asked(agent, task_id=card["id"], while_open="wait")
     done = agent.post(
         f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
     ).json()
@@ -695,3 +780,8 @@ def test_a_listing_costs_its_page_not_every_request(
     page = owner.get("/requests", params={"limit": 10}).json()
     assert len(page["items"]) == 10 and page["next_cursor"] is not None
     assert all("_row" not in v and "_created" not in v for v in page["items"])
+
+
+def generated(agent_id: str) -> str:
+    """The `avatar_url` of an agent's generated picture (§6.10)."""
+    return avatars.url_of(agent_id, images.etag(avatar_generated.draw(agent_id)))

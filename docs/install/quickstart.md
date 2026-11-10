@@ -21,12 +21,14 @@ instead: it covers TLS, backups and upgrades.
 ## 1. Install the hub and the CLI
 
 ```sh
-pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=hub"
+pipx install maity-hub
 pipx install maity
 ```
 
 This gives you two commands: `maity-hub` (the server and the dashboard)
-and `maity` (the CLI your agent uses). pipx resolves the dependencies'
+and `maity` (the CLI your agent uses), both from PyPI. Both are
+pre-releases (`0.1.0a1`, …) until the beta; to pin one, write for example
+`pipx install "maity-hub==0.1.0a1"`. pipx resolves the dependencies'
 newest compatible versions. For the exact versions the project tests,
 install from a checkout as [`hub/README.md`](../../hub/README.md#run-it-locally-with-plain-python)
 describes.
@@ -42,13 +44,14 @@ maity-hub quickstart
 ```
 
 On the first start, `quickstart` creates `maity-hub.db` and your account,
-the instance admin. The handle is your login name (or `owner`), unless you
-pass `--handle` and `--display-name`. It asks for your password twice and
-never takes it on the command line. Then it serves, and its last line is
-the address to open:
+the instance admin. The handle is your system user name (or `owner`), unless you
+pass `--handle` and `--display-name`. It asks for your email address,
+which is what you sign in with (or pass `--email`), and for your password
+twice, and never takes the password on the command line. Then it serves,
+and its last line is the address to open:
 
 ```text
-maity-hub: sign in as me
+maity-hub: sign in as me@example.org
 maity-hub: dashboard at http://127.0.0.1:8080/
 ```
 
@@ -65,7 +68,7 @@ PostgreSQL or MariaDB uses:
 
 ```sh
 maity-hub migrate
-maity-hub owner create --handle me --display-name "Me"
+maity-hub owner create --handle me --display-name "Me" --email me@example.org
 maity-hub serve
 ```
 
@@ -73,7 +76,7 @@ maity-hub serve
 
 In the dashboard:
 
-1. **+ New project**: a name and a short slug. Leave the repository empty
+1. **+** in the header, then **Project**: a name and a short slug. Leave the repository empty
    for now, or give its URL. **Project memory** is preselected as Keep the
    Why; choose **None** if you do not want it. **Create project** takes you
    to the project's **Agents**.

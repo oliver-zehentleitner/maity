@@ -31,9 +31,9 @@ window.Maity = window.Maity || {};
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
-    { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
+    { route: "team", view: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
-    { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
+    { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "team" },
     // One's own agents in the project (js/agents-page.js), the component of
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
@@ -119,7 +119,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
-    // /settings/forge: the account's forge access (§11.4, §16.11), where the hub's setup redirect lands.
+    // /settings/forge: the account's Forge access (§11.4, §16.11), where the hub's setup redirect lands.
     if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
@@ -142,6 +142,15 @@ window.Maity = window.Maity || {};
     return { scope: "unknown" };
   }
 
+  // Whether an address shows a visitor nothing once its public page, if any, was asked for
+  // (§16.11): a handle, or a project address whose view word is none of the dashboard's. An
+  // address under one of the dashboard's own first words keeps the sign-in, which leads on
+  // there (`/sign-in/code`, `/requests/<id>` from a mail, `/inbox`), even where it names no view.
+  function showsVisitorNothing(where) {
+    if (where.scope === "person") return true;
+    return where.scope === "project" && !NAV.some((n) => n.route === where.route);
+  }
+
   function errorBox(err) {
     const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
     return h("div", { class: "error", role: "alert" },
@@ -156,8 +165,10 @@ window.Maity = window.Maity || {};
       el,
       busy: (text) => { el.textContent = text; el.className = "send-status"; },
       done: () => { el.textContent = ""; el.className = "send-status"; },
-      // An ambiguous mention is said with the long forms to write (§8.6).
-      fail: (prefix, err) => { el.textContent = prefix + (M.dom.ambiguousMention(err) || err).message; el.className = "send-status failed"; },
+      // sentence: the catalog's whole sentence with {reason} where its language puts the reason
+      // (tsk-0zbms0wwqhmm), or "" for the reason alone. An ambiguous mention is said with the long
+      // forms to write (§8.6).
+      fail: (sentence, err) => { el.textContent = M.reasonIn(sentence, (M.dom.ambiguousMention(err) || err).message); el.className = "send-status failed"; },
     };
   }
 
@@ -215,9 +226,7 @@ window.Maity = window.Maity || {};
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
   function releasedDay(project) {
-    const d = new Date(project.released_at);
-    return Number.isNaN(d.getTime()) ? project.released_at
-      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return M.fmt.date(project.released_at);
   }
   // The selected project's two places one goes to often, beside its state
   // (the maintainer, tsk-n161gf6h8feb): its repository, with its forge's
@@ -248,6 +257,11 @@ window.Maity = window.Maity || {};
   const PULL_PATHS = { github: "/pulls", gitea: "/pulls", gitlab: "/-/merge_requests", bitbucket: "/pull-requests" };
   const PULLS_MARK = "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z";
   const pullsUrl = (repo, forge) => (repo && Object.hasOwn(PULL_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + PULL_PATHS[forge] : null);
+  // Where a forge runs its workflows, derived the same way (tsk-kdkdy864q11r). Only the forges that
+  // call them Actions: GitLab and Bitbucket call theirs Pipelines, a word of its own.
+  const ACTIONS_PATHS = { github: "/actions", gitea: "/actions" };
+  const ACTIONS_MARK = "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z";
+  const actionsUrl = (repo, forge) => (repo && Object.hasOwn(ACTIONS_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + ACTIONS_PATHS[forge] : null);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -268,12 +282,14 @@ window.Maity = window.Maity || {};
     // and the project's own links stand beside it.
     const name = M.t("project.link.repository");
     const pulls = pullsUrl(repo, forge);
+    const actions = actionsUrl(repo, forge);
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
-      [pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
+      [actions ? { label: M.t("project.link.actions"), said: M.t("project.link.actions_on", { forge: FORGES[forge] }), d: ACTIONS_MARK, url: actions } : null,
+        pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": M.t("project.link.opens", { what: x.said || x.label }), title: x.url },
       mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: M.t("project.link.ktw_dashboard") }), title: why },
@@ -328,6 +344,7 @@ window.Maity = window.Maity || {};
   M.onSessionEnded = (path, epoch) => {
     if (sessionEnded || (epoch !== undefined && epoch !== (M.sessionEpoch || 0))) return;
     sessionEnded = true;
+    kept = null;
     M.api.endSession();
     renderSeq++;
     M.notify.halt();
@@ -339,7 +356,7 @@ window.Maity = window.Maity || {};
     renderLogin(document.getElementById("main"), M.t("login.session_ended"));
   };
 
-  let keptHandle = "";
+  let keptEmail = "";
   function renderLogin(main, note) {
     document.title = M.t("login.page_title");
     // The app's bar stands where the frame cannot be read (§16.7.4); js/site-chrome.js hides it meanwhile.
@@ -347,13 +364,14 @@ window.Maity = window.Maity || {};
       brandTitle(false, "div"),
       M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
-    const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
-    handle.value = keptHandle;
-    keptHandle = "";
-    // The page's language (§6.2), as on /register: the form is drawn again in it, the handle kept, the password not.
+    // The verified address signs in (§2.1); `username` is what password managers fill.
+    const email = h("input", { id: "login-email", name: "email", type: "email", autocomplete: "username", required: true });
+    email.value = keptEmail;
+    keptEmail = "";
+    // The page's language (§6.2), as on /register: the form is drawn again in it, the address kept, the password not.
     const site = M.interfacePicker ? M.interfacePicker("login-interface", M.i18n.language, false) : null;
     if (site) site.addEventListener("change", async () => {
-      keptHandle = handle.value;
+      keptEmail = email.value;
       await M.i18n.choose(site.value);
       renderLogin(main, note);
       // The page is drawn here, not through `render`: the banner of a window follows the language too.
@@ -362,6 +380,9 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const pitch = M.authPages.pitch("sign_in", M.t("login.title"));
+    // A code from another device or a link by mail, as the hub offers them
+    // (js/device-sign-in.js), on this page's own timers.
+    const options = M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null;
     const form = h("form", {
       class: "login",
       onsubmit: async (e) => {
@@ -369,22 +390,30 @@ window.Maity = window.Maity || {};
         status.busy(M.t("login.busy"));
         try {
           const next = routeNext();
-          const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
+          const answer = await M.api.post("/auth/login", Object.assign({ email: email.value.trim(), password: password.value }, next ? { next } : {}));
           password.value = "";
           goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
-          status.fail(M.t("login.failed"), err);
+          const reason = err && err.details && err.details.reason;
+          if (reason === "password_paused") {
+            // §2.1, §2.6.7: when the password goes through again, from `retry_after`.
+            const minutes = M.secondFactor.minutes(err.details.retry_after);
+            status.fail("", { message: M.t("login.paused", { minutes }) });
+          } else {
+            status.fail(M.t("login.failed"), err);
+            // §2.6.7: the link by mail offered with the address filled in.
+            const mail = reason === "email_link" && options ? options.querySelector(".sign-in-mail") : null;
+            if (mail && mail.openWith) mail.openWith(email.value.trim());
+          }
         }
       },
     },
-    h("label", { for: "login-handle" }, M.t("login.handle")), handle,
+    h("label", { for: "login-email" }, M.t("login.email")), email,
     h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),
     status.el);
-    // A code from another device or a link by mail, as the hub offers them
-    // (js/device-sign-in.js), on this page's own timers.
     // A dashboard address of a project with a public page (§16.11): that page is one link away.
     const publicLink = h("p", { class: "public-page-link", hidden: true });
     const parts = M.route.current().path.split("/").filter(Boolean);
@@ -400,7 +429,7 @@ window.Maity = window.Maity || {};
     const legal = M.legal ? M.legal.links() : null;
     append(clear(main), M.authPages.door(pitch.panel, [
       note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, pitch.title, form, publicLink,
-      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
+      options,
       legal]));
     M.siteChrome.enter("/login", () => { if (legal) legal.remove(); });
   }
@@ -448,6 +477,7 @@ window.Maity = window.Maity || {};
     M.notify.halt();
     // Signing out on purpose is no session that ended under the page.
     sessionEnded = true;
+    kept = null;
     try {
       // Build the request while the fallback CSRF token is still available.
       const ending = M.api.post("/auth/logout");
@@ -742,8 +772,11 @@ window.Maity = window.Maity || {};
     // The public page: the namespace owner's alone, however high the trust (§16.9).
     if (M.publicPage) append(panel, M.publicPage.projectPart(ctx, save));
     if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
-    // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
-    if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
+    // The jour fixe's series and their moderators (§20.1, §20.2) are kept at the top of the jour fixe
+    // view (the maintainer, 2026-11-06); here only where to find them.
+    if (humanAdmin) append(panel, h("section", { class: "jf-series-moved", "aria-labelledby": "jfs-moved-title" },
+      h("h2", { class: "panel-title", id: "jfs-moved-title" }, M.t("jfs.title")),
+      h("p", { class: "hint" }, M.tn("jfs.kept_on_page", { link: h("a", { href: ctx.link("jour-fixe") }, M.t("jf.title")) }))));
     // The change ticker (§17.3), read by every member, changed by a human
     // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {
@@ -753,6 +786,9 @@ window.Maity = window.Maity || {};
     if (humanAdmin) {
       append(panel, doneAuthorityForm(ctx, save), memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
     }
+    // Who reads and writes the cards' restricted texts (§6.1, §6.4): a human with
+    // project:admin changes it after a step-up; an admin agent reads its mode alone.
+    if (ctx.canAdmin && M.restricted) append(panel, M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }));
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
@@ -766,8 +802,9 @@ window.Maity = window.Maity || {};
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
-          const when = new Date(until.value);
-          if (!until.value || Number.isNaN(when.getTime())) { until.focus(); return; }
+          // The field holds the account's time zone, the one the absence is shown in (§5.1).
+          const when = M.fmt.fromWall(until.value);
+          if (!when) { until.focus(); return; }
           if (!scope.value.trim()) { scope.focus(); return; }
           save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
         },
@@ -1287,17 +1324,153 @@ window.Maity = window.Maity || {};
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
       h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
-      ctx.projects.map((p) => h("a", {
+      // The tabs this browser has open, in its order (js/tabs.js): dragged
+      // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
+      M.tabs.open(ctx).map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
+        "data-project": p.id,
+        draggable: M.tabs.managed(ctx) ? "true" : null,
+        title: M.tabs.managed(ctx) ? M.t("tabs.move_hint") : null,
+        ondragstart: (e) => dragTab.start(e, p.id),
+        ondragover: (e) => dragTab.over(e, p.id),
+        ondragleave: (e) => dragTab.unmark(e.currentTarget),
+        ondrop: (e) => dragTab.drop(ctx, e, p.id),
+        ondragend: () => dragTab.end(),
+        onkeydown: (e) => moveTabByKey(ctx, e, p),
       },
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
-      pill(p))),
+      pill(p))));
     // Runners belong to the person, not to a project (the maintainer's
-    // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
-    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, M.t("header.new_project")));
+    // wish, tsk-cb6myw32def0): they are in the gear menu, not this row. A new
+    // project is in the "+" menu, so the tabs menu stands right after the tabs (tsk-hp9gq9rmrdq2).
+  }
+
+  // Dragging a tab onto another puts it there: before the tab dropped on,
+  // or after it when dropped on its second half. The id travels in the drag
+  // itself and here, for a drag that carries no data (the smoke test's).
+  // While it is dragged, a line at the tab under it shows that place, by the
+  // same half (the maintainer, tsk-hp9gq9rmrdq2).
+  const dragTab = {
+    id: null,
+    marked: null,
+    start(e, id) {
+      dragTab.id = id;
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", id); } catch (err) { /* the id is kept here too */ }
+      }
+    },
+    // Past the middle of the tab under the pointer: on its second half.
+    pastMiddle(e) {
+      const box = e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
+      return !!(box && box.width && typeof e.clientX === "number" && e.clientX > box.left + box.width / 2);
+    },
+    // The line on one tab, before or after it, and on no other; none on the dragged tab itself.
+    mark(el, side) {
+      if (dragTab.marked !== el) dragTab.unmark(dragTab.marked);
+      if (!el || !el.classList) return;
+      el.classList.toggle("drop-before", side === "before");
+      el.classList.toggle("drop-after", side === "after");
+      dragTab.marked = side ? el : null;
+    },
+    unmark(el) {
+      if (!el || !el.classList) return;
+      el.classList.toggle("drop-before", false);
+      el.classList.toggle("drop-after", false);
+      if (dragTab.marked === el) dragTab.marked = null;
+    },
+    over(e, targetId) {
+      if (!dragTab.id) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      dragTab.mark(e.currentTarget, targetId === dragTab.id ? null : dragTab.pastMiddle(e) ? "after" : "before");
+    },
+    drop(ctx, e, targetId) {
+      const id = dragTab.id;
+      dragTab.id = null;
+      dragTab.unmark(dragTab.marked);
+      if (!id || id === targetId) return;
+      e.preventDefault();
+      const after = dragTab.pastMiddle(e);
+      const order = M.tabs.open(ctx).map((p) => p.id);
+      const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
+      if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
+    },
+    end() { dragTab.id = null; dragTab.unmark(dragTab.marked); },
+  };
+
+  // The keyboard's way, and the one without a drag (WCAG 2.5.7): Alt+Shift
+  // with the left or right arrow moves the focused tab one place.
+  function moveTabByKey(ctx, e, p) {
+    if (!M.tabs.managed(ctx) || !e.altKey || !e.shiftKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const rtl = document.documentElement && document.documentElement.getAttribute("dir") === "rtl";
+    const step = (e.key === "ArrowRight") !== rtl ? 1 : -1;
+    if (M.tabs.move(ctx, p.id, step)) tabsMoved(ctx, p.id);
+  }
+
+  // After a move: the row again, the focus on the moved tab, and its new
+  // place said for a screen reader.
+  function tabsMoved(ctx, id) {
+    renderSwitcher(ctx);
+    tabsChanged(ctx);
+    const order = M.tabs.open(ctx);
+    const at = order.findIndex((p) => p.id === id);
+    const nav = document.getElementById("header").querySelector("nav.switcher");
+    const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-project") === id);
+    if (link) link.focus();
+    tabsSaid(M.t("tabs.moved", { name: order[at].name, place: at + 1, total: order.length }));
+  }
+  // The view drawn from the open tabs (the inbox's filter and grouping) follows them.
+  function tabsChanged(ctx) {
+    if (ctx.tabsChanged) ctx.tabsChanged();
+  }
+  function tabsSaid(text) {
+    const live = document.getElementById("header").querySelector(".tabs-said");
+    if (live) live.textContent = text;
+  }
+
+  // Beside the row: which projects are tabs, moving the current one, and
+  // the row as the account's start set (docs/api.md §5.1 "Start tabs").
+  function tabsMenu(ctx) {
+    if (!M.tabs.managed(ctx) || !ctx.projects.length) return null;
+    const current = ctx.scope === "project" ? ctx.projects.find((p) => p.full_name === ctx.slug) : null;
+    const menu = M.menuButton({
+      label: M.t("tabs.menu"),
+      class: "tabs-menu",
+      face: h("span", { "aria-hidden": "true" }, "⋯"),
+      items: () => {
+        const open = M.tabs.open(ctx);
+        const closed = ctx.projects.filter((p) => !open.includes(p)).sort((a, b) => a.name.localeCompare(b.name));
+        const at = current ? open.indexOf(current) : -1;
+        return [
+          ...open.concat(closed).map((p) => ({
+            label: p.name,
+            checkbox: true,
+            checked: open.includes(p),
+            onSelect: () => {
+              M.tabs.setOpen(ctx, p.id, !open.includes(p));
+              renderSwitcher(ctx);
+              tabsChanged(ctx);
+              tabsSaid(open.includes(p) ? M.t("tabs.closed", { name: p.name }) : M.t("tabs.opened", { name: p.name }));
+            },
+          })),
+          current && at >= 0 ? { separator: true } : null,
+          current && at > 0 ? { label: M.t("tabs.move_left"), onSelect: () => { if (M.tabs.move(ctx, current.id, -1)) tabsMoved(ctx, current.id); } } : null,
+          current && at >= 0 && at < open.length - 1
+            ? { label: M.t("tabs.move_right"), onSelect: () => { if (M.tabs.move(ctx, current.id, 1)) tabsMoved(ctx, current.id); } } : null,
+          { separator: true },
+          { label: M.t("tabs.keep_at_start"), onSelect: () => {
+            M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
+          } },
+        ].filter(Boolean);
+      },
+    });
+    return h("span", { class: "tabs-menu-box" }, menu.el,
+      h("span", { class: "visually-hidden tabs-said", role: "status", "aria-live": "polite" }));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -1322,6 +1495,7 @@ window.Maity = window.Maity || {};
     if (left < nav.scrollLeft) nav.scrollLeft = Math.max(0, left - 8);
     else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
   }
+
 
   // The inbox tab says the project's open requests, the chat tab its unread
   // chats (docs/api.md §18.2), once the counts are read.
@@ -1479,8 +1653,9 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // "+": bring someone in, an agent or a person (the maintainer, 2026-10-31):
-    // the agents page with its join, the invitations page. Humans only.
+    // "+": bring someone in, an agent or a person, pair a runner, or a new project (the maintainer,
+    // 2026-10-31; the order and the runner, tsk-45fhe2yrwzb7): the agents page with its join, the
+    // invitations page, the runners page with its pairing form, the create form. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
@@ -1488,6 +1663,9 @@ window.Maity = window.Maity || {};
       items: () => [
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+        { label: M.t("menu.add.runner"), href: "/runners", current: ctx.scope === "runners" },
+        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
+        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
       ],
     }) : null;
     // The human: their picture, the account, signing out.
@@ -1496,15 +1674,8 @@ window.Maity = window.Maity || {};
       class: "profile-menu",
       face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
       items: () => [
-        { label: M.t("menu.profile"), href: "/account" },
-        { label: M.t("menu.picture"), href: "/account/picture" },
-        { label: M.t("menu.preferences"), href: "/account/preferences" },
-        { label: M.t("menu.theme"), href: "/account/theme" },
-        ctx.me.kind === "human" ? { label: M.t("menu.security"), href: "/account/security" } : null,
-        ctx.me.kind === "human" ? { label: M.t("menu.orgs"), href: "/account/orgs", current: ctx.scope === "orgs" } : null,
-        { label: M.t("menu.sign_in_device"), href: "/account/sign-in-device" },
-        { label: M.t("menu.change_password"), href: "/account" },
-        { label: M.t("menu.linked_accounts"), disabled: true, why: M.t("menu.later") },
+        // The account's tabs (js/account.js), then signing out.
+        ...M.accountTabs.menuItems(ctx),
         { separator: true },
         { label: M.t("menu.sign_out"), onSelect: logout },
       ].filter(Boolean),
@@ -1526,6 +1697,7 @@ window.Maity = window.Maity || {};
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
         switcher(ctx),
+        tabsMenu(ctx),
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
             // On a phone the links are one row that scrolls; the state beside it stays in sight
@@ -1550,7 +1722,10 @@ window.Maity = window.Maity || {};
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null,
-      ctx.scope === "project" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+      // Not on the Chat tab, the maintainer's choice (tsk-sesdq48m9ewk): its list shows each chat's unread mention as an @
+      // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
+      // other tabs' line, which is why the maintainer kept the removal (chat 103539).
+      ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
@@ -1582,7 +1757,16 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, M.t("settings.title")),
       tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": M.t("settings.title") },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
-    if (mine) { await M.mySettings(ctx, root); return; }
+    if (mine) {
+      await M.mySettings(ctx, root);
+      // A member in the restricted-access set who may not change it reads it here: the set's
+      // notice links to settings, which leads such a member to settings/mine (§6.1, §19).
+      const restricted = ((ctx.project && ctx.project.settings) || {}).restricted_access;
+      if (!ctx.canAdmin && human && M.restricted && restricted && restricted.included === true) {
+        append(root, M.restricted.settingsSection(ctx, null));
+      }
+      return;
+    }
     append(root,
       h("p", { class: "muted" }, M.t("settings.intro")),
       // The project's runners, no tab of their own any more.
@@ -1626,7 +1810,7 @@ window.Maity = window.Maity || {};
       ? projectLink(view.full_name, where.route, ...where.args) : null;
   }
 
-  async function loadContext(where, me) {
+  async function loadContext(where, me, kept) {
     const ctx = {
       me: me.member,
       // A deletion waiting for its mail (§2.9) stands beside the member in GET /me.
@@ -1654,11 +1838,16 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         // A window announced, changed or started meanwhile: the banner, or the full page (§16.12).
         if ("maintenance" in fresh) M.maintenance.know(fresh.maintenance);
+        // A project joined or left elsewhere: the views that follow the tabs (the inbox filtered to
+        // open tabs or grouped) draw again too, not only the switcher (web roll-up 3).
+        const names = (list) => (list || []).map((p) => p.full_name).join(" ");
+        const moved = names(fresh.projects) !== names(ctx.projects);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
         renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
+        if (moved) tabsChanged(ctx);
         document.title = M.notify.title(baseTitle);
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
@@ -1672,6 +1861,8 @@ window.Maity = window.Maity || {};
       throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
+    // A project opened by a link while its tab is closed gets its tab back, at the end (js/tabs.js).
+    if (M.tabs.managed(ctx) && !M.tabs.isOpen(ctx, mine.id)) M.tabs.setOpen(ctx, mine.id, true);
     // Trust × role (docs/api.md §2.3): owner and admin hold project:admin and
     // members:admin for a human; absence is the owner's alone.
     ctx.trust = mine.trust;
@@ -1682,13 +1873,17 @@ window.Maity = window.Maity || {};
     ctx.link = (view, ...rest) => projectLink(where.slug, view, ...rest);
     // The event head is read before the view's data, so that nothing that
     // happens while the view loads is missed (it is offered as a reload).
+    // A switch inside the project takes its project and members as the last drawing read them
+    // (`kept`, below); the head is always read again.
+    const known = kept && kept.slug === where.slug ? kept : null;
     const [project, members, head] = await Promise.all([
-      M.api.get(ctx.base),
-      M.api.get(ctx.base + "/members"),
+      known ? known.project : M.api.get(ctx.base),
+      known ? known.members : M.api.get(ctx.base + "/members"),
       M.api.get(ctx.base + "/events?after=latest&wait=0"),
     ]);
     ctx.project = project;
     ctx.eventCursor = head.cursor;
+    ctx.keptProject = { slug: where.slug, project, members };
     return withMembers(ctx, members.items);
   }
 
@@ -1844,7 +2039,7 @@ window.Maity = window.Maity || {};
       const part = h("section", { class: "panel admin-section", id: "admin-maintenance", "aria-label": M.t("admin.maintenance.title") });
       append(root, part);
       append(clear(main), root);
-      M.adminMaintenance.section({ me }, part).catch((err) => { const status = statusLine(); status.fail(M.t("admin.section_failed", { section: M.t("admin.maintenance.title") }), err); append(part, status.el); });
+      M.adminMaintenance.section({ me }, part).catch((err) => { const status = statusLine(); status.fail((reason) => M.t("admin.section_failed", { section: M.t("admin.maintenance.title"), reason }), err); append(part, status.el); });
       document.title = M.t("admin.maintenance.title") + " · Maity";
       return true;
     }
@@ -1852,6 +2047,60 @@ window.Maity = window.Maity || {};
   }
 
   let renderSeq = 0;
+  // A change of the address inside the dashboard (route.listen) draws the next view from the
+  // session, /me and the project as the last drawing read them, for at most KEPT_MS, and reads
+  // them again behind it (keepFresh): a switch waits for the view's own data only, not for three
+  // reads in a row first (tsk-hn2wa8a7e2eq). Every other drawing reads them as before: the first
+  // one, a refresh, a maintenance change, after a sign-in or a session that ended.
+  const SWITCH = {};
+  const KEPT_MS = 60000;
+  let kept = null; // { epoch, at, session, me, project: { slug, project, members } | null }
+  // Any write of this tab (a rename, a new project, a trust changed, a request answered) may
+  // change them: the next drawing reads afresh.
+  // Counted too: a drawing or a read again that began before a write keeps nothing it read.
+  let writes = 0;
+  M.onWrite = () => { kept = null; writes += 1; };
+  const keptKey = (session, me) => JSON.stringify([
+    session.member && session.member.id, session.second_factor || null, session.session_id || null,
+    me.member, me.maintenance || null, me.limit || null,
+    // The counts move all the time and are read on their own round (refreshCounts).
+    me.projects.map((p) => [p.full_name, p.name, p.state, p.trust, p.role, p.logo]),
+  ]);
+  // Behind a switch drawn from `kept`: the same reads as a fresh drawing. What the view stands
+  // on (who is signed in, the second step, the memberships, trust and role, a maintenance
+  // window, one's own limit) changed: the view is drawn again from what was read. Counts,
+  // members and the project only refresh `kept` for the next switch; the view's event feed
+  // offers their changes as before.
+  // `slug`: the project kept and to read again; `fresh`: the project this drawing has just read
+  // itself, entering it from outside, kept as it is (review of #1440).
+  async function keepFresh(seq, reused, slug, fresh) {
+    const wrote = writes;
+    let session, me, project, members;
+    try {
+      const base = slug ? "/projects/" + M.api.projectPath(slug) : null;
+      [session, me, project, members] = await Promise.all([
+        M.api.get("/auth/session"), M.api.get("/me"),
+        base ? M.api.get(base) : null, base ? M.api.get(base + "/members") : null,
+      ]);
+    } catch (err) {
+      // A session that ended is told by the call that met it (onSessionEnded); a 401 of the
+      // session check, or any other failure, leaves nothing kept: the next drawing reads afresh.
+      // Only the read behind the drawing that stands: an older one failing would leave the
+      // current one nothing to compare (review of #1440).
+      if (kept === reused && writes === wrote && seq === renderSeq) kept = null;
+      if (err && err.status === 401 && seq === renderSeq && !sessionEnded) render();
+      return;
+    }
+    // Only the read behind the drawing that stands replaces what is kept: an older one answering
+    // first would leave the current one nothing to compare, its view uncorrected (review of #1440).
+    if (kept !== reused || writes !== wrote || seq !== renderSeq) return;
+    const changed = keptKey(session, me) !== keptKey(reused.session, reused.me);
+    kept = { epoch: reused.epoch, at: Date.now(), session, me,
+      // The project only as just read, here or by the drawing: carried on, it would outlive
+      // KEPT_MS with every switch.
+      project: project ? { slug, project, members } : fresh || null };
+    if (changed) render();
+  }
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
   // page renders, and again while it stands or when `sessions_rev` moves (a
   // sign-in or an end, §18.2); a sign-in is no bell item to count.
@@ -1889,8 +2138,12 @@ window.Maity = window.Maity || {};
     }
   }
 
-  async function render() {
+  async function render(how) {
     const seq = ++renderSeq;
+    const wrote = writes;
+    const reuse = how === SWITCH && kept && !sessionEnded && kept.epoch === (M.sessionEpoch || 0)
+      && Date.now() - kept.at < KEPT_MS ? kept : null;
+    if (how !== SWITCH) kept = null;
     enrolling = false;
     stopTimers();
     const main = document.getElementById("main");
@@ -1902,7 +2155,8 @@ window.Maity = window.Maity || {};
     // meanwhile: it is what stands if its data cannot be read.
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
-    else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
+    // Busy too, for a screen reader; the bar it shows is in css/app.css.
+    else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) { n.setAttribute("inert", ""); n.setAttribute("aria-busy", "true"); } });
     // The frame of the pages without a session (js/site-chrome.js) stands wherever the sign-in
     // or the registration is drawn signed out: /login, /register, the root after a sign-out, an
     // address of the app without a session. Kept meanwhile while no session is known, so a page
@@ -1912,10 +2166,17 @@ window.Maity = window.Maity || {};
     if (M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
     let ctx;
+    let keptSlug = null;
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
-    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
+    // The first segment is decoded on its own, as parseRoute() decodes it, so /%69nvite/<token> is an
+    // invitation here too (#1574 review); a token with a broken escape, which parseRoute() refuses
+    // as a whole, still gets the policy (web roll-up 3, nte-2e1kq5r85vaj).
+    const rawParts = M.route.current().path.split("/").filter(Boolean);
+    let firstWord = rawParts[0] || "";
+    try { firstWord = decodeURIComponent(firstWord); } catch { /* a broken first segment is no invitation */ }
+    if (M.invite && firstWord === "invite" && rawParts.length > 1) M.invite.noReferrer();
     await M.i18n.ready;
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page
@@ -1927,6 +2188,17 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
+    // one after the other. Their answers are handled in the old order, the window first. /me still
+    // waits for the session: asked before it, /me fails by design for a session that owes the
+    // second factor and for a session cookie that outlived its session.
+    // Not for the invitation and registration pages, which read the session themselves (review
+    // of #1524): an early read there was one more, and its late answer could still set a language.
+    let first = null;
+    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    const early = reuse || ownRead ? null : M.api.get("/auth/session");
+    if (early) early.catch(() => {});
     await M.maintenance.fresh();
     if (seq !== renderSeq) return;
     try {
@@ -1936,7 +2208,7 @@ window.Maity = window.Maity || {};
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
-        session = await M.api.get("/auth/session");
+        session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
@@ -1954,12 +2226,20 @@ window.Maity = window.Maity || {};
           }
           // A public page of this address, read-only (§16.9); otherwise the login.
           // A frame of the sign-in drawn before stays until the page is known, then goes.
-          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) {
+          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+          if (shown) {
             if (seq === renderSeq) M.siteChrome.leave();
             return;
           }
-          // The hub's own page in <main> stands when its data could not be read.
-          if (seq === renderSeq && !hubPage) renderLogin(main);
+          // The hub's own page in <main> stands when its data could not be read. A dashboard
+          // route asks for the sign-in; an address that shows a visitor nothing says so
+          // (js/not-found.js), with the sign-in one link away, but only where the hub said it
+          // has no page: a read that failed otherwise (null) keeps the sign-in.
+          if (seq === renderSeq && !hubPage) {
+            if (M.notFound && shown === false && showsVisitorNothing(where)) {
+              M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
+            } else renderLogin(main);
+          }
           return;
         }
         throw err;
@@ -1984,9 +2264,10 @@ window.Maity = window.Maity || {};
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
       if (M.route.current().path === "/sign-in/second-factor") { M.route.go("/", { replace: true }); return; }
-      const me = await M.api.get("/me");
+      const me = reuse ? reuse.me : await M.api.get("/me");
       if (seq !== renderSeq) return;
-      if ("maintenance" in me) M.maintenance.know(me.maintenance, true);
+      // A kept /me is no news about a window: GET /maintenance above was read for this drawing.
+      if (!reuse && "maintenance" in me) M.maintenance.know(me.maintenance, true);
       if (M.maintenance.running() && heldPage(main, me.member, where)) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
@@ -2019,12 +2300,19 @@ window.Maity = window.Maity || {};
       if (moved) { M.route.go(moved, { replace: true }); return; }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and the counts stay as /me has them.
-      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),
+      // The project's own reads are kept only for a switch inside the same project.
+      keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
+      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
       ctx.projectViews = views;
       ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
+      // What the next switch may start from: read just now, or kept and read again below; nothing
+      // a write of this tab came after.
+      if (writes === wrote && !reuse) kept = { epoch: M.sessionEpoch || 0, at: Date.now(), session, me, project: ctx.keptProject || null };
+      // A view outside the project lets the project go: only a switch inside it takes it again.
+      else if (writes === wrote && kept === reuse) reuse.project = ctx.keptProject || null;
     } catch (err) {
       if (seq !== renderSeq) return;
       // The page could not load: the header with the lockup stays, the
@@ -2092,7 +2380,7 @@ window.Maity = window.Maity || {};
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
-        append(root, h("p", null, M.tn("view.none_link", { link: h("a", { href: "/all" }, M.t("view.none_go")) })));
+        M.notFound.view(root);
       }
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -2100,12 +2388,16 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
+    // A view's own tab rows that scroll sideways (the account's, js/account.js), set up now that
+    // they are in the page and have a width: the current tab in sight, the fade on the side with more.
+    root.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     renderBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
     ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
     watch(ctx, where, known ? item : null, main);
-    let label = M.t("view.none");
+    if (reuse) keepFresh(seq, reuse, keptSlug, keptSlug ? null : ctx.keptProject || null);
+    let label = M.t("not_found.title");
     if (empty) label = M.t("view.no_projects");
     else if (where.scope === "all") label = M.t("header.all_projects");
     else if (where.scope === "notifications") label = M.t("view.notifications");
@@ -2190,10 +2482,33 @@ window.Maity = window.Maity || {};
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
 
-  // Back, forward, a link of the dashboard, M.route.go: the view follows.
-  M.route.listen(() => { if (!followingRoute || !followingRoute(parseRoute())) render(); });
+  // Back, forward, a link of the dashboard, M.route.go: the view follows. Another view starts
+  // at the top of the page: the window keeps its scroll over a change of the address, so a
+  // long view opened after another one was scrolled down began where that one stood. A card
+  // (…/tasks/<id>) is the board with its panel, the same view: the board stays where it was,
+  // and so does it when the panel closes. Not either when the view follows the change itself
+  // (a chat chosen in /chats) or only the query changed; a place drawn after the view (an
+  // anchor, a section of the account, the board as it was left) is scrolled to by that view.
+  const viewAt = () => {
+    let where;
+    try { where = parseRoute(); } catch { return M.route.current().path; }
+    if (where.scope !== "project") return M.route.current().path;
+    const tab = NAV.find((n) => n.route === where.route);
+    const view = (tab && tab.view) || where.route;
+    return view === "board" ? "board:" + where.slug : M.route.current().path;
+  };
+  let drawnView = viewAt();
+  M.route.listen(() => {
+    const view = viewAt();
+    const moved = view !== drawnView;
+    drawnView = view;
+    if (followingRoute && followingRoute(parseRoute())) return;
+    if (moved && window.scrollTo) window.scrollTo(0, 0);
+    render(SWITCH);
+  });
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
+    document.querySelectorAll("nav.account-tabs").forEach(updateCue);
   });
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);

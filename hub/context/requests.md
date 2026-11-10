@@ -53,6 +53,83 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
   every project listing, and a boolean says that in one word. The CHECK keeps the two
   from disagreeing.
 
+## A question blocks its card only when it says it waits; `while_open`'s default follows the class
+
+**Id:** 3d44b07f-3ab6-41be-8bd0-a799eb11c530
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08; re-checked by the project lead in Maity message seq 100432, 2026-11-09, after its second trigger fired, which 47e9ac62 now answers
+**See:** requests.md#only-a-wait-filed-since-the-current-claim-began-keeps-its-card-blocked — 47e9ac62-d08b-4f23-a664-5aa31c8b553a — as of 2026-11-09
+**Revisit when:** a request needs to block a card without the asker holding it
+
+A request without `while_open` takes the class's default:
+
+- `wait` for a `consent`, which may not be anything else (§7);
+- `proceed_provisionally` for every other class.
+
+Only `wait`, given or a consent's default, blocks the card the asker holds; the remembered
+status and the restore on the last answer stay as they were. `maity ask --wait` sends
+`while_open: wait`; without it the CLI sends none.
+
+**Reason:**
+- `maity ask` never sent `while_open`, so every `ask --task` blocked the card under the old
+  default `wait`, a side question included.
+- `while_open` already says what the asker does meanwhile, and the inbox shows that to the
+  human; a default of `proceed_provisionally` makes it say what is now true.
+- A consent asks "may I", so the asker cannot go on without the answer; it keeps waiting.
+
+**Rejected alternatives:**
+- A separate `block` field: `_unblock` counts the other waiting requests on the card, so
+  it would need a stored column, a migration and a slot in the migration order.
+- No automatic block, the asker setting `blocked` by hand: no status transition leads
+  there, and the restore on answer would be lost.
+- `proceed_provisionally` for every class: a consent must wait, and its validation
+  (`consent_waits`) would refuse every bare consent.
+
+## Only a wait filed since the current claim began keeps its card blocked
+
+**Id:** 47e9ac62-d08b-4f23-a664-5aa31c8b553a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** hub roll-up note nte-bprq62a9m3bc (a review finding on #1494, card tsk-b7mtzr8xybp5); the lead's go for roll-up part 3, 2026-11-09
+**See:** requests.md#a-question-blocks-its-card-only-when-it-says-it-waits-while_opens-default-follows-the-class — 3d44b07f-3ab6-41be-8bd0-a799eb11c530 — as of 2026-11-09
+**Revisit when:** a change of holder stops setting `card.claim_since`, or a renewal starts to set it
+
+`_unblock` (routes/requests.py) counts the other open waits of the holder on the card only
+when they were filed at or after `card.claim_since`. An earlier wait no longer keeps the card
+blocked once a later wait is answered or withdrawn. That covers a wait filed while the card
+was unheld, which blocked nothing, and one from an earlier claim the holder released, whose
+block the release ended. The request itself stays open. A claim without `claim_since`
+counts every wait, as before.
+
+Two limits remain. The cut is a timestamp, not the claim's identity, so a wait filed at the
+very instant the claim began still counts: two writes with exactly equal stored timestamps
+cannot be told apart by this cut. The hub's clock does not promise distinct instants, and a
+frozen test clock reproduces the tie at will. And a card
+taken over while blocked keeps the previous holder's blocker until an answer or withdrawal
+runs `_unblock`, as before this change.
+
+**Reason:** every change of holder (claim, the expired claim's move to the assignee, a
+takeover, a cover's move to the substitute and its return) sets `claim_since`, a renewal
+does not, and a release clears the block. The two cover moves did not set it before this
+change and now do, so a card's `claim.since` is the start of its current holder. So the
+claim's start separates the waits of this claim from the earlier ones, up to the exact tie
+above. No column and no migration are needed.
+
+**Rejected alternatives:**
+- A stored marker on the request ("this one blocked the card", or the claim it was filed
+  under): it would also settle the exact tie, but needs a new column, a migration and a slot
+  in the migration order; 3d44b07f had already turned down a stored `block` field for that
+  cost, and the tie needs two writes at exactly the same stored instant.
+- `>` instead of `>=`: it would drop a real wait filed at the claim's very instant, the other
+  side of the same tie.
+- Blocking the card at the claim when its claimer has an open wait: that changes what a claim
+  does, and §7 says only a wait filed by the holder blocks.
+- Leaving it: conservative, it never releases work that must wait, but it kept a card
+  `blocked` until a wait that never blocked it was answered.
+
 ## A request listing sorts and pages light entries and builds full views only for its page
 
 **Id:** 1a0b7116-3d75-451f-9b49-fcdad7cdeead
@@ -81,8 +158,39 @@ keeps the count flat as requests grow.
 - Batching every lookup of `request_view` for a list: the view reads from many helpers
   that events and single reads share, so a batched variant would be a second form of the
   same view that has to agree with it, for a cost that the page already bounds.
+  Taken up later, with the single read going through the batch:
+  cc80e184-7bab-430d-aebf-46871b70de1a.
 - Paging in SQL: the `agent` sort orders by the asker's handle and the filters
   (`to=me`, `may_read`) are decided in Python, so the database cannot cut the page alone.
+
+## A page of requests is built in one batch, and a single read is a page of one
+
+**Id:** cc80e184-7bab-430d-aebf-46871b70de1a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the inbox speed card tsk-fxjtwmkc4md5 (the owner's report that the inbox takes about 7 s) and its plan note, approved by the lead, 2026-11-08
+**See:** requests.md#a-request-listing-sorts-and-pages-light-entries-and-builds-full-views-only-for-its-page — 1a0b7116-3d75-451f-9b49-fcdad7cdeead — as of 2026-11-08
+**Revisit when:** a field of the request view needs a lookup that `_known` cannot read for all rows at once, or the placement summary shows up on many requests of a page
+
+`request_views(conn, rows)` builds the views of a page: `_known` reads what they show of
+other tables (memberships, agent names, humans, avatars, asking instances, cards, reports,
+the deleted shape of `needs_in_session`) in one query per table for all rows, and
+`shape_deleted` runs once over the page. `request_view` is `_view` over a `_known` of one
+row, so a list, an event payload and a single read build the view on the same path. The
+listings and the resume packet use the batch. A request's placement summary is still read
+per row: only the requests of a placement carry one.
+
+**Reason:** the light entries bounded the cost by the page, but the page itself still cost
+about six statements per row: 1,219 for a page of 200 on a local fixture, and on a server
+database each one is a round trip, so the inbox's pages took seconds each. With the batch
+the same page costs 24 statements, the same for 50, 200 or 600 requests. The earlier
+objection to batching was a second form of the view that has to agree with the first;
+with the single read going through the batch there is only one form.
+
+**Rejected alternatives:**
+- A batched variant beside the per-row `request_view`: two forms of one view to keep in
+  agreement, the objection recorded in 1a0b7116-3d75-451f-9b49-fcdad7cdeead.
 
 ## An instance address in `to` is stored as written, resolved when each event is written; the asking instance is never stored
 

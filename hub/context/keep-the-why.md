@@ -73,6 +73,7 @@ oldest written beyond a bound:
 | the Keep the Why answers (`ktw.CACHE`), largest at 10 to 100 KB a project; a dropped project takes its last good reads and its idle lock with it | 256 projects |
 | the swarm statistics windows (`swarm.CACHE`) | 1024 |
 | the reader chosen per project (`ForgeAccess._chosen`) | 1024 |
+| the families of named repositories per project and repository (`ktw_reads.FOREIGN`) | `FOREIGN_KEPT`: 256 projects × 8 named = 2048 |
 | the source last found (`forge_access._last_via`) | 4096 |
 | the image read state per project and kind (`images`) | 4096 per map |
 
@@ -258,7 +259,7 @@ switch to `keep-the-why`; this is how the first version behaved.
 **Source:** review finding on the policy pull request and the contract owner's ruling, 2026-10-29; `docs/api.md` §5.2, §6.23; keepthewhy.com/installation
 **Revisit when:** the skills installer changes its flags, or the hub learns the installer's id for an agent's harness
 
-`skill.install[0]` is `npx skills add <source> -g -y`: for every project of
+`skill.install[0]` is `npx skills@<version> add <source> -g -y`: for every project of
 the user, with no prompt.
 
 **Reason:** without flags the installer asks which agents and which scope to
@@ -406,7 +407,8 @@ one rule for the field instead of one per option value.
 - **The named repositories' reader has a budget of its own**, checked on every call before a warm family is used: a project whose own grant is healthy still gets `probe_unavailable` for a named repository while the anonymous (or instance) source is spent, rather than an answer from memory past a check that reads nothing.
 - **A named family's forge reads take the same permits as the files** (4 per project, 16 per process): a family walk holds one permit for its time, since its reads are sequential.
 - **One read of one file at a time**: a call that finds a read of the same file under way waits for it and answers from it; the store and the hold are checked again after the wait.
+- **A named repository's lock lives while a call holds or waits for it** (`ForeignCache.locks`): counted with its callers and dropped by the last one, not tied to the cached family the way `ktw.CACHE` ties its lock to a project's entry.
 
 **Reason:** the views get a project's decision record whole, so every refusal has to take effect before an answer leaves the hub, not when a cache happens to expire; reusing §11.4's own source choice keeps one place that decides which token reads for a project.
 
-**Rejected alternatives:** a namespace check of its own in §11.5 ahead of §11.4's: two places that decide what the instance token serves, which drift. Repeating `probe_unavailable` until the cached snapshot expires: a client that waits for `retry_at` would get the same 503 for up to ten minutes. Answering `timeout` inside the hold: hides the file's real error. Checking the store only before waiting for a permit: two calls for one file both read it inside one hold window. Checking it again after the permit but with no wait on the read under way: the second call would answer `timeout` while the first is still reading.
+**Rejected alternatives:** a namespace check of its own in §11.5 ahead of §11.4's: two places that decide what the instance token serves, which drift. Repeating `probe_unavailable` until the cached snapshot expires: a client that waits for `retry_at` would get the same 503 for up to ten minutes. Answering `timeout` inside the hold: hides the file's real error. Checking the store only before waiting for a permit: two calls for one file both read it inside one hold window. Checking it again after the permit but with no wait on the read under way: the second call would answer `timeout` while the first is still reading. A named repository's lock bound to its cache entry and removed on eviction: the exit on `Busy` (a call that gave up waiting) left the lock behind.

@@ -22,7 +22,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import UTC, datetime, time, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -56,14 +56,43 @@ SIGN_IN_ALERT = records.SIGN_IN
 AT_ONCE = ("second_factor_changed", "second_factor_failed")
 
 
-_SCHEME = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]*):(?=//)")
+_SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
+_WORD = re.compile(r"\w")
 _DOT = re.compile(r"(?<=[A-Za-z0-9-])\.(?=[A-Za-z])")
+
+
+def _schemes(text: str) -> str:
+    """`scheme://` as `scheme[:]//`: a letter at a word's start, then letters, digits, `+`,
+    `.` or `-` up to the `:`. Each `://` looks back over its own run only, so the work grows
+    with the text's length; the pattern it replaces tried every word start of a long run."""
+    out = []
+    last = 0
+    at = text.find("://")
+    while at >= 0:
+        start = at
+        while start > last and text[start - 1] in _SCHEME_CHARS:
+            start -= 1
+        # The leftmost letter at a word boundary: the run's first character after a
+        # character that is no word character, or one after a `+`, `.` or `-`.
+        boundary = (start == 0 or not _WORD.match(text[start - 1])) and start < at
+        found = start < at and text[start].isascii() and text[start].isalpha() and boundary
+        found = found or any(
+            text[i - 1] in "+.-" and text[i].isascii() and text[i].isalpha()
+            for i in range(start + 1, at)
+        )
+        if found:
+            out.append(text[last:at])
+            out.append("[:]")
+            last = at + 1
+        at = text.find("://", at + 1)
+    out.append(text[last:])
+    return "".join(out)
 
 
 def defang(text: str) -> str:
     """No mail client turns this into a link: `https[:]//`, `example[.]org`,
     `www[.]x`, `me@example[.]org` (§18.5)."""
-    return _DOT.sub("[.]", _SCHEME.sub(r"\1[:]", text))
+    return _DOT.sub("[.]", _schemes(text))
 
 
 def quoted(text: str) -> str:
@@ -135,7 +164,7 @@ def for_human(
     moved = json.dumps([listing.stamp(conn, human_id), prefs, row.verified_at], default=str)
     if state.stamp == moved and not state.waiting and state.held_since is None:
         return 0
-    zone = ZoneInfo(prefs["timezone"])
+    zone = preferences.mail_zone(prefs)
     now = clock.now()
     local = now.astimezone(zone)
     where = items.scope(conn, human_id, public_url)
@@ -196,10 +225,14 @@ def for_human(
             # The capped immediate items of the hour go with the hour's digest (§18.5).
             due += [i for i in mailable if _mode(i, modes) == "hourly"] + immediate
             clocks["hourly_at"] = now
-        today = datetime.combine(local.date(), time.fromisoformat(prefs["daily_at"]), tzinfo=zone)
+        # As an instant: a wall time compares by its digits within one zone, so a `daily_at`
+        # in the hour the clocks skip would fall due twice (once by its digits, once by UTC).
+        today = datetime.combine(
+            local.date(), time.fromisoformat(prefs["daily_at"]), tzinfo=zone
+        ).astimezone(UTC)
         if state.daily_at is None:
             clocks["daily_at"] = now
-        elif local >= today and state.daily_at < today:
+        elif now >= today and state.daily_at < today:
             due += [i for i in mailable if _mode(i, modes) == "daily"]
             clocks["daily_at"] = now
         week = _last_weekly(local, prefs["daily_at"], prefs["weekly_on"], zone)
@@ -232,13 +265,17 @@ def for_human(
 
 
 def _last_weekly(local: datetime, daily_at: str, weekly_on: str, zone: tzinfo) -> datetime:
-    """The latest `weekly_on` at `daily_at` not after `local`: a pass that missed the
-    moment (the hub was down) still sends the week's digest at its next pass."""
+    """The latest `weekly_on` at `daily_at` not after `local`, as an instant in UTC: a pass
+    that missed the moment (the hub was down) still sends the week's digest at its next pass.
+    Compared as a wall time, a `daily_at` the clocks skip fell due twice."""
     back = (local.weekday() - preferences.WEEKDAYS.index(weekly_on)) % 7
-    at = datetime.combine(
-        local.date() - timedelta(days=back), time.fromisoformat(daily_at), tzinfo=zone
-    )
-    return at if at <= local else at - timedelta(days=7)
+    day = local.date() - timedelta(days=back)
+    at = datetime.combine(day, time.fromisoformat(daily_at), tzinfo=zone).astimezone(UTC)
+    if at <= local:
+        return at
+    return datetime.combine(
+        day - timedelta(days=7), time.fromisoformat(daily_at), tzinfo=zone
+    ).astimezone(UTC)
 
 
 def _mode(item: Item, modes: dict[str, str]) -> str:

@@ -157,5 +157,5 @@ def test_every_worker_claims_its_pass() -> None:
     """A new worker fails here until it follows the rule, or is named as staying per pod."""
     package = Path(maity_hub.__file__).parent
     workers = [p for p in package.rglob("*.py") if "\nclass Worker" in p.read_text()]
-    assert len(workers) == 16
+    assert len(workers) == 18
     assert [p.name for p in workers if "worker_runs.claim(" not in p.read_text()] == []

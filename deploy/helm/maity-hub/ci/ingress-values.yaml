@@ -14,7 +14,6 @@ forge:
 attachments:
   existingClaim: maity-attachments
   mountPath: /data/attachments
-  quotaBytes: 5368709120
 secretKey:
   existingSecret: maity-hub-secrets
 mail:

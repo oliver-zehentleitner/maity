@@ -14,10 +14,11 @@ import hashlib
 import json
 import logging
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -34,7 +35,8 @@ from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
 
-CSP = "default-src 'none'; style-src 'unsafe-inline'"
+# `img-src 'self'` for the pictures of a person's and an agent's page (§6.10, §16.9).
+CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
 CACHE = "public, max-age=60"
 READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
@@ -218,6 +220,18 @@ class Page:
     indexed: bool = True  # false: `noindex` and out of the sitemap (§16.9)
 
 
+class Targets(Protocol):
+    """Which targets of a kind exist, by id in order; with `among`, only those of these ids,
+    by the same rule: a keyed read for one candidate instead of the whole list."""
+
+    def __call__(self, conn: Connection, among: Collection[str] | None = None) -> list[str]: ...
+
+
+def only(column: Any, among: Collection[str] | None) -> tuple[Any, ...]:
+    """The condition `targets` adds for `among`: none without it."""
+    return () if among is None else (column.in_(list(among)),)
+
+
 @dataclass(frozen=True)
 class Kind:
     """A kind of page: how to render the pages of one target (a person, a project, …), and
@@ -225,7 +239,7 @@ class Kind:
 
     name: str
     render: Callable[[Connection, Settings, str], list[Page]]
-    targets: Callable[[Connection], list[str]]
+    targets: Targets
     # The pages of other kinds that show this target (a person on the pages of their
     # projects): `touch` renders them again with it, `(kind, target_id)` each.
     dependents: Callable[[Connection, str], list[tuple[str, str]]] | None = None
@@ -236,6 +250,7 @@ class Kind:
 
 KINDS: dict[str, Kind] = {}
 _hub: Settings | None = None
+_RENDERS = "public_pages.after_commit"
 
 
 def register(kind: Kind) -> None:
@@ -275,11 +290,25 @@ def refresh(
             ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
     }
+    started = time.monotonic()
     try:
         with conn.begin_nested():
             rendered = KINDS[kind].render(conn, hub, target_id)
     except Exception:
         log.exception("rendering the public pages of %s %s failed; taken off", kind, target_id)
+        remove(conn, kind, target_id)
+        return
+    took = time.monotonic() - started
+    if took > hub.public_pages_render_seconds:
+        # A render that runs that long is treated as one that failed: the next one would
+        # take as long again (§16.9).
+        log.warning(
+            "rendering the public pages of %s %s took %.1f s, over the limit of %d s; taken off",
+            kind,
+            target_id,
+            took,
+            hub.public_pages_render_seconds,
+        )
         remove(conn, kind, target_id)
         return
     for page in rendered:
@@ -319,28 +348,78 @@ def touch(
     pages. `dependents=False` renders the target's own pages only, for a change that no other
     page shows: a project's dependents are every card page of the project, too many to render
     while the caller holds the project row (hub/context/public-pages.md 721bcdfa)."""
+    from maity_hub import events
+
     hub = _hub
     if hub is None or not hub.public_pages:
         return
-    if removal or hub.public_pages_render == "on_change":
+    if not (removal or hub.public_pages_render == "on_change"):
+        return
+    if not events.in_transaction(conn):  # a caller with a plain `engine.begin()`
         refresh(conn, hub, kind, target_id)
         others = KINDS[kind].dependents if dependents else None
         for other, other_id in others(conn, target_id) if others else []:
             refresh(conn, hub, other, other_id)
+        return
+    others = KINDS[kind].dependents if dependents else None
+    targets = [(kind, target_id), *(others(conn, target_id) if others else [])]
+    if removal:
+        # Off in the writer's transaction, so nothing removed is served for a moment; the
+        # render follows the commit. Under the target's lock, so a render of it that is still
+        # running writes its page before this delete, not after it; in one order, so two writers
+        # cannot each wait for the other.
+        for other, other_id in sorted(set(targets)):
+            xact_lock(conn, f"public_page:{other}:{other_id}")
+            remove(conn, other, other_id)
+    _render_after_commit(conn, hub, targets)
+
+
+def _render_after_commit(conn: Connection, hub: Settings, targets: list[tuple[str, str]]) -> None:
+    """Render `targets` once the caller's `events.transaction` has committed, each in a
+    transaction of its own, so no render runs while the writer holds its locks: a project's
+    row, and on SQLite the database's one write lock. Each target once per transaction."""
+    from maity_hub import events
+
+    scratch = events.scratch(conn)
+    queued: dict[tuple[str, str], None] | None = scratch.get(_RENDERS)
+    if queued is None:
+        queued = scratch[_RENDERS] = {}
+        engine = conn.engine
+        pending = queued
+
+        def render() -> None:
+            for other, other_id in pending:
+                with engine.begin() as fresh:
+                    refresh(fresh, hub, other, other_id)
+
+        events.on_commit(conn, render)
+    for target in targets:
+        queued.setdefault(target, None)
 
 
 def render_all(
-    engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None, *, fresh: bool = False
-) -> None:
+    engine: Engine,
+    hub: Settings,
+    stop: worker_runs.Stopping | None = None,
+    *,
+    fresh: bool = False,
+    budget: float | None = None,
+) -> list[tuple[str, str]]:
     """Every page of every kind from the inputs as they are now: the targets that exist are
     rendered again, the pages of targets that no longer exist are deleted (`fresh`: see
-    `refresh`)."""
+    `refresh`). With a `budget` in seconds, the targets not reached within it are not
+    rendered: their pages are deleted, and they are returned."""
+    started = time.monotonic()
+    skipped: list[tuple[str, str]] = []
     for kind in KINDS.values():
         with engine.begin() as conn:
             ids = kind.targets(conn)
         for target_id in ids:
             if stop is not None and stop.is_set():
-                return
+                return skipped
+            if budget is not None and time.monotonic() - started > budget:
+                skipped.append((kind.name, target_id))
+                continue
             with engine.begin() as conn:
                 refresh(conn, hub, kind.name, target_id, fresh=fresh)
         with engine.begin() as conn:
@@ -349,21 +428,61 @@ def render_all(
                     select(t.public_page.c.target_id).where(t.public_page.c.kind == kind.name)
                 ).scalars()
             )
-            for target_id in stored - set(ids):
-                remove(conn, kind.name, target_id)
+            # The targets as they are now, not the pass's own list: one that turned public
+            # meanwhile has its page from `on_change`, which this must not delete.
+            gone = stored - set(kind.targets(conn))
+        # Each candidate is decided again under the lock `refresh` and `touch` take, in a
+        # transaction of its own that holds no other lock: on PostgreSQL a target can be
+        # switched off and on again between the reads above (READ COMMITTED), its new page
+        # rendered after the commit. A render that held the lock has committed when this reads
+        # again; one that waits for it renders after this delete. One lock at a time, because a
+        # writer may take several targets' locks in an order of its own across its transaction
+        # (an organisation's suspension touches its projects one after the other, each with its
+        # cards), and a batch held here could close a cycle with it.
+        for target_id in sorted(gone):
+            with engine.begin() as conn:
+                xact_lock(conn, f"public_page:{kind.name}:{target_id}")
+                if not kind.targets(conn, [target_id]):  # keyed: one candidate, not every target
+                    remove(conn, kind.name, target_id)
+    if skipped:
+        with engine.begin() as conn:
+            for kind_name, target_id in skipped:
+                remove(conn, kind_name, target_id)
+        log.warning(
+            "%d public page targets were not rendered within %.0f s; taken off until rendered",
+            len(skipped),
+            budget,
+        )
+    return skipped
 
 
 def startup(engine: Engine, hub: Settings) -> None:
     """When the instance serves pages, every page is rendered again before this process serves
     any, so nothing made under an earlier state is (§16.9). Page by page, never cleared first:
     the other processes and pods serving meanwhile find the old page or the new one, never
-    none (hub/context/replicas.md, "Several workers per pod")."""
+    none (hub/context/replicas.md, "Several workers per pod"). No further target is taken up
+    after `public_pages_startup_seconds`: the pages of the targets not reached by then are
+    deleted, and a worker renders them first. A target taken up before still waits for its
+    lock and renders to the end, so this does not bound the start. The worker's first pass
+    renders every target without a stored page, so it does not matter which process did the
+    start (with `MAITY_WORKERS` above 1, the supervisor's parent, which runs no worker)."""
     configure(hub)
     if not hub.public_pages:
         return
     with engine.begin() as conn:  # a kind this version no longer renders
         conn.execute(delete(t.public_page).where(t.public_page.c.kind.not_in(list(KINDS))))
-    render_all(engine, hub, fresh=True)
+    render_all(engine, hub, fresh=True, budget=hub.public_pages_startup_seconds)
+
+
+def _unrendered(conn: Connection, kind: Kind) -> list[str]:
+    """The targets of `kind` without a stored page: the ones the start did not reach, in
+    whichever process it ran, and the ones that are not public."""
+    stored = set(
+        conn.execute(
+            select(t.public_page.c.target_id).where(t.public_page.c.kind == kind.name)
+        ).scalars()
+    )
+    return [target_id for target_id in kind.targets(conn) if target_id not in stored]
 
 
 class Worker:
@@ -399,6 +518,15 @@ class Worker:
         # What a kind prepares lives in this process's memory, and the start cleared its pages:
         # every process reads once, outside the pass that only one replica of them claims.
         try:
+            # What the start did not reach; a kind that prepares renders every target below.
+            for kind in [kind for kind in KINDS.values() if kind.prepare is None]:
+                with self.engine.connect() as conn:
+                    missing = _unrendered(conn, kind)
+                for target_id in missing:
+                    if self._stop.is_set():
+                        return
+                    with self.engine.begin() as conn:
+                        refresh(conn, self.hub, kind.name, target_id, fresh=True)
             for kind in self._prepare():
                 with self.engine.connect() as conn:
                     ids = kind.targets(conn)

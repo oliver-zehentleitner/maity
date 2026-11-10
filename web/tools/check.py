@@ -53,6 +53,7 @@ What is checked:
 - all text files: no tabs, no trailing whitespace, final newline.
 """
 
+import glob
 import hashlib
 import importlib.util
 import html.parser
@@ -622,11 +623,146 @@ def glossary_duplicates(text):
     return found
 
 
+# Terms the glossary keeps `unchanged` in every language that a check cannot hold to it:
+# `resume` is translated as an ordinary verb (glossary.md, below its row).
+GLOSSARY_NOT_CHECKED = {"resume"}
+# The other form of address, for the address glossary.md names: a word of it in a text is a
+# finding. German "Sie" and "Ihr…" count only inside a sentence, where they cannot be "she",
+# "they" or "her"; Dutch "u" not after a number, where it is hours. Japanese and Korean name
+# a register, not words, so nothing is checked there. Chinese is unchecked by a slip, not as a
+# register (web/context KtW 7d49c1e3): its pattern would be ("zh-Hans", "你"): "您". An address
+# this table does not know is itself a finding, so a change to the glossary's table cannot pass
+# unseen.
+GLOSSARY_OTHER_ADDRESS = {
+    ("de", "du"): re.compile(r"(?<![.!?:]\s)(?<!^)\b(?:Sie|Ihr|Ihre|Ihrem|Ihren|Ihrer|Ihres)\b|\bIhnen\b"),
+    ("fr", "vous"): re.compile(r"\b(?:tu|toi|tes)\b", re.I),
+    ("es", "tú"): re.compile(r"\b(?:usted|ustedes)\b", re.I),
+    ("it", "tu"): re.compile(r"\b(?:Lei|Suo|Sua|Suoi|Sue)\b"),
+    ("pt", "você"): re.compile(r"\b(?:teu|teus|tua|tuas|contigo|ti|tu)\b", re.I),
+    ("nl", "je"): re.compile(r"\buw\b|(?<![\d}]\s)(?<![\d}+])\bu\b(?!\+)", re.I),
+    ("ja", "です・ます"): None,
+    ("ko", "해요체"): None,
+    ("zh-Hans", "你"): None,
+}
+# French "ton" is also "tone" (le ton, un ton): the possessive ton/ta counts only right before a word
+# the catalog itself writes after "votre" (a token rule, not a grammar: "votre nouvelle session"
+# teaches "nouvelle", and "ta nouvelle" is the informal address too), so a list kept here cannot go
+# stale; and never after an article, across any run of whitespace, so "Le ton, la longueur" and
+# "le ton compte" stay clean (nte-fvbb75pa1ym8). "tes" needs no guard and is in the table above.
+GLOSSARY_OTHER_POSSESSIVE = {
+    ("fr", "vous"): (re.compile(r"\bvotre\s+([^\W\d_][\w'-]*)", re.I), ("ton", "ta")),
+}
+# What a text says beside its words: code spans and placeholders (`{harness}` is no harness).
+# A placeholder reads as a number, as it mostly is one ("{count} u" is hours in Dutch).
+GLOSSARY_CODE = re.compile(r"`[^`]*`")
+
+
+def glossary_words(text):
+    return PLACEHOLDER.sub("0", GLOSSARY_CODE.sub(" ", text))
+
+
+def glossary_rules(text):
+    """What glossary.md fixes mechanically: the terms every language keeps (a Words row
+    `unchanged` in all of them), and each language's address as its table names it."""
+    lines = text.splitlines()
+    rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in lines
+            if line.startswith("| ") and line.count("|") == 11]  # fmt: skip
+    fixed = []
+    for row in rows[1:]:
+        if row[1:] and all(cell == "unchanged" for cell in row[1:]):
+            fixed += [t.strip() for t in row[0].split(",") if t.strip() and t.strip() not in GLOSSARY_NOT_CHECKED]
+    address, inside = {}, False
+    for line in lines:
+        if line.startswith("## "):
+            inside = line.strip() == "## How the reader is addressed"
+        elif inside and line.startswith("| `"):
+            cells = [cell.strip() for cell in line.split("|")[1:-1]]
+            named = re.findall(r"`([^`]+)`", cells[1])
+            address[cells[0].strip("`")] = named[0] if named else cells[1].split()[0]
+    return fixed, address
+
+
+def glossary_term(term):
+    """A term with a space or a hyphen between its words: German writes Keep-the-Why-Export."""
+    return re.compile(r"[ \-]".join(re.escape(word) for word in term.split()), re.I)
+
+
+GLOSSARY_ARTICLE_BEFORE = re.compile(r"\b(?:le|un|ce|du|au|cet|quel)\s+$", re.I)
+
+
+def glossary_possessive(lang, said, data):
+    """A finder for the other address's possessives before the words a language's catalog writes
+    after its own (GLOSSARY_OTHER_POSSESSIVE): it gives the first such match not after an article,
+    or None; None in place of a finder when the language has no such rule or the catalog teaches
+    no word."""
+    rule = GLOSSARY_OTHER_POSSESSIVE.get((lang, said))
+    if not rule:
+        return None
+    learn, possessives = rule
+    nouns = set()
+    for entry in data.values():
+        for text in entry.values() if isinstance(entry, dict) else [entry]:
+            if isinstance(text, str):
+                nouns.update(m.group(1).lower() for m in learn.finditer(glossary_words(text)))
+    if not nouns:
+        return None
+    pattern = re.compile(r"\b(?:%s)\s+(?:%s)\b" % ("|".join(possessives), "|".join(sorted(map(re.escape, nouns)))), re.I)
+
+    # A possessive never follows an article ("le ton compte" is the tone and the verb), whatever
+    # whitespace stands between them; a lookbehind cannot say "any run", so the text before is read.
+    def find(words):
+        return next((m for m in pattern.finditer(words) if not GLOSSARY_ARTICLE_BEFORE.search(words[: m.start()])), None)
+
+    return find
+
+
+def glossary_problems(lang, data, english, fixed, address):
+    """A translation against glossary_rules: a fixed term translated, the other address used."""
+    problems = []
+    other = GLOSSARY_OTHER_ADDRESS.get((lang, address.get(lang)))
+    possessive = glossary_possessive(lang, address.get(lang), data)
+    terms = [(term, glossary_term(term)) for term in fixed]
+    for key, entry in sorted(data.items()):
+        source = english.get(key)
+        if source is None or not well_formed(entry):
+            continue
+        texts = entry.values() if isinstance(entry, dict) else [entry]
+        sources = " ".join(source.values()) if isinstance(source, dict) else source
+        said = glossary_words(sources)
+        for text in texts:
+            words = glossary_words(text)
+            for term, pattern in terms:
+                if pattern.search(said) and not pattern.search(words):
+                    problems.append("%s: %r is translated; glossary.md keeps it unchanged" % (key, term))
+            found = (other.search(words) if other else None) or (possessive(words) if possessive else None)
+            if found:
+                problems.append("%s: %r is not the address glossary.md names (%s)" % (key, found.group(0), address[lang]))
+    return sorted(set(problems))
+
+
 def check_glossary():
     path = os.path.join(I18N, "glossary.md")
-    if os.path.exists(path):
-        for language, word, things in glossary_duplicates(read(path)):
-            finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
+    if not os.path.exists(path):
+        return
+    text = read(path)
+    for language, word, things in glossary_duplicates(text):
+        finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
+    fixed, address = glossary_rules(text)
+    for lang, said in sorted(address.items()):
+        if (lang, said) not in GLOSSARY_OTHER_ADDRESS:
+            finding(path, 1, "%s: address %r is not in GLOSSARY_OTHER_ADDRESS of tools/check.py" % (lang, said))
+    words = os.path.join(os.path.dirname(ROOT), "hub", "src", "maity_hub", "words")
+    for folder in (I18N, words):
+        if not os.path.isdir(folder) or not os.path.exists(os.path.join(folder, "en.json")):
+            continue
+        english = load_catalog(os.path.join(folder, "en.json"))
+        for name in sorted(os.listdir(folder)):
+            lang = name[:-len(".json")]
+            if not name.endswith(".json") or name.endswith(I18N_META) or lang == "en" or english is None:
+                continue
+            data = load_catalog(os.path.join(folder, name))
+            for problem in glossary_problems(lang, data or {}, english, fixed, address):
+                finding(os.path.join(folder, name), 1, problem)
 
 
 def list_gaps(lang):
@@ -774,6 +910,143 @@ def check_error_words(english):
             finding(os.path.join(ROOT, "js", "errors.js"), 1, "error code %r of docs/api.md §1.3 has no words" % code)
 
 
+def entry_texts(entry):
+    return [entry] if isinstance(entry, str) else list(entry.values())
+
+
+def check_prefixes(english):
+    """A text that ends in ": " is a prefix: the code joins something after it, in English order
+    (tsk-0zbms0wwqhmm). The whole sentence goes into the catalog, with a placeholder where the
+    joined part stands: {reason} for a failure, or a node filled with M.tn."""
+    for key, entry in sorted(english.items()):
+        if any(text.endswith(": ") for text in entry_texts(entry)):
+            finding(os.path.join(I18N, "en.json"), 1, "key %r ends in \": \", a prefix: write the whole "
+                    "sentence with a placeholder ({reason} for a failure)" % key)
+
+
+def first_argument(code, start):
+    """The span of the call's first argument, from just after its "(" to its "," or ")"."""
+    depth = 0
+    for i in range(start, len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return start, i
+            depth -= 1
+        elif c == "," and depth == 0:
+            return start, i
+    return start, len(code)
+
+
+def check_fail_sentences(path, src, code, english):
+    """statusLine().fail(sentence, err) puts the reason where the sentence has {reason}: a catalog
+    text handed to it as its first argument has the placeholder (tsk-0zbms0wwqhmm)."""
+    for m in re.finditer(r"\.fail\(", code):
+        begin, end = first_argument(code, m.end())
+        for t in re.finditer(r"\b(?:M|Maity)\.t\(\s*", code[begin:end]):
+            # The sentence itself, not a text filled into it (M.t("x", { what: M.t("y") })).
+            part = code[begin:begin + t.start()]
+            if sum(part.count(c) for c in "([{") != sum(part.count(c) for c in ")]}"):
+                continue
+            at = begin + t.end()
+            quote = src[at] if at < len(src) else ""
+            close = src.find(quote, at + 1) if quote in ("\"", "'") else -1
+            key = src[at + 1:close] if close > 0 else None
+            if key in english and not all("{reason}" in text for text in entry_texts(english[key])):
+                finding(path, code.count("\n", 0, m.start()) + 1,
+                        "fail() puts the reason at {reason}: key %r has none" % key)
+
+
+def call_end(code, start):
+    """Where the call whose "(" ends at start closes: the index of its ")"."""
+    depth = 0
+    for i in range(start, len(code)):
+        if code[i] in "([{":
+            depth += 1
+        elif code[i] in ")]}":
+            if depth == 0:
+                return i
+            depth -= 1
+    return len(code)
+
+
+def callee_of(code, at):
+    """The name of the call whose argument list holds position at, or None."""
+    depth = 0
+    for i in range(at - 1, -1, -1):
+        c = code[i]
+        if c in ")]}":
+            depth += 1
+        elif c in "([{":
+            if depth == 0:
+                if c != "(":
+                    return None
+                m = re.search(r"([A-Za-z_$][\w$]*)\s*$", code[:i])
+                return m.group(1) if m else None
+            depth -= 1
+    return None
+
+
+def literal_keys(src, code, brace):
+    """The property names of the object literal whose "{" is at brace: `name: value`, `"name": value`
+    or the shorthand `name`. None where a name cannot be read here (a spread, a computed name)."""
+    end = call_end(code, brace + 1)
+    keys, depth, start = set(), 0, brace + 1
+    for i in range(brace + 1, end + 1):
+        c = code[i] if i < end else ","
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "," and depth == 0:
+            item = src[start:i].strip()
+            start = i + 1
+            if not item:
+                continue
+            m = re.match(r"""(?:"([^"]*)"|'([^']*)'|([A-Za-z_$][\w$]*))\s*(?::|$)""", item)
+            if item.startswith(("...", "[")) or not m:
+                return None
+            keys.add(m.group(1) or m.group(2) or m.group(3))
+    return keys
+
+
+def check_unfilled_placeholders(path, src, code, english):
+    """A text put on the page as M.t returns it has every placeholder filled: a failure's {reason}
+    left for status.fail is filled there, but put straight into an element (h, append), joined
+    with + or written to textContent it would read "{reason}" (tsk-0zbms0wwqhmm, #1498)."""
+    for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
+        at = m.end()
+        quote = src[at] if at < len(src) else ""
+        close = src.find(quote, at + 1) if quote in ("\"", "'") else -1
+        key = src[at + 1:close] if close > 0 else None
+        if key not in english:
+            continue
+        names = set(re.findall(r"\{([a-z][a-z0-9_]*)\}", "".join(entry_texts(english[key]))))
+        if not names:
+            continue
+        end = call_end(code, at)
+        values = code[close + 1:end]
+        # Values from a variable or a call (M.t(key, times)) are not read here: only none or a literal.
+        given = values.strip().lstrip(",").strip()
+        if given and not given.startswith("{"):
+            continue
+        keys = literal_keys(src, code, close + 1 + values.index("{")) if given else set()
+        if keys is None:
+            continue
+        missing = sorted(names - keys)
+        if not missing:
+            continue
+        before = code[:m.start()].rstrip()
+        after = code[end + 1:].lstrip()
+        shown = (callee_of(code, m.start()) in ("h", "append") or before.endswith("+") or after.startswith("+")
+                 or re.search(r"textContent\s*=$", before))
+        if shown:
+            finding(path, code.count("\n", 0, m.start()) + 1,
+                    "key %r is shown with {%s} unfilled" % (key, "}, {".join(missing)))
+
+
 def check_i18n(write, release=False, notes=None):
     catalogs = {}
     names = sorted(f for f in os.listdir(I18N) if f.endswith(".json") and not f.endswith(I18N_META)) if os.path.isdir(I18N) else []
@@ -808,6 +1081,7 @@ def check_i18n(write, release=False, notes=None):
         finding(os.path.join(I18N, "en.json"), 1, "missing: English is the catalog every language follows")
         return
     check_translations(catalogs, write, release, notes if notes is not None else [])
+    check_prefixes(english)
     used = set()
     counts = {}
     for f in sorted(os.listdir(os.path.join(ROOT, "js"))):
@@ -832,6 +1106,8 @@ def check_i18n(write, release=False, notes=None):
             used.add(key)
             if key not in english:
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
+        check_fail_sentences(path, src, code, english)
+        check_unfilled_placeholders(path, src, code, english)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text, before in literals if prose(text, before))
     check_error_words(english)
@@ -1004,8 +1280,13 @@ SHAPES = os.path.join(ROOT, "tools", "hub-shapes.json")
 SHAPES_BASELINE = os.path.join(ROOT, "tools", "fixture-shapes-baseline.json")
 
 
-def shape_of(value, maps=frozenset(), at=""):
+SHAPE_ID = re.compile(r"\b[a-z]{3}-[0-9a-z]+\b")
+
+
+def shape_of(value, maps=frozenset(), at="", forms=frozenset()):
     """As shape() in hub/tests/test_web_shapes.py, which writes the other side."""
+    if isinstance(value, str) and at in forms:
+        return {"form": SHAPE_ID.sub("<id>", value)}
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, (int, float)):
@@ -1017,13 +1298,13 @@ def shape_of(value, maps=frozenset(), at=""):
     merged = None
     if isinstance(value, list):
         for item in value:
-            merged = merge_shapes(merged, shape_of(item, maps, at + "[]"))
+            merged = merge_shapes(merged, shape_of(item, maps, at + "[]", forms))
         return {"array": merged}
     if at in maps:
         for item in value.values():
-            merged = merge_shapes(merged, shape_of(item, maps, at + "{}"))
+            merged = merge_shapes(merged, shape_of(item, maps, at + "{}", forms))
         return {"map": merged}
-    return {"object": {k: shape_of(v, maps, "%s.%s" % (at, k)) for k, v in sorted(value.items())}}
+    return {"object": {k: shape_of(v, maps, "%s.%s" % (at, k), forms) for k, v in sorted(value.items())}}
 
 
 def merge_shapes(a, b):
@@ -1052,6 +1333,10 @@ def shape_differences(fixture, hub, at=""):
     kind = lambda x: x if isinstance(x, str) else next(iter(x))  # noqa: E731
     if kind(fixture) != kind(hub):
         return ["%s: %s where the hub sends %s" % (at or "the answer", kind(fixture), kind(hub))]
+    if kind(fixture) == "form":
+        if fixture["form"] != hub["form"]:
+            return ["%s: %s where the hub sends %s" % (at, json.dumps(fixture["form"]), json.dumps(hub["form"]))]
+        return []
     if kind(fixture) in ("array", "map"):
         return shape_differences(fixture[kind(fixture)], hub[kind(hub)], at + ("[]" if kind(fixture) == "array" else "{}"))
     if kind(fixture) != "object":
@@ -1071,7 +1356,9 @@ def check_fixture_shapes(node, write, notes):
         notes.append("node not on PATH: the fixtures' shapes are not compared with the hub's")
         return
     hub = json.loads(read(SHAPES))
-    maps = frozenset(json.loads(read(os.path.join(ROOT, "tools", "shape-requests.json")))["maps"])
+    spec = json.loads(read(os.path.join(ROOT, "tools", "shape-requests.json")))
+    maps = frozenset(spec["maps"])
+    forms = {"%s %s" % (r["method"], r["path"]): frozenset(r.get("forms", [])) for r in spec["requests"]}
     r = subprocess.run([node, os.path.join(ROOT, "tools", "fixture_answers.js")], capture_output=True, text=True)
     if r.returncode != 0:
         finding(os.path.join(ROOT, "tools", "fixture_answers.js"), 1, "failed: " + " | ".join(r.stderr.strip().splitlines()[:4]))
@@ -1087,7 +1374,7 @@ def check_fixture_shapes(node, write, notes):
             finding(SHAPES_BASELINE, 1, "the fixture hub refuses %s: %s" % (key, answer["error"]))
             continue
         known = set(baseline.get(key, []))
-        now = shape_differences(shape_of(answer["answer"], maps), hub[key])
+        now = shape_differences(shape_of(answer["answer"], maps, "", forms.get(key, frozenset())), hub[key])
         for d in now:
             if d not in known:
                 finding(SHAPES_BASELINE, 1, "fixture answer to %s: %s" % (key, d))
@@ -1101,6 +1388,323 @@ def check_fixture_shapes(node, write, notes):
     if write:
         with open(SHAPES_BASELINE, "w") as f:
             f.write(json.dumps(kept, indent=1, sort_keys=True) + "\n")
+
+
+# ---- step-up ---------------------------------------------------------------------------------
+
+STEP_UP_LIST = os.path.join(ROOT, "tools", "step-up-routes.json")
+API_VERBS = {"get": "GET", "post": "POST", "patch": "PATCH", "put": "PUT", "del": "DELETE"}
+
+
+def split_plus(expr):
+    """The operands of a string concatenation, split at its top-level "+"."""
+    parts, depth, cur = [], 0, ""
+    for c in expr:
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if c == "+" and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += c
+    parts.append(cur)
+    return [p.strip() for p in parts]
+
+
+def initializer(src, code, name, before):
+    """The text a name was last given before position before: `const name = <this>;`."""
+    last = None
+    for m in re.finditer(r"\b(?:const|let)\s+" + re.escape(name) + r"\s*=\s*", code[:before]):
+        last = m
+    if not last:
+        return None
+    depth, end = 0, len(code)
+    for i in range(last.end(), len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if depth < 0 or (depth == 0 and c == ";"):
+            end = i
+            break
+    return src[last.end():end].strip()
+
+
+def body_text(src, code, body, at, depth=0):
+    """A call's body as written, with the value of every name in it put beside it, names in those
+    too, three deep: a key behind a variable (`{ email: patch }`) is read (xyfr at #1547). A name is
+    resolved by the blocks around the call (declaration_of), not by the last `const` of that name in
+    the file (4hch at #1566); a parameter or a reassignment is not followed."""
+    if depth >= 3:
+        return body
+    names = set(re.findall(r"(?<![\w$.])[A-Za-z_$][\w$]*", body))
+    blocks = brace_blocks(code)
+    more = [bound_value(src, code, declaration_of(code, blocks, name, at)) for name in sorted(names)]
+    return body + " " + " ".join(body_text(src, code, x, at, depth + 1) for x in more if x)
+
+
+def bound_value(src, code, name_at):
+    """The text after `=` of the `const`/`let` whose name stands at name_at, to its `;` or the end of
+    its block; None where name_at is None."""
+    if name_at is None:
+        return None
+    eq = code.find("=", name_at)
+    depth, end = 0, len(code)
+    for i in range(eq + 1, len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if depth < 0 or (depth == 0 and c == ";"):
+            end = i
+            break
+    return src[eq + 1:end].strip()
+
+
+def path_pattern(src, code, expr, at, depth=0):
+    """A regular expression for the paths a call's first argument builds, or None where no part of it
+    can be read here: string literals, `ctx.base`, a name's own `const`, a helper arrow's body, both
+    sides of a `?:` or `||`. What cannot be read stands for any run of characters, slashes too: a
+    helper such as M.api.projectPath gives several segments (xyfr at #1547)."""
+    expr = expr.strip()
+    if expr.startswith("(") and expr.endswith(")") and call_end(expr, 1) == len(expr) - 1:
+        expr = expr[1:-1]
+    out, known = "", False
+    for part in split_plus(expr):
+        sub = None
+        if re.fullmatch(r"\"[^\"]*\"|'[^']*'", part):
+            sub = re.escape(part[1:-1])
+        elif part == "ctx.base":
+            sub = "/projects/[^/]+/[^/]+"
+        elif depth < 3 and re.fullmatch(r"[A-Za-z_$][\w$]*\(.*\)", part, re.S):
+            init = initializer(src, code, part[:part.index("(")], at) or ""
+            arrow = re.match(r"(?:async\s*)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*", init)
+            sub = path_pattern(src, code, init[arrow.end():], at, depth + 1) if arrow else None
+        elif depth < 3 and re.fullmatch(r"[A-Za-z_$][\w$]*", part):
+            init = initializer(src, code, part, at)
+            sub = path_pattern(src, code, init, at, depth + 1) if init else None
+        elif depth < 3 and "?" in part:
+            m = re.fullmatch(r"(.+?)\?(.+):(.+)", part, re.S)
+            alts = [path_pattern(src, code, x, at, depth + 1) for x in m.group(2, 3)] if m else [None]
+            sub = "(?:" + "|".join(alts) + ")" if all(a is not None for a in alts) else None
+        elif depth < 3 and "||" in part:
+            alts = [path_pattern(src, code, x, at, depth + 1) for x in part.split("||")]
+            sub = "(?:" + "|".join(a if a is not None else ".*" for a in alts) + ")" if any(alts) else None
+        if sub is None:
+            out += ".*"
+        else:
+            out += sub
+            known = True
+    return out if known else None
+
+
+def argument_index(code, at):
+    """Which argument (0, 1, …) of the call whose argument list holds position at it is in."""
+    depth = index = 0
+    for i in range(at - 1, -1, -1):
+        c = code[i]
+        if c in ")]}":
+            depth += 1
+        elif c in "([{":
+            if depth == 0:
+                return index
+            depth -= 1
+        elif c == "," and depth == 0:
+            index += 1
+    return index
+
+
+FUNCTION_START = re.compile(r"\s*(?:async\b\s*)?(?:(?P<fn>function\b)|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
+
+
+def function_body(code, begin, end):
+    """The span of the body of the function expression that is the whole of code[begin:end], or
+    None where the argument is something else: a function called or bound right there
+    (`function () {…}()`, `….bind(…)`) runs or is worked out before it is handed on."""
+    m = FUNCTION_START.match(code, begin)
+    if not m:
+        return None
+    p = m.end()
+    if m.group("fn"):
+        paren = code.find("(", p, end)
+        if paren < 0:
+            return None
+        p = call_end(code, paren + 1) + 1
+    while p < end and code[p].isspace():
+        p += 1
+    if p < end and code[p] == "{":
+        close = call_end(code, p + 1)
+        return (p + 1, close) if code[close + 1:end].strip() == "" else None
+    # An arrow's expression body reaches to the end of the argument; a function has a block.
+    return None if m.group("fn") else (p, end)
+
+
+def brace_blocks(code):
+    """Every {…} in code (strings and comments stripped) as (open, close) index pairs."""
+    pairs, stack = [], []
+    for i, c in enumerate(code):
+        if c == "{":
+            stack.append(i)
+        elif c == "}" and stack:
+            pairs.append((stack.pop(), i))
+    return pairs
+
+
+def innermost_block(blocks, at):
+    """The {…} closest around position at, or None at the top of the file."""
+    around = [b for b in blocks if b[0] < at < b[1]]
+    return max(around) if around else None
+
+
+def declaration_of(code, blocks, name, at):
+    """Where the `const` or `let` binding of name that is seen at position at is declared (the
+    index of the name), walking out from the block around at; None where none is."""
+    return nearest_in_scope(blocks, [d.start(1) for d in re.finditer(r"\b(?:const|let)\s+(" + re.escape(name) + r")\s*=", code)], at)
+
+
+def nearest_in_scope(blocks, positions, at, hoisted=()):
+    """Of the declarations whose names stand at positions, the one seen at position at: walking out
+    from the block around at, the first block that declares it. There a `const` or `let` is the
+    last before at, else the first; a function declaration (its position in hoisted) is the last
+    in that block wherever the call stands, as JS hoists it. None where none is."""
+    found = [(pos, innermost_block(blocks, pos)) for pos in positions]
+    block = innermost_block(blocks, at)
+    while True:
+        here = [pos for pos, b in found if b == block]
+        if here:
+            functions = [pos for pos in here if pos in hoisted]
+            if functions:
+                return max(functions)
+            before = [pos for pos in here if pos < at]
+            return max(before) if before else min(here)
+        if block is None:
+            return None
+        block = innermost_block(blocks, block[0])
+
+
+def is_function_declaration(code, at):
+    """Whether the `function` keyword at position at begins a declaration, which binds its name in
+    the block around it, and not a function expression, whose name is bound only inside its own
+    body: a declaration stands where a statement starts, after `;`, `{`, `}` or at the top."""
+    head = code[:at].rstrip()
+    if head.endswith("async"):
+        head = head[:-5].rstrip()
+    if head.endswith("export"):
+        head = head[:-6].rstrip()
+    return head == "" or head[-1] in ";{}"
+
+
+def asks_first(code, at, src=None):
+    """Whether the call at position at goes through M.stepUp.run: inside the function given as its
+    first argument (that function expression alone, see function_body), or in an arrow that is handed to it by name, as a `call:` property, or through
+    a local function that hands that parameter on as its first argument (security.js's act). A call
+    made while M.stepUp.run's arguments are worked out, or in another argument, does not ask: it
+    is sent before anything is asked (review of #1547)."""
+    for s in re.finditer(r"\bM\.stepUp\.run\(", code):
+        begin, end = first_argument(code, s.end())
+        body = function_body(code, begin, end)
+        if body and body[0] <= at < body[1]:
+            return True
+    m = re.search(r"(\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\(?\s*$", code[:at])
+    if not m:
+        return False
+    head = code[:m.start()]
+    named = re.search(r"\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*$", head)
+    if named:
+        # The name M.stepUp.run is given must be this binding: the nearest declaration of that
+        # name in the blocks around the run, not another one of the same name (xyfr at #1547).
+        name = named.group(1)
+        blocks = brace_blocks(code)
+        return any(declaration_of(code, blocks, name, r.start()) == named.start(1)
+                   for r in re.finditer(r"\bM\.stepUp\.run\(\s*" + re.escape(name) + r"\s*,", code))
+    prop = re.search(r"\b([A-Za-z_$][\w$]*)\s*:\s*$", head)
+    if prop:
+        # A property is not bound to a name: it asks only when every read of it in the file goes
+        # straight into M.stepUp.run as the first argument, and none is destructured (xyfr at #1547).
+        key = re.escape(prop.group(1))
+        reads = [r.start() for r in re.finditer(r"\.\s*" + key + r"\b", code)]
+        handed = {r.end() - len(prop.group(1)) - 1 for r in re.finditer(
+            r"\bM\.stepUp\.run\(\s*[A-Za-z_$][\w$]*(?:\[[^\[\]]*\]|\.[A-Za-z_$][\w$]*)*\." + key + r"(?=\s*,)", code)}
+        unpacked = re.search(r"\{[^{}]*\b" + key + r"\b[^{}]*\}\s*=(?!=|>)", code)
+        # A read by a string in brackets (`a["call"]`) or any call through brackets (`a[k]()`,
+        # `a["ca" + "ll"]()`, `a[(k)]()`) may be this property outside the question: not counted
+        # as asking (4hch at #1566).
+        bracketed = src is not None and re.search(r"\[\s*([\"'`])" + key + r"\1\s*\]", src)
+        computed = re.search(r"\]\s*\(", code)
+        return bool(reads) and all(at_ in handed for at_ in reads) and not (unpacked or bracketed or computed)
+    fn = callee_of(code, m.start())
+    if fn:
+        # The helper is the declaration of that name nearest the call in the blocks around it
+        # (nearest_in_scope: the last function declaration of that block, else the last `const` or
+        # `let` before the call, else the first), not the first definition in the file (4hv7 at
+        # #1566). Only a helper of this form can hand the call on; other binding forms are not
+        # resolved.
+        name = re.escape(fn)
+        # A named function expression (`const x = function act() {…}`) binds its name only
+        # inside its own body, so it is no candidate; function declarations are hoisted (4hv7).
+        starts, hoisted = {}, set()
+        for x in re.finditer(r"\bfunction\s+(" + name + r")\s*\(|\b(?:const|let)\s+(" + name + r")\s*=", code):
+            if x.group(1):
+                if not is_function_declaration(code, x.start()):
+                    continue
+                hoisted.add(x.start(1))
+            starts[x.start(1) if x.group(1) else x.start(2)] = x.start()
+        seen = nearest_in_scope(brace_blocks(code), list(starts), m.start(), hoisted)
+        helper = re.compile(r"(?:function\s+" + name + r"\s*\(([^)]*)\)|(?:const|let)\s+" + name
+                            + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{")
+        d = helper.match(code, starts[seen]) if seen is not None else None
+        if d:
+            body = code[d.end():call_end(code, d.end())]
+            params = [x.strip() for x in (d.group(1) or d.group(2) or "").split(",")]
+            index = argument_index(code, m.start())
+            q = params[index] if index < len(params) else ""
+            if q and re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(q) + r"\s*,", body):
+                return True
+    return False
+
+
+def check_step_up():
+    """Every dashboard call to a route that asks for the second factor (tools/step-up-routes.json,
+    docs/api.md §2.8.4) goes through M.stepUp.run, so the page asks instead of showing the bare
+    refusal (tsk-6dk86ej9s0fq); and js/api.js's fixture list is that list."""
+    try:
+        listed = json.loads(read(STEP_UP_LIST))["routes"]
+    except (OSError, ValueError, KeyError) as err:
+        finding(STEP_UP_LIST, 1, "unreadable: %s" % err)
+        return
+    routes = [(e["route"].split(" ", 1)[0], e["route"].split(" ", 1)[1], e.get("body")) for e in listed]
+    api = os.path.join(ROOT, "js", "api.js")
+    block = re.search(r"const STEP_UP_ROUTES = \[(.*?)\];", read(api), re.S)
+    fixture = re.findall(r"\"([^\"]+)\"", block.group(1)) if block else []
+    if sorted(fixture) != sorted(e["route"] for e in listed):
+        finding(api, 1, "STEP_UP_ROUTES differs from tools/step-up-routes.json")
+    for path in sorted(glob.glob(os.path.join(ROOT, "js", "*.js"))):
+        if os.path.basename(path) in ("api.js", "step-up.js"):
+            continue
+        src = read(path)
+        code, error = strip_js(src)
+        if error:
+            continue
+        for m in re.finditer(r"\bM\.api\.(get|post|patch|put|del)\(", code):
+            begin, end = first_argument(code, m.end())
+            pattern = path_pattern(src, code, src[begin:end], m.start())
+            if pattern is None:
+                continue
+            verb = API_VERBS[m.group(1)]
+            hits = [(p, key) for v, p, key in routes if v == verb and re.fullmatch(pattern, re.sub(r"\{[^}]*\}", "x", p))]
+            if not hits:
+                continue
+            if len(hits) == 1 and hits[0][1]:
+                body = body_text(src, code, src[end + 1:call_end(code, m.end())], m.start())
+                if not re.search(r"\b" + re.escape(hits[0][1]) + r"\b", body):
+                    continue
+            if not asks_first(code, m.start(), src):
+                finding(path, code.count("\n", 0, m.start()) + 1,
+                        "%s %s asks for the second factor: send it through M.stepUp.run" % (verb, hits[0][0]))
 
 
 def main(argv):
@@ -1126,6 +1730,7 @@ def main(argv):
     check_css()
     check_vendor()
     check_whitespace()
+    check_step_up()
     for f in findings:
         print(f)
     if not node:

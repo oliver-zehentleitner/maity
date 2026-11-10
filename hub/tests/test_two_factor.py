@@ -40,7 +40,7 @@ def moment() -> Clock:
 
 
 def login(client: TestClient, handle: str = "maintainer") -> Any:
-    return client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
+    return factory.login_handle(client, handle)
 
 
 def signed_in(make_client: ClientFactory, migrated: Engine, **overrides: object) -> flow.Human:
@@ -233,6 +233,51 @@ def test_ten_wrong_codes_lock_the_human_out_for_the_window(
         headers={"X-CSRF-Token": csrf},
     )
     assert locked.status_code == 429  # even the right code, until the window passes
+
+
+def test_a_check_holds_its_place_in_the_count_while_it_compares(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nine wrong codes; while the tenth is compared, the count already holds it, so a check
+    # running at the same time is refused instead of getting past the limit too (§2.8.6).
+    human = signed_in(make_client, migrated)
+    secret, _ = enrol(human, moment)
+    client = make_client(secret_key=KEY)
+    csrf = second_step(client)
+    for _ in range(4):
+        client.post(
+            "/api/v1/auth/second-factor/verify",
+            json={"code": "123456"},
+            headers={"X-CSRF-Token": csrf},
+        )
+    client = make_client(secret_key=KEY)
+    csrf = second_step(client)
+    for _ in range(5):
+        client.post(
+            "/api/v1/auth/second-factor/verify",
+            json={"code": "123456"},
+            headers={"X-CSRF-Token": csrf},
+        )
+    seen: list[int] = []
+    consume = second_factor._consume_totp
+
+    def comparing(*args: Any) -> bool:
+        seen.append(second_factor.WRONG_BY_HUMAN.blocked(human.id))
+        return consume(*args)
+
+    monkeypatch.setattr(second_factor, "_consume_totp", comparing)
+    client = make_client(secret_key=KEY)
+    csrf = second_step(client)
+    moment.move(seconds=30)
+    right = client.post(
+        "/api/v1/auth/second-factor/verify",
+        json={"code": code_now(secret, moment.at)},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert right.status_code == 200
+    assert len(seen) == 1 and seen[0] > 0  # the tenth place was taken before the comparison
+    # The right code gave its place back: one more wrong code still fits.
+    assert second_factor.WRONG_BY_HUMAN.blocked(human.id) == 0
 
 
 def test_a_recovery_code_signs_in_once(
@@ -635,3 +680,56 @@ def test_a_trusted_session_held_at_enrolment_may_still_confirm_a_sign_in(
     fresh = make_client(secret_key=KEY)
     login(fresh)
     assert fresh.get("/api/v1/me/notifications").status_code == 403
+
+
+def test_a_source_becomes_known_only_once_the_second_step_is_done(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.1: a session that waits at the second step makes no known source."""
+    from maity_hub.auth import known_sources
+
+    human = signed_in(make_client, migrated)
+    secret, _ = enrol(human, moment)
+    source = "198.51.100.40"
+    client = make_client(secret_key=KEY, peer=source)
+    csrf = second_step(client)
+    with migrated.begin() as conn:
+        assert known_sources.known(conn, human.id, source) is False
+    moment.move(seconds=30)
+    done = client.post(
+        "/api/v1/auth/second-factor/verify",
+        json={"code": code_now(secret, moment.at)},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert done.status_code == 200, done.text
+    with migrated.begin() as conn:
+        assert known_sources.known(conn, human.id, source) is True
+
+
+def test_a_parked_enrolment_session_signs_out_during_a_maintenance_window(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """Signing out stays open in a running window (§16.12) for a session held at enrolment
+    too, not only for a full one: the way out of a session on a shared computer."""
+    from maity_hub import maintenance
+
+    admin, parked = parked_enrolment(make_client, migrated, moment)
+    with migrated.begin() as conn:
+        maintenance.put(
+            conn,
+            moment.at - timedelta(minutes=1),
+            moment.at + timedelta(minutes=30),
+            "DB",
+            admin.id,
+        )
+    maintenance.forget()
+    try:
+        assert make_client().get("/api/v1/auth/pages/sign_up").status_code == 503  # running
+        session = parked.get("/api/v1/auth/session")
+        assert session.status_code == 200, session.text
+        csrf = session.json()["csrf_token"]
+        out = parked.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf})
+        assert out.status_code == 200, out.text
+        assert parked.get("/api/v1/auth/session").status_code == 401
+    finally:
+        maintenance.forget()

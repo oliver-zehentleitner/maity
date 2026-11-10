@@ -19,7 +19,7 @@ import json
 import os
 import random
 import re
-import stat
+import secrets
 import subprocess
 import threading
 import time
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import adapters, capabilities, config, loop, restart, targets, workspace
+from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
 from .tmux import Session, Tmux, TmuxError, session_name
@@ -39,9 +39,21 @@ from .tmux import Session, Tmux, TmuxError, session_name
 TICK = 5.0
 PICKUP_RETRY = 15.0
 JOIN_TIMEOUT = 120.0
-PICKUP_DETAILS = ("pickup_not_allowed", "pickup_used")
-JOIN_DETAILS = ("code_invalid", "expired", "not_found", "rate_limited", "insecure_transport")
-_JOIN_ERROR = re.compile(r"\bjoin: ([a-z_]+):")
+# `join_failed` carries the hub's own error code (§15.7): any code in this form, never text.
+DETAIL_CODE = hub.ERROR_CODE  # fullmatch only
+# The child's last stderr line under MAITY_ERROR_LINE=<nonce> (cli.main), and nothing else.
+_ERROR_LINE = re.compile(
+    r"maity-error ([0-9a-f]{32}): (?:-|([a-z][a-z0-9_]{0,63})(?: ([a-z][a-z0-9_]{0,63}))?)"
+)
+
+
+def join_detail(code: str | None, reason: Any = None) -> str | None:
+    """The `join_failed` detail for a hub refusal: its error code, or for `forbidden` the
+    `details.reason` that says which rule refused (`member_join_limit`, `member_agents_max`,
+    §3.1). None when neither has the form of a code, or `code` is no string at all."""
+    if code == "forbidden" and isinstance(reason, str) and DETAIL_CODE.fullmatch(reason):
+        return reason
+    return code if isinstance(code, str) and DETAIL_CODE.fullmatch(code) else None
 
 
 class Retry(Exception):
@@ -56,8 +68,11 @@ def run_join(
     as_user: AsUser = RUNNER,
     agent_path: str | None = None,
 ) -> tuple[bool, str | None]:
-    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not;
-    None when the CLI's error has no code in §15.7's list).
+    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not:
+    the hub's code, `network`, or None). The detail comes only from the child's last stderr
+    line, `maity-error <nonce>: …` with this call's own nonce (`MAITY_ERROR_LINE`), built from
+    the error's code fields: no message or traceback text knows the nonce, so none can pass for
+    a code.
 
     `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
     finds it without running git in a clone the agent can write (§5.3). Python runs isolated
@@ -66,14 +81,16 @@ def run_join(
     user, who then owns the credential; on an ssh host it is the host's own `maity`, found
     on the target's `agent_path`. Its output is never logged: an error names the join URL,
     and with it the token."""
+    nonce = secrets.token_hex(16)  # only this call's own machine line carries it
     if not as_user.direct:  # sudo and ssh start empty: pass only what the join needs
-        env = {state.STATE_DIR_ENV: str(place.credential.parent)}
+        env = {state.STATE_DIR_ENV: str(place.credential.parent), hub.ERROR_LINE_ENV: nonce}
         if not as_user.here and agent_path:
             env["PATH"] = agent_path
         cwd = Path("/")
     else:
         env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
         env[state.STATE_DIR_ENV] = str(place.credential.parent)
+        env[hub.ERROR_LINE_ENV] = nonce
     command = [
         *as_user.maity, "join", "--join-file", "-", "--no-resume", "--no-pointer",
         "--client", f"maity-runner/{__version__}",
@@ -88,10 +105,13 @@ def run_join(
         return False, "network"
     if done.returncode == 0:
         return True, None
-    found = _JOIN_ERROR.search(done.stderr)
-    if found and found.group(1) in JOIN_DETAILS:
-        return False, found.group(1)
-    return False, "network" if "cannot reach" in done.stderr else None
+    lines = done.stderr.splitlines()
+    found = _ERROR_LINE.fullmatch(lines[-1]) if lines else None
+    if found is None or not secrets.compare_digest(found.group(1), nonce) or not found.group(2):
+        return False, None
+    if found.group(2) == "network" and found.group(3) is None:
+        return False, "network"
+    return False, join_detail(found.group(2), found.group(3))
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
@@ -103,7 +123,6 @@ ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per 
 LIVE = ("starting", "running", "stopping")
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
-LIMIT_BYTES = 512
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
@@ -196,6 +215,14 @@ class Record:
 
 
 Log = Callable[[str], None]
+
+
+def changed(pid: str, rec: Record) -> str:
+    """The log line for a placement's new reported state: codes and numbers only, so no
+    URL, join code or credential can reach it."""
+    words = [w for w in (rec.state, rec.reason, rec.detail) if w]
+    restarts = f", restart {rec.restarts}" if rec.restarts else ""
+    return f"{pid}: {' '.join(words)} (generation {rec.generation}{restarts})"
 
 
 @dataclass
@@ -559,23 +586,18 @@ class Supervisor:
     def _limit_exit_code(self, pid: str, target: Target) -> int | None:
         """The harness's exit code from the loop's `limit.json`. The file is on the agents'
         side, which may have written or replaced it: a regular file only, never followed
-        through a link, at most LIMIT_BYTES, and nothing but a plain exit code taken."""
+        through a link, at most limitread.LIMIT_BYTES, and nothing but a plain exit code taken."""
         path, as_user = self._limit_file(pid, target), target.as_user
         try:
             if not as_user.direct:  # the agents' user, or the ssh host's
-                # Opened without following a link and without blocking on a FIFO, so a file
-                # swapped after any check cannot hold the read.
-                done = as_user.run(["dd", f"if={path}", f"bs={LIMIT_BYTES}", "count=1",
-                                    "iflag=nofollow,nonblock", "status=none"])  # fmt: skip
+                # Read there by the runner's own module (limitread): opened without following
+                # a link and without blocking on a FIFO, so a file swapped after any check
+                # cannot hold the read. A host's `maity` without it reads nothing: no code.
+                done = as_user.run([*as_user.runner_module("limitread"), str(path)],
+                                   env={"PATH": target.agent_path})  # fmt: skip
                 raw = done.stdout if done.returncode == 0 else ""
             else:
-                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-                try:
-                    if not stat.S_ISREG(os.fstat(fd).st_mode):
-                        return None
-                    raw = os.read(fd, LIMIT_BYTES).decode("utf-8", errors="replace")
-                finally:
-                    os.close(fd)
+                raw = limitread.read(str(path)) or ""
             data = json.loads(raw)
         except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
             return None
@@ -713,6 +735,8 @@ class Supervisor:
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
             )
         except workspace.Refused as refused:
+            if refused.why:  # the runner's log only; the report keeps the codes
+                self.log(f"{p['id']}: {refused.reason}: {refused.why}")
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
@@ -740,6 +764,10 @@ class Supervisor:
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
+        found = target.probes.get(harness.id)
+        warning = capabilities.unchecked(harness.id, found.version if found else None)
+        if warning is not None:
+            self.log(f"{name}: {warning}")
 
     # --- the join (§15.9) -------------------------------------------------------------------
 
@@ -771,7 +799,9 @@ class Supervisor:
         except hub.HubError as exc:
             if exc.status is None or exc.status >= 500 or exc.status == 429:
                 raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
-            detail = exc.code if exc.code in PICKUP_DETAILS else None
+            # A 404 (the placement gone, or no such route) is not the join token's `not_found`.
+            gone = exc.status == 404
+            detail = None if gone else join_detail(exc.code, exc.details.get("reason"))
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):
@@ -825,6 +855,7 @@ class Supervisor:
             private=private,
             workspaces=target.workspaces.resolve() if target.as_user.here else target.workspaces,
             as_user=target.as_user,
+            agent_path=target.agent_path,
         )
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
@@ -963,6 +994,7 @@ class Supervisor:
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     rec.pending = {"key": key, "body": self._body(rec)}
+                    self.log(changed(p["id"], rec))
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
         if not outgoing or self.client is None:

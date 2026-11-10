@@ -1,7 +1,7 @@
 PYTHON ?= python3
 NODE ?= node
 
-.PHONY: check release-check fixtures shapes smoke smoke-run starter-configs e2e pseudo
+.PHONY: check release-check fixtures shapes smoke smoke-run starter-configs e2e pseudo lock lock-check
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers; Python standard library only.
@@ -9,6 +9,8 @@ check:
 	$(PYTHON) tools/check.py
 	$(PYTHON) tools/test_e2e_harness.py
 	$(PYTHON) tools/test_i18n_check.py
+	$(PYTHON) tools/test_step_up_check.py
+	$(PYTHON) tools/test_vendor_ktw.py
 
 # Before a release: no translation lacks a key or follows an older English text.
 release-check:
@@ -52,3 +54,25 @@ pseudo:
 # for Python (README.md, "Browser end-to-end test").
 e2e:
 	$(PYTHON) tools/e2e.py $(if $(ARTIFACTS),--artifacts $(ARTIFACTS))
+
+# Playwright for the e2e and pseudo runs, pinned with hashes in requirements/e2e.txt
+# (ci.yml, web-e2e): `make lock` after changing requirements/e2e.in, with the uv that
+# hub/requirements/tools.txt pins. It is compiled with the hub's runtime pins as constraints,
+# because CI installs it into the hub's environment. `lock-check` recompiles a copy without
+# its hashes, so every hash is fetched again and compared.
+UV ?= uv
+LOCK = $(UV) pip compile --quiet --generate-hashes --universal --python-version 3.12 \
+	--custom-compile-command "make -C web lock"
+
+lock:
+	$(LOCK) -c ../hub/requirements/runtime.txt requirements/e2e.in -o requirements/e2e.txt
+
+lock-check:
+	@tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT \
+	&& mkdir -p "$$tmp/web/requirements" "$$tmp/hub/requirements" \
+	&& cp requirements/e2e.in "$$tmp/web/requirements/" \
+	&& cp ../hub/requirements/runtime.txt "$$tmp/hub/requirements/" \
+	&& sed -e '/^ *--hash=/d' -e 's/ \\$$//' requirements/e2e.txt >"$$tmp/web/requirements/e2e.txt" \
+	&& (cd "$$tmp/web" && $(LOCK) -c ../hub/requirements/runtime.txt requirements/e2e.in -o requirements/e2e.txt) \
+	&& diff -u requirements/e2e.txt "$$tmp/web/requirements/e2e.txt" \
+	&& echo "lock-check: requirements/e2e.txt matches e2e.in and the hub's runtime pins"

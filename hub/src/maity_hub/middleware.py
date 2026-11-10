@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import json
 import logging
 import re
 import time
@@ -35,12 +36,13 @@ from maity_hub import (
     net,
     paths,
     request_stats,
+    route_limits,
 )
 from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, error_response
+from maity_hub.errors import ApiError, error_response, rate_limited
 
 log = logging.getLogger(__name__)
 # The hub's own request log; the server's access log is off (§1.1).
@@ -90,6 +92,11 @@ PUBLIC_PATHS = re.compile(
     r"|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
+# A picture a public page shows (§6.10): its address changes with the picture, so a browser
+# keeps it a day; a shared cache no longer than a public page, so it goes within a minute
+# once the picture stops being public.
+PUBLIC_AVATARS = re.compile(r"/api/v1/avatars/public/[^/]+")
+PUBLIC_AVATARS_CACHE = b"public, max-age=86400, s-maxage=60"
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # The landing page's own files (§16.7): a file asked for under its digest may be cached for good;
@@ -137,6 +144,8 @@ class HubMiddleware:
         if not on_join_host and scope.get("method") in ("GET", "HEAD"):
             if PUBLIC_PATHS.fullmatch(path):
                 public = b"public, max-age=60"
+            elif PUBLIC_AVATARS.fullmatch(path):
+                public = PUBLIC_AVATARS_CACHE
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
             elif LANDING_FILES.fullmatch(path):
@@ -145,10 +154,23 @@ class HubMiddleware:
                 # A public page may be cached; only the stored page's answer asks for it, the
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
-        send = _with_headers(send, public=public)
+        send = _noting_refusal(_with_headers(send, public=public), scope["state"])
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
+
+        table = getattr(getattr(scope.get("app"), "state", None), "route_limits", None)
+        if table:
+            # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), before any
+            # other work: no body is read, no caller looked up.
+            wait = route_limits.wait(scope, table, origin.address)
+            if wait:
+                refused = rate_limited(wait)
+                await error_response(
+                    refused.status, refused.code, refused.message, None, refused.headers
+                )(scope, receive, send)
+                _access(scope, 429)
+                return
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -169,7 +191,9 @@ class HubMiddleware:
             # Nothing here would read it: 404 before the cap, and the body is never read.
             await _not_found(scope, receive, send)
             return
-        cap, refuse = _body_cap(scope)
+        # Only the join is served on the join host, and it takes no large body: there every
+        # body is held to the default cap, so none is read past it for a caller never checked.
+        cap, refuse = (BODY_CAP, _too_large) if on_join_host else _body_cap(scope)
         declared = _content_length(scope)
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
@@ -179,13 +203,15 @@ class HubMiddleware:
         in_query = credentials.find_all(raw_query) + credentials.find_all(
             unquote_to_bytes(raw_query)
         )
-        if not on_join_host and _is_attachment_upload(scope):
+        if cap > BODY_CAP:
+            # A body above the default cap (an attachment, an image, the landing, legal and
+            # sign-in pages' settings and their previews) is read only for a caller the
+            # headers may authenticate (§1.7, §8.7). Every one of these routes takes a caller.
             if in_query:
                 # The filter answers before the pre-check, so a credential leaked in the
                 # query is revoked whoever sends it (§2.2); the body is not read.
                 await self._leaked(in_query, scope, receive, send)
                 return
-            # Up to 10 MiB is read only for a caller the headers may authenticate (§8.7).
             refusal = await self._precheck(scope)
             if refusal is not None:
                 await refusal(scope, receive, send)
@@ -363,13 +389,81 @@ def _access(scope: Scope, status: int) -> None:
     held = scope.get("state", {}).get("held", False)  # set by `deps.wait_of`
     request_stats.WINDOW.record(status, ms, str(scope.get("method")), "" if held else route)
     access.info(
-        "%s %s %s ms=%d route=%s",
+        "%s %s %s ms=%d route=%s%s",
         scope.get("method"),
         _logged_path(scope),
         status,
         ms,
         route,
+        _refusal_tail(scope, status),
     )
+
+
+# What a refusal adds to its request log line (§1.1): its code, and its `details.reason` or
+# `details.scope`, so a refused call can be told apart in the log. Only short code tokens are
+# written; anything else is `?`, so a reason that carries text never reaches the log.
+_LOG_TOKEN = re.compile(r"[a-z0-9][a-z0-9_.:-]{0,63}")
+# An error envelope is small; a larger body is not read for the log.
+_REFUSAL_BODY_MAX = 16 * 1024
+
+
+def _refusal_tail(scope: Scope, status: int) -> str:
+    """` error=<code>` with ` reason=<r>` and ` scope=<s>` for a 403, and for another 4xx that
+    names a reason or a scope; "" for anything else."""
+    if not 400 <= status < 500:
+        return ""
+    refusal = scope.get("state", {}).get("refusal")
+    if not refusal:
+        return ""
+    named = [f" {key}={_log_token(refusal[key])}" for key in ("reason", "scope") if key in refusal]
+    if status != 403 and not named:
+        return ""
+    return f" error={_log_token(refusal['code'])}" + "".join(named)
+
+
+def _log_token(value: object) -> str:
+    return value if isinstance(value, str) and _LOG_TOKEN.fullmatch(value) else "?"
+
+
+def _noting_refusal(send: Send, state: dict[str, Any]) -> Send:
+    """Notes a 4xx answer's code (its `Maity-Error` header) and its `details.reason` and
+    `details.scope` in `state["refusal"]` for the request log; every message passes on as it
+    came, and nothing else of the body is kept."""
+    body: bytearray | None = None
+
+    async def wrapped(message: MutableMapping[str, Any]) -> None:
+        nonlocal body
+        if message["type"] == "http.response.start":
+            body = None
+            headers = {k.lower(): v for k, v in message.get("headers", [])}
+            code = headers.get(b"maity-error")
+            if 400 <= message["status"] < 500 and code is not None:
+                state["refusal"] = {"code": code.decode("latin-1")}
+                if b"content-encoding" not in headers:
+                    body = bytearray()
+        elif message["type"] == "http.response.body" and body is not None:
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > _REFUSAL_BODY_MAX:
+                body = None  # never copied past the cap: the body is not read for the log
+            else:
+                body += chunk
+                if not message.get("more_body", False):
+                    state["refusal"].update(_named(bytes(body)))
+                    body = None
+        await send(message)
+
+    return wrapped
+
+
+def _named(body: bytes) -> dict[str, object]:
+    """`reason` and `scope` from an error envelope's details, where it has them."""
+    try:
+        details = json.loads(body)["error"]["details"]
+    except (ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(details, dict):
+        return {}
+    return {key: details[key] for key in ("reason", "scope") if details.get(key) is not None}
 
 
 def _logged_path(scope: Scope) -> str:
