@@ -490,6 +490,16 @@ def totp_code(secret: str, step: int) -> str:
     return str(value % 10**6).zfill(6)
 
 
+def wrong_totp_code(secret: str) -> str:
+    """A code the hub must refuse: none of the codes for now ± 2 steps.
+
+    The hub takes now ± 1 step, so a fixed "000000" is the real code by chance in about
+    3 of a million runs (tsk-4hn9nv7dbxw4); the extra step on each side covers a slow page."""
+    step = int(time.time() // 30)
+    valid = {totp_code(secret, s) for s in range(step - 2, step + 3)}
+    return next(c for c in (str(d) * 6 for d in range(10)) if c not in valid)
+
+
 def stop_hub(hub: subprocess.Popen) -> None:
     if hub.poll() is None:
         hub.terminate()  # exactly the PID this script started
@@ -2189,7 +2199,7 @@ def security_section(run: Run, browser) -> None:
     run.a11y(page, "security: off")
     secret = set_up_factor(page)
     step = int(time.time() // 30)
-    turn_on(page, "000000")
+    turn_on(page, wrong_totp_code(secret))
     expect(section).to_contain_text("That code is not valid.")
     turn_on(page, totp_code(secret, step))
     expect(page.locator(".security-code-list li")).to_have_count(10)
@@ -2307,7 +2317,7 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     expect(code).to_be_visible()
     run.shot(older, "second-hub-step-up")
     run.a11y(older, "second hub: the step-up question")
-    code.fill("000000")
+    code.fill(wrong_totp_code(secret))
     older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
     # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
