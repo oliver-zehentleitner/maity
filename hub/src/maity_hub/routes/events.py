@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
@@ -211,6 +211,33 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             cursor = rows[-1].seq if rows else max(examined, since)
             return event_views(conn, rows, mine), cursor
 
+    def quiet(since: int) -> bool:
+        """Whether a later pass of the wait may skip its read (tsk-x1rsd4r6htcv): no event of
+        the project past `since`, and the reader as the read would find it, an agent's row
+        present and not isolated, a bridge's connection still carrying it. One statement
+        (and the bridge's check) where the read costs about four. Under the project's lock
+        `seq` follows commit order (`events.emit`), and the read reads only `seq > since`,
+        so it could only answer nothing. Anything else is not quiet and reads in full,
+        which ends the wait or delivers exactly as it does without this check."""
+        with engine.begin() as conn:
+            if carried and not _still_carried(conn, reader):
+                return False
+            head = (
+                select(func.max(t.event.c.seq))
+                .where(t.event.c.project_id == mine.project.id)
+                .scalar_subquery()
+            )
+            if caller.kind == "agent":
+                found = conn.execute(
+                    select(t.membership, head.label("head")).where(t.membership.c.id == mine.id)
+                ).first()
+                if found is None or events.is_isolated(found):
+                    return False
+                top = found.head
+            else:
+                top = conn.execute(select(head)).scalar()
+            return top is None or top <= since
+
     if wait == 0:
         found = await run_in_threadpool(read, False, after)
         if found is None:
@@ -239,6 +266,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     try:
         deadline = time.monotonic() + wait
         since = after
+        passes = 0
         while True:
             if waiter.superseded:
                 # Nothing read, nothing delivered, the cursor where it was: the wait that
@@ -247,7 +275,13 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if await request.is_disconnected() or waiter.ended:
                 return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
-            found = await run_in_threadpool(read, True, since)
+            # The first pass reads; a later one first looks whether anything moved, after the
+            # clear above, so an event committed after the look still wakes the pause below.
+            if passes and await run_in_threadpool(quiet, since):
+                found = ([], since)
+            else:
+                found = await run_in_threadpool(read, True, since)
+            passes += 1
             if found is None:
                 return answer([], since, superseded=False)
             items, cursor = found
