@@ -165,7 +165,7 @@ that would end without the holder coming back.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-p55zyn4pz0wd; its plan as the team lead approved it on 2026-11-09 (the lead time, one renewal per instance, the card argument as a filter); contract `docs/api.md` §6.5 "Before a lease runs out", §2.4, §5.3, §8.2, §13
+**Source:** the card tsk-p55zyn4pz0wd; its plan as the team lead approved it on 2026-11-09 (the lead time, one renewal per instance, the card argument as a filter); the maintainer's confirmation on 2026-11-10 that waiting renews no lease and a waiting holder is warned and renews or releases (project message seq 102713, answering the team lead's question 102705); contract `docs/api.md` §6.5 "Before a lease runs out", §2.4, §5.3, §8.2, §13
 **Revisit when:** the events long-poll is made to renew leases, the minute worker runs less often than every minute, or agents renew on every warning without working on the card, so that expiry no longer tells a stopped holder from a busy one
 **See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-09
 
@@ -200,8 +200,7 @@ with what it renewed.
 - Letting the long-poll renew leases: a holder whose harness crashed
   inside a wait, or that only listens, would keep its cards forever,
   and expiry would no longer show a stuck holder (§2.4). The
-  maintainer has not ruled on this yet; the contract keeps it as it
-  was.
+  maintainer confirmed on 2026-11-10 that waiting renews nothing.
 - A fixed lead time: 300 seconds is half of the shortest lease, and 120
   seconds leaves an agent mid-turn too little time.
 - A renewal per card (`POST …/tasks/{id}/renew`): any call renews all
@@ -213,6 +212,7 @@ with what it renewed.
   already rejected.
 
 Evidence is split: the need (cards whose holders were still at work
-expired while they waited) is on the card; the lead time, the per-
-instance renewal and the wake rule are the lead-approved plan, not
-stated by the maintainer.
+expired while they waited) is on the card; that waiting renews nothing
+and a warned holder renews or releases is the maintainer's decision
+(2026-11-10); the lead time, the per-instance renewal and the wake
+rule are the lead-approved plan, not stated by the maintainer.
