@@ -781,6 +781,7 @@ def main() -> int:
                     profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
+                    chat_phone_head(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
@@ -2964,6 +2965,74 @@ def chat_height_views(run: Run, browser) -> None:
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()
+
+
+def chat_phone_head(run: Run, browser) -> None:
+    """The owner's feedback on the full-screen chat (tsk-2a56j80p3p9h), in fixture mode, in a direct
+    and a group chat, light and dark. On a phone (390 x 844) the full-screen button is at the top
+    right of the chat head, on the back link's row, under the top bar's last entry, also while full,
+    and the agent's session line is not shown. At 1280 x 800 the button stays beside the heading and
+    the session line shows. The button keeps its name and is reached by Tab after the heading. In
+    every size the project tabs' menu ("…") stays on the tabs' row inside the window; on a phone the
+    tabs overflow and scroll instead."""
+    run.step("fixtures: on a phone the full-screen button is at the chat head's top right, no session line, the tabs menu in its row")
+    index = (WEB / "index.html").as_uri()
+    box = "(el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }"
+    for chat, kind in (("agt-a", ".chat-pane:not(.group-chat)"), ("cnv-0007", ".chat-pane.group-chat")):
+        for width, height in ((1280, 800), (390, 844)):
+            phone = width <= 720
+            for scheme in ("light", "dark"):
+                context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+                page = context.new_page()
+                errors: list[str] = []
+                page.on("pageerror", lambda err: errors.append(str(err)))
+                where = f"{chat} at {width}x{height}, {scheme}"
+                try:
+                    page.goto(f"{index}?lang=en#/maintainer/maity/chat/{chat}")
+                    pane = page.locator(f".chat-layout.open {kind}")
+                    pane.locator(".compose").wait_for()
+                    page.wait_for_timeout(300)
+                    toggle = pane.get_by_role("button", name="Read in full screen", exact=True)
+                    heading = pane.locator(".toolbar h2")
+                    at, head = toggle.evaluate(box), heading.evaluate(box)
+                    session = pane.locator(".chat-session")
+                    if chat == "agt-a":
+                        assert session.count() == 1 and session.is_visible() is not phone, f"{where}: session shown {session.is_visible()}"
+                    if phone:
+                        back = pane.locator("a.chat-back").evaluate(box)
+                        assert at[2] >= width - 24 and at[1] < head[1], f"{where}: the button {at}, heading {head}"
+                        assert abs(at[1] - back[1]) <= 1 and back[2] <= at[0] + 0.5, f"{where}: not on the back link's row {at} {back}"
+                    else:
+                        assert abs((at[1] + at[3]) / 2 - (head[1] + head[3]) / 2) < 20 and at[0] >= head[2], f"{where}: beside the heading {at} {head}"
+                    tabs = page.locator(".switcher-row nav.switcher")
+                    tabs_at, menu = tabs.evaluate(box), page.locator(".switcher-row .tabs-menu-box").evaluate(box)
+                    assert abs((menu[1] + menu[3]) / 2 - (tabs_at[1] + tabs_at[3]) / 2) < 8 and menu[0] >= tabs_at[2], f"{where}: tabs menu {menu}, tabs {tabs_at}"
+                    assert menu[2] <= width, f"{where}: tabs menu past the window {menu}"
+                    if phone:
+                        assert tabs.evaluate("(el) => el.scrollWidth > el.clientWidth"), f"{where}: the tabs do not overflow, nothing tested"
+                        assert menu[2] >= width - 24, f"{where}: the tabs menu is not at the row's right end {menu}"
+                    # Tab from the heading reaches the button next, past the heading's own links, wherever it is drawn.
+                    heading.focus()
+                    for _ in range(4):
+                        page.keyboard.press("Tab")
+                        if not heading.evaluate("(el) => el.contains(document.activeElement)"):
+                            break
+                    assert page.evaluate("() => document.activeElement.classList.contains('chat-full-toggle')"), f"{where}: Tab after the heading"
+                    toggle.click()
+                    leave = pane.get_by_role("button", name="Leave full screen", exact=True)
+                    expect(leave).to_have_attribute("aria-pressed", "true")
+                    if phone:
+                        full = leave.evaluate(box)
+                        assert abs(full[1] - 8) <= 1 and abs(full[2] - (width - 12)) <= 1, f"{where}: full screen button {full}"
+                        if chat == "cnv-0007":
+                            run.shot(page, f"chat-head-full-{scheme}")
+                    page.keyboard.press("Escape")
+                    expect(page.locator("html.chat-full")).to_have_count(0)
+                    if phone:
+                        run.shot(page, f"chat-head-{chat}-{scheme}")
+                    assert not errors, f"{where}: {errors}"
+                finally:
+                    context.close()
 
 
 def chat_phone_views(run: Run, browser) -> None:
