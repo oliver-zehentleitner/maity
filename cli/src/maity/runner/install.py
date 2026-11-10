@@ -120,8 +120,22 @@ class Host:
 
 
 def _as_runner(host: Host, argv: Sequence[str]) -> list[str]:
-    """`argv` as the service user, with its own HOME (runuser keeps root's)."""
+    """`argv` as the service user, with its own HOME."""
     return ["runuser", "-u", USER, "--", "env", f"HOME={HOME}", *host.maity(), *argv]
+
+
+def _toml_str(text: str) -> str:
+    """A TOML basic string. Not `json.dumps`: it writes a character outside the BMP as a
+    surrogate pair, which TOML refuses."""
+    out = []
+    for ch in text:
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
 
 
 def starter_config(url: str) -> str:
@@ -130,11 +144,11 @@ def starter_config(url: str) -> str:
         "# then `sudo systemctl restart maity-runner` and `maity runner check`\n"
         "# (every default: `maity runner check --explain`).\n"
         "[hub]\n"
-        f"url = {json.dumps(url)}\n"
-        f"state_dir = {json.dumps(str(STATE_DIR))}\n"
+        f"url = {_toml_str(url)}\n"
+        f"state_dir = {_toml_str(str(STATE_DIR))}\n"
         "\n"
         "[backend.local]\n"
-        f"workspaces = {json.dumps(str(WORKSPACES))}\n"
+        f"workspaces = {_toml_str(str(WORKSPACES))}\n"
     )
 
 
@@ -459,6 +473,20 @@ def _check_state_dir(host: Host, base: str, force: bool) -> None:
         table = tomllib.loads(text).get("hub")
     except tomllib.TOMLDecodeError:
         raise Refused(f"{CONFIG} does not parse; fix it, or --force writes install's own") from None
+    # The pairing would fail on another hub's configuration, but only after the account, the
+    # record and the unit are written: compared here, before the first change.
+    url = table.get("url") if isinstance(table, dict) else None
+    if not isinstance(url, str):
+        raise Refused(f"{CONFIG} names no hub.url; fix it, or --force writes install's own")
+    try:
+        kept = hub.hub_base(url)
+    except hub.HubError:
+        raise Refused(f"{CONFIG}: hub.url is not a hub URL; fix it, or --force") from None
+    if kept != base:
+        raise Refused(
+            f"{CONFIG} is for the hub {kept}, the pairing URL for {base}; fix it, or --force "
+            "writes install's own"
+        )
     value = table.get("state_dir") if isinstance(table, dict) else None
     value = config.DEFAULT_STATE_DIR if value is None else value
     if not isinstance(value, str):
@@ -599,9 +627,14 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
         with _root_dir(host, HOME.parent, create=False) as parent:
             _check_dirs(host, parent, _entry(parent, HOME.name), left_uid, closed=True)
     elif args.purge:
-        with _root_dir(host, HOME.parent, create=False) as parent:
-            if _entry(parent, HOME.name) is not None:
-                raise Refused(f"{HOME} exists, but install made no user {USER}; nothing changed")
+        # Neither an account nor root's record shows install made these trees: they are
+        # someone else's, and --purge removes only what install made.
+        for tree in (HOME, CONFIG.parent):
+            with _root_dir(host, tree.parent, create=False) as parent:
+                if _entry(parent, tree.name) is not None:
+                    raise Refused(
+                        f"{tree} exists, but install made no user {USER}; nothing changed"
+                    )
     # The unit's KillMode=process leaves the agents running when the service stops; nothing
     # would supervise them once it is gone (cli/context/runner.md). Not knowing whether any
     # run stops the removal as a failed stop-all does, and is known before the first change.
@@ -635,9 +668,9 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
         if host.run(["userdel", USER]) != 0:
             raise Refused(f"could not remove the user {USER}; nothing more was removed")
         _say(f"removed user {USER}")
-    _remove(host, HOME, tree=True)
-    _remove(host, CONFIG.parent, tree=True)
     if ours or leftover:
+        _remove(host, HOME, tree=True)
+        _remove(host, CONFIG.parent, tree=True)
         _remove(host, RECORD, tree=False)
     _say("the hub still lists this runner: remove it under Runners in the dashboard")
     return 1 if failed else 0

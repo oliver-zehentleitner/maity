@@ -1284,8 +1284,9 @@ pairs only an unpaired runner; an already paired one needs no code.
 Paired means a credential in `/var/lib/maity-runner/state`, a regular
 file of `maity-runner`'s, read without following a link. An existing
 configuration it keeps must use that `state_dir` (`~/state` counts, as
-`serve` reads `~` as the service user's home); another one is refused,
-and `--force` writes install's own, which then pairs. It keeps an existing file that differs unless
+`serve` reads `~` as the service user's home) and the hub of the pairing
+URL as `hub.url`; another one is refused before any change, and
+`--force` writes install's own, which then pairs. It keeps an existing file that differs unless
 `--force`; a file with install's own text but another mode is put back to
 0644.
 
@@ -1322,6 +1323,8 @@ anyway in the other cases too. `--purge` also
 removes the account, then `/var/lib/maity-runner` (state, credential, and
 workspaces with any work not pushed), `/etc/maity-runner` and the
 account's record. The account goes only if install's record names it;
+without that account or its record, an existing `/var/lib/maity-runner`
+or `/etc/maity-runner` stops `--purge` before any change.
 `--purge` checks all of this before it touches anything. The account goes
 first: if `userdel` fails (a process of the user's still runs), nothing
 more is removed (the unit is already gone), and the next `--purge` goes

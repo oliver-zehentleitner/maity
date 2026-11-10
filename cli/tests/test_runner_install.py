@@ -492,6 +492,53 @@ def test_a_relative_state_dir_is_refused_before_any_change(tmp_path: Path) -> No
     assert host.calls == []
 
 
+@pytest.mark.parametrize(
+    "url, refusal",
+    [
+        ('"https://other.example.org"', "is for the hub https://other.example.org"),
+        ('"ftp://hub.example.org"', "hub.url is not a hub URL"),
+        (None, "names no hub.url"),
+    ],
+    ids=["another-hub", "not-a-hub-url", "no-url"],
+)
+def test_a_kept_configuration_for_another_hub_is_refused_before_any_change(
+    tmp_path: Path, url: str | None, refusal: str
+) -> None:
+    """Found at `pair` it would come after the account, the record and the unit."""
+    host = FakeHost(tmp_path)
+    host.path(install.CONFIG).parent.mkdir(parents=True)
+    old = 'url = "https://hub.example.org"\n'
+    host.path(install.CONFIG).write_text(
+        COMPLETE.replace(old, "" if url is None else f"url = {url}\n")
+    )
+    with pytest.raises(install.Refused, match=refusal):
+        install.cmd_install(args(), host)
+    assert host.calls == []
+    assert not host.path(install.RECORD).exists()
+    assert not host.path(install.UNIT_PATH).exists()
+
+
+def test_the_starter_configuration_quotes_any_url_as_toml_reads_it() -> None:
+    """`json.dumps` would write the non-BMP character as a surrogate pair, which TOML refuses."""
+    url = 'https://h\U0001f600.example/a"b\\c\x7f'
+    assert tomllib.loads(install.starter_config(url))["hub"]["url"] == url
+
+
+def test_a_purge_without_install_s_account_or_record_keeps_etc_maity_runner(
+    tmp_path: Path,
+) -> None:
+    """Nothing shows install made /etc/maity-runner: refused before any change, as for HOME."""
+    host = FakeHost(tmp_path)
+    complete_config(host)
+    other = host.path(install.CONFIG.parent / "other.conf")
+    other.write_text("someone else's\n")
+    with pytest.raises(install.Refused, match="/etc/maity-runner exists, but install made no"):
+        install.cmd_uninstall(args(purge=True), host)
+    assert host.calls == []
+    assert other.read_text() == "someone else's\n"
+    assert host.path(install.CONFIG).is_file()
+
+
 def test_an_unreadable_code_file_is_refused(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
     with pytest.raises(install.Refused, match="cannot be read"):

@@ -1797,7 +1797,8 @@ of `maity runner unit`.
      descriptor.
    - Anything not as install would have made it — a link, another owner, a
      directory or a file of root's that others can write, a kept configuration whose `state_dir` is
-     not the fixed one as `serve` resolves it — stops the command before
+     not the fixed one as `serve` resolves it, or whose `hub.url` names
+     another hub than the pairing URL — stops the command before
      the first change. A file of root's is checked on the descriptor it
      is read from, so what is read is what was checked. The `workspaces`
      of a kept configuration are not checked: that directory is the
@@ -1808,8 +1809,11 @@ of `maity runner unit`.
      points to.
    - Root's record `/var/lib/maity-runner-install.json` (uid, home, time)
      says install made the account. `install` does not take over, and
-     `--purge` does not delete, an account the record does not name. The
-     account's comment is only a label.
+     `--purge` does not delete, an account the record does not name.
+     Without that account or its record, `--purge` refuses before any
+     change when `/var/lib/maity-runner` or `/etc/maity-runner` exists:
+     nothing shows install made them. The account's comment is only a
+     label.
    - Rejected: a custom `--config`. Its directories can sit under paths the
      service user can rename, and checking each such tree is more than the
      manual steps cost.
