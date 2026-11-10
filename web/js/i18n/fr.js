@@ -452,6 +452,7 @@ window.MAITY_I18N["fr"] = {
   "board.claim.unclaimed": "Pas prise en charge",
   "board.closed.failed": "Impossible de lire les cartes fermées : {reason}",
   "board.closed.loading": "Lecture des cartes fermées…",
+  "board.closed.recheck_failed": "Impossible de vérifier si les cartes fermées ont changé pendant leur lecture : {reason}",
   "board.column.other": "Autre",
   "board.column.unknown": "Statut inconnu",
   "board.contract.arbiter_admins": "les admins",

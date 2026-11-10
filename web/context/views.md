@@ -5894,17 +5894,25 @@ answered, with their cards, while the closed group (`done,cancelled` with
 the 14-day window) is still paging. Until the whole read is in, the Done
 and Cancelled columns hold no count and say that the closed cards are
 being read; if that read fails, those columns say so and the open ones
-stay as drawn. A live region outside the columns says the same once for a
+stay as drawn. A failure of the read again of the cards changed meanwhile,
+after the groups have answered, is named as that, not as a failed read of
+the closed cards. A live region outside the columns says the same once for a
 screen reader, and the two columns are marked busy while read. A filter
 that shows the closed columns gives no "no card matches" while they are
 unknown. A hub search keeps its own results, closed cards and counts
-included, as before: all of this is the board's own state without one.
+included: all of this is the board's own state without one. A closed card
+it finds is marked outside the window by its `closed_at`, not by whether
+the board has loaded it, since while the closed group is read the loaded
+cards are the open groups' alone.
 Then the board draws again with every card (with the search's results
 where one is active). The element in the columns that had the focus, a
 card's title link included, keeps it, after a failed read too, where it
 still stands in a column; a card now folded under a parent that came with
 the closed cards, or gone from the columns, hands the focus to the status
-line. A board left from a closed card finds that card now. A reload after a write
+line. The opened card's panel keeps the focus across that draw, on the
+same control, and keeps what the reader chose or typed there and has not
+saved, as it does across a reload after a write. A board left from a
+closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
 answer has been.
 
@@ -5922,4 +5930,13 @@ columns, the ones a reader works in, had long answered.
 - A leaner card shape for the board, or a shorter closed window by default:
   each a contract or product change, held until this change and a faster
   200-card page on the hub have been measured.
+- Holding a hub search until the closed group has answered, so that the
+  loaded cards mean the window again: it brings the wait back for a
+  search. The loaded cards as the test, as before: wrong while the closed
+  group is read (review of #1622).
+- Not redrawing the panel's card part in the late draw: its parent and
+  related lists would lack the closed cards, and a card the reconcile pass
+  changed would show stale data. The late draw redraws it and carries the
+  reader's unsaved choices over instead; it is the board's only redraw no
+  action of the reader starts.
 

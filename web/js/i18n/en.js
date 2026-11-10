@@ -452,6 +452,7 @@ window.MAITY_I18N["en"] = {
   "board.claim.unclaimed": "Unclaimed",
   "board.closed.failed": "The closed cards could not be read: {reason}",
   "board.closed.loading": "Reading the closed cards…",
+  "board.closed.recheck_failed": "The closed cards could not be checked for changes made while they were read: {reason}",
   "board.column.other": "Other",
   "board.column.unknown": "Unknown status",
   "board.contract.arbiter_admins": "the admins",

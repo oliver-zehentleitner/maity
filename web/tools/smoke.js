@@ -4986,6 +4986,64 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
     win.Maity.api.getAll = clAll;
     expect(clNoVerdict && clFilled, "board: a filter on the closed columns says no verdict while they are read " + JSON.stringify([clNoVerdict, clFilled]));
+
+    // The closed group held again, for the checks below; each says whether it was held when it looked.
+    const clHold = win.Maity.api.getAll;
+    // The hub search's tsk-0003 closed an hour ago, inside the window whatever the fixture says.
+    const clRecent = new Date(Date.now() - 3600000).toISOString();
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
+      ? new Promise((res, rej) => { clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) }; })
+      : /[?&]q=tsk-0003/.test(p) ? clAll(p).then((r) => ({ ...r, items: r.items.map((t) => (t.id === "tsk-0003" ? { ...t, closed_at: clRecent } : t)) }))
+        : clAll(p));
+    const clReading = () => text(clColumn("done")).includes("Reading the closed cards…");
+    // A hub search while the closed cards are still read marks a closed card outside the window by its
+    // closed_at, not by the cards loaded so far (review of #1622): tsk-0003, done inside the window, has no
+    // "outside board window" badge, before the closed group answers or after.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clSearchHeld = clReading();
+    byId("board-search").value = "tsk-0003"; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const clHit = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0003");
+    const clBadge = () => !!clHit() && text(clHit()).includes("Closed · outside board window");
+    const clSearchEarly = [!!clHit(), clBadge(), clSearchHeld];
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clSearchLate = [!!clHit(), clBadge()];
+    byId("board-search").value = ""; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(clSearchEarly[0] && !clSearchEarly[1] && clSearchEarly[2] && clSearchLate[0] && !clSearchLate[1],
+      "board: a hub search during the closed read marks no card in the window as outside it " + JSON.stringify([clSearchEarly, clSearchLate]));
+
+    // A card opened by its link while the closed cards are read: the late draw keeps the focus in its panel,
+    // on the same control, and keeps a parent chosen there and not saved (review of #1622).
+    clProto.focus = function () { document.activeElement = this; };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clPanel = () => main.querySelector("aside.card-panel");
+    const clParent = () => clPanel() && clPanel().querySelector(".card-panel-card").querySelectorAll("select")
+      .find((x) => (x.getAttribute("id") || "").startsWith("card-parent-"));
+    const clChoice = clParent() && clParent().querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== clParent().value);
+    if (clChoice) { clParent().value = clChoice; clParent().dispatch("change"); }
+    clParent().focus();
+    const clBefore = clParent();
+    const clPanelHeld = clReading();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clAt = document.activeElement;
+    const clPanelKept = [clPanelHeld, !!clChoice, clAt !== clBefore, !!clAt && clPanel().contains(clAt), clAt === clParent(), clParent().value === clChoice];
+    clProto.focus = clFocus; document.activeElement = undefined;
+    expect(clPanelKept.every(Boolean),
+      "board: the late draw keeps the focus and a chosen parent in the opened card's panel " + JSON.stringify(clPanelKept));
+
+    // A failure of the read again of the cards changed meanwhile is said as such, not as a failed closed read.
+    const clGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (/order=updated/.test(p) ? Promise.reject(new Error("hub unreachable")) : clGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clRecheckHeld = clReading();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = clGet;
+    win.Maity.api.getAll = clHold;
+    const clRecheck = text(clColumn("done"));
+    expect(clRecheckHeld && clRecheck.includes("The closed cards could not be checked for changes made while they were read: hub unreachable")
+      && !clRecheck.includes("The closed cards could not be read"),
+      "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
   }
 
   // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is

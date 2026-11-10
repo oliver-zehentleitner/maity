@@ -432,6 +432,7 @@ window.MAITY_I18N["ja"] = {
   "board.claim.unclaimed": "担当なし",
   "board.closed.failed": "クローズ済みのカードを読み込めませんでした: {reason}",
   "board.closed.loading": "クローズ済みのカードを読み込んでいます…",
+  "board.closed.recheck_failed": "読み込み中にクローズ済みのカードが変更されたかどうかを確認できませんでした: {reason}",
   "board.column.other": "その他",
   "board.column.unknown": "不明なステータス",
   "board.contract.arbiter_admins": "管理者",

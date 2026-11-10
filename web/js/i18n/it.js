@@ -452,6 +452,7 @@ window.MAITY_I18N["it"] = {
   "board.claim.unclaimed": "Non presa in carico",
   "board.closed.failed": "Impossibile leggere le schede chiuse: {reason}",
   "board.closed.loading": "Lettura delle schede chiuse…",
+  "board.closed.recheck_failed": "Non è stato possibile verificare se le schede chiuse sono cambiate durante la lettura: {reason}",
   "board.column.other": "Altro",
   "board.column.unknown": "Stato sconosciuto",
   "board.contract.arbiter_admins": "gli admin",
