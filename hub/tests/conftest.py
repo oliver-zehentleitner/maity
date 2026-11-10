@@ -1,12 +1,15 @@
 """Fixtures. `MAITY_TEST_DATABASE_URL` points the suite at PostgreSQL or
 MariaDB; without it every test gets its own SQLite file. Under pytest-xdist each
 worker gets a database of its own on that server (`<name>_gw0`, `<name>_gw1`, …),
-created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL)."""
+created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL).
+`MAITY_TEST_SHARD=<k>/<n>` runs only the test files of shard k of n
+(`pytest_collection_modifyitems`)."""
 
 from __future__ import annotations
 
 import os
 import shutil
+import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -20,6 +23,42 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
 from maity_hub.db import current_revision, downgrade, head_revision, make_engine, migrate
+
+
+def _shard() -> tuple[int, int] | None:
+    """`MAITY_TEST_SHARD` as (k, n), 1 <= k <= n; unset or empty for the whole suite. Any other
+    value stops the run: a typo must not run a share of the suite and look green."""
+    raw = os.environ.get("MAITY_TEST_SHARD", "").strip()
+    if not raw:
+        return None
+    k, slash, n = raw.partition("/")
+    if not (slash and k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
+        raise pytest.UsageError(f"MAITY_TEST_SHARD must be <k>/<n> with 1 <= k <= n, not {raw!r}")
+    return int(k), int(n)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    _shard()  # a bad MAITY_TEST_SHARD stops the run before collection, with a usage error
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """One shard of the suite, by test file: a file's tests stay together, so its module
+    fixtures (the two processes, the workers) start once per run, as without shards. The file
+    path's CRC-32 picks the shard, the same on every run and machine, so each file runs in
+    exactly one shard and the shards together run the whole suite (CI's `hub-postgresql`)."""
+    shard = _shard()
+    if shard is None:
+        return
+    k, n = shard
+    keep: list[pytest.Item] = []
+    drop: list[pytest.Item] = []
+    for item in items:
+        path = item.nodeid.split("::", 1)[0]
+        (keep if zlib.crc32(path.encode()) % n == k - 1 else drop).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    items[:] = keep
+
 
 TEST_TZ = "Europe/Vienna"  # the PostgreSQL test databases' default time zone, never UTC
 
