@@ -170,6 +170,44 @@ def test_a_sandbox_placeholder_with_anything_in_it_is_refused(placed: Path, entr
         gitfacts.collect(placed)
 
 
+@pytest.mark.parametrize(
+    "entry", ["config.worktree", "objects/info/alternates", "remotes", "commondir"]
+)
+def test_a_fifo_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -> None:
+    """Empty means an empty regular file or directory: a FIFO (or a socket, a device) is
+    neither, and a local read lists it with no type of its own (4hv7)."""
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    if path.is_dir():
+        path.rmdir()
+    elif path.exists():
+        path.unlink()
+    os.mkfifo(path)
+    with pytest.raises(gitfacts.FactsError, match="not a regular file or directory"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize("entry", ["config.worktree", "remotes"])
+def test_a_link_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -> None:
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    if path.is_dir():
+        path.rmdir()
+    else:
+        path.unlink()
+    path.symlink_to(placed / "elsewhere")
+    with pytest.raises(gitfacts.FactsError, match="is a symlink"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize("entry", ["remotes/.hidden", "info/.claude-sandbox-noreplace/.hidden"])
+def test_a_hidden_entry_in_a_placeholder_is_refused(placed: Path, entry: str) -> None:
+    _leave(placed, SANDBOX_LEFT)
+    (placed / ".git" / entry).touch()
+    with pytest.raises(gitfacts.FactsError, match="not a plain clone's"):
+        gitfacts.collect(placed)
+
+
 def test_without_git_common_dir_nothing_runs(placed: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GIT_COMMON_DIR")
     with pytest.raises(gitfacts.FactsError, match="without GIT_COMMON_DIR"):

@@ -7,7 +7,8 @@
 - cli: maity's git check of a runner's clone accepts the empty placeholders Claude Code's sandbox
   leaves in `.git` (`config.worktree`, `objects/info/alternates` and `http-alternates`, `remotes/`,
   `.claude-sandbox-noreplace/` anywhere in `.git`). A placement whose session ran sandboxed no longer refuses its
-  own clone at the next start. Any of them with content is refused as before.
+  own clone at the next start. Any of them with content is refused as before, and so is a FIFO,
+  socket or device anywhere in `.git`.
 
 ### Added
 

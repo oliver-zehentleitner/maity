@@ -275,6 +275,8 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
         shown = onboarding.inline(where)
         if kind == "l":
             return Finding(f".git/{shown} is a symlink", where)
+        if kind not in ("f", "d"):  # a FIFO, a socket or a device: never in a plain clone
+            return Finding(f".git/{shown} is not a regular file or directory", where)
         if SANDBOX_DIR in where.split("/")[:-1]:
             return Finding(f".git/{shown} is not a plain clone's", where)
         if _sandbox_placeholder(where, kind, size, parents):

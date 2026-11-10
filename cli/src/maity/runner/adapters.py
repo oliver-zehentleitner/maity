@@ -53,8 +53,9 @@ GIT_DENIED = (
 
 # What in a clone's .git would turn a git call into running something, or into reading
 # another repository: never written by the agent, so its allowed git calls stay git. The
-# rest of .git (refs, index, objects, logs, FETCH_HEAD) git itself writes on every commit
-# and fetch. Not `commondir`: GIT_COMMON_DIR pins the session's git to the real .git (below),
+# rest of .git (refs, index, objects, logs, FETCH_HEAD) is what commit, fetch and push need
+# between them: a commit writes the index, a fetch FETCH_HEAD, both refs, objects and logs.
+# Not `commondir`: GIT_COMMON_DIR pins the session's git to the real .git (below),
 # and the sandbox's guard on a missing commondir leaves git unable to read it at all.
 # Verified on a sandboxed Claude Code run (cli/context/runner.md).
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")

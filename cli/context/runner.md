@@ -681,8 +681,9 @@ git call run something or read another repository: `config`,
 `config.worktree`, `hooks/`, `info/` and `objects/info/alternates`, the
 same paths as sandbox write denies, plus `.git/maity`. The rest of `.git`
 stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
-into a write deny for every command, and git writes refs, the index,
-objects, logs and `FETCH_HEAD` on each commit and fetch. That a call with something in front of
+into a write deny for every command, and commit, fetch and push need
+refs, the index, objects, logs and `FETCH_HEAD` between them (a commit
+writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). That a call with something in front of
 `maity` stays inside Claude Code's sandbox was checked with one version,
 2.1.318 (`capabilities.CHECKED`); with another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
@@ -1655,7 +1656,9 @@ session wrote them. The check accepts, while empty, a little more than
 those six: an empty `config.worktree`, `objects/info/alternates` or
 `objects/info/http-alternates` file, an empty `remotes/`, and an empty
 `.claude-sandbox-noreplace/` directory wherever it appears in `.git`,
-not only in the three places observed. Any of them with something in it is refused as
+not only in the three places observed. Empty means an empty regular
+file or directory: a link, a FIFO, a socket or a device anywhere in
+`.git` is refused, under any name. Any of them with something in it is refused as
 before. This
 holds for every maity user, not only the runner. Empty, they change
 nothing git does: an empty `config.worktree` is not even read without
