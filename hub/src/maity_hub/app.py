@@ -184,7 +184,8 @@ def serving_engine(settings: Settings) -> Engine:
 
 def serving_async_engine(engine: Engine, settings: Settings) -> AsyncEngine:
     """The async engine beside `engine`, on the same database: the rest of the pool share
-    (`serving.pool_shares`), no overflow, and the same timeouts and names."""
+    (`serving.pool_shares`) and no overflow on a server database, and the same timeouts and
+    names."""
     from maity_hub import serving
 
     return make_async_engine(

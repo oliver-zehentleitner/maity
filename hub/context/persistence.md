@@ -1077,8 +1077,14 @@ What the bridge has to keep:
   pause. The steps of a rollback (a rate given back, which may write the shared counter) and those
   after a commit (blobs and files removed) run in a worker thread, shielded from a cancelled
   request. What a route's body does itself is audited when its family moves, and the loop-lag
-  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) fails when the loop's tick runs later
-  than its limit under concurrent requests of the hot families.
+  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) fails when any tick of a test app's
+  loop runs later than its limit (250 ms by default) while concurrent requests of the hot
+  families run.
+- **A cancellation stays a cancellation.** A statement cancelled in the driver invalidates the
+  connection, and reading `conn.info` on it again inside the transaction raises
+  `PendingRollbackError` in place of the `CancelledError` that must unwind the request.
+  `events.async_transaction` unbinds the dict it bound, and `write_guard`'s transaction events
+  leave an invalidated connection alone.
 - **SQLite's connection setup.** The pragmas and `BEGIN IMMEDIATE` hang on the async engine's sync
   engine as on the sync one, so tests and single-server hubs run the same path as a server.
 
@@ -1091,8 +1097,8 @@ aiosqlite keeps SQLite on the same code path as the servers.
 **Rejected alternatives:**
 - Rewriting the helpers as native async code: 1,900 functions, for a gain the bridge already
   gives; native helpers come only where a measurement asks for one.
-- asyncmy for MariaDB: faster, but its own implementation, so every error number would need
-  verifying again.
+- asyncmy for MariaDB: faster on several workloads by its own upstream benchmark (its README),
+  but its own implementation, so every error number would need verifying again.
 - SQLite sync-only: tests and small hubs would not run the path production runs.
 - Free-threaded Python instead of asyncio: the binary wheels and the Docker base are not there,
   and several processes per pod already give CPU parallelism.

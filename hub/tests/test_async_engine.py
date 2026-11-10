@@ -4,7 +4,9 @@ request reaching the cursor events there, as it reaches them in the thread pool 
 
 from __future__ import annotations
 
+import asyncio
 import threading
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -261,3 +263,53 @@ def test_the_app_holds_an_async_engine_on_its_database_with_the_hooks(
     assert async_engine.sync_engine.dialect.name == engine.dialect.name
     for listener in (write_guard._before, timing._before):
         assert event.contains(async_engine.sync_engine, "before_cursor_execute", listener)
+
+
+# A statement that runs for a few seconds on each engine, for a cancellation while the driver
+# waits on it.
+SLOW = {
+    "sqlite": "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 20000000)"
+    " SELECT count(*) FROM c",
+    "postgresql": "SELECT pg_sleep(5)",
+    "mysql": "SELECT SLEEP(5)",
+    "mariadb": "SELECT SLEEP(5)",
+}
+
+
+def test_a_request_cancelled_during_a_statement_ends_as_a_cancellation(
+    migrated: Engine,
+) -> None:
+    """A request cancelled while its statement runs (a client gone, a server stopping) must end
+    with `CancelledError`, which unwinds it: the driver invalidates the connection, and reading
+    `conn.info` again at the end would ask SQLAlchemy to revalidate it inside the transaction,
+    which raises `PendingRollbackError` in its place. The rate it counted is given back once and
+    the connection returns to the pool."""
+    undone: list[int] = []
+    statement = SLOW[migrated.dialect.name]
+
+    def slow(conn: Connection) -> None:
+        events.on_rollback(conn, lambda: undone.append(1))
+        conn.execute(text(statement))
+
+    async def work(engine: AsyncEngine) -> tuple[str, int]:
+        async def request() -> None:
+            async with events.async_transaction(engine) as conn:
+                await conn.run_sync(slow)
+
+        task = asyncio.ensure_future(request())
+        await asyncio.sleep(0.5)
+        task.cancel()
+        try:
+            await task
+            ended = "returned"
+        except asyncio.CancelledError:
+            ended = "cancelled"
+        except BaseException as error:  # what replaced the cancellation
+            ended = type(error).__name__
+        pool: Any = engine.sync_engine.pool
+        return ended, pool.checkedout()
+
+    started = time.monotonic()
+    assert on_async_engine(migrated, work) == ("cancelled", 0)
+    assert undone == [1]
+    assert time.monotonic() - started < 60

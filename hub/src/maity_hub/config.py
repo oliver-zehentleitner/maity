@@ -98,8 +98,9 @@ class Settings:
     # whole hub: with several workers each process holds its share (`per_worker`).
     db_pool_size: int = 16
     db_max_overflow: int = 16
-    # MAITY_DB_ASYNC_POOL_SIZE: how much of that pool the async engine holds (2), carved out of
-    # it, never on top: the sync engine keeps the rest and the whole overflow
+    # MAITY_DB_ASYNC_POOL_SIZE: how much of that pool the async engine holds (2) on a server
+    # database, carved out of it, never on top: the sync engine keeps the rest and the whole
+    # overflow; SQLite takes no pool sizes
     # (`serving.pool_shares`, hub/context/replicas.md).
     db_async_pool_size: int = 2
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.

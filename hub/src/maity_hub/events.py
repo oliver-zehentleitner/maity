@@ -158,11 +158,12 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     opened = _opened()
     try:
         with engine.begin() as conn:
-            opened.bind(conn.info)
+            info = conn.info
+            opened.bind(info)
             try:
                 yield conn
             finally:
-                _Open.unbind(conn.info)
+                _Open.unbind(info)
     except BaseException:
         opened.rolled_back()
         raise
@@ -183,11 +184,16 @@ async def async_transaction(engine: AsyncEngine) -> AsyncIterator[AsyncConnectio
     opened = _opened()
     try:
         async with engine.begin() as conn:
-            opened.bind(conn.info)
+            # The dict bound here is the one unbound: a statement cancelled in the driver
+            # invalidates the connection, and `conn.info` read again would ask SQLAlchemy to
+            # revalidate it inside the transaction, raising `PendingRollbackError` in place of
+            # the cancellation that must unwind the request.
+            info = conn.info
+            opened.bind(info)
             try:
                 yield conn
             finally:
-                _Open.unbind(conn.info)
+                _Open.unbind(info)
     except BaseException:
         if opened.undo:
             with anyio.CancelScope(shield=True):

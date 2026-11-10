@@ -921,7 +921,8 @@ only about processes.
   persistence.md 66f0bcf9): the async engine holds `MAITY_DB_ASYNC_POOL_SIZE` (2, divided by the
   workers, at least one, never the whole share), the sync engine the rest and the whole overflow,
   so the split adds nothing to the budget either; with all routes still sync, the sync cap is 14
-  of the default 16. A part of 0 pooled connections is refused at the start: SQLAlchemy reads
+  of the default 16. This is a server database's budget: on SQLite the engines take no pool sizes
+  and keep SQLAlchemy's default for a file database each. A part of 0 pooled connections is refused at the start: SQLAlchemy reads
   `pool_size=0` as no limit, so a rounded-down part would lift the cap it is meant to keep, and a
   share therefore needs two, one per engine. The minimum was two while a
   shared count or the forge budget took a second connection from the same pool (entry 2bd65fec),

@@ -248,8 +248,10 @@ def make_async_engine(
     application_name: str = APPLICATION_SERVING,
 ) -> AsyncEngine:
     """The async engine beside a serving engine (`make_engine`): the same options, the async
-    driver (`async_url`), a pool of its own carved out of the hub's (`serving.pool_shares`)
-    and no overflow, which stays with the sync engine. Its events hang on `sync_engine`, where
+    driver (`async_url`). On a server database it has a pool of its own carved out of the hub's
+    (`serving.pool_shares`) and no overflow, which stays with the sync engine; on SQLite, as the
+    sync engine there, it takes no pool sizes and keeps SQLAlchemy's default for a file database
+    (5 + 10). Its events hang on `sync_engine`, where
     SQLAlchemy runs them; `write_guard` and `timing` install there too."""
     target = async_url(url)
     rendered = target.render_as_string(hide_password=False)
