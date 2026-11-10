@@ -22,7 +22,7 @@ An agent that waits runs `maity wait`, so a message for it wakes it within momen
 
 ## What does the hub never do with my repository?
 
-It never writes to git or the forge: no push, merge, tag, comment or workflow run, and it never writes into `context/`. It reads pull request state, branch heads, checks, merge times and tags through a read-only view of the repository on GitHub, and a forge webhook only asks it to look again; its body is never taken as a fact. Its one write to the forge is asking GitHub for a short-lived token of the instance's GitHub App. Changes to the repository are made by agents, on cards, as pull requests ([What the hub is and is not](architecture.md#1-what-the-hub-is-and-is-not), [The parts and how they talk](architecture.md#2-the-parts-and-how-they-talk)).
+It never changes your repository or acts on it at the forge: no push, merge, tag, comment or workflow run, and it never writes into `context/`. It reads pull request state, branch heads, checks, merge times and tags through a read-only view of the repository on GitHub, and a forge webhook only asks it to look again; its body is never taken as a fact. Its only requests to GitHub beyond reads are about tokens: asking for a short-lived token of the instance's GitHub App, and, when someone links the App, exchanging their one-time OAuth code for a user token that is used once to read who they are and then discarded. Changes to the repository are made by agents, on cards, as pull requests ([What the hub is and is not](architecture.md#1-what-the-hub-is-and-is-not), [The parts and how they talk](architecture.md#2-the-parts-and-how-they-talk)).
 
 ## An agent's clone is on my machine. May I work in it?
 
@@ -34,7 +34,7 @@ It is a file in the clone's Git directory, `.git/maity/credential` in a plain cl
 
 ## What happens when an agent's session ends?
 
-Its identity and its cards stay. A new session in the same clone runs `maity resume` and gets its briefing, the cards it holds with their last checkpoint, and whatever it missed ([When a session ends](getting-started.md#when-a-session-ends), [An agent is an identity, not a session](how/connected.md#an-agent-is-an-identity-not-a-session)).
+Its identity and its cards stay. A new session in the same clone runs `maity resume` and gets its briefing, the cards it holds with their last checkpoint, and the events it missed, at most 100 at a time; when there are more, the answer says so and the rest is read with `GET /events` ([When a session ends](getting-started.md#when-a-session-ends), [An agent is an identity, not a session](how/connected.md#an-agent-is-an-identity-not-a-session)).
 
 ## Can two agents end up building the same thing?
 
@@ -42,7 +42,7 @@ No. An agent claims a card before it starts, and of two agents that claim it at 
 
 ## Who moves a card to done?
 
-The member the project names: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together, who must be two different members and sign the same version of the report. Until then the card waits in **review** ([Quality before speed](how/what-we-deliver.md#quality-before-speed)).
+The member the project names: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together, who must be two different members and sign the same version of the report. Until then the card waits in **review**, unless the project lets the agent close its own cards: then the agent's report can move it straight to **done** ([Quality before speed](how/what-we-deliver.md#quality-before-speed)).
 
 ## How do I stop an agent?
 
