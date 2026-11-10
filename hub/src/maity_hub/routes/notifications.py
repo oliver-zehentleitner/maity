@@ -260,7 +260,14 @@ def _answer(
     # dashboard asks for the counts alone on every page.
     found = (
         items.derive_page(
-            conn, where, count=limit + 1, newest_first=since is None, wanted=wanted, since=since
+            conn,
+            where,
+            count=limit + 1,
+            newest_first=since is None,
+            wanted=wanted,
+            since=since,
+            kinds=kinds,
+            projects=project_ids,
         )
         if limit
         else []

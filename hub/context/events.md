@@ -628,3 +628,39 @@ race would have held the PR back for a count the agent does not rely on.
 - Taking the extension's count in a second statement after the check: a redaction committing
   between the two was adopted into the new count while its message stayed counted (review of
   #1490, delta 3).
+
+## A held wait's later pass looks at the project's head before it reads; the runner's stream does not
+
+**Id:** 2263cf0a-7f4d-44e8-9264-352005a8390f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-x1rsd4r6htcv (step 1 of its design note, and the conditions its design review set); prod timing 2026-11-10 (an idle held wait about 2.5 statements a second, almost all from the two-second fallback; 46 % of the calls held 55 s, about 138 statements each); `tests/test_event_quiet_passes.py`, its cost pins red on main
+**See:** events.md — 6310ef59-6010-4fa5-95d5-30f20bc00117 — as of 2026-11-10
+**Revisit when:** `seq` stops following commit order within a project (an insert outside `lock_project`, another engine), the read starts to depend on something besides the rows past its cursor, or step 2 (a longer fallback) is decided on the measured numbers
+
+A held `GET …/events?wait=N` reads in full on its first pass. A later pass, woken by a notice
+or by the fallback, first looks at the project's highest `seq`, with the reader's own checks in
+the same statement or before it: an agent's row present and not isolated, a bridge's
+connection still carrying the agent. Nothing past the cursor and the checks hold: the pass
+answers nothing and keeps the cursor, as the read would have. Anything else reads in full.
+
+The look is safe because the read reads only rows with `seq > since`, and within one project
+`seq` follows commit order: `events.emit` inserts under `lock_project` (`SELECT … FOR UPDATE`
+on the server engines, SQLite's write lock at BEGIN) held to the commit. The waiter's event is
+cleared before the look, so an event committed after it still wakes the pause. Counting
+neither SQLite's `BEGIN IMMEDIATE` nor the wait's `long_poll` row, a skipped pass costs one
+statement where the read cost four for an agent, two where it cost four for a bridge (its
+carrying check stays) and one where it cost two for a human.
+
+**Reason:** an idle wait's cost was its fallback re-reads, not its wakes. The look keeps the
+fallback and every end of a wait (supersession, a disconnect, the shutdown, the deadline,
+isolation, a bridge's end) exactly where they were, and needs no state between passes.
+
+**Rejected alternatives:**
+- The same look for the runner's stream (`/runner/events`): it reads several projects, and
+  `seq` is one counter across them, so a lower `seq` of one project can still be uncommitted
+  while another's higher one is visible. A look at the maximum could skip it.
+- Keeping the highest `seq` per project in memory: another replica's commits would not move
+  it, and the look would answer nothing for rows that exist.
+- A longer fallback alone (step 2): left until this step's prod numbers are in.
