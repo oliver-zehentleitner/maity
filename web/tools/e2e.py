@@ -6145,6 +6145,28 @@ def project_tabs_step(run: Run, page: Page) -> None:
     menu.get_by_role("button", name="Project tabs", exact=True).click()
     menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True).click()
     expect(page.locator(".tabs-said")).to_have_text("Saved: a browser with no tabs of its own yet opens these.")
+    # New project in the tabs menu too, beside the projects (tsk-c4dz5x6rb2h8), at desktop and phone width;
+    # it opens the create form, and the header's "+" keeps its own entry.
+    size = page.viewport_size
+    try:
+        for width in (1280, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+            menu.get_by_role("button", name="Project tabs", exact=True).click()
+            new_item = menu.get_by_role("menuitem", name="New project", exact=True)
+            expect(new_item).to_be_visible()
+            if width == 390:
+                run.a11y(page, "tabs menu, new project, phone")
+            new_item.focus()
+            page.keyboard.press("Enter")
+            expect(page).to_have_url(re.compile(r"/new$"))
+            expect(page.locator("main h2", has_text="Create a project")).to_be_visible()
+        page.locator("header button.add-menu").click()
+        expect(page.locator("header .menu-box:has(button.add-menu)").get_by_role("menuitem", name="Project", exact=True)).to_be_visible()
+        page.keyboard.press("Escape")
+    finally:
+        if size:
+            page.set_viewport_size(size)
     # A fresh browser profile: no tabs of its own, so it opens the account's start set.
     fresh, other = signed_in_page(run, page.context.browser)
     try:
