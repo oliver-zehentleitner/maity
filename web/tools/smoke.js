@@ -939,13 +939,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       : anPost(p, b));
     await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
     if (byId("inbox-project") && byId("inbox-project").value) { byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick(); }
-    // Each round selects the request itself, the first with an answer button, so what the round before left
-    // current decides nothing ("Edit" opens the proposal's editor and answers nothing).
-    const anButton = (li) => li.querySelectorAll("button").slice(1).find((b) => !["Later", "Talk", "Send", "Withdraw", "Edit"].includes(b.textContent) && !b.disabled);
-    const anTarget = main.querySelectorAll("li.entry").find((li) => anButton(li));
-    if (anTarget && !anTarget.className.split(" ").includes("current")) { anTarget.querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick(); }
+    // Each round selects the request itself: only the current entry draws its body, so the entries are opened in
+    // list order until one shows an answer button outside a hidden pane ("Edit" opens a proposal's editor, whose
+    // own buttons stand hidden until then). What the round before left current decides nothing (#1574 review).
+    const anShown = (b, li) => { for (let n = b; n && n !== li; n = n.parentNode) if (n.hidden) return false; return true; };
+    const anButton = (li) => li.querySelectorAll("button").slice(1).find((b) => !["Later", "Talk", "Send", "Withdraw", "Edit"].includes(b.textContent) && !b.disabled && anShown(b, li));
+    const anById = (id) => main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === id);
+    let anTarget = null;
+    for (const id of main.querySelectorAll("li.entry").map((li) => li.getAttribute("data-request"))) {
+      if (!anById(id).className.split(" ").includes("current")) { anById(id).querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick(); }
+      if (anById(id) && anButton(anById(id))) { anTarget = id; break; }
+    }
     const anCur = main.querySelector("li.entry.current");
-    const anReply = anCur && anCur.getAttribute("data-request") === (anTarget && anTarget.getAttribute("data-request")) && anButton(anCur);
+    const anReply = anCur && anCur.getAttribute("data-request") === anTarget && anButton(anCur);
     if (anReply) { anReply.click(); for (let k = 0; k < 2; k++) await tick(); }
     const anHeld = !!anFree;
     await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
