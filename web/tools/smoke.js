@@ -13639,6 +13639,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mnLink = () => header.querySelectorAll(".mention-note a").find((a) => a.textContent === "1 unread mention");
   expect(mnLink() && mnLink().getAttribute("href") === "#/notifications?kind=mention&project=maintainer%2Fmaity",
     "mention count: beside the tabs, a link to the project's mentions on /notifications");
+  // Not on the Chat tab, the maintainer's choice, where the list shows chat mentions as an @ (tsk-sesdq48m9ewk): neither
+  // on the list nor in an open chat, nor after a counts round there; back on the inbox the line is there again.
+  await go("#/maintainer/maity/chat"); for (let k = 0; k < 6; k++) await tick();
+  const mnOnChat = !header.querySelector(".mention-note");
+  await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  const mnChatRound = !header.querySelector(".mention-note");
+  await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 6; k++) await tick();
+  const mnOpenChat = !header.querySelector(".mention-note");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(mnOnChat && mnChatRound && mnOpenChat && !!mnLink(),
+    "mention count: no line on the Chat tab, its list or an open chat, nor after a counts round there; the inbox has it "
+    + JSON.stringify([mnOnChat, mnChatRound, mnOpenChat, !!mnLink()]));
   // A counts read while one stays in the project fills the line again (tsk-gsk31zvpfv02, nte-eh3zh053w5ew):
   // a second mention changes its number, none takes it away, and it comes back with the next one.
   const mnSet = (n) => { mnCount = n; };

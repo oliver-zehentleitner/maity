@@ -1722,7 +1722,10 @@ window.Maity = window.Maity || {};
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null,
-      ctx.scope === "project" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+      // Not on the Chat tab, the maintainer's choice (tsk-sesdq48m9ewk): its list shows each chat's unread mention as an @
+      // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
+      // other tabs' line, which is why the maintainer kept the removal (chat 103539).
+      ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
