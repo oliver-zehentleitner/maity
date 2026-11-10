@@ -243,7 +243,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
 | 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
-| 409 | `replace_open` | a second replacement of a placement while a replacement of it is open or its old instance is kept (`keep_old`), or a `DELETE` of the old one while a replacement is open (§15.14); `details.placement` |
+| 409 | `replace_open` | a second replacement of a placement, or of its replacement, before the old placement has closed, or a `DELETE` of the old one while a replacement is open (§15.14); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
@@ -349,7 +349,7 @@ the hub records it on the session.
 | What | Cap |
 |---|---|
 | Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7), a replacement's sealed transcript 64 MiB (§15.14). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB on a route that takes a caller is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread. The forge webhook takes no caller: it has its own limit and is checked by its signature (§17.4) |
-| Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3) |
+| Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3). A replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14) has 30 minutes, about 300 kbit/s for 64 MiB |
 | Requests to one route | none beyond the route's own limits by default; the general limit per client is the ingress's. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
@@ -13426,10 +13426,14 @@ The hub itself revokes a credential it finds in a payload (§2.2,
 `revoked_reason: leaked_in_payload`), revokes the credentials of a
 revoked runner's placements under `stop` (`revoked_reason:
 runner_revoked`, §15.3), revokes a replaced instance's credential at
-the replacing exchange (`revoked_reason: replaced`, §6.17), and revokes
-every credential of an account an instance admin suspends
-(`revoked_reason: suspended`, §16.8).
-`revoked_reason` is the revoker's `reason` or one of those four. Re-joining issues a new credential
+the replacing exchange (`revoked_reason: replaced`, §6.17) and, for a
+runner replacement, at its step 3 or at the end of the kept window
+(`replaced`, §15.14), revokes the new instance of a replacement that
+ended without step 3 (`revoked_reason: replace_failed`, §15.14),
+revokes a runner's previous credential on a re-pair (`revoked_reason:
+repaired`, §15.2), and revokes every credential of an account an instance admin
+suspends (`revoked_reason: suspended`, §16.8).
+`revoked_reason` is the revoker's `reason` or one of those. Re-joining issues a new credential
 through a new join link; a member may hold several credentials (one per
 clone), each an instance, up to `agent.max_instances` (§6.18).
 
@@ -15282,8 +15286,9 @@ clone Z. It is the only thing the hub asks of a runner.
   hub still allows two clones of one agent with two credentials — two
   instances (§6.17) — when they are joined by hand (§10). The one
   exception is a replacement, which holds the old placement and its
-  replacement at once while it is open and, with `keep_old`, after it
-  is done until the kept old placement closes (§15.14).
+  replacement at once from its start until the old placement closes:
+  after step 3 on its terminal report, with `keep_old` after the kept
+  window (§15.14).
 - **One placement per clone.** At most one active placement per
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
@@ -15340,7 +15345,7 @@ the hub or by a closed placement; they stay on the runner.
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
-| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open, or its old instance is kept |
+| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` until the old placement of a replacement of either has closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB, which leaves the request of 64 KiB room for plain text (§1.7; JSON escaping can still push a body under it over that, which is then `payload_too_large`): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
@@ -15684,8 +15689,8 @@ A placement as the runner reads it:
 }
 ```
 
-- `health`, `nudge`, `replace` and `handover` are as in §15.14:
-  `replace` is `{state, from_instance, handover}` on a replacement's new
+- `health`, `nudge` and `handover` are as in §15.14; `replace`, the
+  runner's form of a replacement, is `{state, from_instance, handover}` on a replacement's new
   placement, `null` otherwise; `handover` is the part this runner
   needs.
 
@@ -16763,25 +16768,26 @@ workspace?, handover, keep_old?, reason?}`: the fields of a creation
 which carries `replaces: <old id>`; the old one carries `replaced_by`.
 
 - **Who.** As a creation (§15.6), the maintainer's answer
-  (req-8kv8vz1xx60k): a human with `members:admin` who owns the new
-  placement's runner does it directly; an agent with `agents:propose`
+  (req-8kv8vz1xx60k): a human with `members:admin` who owns both the old
+  and the new placement's runner does it directly; an agent with `agents:propose`
   proposes it under `policy.spawn_requests`. The consent request is
   titled `Replace <handle> on <old runner> with <new runner>` and its
   summary adds a `handover:` line.
-- **Two at once.** While a replacement is open, the membership holds two
-  active placements, the old and its replacement. With `keep_old`
-  (below) it goes on holding both after step 3, until the kept old
-  placement closes at `kept_until` or by a `DELETE`. That is the one
+- **Two at once.** From the replacement's start until the old placement
+  closes, the membership holds two active placements, the old and its
+  replacement. After step 3 the old one closes on its terminal report
+  (a `DELETE` of it closes it at once if its runner never reports,
+  §15.5); with `keep_old` (below) after the kept window. That is the one
   exception to "one placement per membership" (§15.5). The replacement's
   pickup joins as a new instance (`new_instance`, §6.17) and does not
   count toward `max_instances` while the replacement is open (the
   maintainer's answer, req-5eprep6ndrjf). It does not count while the
   old instance is kept either, so the kept window cannot push the
   membership over its limit; that extension is this section's detail.
-  A second replacement of either is `replace_open` while the
-  replacement is open or the old instance is kept, so the membership
-  never holds more than two; a `DELETE` of the old one is
-  `replace_open` while the replacement is open.
+  A second replacement of either is `replace_open` until the old
+  placement has closed, so the membership never holds more than two; a
+  `DELETE` of the old one is `replace_open` while the replacement is
+  open, before step 3.
 - **Its own clone.** The one-placement-per-clone rule (§15.5) holds for
   a replacement too. On the same runner the body names another
   `workspace.clone` (`placement_exists` otherwise), because two instances
@@ -16826,12 +16832,15 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
          (below). That covers an upload, a download or an opening that
          never completed.
   3. Then, in one transaction, the hub moves the old instance's claims,
-     assignments and unacknowledged events to the new instance, as a
-     `replaces` join does at its exchange (§6.17). The new instance's
+     assignments, unacknowledged events, checkpoints and place as lead
+     to the new instance, as a `replaces` join does at its exchange
+     (§6.17): from then on the old instance counts as replaced by the
+     new one, whose view names it in `replaces`, and an address naming
+     the old instance reaches the new one (§8.2). The new instance's
      first packet after this carries them as `handover` (§5.2), `from`
      naming the old instance. `note` and `missing` are not part of that
      `handover`; they are in `membership.placement.replace`. It revokes the old
-     instance's credential and sets the old placement `desired:
+     instance's credential (`revoked_reason: replaced`) and sets the old placement `desired:
      stopped`. That placement closes with `closed_reason: replaced` on
      its terminal report, and `placement_replaced` is emitted. It reaches
      the new instance too, which wakes it. Its next packet carries
@@ -16856,7 +16865,7 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
     the resume packet, `GET /events`, and a message to the new instance
     are allowed.
   - At `kept_until`, 2 hours after step 3, the hub revokes the
-    credential and sets the old placement `desired: stopped`. It closes
+    credential (`revoked_reason: replaced`) and sets the old placement `desired: stopped`. It closes
     with `closed_reason: replaced`. A `DELETE` of the old placement by
     anyone who may delete it (§15.6) ends it sooner the same way: the
     credential is revoked at once, unlike a plain `DELETE` (§15.5), and
@@ -16876,9 +16885,9 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   missed deadline. A refused or withdrawn consent closes it at once,
   with `refused` or `withdrawn`, as before any runner acted. Its
   instance's credential, if its pickup was redeemed, is revoked when it
-  closes. A sealed
-  transcript already uploaded is deleted, and the owner's outage request
-  (§15.7) names the new placement.
+  closes (`revoked_reason: replace_failed`, whatever the cause). A
+  sealed transcript already uploaded is deleted. After a `failed`, the
+  owner's outage request (§15.7) names the new placement.
 
 **The transcript between runners** (`handover: full`, two runners).
 The maintainer's decision: end-to-end encrypted through the hub, so
@@ -16932,6 +16941,10 @@ sources are:
   for the crash cap (the maintainer's answer, req-8epn4jg083hy);
 - a restart (§15.6);
 - a nudge that `resumed`.
+
+One restart counts once: a nudge that ended a silent run and resumed it
+counts as that nudge, not also as the start after its `exited`
+(`reason: hung`), and likewise in `restarts`.
 
 A placement that starts again and again is not stable, and someone has
 to look at why.
