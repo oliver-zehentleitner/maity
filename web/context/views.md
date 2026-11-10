@@ -5841,12 +5841,14 @@ reports nothing).
 
 `M.membersOnce(ctx, slug)` (web/js/app.js) reads a project's member list once for one ctx,
 which is one page drawn. On All projects the Lead button (`targetsEverywhere`, web/js/lead-chat.js)
-and the all-projects inbox (web/js/inbox.js) both take it from there, so each project's
-`GET …/members` runs once instead of twice. The next drawing has a ctx of its own and reads afresh.
+reads every project's list, and the all-projects inbox (web/js/inbox.js) reads the lists of the
+projects its requests come from; both take them from there, so for a project with requests in the
+inbox `GET …/members` runs once instead of twice (one without requests was read once before too).
+The next drawing has a ctx of its own and reads afresh.
 
 **Reason:** All projects is the start page for anyone with two or more projects, and the members
-read is the slowest of the page's calls (about 150 ms median on prod), so reading it twice per
-project costs that page's load directly.
+read takes about 150 ms median on prod, so reading it a second time for each project with
+requests in the inbox costs that page's load directly.
 
 **Rejected alternative:** weighed while building it, a members cache kept across drawings of
 All projects. A switch inside one project already keeps its members for at most a minute

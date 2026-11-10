@@ -271,7 +271,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
   // All projects reads each project's members once per page drawn: the Lead button and the inbox
-  // share the read (tsk-f78z1dvbs26a; before, each read them, twice per project).
+  // share the read (tsk-f78z1dvbs26a). The fixture has requests in both projects, so before, each
+  // was read twice.
   {
     await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
     const before = gets.length;

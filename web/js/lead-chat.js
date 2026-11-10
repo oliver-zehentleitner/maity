@@ -67,8 +67,8 @@ window.Maity = window.Maity || {};
   // Every project's targets, for the header outside a project: each
   // project's view and members read once per page drawn (per ctx), so the
   // counts' refresh asks nothing again. The members come from M.membersOnce,
-  // which the all-projects inbox reads too, so a project's list is read once
-  // for both (tsk-f78z1dvbs26a).
+  // which the all-projects inbox reads from too, so where both need a
+  // project's list it is read once (tsk-f78z1dvbs26a).
   const everywhereOf = new WeakMap();
   function targetsEverywhere(ctx) {
     if (!everywhereOf.has(ctx)) {

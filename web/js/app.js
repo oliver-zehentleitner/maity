@@ -1893,9 +1893,10 @@ window.Maity = window.Maity || {};
   // its chats, so that they stay in that view.
   M.withMembers = (ctx, members) => withMembers(ctx, members);
   // A project's member list read once per page drawn (per ctx) for the views outside a project
-  // that need several projects' members: on All projects both the Lead button (js/lead-chat.js)
-  // and the inbox (js/inbox.js) read each project's members, and read them twice before
-  // (tsk-f78z1dvbs26a). The next drawing has a ctx of its own and reads afresh.
+  // that need several projects' members: on All projects the Lead button (js/lead-chat.js) reads
+  // every project's members and the inbox (js/inbox.js) those of the projects its requests come
+  // from, so a project with requests was read twice before (tsk-f78z1dvbs26a). The next drawing
+  // has a ctx of its own and reads afresh.
   const membersDrawn = new WeakMap();
   M.membersOnce = (ctx, slug) => {
     let bySlug = membersDrawn.get(ctx);
