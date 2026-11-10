@@ -8249,8 +8249,8 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
   the first entry that is `available`, not itself covered, and may take
   that item (below); a human substitute takes items as an agent does.
   Claims move, they are not dropped: holder and `claim.session_id`
-  change, the lease restarts at `policy.lease_seconds`, checkpoint and
-  branch stay on the card. An assignment moves `assigned_to`. A request
+  change, `claim.since` becomes the move, the lease restarts at
+  `policy.lease_seconds`, checkpoint and branch stay on the card. An assignment moves `assigned_to`. A request
   keeps its `to` and gains `cover`; the substitute reads it, finds it in
   its inbox and answers it as the addressee would (§7), recorded with
   `on_behalf_of` = the covered member. Each moved card and request
@@ -8308,8 +8308,8 @@ ping-pong. Touched means: for a card, the substitute claimed it,
 checkpointed, reported or changed its status after the move (a claim
 that only moved with the cover does not count); for a request, it
 answered it. Everything else returns to the member, with `cover`
-cleared: a held card goes back to the member as holder with the lease
-restarted, an assignment back to `assigned_to` = the member, an open
+cleared: a held card goes back to the member as holder, `claim.since`
+the return and the lease restarted, an assignment back to `assigned_to` = the member, an open
 request simply loses `cover`. `cover_ended` lists the first as `kept`
 and the rest as `returned`. While a cover runs, area routing sends a new
 card for the member to its substitute, with `cover` set; area routing is
@@ -10971,9 +10971,15 @@ member without `requests:answer` is `invalid`
 silently; `trust:owner` is the same as `owner`; `needs_in_session` is sent
 as `{reason, member_id, session_id?}` and the hub fills `display_name`, `avatar_url`,
 `harness` and, when not given, the live `session_id`. A card stays
-`blocked` while any `while_open: wait` request of its holder on it is
+`blocked` while any `while_open: wait` request of its holder on it, filed
+at or after the start of the holder's current claim (`claim_since`), is
 open; `blocked_by_request` names the oldest open one, and the remembered
 status is restored only when the last of them is answered or withdrawn.
+A wait filed earlier keeps no block once a later one is answered or
+withdrawn: one filed while the card was unheld, which blocked nothing,
+and one from an earlier claim the holder released. The request itself
+stays open. The cut is a timestamp, so a wait filed at the very instant
+the claim began still counts.
 
 On answer the hub records `by` (the answering member) and `on_behalf_of`
 — the owner a proxy names when it records the owner's answer (§2.3);
@@ -19029,6 +19035,12 @@ the other three parts are not shown. The maintainer's request of
 wrapped over three rows on a phone. From 601 pixels on, all four parts
 show as above. This holds on every page with the line, the dashboard's
 and the hub's own.
+
+**Target size.** Every link of the line is at least 24 CSS pixels high,
+and each icon link (GitHub, Maity) is 24 pixels wide as well: the target
+size of WCAG 2.5.8, whatever stands on the row above or below it when
+the line wraps between its parts. A link never wraps inside itself. This
+too holds on the dashboard's pages and on the hub's own.
 
 Every link is absolute and the same on every instance. The Maity link
 names maity.team, not the instance's own host: the maintainer's page

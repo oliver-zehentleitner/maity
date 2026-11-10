@@ -108,12 +108,16 @@ def probe(
         public_pages.Kind(
             name=KIND,
             render=found.render(KIND),
-            targets=lambda conn: list(TARGETS),
+            targets=lambda conn, among=None: [i for i in TARGETS if among is None or i in among],
             dependents=lambda conn, target_id: [(DEPENDENT, "d")],
         )
     )
     public_pages.register(
-        public_pages.Kind(name=DEPENDENT, render=found.render(DEPENDENT), targets=lambda c: ["d"])
+        public_pages.Kind(
+            name=DEPENDENT,
+            render=found.render(DEPENDENT),
+            targets=lambda c, among=None: [i for i in ["d"] if among is None or i in among],
+        )
     )
     before = public_pages._hub
     public_pages.configure(hub)
@@ -255,12 +259,16 @@ def _worker_of_several(url: str, done: multiprocessing.Queue) -> None:  # type: 
         public_pages.Kind(
             name=KIND,
             render=found.render(KIND),
-            targets=lambda conn: list(TARGETS),
+            targets=lambda conn, among=None: [i for i in TARGETS if among is None or i in among],
             dependents=lambda conn, target_id: [(DEPENDENT, "d")],
         )
     )
     public_pages.register(
-        public_pages.Kind(name=DEPENDENT, render=found.render(DEPENDENT), targets=lambda c: ["d"])
+        public_pages.Kind(
+            name=DEPENDENT,
+            render=found.render(DEPENDENT),
+            targets=lambda c, among=None: [i for i in ["d"] if among is None or i in among],
+        )
     )
     engine = make_engine(url)
     hub = Settings.from_env({"MAITY_DATABASE_URL": url, "MAITY_PUBLIC_URL": "https://hub.example"})
