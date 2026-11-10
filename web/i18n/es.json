@@ -3622,6 +3622,8 @@
   "profile_delete.submit": "Eliminar el perfil",
   "profile_delete.title": "Eliminar este perfil",
   "profile_delete.type": "Escribe @{handle} para eliminarlo",
+  "project.link.actions": "Actions",
+  "project.link.actions_on": "Actions en {forge}",
   "project.link.chat": "Chat",
   "project.link.discussions": "Discusiones",
   "project.link.issues": "Issues",

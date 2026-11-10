@@ -3644,6 +3644,8 @@ window.MAITY_I18N["it"] = {
   "profile_delete.submit": "Elimina il profilo",
   "profile_delete.title": "Elimina questo profilo",
   "profile_delete.type": "Scrivi @{handle} per eliminarlo",
+  "project.link.actions": "Actions",
+  "project.link.actions_on": "Actions su {forge}",
   "project.link.chat": "Chat",
   "project.link.discussions": "Discussioni",
   "project.link.issues": "Issue",

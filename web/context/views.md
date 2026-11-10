@@ -4817,12 +4817,12 @@ so it was dropped.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 **See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
-The header's row shows the repository, then Pull Requests, then the
+The header's row shows the repository, then Actions, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
 with its mark), then the
 Keep the Why dashboard, and after them, at the right end, the state: the
@@ -4831,6 +4831,16 @@ button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
 own links, Pull Requests is derived in the browser from the repository's
 URL and forge, and a forge outside the table gets no button; the hub knows
 only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Actions, which the maintainer asked for (tsk-kdkdy864q11r, 2026-11-10), is
+derived the same way, but only for the forges that call their workflows
+Actions (GitHub, Gitea): GitLab and Bitbucket call theirs Pipelines, a word
+of its own that no card has asked for yet. Its screen-reader name says the
+forge ("Actions on GitHub"), as the repository's does. A second derived
+button is not the "fifth kind of link" the Revisit condition below means
+(an own link of §6.11, which the hub stores): it follows the forge table,
+and on a phone the row still holds every button in one row that scrolls
+(e2e at 390 and 360 px, light and dark). Neither derived button is on the
+overview's Project tab, which shows the own links only.
 Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
