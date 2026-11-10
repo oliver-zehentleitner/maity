@@ -1462,6 +1462,44 @@ hang's dump itself names no test is confirmed by the #1255 log and by a local re
 without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
 value is the author's weighing, not measured against a real hang beyond #1255.
 
+## hub-postgresql runs in three shards by test file, each with its own PostgreSQL
+
+**Id:** f150febd-ce19-4493-9a97-cfc3bc1c01fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; `.github/workflows/ci.yml`, `hub/tests/conftest.py`
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+
+`hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
+keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
+deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
+service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
+over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
+check. Locally the three shards together collect the whole suite (2125, 2288 and 2207 of 6620 tests).
+
+**Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
+only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
+over the suite. Three legs side by side cut the wall time to about a third plus setup. By file, a
+module's fixtures (a hub, a database set up once per module) stay in one leg and are built once.
+
+**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set the job asks for the maintainer's
+one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
+5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
+or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,
+and it needs no commit.
+
+**Rejected alternatives:**
+- Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
+  time.
+- Sharding by test node id, as the card's plan said first: a module's tests would spread over the
+  legs and each leg would repeat its module setups.
+- A random host port for the service, so that two legs could share a runner: not needed for hosted
+  runners, and the self-hosted machine runs one job per type by design (the entry on one runner
+  service per database job type).
+- A sharding plugin: a new dependency in the hashed locks for what one hook does.
+
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
 **Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
@@ -2456,41 +2494,3 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
-
-## hub-postgresql runs in three shards by test file, each with its own PostgreSQL
-
-**Id:** f150febd-ce19-4493-9a97-cfc3bc1c01fe
-**Type:** decision
-**Status:** active
-**Evidence:** confirmed
-**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; `.github/workflows/ci.yml`, `hub/tests/conftest.py`
-**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
-
-`hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
-keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
-deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
-service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
-over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
-check. Locally the three shards together collect the whole suite (2125, 2288 and 2207 of 6620 tests).
-
-**Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
-only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
-over the suite. Three legs side by side cut the wall time to about a third plus setup. By file, a
-module's fixtures (a hub, a database set up once per module) stay in one leg and are built once.
-
-**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set the job asks for the maintainer's
-one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
-5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
-or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,
-and it needs no commit.
-
-**Rejected alternatives:**
-- Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
-  time.
-- Sharding by test node id, as the card's plan said first: a module's tests would spread over the
-  legs and each leg would repeat its module setups.
-- A random host port for the service, so that two legs could share a runner: not needed for hosted
-  runners, and the self-hosted machine runs one job per type by design (the entry on one runner
-  service per database job type).
-- A sharding plugin: a new dependency in the hashed locks for what one hook does.
