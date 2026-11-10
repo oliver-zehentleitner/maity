@@ -368,9 +368,9 @@ The deployment itself (manual approvals, the maintainer's command) does
 not change. The chart's `appVersion` follows the bump so that its default
 image tag names the image the release tag builds. It had stayed at
 `0.1.0.dev0`, which was never published. For that image to exist,
-`publish-image.yml` takes the image's version tag from the Git tag with a
-`match` pattern rather than `type=semver`. The pinned metadata-action drops
-a PEP 440 pre-release such as `0.1.0a1` as invalid SemVer, so the
+`publish-image.yml` tags the image with `type=pep440` rather than
+`type=semver`. The pinned metadata-action drops a PEP 440 pre-release such
+as `0.1.0a1` as invalid SemVer, so the
 `v0.1.0a1` run logged `v0.1.0a1 is not a valid semver` and pushed only
 the commit-SHA tag (found in the review of this change). The deploy of
 maity.team pins the image by digest, so the default tag only matters to a
