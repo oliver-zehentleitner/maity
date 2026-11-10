@@ -2398,3 +2398,65 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
+
+## The views-split tests read checked-in copies of the files from before the split
+
+**Id:** 58f9c09d-59f5-4033-b424-f10d7b3d83a8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the changelog job of pull request 1606, run 42843782092, at head 930194da69152e7fbd5c28ca2c0ce90a03df0f11; the same failure reproduced with `git clone --depth 1` of that head
+**Revisit when:** the changelog job checks out enough history that commit 126b030c58b0586c66abc931ddc36865ed9ec9f4 is always present, or the generator stops rebuilding from these files
+
+`tools/test_split_views_context.py` reads the views topic and the index from
+before the split out of `tools/fixtures/split_views_context/`. Those bytes are
+the two files `web/context/` had at `126b030c58b0586c66abc931ddc36865ed9ec9f4`,
+the merge-base the split was built from. The tests check the blob ids, so a
+later edit of the copies fails without asking git for that commit.
+
+**Reason:** the changelog job uses `actions/checkout` with no `fetch-depth`,
+so the clone is one commit deep. That commit is not among them. `git cat-file`
+cannot read the object, and `git show` of it exits 128 with `fatal: path '…'
+does not exist in '<commit>'` — the message git gives for an object the clone
+does not have, which looks like a missing path. Four tests died there before
+any assertion. The job is the one that runs these tests, so they have to carry
+their inputs. A depth-1 clone of the branch does the same.
+
+**Rejected alternatives:**
+- Skip the tests when the commit is missing. The changelog job would then skip
+  the checks that need those files, which is the run that has to do them.
+- Give that job a deeper checkout. Any other shallow clone would still fail,
+  and the tests would keep depending on one commit staying reachable.
+- Widen the live-reference skip so the copies could sit outside `tools/`. The
+  scan already skips `tools/`, and the copies are inputs of the tool that lives
+  there. A filename match outside that skip is what the check is for; growing
+  the skip to hold a fixture would hide a real reference of the same name.
+
+## The live-reference scan skips the released changelog
+
+**Id:** b4ccca85-9a23-4e7b-9580-763724d37d4d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the changelog job of pull request 1606, run 42852246152, at head 5cd58a73eb04b217186fa8824581e75521e74196; reproduced by merging origin/main `0fc713bd` into that head
+**Revisit when:** a release stops folding the fragments into `CHANGELOG.md`, or the check no longer scans the tree it is run in
+**See:** process.md#the-views-split-tests-read-checked-in-copies-of-the-files-from-before-the-split — 58f9c09d-59f5-4033-b424-f10d7b3d83a8 — as of 2026-11-10
+
+`--check` refuses a reference to the old views topic outside `changelog.d/`,
+`web/vendor/` and `tools/`, and it also skips the root `CHANGELOG.md`. A pull
+request is checked out as its merge with main, so the scan sees notes a
+release has already folded in. On main at `0fc713bd` that is `CHANGELOG.md:5296`
+and `CHANGELOG.md:5881`. The merge of `5cd58a73` with that main is clean, the
+rebuilt topic files match, and those two lines are the only hits. `changelog.d/`
+was already skipped because a fragment describes a past edit. `tools/changelog.py release`
+moves that fragment into `CHANGELOG.md`, and only a release writes that file.
+
+**Reason:** the notes record what the file was called when the change landed.
+The check is for a reference a reader follows now. Once the tests could run
+without the missing commit, the changelog job failed on exactly those two lines.
+
+**Rejected alternatives:**
+- Edit `CHANGELOG.md` on this branch to drop the old name. Only a release writes
+  that file, and the sentences describe the file that existed then.
+- Leave the check failing until main is rewritten. Every pull request merged
+  with current main would fail the same way.
