@@ -506,3 +506,46 @@ def test_a_link_past_the_cap_is_not_probed_even_where_it_would_match(
     assert probed == [str(n) for n in numbers[: cli.PROBED_LINKS_MAX]]
     assert str(numbers[-1]) not in probed and not _sent(fake)
     assert "this checkout has an unknown pull request" in capsys.readouterr().err
+
+
+# --- a branch cut from main tracks main (tsk-8qwmbw5xydpw) -----------------------------------
+
+
+def _track_main(work: Path, pushed: bool) -> None:
+    git(work, "push", "--quiet", "origin", "work:main")
+    git(work, "fetch", "--quiet", "origin")
+    git(work, "remote", "set-head", "origin", "main")
+    (work / "a.txt").write_text("two\n")
+    git(work, "commit", "--quiet", "-am", "two")
+    if pushed:
+        git(work, "push", "--quiet", "origin", "work")
+    else:
+        git(work, "push", "--quiet", "origin", "--delete", "work")
+    git(work, "config", "branch.work.merge", "refs/heads/main")
+
+
+def test_report_sets_a_branch_tracking_main_to_its_own_and_reports(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = joined.parent.parent
+    _track_main(work, pushed=True)
+    _card(fake)
+    assert _report() == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert "maity: branch work tracked origin/main, the default branch; set" in err
+    assert git(work, "config", "branch.work.merge") == "refs/heads/work"
+    body = next(r.json() for r in fake.signed() if r.path == f"{TASK}/report")
+    assert body["upstream"] == "origin/work" and body["remote_head"] == _head(joined)
+
+
+def test_report_refuses_a_branch_tracking_main_before_it_is_pushed(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = joined.parent.parent
+    _track_main(work, pushed=False)
+    _card(fake)
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "push it with `git push -u origin work`" in err
+    assert git(work, "config", "branch.work.merge") == "refs/heads/main"
+    assert not fake.signed()

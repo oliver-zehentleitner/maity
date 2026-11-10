@@ -304,3 +304,70 @@ def test_a_remote_url_without_a_host_is_named_so(
     git(clone, "remote", "set-url", "origin", url)
     reason = gitfacts._forge_unknown(clone, "origin")
     assert reason is not None and named in reason
+
+
+# --- a branch cut from main tracks main (tsk-8qwmbw5xydpw) -----------------------------------
+
+
+def _track_main(clone: Path, set_head: bool) -> None:
+    """`work` as `git switch -c work origin/main` leaves it: its upstream is origin's main.
+    With `set_head` the clone knows origin's default branch (`origin/HEAD`, as a clone of a
+    repository with commits sets it); without, only the remote's HEAD says it."""
+    git(clone, "push", "--quiet", "origin", "work:main")
+    git(clone, "fetch", "--quiet", "origin")
+    if set_head:
+        git(clone, "remote", "set-head", "origin", "main")
+    elif git(clone, "for-each-ref", "refs/remotes/origin/HEAD"):
+        git(clone, "remote", "set-head", "origin", "--delete")  # a fetch of git 2.48+ sets it
+    git(clone, "config", "branch.work.merge", "refs/heads/main")
+
+
+@pytest.mark.parametrize("set_head", [True, False], ids=["origin-HEAD", "ls-remote"])
+def test_a_branch_tracking_main_is_set_to_track_its_own_branch(clone: Path, set_head: bool) -> None:
+    _track_main(clone, set_head)
+    (clone / "a.txt").write_text("two\n")
+    git(clone, "commit", "--quiet", "-am", "two")
+    git(clone, "push", "--quiet", "origin", "work")  # pushed without -u: still tracks main
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+    done = gitfacts.track_own_branch(clone)
+    assert done.problem is None
+    assert done.note == (
+        "branch work tracked origin/main, the default branch; set branch.work.merge to "
+        "refs/heads/work, its own branch on origin"
+    )
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/work"
+    assert git(clone, "config", "branch.work.remote") == "origin"
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch == "work" and facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_branch_tracking_main_that_is_not_pushed_is_left_and_named(clone: Path) -> None:
+    _track_main(clone, set_head=True)
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    done = gitfacts.track_own_branch(clone)
+    assert done.note is None
+    assert done.problem == (
+        "branch work tracks origin/main, the default branch, and origin has no branch work; "
+        "push it with `git push -u origin work`"
+    )
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+
+
+def test_an_upstream_other_than_the_default_branch_is_left_as_it_is(clone: Path) -> None:
+    """A stacked branch that tracks the branch below it, say: not main, not touched."""
+    _track_main(clone, set_head=True)
+    git(clone, "push", "--quiet", "origin", "work:base")
+    git(clone, "config", "branch.work.merge", "refs/heads/base")
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/base"
+
+
+def test_the_default_branch_itself_and_its_own_upstream_are_left(clone: Path) -> None:
+    _track_main(clone, set_head=True)
+    git(clone, "switch", "--quiet", "-c", "main", "--track", "origin/main")
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+    assert git(clone, "config", "branch.main.merge") == "refs/heads/main"
+    git(clone, "switch", "--quiet", "work")
+    git(clone, "config", "branch.work.merge", "refs/heads/work")
+    assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
