@@ -79,17 +79,21 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # Tags: the version on a v* tag (1.2.3 and 1.2), always the full commit SHA,
-      # never `latest` (deploy/helm/maity-hub/values.yaml: a moving tag does not
-      # change the pod on an upgrade).
+      # Tags: the version on a v* tag as pyproject.toml writes it (0.1.0a2, 1.2.3),
+      # 1.2 for a final release only, always the full commit SHA, never `latest`
+      # (deploy/helm/maity-hub/values.yaml: a moving tag does not change the pod on
+      # an upgrade). `pep440`, not `semver`: the hub's versions are PEP 440, and
+      # `type=semver` drops 0.1.0a2 as invalid SemVer, so v0.1.0a1 got only its SHA
+      # tag. For a pre-release both pep440 lines give the version itself, so a
+      # pre-release never moves a 0.1 tag. The chart's appVersion names this tag.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=pep440,pattern={{version}}
+            type=pep440,pattern={{major}}.{{minor}}
             type=sha,format=long,prefix=
 
       - name: Build for the check

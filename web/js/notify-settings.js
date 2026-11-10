@@ -12,7 +12,7 @@ window.Maity = window.Maity || {};
   M.views = M.views || {};
 
   // Getters: the words are the catalog's when shown.
-  const KINDS = ["inbox", "chat", "mention", "security"];
+  const KINDS = ["inbox", "chat", "mention", "security", "invitation"];
   // §18.4: the mode of a kind is its interval; chat and mention may carry the message text.
   const MAIL_MODES = ["immediate", "hourly", "daily", "weekly", "off"];
   const MAIL_MODE_LABELS = {
@@ -27,6 +27,7 @@ window.Maity = window.Maity || {};
     get chat() { return M.t("mail.kind.chat"); },
     get mention() { return M.t("mail.kind.mention"); },
     get security() { return M.t("mail.kind.security"); },
+    get invitation() { return M.t("mail.kind.invitation"); },
   };
   const WITH_CONTENT = ["chat", "mention"];
   const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -45,6 +46,7 @@ window.Maity = window.Maity || {};
     get chat() { return M.t("notify.kind.chat"); },
     get mention() { return M.t("notify.kind.mention"); },
     get security() { return M.t("notify.kind.security"); },
+    get invitation() { return M.t("notify.kind.invitation"); },
   };
   const PERMISSION = {
     get granted() { return M.t("notify.permission.granted"); },
