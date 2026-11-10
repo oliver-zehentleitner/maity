@@ -17,6 +17,7 @@ window.Maity = window.Maity || {};
     // Read from the catalog when asked, so a language set later applies.
     get inbox() { return M.t("bell.kind.inbox"); },
     get chat() { return M.t("bell.kind.chat"); },
+    get invitation() { return M.t("bell.kind.invitation"); },
     get mention() { return M.t("bell.kind.mention"); },
     get security() { return M.t("bell.kind.security"); },
   };
