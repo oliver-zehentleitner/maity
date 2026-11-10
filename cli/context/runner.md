@@ -623,9 +623,9 @@ runner that refuses the harness by configuration.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
-**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration, or a harness version other than the one in `capabilities.CHECKED` is in use
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration or runs a program, Claude Code stops turning `Edit(…)` denies into sandbox write denies, or a harness version other than the one in `capabilities.CHECKED` is in use
 
 Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
 environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
@@ -658,9 +658,15 @@ other separators) is `maity`. Assignments, quotes, variables, escapes,
 shell operators and a `:` in the program (Claude Code's `prog:*` form)
 are refused when the configuration is read, and an adapter skips such a
 rule as well.
-`maity` stays the runner's own rule. Claude Code's `.git` write deny is
-one `Edit(…)` rule, which covers its file-editing tools; it does not
-check a `Write(…)` deny rule. That a call with something in front of
+`maity` stays the runner's own rule. Claude Code's `.git` write denies
+are `Edit(…)` rules, which cover its file-editing tools; it does not
+check a `Write(…)` deny rule. They name only what would make an allowed
+git call run something or read another repository: `config`,
+`config.worktree`, `hooks/`, `info/` and `objects/info/alternates`, the
+same paths as sandbox write denies, plus `.git/maity`. The rest of `.git`
+stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
+into a write deny for every command, and git writes refs, the index,
+objects, logs and `FETCH_HEAD` on each commit and fetch. That a call with something in front of
 `maity` stays inside Claude Code's sandbox was checked with one version,
 2.1.318 (`capabilities.CHECKED`); with another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
@@ -690,13 +696,21 @@ hardening task asked: what was checked is the harness's behaviour with
 one version, not a contract.
 
 **Rejected alternatives:**
+- Denying `Edit(…)` on all of `.git`: the sandbox made the whole
+  directory read-only for every command, so no agent could fetch, commit
+  or push (the first sandboxed placements, 2026-11-10).
+- `commondir` in the list: for a file that does not exist, the sandbox
+  leaves something git cannot read, and every git call in the session
+  failed on it. `GIT_COMMON_DIR` already makes git ignore it.
 - A read-only `.git` with write access to `objects`, `refs` and the
   index only: git creates its lock files and `ORIG_HEAD` in `.git`
   itself, so commits fail.
 - Denying writes to each redirecting file (`commondir`,
-  `config.worktree`, `info/attributes`): files that do not exist yet
-  cannot be bound read-only reliably, and it is the enumeration the gc
-  fix already moved away from.
+  `config.worktree`, `info/attributes`) as the boundary: files that do
+  not exist yet cannot be bound read-only reliably, and it is the
+  enumeration the gc fix already moved away from. The list above is a
+  second layer over the `GIT_COMMON_DIR` pin and clonecheck, not instead
+  of them.
 - Hiding the whole home from Codex: the agent's `maity`, `git` and
   toolchains are often installed there.
 - `--ignore-submodules=all` on `maity`'s own `git status`: it also hides
@@ -1538,10 +1552,10 @@ message says are no boundary.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity itself starts first checks the clone the same way `gc` does
@@ -1608,6 +1622,19 @@ cached, since the clone may change between two runs, and the cap keeps
 it bounded. git that gh starts
 is not maity's and is not checked. Outside a placement nothing changes.
 
+A clone Claude Code's sandbox ran in holds entries a plain clone has
+not: an empty `config.worktree` and `objects/info/alternates`, an empty
+`remotes/`, and empty `.claude-sandbox-noreplace/` directories (in
+`info/`, `objects/info/` and `objects/info/commit-graphs/`). The
+sandbox leaves them to guard the paths it protects; no command of the
+session wrote them. The check accepts exactly these while they are
+empty, and refuses them as before once anything is in them. This
+holds for every maity user, not only the runner. Empty, they change
+nothing git does: an empty `config.worktree` is not even read without
+an `extensions.worktreeConfig` the configuration check refuses, an
+empty `alternates` names no object store, and an empty `remotes/` names
+no remote.
+
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox for Claude Code (inside it for Codex), in a clone whose
 configuration the agent writes. The pinned
@@ -1625,6 +1652,12 @@ a program it starts. maity's own git under the runner only reads, so
 every call can run that way.
 
 **Rejected alternatives:**
+- The runner deleting the sandbox's placeholders before a start: the
+  runner changes nothing in an agent's clone, and the sandbox makes them
+  again on the next session.
+- Accepting those names whatever they hold: a `config.worktree` or an
+  `alternates` with content changes what git reads. Only the empty ones
+  are known to be the sandbox's.
 - Passing maity's own environment on to git: a variable set on the
   command line that starts maity names programs for git as well as the
   configuration does.

@@ -51,6 +51,14 @@ GIT_DENIED = (
 )  # fmt: skip
 
 
+# What in a clone's .git would turn a git call into running something, or into reading
+# another repository: never written by the agent, so its allowed git calls stay git. The
+# rest of .git (refs, index, objects, logs, FETCH_HEAD) git itself writes on every commit
+# and fetch. Not `commondir`: GIT_COMMON_DIR pins the session's git to the real .git (below),
+# and the sandbox's guard on a missing commondir leaves git unable to read it at all.
+# Verified on a sandboxed Claude Code run (cli/context/runner.md).
+GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
+
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
     "GIT_CONFIG_COUNT": "2",
@@ -170,11 +178,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
-    # Agents commit through git and never edit .git: its config and hooks would turn an
-    # allowed `git status` into anything. The credential is not readable through Read.
+    # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
+    # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
+    # git could no longer fetch or commit. The credential is not readable through Read.
     # `Edit(…)` covers every file-editing tool; Claude Code ignores a `Write(…)` deny rule.
-    deny = [f"Edit(/{ws}/.git/**)"]
-    deny += [f"Read(/{ws}/.git/maity/**)"]
+    git = f"{ws}/.git"
+    deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
+            for name in GIT_PROTECTED]  # fmt: skip
+    deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
@@ -197,8 +208,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            "filesystem": {"denyRead": [f"{ws}/.git/maity", *(str(p) for p in ctx.private)],
-                           "denyWrite": [f"{ws}/.git/maity"]},
+            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
+                           "denyWrite": [f"{git}/maity",
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED)]},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
     return settings

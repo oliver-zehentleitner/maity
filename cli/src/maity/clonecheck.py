@@ -66,6 +66,11 @@ GIT_DIRS = frozenset({
 INFO_FILES = frozenset({"exclude", "refs"})
 # Other object stores git would read from (and, over http, fetch from).
 ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
+# Claude Code's sandbox leaves these in a clone it ran in, to guard the paths it protects:
+# empty, they change nothing git does. Anything in them is refused as before.
+SANDBOX_DIR = ".claude-sandbox-noreplace"  # an empty directory, wherever it appears
+SANDBOX_EMPTY_FILES = frozenset({"config.worktree", *ALTERNATES})
+SANDBOX_EMPTY_DIRS = frozenset({"remotes"})
 CONFIG_MAX = 64 * 1024
 # More entries than this in `.git` are refused rather than listed on every git run.
 TREE_MAX = 20_000
@@ -262,6 +267,7 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
     follows them, so a link would put any file in the place of one that was checked)."""
     if len(entries) > TREE_MAX:
         return Finding(f"its .git holds more than {TREE_MAX} entries (`git gc` packs them)")
+    parents = {where.rpartition("/")[0] for where, _, _ in entries}
     # `git sparse-checkout` writes `config.worktree` too, which sorts first: named for what
     # the clone is set up for.
     for where, kind, size in sorted(entries, key=lambda e: (e[0] != "info/sparse-checkout", e)):
@@ -269,6 +275,10 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
         shown = onboarding.inline(where)
         if kind == "l":
             return Finding(f".git/{shown} is a symlink", where)
+        if SANDBOX_DIR in where.split("/")[:-1]:
+            return Finding(f".git/{shown} is not a plain clone's", where)
+        if _sandbox_placeholder(where, kind, size, parents):
+            continue
         if not rest and kind != ("f" if top in GIT_FILES else "d" if top in GIT_DIRS else "?"):
             return Finding(f".git/{shown} is not a plain clone's", where)
         if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
@@ -278,6 +288,13 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
         if where == "config" and size > CONFIG_MAX:
             return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB")
     return None
+
+
+def _sandbox_placeholder(where: str, kind: str, size: int, parents: set[str]) -> bool:
+    """Whether an entry is one Claude Code's sandbox leaves, still empty."""
+    if kind == "d" and where not in parents:
+        return where.rpartition("/")[2] == SANDBOX_DIR or where in SANDBOX_EMPTY_DIRS
+    return kind == "f" and size == 0 and where in SANDBOX_EMPTY_FILES
 
 
 class Refused(Exception):

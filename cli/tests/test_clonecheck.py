@@ -120,6 +120,56 @@ def test_an_entry_a_plain_clone_has_not_is_refused(placed: Path) -> None:
         gitfacts.collect(placed)
 
 
+# What one sandboxed Claude Code session left in a clone, and a plain clone has not: Claude
+# Code 2.1.321, bubblewrap (cli/context/runner.md). A trailing `/` is an empty directory.
+SANDBOX_LEFT = (
+    "config.worktree",
+    "objects/info/alternates",
+    "remotes/",
+    "info/.claude-sandbox-noreplace/",
+    "objects/info/.claude-sandbox-noreplace/",
+    "objects/info/commit-graphs/.claude-sandbox-noreplace/",
+)
+
+
+def _leave(clone: Path, entries: tuple[str, ...]) -> None:
+    for entry in entries:
+        path = clone / ".git" / entry
+        if entry.endswith("/"):
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+
+def test_what_the_sandbox_leaves_empty_reads_as_before(placed: Path) -> None:
+    """Empty, they change nothing git does; without this, the next start of a placement whose
+    session ran sandboxed refused its own clone (tsk-2zz5tjpbt28n)."""
+    _leave(placed, SANDBOX_LEFT)
+    assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "config.worktree",
+        "objects/info/alternates",
+        "objects/info/http-alternates",
+        "remotes/origin",
+        "info/.claude-sandbox-noreplace/hook",
+        "objects/info/.claude-sandbox-noreplace/pack",
+        "objects/info/commit-graphs/.claude-sandbox-noreplace/graph",
+    ],
+)
+def test_a_sandbox_placeholder_with_anything_in_it_is_refused(placed: Path, entry: str) -> None:
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[core]\n\tsparseCheckout = true\n")
+    with pytest.raises(gitfacts.FactsError, match=r"not a plain clone's|exists|not supported"):
+        gitfacts.collect(placed)
+
+
 def test_without_git_common_dir_nothing_runs(placed: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GIT_COMMON_DIR")
     with pytest.raises(gitfacts.FactsError, match="without GIT_COMMON_DIR"):
