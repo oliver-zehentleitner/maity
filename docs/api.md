@@ -15244,7 +15244,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
-| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced` (§15.14) |
+| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced`, `replace_failed` (§15.14) |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
@@ -15308,6 +15308,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | the agent is isolated (§6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
 | the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds` (§15.3) |
 | a replacement finished its handover (§15.14) | `replaced` | uniform, as above: the old placement gets `desired: stopped` |
+| a replacement failed: its new placement reported `failed`, or a `full` transcript did not arrive in time (§15.14) | `replace_failed` | uniform, as above, for the new placement; the old one runs on |
 | the runner is removed | `runner_removed` | at once. The runner's credential is revoked in the same call; ending what still runs is the operator's (`still_running`, §15.3) and the runner's `orphaned` handling |
 
 A placement closing the uniform way is still active and reads as
@@ -15449,6 +15450,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `sessions` | integer | fresh sessions started in this generation; every other start resumes the placement's session (§15.14) |
 | `last_activity_at` | timestamp or `null` | the latest harness output or loop call the runner saw; clamped like `since`; a report changing only this field is sent at most once a minute and writes no event (§15.14) |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
+| `handover` | `{transcript: "received"}` or absent | on the new placement of a `full` replacement: the transcript is in the clone (§15.14); anywhere else `invalid` |
 | `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
 | `crash_count`, `crash_window_seconds` | integers or `null` | quick exits within the window, for `crash_loop` and while counting toward it |
 | `deadline_at` | timestamp or `null` | with `stopping`: when the process is ended if it has not exited |
@@ -15635,7 +15637,7 @@ Runner credential, signed (§15.1).
 | POST | `/runner/hello` | `{client, capabilities, actual: [{placement_id, generation, state, target}]}` | `200`, the runner packet below. Opens a runner session and ends the previous one. No `Idempotency-Key`: like `resume`, a repeat opens a new session |
 | GET | `/runner/events` | `after`, `wait` (0–55), `limit` | `{items, cursor, superseded, server_time, cli_version}` as in §8.3, over every project the runner reads |
 | GET | `/runner/placements` | — | `{items}`: every active, approved placement of this runner, the full desired spec as below |
-| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, nudge?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
+| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, nudge?, handover?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
 | PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; only the old placement's runner of an open `full` replacement, once (`conflict` after); §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; only the new placement's runner, `not_found` until uploaded or after deletion |
@@ -15840,7 +15842,9 @@ The kinds are in §8.2. Rules that apply to all of them:
   absent, and the generated rules tell the agent not to start `maity
   wait` and to end its turn after a checkpoint; without it `hints.duty`
   is `"self"`. The packet gains `membership.placement`: `{id,
-  runner_name, harness, mode, stop_grace_seconds}` or `null`.
+  runner_name, harness, mode, stop_grace_seconds, replace}` or `null`.
+  `replace` is `null` unless the placement is the new one of an open or
+  just finished replacement (§15.14).
 - **Supervised wake set** (§8.2). A long-poll (`wait > 0`) of a session
   opened with `supervisor` is woken by the usual wake-relevant set minus
   the events whose audience is only `all`, except `state_changed`,
@@ -16566,11 +16570,31 @@ that restarts itself:
 
 ### 15.14 Placement health: a stuck agent, a nudge, a replacement
 
-The maintainer's decisions of 2026-11-10 (card tsk-j9e0yapj21wj). Until
-now a run that stopped producing anything held its placement as
-`running` until someone noticed. Every failure ended as `crash_loop`,
-an expired login and a full context alike. The only remedy was a
-restart, and it started a new session that knew nothing of the old one.
+Card tsk-j9e0yapj21wj. The maintainer decided the design on 2026-11-10:
+- the reasons a run ends, and which are never retried (seq 101898);
+- a restart resumes the agent's session, and an agent can be replaced
+  by a click, with a handover or none (101909);
+- an owner-wide threshold for silence with a per-agent override, then a
+  check-in with a deadline, then a nudge (101921). The deadline is a
+  grace period of its own (103408), and both range from 1 minute to
+  24 hours (103506);
+- a nudge either wakes the agent or resumes it, and the runner decides
+  which (101928, 103425);
+- two handover kinds, a summary and the full context (101987);
+- the order: new instance, handover, then stop the old one (103365);
+- the full context goes end-to-end encrypted through the hub (103388,
+  103493);
+- six restarts an hour hold a placement (101931), and a human or an
+  admin agent clears it (103515).
+
+Everything else in this section is the contract's own detail within that
+design.
+
+Until now a run that stopped producing anything held its placement as
+`running` until someone noticed. Every failure the runner did not
+classify ended as `crash_loop`, an expired login and a full context
+alike. The only remedy was a restart, and it started a new session that
+knew nothing of the old one.
 
 This section adds five things:
 - the hub notices silence and asks the agent before it acts;
@@ -16638,6 +16662,7 @@ because only it sees the process:
 | the run ended and the loop waits for an event | starts a run on the same session | `woken` |
 | the process is gone (out of memory, killed) | starts the harness again, resuming the same session with a line saying it was interrupted | `resumed` |
 | the process is alive but silent (supervised) | ends it as a stop does (TERM, KILL after `stop_grace_seconds`), reports `exited` with `reason: hung`, `detail: idle`, then resumes as above | `resumed` |
+| the process is alive and has produced output since the nudge's `at` minus `hang_after_minutes` (supervised) | nothing: it is working | `left_running` |
 | the process is alive (interactive) | nothing: a person may be at the pane, and the ask already reached the agent | `left_running` |
 
 - **Who.** A nudge is allowed to whoever may restart the placement
@@ -16713,8 +16738,9 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   clone of the old placement stays on the runner as every workspace
   does.
 - **The order** is the maintainer's: start the new one, then the
-  handover, then stop the old one. The work is never without a running
-  instance.
+  handover, then stop the old one. The old instance keeps its claims and
+  its credential until the new one has them, so the work always has an
+  instance that holds it.
   1. The new placement starts as any placement does. Its first resume
      packet carries `membership.placement.replace: {state:
      "handover_pending", from_instance, handover}`. The rules tell the
@@ -16731,21 +16757,43 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
        as `handover.note` in its packet. Without a note by `reply_by`, the
        hub goes on with `handover.note: null` and `handover.missing:
        true`.
-     - `full`: as `summary`, and the whole transcript of the old session
-       goes to the new session, across harness and model. Between two
-       runners it travels encrypted (below). On one runner it is copied
-       locally and never reaches the hub. The new session's first prompt
-       points the agent to it.
+     - `full`: as `summary`, plus the whole transcript of the old
+       session, for a new session of any harness and model. The old
+       placement's runner exports it, resuming the old session once if
+       it is not running, as for the note. Between two runners it
+       travels encrypted (below). On one runner, the runner copies it
+       locally and it never reaches the hub.
+       - **Success** is the new placement's runner reporting `handover:
+         {transcript: "received"}` in a status report (§15.8). It reports
+         that once it has put the transcript into the clone's
+         runner-owned `.git/maity/handover/transcript`, outside the work
+         tree. Step 3 waits for that report, and for the note or the
+         note's `reply_by`.
+       - **The deadline** is 2 hours after the replacement was created.
+         If the report has not come by then, the replacement fails
+         (below). That covers an upload, a download or an opening that
+         never completed.
   3. Then, in one transaction, the hub moves the old instance's claims,
      assignments and unacknowledged events to the new instance (as a
      `replaces` join does at its exchange, §6.17: the packet's
      `handover`, `from` naming the old instance). It revokes the old
      instance's credential and sets the old placement `desired:
      stopped`. That placement closes with `closed_reason: replaced` on
-     its terminal report, and `placement_replaced` is emitted.
-- **Aborting.** A `DELETE` of the new placement before step 3, or its
-  report `failed`, ends the replacement: the old placement runs on as
-  it was, and the owner's outage request (§15.7) names the new one.
+     its terminal report, and `placement_replaced` is emitted. It reaches
+     the new instance too, which wakes it. Its next packet carries
+     `membership.placement.replace: {state: "done", note, missing,
+     transcript}`, with `transcript` the file's path for `full`, else
+     `null`. That is how an agent that is already running learns of the
+     handover.
+- **Aborting.** The replacement ends without step 3 on any of these:
+  - a `DELETE` of the new placement before step 3;
+  - the new placement's report `failed`;
+  - a `full` transcript not received by its deadline.
+
+  The old placement runs on as it was. The new one closes, with
+  `removed` after a `DELETE` and `replace_failed` otherwise. A sealed
+  transcript already uploaded is deleted, and the owner's outage request
+  (§15.7) names the new placement.
 
 **The transcript between runners** (`handover: full`, two runners).
 The maintainer's decision: end-to-end encrypted through the hub, so
@@ -16773,6 +16821,14 @@ secrets read in the workspace.
   for the replacement it was made for. It sends the result to `PUT
   /runner/placements/{id}/handover`, as `application/octet-stream`, at
   most 64 MiB.
+- **The bytes.** The body is `enc`, the 32-byte encapsulated key,
+  followed by the ciphertext of one single-shot `Seal` (RFC 9180 §6.1).
+  `aad` is empty, and `info` is the new placement's id as UTF-8 bytes.
+  The plaintext is a UTF-8 JSON object `{"v": 1, "harness", "model",
+  "session", "transcript"}`: the old session's harness, model and
+  session id, and its transcript in the harness's own export format, as
+  a string. A body shorter than 48 bytes (32 plus the 16-byte tag) is
+  `invalid`.
 - The new placement's runner reads `handover: {kind: "full", ready:
   true}` and fetches it with `GET /runner/placements/{id}/handover`. It
   opens it locally and confirms with `DELETE`, after which the hub
