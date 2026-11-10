@@ -302,6 +302,24 @@ def test_codex_config(tmp_path: Path) -> None:
     assert set(domains) == {"maity.team", "github.com", "pypi.org", *adapters.CODEX_PROVIDER_HOSTS}
 
 
+def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
+    supervised = {**PLACEMENT, "mode": "supervised"}
+    claude = adapters.claude_settings(context(tmp_path / "c", placement=supervised))
+    assert "AskUserQuestion" in claude["permissions"]["deny"]  # bare: out of the context
+    codex = tomllib.loads(
+        adapters.codex_config(context(tmp_path / "x", harness_id="codex", placement=supervised))
+    )
+    assert codex["tools"]["experimental_request_user_input"] == {"enabled": False}
+
+
+def test_an_interactive_placement_keeps_the_question_tool(tmp_path: Path) -> None:
+    # A person is at the pane; what the permission mode does with the tool stays as it was.
+    claude = adapters.claude_settings(context(tmp_path / "c"))
+    assert "AskUserQuestion" not in claude["permissions"]["deny"]
+    codex = tomllib.loads(adapters.codex_config(context(tmp_path / "x", harness_id="codex")))
+    assert "tools" not in codex
+
+
 def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     (home / "codex").mkdir(parents=True)

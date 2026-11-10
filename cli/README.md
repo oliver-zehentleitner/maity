@@ -991,7 +991,9 @@ project's own harness configuration is never loaded:
   by the runner outside the clone (`maity`, `git`, the repository's
   `allow` list, file tools inside the clone only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
-  configuration. Before an `interactive` start the runner marks the
+  configuration. A `supervised` placement also gets `AskUserQuestion` as a
+  bare deny rule: nobody answers a headless run, so the tool is not
+  offered. Before an `interactive` start the runner marks the
   clone as trusted in the agents' Claude Code configuration
   (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
   Code's own saves take; see `cli/context/runner.md` for the one case in
@@ -1048,7 +1050,10 @@ project's own harness configuration is never loaded:
   credential stays readable, because the agent's `maity` runs inside the
   sandbox. It sets
   `approval_policy = "never"`, and allows network to the hub, the forge,
-  Codex's model endpoints and a repository's `network` list only. The
+  Codex's model endpoints and a repository's `network` list only. For a
+  `supervised` placement it also turns off the tool for asking the person
+  at the terminal (`[tools.experimental_request_user_input] enabled =
+  false`). The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
   in the repository is not loaded. Codex has no per-command allowlist, so
