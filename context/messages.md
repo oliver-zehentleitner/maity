@@ -600,8 +600,8 @@ member up.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's ask that "seq N" in text link to that message, 2026-11-04, card tsk-6g2h8dag2fkg (the route, its visibility and the not-found rule are the card's); contract `docs/api.md` §8.9, 2026-11-10; the maintainer's acceptance that §8.9 states openly that time is not closed, request req-r6hmhaszf4e6 (option o1), 2026-11-10; the alternatives and the reasons below are the implementer's
-**Revisit when:** the readable set of `GET /events` changes shape (a new exception in §8.2 has to be checked here too), links to events in another project or in a cross-project chat are wanted, the maintainer withdraws req-r6hmhaszf4e6 and wants the time channel closed, or a later participant's links to a group chat's earlier messages should open them
+**Source:** the maintainer's ask that "seq N" in text link to that message, 2026-11-04, card tsk-6g2h8dag2fkg (the route, its visibility and the not-found rule are the card's); contract `docs/api.md` §8.9, 2026-11-10; the maintainer's acceptance that §8.9 states openly that time is not closed, request req-r6hmhaszf4e6 (option o1), 2026-11-10, and that the residual covers a hidden event's kind class and an agent in a group chat's audience, request req-3gfnkas6bv8b (option o1), 2026-11-10; the alternatives and the reasons below are the implementer's
+**Revisit when:** the readable set of `GET /events` changes shape (a new exception in §8.2 has to be checked here too), links to events in another project or in a cross-project chat are wanted, the maintainer withdraws req-r6hmhaszf4e6 or req-3gfnkas6bv8b and wants the time channel closed, or a later participant's links to a group chat's earlier messages should open them
 
 `GET /projects/{owner}/{slug}/events/{seq}` answers one event, with
 exactly the readable set of `GET /events` and the shape it serves, plus
@@ -620,22 +620,30 @@ The card requires that the route not reveal whether an event exists, so
 every difference between a hidden and a missing event is named in §8.9
 and all but one are closed there (status, details, body length,
 parsing, project, redaction, headers, side effects, limits). Time is
-not: the read rule reads further rows by a found row's kind and content
-before it decides, and a missing row has none to read, so a caller may
-tell a hidden event from a missing one by response time — that this
-project has an event at that `seq` it may not read, nothing of what the
-event is. §8.9 says so plainly rather than claim a closure it does not
-have; that this is narrower than the card's wording the maintainer
-accepted (req-r6hmhaszf4e6).
+not: a found row costs the process its checks, and a row of certain
+shapes makes the read rule read further rows before it decides (an
+`event_redacted`'s subject, a jour fixe round or series, a ticker
+decision's request, a watcher list, the restricted-access set, whether a
+group chat is a jour fixe round's thread, the agents its event names),
+so a caller may tell by response time that this project has an event at
+that `seq` it may not read, roughly its kind class (which check the row needed), and for a
+group chat's event whether its audience names an agent; never its
+author or content. §8.9 says so plainly rather than claim a closure it
+does not have; that this is narrower than the card's wording the
+maintainer accepted (req-r6hmhaszf4e6), the kind class and the agent
+in a group chat's audience included (req-3gfnkas6bv8b).
 Who gets `conversation_id` is who may open the conversation, not who
 reads the event: the admin of a blind redaction reads its
 `event_redacted` in a closed group chat without reading the chat
 (§8.5), and the field must not name a chat to them. Two group-chat
 consequences of keeping the event list's one rule are accepted: a
 participant added later reads earlier messages in the chat's history
-but gets `not_found` for them here (the history's rule is §9.2's, not
-the event list's), and a former participant reads the events it was
-there for but no longer the chat, so it gets them with
+but gets `not_found` here for those the event list does not serve it
+(the history's rule is §9.2's, not the event list's; a rejoining former
+participant still reads its earlier stay's, the owner of an agent a
+message names reads that one along), and a former participant reads
+the events it was there for but, unless it reads along as the owner of
+an agent participant, no longer the chat, so it gets them with
 `conversation_id: null` and opens them outside the chat. A link is an
 ordinary `href` to a dashboard path, as an id's is, so it opens in a
 new tab, copies and reloads.

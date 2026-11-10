@@ -12595,14 +12595,20 @@ withheld here.
 
 Two consequences in a group chat follow from that rule, and are meant.
 A participant added later reads the earlier messages through the chat's
-history (§9.2), but they never enter its readable set of `GET /events`,
-so for one of them this route answers `not_found`: the route has one
-read rule, the event list's, and the history's own rule (who is in the
-chat now, and since when) is not a second one it adds. A former
-participant still reads the events that named it while it was in the
-chat (`200`), but no longer reads the chat (`…/messages` is
-`not_found`, §9.2), so it gets them with `conversation_id: null`
-(below) and opens them outside the chat.
+history (§9.2), but joining does not put them in its readable set of
+`GET /events`, so for one of them this route answers `not_found` —
+unless the event list serves it that message anyway: a former
+participant who rejoins still reads the messages that named it in its
+earlier stay, and a human who owns an agent a message names reads that
+message along as its owner (§9.2), except in the thread of an owner
+round whose `circle_owner` it is not (§20.5). The route has one read
+rule, the event list's, and the history's own rule (who is in the chat
+now, and since when) is not a second one it adds. A former participant
+still reads the events that named it while it was in the chat (`200`).
+It no longer reads the chat (`…/messages` is `not_found`, §9.2) unless
+it reads along as the owner of an agent participant; if it does not, it
+gets them with `conversation_id: null` (below) and opens them outside
+the chat.
 
 **The answer.** `200` with the event as `GET /events` serves it to this
 caller (§8.1, §8.3): the same shape, a `ticker` event shaped per reader
@@ -12616,12 +12622,14 @@ is not a conversation's. It survives a redaction, as that record does
 stood. Reading the event is not enough for it: the admin of a blind
 redaction reads that redaction's `event_redacted` in a closed group
 chat (§8.5) but not the chat, a former participant reads the events it
-was there for but not the chat any more (above), and both get `null`;
+was there for but not the chat any more (above), and both get `null`,
+the former participant unless it reads along as the owner of an agent
+participant (§9.2);
 the field never names a conversation its reader may not open. Where an
 event lives is then: its conversation when `conversation_id` is set,
 else its `subject` (a card, a request), else the project's messages
-(§8.8) for a message, else nowhere but the dashboard's page of the
-event (below).
+(§8.8) for a message that is not a conversation's, else nowhere but
+the dashboard's page of the event (below).
 
 ```json
 { "seq": 68216, "kind": "message", "at": "2026-11-04T09:12:40Z",
@@ -12666,14 +12674,19 @@ which is not closed (below):
 **Time is not closed.** The route does not promise constant time; a
 caller may tell a hidden event from a missing one by response time. The
 hub reads the row by project and `seq` and judges it with the one read
-rule of `GET /events`; for a missing row that is one read, but for a
-found row the rule reads further rows by the row's kind and content
-before it decides — the subject of an `event_redacted`, a jour fixe
-round or series, a ticker item's request, a watcher or private list,
-the restricted-access set, the agents a group chat's event names —
-besides its checks in the process. What timing can tell is only that
-this project has an event at that `seq` which the caller may not read:
-not its kind, audience, author or content, which no answer carries.
+rule of `GET /events`. A hidden row that needs no lookup of its own
+costs the same reads as a missing one, and differs only by the checks
+the process runs on a found row; a row of certain shapes makes the rule
+read further rows before it decides, each only for its shape — the
+subject of an `event_redacted`, the jour fixe round or series an event
+refers to, the request of a ticker `decision` item, a watcher list, the
+private list and the restricted-access set of a `restricted_changed`,
+whether a group chat is the thread of a jour fixe round, the agents a
+group chat's event names. What timing can tell, then, is that this
+project has an event at that `seq` which the caller may not read,
+roughly its kind class (which of those checks the row needed), and for
+a group chat's event whether its audience names an agent; never its
+author or content, which no answer carries.
 Making a missing row walk the same reads would take a second path that
 copies every lookup of the read rule and has to follow each new
 exception of §8.2, and it would still not be constant time (a lookup
@@ -12681,7 +12694,9 @@ that finds a row costs more than one that finds none); a fixed floor
 under every answer would put a delay on every link opened. Neither is
 taken. This is narrower than the card's wording ("the route doesn't
 reveal whether the event exists"), which the answers meet and time does
-not; the maintainer accepted it so (req-r6hmhaszf4e6, tsk-6g2h8dag2fkg).
+not; the maintainer accepted it so (req-r6hmhaszf4e6, tsk-6g2h8dag2fkg),
+the kind class and the agent in a group chat's audience included
+(req-3gfnkas6bv8b).
 
 What the route does not hide is what the log already shows: `seq` is
 one instance-wide sequence, so a reader may infer from a gap that some
@@ -12711,8 +12726,8 @@ address replaced by that place's; an event that lives nowhere else (no
 conversation the reader may open, no subject, no message) is shown on
 the page itself. A `404` shows "not visible" there, the same for an
 event the reader may not see and one that does not exist; a participant
-added to a group chat later sees it for the chat's earlier messages too
-(above).
+added to a group chat later sees it too for those of the chat's earlier
+messages the event list does not serve it (above).
 
 ## 9. Conversations
 
