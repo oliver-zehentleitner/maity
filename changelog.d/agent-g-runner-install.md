@@ -11,3 +11,8 @@
   started. `maity runner uninstall` stops the service and its agents, then removes the unit; if
   it cannot tell that the agents stopped, it removes nothing unless `--force`. `--purge` also
   removes state, workspaces, the configuration and the account install made.
+
+### Fixed
+
+- cli: the shipped `maity-runner.service` lists `/tmp` in `ReadWritePaths`. `ProtectSystem=strict`
+  had left it read-only, so a harness that writes its own files under `/tmp` failed at start.

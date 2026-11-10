@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
 import tomllib
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -146,6 +148,10 @@ def test_the_unit_starts_the_maity_that_ran_install(tmp_path: Path) -> None:
     assert "/usr/local/bin/maity runner serve" not in unit.split("[Unit]")[1]
     assert "KillMode=process" in unit and "RestartPreventExitStatus=78" in unit
     assert "User=maity-runner" in unit
+    # ProtectSystem=strict leaves /tmp read-only unless named: harnesses write there.
+    assert "ProtectSystem=strict" in unit
+    assert "\nReadWritePaths=/var/lib/maity-runner /tmp\n" in unit
+    assert "PrivateTmp" not in unit.split("[Service]")[1].replace("# No PrivateTmp", "")
 
 
 def test_an_incomplete_configuration_enables_but_does_not_start(
@@ -598,6 +604,27 @@ def test_a_directory_of_another_user_in_home_is_refused(tmp_path: Path) -> None:
     with pytest.raises(install.Refused, match="does not belong to maity-runner"):
         install.cmd_install(args(code=None), host)
     assert host.calls == []
+
+
+def test_the_cli_imports_without_pwd_and_without_posix_open_flags() -> None:
+    """Windows has no `pwd`, `O_NOFOLLOW` or `O_DIRECTORY`; the CLI imports this module there
+    too (cli-windows, join-windows)."""
+    probe = (
+        "import os, sys\n"
+        "sys.modules['pwd'] = None\n"
+        "del os.O_NOFOLLOW, os.O_DIRECTORY\n"
+        "import maity.cli, maity.runner.install\n"
+        "print('imported')\n"
+    )
+    src = str(Path(install.__file__).parents[2])
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {src!r})\n{probe}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "imported"
 
 
 def test_install_and_uninstall_take_no_config_path() -> None:

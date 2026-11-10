@@ -11,6 +11,8 @@
 #
 # The agents run in a tmux server this service starts, so they inherit everything below:
 # they can write only /var/lib/maity-runner (their home, the clones, the state) and /tmp.
+# ProtectSystem=strict makes everything else read-only, /tmp included, so both are in
+# ReadWritePaths; a harness that writes its own files under /tmp fails at start without it.
 
 [Unit]
 Description=Maity runner: starts and stops agents on placements
@@ -38,13 +40,13 @@ TimeoutStopSec=30
 # The agents' files then live in ~maity-agent/.maity-runner, which the agents' user writes,
 # and sudo's children share this unit's read-only file system: add that directory and the
 # workspaces to ReadWritePaths, e.g.
-#   ReadWritePaths=/var/lib/maity-runner /home/maity-agent/.maity-runner /srv/maity/workspaces
+#   ReadWritePaths=/var/lib/maity-runner /tmp /home/maity-agent/.maity-runner /srv/maity/workspaces
 # sudo logs every command it runs (one `tmux list-panes` per tick, among others); a
 # `Defaults:maity-runner !syslog` (or log_allowed off) line quiets that, at the operator's
 # choice.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/maity-runner
+ReadWritePaths=/var/lib/maity-runner /tmp
 # No PrivateTmp: with KillMode=process the agents outlive a service restart, and a private
 # /tmp would be replaced under them on the next start.
 UMask=0077

@@ -48,7 +48,12 @@ RECORD = Path("/var/lib/maity-runner-install.json")
 COMMENT = "Maity runner"
 # What the shipped unit starts; install replaces it with the interpreter that runs this command.
 SHIPPED_EXEC = "ExecStart=/usr/local/bin/maity runner serve --config /etc/maity-runner/runner.toml"
-_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
+def _dir_flags() -> int:
+    """A directory, opened without following a link. POSIX only, like everything that calls
+    it: the CLI imports this module on Windows too, which has neither flag."""
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
 class Refused(Exception):
@@ -174,7 +179,7 @@ def _root_dir(host: Host, absolute: Path, create: bool) -> Iterator[int | None]:
                 except FileExistsError:
                     made = False
             try:
-                below = os.open(part, _DIR, dir_fd=fd)
+                below = os.open(part, _dir_flags(), dir_fd=fd)
             except FileNotFoundError:
                 os.close(fd)
                 fd = -1
@@ -313,7 +318,7 @@ def _check_user(host: Host) -> User | None:
         _their_dir(host, home, HOME, user)
         if parent is None:  # checked above; gone since
             raise Refused("a directory install checked has gone; nothing more was changed")
-        fd = os.open(HOME.name, _DIR, dir_fd=parent)
+        fd = os.open(HOME.name, _dir_flags(), dir_fd=parent)
         try:
             for below in (STATE_DIR, WORKSPACES):
                 st = _entry(fd, below.name)
@@ -371,7 +376,7 @@ def _open_dir(host: Host, name: str, parent_fd: int, shown: Path, user: User) ->
     except FileExistsError:
         made = False
     try:
-        fd = os.open(name, _DIR, dir_fd=parent_fd)
+        fd = os.open(name, _dir_flags(), dir_fd=parent_fd)
     except OSError:
         raise Refused(f"{shown} is a link or not a directory; move it away first") from None
     try:
@@ -447,12 +452,12 @@ def _paired(host: Host, user: User | None) -> bool:
         home = _entry(parent, HOME.name)
         if parent is None or home is None:
             return False
-        fd = os.open(HOME.name, _DIR, dir_fd=parent)
+        fd = os.open(HOME.name, _dir_flags(), dir_fd=parent)
     try:
         if _entry(fd, STATE_DIR.name) is None:
             return False
         try:
-            below = os.open(STATE_DIR.name, _DIR, dir_fd=fd)
+            below = os.open(STATE_DIR.name, _dir_flags(), dir_fd=fd)
         except OSError:
             raise Refused(f"{STATE_DIR} is a link or not a directory; move it away first") from None
         try:
