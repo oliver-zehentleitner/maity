@@ -443,6 +443,8 @@
   "board.claim.lease_expired": "prenotazione scaduta {time}",
   "board.claim.lease_until": "prenotazione fino a {time}",
   "board.claim.unclaimed": "Non presa in carico",
+  "board.closed.failed": "Impossibile leggere le schede chiuse: {reason}",
+  "board.closed.loading": "Lettura delle schede chiuse…",
   "board.column.other": "Altro",
   "board.column.unknown": "Stato sconosciuto",
   "board.contract.arbiter_admins": "gli admin",

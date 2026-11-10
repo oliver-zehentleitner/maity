@@ -423,6 +423,8 @@
   "board.claim.lease_expired": "{time}에 예약 만료",
   "board.claim.lease_until": "{time}까지 예약",
   "board.claim.unclaimed": "담당 안 됨",
+  "board.closed.failed": "닫힌 카드를 읽지 못했어요: {reason}",
+  "board.closed.loading": "닫힌 카드를 읽는 중…",
   "board.column.other": "기타",
   "board.column.unknown": "알 수 없는 상태",
   "board.contract.arbiter_admins": "관리자",

@@ -450,6 +450,8 @@ window.MAITY_I18N["de"] = {
   "board.claim.lease_expired": "Reservierung abgelaufen {time}",
   "board.claim.lease_until": "Reservierung bis {time}",
   "board.claim.unclaimed": "Nicht übernommen",
+  "board.closed.failed": "Die geschlossenen Karten konnten nicht gelesen werden: {reason}",
+  "board.closed.loading": "Die geschlossenen Karten werden gelesen…",
   "board.column.other": "Andere",
   "board.column.unknown": "Unbekannter Status",
   "board.contract.arbiter_admins": "die Admins",

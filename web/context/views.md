@@ -1915,7 +1915,9 @@ not the sum.
   boundary excludes.
 - The open columns first and the closed window after them: the board
   would draw twice, and its closed columns and counts would change under
-  the reader.
+  the reader. Taken up on 2026-11-10, after prod measured the closed
+  window as the board's longest wait: [the board draws once the open
+  groups have answered](#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow).
 - One request per status: seven instead of five, for groups (`blocked`,
   `review`; `done`, `cancelled`) that are small next to the rest.
 - Reconciling from the project's event feed (the cards a task event names
@@ -5874,3 +5876,40 @@ All projects. A switch inside one project already keeps its members for at most 
 (`KEPT_MS` in web/js/app.js) and reads them again behind the view; a cache without that re-read
 would show a member list from before a change on the next visit, and adding it was more than the
 card asked for. Alternatives beyond that were not discussed.
+
+## The board draws once the open groups have answered; the closed columns follow
+
+**Id:** e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a5pxwgkgr73e: the owner's feedback on deploy 6 (2026-11-10, the board one of two pages still over 1 s); the operators' per-call measurement of the board on rev 30 (2026-11-10: the five group reads start together and take 83–203 ms each; the closed group then pages serially, 4 pages of 200, about 0.9 s and 550 kB); the coordinator's go for this change the same day
+**See:** views.md#the-board-reads-its-column-groups-side-by-side — 145f0bf3-3024-414a-8026-19dad1960ff7 — as of 2026-11-10
+**Revisit when:** the hub serves the closed window in one page or a smaller shape, the closed window changes, or the board's first draw is measured over 1 s again
+
+The board still asks its five groups at once and reconciles as before
+(the entry above). What changed is when it first draws: once the four open
+groups (`proposed`, `open`, `in_progress`, `blocked,review`) have
+answered, with their cards, while the closed group (`done,cancelled` with
+the 14-day window) is still paging. Until the whole read is in, the Done
+and Cancelled columns hold no count and say that the closed cards are
+being read; if that read fails, those columns say so and the open ones
+stay as drawn. Then the board draws again with every card. The control
+that had the focus keeps it, and a board left from a closed card finds
+that card now. A reload after a write supersedes the first read: an
+answer is drawn only if no later read's answer has been.
+
+**Reason:** on the maintainer's project the closed window was 783 cards,
+the largest group by far, and its pages follow each other through a
+keyset cursor, so it held the first draw by about a second while the open
+columns, the ones a reader works in, had long answered.
+
+**Rejected alternatives:**
+- Waiting for every group, as before: the reason above. The objection
+  recorded then, that the closed columns and counts change under the
+  reader, is met by showing no count and a loading line in those columns
+  until they are complete.
+- A leaner card shape for the board, or a shorter closed window by default:
+  each a contract or product change, held until this change and a faster
+  200-card page on the hub have been measured.
+

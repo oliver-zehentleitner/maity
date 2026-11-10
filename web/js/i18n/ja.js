@@ -430,6 +430,8 @@ window.MAITY_I18N["ja"] = {
   "board.claim.lease_expired": "予約は {time} に失効しました",
   "board.claim.lease_until": "予約は {time} まで",
   "board.claim.unclaimed": "担当なし",
+  "board.closed.failed": "完了したカードを読み込めませんでした: {reason}",
+  "board.closed.loading": "完了したカードを読み込んでいます…",
   "board.column.other": "その他",
   "board.column.unknown": "不明なステータス",
   "board.contract.arbiter_admins": "管理者",

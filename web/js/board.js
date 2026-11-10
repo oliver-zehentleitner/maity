@@ -714,9 +714,20 @@ window.Maity = window.Maity || {};
       }
       return { paged, newest };
     };
-    const readList = async () => {
+    // shown(cards), where given, is called once the four open groups have answered, with their cards,
+    // before the closed group's pages (tsk-a5pxwgkgr73e): on the maintainer's project that group was
+    // 783 cards in four pages one after the other, so it held the first draw by seconds.
+    const readList = async (shown) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
-      const parts = await Promise.all(listPaths.map((path) => M.api.getAll(path)));
+      const groups = listPaths.map((path) => M.api.getAll(path));
+      // A closed group failing while the open ones are awaited is handled by Promise.all below.
+      groups.forEach((read) => read.catch(() => {}));
+      if (shown) {
+        const open = new Map();
+        (await Promise.all(groups.slice(0, LIST_GROUPS.length))).forEach((r) => r.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        shown([...open.values()]);
+      }
+      const parts = await Promise.all(groups);
       const cards = new Map();
       parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
       let from = began;
@@ -727,7 +738,20 @@ window.Maity = window.Maity || {};
       }
       return (await M.api.getAll(windowPath)).items;
     };
-    let items = await readList();
+    // The first draw takes the open groups' cards; the closed columns say they are being read until
+    // the whole read is in (closedPending), or why it failed (closedError). Each read has a number
+    // (reads); an answer is drawn only when no later read's has been (applied), so a slow first read
+    // never replaces a reload's cards, and a failed reload leaves the first read to fill the columns.
+    let closedPending = true;
+    let closedError = null;
+    let reads = 1;
+    let applied = 0;
+    const apply = (read) => { if (read < applied) return false; applied = read; return true; };
+    let openShown;
+    const openRead = new Promise((resolve) => { openShown = resolve; });
+    const firstRead = readList((open) => openShown(open));
+    firstRead.catch(() => {});
+    let items = await Promise.race([openRead, firstRead]);
     let boardItems = items;
     let searchVersion = 0;
     let hubResults = false;
@@ -777,7 +801,12 @@ window.Maity = window.Maity || {};
     }
 
     async function reload(focusKey, inPanel) {
-      boardItems = await readList();
+      const read = ++reads;
+      const fresh = await readList();
+      if (!apply(read)) return;
+      boardItems = fresh;
+      closedPending = false;
+      closedError = null;
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
@@ -945,10 +974,17 @@ window.Maity = window.Maity || {};
           }
         },
       },
-      h("h3", { class: "column-head" }, label, h("span", { class: "count" }, String(cards.length))),
-      cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+      h("h3", { class: "column-head" }, label, closedWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
+      closedWaiting(s) && !cards.length
+        ? (closedError
+          ? h("p", { class: "send-status failed closed-read" }, M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
+          : h("p", { class: "muted closed-read", role: "status" }, M.t("board.closed.loading")))
+        : cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
       return col;
     }
+
+    // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
+    const closedWaiting = (s) => (closedPending || !!closedError) && !hubResults && (s === "done" || s === "cancelled");
 
     let byId = {};
     // The opened card's panel (js/card-panel.js), beside or above the columns.
@@ -1010,7 +1046,7 @@ window.Maity = window.Maity || {};
       columns = {};
       COLUMNS.forEach(([s]) => { columns[s] = standing.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
-      if (!items.length && !searchInput.value) {
+      if (!items.length && !searchInput.value && !closedPending && !closedError) {
         append(intro, h("p", { class: "first-hint" }, M.t("board.empty")));
       } else if (!visible.length) {
         append(intro, h("p", { class: "muted" }, M.t("board.no_match")));
@@ -1158,6 +1194,30 @@ window.Maity = window.Maity || {};
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
       searchStatus, formBox, status.el, intro, wantedNote, boardBody);
     let markedCard = draw();
+    // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
+    // search filters it too), the focus kept on the control that had it. A board left from a closed
+    // card finds that card only now, and its title takes the focus if nothing else took it meanwhile.
+    // A reload drawn meanwhile supersedes it.
+    const markedFirst = !!markedCard;
+    firstRead.then((all) => {
+      if (!apply(1)) return;
+      const at = document.activeElement;
+      const key = at && columnsBox.contains(at) ? at.getAttribute("data-focus") : null;
+      boardItems = all;
+      closedPending = false;
+      if (!hubResults) items = boardItems;
+      const found = draw();
+      if (key) refocus(key);
+      else if (found && !markedFirst && returning && (!at || at === document.body)) {
+        const title = found.querySelector("a.card-open");
+        window.setTimeout(() => (title || found).focus(), 0);
+      }
+    }, (err) => {
+      if (applied > 1) return;
+      closedPending = false;
+      closedError = err;
+      draw();
+    });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {
       searchInput.value = kept.search;

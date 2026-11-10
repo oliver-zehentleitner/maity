@@ -443,6 +443,8 @@
   "board.claim.lease_expired": "reservering verlopen {time}",
   "board.claim.lease_until": "reservering tot {time}",
   "board.claim.unclaimed": "Niet geclaimd",
+  "board.closed.failed": "De gesloten kaarten konden niet worden gelezen: {reason}",
+  "board.closed.loading": "De gesloten kaarten worden gelezen…",
   "board.column.other": "Overig",
   "board.column.unknown": "Onbekende status",
   "board.contract.arbiter_admins": "de admins",

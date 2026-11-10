@@ -443,6 +443,8 @@
   "board.claim.lease_expired": "lease expired {time}",
   "board.claim.lease_until": "lease until {time}",
   "board.claim.unclaimed": "Unclaimed",
+  "board.closed.failed": "The closed cards could not be read: {reason}",
+  "board.closed.loading": "Reading the closed cards…",
   "board.column.other": "Other",
   "board.column.unknown": "Unknown status",
   "board.contract.arbiter_admins": "the admins",
