@@ -28,7 +28,7 @@ def first_call(src):
     assert error is None, error
     m = re.search(r"\bM\.api\.(get|post|patch|put|del)\(", code)
     begin, end = check.first_argument(code, m.end())
-    return check.path_pattern(src, code, src[begin:end], m.start()), check.asks_first(code, m.start())
+    return check.path_pattern(src, code, src[begin:end], m.start()), check.asks_first(code, m.start(), src)
 
 
 def reaches(pattern, path):
@@ -109,6 +109,141 @@ expect(pattern is None, "a path nothing of which can be read is left alone")
 
 pattern, asks = first_call('M.api.get(ctx.base + "/members");')
 expect(not reaches(pattern, "/projects/{owner}/{slug}"), "another route under the project is not the project's own")
+
+# A wrapper is tied to the binding it is given, not to its name anywhere in the file (xyfr at #1547).
+pattern, asks = first_call(
+    'function a(){ const call = () => M.api.post("/runners/enrollments", b); return call(); }\n'
+    'function b(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); }'
+)
+expect(not asks, "another binding of the same name handed to M.stepUp.run elsewhere does not make this one ask")
+
+pattern, asks = first_call(
+    'function b(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); }\n'
+    'function a(){ const call = () => M.api.post("/runners/enrollments", b); return M.stepUp.run(call, slot); }'
+)
+expect(asks, "the binding handed to M.stepUp.run in its own function asks, whatever another function names its own")
+
+pattern, asks = first_call(
+    'function a(){ const call = () => M.api.post("/runners/enrollments", b);\n'
+    '  function c(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); } return call(); }'
+)
+expect(not asks, "a binding of the same name in a function inside does not make the outer one ask")
+
+pattern, asks = first_call(
+    'const call = () => M.api.post("/runners/enrollments", b);\n'
+    'async function go(){ await M.stepUp.run(call, slot); }'
+)
+expect(asks, "a binding handed on from a function inside its scope asks")
+
+pattern, asks = first_call(
+    'const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nawait M.stepUp.run(steps[i].call, slot);\nawait steps[0].call();'
+)
+expect(not asks, "a call: property also called outside M.stepUp.run does not ask")
+
+pattern, asks = first_call(
+    'const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nconst { call } = steps[0];\nawait M.stepUp.run(steps[i].call, slot);'
+)
+expect(not asks, "a call: property that is destructured does not ask")
+
+pattern, asks = first_call(
+    'const steps = [{ call: () => M.api.patch(LEGAL, v) }];\nawait M.stepUp.run(other.items[k].call, slot);'
+)
+expect(asks, "a call: property read only into M.stepUp.run asks, through any path")
+
+pattern, asks = first_call('const go = () => M.api.post(M.api.projectPath(slug) + "/requests/" + id + "/answer", b);')
+expect(reaches(pattern, "/projects/{owner}/{slug}/requests/{id}/answer") and reaches(pattern, "/requests/{id}/answer") and not asks,
+       "a part that cannot be read may stand for several segments: a project path before a personal route's tail")
+
+
+def scan(name, src):
+    """check_step_up's findings for one file js/<name> beside the real list and fixture."""
+    import json
+    import os
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(root, "js"))
+        shutil.copy(os.path.join(check.ROOT, "js", "api.js"), os.path.join(root, "js", "api.js"))
+        with open(os.path.join(root, "js", name), "w") as f:
+            f.write('"use strict";\n' + src + "\n")
+        saved = check.ROOT, list(check.findings)
+        check.ROOT = root
+        del check.findings[:]
+        try:
+            check.check_step_up()
+            return [x for x in check.findings if name in x]
+        finally:
+            check.ROOT = saved[0]
+            check.findings[:] = saved[1]
+    finally:
+        shutil.rmtree(root)
+
+
+got = scan("collision.js", 'function a(){ const call = () => M.api.post("/runners/enrollments", b); return call(); }\n'
+           'function b(){ const call = () => M.api.get("/me"); return M.stepUp.run(call, slot); }')
+expect(len(got) == 1 and "POST /runners/enrollments" in got[0], "make check: xyfr's two bindings named call, the unwrapped one is a finding " + repr(got))
+
+got = scan("hidden.js", 'const patch = { address: "a@b.c" };\nM.api.patch("/me/notification-settings", { email: patch });')
+expect(len(got) == 1 and "/me/notification-settings" in got[0], "make check: the address behind a variable in the body is a finding " + repr(got))
+
+got = scan("plain.js", 'M.api.patch("/me/notification-settings", { email: { muted: true } });')
+expect(got == [], "make check: a notification-settings write without the address is none " + repr(got))
+
+# 4hch at #1566: reads of a call: property the dotted scan does not see, and a body name shadowed elsewhere.
+pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\na["call"]();')
+expect(not asks, "a call: property also read by a string in brackets does not ask")
+
+pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\na[key]();')
+expect(not asks, "a call: property where a computed name is called does not ask")
+
+# 4hch at #1566, delta 1: any call through brackets, not only a bare name in them.
+for form in ('a["ca" + "ll"]()', 'a[key || "call"]()', 'a[(key)]()', 'a[key()]()'):
+    pattern, asks = first_call('const a = { call: () => M.api.post("/runners/enrollments", b) };\nawait M.stepUp.run(a.call, slot);\n' + form + ';')
+    expect(not asks, "a call: property where the file calls through brackets, " + form + ", does not ask")
+
+got = scan("shadow.js", 'const patch = { address: "a@b.c" };\nfunction other(){ const patch = { muted: true }; return patch; }\n'
+           'M.api.patch("/me/notification-settings", { email: patch });')
+expect(len(got) == 1, "make check: the body's name is the binding around the call, not another function's of the same name " + repr(got))
+
+# 4hv7 at #1566, delta 2: a hand-over helper is the declaration nearest the call by blocks, not the first of its name.
+got = scan("helpers.js", 'function one(){ const act = async (busy, fn) => { await M.stepUp.run(fn, ask); }; act("x", () => M.api.get("/me")); }\n'
+           'function two(){ const act = async (busy, fn) => { await fn(); }; act("x", () => M.api.post("/runners/enrollments", b)); }')
+expect(len(got) == 1 and "POST /runners/enrollments" in got[0], "make check: two sibling helpers named act, the one that calls fn itself is a finding " + repr(got))
+
+got = scan("helpers2.js", 'function one(){ function act(busy, fn) { return M.stepUp.run(fn, ask); } act("x", () => M.api.get("/me")); }\n'
+           'function two(){ function act(busy, fn) { return fn(); } act("x", () => M.api.post("/runners/enrollments", b)); }')
+expect(len(got) == 1 and "POST /runners/enrollments" in got[0], "make check: two sibling function declarations named act, the unwrapping one is a finding " + repr(got))
+
+pattern, asks = first_call('function act(busy, fn) { return M.stepUp.run(fn, ask); }\nfunction go(){ act("x", () => M.api.post("/runners/enrollments", b)); }')
+expect(asks, "a helper declared around the call's function, seen from inside it, asks")
+
+pattern, asks = first_call('const act = async (busy, fn) => { await M.stepUp.run(fn, ask); };\n'
+                           'function go(){ const act = other; act("x", () => M.api.post("/runners/enrollments", b)); }')
+expect(not asks, "a nearer binding of the helper's name that is no helper does not ask")
+
+# 4hv7 at #1566, delta 3: a named function expression binds its name only inside itself; a function
+# declaration is hoisted, so of two in one block the last counts, wherever the call stands.
+got = scan("expr.js", 'function two(){ const act = async (busy, fn) => { await fn(); };\n'
+           '  const x = function act(busy, fn) { return M.stepUp.run(fn, ask); };\n'
+           '  act("x", () => M.api.post("/runners/enrollments", b)); }')
+expect(len(got) == 1, "make check: a named function expression's name is not the helper in scope " + repr(got))
+
+got = scan("expr3.js", 'function go() {\n  function act(fn) { return fn(); }\n  const other = function act(fn) { return M.stepUp.run(fn, slot); };\n'
+           '  act(() => M.api.post("/runners/enrollments", b));\n}\ngo();')
+expect(len(got) == 1, "make check: 4hv7's case, a declared unwrapping act beside a wrapping named expression act, is a finding " + repr(got))
+
+got = scan("expr2.js", 'const x = function act(busy, fn) { return M.stepUp.run(fn, ask); };\n'
+           'act("x", () => M.api.post("/runners/enrollments", b));')
+expect(len(got) == 1, "make check: a named function expression alone binds no helper around it " + repr(got))
+
+got = scan("hoist.js", 'function two(){ function act(busy, fn) { return M.stepUp.run(fn, ask); }\n'
+           '  act("x", () => M.api.post("/runners/enrollments", b));\n  function act(busy, fn) { return fn(); } }')
+expect(len(got) == 1, "make check: of two function declarations in one block the last counts, after the call too " + repr(got))
+
+pattern, asks = first_call('function two(){ function act(busy, fn) { return fn(); }\n'
+                           '  act("x", () => M.api.post("/runners/enrollments", b));\n  function act(busy, fn) { return M.stepUp.run(fn, ask); } }')
+expect(asks, "the last of two function declarations, wrapping, asks for a call before it")
 
 print("%d failure(s)" % failures)
 sys.exit(1 if failures else 0)

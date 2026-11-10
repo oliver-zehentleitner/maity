@@ -3389,10 +3389,12 @@ window.MAITY_I18N["ja"] = {
   "placements.new.done": "{name} を {runner} に配置しました。ランナーは次に配置を読み込んだときに起動します。",
   "placements.new.failed": "ランナーに配置できませんでした：{reason}",
   "placements.new.field": "{field}：{why}",
-  "placements.new.hint": "ランナーは、ここで選んだツール、モード、モデルで、このプロジェクトのリポジトリのクローン内でエージェントを起動します。表示されるのは、ペアリング済みでこのプロジェクトに許可された自分のランナーだけです。",
+  "placements.new.hint": "ランナーは、ここで選んだツール、モード、モデルで、このプロジェクトのリポジトリのクローン内でエージェントを起動します。表示されるのは、ペアリング済みでこのプロジェクトに許可され、そのリポジトリを提供する自分のランナーだけです。",
   "placements.new.mode": "モード",
   "placements.new.model": "モデル",
   "placements.new.model_default": "ランナーの既定",
+  "placements.new.no_repository": "ランナーはプロジェクトのリポジトリのクローン内でエージェントを起動しますが、このプロジェクトにはリポジトリがありません。",
+  "placements.new.no_runner_offers": "このプロジェクトで許可されたあなたのランナーは、どれもそのリポジトリ {repository} を提供していません。ランナーが提供するのは、その設定に挙げられたリポジトリです。",
   "placements.new.no_tool": "ランナーはそこでインストール済みのツールを提供していません。",
   "placements.new.none": "ペアリング済みのあなたのランナーは、まだこのプロジェクトで許可されていません。{link} で許可してください。",
   "placements.new.none_link": "このプロジェクトの「ランナー」",
@@ -3935,7 +3937,7 @@ window.MAITY_I18N["ja"] = {
   "restricted.widen.cards": {
     "other": "現在、制限付きテキストのあるカードは {count} 件です。"
   },
-  "restricted.widen.cards_unknown": "以前メンバーが開放されていた間に書かれたテキストも保存されたままで、それも読めるようになります。",
+  "restricted.widen.cards_unknown": "以前制限付きアクセスが開放されていた間に書かれたテキストも保存されたままで、それも読めるようになります。",
   "restricted.widen.future": "後からこのプロジェクトに参加するメンバーも全員、読めるようになります。",
   "restricted.widen.go": "保存して読めるようにする",
   "restricted.widen.newly": "次のメンバーは、これまでに書かれたものも含めて、プロジェクトのすべての制限付きテキストを読み書きするようになります:",

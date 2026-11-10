@@ -30,6 +30,7 @@ from maity_hub import (
     forge_access,
     handles,
     images,
+    invitations,  # also registers the proposal of an invitation by handle (§3.4)
     join_line,
     landing_files,
     languages,
@@ -343,6 +344,9 @@ def create_app(
         # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
         invitations_worker = org_invitations.Worker(engine)
         invitations_worker.start()
+        # So does a project's invitation by handle, whose request is withdrawn (§3.4).
+        handle_invitations_worker = invitations.Worker(engine)
+        handle_invitations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -397,6 +401,7 @@ def create_app(
         reports_worker.stop()
         sources_worker.stop()
         invitations_worker.stop()
+        handle_invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()

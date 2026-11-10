@@ -307,7 +307,12 @@ reads it within 5 seconds, once; the events from the cursor. Its chat
 lists catch up at the next 30-second round. Actions and events still
 re-read `/me` at once. `/chats`, which has no project feed, reads the
 notification counts (`/me/notifications?limit=0`, not `/me`) every 15
-seconds while it is shown: a reply in the open chat comes in by them.
+seconds while it is shown. Those counts bring a reply in the open chat
+at once only where they move: a message from someone else to a party or
+participant. A group chat read along as an agent's owner moves no count
+(§9.3), so while one is open, each counts read refreshes it anyway;
+one's own message from another tab moves none either and comes with the
+30-second round.
 
 **Reason:** the 15-second round in every open tab was a large share of
 the hub's load: each round with an unread sign-in alert also read the

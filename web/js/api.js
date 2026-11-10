@@ -914,7 +914,8 @@ window.Maity = window.Maity || {};
     // The header holds at most four links: only an enabled section with a label is one (§16.7).
     let labelled = 0;
     sections.forEach((s, i) => {
-      if (s && s.enabled === true && s.nav_label) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
+      // A label of blanks counts for nothing; it is refused below, as the hub does (landing.py).
+      if (s && s.enabled === true && typeof s.nav_label === "string" && s.nav_label.trim()) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
     });
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
@@ -922,7 +923,13 @@ window.Maity = window.Maity || {};
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
-      if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
+      // A label sent is 1–24 characters once trimmed: one of blanks is refused, not taken as no label (the hub's
+      // text rule, landing.py _text; web roll-up 3, nte-m2e51amspdtr 2).
+      if (s.nav_label !== undefined && s.nav_label !== null) {
+        const label = typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label;
+        if (label === "") errors[sp + ".nav_label"] = "invalid";
+        else landingText(label, sp + ".nav_label", 24, false, errors);
+      }
       if (s.type !== "hero" && known.includes("eyebrow")) landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
@@ -2759,8 +2766,9 @@ window.Maity = window.Maity || {};
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
     // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
-    // the placement quota, the repository's offer or the spec's other validations (review of
-    // #1558). The placement waits for the runner (reported null) and needs no consent.
+    // the placement quota or the spec's other validations (review of #1558); the repository's
+    // offer with `*` and `?` only (tsk-wn6qp27090qy). The placement waits for the runner
+    // (reported null) and needs no consent.
     ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       const prj = project(m[1], path);
       const caller = me().member;
@@ -2797,6 +2805,12 @@ window.Maity = window.Maity || {};
       if (!tool || !(tool.modes || []).includes(mode) || (body.model && !(tool.models || []).includes(body.model))
         || (body.target && !(c.targets || []).some((t) => t.name === body.target))) {
         fail(409, "harness_not_offered", "not in the runner's advertised capabilities", path, { offered: c.harnesses || [] });
+      }
+      if (!prj.repository) fail(409, "repository_not_offered", "the project has no repository", path);
+      const repoName = prj.repository.url.replace(/^https:\/\//, "").replace(/\/+$/, "");
+      const glob = (p) => new RegExp("^" + p.split("").map((ch) => (ch === "*" ? "[\\s\\S]*" : ch === "?" ? "[\\s\\S]" : ch.replace(/[.+^${}()|[\]\\/]/g, "\\$&"))).join("") + "$");
+      if (!(c.repositories || []).some((p) => typeof p === "string" && glob(p).test(repoName))) {
+        fail(409, "repository_not_offered", "the runner does not offer the project's repository", path);
       }
       const at = nowIso();
       const made = {
@@ -4067,6 +4081,8 @@ window.Maity = window.Maity || {};
           return { ...card, match };
         }).filter((card) => card.match.length);
       }
+      // `order=updated` (§6): the old updated_at desc order, as the board's reconciling read asks it.
+      if (query.get("order") === "updated") items = items.slice().sort((a, b) => (Date.parse(b.updated_at || 0) || 0) - (Date.parse(a.updated_at || 0) || 0));
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and

@@ -3259,7 +3259,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "paths.glance.none": "还没有成员向其他成员汇报。",
   "paths.group.close": "折叠 {role} 列",
   "paths.group.count": {
-    "other": "{count} 名成员"
+    "other": "{count} 个成员"
   },
   "paths.group.open": "显示每个成员",
   "paths.instances": {
@@ -3389,10 +3389,12 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.done": "{name} 已部署到 {runner}。运行器下次读取其部署时会启动它。",
   "placements.new.failed": "未能部署到运行器：{reason}",
   "placements.new.field": "{field}：{why}",
-  "placements.new.hint": "运行器会在此项目仓库的克隆中，用这里选择的工具、模式和模型启动智能体。只列出你自己已配对并获准用于此项目的运行器。",
+  "placements.new.hint": "运行器会在此项目仓库的克隆中，用这里选择的工具、模式和模型启动智能体。只列出你自己已配对、获准用于此项目并提供其仓库的运行器。",
   "placements.new.mode": "模式",
   "placements.new.model": "模型",
   "placements.new.model_default": "运行器默认",
+  "placements.new.no_repository": "运行器会在项目仓库的克隆中启动智能体，而此项目没有仓库。",
+  "placements.new.no_runner_offers": "你获准用于此项目的运行器都不提供其仓库 {repository}。运行器提供的是其配置中列出的仓库。",
   "placements.new.no_tool": "运行器在那里没有提供已安装的工具。",
   "placements.new.none": "你已配对的运行器尚无获准用于此项目的。请在{link}中允许一个。",
   "placements.new.none_link": "此项目的“运行器”",
@@ -3913,7 +3915,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "restricted.settings.error.guest": "访客永远不在组中。",
   "restricted.settings.error.not_a_member": "不是此项目的活跃成员。",
   "restricted.settings.error.owner_not_a_member": "此智能体的所有者不是项目成员，或是访客。",
-  "restricted.settings.error.too_many": "列表中最多 200 名成员。",
+  "restricted.settings.error.too_many": "列表中最多 200 个成员。",
   "restricted.settings.error.unknown_mode": "不是此 hub 识别的模式。",
   "restricted.settings.gone": "{id}（已不是成员）",
   "restricted.settings.guest_never": "（访客：永远不在组中）",

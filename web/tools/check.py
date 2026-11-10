@@ -1395,10 +1395,43 @@ def initializer(src, code, name, before):
     return src[last.end():end].strip()
 
 
+def body_text(src, code, body, at, depth=0):
+    """A call's body as written, with the value of every name in it put beside it, names in those
+    too, three deep: a key behind a variable (`{ email: patch }`) is read (xyfr at #1547). A name is
+    resolved by the blocks around the call (declaration_of), not by the last `const` of that name in
+    the file (4hch at #1566); a parameter or a reassignment is not followed."""
+    if depth >= 3:
+        return body
+    names = set(re.findall(r"(?<![\w$.])[A-Za-z_$][\w$]*", body))
+    blocks = brace_blocks(code)
+    more = [bound_value(src, code, declaration_of(code, blocks, name, at)) for name in sorted(names)]
+    return body + " " + " ".join(body_text(src, code, x, at, depth + 1) for x in more if x)
+
+
+def bound_value(src, code, name_at):
+    """The text after `=` of the `const`/`let` whose name stands at name_at, to its `;` or the end of
+    its block; None where name_at is None."""
+    if name_at is None:
+        return None
+    eq = code.find("=", name_at)
+    depth, end = 0, len(code)
+    for i in range(eq + 1, len(code)):
+        c = code[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if depth < 0 or (depth == 0 and c == ";"):
+            end = i
+            break
+    return src[eq + 1:end].strip()
+
+
 def path_pattern(src, code, expr, at, depth=0):
     """A regular expression for the paths a call's first argument builds, or None where no part of it
     can be read here: string literals, `ctx.base`, a name's own `const`, a helper arrow's body, both
-    sides of a `?:` or `||`. What cannot be read stands for one path segment or part of one."""
+    sides of a `?:` or `||`. What cannot be read stands for any run of characters, slashes too: a
+    helper such as M.api.projectPath gives several segments (xyfr at #1547)."""
     expr = expr.strip()
     if expr.startswith("(") and expr.endswith(")") and call_end(expr, 1) == len(expr) - 1:
         expr = expr[1:-1]
@@ -1422,9 +1455,9 @@ def path_pattern(src, code, expr, at, depth=0):
             sub = "(?:" + "|".join(alts) + ")" if all(a is not None for a in alts) else None
         elif depth < 3 and "||" in part:
             alts = [path_pattern(src, code, x, at, depth + 1) for x in part.split("||")]
-            sub = "(?:" + "|".join(a if a is not None else "[^/]*" for a in alts) + ")" if any(alts) else None
+            sub = "(?:" + "|".join(a if a is not None else ".*" for a in alts) + ")" if any(alts) else None
         if sub is None:
-            out += "[^/]*"
+            out += ".*"
         else:
             out += sub
             known = True
@@ -1472,7 +1505,62 @@ def function_body(code, begin, end):
     return None if m.group("fn") else (p, end)
 
 
-def asks_first(code, at):
+def brace_blocks(code):
+    """Every {…} in code (strings and comments stripped) as (open, close) index pairs."""
+    pairs, stack = [], []
+    for i, c in enumerate(code):
+        if c == "{":
+            stack.append(i)
+        elif c == "}" and stack:
+            pairs.append((stack.pop(), i))
+    return pairs
+
+
+def innermost_block(blocks, at):
+    """The {…} closest around position at, or None at the top of the file."""
+    around = [b for b in blocks if b[0] < at < b[1]]
+    return max(around) if around else None
+
+
+def declaration_of(code, blocks, name, at):
+    """Where the `const` or `let` binding of name that is seen at position at is declared (the
+    index of the name), walking out from the block around at; None where none is."""
+    return nearest_in_scope(blocks, [d.start(1) for d in re.finditer(r"\b(?:const|let)\s+(" + re.escape(name) + r")\s*=", code)], at)
+
+
+def nearest_in_scope(blocks, positions, at, hoisted=()):
+    """Of the declarations whose names stand at positions, the one seen at position at: walking out
+    from the block around at, the first block that declares it. There a `const` or `let` is the
+    last before at, else the first; a function declaration (its position in hoisted) is the last
+    in that block wherever the call stands, as JS hoists it. None where none is."""
+    found = [(pos, innermost_block(blocks, pos)) for pos in positions]
+    block = innermost_block(blocks, at)
+    while True:
+        here = [pos for pos, b in found if b == block]
+        if here:
+            functions = [pos for pos in here if pos in hoisted]
+            if functions:
+                return max(functions)
+            before = [pos for pos in here if pos < at]
+            return max(before) if before else min(here)
+        if block is None:
+            return None
+        block = innermost_block(blocks, block[0])
+
+
+def is_function_declaration(code, at):
+    """Whether the `function` keyword at position at begins a declaration, which binds its name in
+    the block around it, and not a function expression, whose name is bound only inside its own
+    body: a declaration stands where a statement starts, after `;`, `{`, `}` or at the top."""
+    head = code[:at].rstrip()
+    if head.endswith("async"):
+        head = head[:-5].rstrip()
+    if head.endswith("export"):
+        head = head[:-6].rstrip()
+    return head == "" or head[-1] in ";{}"
+
+
+def asks_first(code, at, src=None):
     """Whether the call at position at goes through M.stepUp.run: inside the function given as its
     first argument (that function expression alone, see function_body), or in an arrow that is handed to it by name, as a `call:` property, or through
     a local function that hands that parameter on as its first argument (security.js's act). A call
@@ -1488,15 +1576,49 @@ def asks_first(code, at):
         return False
     head = code[:m.start()]
     named = re.search(r"\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*$", head)
-    if named and re.search(r"\bM\.stepUp\.run\(\s*" + re.escape(named.group(1)) + r"\s*,", code):
-        return True
+    if named:
+        # The name M.stepUp.run is given must be this binding: the nearest declaration of that
+        # name in the blocks around the run, not another one of the same name (xyfr at #1547).
+        name = named.group(1)
+        blocks = brace_blocks(code)
+        return any(declaration_of(code, blocks, name, r.start()) == named.start(1)
+                   for r in re.finditer(r"\bM\.stepUp\.run\(\s*" + re.escape(name) + r"\s*,", code))
     prop = re.search(r"\b([A-Za-z_$][\w$]*)\s*:\s*$", head)
-    if prop and re.search(r"\bM\.stepUp\.run\([^,()]*\." + re.escape(prop.group(1)) + r"\s*,", code):
-        return True
+    if prop:
+        # A property is not bound to a name: it asks only when every read of it in the file goes
+        # straight into M.stepUp.run as the first argument, and none is destructured (xyfr at #1547).
+        key = re.escape(prop.group(1))
+        reads = [r.start() for r in re.finditer(r"\.\s*" + key + r"\b", code)]
+        handed = {r.end() - len(prop.group(1)) - 1 for r in re.finditer(
+            r"\bM\.stepUp\.run\(\s*[A-Za-z_$][\w$]*(?:\[[^\[\]]*\]|\.[A-Za-z_$][\w$]*)*\." + key + r"(?=\s*,)", code)}
+        unpacked = re.search(r"\{[^{}]*\b" + key + r"\b[^{}]*\}\s*=(?!=|>)", code)
+        # A read by a string in brackets (`a["call"]`) or any call through brackets (`a[k]()`,
+        # `a["ca" + "ll"]()`, `a[(k)]()`) may be this property outside the question: not counted
+        # as asking (4hch at #1566).
+        bracketed = src is not None and re.search(r"\[\s*([\"'`])" + key + r"\1\s*\]", src)
+        computed = re.search(r"\]\s*\(", code)
+        return bool(reads) and all(at_ in handed for at_ in reads) and not (unpacked or bracketed or computed)
     fn = callee_of(code, m.start())
     if fn:
-        d = re.search(r"(?:function\s+" + re.escape(fn) + r"\s*\(([^)]*)\)|\b(?:const|let)\s+" + re.escape(fn)
-                      + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{", code)
+        # The helper is the declaration of that name nearest the call in the blocks around it
+        # (nearest_in_scope: the last function declaration of that block, else the last `const` or
+        # `let` before the call, else the first), not the first definition in the file (4hv7 at
+        # #1566). Only a helper of this form can hand the call on; other binding forms are not
+        # resolved.
+        name = re.escape(fn)
+        # A named function expression (`const x = function act() {…}`) binds its name only
+        # inside its own body, so it is no candidate; function declarations are hoisted (4hv7).
+        starts, hoisted = {}, set()
+        for x in re.finditer(r"\bfunction\s+(" + name + r")\s*\(|\b(?:const|let)\s+(" + name + r")\s*=", code):
+            if x.group(1):
+                if not is_function_declaration(code, x.start()):
+                    continue
+                hoisted.add(x.start(1))
+            starts[x.start(1) if x.group(1) else x.start(2)] = x.start()
+        seen = nearest_in_scope(brace_blocks(code), list(starts), m.start(), hoisted)
+        helper = re.compile(r"(?:function\s+" + name + r"\s*\(([^)]*)\)|(?:const|let)\s+" + name
+                            + r"\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)\s*\{")
+        d = helper.match(code, starts[seen]) if seen is not None else None
         if d:
             body = code[d.end():call_end(code, d.end())]
             params = [x.strip() for x in (d.group(1) or d.group(2) or "").split(",")]
@@ -1539,12 +1661,10 @@ def check_step_up():
             if not hits:
                 continue
             if len(hits) == 1 and hits[0][1]:
-                body = src[end + 1:call_end(code, m.end())]
-                if re.fullmatch(r"\s*[A-Za-z_$][\w$]*\s*", body):
-                    body = initializer(src, code, body.strip(), m.start()) or ""
+                body = body_text(src, code, src[end + 1:call_end(code, m.end())], m.start())
                 if not re.search(r"\b" + re.escape(hits[0][1]) + r"\b", body):
                     continue
-            if not asks_first(code, m.start()):
+            if not asks_first(code, m.start(), src):
                 finding(path, code.count("\n", 0, m.start()) + 1,
                         "%s %s asks for the second factor: send it through M.stepUp.run" % (verb, hits[0][0]))
 

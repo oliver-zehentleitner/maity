@@ -54,9 +54,13 @@ The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
 in the project alone, under oneself: a boss or an area owner of someone
 else's places none of them, and an own agent that reports to someone
-else's shows that as a stub with the boss's handle, as text, and nothing
-more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
-ringed. Built from the same member list, so no second tree and no hub field.
+else's shows that as a stub with the boss's handle, as text (the
+qualified `owner/handle` where another member shares the short one,
+`M.dom.handleOf`, docs/api.md §6.3), and nothing more of the other side:
+no name, no link to its page, no tooltip. Where the member list gives no
+handle, the stub is the neutral sentence "reports to someone who is not
+yours", never an id or a name. Its instances are dots in their presence's
+colour, the lead ringed. Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
@@ -778,16 +782,21 @@ Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
 with its id, without opening it, the row marked read in place (its
 button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
-off while nothing it marks is unread, with a line that sign-in and
-address alerts stay unread. **Mark read** is not offered on one of the
+off while nothing it marks is unread. It leaves every security alert
+unread, whatever the session, with the line "Mark all read leaves
+security alerts unread: mark each one read on its own."
+(`waiting.mark_all.hint`). **Mark read** is not offered on one of the
 open matters of §18.3 — `registration_pending`, `mail_disabled`,
 `agents_not_listening`, told by their targets
 (`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
-— which read as read once the matter is closed, nor on a sign-in or
-address alert unless this session may confirm it (`M.sessions.mayConfirm`,
-§2.6.5): the hub skips such an id without saying so, and a button that
-does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item. Until 2026-11-04 a fourth
+— which read as read once the matter is closed, nor on a security
+alert this session may not mark (`M.sessions.mayMark`, as the bell
+does): an address change only from a confirmed session older than it,
+every other security alert from any session (§18.3). A sign-in is no
+item; the box above the list shows the sessions (§2.6.5). An id the hub
+leaves unread anyway is answered as `skipped` (§18.3), which the page
+says, its row staying unread. The sessions are read for that only when
+the page shows an unread security item. Until 2026-11-04 a fourth
 matter, `report_open` (target `report`), stood among them; a new report
 is now the instance admin's personal request instead (entry
 f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
@@ -1341,8 +1350,23 @@ the hub for each credential to decide on `rejoin`: the view has them.
 
 Where they run, on the project's Agents, has **Start an agent on a runner**
 for a human with members:admin. It offers the runners attached here
-(`GET …/runners`) that the human owns and whose credential is live. With
-none, the section says so and links the project's Runners. The agent is one
+(`GET …/runners`) that the human owns, whose credential is live and which
+offer the project's repository: one of the runner's advertised
+`repositories` matches the repository's URL without `https://`, with the
+hub's rule (`check_repository` in `hub/src/maity_hub/placements.py`,
+Python's `fnmatch.fnmatchcase`; `fnmatch` in `web/js/placements.js` is its
+port, a `[…]` set read as Python 3.12's `fnmatch.translate` reads it, so a
+reversed range such as `[z-a]` matches nothing, `[!z-a]` any one character,
+and neither throws and hides the runner's other patterns; the name is read by
+Unicode character, as Python reads it, so `?` takes a character beyond U+FFFF
+whole (an advertised pattern is printable ASCII, `Name` in
+`hub/src/maity_hub/routes/runner.py`; the port reads any pattern the same
+way); and a `*` is matched by going back only to the last `*`,
+not by one RegExp over the pattern, so many stars against a long name take
+time in proportion to the two lengths, not seconds). With none, the section says so and links the project's Runners; with
+attached runners of which none offers the repository, it says that and
+names the repository; a project without a repository offers no form and
+says a runner needs one. The agent is one
 of the human's own agents here without an active placement, or a new
 profile with the join panel's fields (trust, role, reports to, areas,
 briefing). Where, tool, mode and model come from what the chosen runner
@@ -1356,8 +1380,11 @@ second factor, so the call is not wrapped in `M.stepUp.run`.
 **Reason:** the placements are already shown and steered here, so the
 form sits beside them. Offering only what the hub accepts keeps the
 choices few: someone else's runner is `forbidden`, a revoked one
-`runner_revoked`, an agent placed already `placement_exists`, and a tool
-that is not advertised `harness_not_offered`.
+`runner_revoked`, an agent placed already `placement_exists`, a tool
+that is not advertised `harness_not_offered`, and a runner that does not
+offer the project's repository, or a project without one,
+`repository_not_offered` (the last added by tsk-wn6qp27090qy, after a
+re-check of the merged form found such runners offered).
 
 **Rejected alternative:** the form on the instance-level Runners page:
 there the project would be one more choice, and the placements are not
@@ -1366,7 +1393,9 @@ the lists, and a typo would only be refused by the hub (a tool it does not
 know as `invalid`, a model the runner does not offer as
 `harness_not_offered`, `_check_spec` in `hub/src/maity_hub/routes/placements.py`).
 Listing every attached runner and letting the hub refuse: a choice that
-can only fail.
+can only fail. Listing a runner that does not offer the repository as
+unavailable instead of leaving it out: the other runners the hub would
+refuse are left out too, and with none left the section says why.
 
 ## Project settings are the project's last tab, not a panel from the gear menu
 
@@ -1769,7 +1798,11 @@ item in every project (a request, a sign-in, a long-poll that only timed
 out), and the counts were read every 15 seconds too, which also nudged
 it. Now it reads only for an answer with a chat or mention item in it, or
 one that moved the chat counts. Everything else waits for the 30-second
-round, which was there already.
+round, which was there already, with one exception: a group chat read
+along as an agent's owner brings no chat item and moves no count (§9.3),
+so while one is open, the 15-second counts read refreshes it as before
+(web roll-up 3, a post-merge review of #1527). One's own message sent from
+another tab comes with the round.
 
 **Reason:** each of these reads costs a round trip and hub statements for
 data that did not change. On the measured hub they added up to the
@@ -1783,6 +1816,108 @@ repeated reads beside every opened card and in the chat.
   but still a full round for an answer that is about no chat at all.
 - Dropping the stream nudge and keeping only the 30-second round: a new
   chat message would wait up to 30 seconds in the open conversation.
+
+## The Agents page reads credentials only for its own agents that are placed
+
+**Id:** a71aebc3-1d25-4e28-90ce-f96f8c716c02
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: 27 credential lists at once, queuing from 95 to 568 ms); the plan on tsk-d61rvjm6gteh (PR C), approved by the coordinator the same day
+**Revisit when:** the placements list carries whether its credential was revoked, or the member list carries the credentials
+
+A project's Agents page read the credentials of every agent of one's own
+in it, at once, before the "Where they run" section could draw. That
+section needs them only to know whether a placement's credential was
+revoked, which decides whether **Restart with a new join** is offered. It
+now reads the placements first and asks for the credentials of one's own
+agents that have a placement, once each; a placement that appears later
+asks for its agent then. It listens for placement events before its first
+read, and reads the list again once it stands if one came meanwhile.
+
+**Reason:** on the measured project those reads were the page's slowest
+part, and most of them served nothing: few agents have a placement.
+
+**Rejected alternatives:**
+- The credentials read when a row is expanded: the rejoin choice stands in
+  the placement row as it is drawn, so the read would only move.
+- The revoked state in the placements or member list: one read less, but a
+  contract change, which this card's boundary excludes.
+
+## The board reads its column groups side by side
+
+**Id:** 145f0bf3-3024-414a-8026-19dad1960ff7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: six serial pages of 200 for 1,135 cards, 1.37 s, 2.8 s with gaps); the plan on tsk-d61rvjm6gteh (PR B), approved by the coordinator the same day
+**Revisit when:** the contract gains a card status, the hub serves a larger page or the whole board in one answer, or the board reads only the open columns at first
+
+The board asked for every card of its window in one list (`status=all`
+with `closed_after`), page after page, each page waiting for the one
+before. It now asks five groups at once: `proposed`, `open`,
+`in_progress`, `blocked,review`, and `done,cancelled` with the closed
+window. Each group follows its own pages. The board orders every column
+itself, so the groups may answer in any order. Five reads are not one
+snapshot: a card moved from a group not yet answered into one already
+answered would be in neither, and one moved the other way in both. So once
+all five have answered, the board reads the cards changed since a minute
+before the reads began (the start taken on the hub's clock, the minute a
+margin for its skew): `status=all` with the window and `order=updated`,
+newest first, pages of 50, until the first card older than that. Each card
+it returns replaces or adds its card. That read pages by an `updated_at`
+keyset, and a card changed again between two of its pages moves ahead of
+the cursor. So a pass that followed a cursor is followed by another from
+the first page, taking every card at least as new as the newest the pass
+before saw. The comparison includes that time itself: a card changed in
+the same second as the newest one is recovered too. A pass of one page has
+no gap and ends the reading. After three passes that each followed a
+cursor, one list of every status in the window (`status=all` with the
+window, all its pages) is read instead and replaces the cards.
+What is guaranteed: every card that did not change during the reads is
+shown as its group read it, and every card that did is shown once, as the
+last pass, or the one list, has it. The one list has the gaps between its
+own pages that the board always had. A change after the last read is the
+board's usual news, offered as a reload. The reload after a write reads the
+same way; the hub search still asks one list over every status
+(`status=all&q=`).
+When the board falls back to the one list: when all three passes followed
+a cursor, that is, when cards keep changing while the passes read, or when
+the cards at or after a pass's start fill its first page and more cards
+follow in the window (for example many cards changed in the same second).
+The cost: one request per group, each following its own pages, then the
+changed-cards read, whose passes each read pages until a card older than
+their start or the end of the window, and where all three passes followed
+a cursor, the one list with all its pages. At most five requests are in
+flight at once. The wait is the longest group plus the changed-cards
+read's pages, one after the other, not the sum of every page.
+
+**Reason:** the pages were the board's longest wait, and nothing in one
+page depends on another. Side by side, the wait is the longest group,
+not the sum.
+
+**Rejected alternatives:**
+- A larger `limit`: fewer pages, but a contract change, which this card's
+  boundary excludes.
+- The open columns first and the closed window after them: the board
+  would draw twice, and its closed columns and counts would change under
+  the reader.
+- One request per status: seven instead of five, for groups (`blocked`,
+  `review`; `done`, `cancelled`) that are small next to the rest.
+- Reconciling from the project's event feed (the cards a task event names
+  during the reads): a reader who is neither owner nor admin is in few
+  events' audiences (§6.11), so a move could stay unseen. The changed-cards
+  read depends on no audience.
+- One list again whenever the board fits a page: the first page decides,
+  so every larger board waits for it before its groups start.
+- Falling back to the one list whenever the changed-cards read pages: more
+  than 50 cards changed during the reads is rare, and when it happens the
+  first page read again finds what moved ahead of the cursor for one more
+  request instead of a whole list.
+
+The group lists name the contract's seven statuses (§6.4). A status the
+contract adds would not be read until the board names it; the board's
+column for an unknown status stays for a hub that sends one anyway.
 
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
@@ -3310,10 +3445,25 @@ slot in place keeps the focus and the context where the human was.
 
 `tools/step-up-routes.json` lists the hub's routes that ask for the factor (method and path under the API prefix; `body` where the hub asks only for one field, `when` where it asks only in some cases). Three readers keep it true:
 - `hub/tests/test_step_up_routes.py` reads the hub's source: every route whose handler reaches `second_factor.require_step_up`, directly, in a lambda it hands on, or through the hub's own functions it calls. Each call is resolved through the module's imports, so the gate imported under another name, or called by a module's name or its full dotted path, counts the same. A function handed around under another variable or taken by `getattr` is not followed. The two sets must be equal.
-- `tools/check.py` fails on a call `M.api.<verb>(path, …)` in `js/` whose path it reads as one of those routes and that does not go through `M.stepUp.run`. It reads string literals, `ctx.base`, a name's `const`, a helper arrow and both sides of a choice; what it cannot read it leaves alone. A call counts as asking first inside the function given as `M.stepUp.run`'s first argument (the argument is that function expression and nothing more, not one called or bound right there), as an arrow handed to it by name or as a `call:` property, or as the argument of a local function that hands that parameter to it as the first argument. A call made to work out `M.stepUp.run`'s arguments is sent before anything is asked, and does not count. `tools/test_step_up_check.py` holds those readings.
+- `tools/check.py` fails on a call `M.api.<verb>(path, …)` in `js/` whose path it reads as one of those routes and that does not go through `M.stepUp.run`. It is a reading of the text, not of the program. It recognises exactly the forms below; any other form is not checked and can pass.
+  - **Path:** the parts of a `+` chain that are a string literal; `ctx.base`; a name, read from the last `const name =` or `let name =` before the call anywhere in the file (not by blocks); a call of such a name bound to an arrow, whose body is read; or `a ? b : c` and `a || b` of those; three deep. Any other part stands for any run of characters, slashes too (`M.api.projectPath` gives several segments). A path with no part read is left alone.
+  - **Names in a body and of a named arrow (form 2 below):** a name is bound only by a declaration `const name =` or `let name =`. The check walks out from the call through the `{…}` blocks around it to the nearest block that declares the name, and takes there the last such declaration before the call, else the first. Its value is the text after `=` up to its `;` or the end of its block. Nothing else binds a name for the check, in a path either: not a later declarator after a comma (`const a = 1, name = …`), a parameter, a destructuring, `var`, a function declaration or a reassignment.
+  - **Body:** for a route that asks only for one field, the call's body is read with the value of every name in it, three deep. The field counts where its key stands as a word in that text, so a key behind a variable counts.
+  - **Asking first**, in exactly these four forms; in 2 to 4 the arrow's body is the call itself (`=> M.api.…(…)`, in parentheses or not), not a block:
+    1. Inside the function expression that is the whole of `M.stepUp.run`'s first argument; not one called or bound right there.
+    2. In an arrow `const name = (…) =>` or `let name = x =>`, not `async`, where an `M.stepUp.run(name, …)` in the file resolves, by the blocks around it, to this declaration. This shows the binding is handed to the question once, not that every call of it goes through it.
+    3. In an arrow that is a property `key: (…) =>`, not `async`, where every `.key` read in the file (`x.key`, `x[i].key`) is `M.stepUp.run`'s first argument, no `{ … key … } =` destructures it, no `["key"]` reads it, and the file makes no call through brackets (`…](`).
+    4. As an argument of a local function (`function f(…) {` or `const f = (…) => {`) whose parameter in that place is handed to `M.stepUp.run` as its first argument in its body. `f` is found as follows, and only so: the check walks out from the call through the `{…}` blocks around it to the nearest block that declares `f` by a function declaration (a `function`, also `async` or `export`, where a statement starts: at the top or after `;`, `{` or `}`), a `const` or a `let`. There it takes the last function declaration of that block, wherever the call stands; if the block has none, the last `const` or `let` before the call, else the first. Where that declaration is not such a helper, the call does not ask. Any other binding form is not resolved and can pass, for example a named function expression's own name, a parameter, `var`, an import or an assignment.
+  - A call made to work out `M.stepUp.run`'s arguments, or in another of its arguments, is sent before anything is asked, and does not count.
+  - `tools/test_step_up_check.py` holds those readings, some through the whole check on a file of its own (tsk-4zrnkb3gh6mq, after xyfr's post-merge re-check of #1547 found that a name given to `M.stepUp.run` anywhere in the file had counted, and 4hch's review of #1566 the reads and names the first fix still missed).
 - The same check keeps `js/api.js`'s `STEP_UP_ROUTES` equal to the list. With `window.MAITY_FIXTURE_STEP_UP` set (to `Date.now()`, so that a code given earlier in the run does not count), the fixture hub refuses them with `step_up_required` until a code is verified.
 
 A reject of a held address change is never asked by the hub, but it is sent through the question like the approve: the hub's reading includes it, and asking only after a refusal costs nothing there.
+
+Known limits, each a way a new guarded call could go unseen (tsk-4zrnkb3gh6mq records them rather than closing them):
+- The hub test finds routes declared as `@router.<method>("<path>")` on a module-level function with a local `APIRouter`. A route added with `add_api_route` (as `routes/project_images.py` adds its image routes), a class method, or a router built inside a function (as `app.py` builds the one for `/languages` and `/health`) adds nothing to its set; none of those files reaches `require_step_up` today.
+- `tools/check.py` follows only the forms listed above. Any other way to write a binding, a path or a hand-over is not checked and can pass: a parameter of the same name, a reassignment, an alias that keeps the arrow, a direct call beside the wrapped one, a function passed under another name, a value stored and read in another file.
+- The fixture asks for the factor on any `email.address` in `PATCH /me/notification-settings`; the hub asks only when a verified or disabled address changes (`_change_address` in `hub/src/maity_hub/notifications/preferences.py`). Wider than the hub, it never lets through what the hub refuses.
 
 **Reason:** the runner pairing, the mail settings, the password, the address change and its approval, and the answer that moves a project were each written without the helper, and nothing failed until a person met the refusal. A list read from the hub and a check over every call catches the next one when it is written. A test drives only the flows someone thought of.
 
@@ -4224,7 +4374,10 @@ editor is drawn from it; a body whose pages, sections or lists are of
 the wrong kind leaves the draft as it was. That kind check covers every
 value the editor binds to an object, not only lists: a button, a group
 and each footer link must be an object, or absent where optional, or the
-editor would break after the draft was replaced. Save asks for the
+editor would break after the draft was replaced. A section's type is
+looked up among the editor's own types only (`Object.hasOwn`), so a
+`constructor` or `__proto__` in an import is drawn as an unknown section,
+never taken for something every object inherits. Save asks for the
 step-up (§2.8.4) the hub requires for this call.
 
 **Reason:** the preview call already validates a draft exactly as a
@@ -5192,7 +5345,8 @@ reset.
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
-`GET /site/chrome` in the page's language. While the page stands, the hub's
+`GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
+and take the frame's language from its answer. While the page stands, the hub's
 `/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
@@ -5250,6 +5404,30 @@ than clearing the session on that 401 here was lotse#wtwy's decision (message se
 2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
+
+The frame's mark (`home()` in `js/site-chrome.js`) is the hub's SVG without its style attributes;
+it keeps the class `mark`, and its colours come from `public-pages.css` (`.site-header .mark
+rect`, …), because the dashboard's policy is `default-src 'self'` with no inline style. **Rejected:** the
+style attributes as the hub inlines them (web-e2e failed on them at `cc402ec1`), classes in
+`app.css` (a second copy of the hub's design, reverted in `7b63d015`), and an `<img>` (it cannot
+take the header's theme tokens). Source: the author's notes on #1287, round 2 (card
+tsk-gsk31zvpfv02).
+
+The footer's languages (`language()`) are this page's own path and query with `lang` set,
+written through `M.route.href`, and a click chooses the language (as the page's picker does) and
+draws the page again at that address. **Rejected:** a bare `?lang=`, which under the shell's
+`<base href="/assets/">` resolves to `/assets/` (a 404) and loses a sign-in's `next`; a page load
+to `/?lang=`, which leaves the sign-in. Source: the same notes on #1287.
+
+Under 960 px, a pitch panel that has none of the pitch's parts (subline, points, note) is hidden
+(`hub/src/maity_hub/landing_assets/public-pages.css`, the narrow-screen rule), so a phone gets no
+empty dark band. Every key of §16.7.4 is optional, so a panel with only a note or only points
+stays. The title is the form's heading, not a part of the panel. A new part that `pitch()` draws
+must be added to that rule. **Rejected:** hiding on subline and points only (it hid a note-only
+pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second source of truth);
+keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
+one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
+notes on #1287, round 3 (card tsk-gsk31zvpfv02).
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
@@ -5553,3 +5731,57 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## A handle field's hint is a sentence of fixed words, with no handle or address filled in
+
+**Id:** e9c2136d-efa9-4222-b013-6042a56ec86c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-srzrkf2parzt (the owner's decision req-3wdzdcvcbf7s: every field that asks for a handle explains the word); the ChatGPT reviewer's P2 in the review of #1488 (seq 91149) and the Grok reviewer's P3 (seq 91705); web/js/handles.js `explain`; e2e `handle_hints_step`
+**Revisit when:** a hint has to name the reader's own handle or address, or the phone widths the e2e step measures change
+
+Under every field that asks for a handle, `M.handles.explain(kind, input)`
+adds one sentence of fixed words for its kind (your own, an agent's, an
+organisation's, the person invited), which the field names in its
+`aria-describedby`. Nothing is filled in: no handle, no host, no example
+address. e2e `handle_hints_step` measures all seven kinds of field at 390
+and 360 px, light and dark: at most two lines, no overflow.
+
+**Reason:** the first version filled in the instance's host and the
+reader's handle as an example (`maity.team/<handle>`). On the English
+Account page that took three lines at 360 px, and a 31-character handle
+three lines at 390 px, against the card's two lines on a phone. Fixed
+words keep every hint's length known whatever the handle or the host.
+
+**Rejected alternatives:** a filled-in example cut to a length, which
+still varies with the host and reads oddly when cut; a filled-in example
+only on wide screens, which gives two texts to keep true. The example
+`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+about the reader's own agent or organisation.
+
+## A message's seq is drawn with its "#" from the stylesheet, so a copy takes the number alone
+
+**Id:** 10d6fda7-c01c-4087-80e5-3c0a8ea4253c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0aadqqwe8jvt and #1311 (the seq beside each chat message); the Grok reviewer's P3 on #1311 (seq 66303), collected on card tsk-gsk31zvpfv02; the code comment in web/js/chat.js at `msg-seq`; web/css/app.css (`.msg-seq::before`)
+**Revisit when:** a seq becomes a link in the chat, or the number is to be read out with a word
+
+Each chat message shows its seq beside its time as `#4202`. The span holds the number alone
+(`.msg-seq`); the `#` is drawn by the stylesheet (`.msg-seq::before { content: "#"; }`), so it is
+no part of a selection.
+
+**Reason:** agents cite a message by its seq ("seq 54246", card tsk-0aadqqwe8jvt), so a copy of
+the visible text should give the number they need, without the sign. The code comment says so;
+the rejected alternatives below are inferred, nobody stated them.
+
+**Rejected alternatives:** `#` as text in the span, which a copy takes along; a word such as
+"seq", which the dashboard's other texts do not use for it; a link, as the join panel's
+"message #seq", since a chat message has no address of its own to link to.
+
+**Known gap:** a screen reader can hear "· #4202" (the stylesheet's `#` is read out too) with no
+word for what the number is, and the list
+is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
+reports nothing).

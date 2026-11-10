@@ -1828,11 +1828,16 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         // A window announced, changed or started meanwhile: the banner, or the full page (§16.12).
         if ("maintenance" in fresh) M.maintenance.know(fresh.maintenance);
+        // A project joined or left elsewhere: the views that follow the tabs (the inbox filtered to
+        // open tabs or grouped) draw again too, not only the switcher (web roll-up 3).
+        const names = (list) => (list || []).map((p) => p.full_name).join(" ");
+        const moved = names(fresh.projects) !== names(ctx.projects);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
         renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
+        if (moved) tabsChanged(ctx);
         document.title = M.notify.title(baseTitle);
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
@@ -2155,7 +2160,13 @@ window.Maity = window.Maity || {};
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
-    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
+    // The first segment is decoded on its own, as parseRoute() decodes it, so /%69nvite/<token> is an
+    // invitation here too (#1574 review); a token with a broken escape, which parseRoute() refuses
+    // as a whole, still gets the policy (web roll-up 3, nte-2e1kq5r85vaj).
+    const rawParts = M.route.current().path.split("/").filter(Boolean);
+    let firstWord = rawParts[0] || "";
+    try { firstWord = decodeURIComponent(firstWord); } catch { /* a broken first segment is no invitation */ }
+    if (M.invite && firstWord === "invite" && rawParts.length > 1) M.invite.noReferrer();
     await M.i18n.ready;
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page
