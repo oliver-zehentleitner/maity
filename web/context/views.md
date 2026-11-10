@@ -5933,17 +5933,22 @@ screen reader, and the two columns are marked busy while read. A filter
 that shows the closed columns gives no "no card matches" while they are
 unknown. A hub search keeps its own results, closed cards and counts
 included: all of this is the board's own state without one. A closed card
-it finds is marked outside the window by its `closed_at`, not by whether
-the board has loaded it, since while the closed group is read the loaded
-cards are the open groups' alone.
+it finds is marked outside the window by its `closed_at` (at or before the
+cutoff, as the strict `closed_after` reads it), not by whether the board has
+loaded it, since while the closed group is read the loaded cards are the
+open groups' alone; the late draw clears the mark from a card it loaded.
 Then the board draws again with every card (with the search's results
 where one is active). The element in the columns that had the focus, a
 card's title link included, keeps it, after a failed read too, where it
 still stands in a column; a card now folded under a parent that came with
 the closed cards, or gone from the columns, hands the focus to the status
-line. The opened card's panel keeps the focus across that draw, on the
-same control, and keeps what the reader chose or typed there and has not
-saved, as it does across a reload after a write. A board left from a
+line. The opened card's panel keeps its card part as it is across that
+draw when the card itself is unchanged: the focus, what the reader chose or
+typed there and has not saved, and an editor opened in it (a new subtask's
+form) with its draft. A card the read brings changed is drawn anew in the
+panel: the choices in its controls are carried over and the focus stays on
+the same control, but an editor opened in it closes. A reload after a write
+draws the panel anew as before. A board left from a
 closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
 answer has been.
@@ -5966,9 +5971,12 @@ columns, the ones a reader works in, had long answered.
   loaded cards mean the window again: it brings the wait back for a
   search. The loaded cards as the test, as before: wrong while the closed
   group is read (review of #1622).
-- Not redrawing the panel's card part in the late draw: its parent and
-  related lists would lack the closed cards, and a card the reconcile pass
-  changed would show stale data. The late draw redraws it and carries the
-  reader's unsaved choices over instead; it is the board's only redraw no
-  action of the reader starts.
+- Always redrawing the panel's card part in the late draw and carrying the
+  reader's choices over (round 3 of #1622): an editor the reader opened
+  after the panel was drawn (a new subtask's form) has no control in the
+  redrawn part to carry its draft to, and it closed. The part is now kept
+  when its card is unchanged; its related and parent lists then lack the
+  closed cards that came with the late draw until the next draw, a smaller
+  loss than a draft. A card the reconcile pass changed is still drawn anew,
+  since stale data in the panel would be worse.
 

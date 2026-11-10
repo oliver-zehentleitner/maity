@@ -1011,11 +1011,14 @@ window.Maity = window.Maity || {};
       const all = Array.from(root.querySelectorAll(FOCUSABLE));
       return all.find((e) => controlKey(e, all) === key) || null;
     };
-    // What the reader chose or typed in the panel's card part and has not saved: each control's
-    // state as last drawn (panelDrawn), so that the late draw, the one redraw no action of the reader
-    // starts, carries what differs from it onto the controls drawn anew (review of #1622).
+    // The late draw, the one redraw no action of the reader starts, leaves the panel's card part as
+    // it is when its card is unchanged (panelData), an editor opened in it and its draft included.
+    // A card the reconcile pass changed is drawn anew: what the reader chose or typed in its controls
+    // and has not saved, each control's state against how it was drawn (panelDrawn), is carried onto
+    // the controls drawn anew; an editor opened later in it closes (review of #1622).
     let panelDrawn = null;
     let panelPart = null;
+    let panelData = null;
     const CONTROLS = "input, select, textarea";
     const controlsOf = (root) => {
       const all = Array.from(root.querySelectorAll(CONTROLS));
@@ -1033,7 +1036,8 @@ window.Maity = window.Maity || {};
       else if (el.tagName !== "SELECT" || Array.from(el.querySelectorAll("option")).some((o) => o.getAttribute("value") === state)) el.value = state;
     };
     const drawnState = (part) => new Map(controlsOf(part).map(([k, e]) => [k, stateOf(e)]));
-    function showPanelPart(part, keepTyped) {
+    function showPanelPart(part, keepTyped, data) {
+      panelData = JSON.stringify(data);
       const typed = keepTyped && panelPart && panelDrawn
         ? controlsOf(panelPart).filter(([k, e]) => panelDrawn.has(k) && panelDrawn.get(k) !== stateOf(e)).map(([k, e]) => [k, stateOf(e)])
         : [];
@@ -1088,7 +1092,7 @@ window.Maity = window.Maity || {};
           if (c.id === updated.id && c !== updated) Object.assign(c, updated);
           draw();
         });
-      showPanelPart(part, false);
+      showPanelPart(part, false, c);
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       // Closed, or another card opened, before the timer: the focus stays where that left it.
@@ -1105,6 +1109,7 @@ window.Maity = window.Maity || {};
       panelCard = null;
       panelPart = null;
       panelDrawn = null;
+      panelData = null;
     }
 
     function shown(c) {
@@ -1148,7 +1153,12 @@ window.Maity = window.Maity || {};
             h("h3", { class: "column-head" }, M.t("board.column.unknown")),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
-      if (panel) showPanelPart(card(ctx, byId[panel.id] || panelCard, byId, manage, true), !!keepTyped);
+      if (panel) {
+        const data = byId[panel.id] || panelCard;
+        if (!(keepTyped && panelPart && JSON.stringify(data) === panelData)) {
+          showPanelPart(card(ctx, data, byId, manage, true), !!keepTyped, data);
+        }
+      }
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         // A folded child: its parent unfolds, and the child's row is marked.
@@ -1195,7 +1205,8 @@ window.Maity = window.Maity || {};
         // Outside the window by its closed_at, not by the loaded cards: while the closed group is
         // still read, those are the open groups' alone (review of #1622).
         const loaded = new Set(boardItems.map((c) => c.id));
-        const inWindow = (c) => !!c.closed_at && Date.parse(c.closed_at) >= Date.parse(since);
+        // closed_after is strict (§6, docs/api.md): a card closed at the cutoff is outside.
+        const inWindow = (c) => !!c.closed_at && Date.parse(c.closed_at) > Date.parse(since);
         items = result.items.map((c) => ({ ...c,
           _searchClosed: ["done", "cancelled"].includes(c.status) && !loaded.has(c.id) && !inWindow(c) }));
         hubResults = true;
