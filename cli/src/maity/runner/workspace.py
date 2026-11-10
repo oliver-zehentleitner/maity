@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import proc, state
+from .. import proc, redact, state
 from . import config
 from .asuser import RUNNER, AsUser
 
@@ -57,12 +57,13 @@ class Refused(Exception):
 
 def said(text: str) -> str | None:
     """The last line a tool wrote, for the runner's log: printable, at most 300 characters,
-    and a URL's user part masked (a repository URL carries none, but a redirect could)."""
+    with the userinfo taken out of every URL in it. An https repository URL carries none,
+    an ssh one at most a user name, but a redirect or a helper's message could carry more."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
         return None
     line = "".join(ch if ch.isprintable() else "?" for ch in lines[-1])
-    return re.sub(r"://[^/\s@]+@", "://…@", line)[:300]
+    return redact.without_userinfo(line)[:300]
 
 
 @dataclass(frozen=True)

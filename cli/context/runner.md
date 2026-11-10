@@ -1714,9 +1714,12 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
 - The text stays out of the report. `detail` is a closed list of codes
   (§15.7), and a tool's message is no code. The log line for a new state
   carries codes and numbers only for the same reason.
-- The line is printable, at most 300 characters, and masks a URL's user
-  part. A repository URL the runner accepts carries none, but a redirect
-  could.
+- The reason is printable, capped at 300 characters (the line adds the
+  placement and the reason code), and every URL in it loses its userinfo,
+  through the same redactor as the rest of the CLI (`redact.without_userinfo`).
+  An https repository URL the runner accepts carries none, and an ssh one
+  at most a user name. A redirect or a helper's message could carry a
+  password.
 - Rejected: free text in `detail`. The hub would then store and show a
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code

@@ -805,12 +805,38 @@ def test_a_clone_without_git_says_why(
     assert failed.value.why == "git is not installed"
 
 
+@pytest.mark.parametrize("source", ["stderr", "tool_error"])
+@pytest.mark.parametrize(
+    "url", ["https://user@mail:SECRET@host/o/r", "https://user:prefix@SECRET@host/o/r"]
+)
+def test_a_secret_in_what_the_clone_said_never_reaches_why(
+    tmp_path: Path, origin_repo: Path, monkeypatch: pytest.MonkeyPatch, source: str, url: str
+) -> None:
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if source == "tool_error":
+            raise proc.ToolError(f"cannot reach {url}")
+        return subprocess.CompletedProcess(command, 128, "", f"fatal: {url} not found\n")
+
+    monkeypatch.setattr(proc, "run", run)
+    with pytest.raises(workspace.Refused) as failed:
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    why = failed.value.why or ""
+    assert "SECRET" not in why and "https://host/o/r" in why
+
+
 @pytest.mark.parametrize(
     ("text", "line"),
     [
         ("", None),
         ("Cloning...\nfatal: could not read Username\n\n", "fatal: could not read Username"),
-        ("fatal: https://bob:s3cret@host/x/y not found", "fatal: https://…@host/x/y not found"),
+        ("fatal: https://bob:s3cret@host/x/y not found", "fatal: https://host/x/y not found"),
+        # Up to the last @: a password may hold one, as may a user name.
+        ("fatal: https://user@mail:SECRET@host/o/r", "fatal: https://host/o/r"),
+        ("fatal: https://user:prefix@SECRET@host/o/r", "fatal: https://host/o/r"),
         ("a\x1b[31mb", "a?[31mb"),
         ("x" * 400, "x" * 300),
     ],
