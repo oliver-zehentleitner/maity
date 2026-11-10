@@ -1651,8 +1651,12 @@ not: an empty `config.worktree` and `objects/info/alternates`, an empty
 `remotes/`, and empty `.claude-sandbox-noreplace/` directories (in
 `info/`, `objects/info/` and `objects/info/commit-graphs/`). The
 sandbox leaves them to guard the paths it protects; no command of the
-session wrote them. The check accepts exactly these while they are
-empty, and refuses them as before once anything is in them. This
+session wrote them. The check accepts, while empty, a little more than
+those six: an empty `config.worktree`, `objects/info/alternates` or
+`objects/info/http-alternates` file, an empty `remotes/`, and an empty
+`.claude-sandbox-noreplace/` directory wherever it appears in `.git`,
+not only in the three places observed. Any of them with something in it is refused as
+before. This
 holds for every maity user, not only the runner. Empty, they change
 nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
