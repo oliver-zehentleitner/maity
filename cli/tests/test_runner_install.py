@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import tomllib
 from collections.abc import Iterator, Sequence
@@ -78,7 +79,8 @@ class FakeHost(install.Host):
         self.calls.append((argv, stdin))
         if argv[0] == "useradd":
             comment = argv[argv.index("--comment") + 1]
-            self.users[argv[-1]] = install.User(990, 990, str(install.HOME), comment)
+            uid, gid = os.getuid(), os.getgid()  # what the test can own, standing in for 990
+            self.users[argv[-1]] = install.User(uid, gid, str(install.HOME), comment)
             self.path(install.HOME).mkdir(parents=True)
         if argv[0] == "userdel":
             self.users.pop(argv[-1], None)
@@ -96,7 +98,6 @@ def args(**kw: object) -> argparse.Namespace:
         "url": URL,
         "code": "K3PF-9QZD-1MWA",
         "code_file": None,
-        "config": None,
         "force": False,
         "purge": False,
     }
@@ -260,19 +261,6 @@ def test_uninstall_purge_removes_state_configuration_and_user(tmp_path: Path) ->
     assert host.commands()[-1] == "userdel maity-runner"
 
 
-def test_purge_with_config_removes_only_that_file(tmp_path: Path) -> None:
-    host = FakeHost(tmp_path)
-    other = Path("/etc/runners/mine.toml")
-    neighbour = host.path(other.parent / "keep.toml")
-    neighbour.parent.mkdir(parents=True)
-    neighbour.write_text("")
-    host.path(install.HOME).mkdir(parents=True)
-    host.path(other).write_text("")
-    install.cmd_uninstall(args(purge=True, config=str(other)), host)
-    assert not host.path(other).exists()
-    assert neighbour.exists()
-
-
 def test_uninstall_refuses_without_root(tmp_path: Path) -> None:
     host = FakeHost(tmp_path, uid=1000)
     with pytest.raises(install.Refused, match="sudo"):
@@ -289,16 +277,16 @@ def test_the_cli_maps_a_refusal_to_exit_2(
     assert "sudo" in capsys.readouterr().err
 
 
-def test_the_unit_names_the_configuration_given_and_quotes_every_word(tmp_path: Path) -> None:
+def test_the_unit_quotes_every_word(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
     host.maity_words = ['/opt/my tools/100%/$HOME/py\\th"on', "-I", "-m", "maity"]
-    install.cmd_install(args(config="/etc/runners/main.toml"), host)
+    install.cmd_install(args(), host)
     line = next(
         x for x in host.path(install.UNIT_PATH).read_text().splitlines() if x.startswith("Exec")
     )
     assert line == (
         'ExecStart="/opt/my tools/100%%/$$HOME/py\\\\th\\"on" "-I" "-m" "maity" "runner" '
-        '"serve" "--config" "/etc/runners/main.toml"'
+        '"serve" "--config" "/etc/maity-runner/runner.toml"'
     )
 
 
@@ -308,15 +296,6 @@ def test_a_control_character_in_a_path_is_refused_before_any_change(tmp_path: Pa
     with pytest.raises(install.Refused, match="control character"):
         install.cmd_install(args(), host)
     assert host.calls == []
-
-
-@pytest.mark.parametrize("given", ["runner.toml", "~/runner.toml", "../x.toml"])
-def test_a_relative_config_is_refused_before_any_change(tmp_path: Path, given: str) -> None:
-    for command in (install.cmd_install, install.cmd_uninstall):
-        host = FakeHost(tmp_path / command.__name__ / given.replace("/", "_"))
-        with pytest.raises(install.Refused, match="absolute path"):
-            command(args(config=given), host)
-        assert host.calls == []
 
 
 def test_a_link_in_the_service_users_home_is_not_followed(tmp_path: Path) -> None:
@@ -352,19 +331,36 @@ def test_a_link_at_the_configuration_is_refused_and_its_target_untouched(tmp_pat
     link = host.path(install.CONFIG)
     link.parent.mkdir(parents=True)
     link.symlink_to(target)  # dangling: exists() is False, but it would be followed
-    with pytest.raises(install.Refused, match="link or not a regular file"):
+    with pytest.raises(install.Refused, match="not a regular file of root's"):
         install.cmd_install(args(force=True), host)
     assert not target.exists()
+    assert host.calls == []
 
 
-def test_a_configuration_directory_others_can_write_is_refused(tmp_path: Path) -> None:
+@pytest.mark.parametrize("directory", ["/etc", "/etc/maity-runner", "/var/lib"])
+def test_a_directory_on_the_way_others_can_write_is_refused(tmp_path: Path, directory: str) -> None:
     host = FakeHost(tmp_path)
-    directory = host.path(Path("/etc/runners"))
-    directory.mkdir(parents=True)
-    directory.chmod(0o777)
+    for made in ("/etc/maity-runner", "/var/lib"):
+        host.path(Path(made)).mkdir(parents=True)
+    host.path(Path(directory)).chmod(0o777)
     with pytest.raises(install.Refused, match="writable by group or others"):
-        install.cmd_install(args(config="/etc/runners/main.toml"), host)
-    assert not (directory / "main.toml").exists()
+        install.cmd_install(args(), host)
+    assert host.calls == []
+    assert not host.path(install.CONFIG).exists()
+
+
+@pytest.mark.parametrize("directory", ["/etc/maity-runner", "/var/lib", "/etc/systemd"])
+def test_a_link_on_the_way_is_refused_before_any_change(tmp_path: Path, directory: str) -> None:
+    host = FakeHost(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    link = host.path(Path(directory))
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(elsewhere)
+    with pytest.raises(install.Refused, match="is a link or not a directory"):
+        install.cmd_install(args(), host)
+    assert host.calls == []
+    assert list(elsewhere.iterdir()) == []
 
 
 def test_force_replaces_the_file_instead_of_writing_through_it(tmp_path: Path) -> None:
@@ -388,17 +384,51 @@ def test_an_unsupported_key_is_incomplete_too(tmp_path: Path) -> None:
     assert "systemctl enable maity-runner" in host.commands()
 
 
-def test_paired_is_read_from_the_configured_state_dir(tmp_path: Path) -> None:
-    host = FakeHost(tmp_path)
-    config_path = Path("/etc/runners/main.toml")
-    host.path(config_path).parent.mkdir(parents=True)
-    host.path(config_path).write_text(
+def srv_state(host: FakeHost) -> None:
+    """A kept configuration whose credential is under /srv."""
+    host.path(install.CONFIG).parent.mkdir(parents=True)
+    host.path(install.CONFIG).write_text(
         COMPLETE.replace("/var/lib/maity-runner/state", "/srv/runner-state")
     )
     (host.path(Path("/srv/runner-state"))).mkdir(parents=True)
     (host.path(Path("/srv/runner-state")) / "credential").write_text("x")
-    assert install.cmd_install(args(code=None, config=str(config_path)), host) == 0
+
+
+def test_paired_is_read_from_the_configured_state_dir(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    srv_state(host)
+    assert install.cmd_install(args(code=None), host) == 0
     assert not any(" pair " in line for line in host.commands())
+
+
+def test_a_forced_configuration_is_paired_against_its_own_state_dir(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    srv_state(host)
+    # --force writes install's own configuration, whose state_dir holds no credential.
+    with pytest.raises(install.Refused, match="pairing code is empty"):
+        install.cmd_install(args(code=None, force=True), host)
+    assert host.calls == []
+    assert "/srv/runner-state" in host.path(install.CONFIG).read_text()
+
+
+def test_a_state_dir_under_home_is_resolved_as_serve_does(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)  # paired: the credential is in /var/lib/maity-runner/state
+    host.path(install.CONFIG).write_text(
+        COMPLETE.replace('"/var/lib/maity-runner/state"', '"~/state"')
+    )
+    host.calls.clear()
+    assert install.cmd_install(args(code=None), host) == 0
+    assert not any(" pair " in line for line in host.commands())
+
+
+def test_a_relative_state_dir_is_refused_before_any_change(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    host.path(install.CONFIG).parent.mkdir(parents=True)
+    host.path(install.CONFIG).write_text(COMPLETE.replace('"/var/lib/maity-runner/state"', '"st"'))
+    with pytest.raises(install.Refused, match="not absolute"):
+        install.cmd_install(args(), host)
+    assert host.calls == []
 
 
 def test_an_unreadable_code_file_is_refused(tmp_path: Path) -> None:
@@ -408,18 +438,27 @@ def test_an_unreadable_code_file_is_refused(tmp_path: Path) -> None:
     assert host.calls == []
 
 
-def test_uninstall_does_not_run_stop_all_on_a_configuration_that_does_not_load(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+@pytest.mark.parametrize("broken", ["missing", "does not load"])
+def test_agents_that_cannot_be_stopped_stop_the_removal(tmp_path: Path, broken: str) -> None:
     host = FakeHost(tmp_path)
-    install.cmd_install(args(), host)  # the starter configuration: no limits, no harness
+    complete_config(host)
+    install.cmd_install(args(), host)
+    if broken == "missing":
+        host.path(install.CONFIG).unlink()
+    else:
+        host.path(install.CONFIG).write_text("[hub]\n")
     host.calls.clear()
-    install.cmd_uninstall(args(), host)
+    with pytest.raises(install.Refused, match=f"{broken}.*nothing was removed"):
+        install.cmd_uninstall(args(purge=True), host)
     assert not any("stop-all" in line for line in host.commands())
-    assert "does not load" in capsys.readouterr().err
+    assert host.path(install.UNIT_PATH).exists() and host.path(install.HOME).is_dir()
+    assert install.USER in host.users
+    # --force goes on, as after a failed stop-all.
+    assert install.cmd_uninstall(args(purge=True, force=True), host) == 0
+    assert not host.path(install.HOME).exists()
 
 
-def test_purge_removes_a_link_at_home_but_not_what_it_points_to(tmp_path: Path) -> None:
+def test_purge_refuses_a_link_at_home_and_leaves_what_it_points_to(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
     install.cmd_install(args(), host)
     kept = tmp_path / "precious"
@@ -430,19 +469,21 @@ def test_purge_removes_a_link_at_home_but_not_what_it_points_to(tmp_path: Path) 
 
     shutil.rmtree(home)
     home.symlink_to(kept)
-    install.cmd_uninstall(args(purge=True), host)
-    assert not os.path.lexists(home)
+    host.calls.clear()
+    with pytest.raises(install.Refused, match="is a link or not a directory"):
+        install.cmd_uninstall(args(purge=True), host)
+    assert host.calls == []
     assert (kept / "file").exists()
 
 
 def test_purge_refuses_a_config_that_is_a_directory(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
-    directory = host.path(Path("/etc/runners"))
+    directory = host.path(install.CONFIG)
     directory.mkdir(parents=True)
     host.path(install.UNIT_PATH).parent.mkdir(parents=True)
     host.path(install.UNIT_PATH).write_text("unit")
-    with pytest.raises(install.Refused, match="not what install made"):
-        install.cmd_uninstall(args(purge=True, config="/etc/runners"), host)
+    with pytest.raises(install.Refused, match="not a regular file of root's"):
+        install.cmd_uninstall(args(purge=True), host)
     assert directory.is_dir()
     assert host.calls == []  # refused before the service was touched
     assert host.path(install.UNIT_PATH).exists()
@@ -456,9 +497,10 @@ def test_purge_leaves_a_user_install_did_not_make(tmp_path: Path) -> None:
     assert host.calls == []
 
 
-def test_an_account_with_install_s_home_but_no_marker_is_not_taken_over(tmp_path: Path) -> None:
+def test_an_account_without_root_s_record_is_not_taken_over(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
-    host.users[install.USER] = install.User(990, 990, str(install.HOME), "someone else's")
+    # install's home and its comment, as an account's owner could set them: still not proof.
+    host.users[install.USER] = install.User(990, 990, str(install.HOME), install.COMMENT)
     host.path(install.HOME).mkdir(parents=True)
     with pytest.raises(install.Refused, match="install did not make"):
         install.cmd_install(args(), host)
@@ -468,11 +510,44 @@ def test_an_account_with_install_s_home_but_no_marker_is_not_taken_over(tmp_path
     assert host.path(install.HOME).is_dir()
 
 
-def test_install_marks_the_account_it_makes(tmp_path: Path) -> None:
+def test_install_records_the_account_it_makes(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
     install.cmd_install(args(), host)
-    assert f"--comment {install.MARKER} " in host.commands()[0]
-    assert host.users[install.USER].ours
+    record = json.loads(host.path(install.RECORD).read_text())
+    assert record["uid"] == host.users[install.USER].uid and record["home"] == str(install.HOME)
+    assert (host.path(install.RECORD).stat().st_mode & 0o777) == 0o644
+    install.cmd_uninstall(args(purge=True, force=True), host)
+    assert not host.path(install.RECORD).exists()
+
+
+def test_a_record_for_another_uid_does_not_make_an_account_install_s(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    user = host.users[install.USER]
+    host.users[install.USER] = install.User(user.uid + 1, user.gid, user.home, user.gecos)
+    with pytest.raises(install.Refused, match="not made by install"):
+        install.cmd_uninstall(args(purge=True), host)
+
+
+def test_a_directory_of_another_user_in_home_is_refused(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    # Root's record and the account name another uid than the one owning HOME.
+    uid = os.getuid() + 1
+    user = host.users[install.USER]
+    host.users[install.USER] = install.User(uid, user.gid, user.home, user.gecos)
+    record = json.loads(host.path(install.RECORD).read_text())
+    host.path(install.RECORD).write_text(json.dumps({**record, "uid": uid}))
+    host.calls.clear()
+    with pytest.raises(install.Refused, match="does not belong to maity-runner"):
+        install.cmd_install(args(code=None), host)
+    assert host.calls == []
+
+
+def test_install_and_uninstall_take_no_config_path() -> None:
+    for argv in (["install", URL, "--code", "X"], ["uninstall"]):
+        with pytest.raises(SystemExit):
+            cli.main(["runner", *argv, "--config", "/etc/runners/main.toml"])
 
 
 @pytest.mark.parametrize("failing", ["disable", "stop-all"])
@@ -499,6 +574,7 @@ def test_force_goes_on_after_a_failed_stop(tmp_path: Path) -> None:
 
 def test_a_failed_reload_after_uninstall_exits_1(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
+    complete_config(host)
     install.cmd_install(args(), host)
     host.failing = {"daemon-reload"}
     assert install.cmd_uninstall(args(), host) == 1

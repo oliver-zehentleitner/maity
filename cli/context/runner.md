@@ -1703,15 +1703,15 @@ is the way left to put a question to a person.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); `cli/src/maity/runner/install.py`. The choices below are the implementer's within that scope, not confirmed by the maintainer.
+**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); the team lead narrowed it on 2026-11-10 to fixed paths, refusing instead of repairing, a root-owned creation record, and no removal while agents may run; `cli/src/maity/runner/install.py`. The choices below are the implementer's within that scope, not confirmed by the maintainer.
 **Revisit when:** a per-user (`systemctl --user`) variant is wanted, the shipped unit's `ExecStart` line changes, or `install` learns to write `[limits]` and a harness itself
 
 `sudo maity runner install <pairing url> --code-file -` does the steps the
 unit's header lists:
 1. It checks for Linux, root, systemd, tmux and runuser.
-2. It creates the `maity-runner` system user, marked as install's in its
-   comment field, and `/var/lib/maity-runner` (state, workspaces; 0700,
-   owned by that user).
+2. It creates the `maity-runner` system user, records it in
+   `/var/lib/maity-runner-install.json`, and makes `/var/lib/maity-runner`
+   (state, workspaces; 0700, owned by that user).
 3. It writes `/etc/maity-runner/runner.toml` and checks the service user can
    read it.
 4. It writes the unit.
@@ -1723,7 +1723,8 @@ A second run is safe. It creates only what is missing, pairs only an
 unpaired runner, and keeps a file that differs unless `--force`.
 `uninstall` stops and disables the service, ends its agents and removes the
 unit. `--purge` also removes state, workspaces, the configuration and the
-account install made.
+account install made. The paths are fixed; other paths are the manual steps
+of `maity runner unit`.
 
 1. **`ExecStart` names the interpreter of the `maity` that runs `install`**
    (`<python> -I -m maity runner serve …`), the way the agents' side already
@@ -1749,7 +1750,10 @@ account install made.
    - Rejected: guessing projects, repositories or a harness. Those are the
      operator's choices.
 4. **`uninstall` ends the agents (`stop-all`) after stopping the service,
-   and removes nothing when either step fails unless `--force`.** The
+   and removes nothing unless it knows they stopped, or `--force`.** Not
+   knowing counts as failing: no configuration, one that does not load
+   (install's own starter does not), or no account of install's to run
+   `stop-all` as. The
    unit's `KillMode=process` keeps agents running across a service stop.
    Once the unit is gone nothing would supervise them, and once `--purge`
    has removed the state their workspaces would be gone from under them.
@@ -1757,24 +1761,35 @@ account install made.
      credential whose runner is gone.
    - Rejected: warning and going on. A purge would then delete what running
      agents still use.
-5. **Root never follows a link where others can write, and removes only
-   what it made.**
-   - The service user's home, and in the `single` layout every agent, can
-     write `/var/lib/maity-runner`. Its directories are opened with
-     `O_NOFOLLOW` from the parent's descriptor and owned and moded through
-     that descriptor; a link there is refused.
-   - Files are written to a temporary file in a root-owned directory that
-     others cannot write, then renamed into place. A link or non-regular
-     file at the path is refused.
-   - The account install makes carries a marker in its comment field.
-     `install` does not take over an unmarked `maity-runner` account, and
-     `--purge` deletes no account without the marker.
-   - `--purge` removes `/var/lib/maity-runner`, and either
-     `/etc/maity-runner` or only the file a `--config` names, never a
-     directory there. It checks all of this before it changes anything, and
-     removes a link itself, never what it points to.
-   - Rejected: plain `chmod`/`chown`/`write_text` on paths. A link swapped
-     in by the service user would hand root's files to it.
+5. **Fixed paths, and root refuses rather than repairs.**
+   - `install` and `uninstall` take no `--config`; they use
+     `/etc/maity-runner/runner.toml`, the unit under
+     `/etc/systemd/system` and `/var/lib/maity-runner`. Other paths are the
+     manual steps of `maity runner unit`.
+   - Every directory on the way to a file root writes or removes is opened
+     from `/` one component at a time with `O_NOFOLLOW`, and each must be a
+     directory of root's that group and others cannot write. Files are made
+     and renamed, or removed, through the last descriptor. Nobody but root
+     can then swap anything on the way between the check and the change.
+   - The service user's directories (writable by that user, and in the
+     `single` layout by every agent) must be real directories of that
+     user's; they are opened the same way and changed through their
+     descriptor.
+   - Anything not as install would have made it — a link, another owner, a
+     directory others can write, a configuration whose `state_dir` it
+     cannot resolve as `serve` does — stops the command before the first
+     change.
+   - Root's record `/var/lib/maity-runner-install.json` (uid, home, time)
+     says install made the account. `install` does not take over, and
+     `--purge` does not delete, an account the record does not name. The
+     account's comment is only a label.
+   - Rejected: a custom `--config`. Its directories can sit under paths the
+     service user can rename, and checking each such tree is more than the
+     manual steps cost.
+   - Rejected: repairing owners and modes. A wrong owner or a link is a sign
+     someone else has been there; root fixing it would act on their setup.
+   - Rejected: a marker in the account's comment field. Where users may
+     change their own full name, an account's owner can set it.
    - Rejected: adopting any existing `maity-runner` account. An account of
      the same name made for something else would be taken over, and later
      deleted.

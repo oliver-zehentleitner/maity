@@ -753,15 +753,16 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "--force. While the configuration is not one serve would accept (no [limits] or "
         "[harness.<id>] yet), the service is enabled but not started, and what is missing is "
         "listed. Running it again is safe: it creates only what is missing and pairs only an "
-        "unpaired runner (no code needed then). As root it never follows a link in the service "
-        "user's directories or at a file it writes; --config must be an absolute path.",
+        "unpaired runner; an already paired one needs no code. The paths are fixed; other paths "
+        "are the manual steps of `maity runner unit`. Anything on those paths that is not as "
+        "install would have made it (a link, another owner, a directory others can write) "
+        "stops it before any change.",
         formatter_class=fmt,
     )
     r.add_argument("url", help="the pairing URL (https://<hub>/r/<token>)")
     code = r.add_mutually_exclusive_group()
     code.add_argument("--code", help="the single-use pairing code")
     code.add_argument("--code-file", help="read the code from this file, or stdin with -")
-    r.add_argument("--config", help=f"configuration file (default {install.CONFIG})")
     r.add_argument("--force", action="store_true", help="rewrite the configuration and the unit")
     r.set_defaults(handler=_installer(install.cmd_install))
 
@@ -771,11 +772,12 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         description=f"Stops and disables the service, ends the agents it started (`stop-all`) "
         f"and removes {install.UNIT_PATH}; when stopping fails, nothing is removed unless "
         f"--force. With --purge also {install.HOME} (state, credential, workspaces with any "
-        f"unpushed work), the configuration and the {install.USER} user, if install made it. "
+        f"unpushed work), {install.CONFIG.parent} and the {install.USER} user, if install made "
+        f"it ({install.RECORD} says so). When it cannot tell that the agents stopped (no "
+        "configuration, one that does not load), it removes nothing either. "
         "The hub keeps listing the runner until it is removed in the dashboard.",
         formatter_class=fmt,
     )
-    r.add_argument("--config", help=f"configuration file (default {install.CONFIG})")
     r.add_argument("--purge", action="store_true", help="also remove state, workspaces and user")
     r.add_argument(
         "--force", action="store_true", help="go on when stopping the service or its agents fails"
