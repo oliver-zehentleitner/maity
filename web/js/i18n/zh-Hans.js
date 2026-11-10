@@ -3554,6 +3554,8 @@ window.MAITY_I18N["zh-Hans"] = {
   "profile_delete.submit": "删除个人资料",
   "profile_delete.title": "删除此个人资料",
   "profile_delete.type": "输入 @{handle} 以删除它",
+  "project.link.actions": "Actions",
+  "project.link.actions_on": "{forge} 上的 Actions",
   "project.link.chat": "聊天",
   "project.link.discussions": "讨论",
   "project.link.issues": "议题",
