@@ -916,15 +916,20 @@ only about processes.
 
 - **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
   meaning for the operator; each process holds its share, rounded down, so raising the workers
-  never adds to the pool connections asked of the database (entry on connections above). A share
-  of 0 pooled connections is refused at the start: SQLAlchemy reads `pool_size=0` as no limit, so
-  the rounded-down share would lift the cap it is meant to keep. The minimum was two while a
+  never adds to the pool connections asked of the database (entry on connections above). Since
+  tsk-v874y63b4z8p each process splits its share between its two engines (`serving.pool_shares`,
+  persistence.md 66f0bcf9): the async engine holds `MAITY_DB_ASYNC_POOL_SIZE` (2, divided by the
+  workers, at least one, never the whole share), the sync engine the rest and the whole overflow,
+  so the split adds nothing to the budget either; with all routes still sync, the sync cap is 14
+  of the default 16. A part of 0 pooled connections is refused at the start: SQLAlchemy reads
+  `pool_size=0` as no limit, so a rounded-down part would lift the cap it is meant to keep, and a
+  share therefore needs two, one per engine. The minimum was two while a
   shared count or the forge budget took a second connection from the same pool (entry 2bd65fec),
   so that a process with one waited on itself until the pool's timeout once its overflow share was
   in use. Since #1320 they have their own engine, and a measurement on PostgreSQL (card
   tsk-zm2z04ep2cma) found no request in the request handlers of the measured test files that held
-  two serving connections at once, so one is enough to be correct and more is throughput, the
-  operator's choice. The shared-counter connections (two per process), the listener connections
+  two serving connections at once, so one per engine is enough to be correct and more is
+  throughput, the operator's choice. The shared-counter connections (two per process), the listener connections
   (one per process) and the readiness probe's come on top. A known consequence of a share of one:
   the background passes take from the same pool, so a request that finds its pool share and its
   overflow share (`MAITY_DB_MAX_OVERFLOW` divided by the workers, rounded down) in use waits up to

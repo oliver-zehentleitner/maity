@@ -12,13 +12,15 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import Any, cast
 
+import anyio
 from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from maity_hub import clock, restricted, ticker_read
 from maity_hub import tables as t
@@ -105,6 +107,46 @@ class Notifier:
 notifier = Notifier()
 
 
+@dataclass
+class _Open:
+    """What a `transaction` gathers while it is open, under `conn.info` keys its helpers read."""
+
+    pending: list[tuple[str, int]]
+    undo: list[Callable[[], None]]
+    after: list[Callable[[], None]]
+    scratch: dict[str, Any]
+
+    def bind(self, info: MutableMapping[Any, Any]) -> None:
+        info[_PENDING] = self.pending
+        info[_UNDO] = self.undo
+        info[_AFTER] = self.after
+        info[_SCRATCH] = self.scratch
+
+    @staticmethod
+    def unbind(info: MutableMapping[Any, Any]) -> None:
+        for key in (_PENDING, _UNDO, _AFTER, _SCRATCH):
+            info.pop(key, None)
+
+    def rolled_back(self) -> None:
+        for step in reversed(self.undo):
+            step()
+
+    def announce(self) -> None:
+        for project_id, seq in self.pending:
+            notifier.notify(project_id, seq)
+
+    def run_after(self) -> None:
+        for step in self.after:
+            try:
+                step()
+            except Exception:  # committed already: a failed clean-up is the sweep's to retry
+                log.exception("a step after the commit failed")
+
+
+def _opened() -> _Open:
+    return _Open([], [], [], {})
+
+
 @contextmanager
 def transaction(engine: Engine) -> Iterator[Connection]:
     """`engine.begin()` that announces the events it wrote once they are committed.
@@ -113,34 +155,48 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     a waiter woken there could read before the row is visible; the
     announcement waits until `begin()` has returned cleanly.
     """
-    pending: list[tuple[str, int]] = []
-    undo: list[Callable[[], None]] = []
-    after: list[Callable[[], None]] = []
-    scratch: dict[str, Any] = {}
+    opened = _opened()
     try:
         with engine.begin() as conn:
-            conn.info[_PENDING] = pending
-            conn.info[_UNDO] = undo
-            conn.info[_AFTER] = after
-            conn.info[_SCRATCH] = scratch
+            opened.bind(conn.info)
             try:
                 yield conn
             finally:
-                conn.info.pop(_PENDING, None)
-                conn.info.pop(_UNDO, None)
-                conn.info.pop(_AFTER, None)
-                conn.info.pop(_SCRATCH, None)
+                _Open.unbind(conn.info)
     except BaseException:
-        for step in reversed(undo):
-            step()
+        opened.rolled_back()
         raise
-    for project_id, seq in pending:
-        notifier.notify(project_id, seq)
-    for step in after:
-        try:
-            step()
-        except Exception:  # committed already: a failed clean-up is the sweep's to retry
-            log.exception("a step after the commit failed")
+    opened.announce()
+    opened.run_after()
+
+
+@asynccontextmanager
+async def async_transaction(engine: AsyncEngine) -> AsyncIterator[AsyncConnection]:
+    """`transaction` on the async engine: the same `conn.info` keys, so `on_commit`,
+    `on_rollback`, `scratch` and the event writers work unchanged on the `Connection` that
+    `AsyncConnection.run_sync` hands them. The announcement waits for the commit as there.
+
+    The steps of a rollback and those after the commit run in a worker thread: a rate given
+    back may write the shared counter (`shared_counts`), a step after the commit removes blobs
+    and files, and the event loop would wait for either. Both are shielded from a cancelled
+    request, which must still give back what it counted."""
+    opened = _opened()
+    try:
+        async with engine.begin() as conn:
+            opened.bind(conn.info)
+            try:
+                yield conn
+            finally:
+                _Open.unbind(conn.info)
+    except BaseException:
+        if opened.undo:
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(opened.rolled_back)
+        raise
+    opened.announce()
+    if opened.after:
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(opened.run_after)
 
 
 def in_transaction(conn: Connection) -> bool:

@@ -1039,3 +1039,60 @@ last read always was.
   old role.
 - Locking the membership (`FOR SHARE`) for the read: a read route would make a demotion or removal
   wait behind it, and SQLite has no row locks to match.
+
+## An async engine beside the sync one, driving the same `Connection` code through `run_sync`
+
+**Id:** 66f0bcf9-cb6f-4993-81de-541d13f0c942
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the owner's decision on the asyncio plan (req-hd5k9fprpxp7, 2026-11-09, card
+tsk-v874y63b4z8p and its plan notes); the project lead's decision on the pool split (2026-11-10);
+`db.make_async_engine`, `db.retrying_async`, `events.async_transaction`, `serving.pool_shares`,
+`hub/tests/test_async_engine.py`, `hub/tests/test_loop_lag.py`
+**Revisit when:** a measurement asks for a native async helper instead of `run_sync`, the series'
+cleanup removes sync paths the routes no longer use, the Docker base and every pinned binary wheel
+support free-threaded Python, or aiomysql falls behind PyMySQL's error numbers
+**See:** replicas.md — 4e24abd8-ab64-4844-897b-629bfa211f6d — as of 2026-11-10
+
+A serving hub has two engines on one database. The sync engine is the one it always had: the routes
+that are still `def` (in the thread pool), the background workers, migrations and the CLI. The
+async engine (`db.make_async_engine`) is built from the same options (`_engine_options`: isolation,
+timeouts, `options`, `application_name`, recycle, LIFO pool), with the async driver of each one
+the hub ships with (`db.async_url`): psycopg 3's own async mode on PostgreSQL, aiomysql on MariaDB,
+aiosqlite on SQLite. A route moved to it opens `events.async_transaction` (or `engine.begin()`) and
+hands its body to `AsyncConnection.run_sync`, which runs today's sync `Connection` code on a
+connection driven through SQLAlchemy's greenlet bridge. About 1,900 functions that take a
+`Connection` stay as they are; the routes move family by family, each PR measured.
+
+What the bridge has to keep:
+- **The cursor events.** They hang on `async_engine.sync_engine`, where SQLAlchemy runs them:
+  `write_guard` and `timing` install there (`create_app`), and so do the statement counts of the
+  tests. Both read a context variable the request sets; SQLAlchemy's greenlet runs in the
+  context of the task that awaits `run_sync`, so the request's human and tally reach them as the
+  thread pool's copy of the context did. `hub/tests/test_async_engine.py` checks both.
+- **Nothing that blocks on the loop.** The body under `run_sync` runs on the event loop's thread.
+  The engine's own waits await: the DNS retry's pause (`_pause_on_the_loop`), `retrying_async`'s
+  pause. The steps of a rollback (a rate given back, which may write the shared counter) and those
+  after a commit (blobs and files removed) run in a worker thread, shielded from a cancelled
+  request. What a route's body does itself is audited when its family moves, and the loop-lag
+  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) fails when the loop's tick runs later
+  than its limit under concurrent requests of the hot families.
+- **SQLite's connection setup.** The pragmas and `BEGIN IMMEDIATE` hang on the async engine's sync
+  engine as on the sync one, so tests and single-server hubs run the same path as a server.
+
+**Reason:** the routes paid two thread hops (authentication, then the body) and competed for the
+thread pool's 40 threads, held long-polls and slow reads included. The bridge removes the hops for
+each route it carries without rewriting the code under it. aiomysql is built on PyMySQL, so the
+error numbers `retrying`, the savepoint rule and the refusals read (1213, 1305) are the same;
+aiosqlite keeps SQLite on the same code path as the servers.
+
+**Rejected alternatives:**
+- Rewriting the helpers as native async code: 1,900 functions, for a gain the bridge already
+  gives; native helpers come only where a measurement asks for one.
+- asyncmy for MariaDB: faster, but its own implementation, so every error number would need
+  verifying again.
+- SQLite sync-only: tests and small hubs would not run the path production runs.
+- Free-threaded Python instead of asyncio: the binary wheels and the Docker base are not there,
+  and several processes per pod already give CPU parallelism.

@@ -98,6 +98,10 @@ class Settings:
     # whole hub: with several workers each process holds its share (`per_worker`).
     db_pool_size: int = 16
     db_max_overflow: int = 16
+    # MAITY_DB_ASYNC_POOL_SIZE: how much of that pool the async engine holds (2), carved out of
+    # it, never on top: the sync engine keeps the rest and the whole overflow
+    # (`serving.pool_shares`, hub/context/replicas.md).
+    db_async_pool_size: int = 2
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
     db_pool_recycle: int = 1800
     # MAITY_DB_STATEMENT_TIMEOUT, MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT: seconds, set on every
@@ -223,6 +227,9 @@ class Settings:
             db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
+            ),
+            db_async_pool_size=int(
+                parse_number(env, "MAITY_DB_ASYNC_POOL_SIZE", 2, minimum=1, maximum=500)
             ),
             db_pool_recycle=int(
                 parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
