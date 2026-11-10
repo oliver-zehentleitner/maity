@@ -433,7 +433,7 @@ jobs:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
       # A test (setup and teardown included) still running after 300 s prints every thread's stack into the log
       # and runs on: a hang shows the frame it waits on (the test's or a fixture's) within 5 minutes, not as a
-      # cancel after 90; the dump names the test only when its call hangs (context/process.md, the entry on the
+      # cancel after 120; the dump names the test only when its call hangs (context/process.md, the entry on the
       # stack after 300 s).
       # --durations=50: the 50 slowest tests at the end of the log, the data for making the job faster (tsk-g6acq8cbajb4).
       PYTEST_ADDOPTS: -o faulthandler_timeout=300 --durations=50

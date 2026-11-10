@@ -1414,9 +1414,11 @@ depends on a human; the approval has to come from Oliver).
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
 **See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
-`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
+with `--durations=50` beside it, 97f338fd). A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
-once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's limit (90 minutes,
+120 since 2026-11-10, 97f338fd). The log then
 already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
 when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
 fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
@@ -1426,8 +1428,9 @@ about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
 (`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
-300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
-an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s was
+an eighteenth of the then 90 minutes (a twenty-fourth of the 120 since 2026-11-10), so a hang shows where it waits early
+in the run.
 
 **Rejected alternatives:**
 - `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
