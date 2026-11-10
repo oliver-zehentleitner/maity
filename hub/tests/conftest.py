@@ -36,7 +36,10 @@ def _shard() -> tuple[int, int] | None:
     # int() refuses more than 4300 digits (review of #1625).
     match = re.fullmatch(r"([0-9]{1,4})/([0-9]{1,4})", raw)
     if not match or not 1 <= int(match[1]) <= int(match[2]):
-        raise pytest.UsageError(f"MAITY_TEST_SHARD must be <k>/<n> with 1 <= k <= n, not {raw!r}")
+        raise pytest.UsageError(
+            f"MAITY_TEST_SHARD must be <k>/<n>, at most four ASCII digits a side,"
+            f" with 1 <= k <= n, not {raw!r}"
+        )
     return int(match[1]), int(match[2])
 
 
