@@ -1352,8 +1352,12 @@ for the newest run to finish.
 **Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
 
+(2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs, its 44 green jobs took
+835 s median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its tests had
+passed. Card tsk-w81egrhwz7a7.)
+
 `hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`; every other job
-`ci-ok` waits for carries 30 (`web-e2e` keeps its 15). Without it a job runs to GitHub's limit of six hours; while main's one
+`ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15 until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one
 running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
 MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
 (MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
