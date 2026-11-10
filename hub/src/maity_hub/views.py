@@ -587,7 +587,10 @@ def member_views(
     # The member humans and the agents' owners in one read, and their pictures in one
     # (tsk-6srccd2r1h62): the owners' rows give `_owners` and `owned_by` too.
     owner_ids = {a.owner_id for a in agents.values()}
-    wanted = human_ids | owner_ids
+    # The humans who last changed an agent's team rulebook, for its `team.updated_by`
+    # (tsk-xrtxsvv6f974): prod's member list read each one on its own, once per agent.
+    editors = {r.team_updated_by for r in rows if r.agent_id is not None and r.team_updated_by}
+    wanted = human_ids | owner_ids | editors
     people = (
         {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(wanted)))}
         if wanted
@@ -764,7 +767,7 @@ def member_views(
             # Whose work this agent continues and where the hand-over is, never a text (§3.1).
             view["takes_over"] = row.takes_over
             view["handover"] = row.handover
-            view["team"] = instances.team(conn, row)
+            view["team"] = instances.team(conn, row, people)
             view["instances"] = team_of.get(row.id, [])
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:

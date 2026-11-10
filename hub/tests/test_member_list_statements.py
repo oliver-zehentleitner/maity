@@ -49,3 +49,29 @@ def test_the_member_list_reads_people_pictures_and_projects_once(
     # project: the views' read and the full names (namespace.full_names).
     found = (reads["human"], reads["avatar_image"], reads["project"])
     assert found == (3, 1, 2), reads
+
+
+def test_the_member_list_reads_no_more_for_more_agents_with_an_edited_team(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """prod after deploy 5 (tsk-xrtxsvv6f974): a project's member list sent one more statement
+    per agent whose team rulebook a human had changed, the editor's handle for
+    `team.updated_by`. The people read carries the editors now, so the count stays flat."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+
+    def edited_agent() -> None:
+        agent = flow.agent(make_client, owner)
+        changed = owner.patch(f"{MEMBERS}/{agent.id}", {"team": {"max_instances": 2}})
+        assert changed.status_code == 200, changed.text
+
+    edited_agent()
+    one = _reads(migrated, lambda: owner.get(MEMBERS))
+    edited_agent()
+    edited_agent()
+    three = _reads(migrated, lambda: owner.get(MEMBERS))
+    assert sum(three.values()) == sum(one.values()), (one, three)
+    teams = [m["team"]["updated_by"] for m in owner.get(MEMBERS).json()["items"] if "team" in m]
+    assert teams and all(
+        by == {"kind": "human", "id": owner.id, "handle": "maintainer"} for by in teams
+    )
