@@ -1554,6 +1554,8 @@ each command is checked only once.
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 
+(2026-11-10: the fixture-only rule below, and its rejected "screenshots of a real hub", are reversed by the maintainer for his own screenshots: see e148b060-628a-43ae-a5bf-35270d1c1b75. Where the images live, how the site points at them, and the 1600 px and 256-colour reduction still hold.)
+
 The images of the docs pages are files in `docs/img/`, linked from the
 Markdown with a relative path, so they show on GitHub as on the site.
 `tools/site_docs.py` rewrites a relative image the way it rewrites a link:
@@ -1601,6 +1603,42 @@ state that holds nothing private.
   enough.
 - Screenshots of a real hub: real names and data in the repository; the
   fixtures exist for this.
+
+## Docs screenshots may show the real hub with the maintainer's own data; they are still reduced to 1600 px and 256 colours
+
+**Id:** e148b060-628a-43ae-a5bf-35270d1c1b75
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to request req-wj3x9gr5nazr on card tsk-8cjckxxbvhm1 (pull request #1601), 2026-11-10T15:03:20Z, option o1; his go for the board picture's visible card text and tabs the same day ("passt schon nimm die")
+**Revisit when:** a screenshot would show someone else's account, a secret (a token, a join code, an address) or a private project; or the screenshots are made by a script
+**See:** process.md#docs-images-and-diagrams-live-in-docsimg-screenshots-are-of-fixture-mode-and-the-site-points-a-relative-image-at-the-deployed-file — 7f3f6220-0bf0-4d81-8521-5761b877a1dd — as of 2026-11-10
+
+The screenshots of the board, the inbox and Create a project in `docs/img/` are the
+maintainer's own, taken on the real hub. They show his name, his projects' tabs, agent
+handles, a session id and a card's checkpoint text, and no mail address, token or join
+code. They are scaled to 1600 px wide and reduced to 256 colours (libimagequant, then
+oxipng level 4), as 7f3f6220 says, which keeps their text readable.
+
+The request asked whether to lift the fixture-only rule of 7f3f6220. Its options, verbatim:
+
+- o1: "(a) So veröffentlichen, alte Regel aufheben"
+- o2: "(b) Session-ID und OVH-Zeile schwärzen"
+- o3: "(c) Neu im Fixture-Modus aufnehmen"
+- o4: "Erst besprechen"
+
+The answer was o1, given without a text.
+
+**Reason:** the maintainer had already released what the pictures show, and the request
+recommended (a), since real pictures look better than fixture data. The reduction stays
+because every version of an image stays in the history.
+
+**Rejected alternatives:**
+
+- o2, blacking out the session id and the checkpoint's hosting line: not chosen.
+- o3, new screenshots in fixture mode, which keeps the old rule but looks less real.
+- Publishing at full size (2554 px, truecolour, about 787 KB for three): against the
+  reduction of 7f3f6220, which this answer keeps.
 
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 

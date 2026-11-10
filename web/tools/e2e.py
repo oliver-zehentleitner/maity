@@ -490,6 +490,16 @@ def totp_code(secret: str, step: int) -> str:
     return str(value % 10**6).zfill(6)
 
 
+def wrong_totp_code(secret: str) -> str:
+    """A code the hub must refuse: none of the codes for now ± 2 steps.
+
+    The hub takes now ± 1 step, so a fixed "000000" is the real code by chance in about
+    3 of a million runs (tsk-4hn9nv7dbxw4); the extra step on each side covers a slow page."""
+    step = int(time.time() // 30)
+    valid = {totp_code(secret, s) for s in range(step - 2, step + 3)}
+    return next(c for c in (str(d) * 6 for d in range(10)) if c not in valid)
+
+
 def stop_hub(hub: subprocess.Popen) -> None:
     if hub.poll() is None:
         hub.terminate()  # exactly the PID this script started
@@ -2189,7 +2199,7 @@ def security_section(run: Run, browser) -> None:
     run.a11y(page, "security: off")
     secret = set_up_factor(page)
     step = int(time.time() // 30)
-    turn_on(page, "000000")
+    turn_on(page, wrong_totp_code(secret))
     expect(section).to_contain_text("That code is not valid.")
     turn_on(page, totp_code(secret, step))
     expect(page.locator(".security-code-list li")).to_have_count(10)
@@ -2307,7 +2317,7 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     expect(code).to_be_visible()
     run.shot(older, "second-hub-step-up")
     run.a11y(older, "second hub: the step-up question")
-    code.fill("000000")
+    code.fill(wrong_totp_code(secret))
     older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
     # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
@@ -3539,6 +3549,9 @@ def jour_fixe_settings_layout(run: Run, browser) -> None:
                         page.goto(f"{index}?lang=en#/maintainer/maity/jour-fixe")
                         expect(page.locator("main section.jf-series-block").first).to_be_visible()
                         expect(page.locator("main .signin-banner")).to_be_visible()
+                        # A round's date link is a 24 px target (WCAG 2.5.8, nte-ynsymv950zq4).
+                        tall = page.evaluate("() => Array.from(document.querySelectorAll('main ul.jf-rounds a')).map((a) => Math.round(a.getBoundingClientRect().height))")
+                        assert tall and min(tall) >= 24, f"{where}: a round's date link is under 24 px high: {tall}"
                         fold = page.locator("main details.jf-series-settings")
                         if not keeper:
                             # What this state changes is the section's absence: the page stays inside the window.
@@ -4673,6 +4686,28 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     reviewer = next(m for m in members if m.get("handle") == "e2e-reviewer")
     assert reviewer["reports_to"] == agent_id, reviewer
+    # A project name of one unbroken 63-character word wraps in the Agents hint rather than widening the page
+    # (nte-fk0fzcsma0e7). The e2e project's name is short, so its read is answered with such a name for this check.
+    long_name = "E2E" + "x" * 60
+    assert len(long_name) == 63
+    project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha$")
+
+    def with_long_name(route) -> None:
+        body = route.fetch().json()
+        body["name"] = long_name
+        route.fulfill(json=body)
+
+    page.route(project_read, with_long_name)
+    try:
+        for width in (390, 360):
+            page.set_viewport_size({"width": width, "height": 844})
+            page.goto(f"{run.base}/owner/e2e-alpha/agents")
+            expect(page.locator("main p.agents-project-hint")).to_contain_text(long_name)
+            wide = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+            assert wide[0] <= wide[1], f"Agents with a 63-character project name is {wide[0]} px wide at {width} px"
+    finally:
+        page.unroute(project_read, with_long_name)
+        page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     tabs = page.locator("main nav.agents-tabs")
     expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
@@ -4703,6 +4738,44 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             assert size and size["width"] >= 24 and size["height"] >= 24, f"a dot's target at {width} px: {size}"
             run.shot(page, f"agents-fleet-{width}-{scheme}")
         run.a11y(page, "agents, the Organisation tab")
+        # Each state's dot differs in shape or size, not in colour alone (WCAG 1.4.1, nte-s2dqhn1n4bez): one probe
+        # dot per state in the page's own stylesheet, compared with the colours left out; shown at 390 px for the PR.
+        probe = """(states) => {
+          const box = document.createElement('span'); box.className = 'fleet-dots fleet-probe';
+          document.querySelector('ul.fleet-tree').before(box);
+          return states.map((st) => { const a = document.createElement('a'); a.className = 'fleet-dot ' + st; box.appendChild(a);
+            const b = getComputedStyle(a, '::before');
+            return [st, b.width, b.height, b.borderTopWidth, b.borderLeftWidth, b.backgroundImage === 'none' ? 'none' : 'image', b.backgroundColor === 'rgba(0, 0, 0, 0)' ? 'clear' : 'filled'];
+          }); }"""
+        states = ["online", "away", "offline", "dormant", "online lead"]
+        # Forced colours too (#1598 review): there the browser would drop a gradient, a background colour and a
+        # shadow, so the check runs with forced-colors active as well, and the lead keeps its ring.
+        for forced in ("none", "active"):
+            for scheme in ("light", "dark"):
+                page.set_viewport_size({"width": 390, "height": 844})
+                page.emulate_media(color_scheme=scheme, forced_colors=forced)
+                page.reload()
+                expect(node(reviewer["id"])).to_be_visible()
+                shapes = page.evaluate(probe, states)
+                plain = [x for x in shapes if x[0] != "online lead"]
+                assert len({tuple(x[1:]) for x in plain}) == len(plain), f"two dot states look alike ({scheme}, forced colours {forced}): {shapes}"
+                ring = page.evaluate("""() => { const b = getComputedStyle(document.querySelector('.fleet-probe .fleet-dot.lead'), '::before');
+                  return [b.boxShadow, b.outlineStyle]; }""")
+                assert ring[0] != "none" or ring[1] not in ("none", ""), f"the lead dot has no ring ({scheme}, forced colours {forced}): {ring}"
+                run.shot(page, f"agents-fleet-states-390-{scheme}" + ("-forced" if forced == "active" else ""))
+                page.evaluate("() => document.querySelectorAll('.fleet-probe').forEach((e) => e.remove())")
+                print(f"   fleet dots, {scheme}, forced colours {forced}: four shapes {plain}, lead ring kept")
+        page.emulate_media(forced_colors="none")
+        # A stack of pictures overlaps whether a picture is generated or loaded (nte-b3pfhm2bp0vt (b)): every picture
+        # after the first moves 10 px under the one before, mixed kinds included, so the stack keeps its width.
+        overlap = page.evaluate("""() => {
+          const pairs = [['avatar-svg', 'avatar-img'], ['avatar-img', 'avatar-svg'], ['avatar-svg', 'avatar-svg'], ['avatar-img', 'avatar-img']];
+          return pairs.map(([a, b]) => { const box = document.createElement('span'); box.className = 'avatars';
+            const one = document.createElement(a === 'avatar-img' ? 'img' : 'span'); one.className = a;
+            const two = document.createElement(b === 'avatar-img' ? 'img' : 'span'); two.className = b;
+            box.append(one, two); document.body.appendChild(box);
+            const m = getComputedStyle(two).marginInlineStart; box.remove(); return [a + '+' + b, m]; }); }""")
+        assert all(m == "-10px" for _, m in overlap), f"a stack of mixed pictures does not overlap: {overlap}"
     finally:
         page.emulate_media(color_scheme="light")
         page.set_viewport_size({"width": 1280, "height": 900})
