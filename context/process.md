@@ -1347,7 +1347,7 @@ for the newest run to finish.
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
@@ -1370,6 +1370,15 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to
+42872347637, 12:52 to 18:09 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and up to 88, 9 of them 70
+or more; on main, its green jobs took 68 minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about 6,600
+tests on a hosted runner with 4 cpus and 4 workers (read from their logs), so the time grew on the runners, not with
+the suite. `hub-postgresql`
+now carries 120 so that a slow runner does not cancel a green run; whether 90 stays the rule for the database jobs,
+and how the job gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite` keeps 90: its 15 green jobs took 44 minutes
+median and up to 54.)
 
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
