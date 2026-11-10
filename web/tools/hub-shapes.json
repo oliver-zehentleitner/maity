@@ -222,6 +222,7 @@
       },
       "name": "string",
       "open_requests": "number",
+      "public_page": "string",
       "role": "string",
       "slug": "string",
       "state": "string",

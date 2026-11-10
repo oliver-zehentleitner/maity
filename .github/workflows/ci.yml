@@ -176,7 +176,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -415,8 +415,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
-    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
-    timeout-minutes: 90
+    # A hang fails after 120 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts):
+    # green runs reached 88 of the former 90 (tsk-g6acq8cbajb4).
+    timeout-minutes: 120
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
@@ -432,9 +433,11 @@ jobs:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
       # A test (setup and teardown included) still running after 300 s prints every thread's stack into the log
       # and runs on: a hang shows the frame it waits on (the test's or a fixture's) within 5 minutes, not as a
-      # cancel after 90; the dump names the test only when its call hangs (context/process.md, the entry on the
+      # cancel after 120; the dump names the test only when its call hangs (context/process.md, the entry on the
       # stack after 300 s).
-      PYTEST_ADDOPTS: -o faulthandler_timeout=300
+      # --durations=50: the 50 slowest test phases (setup, call and teardown each count on their own) at the end of
+      # the log, the data for making the job faster (tsk-g6acq8cbajb4).
+      PYTEST_ADDOPTS: -o faulthandler_timeout=300 --durations=50
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet

@@ -141,6 +141,26 @@ to open them from.
 
 **Rejected alternatives:** unknown beyond the contract entry's.
 
+## A private project carries a lock after its name, from the project's own public_page
+
+**Id:** fccd0d35-4bfc-44d8-8083-66765ec5a80f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5t3qd0m9rj6r (the owner in the project chat, 2026-11-10, seq 105399: a private project's tab shows a symbol after its name saying it is private; the proposal approved in seq 105431); the owner's answer on req-tj5y18pc44qz, 2026-11-10 (`public_page` on `GET /me`, the lock following `public_page` alone)
+**Revisit when:** a project gets a visibility other than `on` and `off`, or the tabs read their projects from somewhere other than `/me`
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-10
+
+A project whose `public_page` is `off` (§16.9) shows a small padlock (`M.icons.lock`, 12 px, the muted text colour, either theme) right after its name in these places: its tab, its entry in the tabs menu, the project header, and on All projects the project label of each request to the project and the project's group heading. The name stands without a lock elsewhere: a personal request that names a project keeps its "Personal · <project>" label, as it is the human's own request, not the project's (`inbox.js` `projectBadge`); an open request's Project fact (`inbox.js`, `inbox.fact.project`); the project filter on All projects, whose `<option>` cannot hold an icon; and a conversation's project mark in the chat list, which carries the name only in its title (`chats.js`). The lock is `role="img"` named "Private" (`new_project.private.label`), with the create form's sentence as its tooltip (`new_project.created.private`), so it does not rest on the picture alone. A public project, the default, carries nothing. `GET /me` lists `public_page` with each human's project (§5.1), so the row of tabs marks a project without reading each one.
+
+**Reason:** the owner wants to see at a glance which of their projects only members can read. The lock follows the project's own setting, not whether a page is served: an archived or held project that is `on` stays unmarked, because those states have marks of their own (the state dot, the moderation notices), and the lock says what the owner chose.
+
+**Rejected alternatives:**
+- A "Private" text label in the tab: on a phone it takes too much of the row's width.
+- An emoji: it is drawn by the font, in its own colours, not in the theme's.
+- Reading each project for its visibility, or the lock only where the open project is known: the first is a read per tab, the second would leave the tabs, the menu and All projects without it.
+- The lock when no page is served (archived, held, an owner suspended): it would mark projects the owner made public, for reasons the lock does not name.
+
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
 **Id:** b8c3a4f4-1e21-4de1-9a82-7abe86456259
@@ -2405,6 +2425,38 @@ the hub ship together, the hub's part first. Always sending `via`,
 `"public"` without a join host: the same as sending none, one more
 field to keep right.
 
+## The invite form asks for a person's handle first, the email address after it
+
+**Id:** 0e944b7a-41cf-4b05-8921-dd5de7d21c15
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision quoted on the card tsk-8xsrzjv7f0yr (scope point 3); docs/api.md §3.4 (`handle` excludes `address`, an invitation by handle has no `url`); its web PR
+**See:** views.md#an-invitations-link-via-the-join-host-is-offered-only-where-the-hub-names-one — 35607b9c-4a72-4936-bcf8-63a429436ab9 — as of 2026-11-10
+**See:** views.md#a-handle-fields-hint-is-a-sentence-of-fixed-words-with-no-handle-or-address-filled-in — e9c2136d-efa9-4222-b013-6042a56ec86c — as of 2026-11-10
+**Revisit when:** the hub lets one invitation name both a handle and an address, or gives an invitation by handle a link
+
+The Members → invite form (`js/invite.js` `membersPanel`) has a **Handle** field before the
+**Email address** field, the handle explained under it as for an organisation's invitation
+(`M.handles.explain("person")`). With a handle typed, the address field and **Link via <join host>**
+are disabled and not sent: the hub refuses a handle with an address (`with_address`), and an
+invitation by handle has no link, so neither would do anything. After the issue the form says
+the invitation was sent to the person by name and handle, with nothing to copy, instead of
+the link shown once. The hub's refusals of a handle (`format`, `unknown`, `not_a_person`,
+`member`, `invited`) are said in words and put the focus back on the field.
+
+**Reason:** the maintainer named the handle as the better way in: people know a handle, and
+not everyone wants to hand out their address. The address field was labelled "Address", which
+did not say which address; it is now "Email address" in every language. That much is
+confirmed; disabling the fields that do nothing beside a handle is this change's own reading
+of the contract.
+
+**Rejected alternatives:**
+- One field for a handle or an address, told apart by its `@`: an address holds an `@` too,
+  and `@name` is how a handle is often written, so the form would guess at what was meant.
+- Leaving the address and the join host's link open beside a handle: the hub would refuse
+  the pair, or the link choice would be sent for an invitation that has no link.
+
 ## Registration in the admin area: missing beside the fields, a block lifted by its typed address
 
 **Id:** 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0
@@ -4212,33 +4264,39 @@ types and still does not give a phone its screen.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); browser measurements at 1280 × 800 and 390 × 844 in the PR
+**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); card tsk-df4tcq83pnf6 (the maintainer, 2026-11-02: the chat input ran past the bottom of the screen and the page had to be scrolled; wanted the input inside the viewport on desktop and phone, light and dark); browser measurements at 1280 × 800, 390 × 844 and 375 × 667 in the PR
 **Revisit when:** the chat stops sizing itself with `--chat-h`, or the product line moves out of the page's flow
-**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
+**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-05
 
 The open chat's height (`--chat-h`, `fitToScreen` in `js/chat.js`) is the window's height less where
 the chat layout starts on the page and less what stands below it down to the end of the page
-(main's padding, the product line of §16.13). The page then ends at the window's bottom edge, the
-product line under the composer is in sight, and only the history and the chat list scroll. It is
+(main's padding, the product line of §16.13). Where that leaves room for the pane's fixed chrome
+(heading, composer, and the like) plus about 60 px of history, the page ends at the window's bottom
+edge, the product line under the composer is in sight, and only the history and the chat list scroll.
+When the fixed chrome fits in the window but that comfortable height would run past the bottom edge
+(a short phone, a tall header), the height stops at the window edge so the input stays on screen; the
+product line may then sit just below the fold rather than pushing the composer off. That needs room
+for at least about 24 px of history next to the fixed chrome; only when the fixed chrome with those
+24 px is taller than the window below the layout (a tall sign-in banner on a short phone) does the
+page scroll, and then the product line stays below the composer, never over it. It is
 measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
-body: a banner above, the product line below). It is never less than what the open chat cannot
-shrink (its heading, the composer) plus 60 px of history, about three lines: on a screen too small
-for that, the page scrolls and the product line stays below the composer, never over it. The
-observer measures in the next frame, not in its own round, where a new height would resize the
-body again and the browser would report a ResizeObserver loop. Besides the body it watches the
-pane's fixed parts and the panes the layout holds: folding the composer or making it taller, and on
-Chats a group chat taking a direct chat's place, change the floor without resizing the body; only the
-current pane's parts are watched. A layout not yet in the page,
-as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
-most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
-at all, Chats measures the layout the pane moves into. While a
-message is sent, "Sending…" and a failure stand in the composer's row, after the meat-proxy switch
-and before Send, so no line appears below the row and nothing moves.
+body: a banner above, the product line below), and on the visual viewport so a phone's on-screen
+keyboard is followed. The observer measures in the next frame, not in its own round, where a new
+height would resize the body again and the browser would report a ResizeObserver loop. Besides the
+body it watches the pane's fixed parts and the panes the layout holds: folding the composer or making
+it taller, and on Chats a group chat taking a direct chat's place, change the floor without resizing
+the body; only the current pane's parts are watched. A layout not yet in the page, as Chats builds it
+while its view is still drawn, is measured once it is there, a few tries at most, and then lets go of
+its listeners; the holder a pane is drawn into on Chats is not measured at all, Chats measures the
+layout the pane moves into. While a message is sent, "Sending…" and a failure stand in the composer's
+row, after the meat-proxy switch and before Send, so no line appears below the row and nothing moves.
 
 **Reason:** the earlier measure took the header's bottom and 16 px. It left out what stands between
 the header and the chat and everything below it, so the product line pushed the composer past the
 window's edge. On Chats the first measure came before the layout was in the page and stopped for
-good, leaving the CSS fallback `calc(100dvh - 140px)`.
+good, leaving the CSS fallback `calc(100dvh - 140px)`. A later floor of fixed chrome plus 60 px of
+history kept the product line under the composer on a short phone, but forced `--chat-h` taller than
+the window, so the input sat past the bottom edge and the page had to be scrolled to reach it.
 
 **Rejected alternatives:**
 - No product line on chat views: §16.13 puts it at the end of every page the dashboard draws.
@@ -4251,6 +4309,12 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   more than that, so the composer ran past the pane and under the product line.
 - A floor of 120 px of history: a group chat on a 390 × 844 phone no longer fitted the window
   even without a banner above it.
+- Keeping `max(fixed + 60 px, space to the footer)` on every screen: on a 375 × 667 phone without a
+  banner that floor was taller than the window, so the composer ran past the bottom edge and the
+  page scrolled; the input has to stay in the viewport when the fixed chrome fits there.
+- Stopping at the window edge whenever the fixed chrome alone fits: on Chats at 375 × 667 with the
+  sign-in banner that left 3 px of history, an input in view with no message above it; below about
+  24 px of history the page scrolls instead.
 - A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
   inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
   another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
@@ -5836,3 +5900,29 @@ the rejected alternatives below are inferred, nobody stated them.
 word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
+
+## All projects reads each project's members once per page drawn, shared by the Lead button and the inbox
+
+**Id:** e66cb966-b6f3-417b-bb0a-0bd84ce1899d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f78z1dvbs26a: prod's access log (17fce84f, 2026-11-09) counted `…/members` twice on a page, and the smoke harness found the double read on All projects, not on Settings; the lead's go for one shared per-render read (2026-11-10)
+**Revisit when:** the hub offers one call for the members of several projects, or a page outside a project keeps project data across drawings
+
+`M.membersOnce(ctx, slug)` (web/js/app.js) reads a project's member list once for one ctx,
+which is one page drawn. On All projects the Lead button (`targetsEverywhere`, web/js/lead-chat.js)
+reads every project's list, and the all-projects inbox (web/js/inbox.js) reads the lists of the
+projects its requests come from; both take them from there, so for a project with requests in the
+inbox `GET …/members` runs once instead of twice (one without requests was read once before too).
+The next drawing has a ctx of its own and reads afresh.
+
+**Reason:** All projects is the start page for anyone with two or more projects, and the members
+read takes about 150 ms median on prod, so reading it a second time for each project with
+requests in the inbox costs that page's load directly.
+
+**Rejected alternative:** weighed while building it, a members cache kept across drawings of
+All projects. A switch inside one project already keeps its members for at most a minute
+(`KEPT_MS` in web/js/app.js) and reads them again behind the view; a cache without that re-read
+would show a member list from before a change on the next visit, and adding it was more than the
+card asked for. Alternatives beyond that were not discussed.
