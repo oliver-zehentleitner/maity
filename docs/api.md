@@ -15335,7 +15335,7 @@ the hub or by a closed placement; they stay on the runner.
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
-| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, reason?}`, `handover` one of `none`, `summary`, `full`; `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open |
+| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open |
 | `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB (which leaves the request of 64 KiB room, §1.7): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
@@ -16593,7 +16593,12 @@ Card tsk-j9e0yapj21wj. The maintainer decided the design on 2026-11-10:
   103493);
 - six restarts an hour hold a placement (101931), and a human or an
   admin agent clears it (103515); a change of the spec by another agent
-  does not (req-0gmaarwpwgnh).
+  does not (req-0gmaarwpwgnh); starts after a network failure do not
+  count, but the owner is told (req-8epn4jg083hy);
+- a replacement is done as a creation is: by a human directly, by an
+  agent as a proposal (req-8kv8vz1xx60k); its new instance does not
+  count toward the instance limit, and the old one may be kept dormant
+  for 2 hours, reachable only by the new one (req-5eprep6ndrjf).
 
 Everything else in this section is the contract's own detail within that
 design.
@@ -16650,9 +16655,11 @@ not work (§2.4).
 that waits for events is idle, not stuck, and the next event wakes it.
 - A supervised placement is at work while a run is open. Its runner
   reports `run: "open"` when a run starts and `run: "waiting"` when
-  the loop waits for an event between runs (§15.7).
+  the loop waits for an event between runs (§15.7). Its spell of work
+  starts with the report of `run: "open"`.
 - An interactive placement is at work while its instance has no
-  long-poll open. An interactive session that is stuck with a long-poll
+  long-poll open. Its spell of work starts when the last long-poll
+  ended. An interactive session that is stuck with a long-poll
   still open is not noticed this way; the person at its pane is the
   one who sees it.
 
@@ -16660,7 +16667,9 @@ that waits for events is idle, not stuck, and the next event wakes it.
 `running` at the current generation and that is at work, the hub
 computes the silence. That is the time since the latest of
 `reported.last_activity_at`, the last call of the placement's instance
-that counts as activity, and the moment it was last found at work. When the silence reaches
+that counts as activity, and the start of the current spell of work
+(above), so a long wait before it does not count. When the silence
+reaches
 `hang_after_minutes`:
 
 1. The hub sets `health.state: asked` with `asked_at` and `reply_by` =
@@ -16740,23 +16749,25 @@ waiting for input nobody gives.
 **Replacing an agent.** `POST
 /projects/{owner}/{slug}/placements/{id}/replace` moves an agent to a
 new placement. The body is `{runner, target?, harness?, mode?, model?,
-workspace?, handover, reason?}`: the fields of a creation (§15.6) for
-the new placement, defaulting to the old one's, plus `handover`, one of
-`none`, `summary` and `full`. It answers `201` with the new placement,
+workspace?, handover, keep_old?, reason?}`: the fields of a creation
+(§15.6) for the new placement, defaulting to the old one's, plus
+`handover`, one of `none`, `summary` and `full`, and `keep_old`
+(boolean, default `false`, below). It answers `201` with the new placement,
 which carries `replaces: <old id>`; the old one carries `replaced_by`.
 
 - **Who.** As a creation (§15.6): a human with `members:admin` who owns
   the new placement's runner does it directly; an agent with
   `agents:propose` proposes it under `policy.spawn_requests`. The
   consent request is titled `Replace <handle> on <old runner> with
-  <new runner>` and its summary adds a `handover:` line. Who may
-  replace is pending the maintainer's answer (req-8kv8vz1xx60k).
+  <new runner>` and its summary adds a `handover:` line. This is the
+  maintainer's answer (req-8kv8vz1xx60k).
 - **Two at once.** While a replacement is open, the membership holds two
   active placements, the old and its replacement. That is the one
   exception to "one placement per membership" (§15.5). The replacement's
   pickup joins as a new instance (`new_instance`, §6.17) and does not
-  count toward `max_instances` while the replacement is open (pending
-  the maintainer's answer, req-5eprep6ndrjf). A second
+  count toward `max_instances` while the replacement is open, nor while
+  the old instance is kept (below; the maintainer's answer,
+  req-5eprep6ndrjf). A second
   replacement of either is `replace_open`, and so is a `DELETE` of the
   old one while it is open.
 - **Its own clone.** The one-placement-per-clone rule (§15.5) holds for
@@ -16782,9 +16793,9 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
        (text, at most 48 KiB; only the placement's own instance may).
        When the old placement is not running, its runner resumes the
        old session once for that alone. The note reaches the new instance
-       as `handover.note` in its packet. Without a note by `reply_by`, the
-       hub goes on with `handover.note: null` and `handover.missing:
-       true`.
+       in step 3, as `membership.placement.replace.note`. Without a note by
+       `reply_by`, the hub goes on, and step 3 carries `note: null` and
+       `missing: true`.
      - `full`: as `summary`, plus the whole transcript of the old
        session, for a new session of any harness and model. The old
        placement's runner exports it, resuming the old session once if
@@ -16816,6 +16827,24 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
      transcript}`, with `transcript` the file's path for `full`, else
      `null`. That is how an agent that is already running learns of the
      handover.
+- **Keeping the old instance.** With `keep_old: true` in the body (the
+  maintainer's answer, req-5eprep6ndrjf), step 3 moves the work as
+  above but neither revokes the old instance's credential nor stops its
+  placement. The old instance is dormant (§6.17) for 2 hours instead, so
+  the new instance can ask it what the handover left out:
+  - Only the new instance reaches it. The hub wakes it only for a
+    message from the new instance addressed to it, and the rules tell
+    it so in its next packet (`membership.placement.replace: {state:
+    "kept", kept_until, by_instance}`).
+  - Every other call of its credential is refused as for an isolated
+    agent (§6.2, "Isolation", `details.reason: isolated`). `GET /me`,
+    the resume packet, `GET /events`, and a message to the new instance
+    are allowed.
+  - At `kept_until`, 2 hours after step 3, the hub revokes the
+    credential and sets the old placement `desired: stopped`. It closes
+    with `closed_reason: replaced`. A `DELETE` of the old placement by
+    the new instance, or by anyone who may delete it (§15.6), ends it
+    sooner.
 - **Aborting.** The replacement ends without step 3 on any of these:
   - a `DELETE` of the new placement before step 3;
   - the new placement's report `failed`;
@@ -16879,7 +16908,7 @@ beside `health.state`, so an ask and its answer do not clear it. The
 sources are:
 - a start the runner reports after an exit, except one after
   `network`: an outage of the provider says nothing about the agent, as
-  for the crash cap (pending the maintainer's answer, req-8epn4jg083hy);
+  for the crash cap (the maintainer's answer, req-8epn4jg083hy);
 - a restart (§15.6);
 - a nudge that `resumed`.
 
@@ -16890,6 +16919,11 @@ to look at why.
   an outage (§15.7): class `info`, option `seen`, title `<agent handle>
   on <runner name> keeps restarting`, with the last reasons in its
   summary.
+- Six starts after `network` within an hour do not hold the placement,
+  but the owner hears of them (req-8epn4jg083hy). The hub files the same
+  kind of personal request, titled `<agent handle> on <runner name>
+  keeps losing its provider`. It withdraws the request once an hour has
+  passed without a `network` exit of that placement.
 - While `health.flapping` is `true`, the runner starts no run by itself
   after an exit; it reports `exited` with `retry_at: null`.
 - A restart, a nudge, a change of the spec (`PATCH` of anything but
@@ -16909,6 +16943,7 @@ to look at why.
 | `health` | `{state, asked_at, reply_by, flapping, flapping_since, settings}`: `state` is `ok` or `asked`; `flapping` a flag of its own (above); `settings` holds the three values that apply, in minutes |
 | `nudge` | `{id, at, by, outcome}` of the latest nudge, `outcome` `null` until the runner reports it; `by` is a member id or `"hub"`; `null` before the first |
 | `replaces`, `replaced_by` | the placement ids of an open or finished replacement, else `null` |
+| `kept_until` | on an old placement kept dormant after its replacement (`keep_old`), when the hub stops it; else `null` |
 | `handover` | while a replacement is open, the part each runner needs, else `null`: on the old placement `{kind, to_placement, to_key, local}` (`to_key` only for `full` between two runners, `local: true` when both are on one runner), so its runner knows to resume the old session for the note or the export; on the new placement `{kind, ready}` for `full` between two runners, `{kind, local: true}` on one runner, `{kind}` otherwise |
 
 **Events** (§8.2): `placement_check_in`, `placement_nudged`,
