@@ -103,7 +103,8 @@ window.Maity = window.Maity || {};
     const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
     const zoneList = h("datalist", { id: id("zones") }, zones.map((z) => h("option", { value: z })));
     const zone = h("input", { id: id("timezone"), list: id("zones"), autocomplete: "off", spellcheck: "false" });
-    zone.value = s.timezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+    // A new series proposes the reader's zone: the account's (#1530), the browser's while none is set.
+    zone.value = s.timezone || (M.i18n.accountZone && M.i18n.accountZone()) || (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
     const num = (k, lo, hi, def) => {
       const input = h("input", { id: id(k), type: "number", min: String(lo), max: String(hi), step: "1" });
       input.value = String(s[k] !== undefined ? s[k] : def);

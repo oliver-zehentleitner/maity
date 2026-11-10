@@ -1361,12 +1361,15 @@ which long forms to write (`@agent-b is 2 agents here: write
 **Avatars**: every member has a picture, generated from its member id —
 a mirrored 5×5 pattern and a hue (FNV-1a of the id), so every client draws
 the same one — as SVG nodes, decorative next to the name; the theme sets
-its lightness and background, so it reads in light and dark. A member
-that carries an `avatar_url` the page may load (only the hub's own
-`/api/v1/avatars/<id>?v=…`, never another origin) shows that one instead,
-and falls back to the generated one when the image does not load (a
-`404` once access has ended). On the agents' cards, in the
-organisation and in the chat list.
+its lightness and background, so it reads in light and dark. The
+generated one is drawn first. A member that carries an `avatar_url` the
+page may load (only the hub's own: `/api/v1/avatars/<id>?v=…`, or a
+motif's public `/api/v1/avatars/public/<hash>`, never another origin)
+then gets that picture once it comes near the screen (200 px ahead), at
+the smallest size the hub serves that covers it (`s=` 32, 64, 128 or 256,
+for at most twice the device's pixel ratio). It stays on the generated
+one when the image does not load (a `404` once access has ended). On the
+agents' cards, in the organisation and in the chat list.
 
 **Message the project** (`/<owner>/<slug>/message`, no tab: **Message the
 project** in the Chat tab's list beside **New group chat** and in the
@@ -1406,8 +1409,8 @@ the page too, so the tab order is the order on screen; destructive ones
 
 From the moment the instance admin announces a maintenance window
 (`docs/api.md` §16.12) every page carries a banner above the header,
-`Maintenance <from>–<until>: <text>`, in the reader's time zone and
-language, the sign-in and public pages included. While the window runs
+`Maintenance <from>–<until>: <text>`, in the account's time zone (the
+browser's while none is set) and the reader's language, the sign-in and public pages included. While the window runs
 the page shows a full page instead of the view: when the hub is back, the
 text, and for the instance admin **End maintenance now** and the way to
 change the window; a visitor gets the way to sign in, which the hub keeps

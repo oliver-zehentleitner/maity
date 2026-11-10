@@ -1798,7 +1798,11 @@ item in every project (a request, a sign-in, a long-poll that only timed
 out), and the counts were read every 15 seconds too, which also nudged
 it. Now it reads only for an answer with a chat or mention item in it, or
 one that moved the chat counts. Everything else waits for the 30-second
-round, which was there already.
+round, which was there already, with one exception: a group chat read
+along as an agent's owner brings no chat item and moves no count (§9.3),
+so while one is open, the 15-second counts read refreshes it as before
+(web roll-up 3, a post-merge review of #1527). One's own message sent from
+another tab comes with the round.
 
 **Reason:** each of these reads costs a round trip and hub statements for
 data that did not change. On the measured hub they added up to the
@@ -4370,7 +4374,10 @@ editor is drawn from it; a body whose pages, sections or lists are of
 the wrong kind leaves the draft as it was. That kind check covers every
 value the editor binds to an object, not only lists: a button, a group
 and each footer link must be an object, or absent where optional, or the
-editor would break after the draft was replaced. Save asks for the
+editor would break after the draft was replaced. A section's type is
+looked up among the editor's own types only (`Object.hasOwn`), so a
+`constructor` or `__proto__` in an import is drawn as an unknown section,
+never taken for something every object inherits. Save asks for the
 step-up (§2.8.4) the hub requires for this call.
 
 **Reason:** the preview call already validates a draft exactly as a
