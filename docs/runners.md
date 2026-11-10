@@ -65,6 +65,16 @@ maity placement stop <agent> --grace 60
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
+## Working in an agent's clone
+
+An agent's clone on the runner belongs to the agent. You look there, you don't work there.
+
+- Read the work from the pushed branch or the pull request. To look inside the clone, use only git that reads: `git log`, `git diff`, `git show`.
+- Never continue what the agent left: no `git rebase --continue`, `git cherry-pick --continue` or `git am --continue`. The agent can write those states, and a line it planted would run as you.
+- Do your own work in a clone of your own.
+
+The runner checks each clone before it starts an agent in it. That check covers the clone as it was then, and a session can change it afterwards. [`maity runner`](../cli/README.md#maity-runner) has the details.
+
 ## Read more
 
 - [`maity runner`](../cli/README.md#maity-runner): every setting and how the service runs.

@@ -623,7 +623,7 @@ runner that refuses the harness by configuration.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused; a reviewer's reproduction of a `commondir` written from inside the sandbox, and the maintainer's choice of option (c), the start check with its detail code, req-2adhtsb3ct75, 2026-11-10
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused; a reviewer's reproduction of a `commondir` written from inside the sandbox, and the maintainer's choice of option (c), the start check with its detail code, req-2adhtsb3ct75, 2026-11-10; the maintainer's choice of the docs over a start refusal of a rebase or sequencer state, with a section on the runner page, req-ynqaa1dkt1pe, 2026-11-10
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
 **Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration or runs a program, Claude Code stops turning `Edit(…)` denies into sandbox write denies, or a harness version other than the one in `capabilities.CHECKED` is in use
 
@@ -656,20 +656,19 @@ the agent wrote, and neither can be denied (below). So the runner reads
 every existing clone at its start the way `gc` does, before the join and
 the harness. A clone whose `.git` is not a plain clone's (a `commondir`,
 `worktrees/`, a `config.worktree` with content, a configuration key a
-plain clone has not, or an unfinished rebase, `am` or cherry-pick) is
-not started: it is reported `failed`,
+plain clone has not) is not started: it is reported `failed`,
 `workspace_in_use` with `not_a_plain_clone` (§15.7), the finding goes to
 the runner's log, and the runner deletes nothing in it and does not try
 again. The sandbox's empty placeholders pass. A person runs git in a
 runner's clone only through `maity` or after the runner's check (the
 check of the next start, or `gc`'s), and then only git that reads: the
-start refuses a clone with `rebase-merge/`, `rebase-apply/` or
-`sequencer/` (an unfinished rebase, `am` or cherry-pick, which the agent
-may write and whose `--continue` would run an `exec` line planted
-there), but `gc`'s check does not, and nothing keeps a session from
-writing one later. A session that runs on after the
+check does not look inside `rebase-merge/`, `rebase-apply/` or
+`sequencer/`, which the agent may write, so a `rebase --continue` would
+run an `exec` line planted there. A session that runs on after the
 check can plant again, so the check covers the clone as it was then;
-otherwise the work is read from the pushed branch.
+otherwise the work is read from the pushed branch. A person works in a
+clone of their own; the runner page (`docs/runners.md`, "Working in an
+agent's clone") says so for operators.
 
 A repository's grant may only add plain commands, a grammar rather
 than a list of bad spellings: a program name or path, then arguments of
@@ -739,10 +738,11 @@ one version, not a contract.
 - Relying on the pin alone for a clone a session ran in: a person's plain
   `git` there has no pin and would follow the plant. Checking at the
   start costs one read of `.git` per start, the read `gc` already does.
-- Refusing a rebase or sequencer state in clonecheck itself, for every
-  git maity runs: `maity report` and `checkpoint` would then fail in the
-  middle of an agent's own rebase. It is refused at the start only, where
-  an agent's interrupted rebase costs a restart the operator looks at.
+- Refusing a rebase or sequencer state (`rebase-merge/`, `rebase-apply/`,
+  `sequencer/`) at the start: an agent's own interrupted rebase would
+  then keep its placement from restarting. Only git that continues such
+  a state runs what it holds, and the docs tell a person not to. The
+  maintainer chose the docs over the refusal (req-ynqaa1dkt1pe).
 - Removing a planted `commondir` or `worktrees/` at the start: the runner
   deletes nothing in an agent's clone, so what was planted stays there
   for someone to look at.

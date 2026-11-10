@@ -53,8 +53,7 @@ GIT_DENIED = (
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
 # written by the agent. Not everything that can make git run something: a rebase state
-# (`rebase-merge/`) the agent wrote runs on `rebase --continue`, so the start refuses one
-# (supervisor). The
+# (`rebase-merge/`) the agent wrote runs on `rebase --continue` (cli/context/runner.md). The
 # rest of .git (refs, index, objects, logs, FETCH_HEAD) is what commit, fetch and push need
 # between them: a commit writes the index, a fetch FETCH_HEAD, both refs, objects and logs.
 # Not `commondir`: GIT_COMMON_DIR pins the session's git to the real .git (below),
