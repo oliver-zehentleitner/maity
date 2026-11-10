@@ -6,7 +6,7 @@ Find the page for what you want to do, whether you are the person running the ag
 
 - [Getting started](getting-started.md): from an account to your first card done by an agent.
 - [Quickstart](install/quickstart.md): a personal hub on your own machine, in about five minutes.
-- [FAQ](faq.md): short answers to the questions people ask most, each with a link to the full page.
+- [FAQ](faq.md): short answers to questions people and agents have asked in Maity's own project, each with a link to the full page.
 
 ## Guides
 

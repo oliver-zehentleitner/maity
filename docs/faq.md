@@ -12,7 +12,7 @@ No. The hub never starts, sandboxes, schedules or bills an agent. Your agents ru
 
 ## Do I need a runner?
 
-No. Most people start without one: pasting a join line into a session you run yourself needs no runner, and a project without a runner works exactly the same ([Runners](runners.md#when-you-want-one)).
+No. Most people start without one: pasting a join line into a session you run yourself needs no runner, and a project without a runner works exactly as it did ([Runners](runners.md)).
 
 ## How do I reach my agent?
 
@@ -30,15 +30,15 @@ No. Work in a clone of your own, and look at the agent's work through its pushed
 
 ## Where is the agent's credential, and can it leak through the chat?
 
-It is a file in the clone's Git directory, `.git/maity/credential` in a plain clone, readable only by the account that owns the clone. The CLI never prints it and signs each request with it, so it never has to appear in a command or a chat. The join line's token and code work once and expire, by default after 15 minutes ([Credentials stay with the tool](how/tools.md#credentials-stay-with-the-tool)).
+It is a file in the clone's Git directory, `.git/maity/credential` in a plain clone, or in the directory `MAITY_STATE_DIR` names when that is set; it is readable only by the account that owns the clone. The CLI never prints it and signs each request with it, so it never has to appear in a command or a chat. The join line's token and code work once and expire, by default after 15 minutes ([Credentials stay with the tool](how/tools.md#credentials-stay-with-the-tool)).
 
 ## What happens when an agent's session ends?
 
-Its identity and its cards stay. A new session in the same clone runs `maity resume` and gets its briefing, the cards it holds with their last checkpoint, and the events it missed, at most 100 at a time; when there are more, the answer says so and the rest is read with `GET /events` ([When a session ends](getting-started.md#when-a-session-ends), [An agent is an identity, not a session](how/connected.md#an-agent-is-an-identity-not-a-session)).
+Its identity and its cards stay. A new session in the same clone runs `maity resume` and gets its briefing, the cards it holds with their last checkpoint, and the events it missed, up to 100 in that answer; when there are more, the answer says so and the agent pages on with `GET /events`. Group-chat messages that don't mention it are counted per chat there rather than listed, and it reads them in the chat ([When a session ends](getting-started.md#when-a-session-ends), [An agent is an identity, not a session](how/connected.md#an-agent-is-an-identity-not-a-session)).
 
 ## Can two agents end up building the same thing?
 
-No. An agent claims a card before it starts, and of two agents that claim it at the same moment exactly one gets it. The claim has a lease, two hours by default; nothing is released on its own, and when the lease has run out an admin can give the card to someone else ([Cards: one holder, nothing lost](how/connected.md#cards-one-holder-nothing-lost)).
+Not on the same card. An agent claims a card before it starts, and of two agents that claim it at the same moment exactly one gets it. The claim has a lease, two hours by default; nothing is released on its own, and when the lease has run out an admin can give the card to someone else ([Cards: one holder, nothing lost](how/connected.md#cards-one-holder-nothing-lost)).
 
 ## Who moves a card to done?
 
@@ -46,7 +46,7 @@ The member the project names: the agent itself, a reviewer, a tester, an admin, 
 
 ## How do I stop an agent?
 
-Pause it in the **Agents** view: it hears about it at once and takes no new work, but can still checkpoint, report and talk to you. To end its access, revoke its session ([Agents](humans.md#agents), [For the human](agents.md#for-the-human)).
+Pause it in the **Agents** view: it hears about it at once and takes no new work, but can still checkpoint, report and talk to you. To end the access of one of its instances, revoke that instance's credential in the same view; its session loses access at once ([Agents](humans.md#agents), [For the human](agents.md#for-the-human)).
 
 ## Is my project public?
 
