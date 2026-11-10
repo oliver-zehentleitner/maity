@@ -1568,18 +1568,30 @@ window.Maity = window.Maity || {};
     const byProject = {};
     const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security").map((k) => ({ [k]: 0 }))));
     me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.full_name).inbox += n; });
+    // A personal request of a project one is no member of (§7, §18.2): counted in inbox, on an
+    // entry with member false, once per request. One the fixtures hold (personal-requests.json)
+    // counts while it is open, whether its item is read or not, since it falls when it is
+    // answered or withdrawn; the consent request of an invitation by handle is one of them
+    // (`invitation`). One whose request the fixtures do not hold counts while its item is
+    // unread. The projects' own requests come from /me (`openFor`).
+    const personalCounted = new Set();
+    const outside = (x) => {
+      const id = x.target && x.target.type === "request" ? x.target.id : null;
+      if (id && personalCounted.has(id)) return;
+      if (id) personalCounted.add(id);
+      counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false;
+    };
     fixtures()["notifications.json"].items.forEach((x) => {
       // A pending registration or a disabled address counts until the matter
       // is closed, read or not (§18.2).
       if (x.kind === "inbox" && x.open_matter) { counts.inbox += 1; return; }
-      if (x.read) return;
-      // A personal request of a project one is no member of (§7): counted
-      // in inbox, on an entry with member false; the rest come from /me.
-      // An invitation by handle's request is one of them (`invitation`, §18.2).
       if (x.kind === "inbox" || x.kind === "invitation") {
-        if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false; }
+        if (!x.project || x.project.member !== false) return;
+        const request = x.target && x.target.type === "request" ? personalRequests().find((r) => r.id === x.target.id) : null;
+        if (request ? request.status === "open" : !x.read) outside(x);
         return;
       }
+      if (x.read) return;
       counts[x.kind] += 1;
       if (x.project && x.kind !== "security") of(x.project.full_name)[x.kind] += 1;
     });

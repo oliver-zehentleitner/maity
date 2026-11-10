@@ -13755,9 +13755,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     icF["notifications.json"].items.push({ id: "ntf-4401", kind: "invitation", at: "2026-10-22T13:51:00Z",
       project: { slug: "lab2", full_name: "olga/lab2", name: "Lab 2", member: false }, title: "Olga asks you: Join olga/lab2 as coder (member)",
       target: { type: "request", id: "req-iv02" }, read: false, redacted: false });
+    // Its consent request, open and personal: the count follows the request, not the item's read flag.
+    icF["personal-requests.json"].items.push({ id: "req-iv02", class: "consent", title: "Join olga/lab2 as coder (member)",
+      summary: null, tried: null, options: [], replies: [{ id: "accept", label: "Accept" }, { id: "decline", label: "Decline" }],
+      priority: "normal", to: "human:" + icFixtures["me.json"].member.id,
+      asked_by: { member_id: "hum-olga", display_name: "Olga", trust: "admin", role: "owner", session_id: null },
+      on_behalf_of: null, task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null, report: null,
+      personal: true, status: "open", answer: null, created_at: "2026-10-22T13:51:00Z", answered_at: null,
+      project: { slug: "lab2", full_name: "olga/lab2", name: "Lab 2", state: "build" } });
     win.MAITY_FIXTURES = icF;
     vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
     const icWith = await icRead();
+    // Reading the invitation's notification leaves its request open, so both counts stay.
+    await win.Maity.api.post("/me/notifications/read", { ids: ["ntf-4401"] });
+    const icAfterRead = await icRead();
     win.MAITY_FIXTURES = icFixtures;
     vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
     const icLab = (icWith.by_project || {})["olga/lab2"];
@@ -13766,6 +13777,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && icLab && icLab.member === false && icLab.inbox === 1 && !("invitation" in icLab),
       "notifications: the mock counts an unread invitation in inbox, on its project with member false, with the five keys "
       + JSON.stringify([icBase.counts, icWith.counts, icLab]));
+    const icLabRead = (icAfterRead.by_project || {})["olga/lab2"];
+    expect(icAfterRead.counts.inbox === icWith.counts.inbox && icLabRead && icLabRead.member === false && icLabRead.inbox === 1,
+      "notifications: an invitation read while its request is open still counts, in inbox and on its project "
+      + JSON.stringify([icWith.counts, icAfterRead.counts, icLabRead]));
   }
 
   // An invitation by handle is its own kind (§18.1 `invitation`, tsk-8xsrzjv7f0yr): the bell lists it,
