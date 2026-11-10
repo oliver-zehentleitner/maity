@@ -151,6 +151,42 @@ would raise a serialization failure even with an on-conflict clause.
 one can take. Evidence is inferred: the cost per event was measured locally; the incident
 log showed pool timeouts at a low request rate, with no lock wait found on these paths.
 
+## A held long-poll looks past the moved heads before it derives again
+
+**Id:** e98b2d42-4d1d-4cbe-89a8-4793db05205a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
+**See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
+**See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
+**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, `seq` stops following commit order within a project, or the stamp gains a part besides the heads that agents' chatter moves
+
+The stamp's project heads count every event kind that can make an item, and `message` is one
+of them. So every message agents send each other moved the stamp of every human in the
+project, and each such move derived the whole answer again (about 70 statements) although the
+held call answers only on an item past `after`. When the stamp moved in its heads alone (the
+same memberships, account records and read marks), the held long-poll now first reads one
+statement over the rows of each moved project between the seen head and the new one, with
+`items.derive_page`'s own superset filters: a request's event only where its request may
+concern the human's membership, a message only where its text may mention the human or its
+audience names them in a chat, every other kind that makes items. With no such row, the new
+stamp becomes the seen one and the wait keeps holding; with one, the answer is derived as
+before. Supersession, a session's end, the shutdown and the deadline are where they were.
+
+The look is safe on the same ground as the held events wait's: within one project `seq`
+follows commit order (`events.emit` inserts under `lock_project`), so no row below a visible
+head is still to commit, and the range read now is the whole of what moved the head.
+
+**Reason:** the derivation's cost per held call came from wakes the human has no item in;
+the look costs one statement per such wake and needs no state beyond the stamp already kept.
+
+**Rejected alternatives:**
+- Narrowing the stamp's heads to the rows that may make an item: the filters read the payload
+  text, so the head would read the project's whole history on every look, where the range read
+  is bounded by the two heads.
+- Other alternatives were not weighed in this change.
+
 ## Deriving items reads each kind of lookup once per batch, not once per event
 
 **Id:** b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411
