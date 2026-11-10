@@ -293,7 +293,7 @@ does not name the exception; which wording holds is open there.
   with a fresh fit, as `chat_height_views` in `web/tools/e2e.py` does;
   where observers are involved, it counts their targets after N switches
   (tsk-e4dk3hs41vfz).
-- Before stacking in shared web files (`inbox.js`, `views.md`, `e2e.py`),
+- Before stacking in shared web files (`inbox.js`, a `web/context/` topic file, `e2e.py`),
   agree the merge order with the other open pull requests and write it on
   the card before the stack's first push (tsk-qymtmpkp43jq).
 - For a finding that something must never happen, list every path by

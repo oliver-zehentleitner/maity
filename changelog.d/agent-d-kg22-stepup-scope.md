@@ -8,4 +8,4 @@
   are not resolved. A path part it cannot read may stand for several
   segments, and a body key behind a variable is read where the name is declared by `const name =`
   or `let name =` in the blocks around the call. It reads text, not the program, and checks only
-  the forms web/context/views.md lists; any other is not checked (tsk-4zrnkb3gh6mq).
+  the forms web/context/account.md lists; any other is not checked (tsk-4zrnkb3gh6mq).

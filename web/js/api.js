@@ -1732,7 +1732,7 @@ window.Maity = window.Maity || {};
       if (!member && org.public_page !== "on" && !mine.length) fail(404, "not_found", "no such person or organisation", path);
       // The switch stands in for the hub's store here: the real hub serves no
       // organisation page yet and answers page_served false (hub/context/public-pages.md
-      // 4423561d); the fixture keeps the true branch drawn (views.md, the entry after 63efb194).
+      // 4423561d); the fixture keeps the true branch drawn (web/context/organisations.md).
       const out = Object.assign({ kind: "organisation", handle: org.handle, display_name: org.display_name, avatar_url: member ? org.avatar_url || null : null,
         page_served: org.public_page === "on" }, listed(mine));
       // Members read each other's names, not each other's pictures (§6.10).
