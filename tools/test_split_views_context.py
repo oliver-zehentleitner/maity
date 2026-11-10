@@ -98,6 +98,9 @@ class Split(unittest.TestCase):
             root = Path(tmp)
             (root / "changelog.d").mkdir()
             (root / "changelog.d" / "old.md").write_text("see web/context/views.md\n", encoding="utf-8")
+            (root / "CHANGELOG.md").write_text(
+                "released note still names web/context/views.md\n", encoding="utf-8"
+            )
             vendor = root / "web" / "vendor" / "keep-the-why"
             vendor.mkdir(parents=True)
             (vendor / "README.md").write_text("docs/dashboard-views.md\n", encoding="utf-8")

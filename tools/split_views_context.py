@@ -14,8 +14,9 @@ for this run only; it is not written back into the table.
 in memory and compares them with web/context here. It prints the lossless
 counts and exits 1 when a byte differs, an id is missing, extra or repeated,
 or a live ``views.md`` reference remains outside ``changelog.d/``,
-``web/vendor/`` and ``tools/``. The files it writes are refused if they
-still name ``views.md``. ``dashboard-views.md`` is not that file.
+the root ``CHANGELOG.md``, ``web/vendor/`` and ``tools/``. The files it
+writes are refused if they still name ``views.md``. ``dashboard-views.md``
+is not that file.
 
 Standard library only.
 """
@@ -76,11 +77,14 @@ FAMILY_ARG = re.compile(
 )
 # dashboard-views.md is the vendored library's document, not this split.
 VIEWS_REF = re.compile(r"(?<![\w-])views\.md")
-# Historical fragments describe a past edit. Vendored files are not ours.
-# The tools name views.md as the file they are given. The pre-split copies
-# the tests read live under tools/fixtures/ and stay inside this skip:
-# a views.md outside it is a live reference, so the skip is not widened for them.
+# Historical fragments describe a past edit. A release folds them into the
+# root CHANGELOG.md, which a pull request is merged with and does not edit.
+# Vendored files are not ours. The tools name views.md as the file they are
+# given. The pre-split copies the tests read live under tools/fixtures/ and
+# stay inside this skip: a views.md outside it is a live reference, so the
+# skip is not widened for the copies.
 LIVE_SKIP = ("changelog.d/", "web/vendor/", "tools/")
+LIVE_SKIP_FILES = {"CHANGELOG.md"}
 
 
 class Unclassified(Exception):
@@ -330,7 +334,7 @@ def live_views_references(root: Path) -> list[str]:
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
-        if rel.startswith(LIVE_SKIP) or rel.startswith(".git/"):
+        if rel in LIVE_SKIP_FILES or rel.startswith(LIVE_SKIP) or rel.startswith(".git/"):
             continue
         if path.suffix.lower() not in {".md", ".js", ".py", ".yml", ".yaml", ".txt", ".html", ".css"} and path.name not in {
             "CONTRIBUTING.md",
