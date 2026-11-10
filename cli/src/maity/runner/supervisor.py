@@ -735,6 +735,8 @@ class Supervisor:
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
             )
         except workspace.Refused as refused:
+            if refused.why:  # the runner's log only; the report keeps the codes
+                self.log(f"{p['id']}: {refused.reason}: {refused.why}")
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip

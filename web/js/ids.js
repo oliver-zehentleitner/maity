@@ -25,7 +25,7 @@ window.Maity = window.Maity || {};
   // A match right after a slash is kept or dropped in link(): a regular
   // expression cannot tell `#909/#911` from `issues/#5/#6`.
   const ID = /(?<![\w\-#&?=.])(?:(?:([a-z0-9][a-z0-9-]{1,30})\/([a-z0-9][a-z0-9-]{1,62})\/)?(tsk|req)-([0-9a-hjkmnp-tv-z]{12})|(agt|hum)-([0-9a-hjkmnp-tv-z]{12})|#([1-9][0-9]{0,6}))(?![\w\-])/g;
-  const PAGE = { tsk: "tasks", req: "inbox", agt: "members", hum: "members" };
+  const PAGE = { tsk: "tasks", req: "inbox", agt: "team", hum: "team" };
 
   // The forge numbers resolve on: GitHub only (§6.13, the one forge of V1),
   // read as the hub reads a repository (hub/src/maity_hub/forge.py): the

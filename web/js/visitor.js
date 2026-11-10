@@ -13,11 +13,11 @@ window.Maity = window.Maity || {};
   const VIEWS = [
     { path: "", get label() { return M.t("nav.overview"); } },
     { path: "/board", get label() { return M.t("nav.board"); } },
-    { path: "/members", get label() { return M.t("nav.members"); } },
+    { path: "/team", get label() { return M.t("nav.members"); } },
     { path: "/organisation", get label() { return M.t("nav.organisation"); } },
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
-  const PROJECT_KINDS = ["project", "board", "members", "organisation", "why", "card"];
+  const PROJECT_KINDS = ["project", "board", "team", "organisation", "why", "card"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
     get reviews_given() { return M.t("visitor.stat.reviews_given"); },
@@ -125,7 +125,7 @@ window.Maity = window.Maity || {};
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },
-    members(d) {
+    team(d) {
       return [
         h("ul", null, d.shown.map((p) => h("li", null, who(p), " (" + p.handle + ") ", h("span", { class: "muted" }, M.trust.roleLabel(p.role))))),
         d.others.length ? [h("h2", null, M.t("visitor.others")),
@@ -187,7 +187,7 @@ window.Maity = window.Maity || {};
     if (parts[1] === "agents") return parts.length === 3;
     if (parts[2] === "tasks") return parts.length === 4;
     if (parts[2] === "overview") return parts.length === 3 || (parts.length === 4 && ["project", "swarm"].includes(parts[3]));
-    return parts.length === 2 || (parts.length === 3 && ["board", "members", "organisation", "why"].includes(parts[2]));
+    return parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]));
   }
 
   // The member Overview's addresses (§16.11) read the project's own page, the public overview
