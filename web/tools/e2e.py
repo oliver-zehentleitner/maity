@@ -2927,10 +2927,10 @@ def chat_height_views(run: Run, browser) -> None:
                     assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
                         f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
                     )
-                    # Without the banner the input stays in the viewport (tsk-df4tcq83pnf6). A
-                    # group's Manage chrome on a short phone (fits=False) can exceed the window
-                    # by itself; there the page may still scroll, same as with a banner.
-                    if not banner and (fits or "cnv-" not in route):
+                    # Without the banner the input stays in the viewport (tsk-df4tcq83pnf6), a group
+                    # chat on a short phone too (on the project's Chat tab its composer ran to 681 at
+                    # 375 x 667 before the fix). Only grown chrome (Manage opened, below) may exceed it.
+                    if not banner:
                         assert m["compose"]["bottom"] <= m["vh"] + 0.5, (
                             f"{where}: the composer ends at {m['compose']['bottom']:.0f}, past the window ({m['vh']})"
                         )
@@ -2960,7 +2960,7 @@ def chat_height_views(run: Run, browser) -> None:
                             assert unfolded["history"]["height"] >= 56, (
                                 f"{where}, composer folded and shown again: history {unfolded['history']['height']:.0f}"
                             )
-                        if not banner and (fits or "cnv-" not in route):
+                        if not banner:
                             assert unfolded["compose"]["bottom"] <= unfolded["vh"] + 0.5, (
                                 f"{where}, composer folded and shown again: past the window: {unfolded}"
                             )

@@ -470,6 +470,9 @@ window.Maity = window.Maity || {};
   // 100dvh does not everywhere.
   // Preferred lines of history above the product line when the window has room.
   const HISTORY_LEAST = 60;
+  // The least history worth stopping at the window edge for: below it the
+  // input in view shows no message, so the page scrolls instead (tsk-df4tcq83pnf6).
+  const HISTORY_MIN = 24;
   // Full screen (the owner's request, tsk-fnch2yxp2kk1): the open chat covers the window, the
   // page around it hidden, to read on a phone. A button in the chat's heading row, as the list's
   // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
@@ -618,16 +621,16 @@ window.Maity = window.Maity || {};
         // the product line sit just below the fold rather than shrinking the
         // message list (composer 3x / tall chrome with a banner).
         px = Math.max(toFooter, floor + HISTORY_LEAST);
-      } else if (toWindow >= floor) {
+      } else if (toWindow >= floor + HISTORY_MIN) {
         // Fixed chrome fits, but not with HISTORY_LEAST: stop at the window
         // edge so the input stays on screen; history may shrink below the
-        // preferred floor (short phone, tsk-df4tcq83pnf6).
+        // preferred floor, not below HISTORY_MIN (short phone, tsk-df4tcq83pnf6).
         px = toWindow;
       } else {
-        // Fixed chrome taller than the window below the layout (a tall banner
-        // on a short phone, or a group's Manage chrome): keep a history floor
-        // so the composer is not clipped under the product line; the page may
-        // scroll.
+        // Fixed chrome with HISTORY_MIN taller than the window below the layout
+        // (a tall banner on a short phone, or a group's Manage chrome): keep a
+        // history floor so the composer is not clipped under the product line;
+        // the page may scroll.
         px = Math.max(240, floor + HISTORY_LEAST, toFooter);
       }
       const value = Math.max(0, px) + "px";
