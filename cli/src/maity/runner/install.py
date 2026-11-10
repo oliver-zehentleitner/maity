@@ -512,7 +512,7 @@ def _paired(host: Host, user: User | None) -> bool:
 def _incomplete(host: Host) -> list[str]:
     """Why `serve` would refuse this configuration (exit 78), or nothing."""
     try:
-        return config.unsupported(config.load(host.path(CONFIG)))
+        return config.unsupported(_load_config(host))
     except config.ConfigError as exc:
         return list(exc.problems)
 
@@ -629,7 +629,8 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
         )
         return 1 if failed else 0
     # The account first: a userdel that fails (a process of the user's still running) leaves
-    # everything as it was, and the next --purge starts over.
+    # the account, its trees, the configuration and the record; the service is already
+    # stopped and its unit removed. The next --purge goes on from there.
     if ours:
         if host.run(["userdel", USER]) != 0:
             raise Refused(f"could not remove the user {USER}; nothing more was removed")
@@ -699,10 +700,24 @@ def _usable_config(host: Host, force: bool) -> bool:
 
 def _loads(host: Host) -> bool:
     try:
-        config.load(host.path(CONFIG))
+        _load_config(host)
     except config.ConfigError:
         return False
     return True
+
+
+def _load_config(host: Host) -> config.Config:
+    """The configuration as `serve` would read it, from the text `_read_root` read and
+    checked on the descriptor, never by name a second time."""
+    path = host.path(CONFIG)
+    text = _read_root(host, CONFIG)
+    if text is None:
+        raise config.ConfigError([f"{path}: no such file; write it first (runner design §5.1)"])
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise config.ConfigError([f"{path}: not valid TOML ({exc})"]) from None
+    return config.parse(raw, path)
 
 
 def _halt(args: argparse.Namespace, what: str) -> None:

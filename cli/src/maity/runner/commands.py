@@ -777,7 +777,8 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         f"it ({install.RECORD} says so). When it cannot tell that the agents stopped (no "
         "configuration, one that does not load), it removes nothing either, and those are "
         "checked before the service is disabled. --purge removes the account first, so a "
-        "failed userdel leaves everything for the next --purge. "
+        "failed userdel leaves the account, its files and the configuration for the next "
+        "--purge; the unit is already gone by then. "
         "The hub keeps listing the runner until it is removed in the dashboard.",
         formatter_class=fmt,
     )

@@ -1767,8 +1767,10 @@ of `maity runner unit`.
    - What it can know without stopping anything (the account, whether the
      configuration is there and loads) is checked before the service is
      disabled, so a refusal leaves the service as it was. `--purge` removes
-     the account before the trees: a `userdel` that fails then leaves
-     everything for the next `--purge`, and one that stopped after the
+     the account before the trees: a `userdel` that fails then leaves the
+     account, its trees, the configuration and the record for the next
+     `--purge` (the service is stopped and its unit removed by then), and
+     one that stopped after the
      account was gone finishes on the record that names it. The
      directories then keep the gone account's uid, so they are checked
      against the uid in that record, before anything changes: owned by

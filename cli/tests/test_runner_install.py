@@ -827,3 +827,19 @@ def test_a_record_without_a_usable_uid_is_no_leftover(tmp_path: Path, uid: objec
     with pytest.raises(install.Refused, match="install made no user"):
         install.cmd_uninstall(args(purge=True, force=True), host)
     assert host.calls == [] and host.path(install.HOME).is_dir()
+
+
+def test_the_configuration_is_read_only_through_its_checked_descriptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """install and uninstall parse the text `_read_root` checked, never the path again."""
+    from maity.runner import config
+
+    def by_name(path: Path) -> None:
+        raise AssertionError(f"read by name: {path}")
+
+    monkeypatch.setattr(config, "load", by_name)
+    host = FakeHost(tmp_path)
+    complete_config(host)
+    assert install.cmd_install(args(), host) == 0
+    assert install.cmd_uninstall(args(purge=True), host) == 0
