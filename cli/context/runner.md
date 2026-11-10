@@ -656,15 +656,18 @@ the agent wrote, and neither can be denied (below). So the runner reads
 every existing clone at its start the way `gc` does, before the join and
 the harness. A clone whose `.git` is not a plain clone's (a `commondir`,
 `worktrees/`, a `config.worktree` with content, a configuration key a
-plain clone has not) is not started: it is reported `failed`,
+plain clone has not, or an unfinished rebase, `am` or cherry-pick) is
+not started: it is reported `failed`,
 `workspace_in_use` with `not_a_plain_clone` (§15.7), the finding goes to
 the runner's log, and the runner deletes nothing in it and does not try
 again. The sandbox's empty placeholders pass. A person runs git in a
 runner's clone only through `maity` or after the runner's check (the
 check of the next start, or `gc`'s), and then only git that reads: the
-check does not look inside `rebase-merge/`, `rebase-apply/` or
-`sequencer/`, which the agent may write, so a `rebase --continue` would
-run an `exec` line planted there. A session that runs on after the
+start refuses a clone with `rebase-merge/`, `rebase-apply/` or
+`sequencer/` (an unfinished rebase, `am` or cherry-pick, which the agent
+may write and whose `--continue` would run an `exec` line planted
+there), but `gc`'s check does not, and nothing keeps a session from
+writing one later. A session that runs on after the
 check can plant again, so the check covers the clone as it was then;
 otherwise the work is read from the pushed branch.
 
@@ -736,10 +739,10 @@ one version, not a contract.
 - Relying on the pin alone for a clone a session ran in: a person's plain
   `git` there has no pin and would follow the plant. Checking at the
   start costs one read of `.git` per start, the read `gc` already does.
-- Refusing a rebase or sequencer state (`rebase-merge/`, `rebase-apply/`,
-  `sequencer/`) at the start: an agent's own interrupted rebase would
-  then keep its placement from restarting. Only git that continues such
-  a state runs what it holds, and the docs tell a person not to.
+- Refusing a rebase or sequencer state in clonecheck itself, for every
+  git maity runs: `maity report` and `checkpoint` would then fail in the
+  middle of an agent's own rebase. It is refused at the start only, where
+  an agent's interrupted rebase costs a restart the operator looks at.
 - Removing a planted `commondir` or `worktrees/` at the start: the runner
   deletes nothing in an agent's clone, so what was planted stays there
   for someone to look at.

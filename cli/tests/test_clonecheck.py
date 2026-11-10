@@ -170,6 +170,7 @@ def test_a_sandbox_placeholder_with_anything_in_it_is_refused(placed: Path, entr
         gitfacts.collect(placed)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no FIFOs in a file system")
 @pytest.mark.parametrize(
     "entry", ["config.worktree", "objects/info/alternates", "remotes", "commondir"]
 )
@@ -208,7 +209,10 @@ def test_a_hidden_entry_in_a_placeholder_is_refused(placed: Path, entry: str) ->
         gitfacts.collect(placed)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root lists any directory")
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="POSIX modes; root lists any directory",
+)
 @pytest.mark.parametrize("entry", ["remotes", "info/.claude-sandbox-noreplace"])
 def test_a_placeholder_that_cannot_be_listed_is_refused(placed: Path, entry: str) -> None:
     """Unlisted, a directory would look empty and pass as a placeholder, with a file in it

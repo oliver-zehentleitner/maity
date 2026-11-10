@@ -14,7 +14,9 @@
 
 - cli runner: at each start the runner reads an existing clone with the same check before the
   join and the harness, and starts nothing in one whose `.git` is not a plain clone's, such as
-  a `commondir` or `worktrees/` an earlier session wrote. The placement fails with
+  a `commondir` or `worktrees/` an earlier session wrote, or that holds an unfinished rebase, `am`
+  or cherry-pick (`rebase-merge/`, `rebase-apply/`, `sequencer/`), whose `--continue` would run
+  what the state holds. The placement fails with
   `workspace_in_use` and the detail `not_a_plain_clone`; the runner's log names what it found,
   and nothing in the clone is removed.
 - contract, hub: §15.7 lists `not_a_plain_clone` as a detail of `workspace_in_use`, and the hub

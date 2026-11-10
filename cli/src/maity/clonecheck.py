@@ -149,6 +149,19 @@ class Local:
 LOCAL = Local()
 
 
+# An unfinished rebase, `am` or cherry-pick: the next `--continue` runs what the state holds
+# (an `exec` line in the todo list), and the agent can write it. Refused only before a start.
+UNFINISHED = ("rebase-merge", "rebase-apply", "sequencer")
+
+
+def unfinished(path: Path, files: Files = LOCAL) -> str | None:
+    """Why a clone holds a state the next git could continue, or None."""
+    for name in UNFINISHED:
+        if files.exists(path / ".git" / name, "-e") or files.exists(path / ".git" / name, "-L"):
+            return f".git/{name} exists: an unfinished rebase, am or cherry-pick"
+    return None
+
+
 def not_inspectable(path: Path, files: Files = LOCAL) -> str | None:
     """Why git must not run in this clone, or None."""
     finding = _inspect(path, files)[0]

@@ -527,6 +527,9 @@ PLANTED = {
     "commondir": ("commondir", "../../other/.git\n"),
     "worktrees": ("worktrees/elsewhere/gitdir", "/somewhere/else/.git\n"),
     "config.worktree": ("config.worktree", "[core]\n\thooksPath = /tmp/h\n"),
+    "rebase-merge": ("rebase-merge/git-rebase-todo", "exec touch /tmp/planted\n"),
+    "rebase-apply": ("rebase-apply/next", "1\n"),
+    "sequencer": ("sequencer/todo", "exec touch /tmp/planted\n"),
 }
 
 

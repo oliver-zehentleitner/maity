@@ -1138,14 +1138,16 @@ The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
 above. It reads every existing clone with that check at each start too,
 and starts nothing in one whose `.git` is not a plain clone's (a planted
-`commondir` or `worktrees/`, for example): the placement fails with
+`commondir` or `worktrees/`, for example) or holds an unfinished rebase,
+`am` or cherry-pick: the placement fails with
 `workspace_in_use`, `not_a_plain_clone`, the runner's log says what it
 found, and nothing in the clone is removed. Run git in a runner's clone
 only through `maity`, or, after the runner's check, only git that reads
 (`log`, `diff`, `show`), never one that continues a state the agent left
 (`rebase --continue`, `cherry-pick --continue`, `am --continue`): the
-check does not read `.git/rebase-merge/` and the like, and a planted
-`exec` line there runs as you. A session that ran on since the check may
+start refuses a clone with `.git/rebase-merge/`, `rebase-apply/` or
+`sequencer/`, but a session can write one after it, and a planted `exec`
+line there runs as you. A session that ran on since the check may
 have planted something again. **Beyond that, never run git in an agent's
 clone as yourself in the `single` layout:** a planted `.git/commondir`,
 submodule, hook or configuration runs as you. Look at the work through the pushed branch or the pull
