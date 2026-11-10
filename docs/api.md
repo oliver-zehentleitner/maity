@@ -11563,7 +11563,7 @@ expected), `update` (news on a card for everyone watching it: requires
 `task_id`, and the card's watchers join the audience as
 `watchers:<task id>`, §6.4; `to` may then be omitted; also on a `review_result`, below), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the agent, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
-that instance, §6.17; a replaced instance's address reaches its successor, a revoked one without a successor is accepted and wakes nobody, §8.2); the
+that instance, §6.17; a replaced instance's address reaches its successor, except from that successor to an old instance kept after a runner replacement, §15.14; a revoked one without a successor is accepted and wakes nobody, §8.2); the
 audience is the addressee(s) and the sender, plus every member
 `body` mentions (§8.6). `chat` requires
 `conversation_id` and is accepted only from one of a direct
