@@ -16891,10 +16891,12 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   instance's credential, if its pickup was redeemed, is revoked when it
   closes (`revoked_reason: replace_failed`, whatever the cause). A
   sealed transcript already uploaded is deleted. After a `failed`, the
-  owner's outage request (§15.7) names the new placement. §15.7 withdraws
-  it, if still open, when that placement closes; one the owner already
-  answered `seen` stays answered. Either way the closed placement, with
-  `replace_failed`, is the record of what happened, and the old one runs
+  owner's outage request (§15.7) names the new placement. When that
+  placement is stopped (its uniform close with `replace_failed`) or
+  deleted, §15.7 withdraws the request if it is still open; one the
+  owner already answered `seen` stays answered. The closed placement's
+  `closed_reason` is the record of what happened (`replace_failed`,
+  unless a later cause closed it at once, §15.5), and the old one runs
   on.
 
 **The transcript between runners** (`handover: full`, two runners).
