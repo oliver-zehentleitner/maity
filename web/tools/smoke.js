@@ -21,6 +21,10 @@ const path = require("path");
 const vm = require("vm");
 const WEB = process.argv[2];
 
+function dropSelection(n) {
+  if (typeof n.selectionStart === "number") n.selectionStart = n.selectionEnd = String(n.value || "").length;
+  for (const c of n.childNodes || []) dropSelection(c);
+}
 class Node_ {
   constructor() { this.childNodes = []; this.parentNode = null; }
   get firstChild() { return this.childNodes[0] || null; }
@@ -29,7 +33,11 @@ class Node_ {
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text_(c) : c)); }
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
   insertBefore(c, ref) { c.parentNode = this; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); return c; }
-  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; return c; }
+  // A stress condition of the shim, not a browser's behaviour (Chromium keeps a detached field's
+  // selection when it is put back, #1581 review): a removed subtree's fields get the caret at the
+  // end, so a smoke case that keeps a caret across a redraw holds only with the code that restores
+  // it. The e2e step at tools/e2e.py's note-edit redraw checks the caret in Chromium itself.
+  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; dropSelection(c); return c; }
   replaceChild(c, old) { const i = this.childNodes.indexOf(old); if (i < 0) return old; if (c.parentNode) c.parentNode.removeChild(c); this.childNodes[i] = c; c.parentNode = this; old.parentNode = null; return old; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
@@ -276,6 +284,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(links[0].getAttribute("aria-label") === "GitHub" && links[1].getAttribute("aria-label") === "Maity"
       && productLine.querySelectorAll("svg").every((svg) => svg.getAttribute("aria-hidden") === "true"),
       "product line: the icon links named GitHub and Maity, every icon aria-hidden");
+    // Names stay as they are in a page translator, the catalog's sentence is translated (nte-zvjjfj9g95bh (b)): exactly
+    // the word Maity, the name and the two icon links carry translate="no", nothing else on the line.
+    const fixedWords = productLine.all().filter((e) => e.getAttribute && e.getAttribute("translate") === "no")
+      .map((e) => e.getAttribute("aria-label") || text(e));
+    expect(JSON.stringify(fixedWords) === JSON.stringify(["Maity", "Oliver Zehentleitner", "GitHub", "Maity"]),
+      "product line: the word Maity, the name and the two icon links carry translate=no, the sentence does not " + JSON.stringify(fixedWords));
     const heart = productLine.querySelector(".product-heart");
     expect(heart && heart.getAttribute("role") === "img" && heart.getAttribute("aria-label") === "love", "product line: the heart is a symbol named love");
     expect(productLine.all().every((e) => e.attrs.style === undefined && e.tagName !== "STYLE" && e.tagName !== "USE" && e.tagName !== "TITLE"),
@@ -3396,43 +3410,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(hlLinks().map((a) => a.getAttribute("href") + "|" + a.getAttribute("aria-label") + "|" + text(a)).join()
     === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|Repository,"
+    + "https://github.com/oliver-zehentleitner/maity/actions|Actions on GitHub (opens in a new tab)|Actions,"
     + "https://github.com/oliver-zehentleitner/maity/pulls|Pull Requests (opens in a new tab)|Pull Requests,"
     + "https://github.com/oliver-zehentleitner/maity/issues|Issues (opens in a new tab)|Issues,"
     + "https://discord.gg/maity|Chat (opens in a new tab)|Chat,"
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
-    "header: the repository (\"Repository\", its forge in the mark and the name), Pull Requests from its forge, the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
+    "header: the repository (\"Repository\", its forge in the mark and the name), Actions and Pull Requests from its forge, the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
   // The links in a row of their own, which a phone scrolls, the state beside it, not in it (tsk-m9ew7v609fq0).
   const hlBlock = Array.from(header.querySelector(".project-state").childNodes).map((c) => String(c.className || ""));
   expect(hlBlock[0] === "project-links" && hlBlock.findIndex((c) => c.split(" ").includes("state")) > 0
     && header.querySelector(".project-links").childNodes.length === hlLinks().length
     && !header.querySelector(".project-links").querySelector(".state"),
     "header: the state stands to the right of the project's links (tsk-hf70q6maf8cv), outside the row that scrolls: " + hlBlock.join());
-  // Pull Requests per forge (tsk-hf70q6maf8cv): none for a forge the table does not know.
+  // Pull Requests per forge (tsk-hf70q6maf8cv) and Actions (tsk-kdkdy864q11r): none for a forge the table does not
+  // know; Actions only where the forge calls its workflows so (GitHub, Gitea), between Repository and Pull Requests.
   const hlPulls = win.Maity.api.get;
-  for (const [forge, url, want] of [
-    ["gitlab", "https://gitlab.com/o/r.git", "https://gitlab.com/o/r/-/merge_requests"],
-    ["gitea", "https://git.example.org/o/r/", "https://git.example.org/o/r/pulls"],
-    ["bitbucket", "https://bitbucket.org/o/r", "https://bitbucket.org/o/r/pull-requests"],
-    ["constructor", "https://git.example.org/o/r", null],
-    ["other", "https://git.example.org/o/r", null],
-    [null, "https://git.example.org/o/r", null],
+  for (const [forge, url, want, wantActions] of [
+    ["github", "https://github.com/o/r.git/", "https://github.com/o/r/pulls", "https://github.com/o/r/actions"],
+    ["gitlab", "https://gitlab.com/o/r.git", "https://gitlab.com/o/r/-/merge_requests", null],
+    ["gitea", "https://git.example.org/o/r/", "https://git.example.org/o/r/pulls", "https://git.example.org/o/r/actions"],
+    ["bitbucket", "https://bitbucket.org/o/r", "https://bitbucket.org/o/r/pull-requests", null],
+    ["constructor", "https://git.example.org/o/r", null, null],
+    ["other", "https://git.example.org/o/r", null, null],
+    [null, "https://git.example.org/o/r", null, null],
   ]) {
     win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlPulls(p).then((x) => Object.assign({}, x, { repository: Object.assign({}, x.repository, { url, forge }) })) : hlPulls(p));
     await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
     const found = hlLinks().filter((a) => text(a) === "Pull Requests");
-    expect(want ? found.length === 1 && found[0].getAttribute("href") === want && text(hlLinks()[1]) === "Pull Requests" : found.length === 0, "header: Pull Requests on " + forge + ": " + want);
+    const at = wantActions ? 2 : 1;
+    expect(want ? found.length === 1 && found[0].getAttribute("href") === want && text(hlLinks()[at]) === "Pull Requests" : found.length === 0, "header: Pull Requests on " + forge + ": " + want);
+    const acts = hlLinks().filter((a) => text(a) === "Actions");
+    expect(wantActions ? acts.length === 1 && acts[0].getAttribute("href") === wantActions && text(hlLinks()[1]) === "Actions"
+      && acts[0].getAttribute("aria-label") === "Actions on " + { github: "GitHub", gitea: "Gitea" }[forge] + " (opens in a new tab)" : acts.length === 0,
+      "header: Actions on " + forge + ": " + wantActions);
     await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
   }
   win.Maity.api.get = hlPulls;
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 2 && text(hlLinks()[0]) === "Repository" && text(hlLinks()[1]) === "Pull Requests", "header: a project without a Keep the Why dashboard or links shows the repository alone");
+  expect(hlLinks().length === 3 && text(hlLinks()[0]) === "Repository" && text(hlLinks()[1]) === "Actions" && text(hlLinks()[2]) === "Pull Requests",
+    "header: a project without a Keep the Why dashboard or links shows the repository alone, with what its forge derives");
   const hlGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x,
     { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }), links: Object.assign({}, x.links, { wiki: "http://plain.example/wiki" }),
       keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 4 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+  expect(hlLinks().length === 5 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
     "header: another forge in the name for a screen reader; a dashboard or a link that is not plain https gets no link");
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null, links: { issues: null, wiki: null, discussions: null, chat: null } })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();

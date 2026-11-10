@@ -3554,6 +3554,8 @@ window.MAITY_I18N["ja"] = {
   "profile_delete.submit": "プロフィールを削除",
   "profile_delete.title": "このプロフィールを削除",
   "profile_delete.type": "削除するには @{handle} と入力してください",
+  "project.link.actions": "Actions",
+  "project.link.actions_on": "{forge} 上の Actions",
   "project.link.chat": "チャット",
   "project.link.discussions": "ディスカッション",
   "project.link.issues": "イシュー",

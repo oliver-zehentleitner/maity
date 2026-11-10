@@ -3532,6 +3532,8 @@
   "profile_delete.submit": "프로필 삭제",
   "profile_delete.title": "이 프로필 삭제",
   "profile_delete.type": "삭제하려면 @{handle}을(를) 입력하세요",
+  "project.link.actions": "Actions",
+  "project.link.actions_on": "{forge}의 Actions",
   "project.link.chat": "채팅",
   "project.link.discussions": "토론",
   "project.link.issues": "이슈",
