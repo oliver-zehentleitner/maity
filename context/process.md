@@ -1481,10 +1481,14 @@ check. Locally the three shards together collect the whole suite (2125, 2288 and
 
 **Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
 only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
-over the suite. Three legs side by side cut the wall time to about a third plus setup. By file, a
-module's fixtures (a hub, a database set up once per module) stay in one leg and are built once.
+over the suite. Three legs side by side are expected to cut the wall time to about a third plus
+setup, as far as the shards take about the same time and three runners are free at once; that is
+not measured yet. By file, a module's fixtures (a hub, a database set up once per module) stay in
+one leg and are not set up again in the other two; inside a leg each xdist worker that runs some
+of the module's tests sets them up, as without shards.
 
-**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set the job asks for the maintainer's
+**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set and `pg` among `HUB_RUNNER_TYPES`
+(unset means all three) the job asks for the maintainer's
 one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
 5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
 or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,

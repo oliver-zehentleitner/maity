@@ -8,6 +8,7 @@ created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL).
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import zlib
 from collections.abc import Callable, Iterator
@@ -31,10 +32,11 @@ def _shard() -> tuple[int, int] | None:
     raw = os.environ.get("MAITY_TEST_SHARD", "").strip()
     if not raw:
         return None
-    k, slash, n = raw.partition("/")
-    if not (slash and k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
+    # ASCII digits only: str.isdigit also takes "²", which int() refuses (review of #1625).
+    match = re.fullmatch(r"([0-9]+)/([0-9]+)", raw)
+    if not match or not 1 <= int(match[1]) <= int(match[2]):
         raise pytest.UsageError(f"MAITY_TEST_SHARD must be <k>/<n> with 1 <= k <= n, not {raw!r}")
-    return int(k), int(n)
+    return int(match[1]), int(match[2])
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -42,8 +44,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """One shard of the suite, by test file: a file's tests stay together, so its module
-    fixtures (the two processes, the workers) start once per run, as without shards. The file
+    """One shard of the suite, by test file: a file's tests stay in one shard, so its module
+    fixtures (the two processes, the workers) are not set up again in the other shards; inside
+    the shard each xdist worker that runs some of them sets them up, as without shards. The file
     path's CRC-32 picks the shard, the same on every run and machine, so each file runs in
     exactly one shard and the shards together run the whole suite (CI's `hub-postgresql`)."""
     shard = _shard()
