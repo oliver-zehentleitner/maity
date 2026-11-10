@@ -242,7 +242,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `harness_not_offered` | harness, mode, model or target not in the runner's last advertised capabilities (§15.3); `details.offered` |
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
-| 409 | `placement_flapping` | a restart, nudge or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
+| 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
 | 409 | `replace_open` | a second replacement of a placement, or a `DELETE` of the old one, while a replacement is open (§15.14); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
@@ -15332,7 +15332,7 @@ the hub or by a closed placement; they stay on the runner.
 | `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; or `agents:propose` under `spawn_requests` | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent` |
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
-| `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec |
+| `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, reason?}`, `handover` one of `none`, `summary`, `full`; `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open |
@@ -16592,7 +16592,8 @@ Card tsk-j9e0yapj21wj. The maintainer decided the design on 2026-11-10:
 - the full context goes end-to-end encrypted through the hub (103388,
   103493);
 - six restarts an hour hold a placement (101931), and a human or an
-  admin agent clears it (103515).
+  admin agent clears it (103515); a change of the spec by another agent
+  does not (req-0gmaarwpwgnh).
 
 Everything else in this section is the contract's own detail within that
 design.
@@ -16748,12 +16749,14 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   the new placement's runner does it directly; an agent with
   `agents:propose` proposes it under `policy.spawn_requests`. The
   consent request is titled `Replace <handle> on <old runner> with
-  <new runner>` and its summary adds a `handover:` line.
+  <new runner>` and its summary adds a `handover:` line. Who may
+  replace is pending the maintainer's answer (req-8kv8vz1xx60k).
 - **Two at once.** While a replacement is open, the membership holds two
   active placements, the old and its replacement. That is the one
   exception to "one placement per membership" (§15.5). The replacement's
   pickup joins as a new instance (`new_instance`, §6.17) and does not
-  count toward `max_instances` while the replacement is open. A second
+  count toward `max_instances` while the replacement is open (pending
+  the maintainer's answer, req-5eprep6ndrjf). A second
   replacement of either is `replace_open`, and so is a `DELETE` of the
   old one while it is open.
 - **Its own clone.** The one-placement-per-clone rule (§15.5) holds for
@@ -16876,7 +16879,7 @@ beside `health.state`, so an ask and its answer do not clear it. The
 sources are:
 - a start the runner reports after an exit, except one after
   `network`: an outage of the provider says nothing about the agent, as
-  for the crash cap;
+  for the crash cap (pending the maintainer's answer, req-8epn4jg083hy);
 - a restart (§15.6);
 - a nudge that `resumed`.
 
@@ -16887,14 +16890,17 @@ to look at why.
   an outage (§15.7): class `info`, option `seen`, title `<agent handle>
   on <runner name> keeps restarting`, with the last reasons in its
   summary.
-- While `health.flapping` is `true`, the runner starts no run by itself after an exit; it reports
-  `exited` with `retry_at: null`.
-- A restart, a nudge or a replacement by an agent without trust `admin`
-  answers `placement_flapping`. Without that rule, an agent could restart
+- While `health.flapping` is `true`, the runner starts no run by itself
+  after an exit; it reports `exited` with `retry_at: null`.
+- A restart, a nudge, a change of the spec (`PATCH` of anything but
+  `desired`) or a replacement by an agent without trust `admin` answers
+  `placement_flapping`. Without that rule, an agent could restart
   a crashing teammate forever without anyone looking at why.
-- A restart, a nudge or a replacement by a human with the right, or by
-  an agent with trust `admin` in the project (a lead, say), clears it.
-  So does a `PATCH` of the spec. A human's own action is never refused.
+- A restart, a nudge, a change of the spec or a replacement by a human
+  with the right, or by an agent with trust `admin` in the project (a
+  lead, say), clears it; a change of the spec by any other agent does
+  not (the maintainer's answer, req-0gmaarwpwgnh). A human's own action
+  is never refused.
 
 **The placement's new fields** (§15.5):
 
