@@ -313,7 +313,7 @@ so whoever runs it is the operator who also sets the list.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-rzhydxnsav4m, the contract in `docs/api.md` §6.1 and §11
-**Verification:** corroborated — the reads a repository URL can start were checked against the hub: `forge.py` maps only `github.com`, and `images.py`, `ktw.py`, `ktw_reads.py`, `forge_access.py`, `probe.py` and `forge_webhook.py` do not request any other host
+**Verification:** corroborated — the reads a repository URL can start were checked against the hub: `forge.py` maps only `github.com`. The forge contents and metadata reads (`images.py`, `forge_access.py`, `probe.py`, `forge_webhook.py`, and the contents reads in `ktw.py` and `ktw_reads.py`) use GitHub's fixed hosts. The state and bodies downloads use the validated URL from the repository contents: `ktw.read_state` and `ktw_reads._read` call `outbound.read` with that URL
 **Revisit when:** a forge other than GitHub is actually read (card tsk-sqpcbndm0tvd), or a self-hosted host whose name does not say its product needs a merge-request link before that read exists
 **See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-11-10
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-10
