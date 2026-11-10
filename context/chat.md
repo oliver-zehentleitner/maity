@@ -480,7 +480,12 @@ hub so it holds across devices, emits no event, and is limited to 20.
 quiet. A new message a human participant has not read does not have to
 rise above those quiet pins to be noticed: it stays visible through that
 conversation's unread count and the header's chat badge. An observer's
-unread is null and adds nothing to the badge.
+unread is null and adds nothing to the badge. The pin is stored by the
+hub, not only in the browser: it holds across the human's devices, and
+the list is paged, so the hub has to know the order. The dashboard does
+not sort on its own. The list is paged (§1.4), so a pinned chat on a
+later page would stay hidden; the hub orders the list, and the cursor
+follows that order.
 
 **Rejected alternatives:**
 - The previous order (pinned with unread, then unpinned with unread,
@@ -489,6 +494,12 @@ unread is null and adds nothing to the badge.
   participant, the unread count and the header's chat badge already show
   a new message, so the list no longer lifts that chat above a quiet pin.
   An observer's unread is null and adds nothing to either.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows that order.
 
 ## A human switches the meat-proxy mode per chat; the profile gives the default
 
