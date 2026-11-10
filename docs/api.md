@@ -15336,7 +15336,7 @@ the hub or by a closed placement; they stay on the runner.
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open |
-| `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB (which leaves the request of 64 KiB room, §1.7): the handover note of a `summary` or `full` replacement (§15.14); `204` |
+| `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB, which leaves the request of 64 KiB room for plain text (§1.7; JSON escaping can still push a body under it over that, which is then `payload_too_large`): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
 ```
@@ -16852,10 +16852,13 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   - a consent request for the replacement refused or withdrawn (§15.6).
 
   The old placement runs on as it was, and its `replaced_by` goes back
-  to `null`. The new one closes (`active: false`), with `removed` after
-  a `DELETE`, `refused` or `withdrawn` for its consent, and
-  `replace_failed` otherwise. If its pickup was already redeemed, the
-  new instance's credential is revoked. A sealed
+  to `null`. The new one closes as §15.5 closes any placement: the
+  uniform way (`desired: stopped`, closed by its terminal report), with
+  `removed` after a `DELETE` and `replace_failed` after a `failed` or a
+  missed deadline. A refused or withdrawn consent closes it at once,
+  with `refused` or `withdrawn`, as before any runner acted. Its
+  instance's credential, if its pickup was redeemed, is revoked when it
+  closes. A sealed
   transcript already uploaded is deleted, and the owner's outage request
   (§15.7) names the new placement.
 
