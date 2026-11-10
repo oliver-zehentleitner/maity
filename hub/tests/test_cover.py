@@ -142,6 +142,86 @@ def test_a_substitute_takes_the_work_and_gives_back_what_it_did_not_touch(
     assert sub.get("/projects/maintainer/maity/requests?to=me").json()["items"] == []
 
 
+def wait_on(who: Any, card_id: str, to: str) -> dict[str, Any]:
+    body = {"class": "decision", "title": "May I?", "to": to, "task_id": card_id}
+    response = who.post("/projects/maintainer/maity/requests", {**body, "while_open": "wait"})
+    assert response.status_code == 201, response.text
+    created: dict[str, Any] = response.json()
+    return created
+
+
+def blocked(owner: flow.Human, card_id: str) -> tuple[str, str | None]:
+    card = card_of(owner, card_id)
+    return card["status"], card["blocked_by_request"]
+
+
+def test_a_wait_the_substitute_filed_before_the_cover_keeps_no_block(
+    owner: flow.Human, make_client: ClientFactory, now: list[datetime]
+) -> None:
+    """The cover's move is a change of holder: `claim.since` becomes the move, so a wait the
+    substitute filed before it, which blocked nothing, holds no later block (§6.12, §7)."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    held = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{held['id']}/claim", {})
+    now[0] += timedelta(seconds=1)
+    early = wait_on(sub, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("in_progress", None)  # not the holder: no block
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    now[0] += timedelta(seconds=1)
+    limit(covered, now[0] + timedelta(hours=2))
+    moved = card_of(owner, held["id"])
+    assert moved["claim"]["holder"] == sub.id and moved["claim"]["since"] == z(now[0])
+    now[0] += timedelta(seconds=1)
+    later = wait_on(sub, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("blocked", later["id"])
+    answered = owner.post(
+        f"/projects/maintainer/maity/requests/{later['id']}/answer", {"text": "yes"}
+    )
+    assert answered.status_code == 200, answered.text
+    assert blocked(owner, held["id"]) == ("in_progress", None)
+    assert owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()["status"] == (
+        "open"
+    )
+
+
+def test_a_wait_the_member_filed_during_its_cover_keeps_no_block_after_the_return(
+    owner: flow.Human, make_client: ClientFactory, now: list[datetime]
+) -> None:
+    """The return is a change of holder too: a wait the covered member filed while the
+    substitute held the card holds no block once the card is back (§6.12, §7)."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    held = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{held['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    now[0] += timedelta(seconds=1)
+    limit(covered, now[0] + timedelta(hours=2))
+    assert card_of(owner, held["id"])["claim"]["holder"] == sub.id
+    now[0] += timedelta(seconds=1)
+    early = wait_on(covered, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("in_progress", None)  # not the holder: no block
+    now[0] += timedelta(minutes=30)
+    covered.resume()  # back: the untouched claim returns
+    back = card_of(owner, held["id"])
+    assert back["claim"]["holder"] == covered.id and back["claim"]["since"] == z(now[0])
+    now[0] += timedelta(seconds=1)
+    later = wait_on(covered, held["id"], owner.id)
+    assert blocked(owner, held["id"]) == ("blocked", later["id"])
+    answered = owner.post(
+        f"/projects/maintainer/maity/requests/{later['id']}/answer", {"text": "yes"}
+    )
+    assert answered.status_code == 200, answered.text
+    assert blocked(owner, held["id"]) == ("in_progress", None)
+    assert owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()["status"] == (
+        "open"
+    )
+
+
 def test_a_substitute_answers_on_the_covered_members_behalf(
     owner: flow.Human, make_client: ClientFactory, now: list[datetime]
 ) -> None:

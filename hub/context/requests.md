@@ -59,8 +59,9 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08
-**Revisit when:** a request needs to block a card without the asker holding it, or `_unblock` needs to tell blocking requests from waiting ones that blocked nothing
+**Source:** jour fixe 2026-11-02, proposal r4 (a question to the human set the card to `blocked`, and the lead could then not set it to `done` after the merge, while often only a side question was open); card tsk-qr32egwhrxz1 and its plan note, approved by the lead, 2026-11-08; re-checked by the project lead in Maity message seq 100432, 2026-11-09, after its second trigger fired, which 47e9ac62 now answers
+**See:** requests.md#only-a-wait-filed-since-the-current-claim-began-keeps-its-card-blocked — 47e9ac62-d08b-4f23-a664-5aa31c8b553a — as of 2026-11-09
+**Revisit when:** a request needs to block a card without the asker holding it
 
 A request without `while_open` takes the class's default:
 
@@ -85,6 +86,49 @@ status and the restore on the last answer stay as they were. `maity ask --wait` 
   there, and the restore on answer would be lost.
 - `proceed_provisionally` for every class: a consent must wait, and its validation
   (`consent_waits`) would refuse every bare consent.
+
+## Only a wait filed since the current claim began keeps its card blocked
+
+**Id:** 47e9ac62-d08b-4f23-a664-5aa31c8b553a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** hub roll-up note nte-bprq62a9m3bc (a review finding on #1494, card tsk-b7mtzr8xybp5); the lead's go for roll-up part 3, 2026-11-09
+**See:** requests.md#a-question-blocks-its-card-only-when-it-says-it-waits-while_opens-default-follows-the-class — 3d44b07f-3ab6-41be-8bd0-a799eb11c530 — as of 2026-11-09
+**Revisit when:** a change of holder stops setting `card.claim_since`, or a renewal starts to set it
+
+`_unblock` (routes/requests.py) counts the other open waits of the holder on the card only
+when they were filed at or after `card.claim_since`. An earlier wait no longer keeps the card
+blocked once a later wait is answered or withdrawn. That covers a wait filed while the card
+was unheld, which blocked nothing, and one from an earlier claim the holder released, whose
+block the release ended. The request itself stays open. A claim without `claim_since`
+counts every wait, as before.
+
+Two limits remain. The cut is a timestamp, not the claim's identity, so a wait filed at the
+very instant the claim began still counts: two writes with exactly equal stored timestamps
+cannot be told apart by this cut. The hub's clock does not promise distinct instants, and a
+frozen test clock reproduces the tie at will. And a card
+taken over while blocked keeps the previous holder's blocker until an answer or withdrawal
+runs `_unblock`, as before this change.
+
+**Reason:** every change of holder (claim, the expired claim's move to the assignee, a
+takeover, a cover's move to the substitute and its return) sets `claim_since`, a renewal
+does not, and a release clears the block. The two cover moves did not set it before this
+change and now do, so a card's `claim.since` is the start of its current holder. So the
+claim's start separates the waits of this claim from the earlier ones, up to the exact tie
+above. No column and no migration are needed.
+
+**Rejected alternatives:**
+- A stored marker on the request ("this one blocked the card", or the claim it was filed
+  under): it would also settle the exact tie, but needs a new column, a migration and a slot
+  in the migration order; 3d44b07f had already turned down a stored `block` field for that
+  cost, and the tie needs two writes at exactly the same stored instant.
+- `>` instead of `>=`: it would drop a real wait filed at the claim's very instant, the other
+  side of the same tie.
+- Blocking the card at the claim when its claimer has an open wait: that changes what a claim
+  does, and §7 says only a wait filed by the holder blocks.
+- Leaving it: conservative, it never releases work that must wait, but it kept a card
+  `blocked` until a wait that never blocked it was answered.
 
 ## A request listing sorts and pages light entries and builds full views only for its page
 

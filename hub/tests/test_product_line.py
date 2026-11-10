@@ -89,6 +89,24 @@ def test_at_phone_width_the_line_is_its_first_part() -> None:
     assert f"<style>{product_line.STYLE}</style>" == product_line.HEAD
 
 
+def test_every_link_has_the_dashboards_target_size() -> None:
+    # §16.13 "Target size" (WCAG 2.5.8), as web/css/app.css draws it: every link 24 px high,
+    # the two icon links 24 px wide, no link wrapped inside itself. The block is the hashed one.
+    line = product_line.html("en")
+    assert re.findall(r'<a [^>]*class="product-icon" aria-label="([^"]+)"', line) == [
+        "GitHub",
+        "Maity",
+    ]
+    assert line.count('class="product-icon"') == 2  # the text links are no icons
+    assert (
+        ".product-line a{color:inherit;margin:0;display:inline-flex;align-items:center;"
+        "justify-content:center;min-height:24px;white-space:nowrap}"
+    ) in product_line.STYLE
+    assert ".product-line .product-icon{min-width:24px;vertical-align:middle}" in (
+        product_line.STYLE
+    )
+
+
 def test_the_line_is_in_the_pages_language() -> None:
     line = product_line.html("de")
     assert "Einen Fehler gefunden?" in line and "Mit " in line and " auf " in line
