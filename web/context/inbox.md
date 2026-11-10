@@ -330,7 +330,7 @@ A body whose parsed form differs from its text (compared without the white space
 **Status:** active
 **Evidence:** confirmed
 **Source:** the card tsk-y8gkq1kvt63c (the owner's request: the inbox took 7 s on prod); the measurement and plan on tsk-fxjtwmkc4md5 (notes nte-dpe78x619re6, nte-n1rj7s15xw3f: 4.6 s of the 7 s were three serial pages of the full request history); web/js/inbox.js `load`, `closedOf`
-**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-08
+**See:** inbox.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-08
 **Revisit when:** the hub's request list gets a page size or an order that makes the full history cheap, or the inbox shows the answered ones by default
 
 A project's inbox asks its list with `status=open`. **Show** → all reads the

@@ -106,7 +106,7 @@ any forge: a wrong path shape would be a dead link that looks right.
 **Evidence:** inferred
 **Source:** the maintainer's screenshot and wish on tsk-b67chbx96n29 ("move the two blocks in front of Latest reports"), as the coordinator passed it on, 2026-10-30: on a wide desktop Project and README badge were a row of their own below the whole report list, with empty space under Team; the place under Team is the implementation's choice from the two the coordinator named
 **Revisit when:** the maintainer asks for another place, or the overview gets a panel that competes for the space under Team
-**See:** views.md — 057e7277-3eba-4267-93d2-c6b74a5e2ff1 — as of 2026-10-30
+**See:** overview.md — 057e7277-3eba-4267-93d2-c6b74a5e2ff1 — as of 2026-10-30
 
 The second row is Team with Project and README badge under it
 (`.overview-stack`), and Latest reports beside them. On a phone, where

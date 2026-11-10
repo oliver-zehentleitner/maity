@@ -130,7 +130,7 @@ up the state, so the mark belongs there as well as in the header.
 **Evidence:** confirmed
 **Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
 **Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
-**See:** views.md#a-members-own-settings-in-a-project-are-a-tab-of-their-own-my-settings-at-my-settings — df54f284-212c-4eab-995d-778dce37f7fb — as of 2026-10-30
+**See:** settings.md#a-members-own-settings-in-a-project-are-a-tab-of-their-own-my-settings-at-my-settings — df54f284-212c-4eab-995d-778dce37f7fb — as of 2026-10-30
 
 The project's tabs end in one **Settings**, offered to its admins and to
 every human member. Inside it two tabs, as links: **Project**
@@ -161,7 +161,7 @@ rule, no route kept for an old address.
 **Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
-**See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
+**See:** shell.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
 The header's row shows the repository, then Actions, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each

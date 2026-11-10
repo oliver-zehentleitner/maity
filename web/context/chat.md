@@ -40,7 +40,7 @@ messages — a long pause would hide that the agent came back later.
 **Evidence:** inferred
 **Source:** the group-chat contract (docs/api.md §9.2, §9.3, §8.5; PR #153) and the coordinator's card for the dashboard's part (tsk-b2dv60tsexjf), 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the hub sends live events to an owner who reads along, a chat gets more than twelve people, or the list needs filters by kind
-**See:** views.md#the-chats-history-days-apart-a-senders-run-grouped-and-the-line-before-what-was-unread-when-it-opened — abe93ad2-1a75-4abc-a5d0-70e074d17335 — as of 2026-10-22
+**See:** chat.md#the-chats-history-days-apart-a-senders-run-grouped-and-the-line-before-what-was-unread-when-it-opened — abe93ad2-1a75-4abc-a5d0-70e074d17335 — as of 2026-10-22
 
 Group chats are in the same list as the direct chats, newest first, and
 open in the same right-hand pane. A new one is made in that pane
@@ -80,7 +80,7 @@ the backlog the window keeps out.
 **Evidence:** inferred
 **Source:** docs/api.md §9.2 (an owner outside the project) and §8.5 (blind removal); the coordinator's card for group chats part 2 (tsk-vz8e024wehde), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub offers such an owner a list of its readable projects, sends it events, or the accounts design gives humans a place for projects they are not in
-**See:** views.md#group-chats-live-in-the-chat-views-own-two-panes-the-hub-says-which-kind-a-chat-is-and-the-history-before-one-joined-is-read-on-demand — 46abbbf3-40b9-4802-a22f-1a85293a9b8f — as of 2026-10-23
+**See:** chat.md#group-chats-live-in-the-chat-views-own-two-panes-the-hub-says-which-kind-a-chat-is-and-the-history-before-one-joined-is-read-on-demand — 46abbbf3-40b9-4802-a22f-1a85293a9b8f — as of 2026-10-23
 
 An owner whose agent is in a project the owner is not in reads that
 agent's group chats at `/observe/<slug>`. The page is the chat view
@@ -337,7 +337,7 @@ the room above the tabs on every page of a project.
 **Evidence:** inferred
 **Source:** the maintainer's card tsk-m9ew7v609fq0, 2026-11-03 (on a phone the header's buttons wrapped under the logo; hide the Lead there, its function reachable another way, the menu or settings named as an example); the dashboard's implementation the same day
 **Revisit when:** the header gets room for the Lead at phone width again, or the Chat button stops leading to `/chats`
-**See:** views.md#the-lead-is-reached-by-a-lead-button-left-of-chat-not-by-chat-itself-or-a-strip — 0ff66bde-7c26-412a-a856-069b52764910 — as of 2026-11-03
+**See:** chat.md#the-lead-is-reached-by-a-lead-button-left-of-chat-not-by-chat-itself-or-a-strip — 0ff66bde-7c26-412a-a856-069b52764910 — as of 2026-11-03
 
 At phone width (≤ 600 px) the header hides the Lead button, so Chat, +, the gear, the bell and
 the profile fit in the logo's row from 360 px (narrower, they still go under it). The same control (one lead opened at once, several a menu with
@@ -392,7 +392,7 @@ named.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §9.3 "Meat proxy per chat" after the contract #922 and the hub's #956 (`PUT …/conversations/{id}/meat-proxy` with `true`, `false` or `null`; the participants' entries carry `meat_proxy` and, for oneself, `meat_proxy_chat`; no event); the coordinator's card tsk-n872zkxmwbec (a switch beside Attach and Send in direct and group chats for human participants, a way back to `null`, the designer's two icons, on in the accent on `--out-bg`), 2026-10-31; the coordinator's word to use the designer's final3 icons, 2026-11-01; the button's shape and the Follow my profile link are the implementer's, 2026-11-01
-**See:** views.md#the-meat-proxy-switch-has-its-two-parts-under-it-each-sent-alone-the-hub-decides-the-switch-and-the-note — e9c14296-f8da-4f83-871b-056a0d3ab6ed — as of 2026-11-01
+**See:** account.md#the-meat-proxy-switch-has-its-two-parts-under-it-each-sent-alone-the-hub-decides-the-switch-and-the-note — e9c14296-f8da-4f83-871b-056a0d3ab6ed — as of 2026-11-01
 **Revisit when:** the designer sends the icons with the Maity logo, the hub emits an event for the per-chat value, or a chat offers parts of its own
 
 In a direct or group chat a human participant finds the meat-proxy
@@ -469,7 +469,7 @@ types and still does not give a phone its screen.
 **Evidence:** inferred
 **Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); browser measurements at 1280 × 800 and 390 × 844 in the PR
 **Revisit when:** the chat stops sizing itself with `--chat-h`, or the product line moves out of the page's flow
-**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
+**See:** chat.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
 
 The open chat's height (`--chat-h`, `fitToScreen` in `js/chat.js`) is the window's height less where
 the chat layout starts on the page and less what stands below it down to the end of the page
@@ -522,7 +522,7 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 **Evidence:** confirmed
 **Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
 **Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
-**See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
+**See:** chat.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
 At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
 - The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.

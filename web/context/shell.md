@@ -8,8 +8,8 @@
 **Evidence:** confirmed
 **Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21; re-checked when the tabs became the browser's own (card tsk-p6aye59z0k7g), 2026-11-06
 **Revisit when:** a human asks to land on one project
-**See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
-**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
+**See:** inbox.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**See:** shell.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-06
 
 One account holds many projects. The header of every screen carries a
 project switcher: each project this browser has open as a tab, with its
@@ -142,7 +142,7 @@ two key forms in several places.
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10 (chats 102080 and 103539)
-**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
+**See:** inbox.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
 
 A project's pill counts its open requests, unread chats and unread mentions (§18.2 `by_project`),
 but only Inbox and Chat have a tab count. While the project has unread mentions, a line beside its
@@ -244,7 +244,7 @@ length.
 **Evidence:** inferred
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
-**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-09
+**See:** shell.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-09
 
 The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
@@ -320,7 +320,7 @@ as its title is the system talking to itself.
 **Evidence:** inferred
 **Source:** the maintainer's card tsk-m9ew7v609fq0, 2026-11-03 (on a phone the project's links wrapped into two rows; one row that scrolls sideways, the state always in sight); review on #1271 (with Review, Released and an absence the first version squeezed the row to 0 px and scrolled the page sideways)
 **Revisit when:** a project gets so many state parts that they leave no usable row beside them on a phone, or the header gives the links a row of their own
-**See:** views.md#a-projects-own-links-stand-beside-the-repository-which-reads-repository-whatever-the-forge-the-form-sends-only-what-changed — 10a77061-c980-4990-b44b-cb7f518cd4eb — as of 2026-11-03
+**See:** settings.md#a-projects-own-links-stand-beside-the-repository-which-reads-repository-whatever-the-forge-the-form-sends-only-what-changed — 10a77061-c980-4990-b44b-cb7f518cd4eb — as of 2026-11-03
 
 At phone width (≤ 600 px) the repository, Pull Requests, the project's own links and Why are one
 row of their own (`.project-links`) that scrolls sideways, with the fade cue of the tab rows.
@@ -452,7 +452,7 @@ further, on one view only.
 **Evidence:** confirmed
 **Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
 **Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
-**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
+**See:** shell.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
 The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). On a phone (600 px) the row wraps by the tabs' full width, which put the menu on a line of its own; there the tabs fill the room the menu leaves (`flex: 1 1 0`) and scroll, the menu keeps the row's right end, and the project's state takes the next row. New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
 
