@@ -337,6 +337,48 @@ its own once the release is verified.
 - An API token stored as a repository secret: a long-lived credential;
   trusted publishing needs none.
 
+## Every deploy of maity.team is a release: a version bump as the last merge, then the maintainer's `v*` tag
+
+**Id:** 1555765c-85df-41a5-9929-2ee3479ce1fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump approved by the team lead); `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
+**Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
+**See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
+
+Until deploy 5, maity.team ran images built from main by commit, and
+only `0.1.0a1` was ever tagged. From deploy 6 on, every deploy also
+publishes `maity-hub` on PyPI, with the image's version. Each deploy goes
+through the same steps:
+
+1. A pull request raises `version` in `hub/pyproject.toml` to the next
+   pre-release. It also raises `appVersion` in the Helm chart to match,
+   together with the chart's own `version`. That pull request is the last
+   merge before the deploy.
+2. ci passes on the push of that merge.
+3. The maintainer pushes `v<version>` on that commit, and nobody else
+   pushes a `v*` tag. The tag builds the package and the image, gated as
+   in 843b8d35.
+4. Ops deploys the image that tag built.
+
+The deployment itself (manual approvals, the maintainer's command) does
+not change. The chart's `appVersion` follows the bump so that its default
+image tag names an image that exists. It had stayed at `0.1.0.dev0`,
+which was never published.
+
+**Reason:** this is the maintainer's decision; no reason beyond it was
+stated.
+
+**Rejected alternatives:**
+- Deploying images built from main by commit and tagging releases
+  separately: the status quo until deploy 5. What maity.team runs then
+  has no version a person could install.
+
+The changelog is not folded per deploy for now: the fragments in
+`changelog.d/` stay until the maintainer decides otherwise (req-k3acfg3wva0g,
+open). `v0.1.0a1` was tagged without folding them either.
+
 ## The sdist carries the dashboard and the join page under `bundled/`
 
 **Id:** c36f4a54-432f-4fe2-82ab-377690759268

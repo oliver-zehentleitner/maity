@@ -492,6 +492,22 @@ make release-build   # a fresh environment from requirements/release.txt; sdist 
 make release-check   # the bundled files, a wheel rebuilt from the sdist, an install that serves the dashboard
 ```
 
+Every deploy of maity.team is a release, so what runs there can be installed
+under the same version. Per deploy:
+
+1. A pull request raises `version` in `pyproject.toml` to the next
+   pre-release (`0.1.0a2` after `0.1.0a1`). It is the last merge before the
+   deploy.
+2. ci passes on the push of that merge to main (`ci-ok`).
+3. The maintainer pushes the tag `v<version>` on that merge commit, and
+   nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
+   on PyPI) and `publish-image.yml` (the image), and both wait for ci on that
+   commit and for hub-mariadb on the same hub files.
+4. Ops deploys the image that tag built, pinned by its digest.
+
+The deployment itself is unchanged: manual approvals, on the maintainer's
+command.
+
 ### Migrations
 
 Schema changes are Alembic revisions in `src/maity_hub/migrations/versions/`:
