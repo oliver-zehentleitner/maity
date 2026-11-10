@@ -4216,9 +4216,10 @@ the chat layout starts on the page and less what stands below it down to the end
 edge, the product line under the composer is in sight, and only the history and the chat list scroll.
 When the fixed chrome fits in the window but that comfortable height would run past the bottom edge
 (a short phone, a tall header), the height stops at the window edge so the input stays on screen; the
-product line may then sit just below the fold rather than pushing the composer off. Only when the
-fixed chrome itself is taller than the window below the layout (a tall sign-in banner on a short
-phone) does the page scroll, and then the product line stays below the composer, never over it. It is
+product line may then sit just below the fold rather than pushing the composer off. That needs room
+for at least about 24 px of history next to the fixed chrome; only when the fixed chrome with those
+24 px is taller than the window below the layout (a tall sign-in banner on a short phone) does the
+page scroll, and then the product line stays below the composer, never over it. It is
 measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
 body: a banner above, the product line below), and on the visual viewport so a phone's on-screen
 keyboard is followed. The observer measures in the next frame, not in its own round, where a new
@@ -4252,6 +4253,9 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 - Keeping `max(fixed + 60 px, space to the footer)` on every screen: on a 375 × 667 phone without a
   banner that floor was taller than the window, so the composer ran past the bottom edge and the
   page scrolled; the input has to stay in the viewport when the fixed chrome fits there.
+- Stopping at the window edge whenever the fixed chrome alone fits: on Chats at 375 × 667 with the
+  sign-in banner that left 3 px of history, an input in view with no message above it; below about
+  24 px of history the page scrolls instead.
 - A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
   inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
   another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
