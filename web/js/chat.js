@@ -463,11 +463,11 @@ window.Maity = window.Maity || {};
   // header's bottom left out what stands between (a banner, the toolbar's
   // margin) and everything below, so the page scrolled past the composer
   // (tsk-j10w2hsm1h90). When the fixed chrome plus a history floor would run
-  // past the window, the height stops at the window edge so the input stays
-  // on screen (tsk-df4tcq83pnf6); the product line may then sit just below
-  // the fold. Measured again on a resize and when the page around it
-  // changes; the visual viewport shrinks with a phone's on-screen keyboard,
-  // 100dvh does not everywhere.
+  // past the window but the chrome plus HISTORY_MIN fits, the height stops at
+  // the window edge so the input stays on screen (tsk-df4tcq83pnf6); the
+  // product line may then sit just below the fold. Measured again on a
+  // resize and when the page around it changes; the visual viewport
+  // shrinks with a phone's on-screen keyboard, 100dvh does not everywhere.
   // Preferred lines of history above the product line when the window has room.
   const HISTORY_LEAST = 60;
   // The least history worth stopping at the window edge for: below it the
@@ -608,7 +608,8 @@ window.Maity = window.Maity || {};
       // Floor is the pane's non-history chrome only. A +HISTORY_LEAST floor that
       // is taller than the window put the composer past the bottom edge on a
       // short phone (tsk-df4tcq83pnf6); the page scrolled and the input was off
-      // screen. Prefer keeping the composer in the window when that chrome fits.
+      // screen. Keep the composer in the window when that chrome plus
+      // HISTORY_MIN fits.
       const floor = Number.isFinite(fixed) ? fixed : 0;
       const toFooter = Math.floor(height - (box.top + scrolled) - below);
       const toWindow = Math.floor(height - (box.top + scrolled));
