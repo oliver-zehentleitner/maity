@@ -350,7 +350,13 @@ It refuses with exit 4, before anything is sent, on any of these:
   `gh` can't be asked does the hub's last observation stand. A report for another PR is sent from
   that PR's branch (`git switch`), or after a merge with the branch
   deleted, from that branch recreated at its merged head
-  (`git switch -c <branch> <merged head>`)
+  (`git switch -c <branch> <merged head>`). So on a card with two
+  stacked pull requests, once the card's last report names the first,
+  the second is reported only after the first has merged (or closed):
+  while the card's last report names the first and the hub last saw it
+  open, a report from the second's branch is refused, unless gh finds it
+  merged or closed now. A card that links the first needs the second
+  linked as well (`maity link`)
 
 Before it asks git about the upstream, it refuses with exit 1 an upstream
 whose remote, configured URL or merge ref starts with `-` or names a remote

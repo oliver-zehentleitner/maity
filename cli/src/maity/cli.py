@@ -2080,9 +2080,9 @@ def cmd_say(args: argparse.Namespace) -> int:
             if names:
                 _err(
                     f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
-                    "write a missing or proposed name without backticks, a command under `## Ran`, "
-                    "and a proposed wording, an output, a mutation or a removed text next to its "
-                    "line in backticks, not in quotes"
+                    "write a missing or proposed name without backticks, a command or a removed "
+                    "id under `## Ran` or in a fenced block, and a proposed wording, an output, "
+                    "a mutation or a removed text next to its line in backticks, not in quotes"
                 )
             for line in [*cites.bad, *names]:
                 _err(line)
@@ -4308,7 +4308,12 @@ def build_parser() -> argparse.ArgumentParser:
         "Send a completion report. The head commit comes from git, the remote head from "
         "`git ls-remote`, the pull request from `gh` when it is installed; nothing is typed by "
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
-        "changes exist, the branch is not pushed, or the pull request's head differs. A branch "
+        "changes exist, the branch is not pushed, or the pull request's head differs. On a card "
+        "with two stacked pull requests, once the card's last report names the first, the "
+        "second is reported only after the first has merged (or closed): while the card's "
+        "last report names the first and the hub last saw it open, a report from the second's "
+        "branch is refused, unless gh finds it merged or closed now; a card that links the "
+        "first (`maity link`) needs the second linked too. A branch "
         "deleted after its pull request was merged reports with the merged head. A card "
         "whose result is not code (a review, a draft, a decision prepared for a human) is "
         "reported with --no-code: the summary carries the result, and no git fact is read or "

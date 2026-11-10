@@ -506,3 +506,76 @@ def test_a_link_past_the_cap_is_not_probed_even_where_it_would_match(
     assert probed == [str(n) for n in numbers[: cli.PROBED_LINKS_MAX]]
     assert str(numbers[-1]) not in probed and not _sent(fake)
     assert "this checkout has an unknown pull request" in capsys.readouterr().err
+
+
+# --- two stacked pull requests on one card (tsk-2xk7cg5n8a1b, §6.6) --------------------------
+
+
+def test_the_help_says_up_front_when_a_stacked_second_pull_request_reports(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["report", "--help"])
+    text = " ".join(capsys.readouterr().out.split())
+    assert (
+        "On a card with two stacked pull requests, once the card's last report names the "
+        "first, the second is reported only after the first has merged (or closed)" in text
+    )
+    assert (
+        "while the card's last report names the first and the hub last saw it open, a report "
+        "from the second's branch is refused, unless gh finds it merged or closed now" in text
+    )
+    assert "a card that links the first (`maity link`) needs the second linked too" in text
+
+
+@pytest.mark.parametrize(
+    ("first", "links", "sent", "observed"),
+    [
+        ("OPEN", [], False, "open"),  # the first is still open: refused
+        ("MERGED", [], True, "open"),  # after its merge the second reports
+        ("CLOSED", [], True, "open"),  # or after it was closed
+        ("MERGED", [_link(780)], False, "open"),  # linked: the second needs a link of its own
+        ("MERGED", [_link(780), _link(799)], True, "open"),
+        ("OPEN", [_link(780), _link(799)], False, "open"),  # a link alone does not let it through
+        # the hub last saw the first closed: gh is not asked, the second reports even
+        # though the forge has the first open again (reopened)
+        ("OPEN", [], True, "closed"),
+        (None, [], False, "open"),  # gh can't check: the hub's open stands, refused
+    ],
+)
+def test_the_second_of_two_stacked_pull_requests_reports_after_the_first_merges(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    bin_dir: Path,
+    first: str | None,
+    links: list[dict[str, Any]],
+    sent: bool,
+    observed: str,
+) -> None:
+    """What the help and §6.6 say: the first (#780) was reported and the hub last saw it
+    `observed`, the second (#799) is checked out; `pr view` answers the first's state on
+    the forge (None: gh fails)."""
+    _gh_view(bin_dir, _head(joined), first)
+    _card(fake, links=links, report=_before(780, "open", observed=observed))
+    assert _report() == (cli.EXIT_OK if sent else cli.EXIT_REFUSED)
+    assert _sent(fake) is sent
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        None,  # no report on the card (the first was never reported here)
+        {"pr": None, "observed": None},  # the last report was --no-code
+    ],
+)
+def test_the_stacked_rule_starts_only_once_the_last_report_names_the_first(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    bin_dir: Path,
+    report: dict[str, Any] | None,
+) -> None:
+    """The rule holds once the card's last report names the first: without such a report
+    the second (#799) reports while the first is open on the forge."""
+    _gh_view(bin_dir, _head(joined), "OPEN")
+    _card(fake, report=report)
+    assert _report() == cli.EXIT_OK and _sent(fake)

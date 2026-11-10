@@ -490,6 +490,16 @@ def totp_code(secret: str, step: int) -> str:
     return str(value % 10**6).zfill(6)
 
 
+def wrong_totp_code(secret: str) -> str:
+    """A code the hub must refuse: none of the codes for now ± 2 steps.
+
+    The hub takes now ± 1 step, so a fixed "000000" is the real code by chance in about
+    3 of a million runs (tsk-4hn9nv7dbxw4); the extra step on each side covers a slow page."""
+    step = int(time.time() // 30)
+    valid = {totp_code(secret, s) for s in range(step - 2, step + 3)}
+    return next(c for c in (str(d) * 6 for d in range(10)) if c not in valid)
+
+
 def stop_hub(hub: subprocess.Popen) -> None:
     if hub.poll() is None:
         hub.terminate()  # exactly the PID this script started
@@ -2189,7 +2199,7 @@ def security_section(run: Run, browser) -> None:
     run.a11y(page, "security: off")
     secret = set_up_factor(page)
     step = int(time.time() // 30)
-    turn_on(page, "000000")
+    turn_on(page, wrong_totp_code(secret))
     expect(section).to_contain_text("That code is not valid.")
     turn_on(page, totp_code(secret, step))
     expect(page.locator(".security-code-list li")).to_have_count(10)
@@ -2307,7 +2317,7 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     expect(code).to_be_visible()
     run.shot(older, "second-hub-step-up")
     run.a11y(older, "second hub: the step-up question")
-    code.fill("000000")
+    code.fill(wrong_totp_code(secret))
     older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
     # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
@@ -2861,18 +2871,22 @@ CHAT_MEASURE = """() => {
   const box = (sel) => { const el = document.querySelector(sel); if (!el) return null;
     const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, height: b.height }; };
   return { overflow: document.scrollingElement.scrollHeight - window.innerHeight,
+    vh: window.innerHeight,
     history: box('.chat-layout.open .chat-pane .messages'), compose: box('.chat-layout.open .chat-pane .compose'),
     footer: box('#product-line'), errors: window.__errors.slice() };
 }"""
 
 
 def chat_height_views(run: Run, browser) -> None:
-    """The open chat against the window (tsk-j10w2hsm1h90), in fixture mode: on a project's Chat
-    tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and after the pane
-    grew or shrank inside (the composer folded, shown, three times its rows, a group's Manage opened). Without the sign-in banner the
-    page ends at the window's bottom edge; with it (a phone has no room then) the page scrolls, but
-    the history keeps some height and the composer never runs under the product line. A
-    ResizeObserver loop is reported on window only, so a collector there counts it as an error."""
+    """The open chat against the window (tsk-j10w2hsm1h90, tsk-df4tcq83pnf6), in fixture mode: on a
+    project's Chat tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and
+    after the pane grew or shrank inside (the composer folded, shown, three times its rows, a group's
+    Manage opened). Without the sign-in banner the composer stays inside the viewport (its bottom
+    at or above the window's edge); where the window has room the page ends at that edge, and on a
+    short phone the product line may sit just below the fold rather than pushing the input off
+    screen. With the banner (a phone has no room then) the page may scroll, but the history keeps
+    some height and the composer never runs under the product line. A ResizeObserver loop is
+    reported on window only, so a collector there counts it as an error."""
     run.step("fixtures: the open chat ends at the window's bottom edge, the composer above the product line")
     index = (WEB / "index.html").as_uri()
     # 375 x 667 is too small for a composer and 60 px of history: there the page scrolls, never overlaps.
@@ -2912,12 +2926,31 @@ def chat_height_views(run: Run, browser) -> None:
                     m = page.evaluate(CHAT_MEASURE)
                     where = f"{route} at {width}x{height}" + (" with the sign-in banner" if banner else "")
                     assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
-                    assert m["history"]["height"] >= 56, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    # Some history always. Preferred ~60 px floor when the window can take the
+                    # fixed chrome plus that floor without the banner; otherwise history may
+                    # shrink so the composer stays in view (tsk-df4tcq83pnf6).
+                    assert m["history"]["height"] >= 8, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    if fits and not banner:
+                        assert m["history"]["height"] >= 56, (
+                            f"{where}: the history is {m['history']['height']:.0f} px tall (preferred floor)"
+                        )
                     assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
                         f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
                     )
+                    # Without the banner the input stays in the viewport (tsk-df4tcq83pnf6), a group
+                    # chat on a short phone too (on the project's Chat tab its composer ran to 681 at
+                    # 375 x 667 before the fix). Only grown chrome (Manage opened, below) may exceed it.
+                    if not banner:
+                        assert m["compose"]["bottom"] <= m["vh"] + 0.5, (
+                            f"{where}: the composer ends at {m['compose']['bottom']:.0f}, past the window ({m['vh']})"
+                        )
                     if fits and not banner:
                         assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
+                    elif not banner and "cnv-" not in route:
+                        # Short phone, direct chat: product line may sit just below the fold.
+                        assert m["overflow"] <= m["footer"]["height"] + 24, (
+                            f"{where}: the page scrolls {m['overflow']} px past the window (footer {m['footer']['height']:.0f})"
+                        )
                     toggle = page.locator(".chat-layout.open .chat-pane .compose-toggle")
                     if toggle.is_visible():
                         # Folding the composer changes the pane's fixed part, not the body: measured again.
@@ -2930,9 +2963,17 @@ def chat_height_views(run: Run, browser) -> None:
                             f"{where}, composer folded: the page scrolls {folded['overflow']} px past the window"
                         )
                         unfolded = page.evaluate(CHAT_MEASURE)
-                        assert unfolded["history"]["height"] >= 56 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
+                        assert unfolded["history"]["height"] >= 8 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
                             f"{where}, composer folded and shown again: {unfolded}"
                         )
+                        if fits and not banner:
+                            assert unfolded["history"]["height"] >= 56, (
+                                f"{where}, composer folded and shown again: history {unfolded['history']['height']:.0f}"
+                            )
+                        if not banner:
+                            assert unfolded["compose"]["bottom"] <= unfolded["vh"] + 0.5, (
+                                f"{where}, composer folded and shown again: past the window: {unfolded}"
+                            )
                     # What grows inside the pane after it was fitted: the composer three times its
                     # rows (a wide screen), a group's "Manage or leave" opened.
                     grown = []
@@ -2952,7 +2993,8 @@ def chat_height_views(run: Run, browser) -> None:
                         page.wait_for_timeout(300)
                         back = page.evaluate(CHAT_MEASURE)
                         what = ", ".join(n for n, _ in grown)
-                        assert g["history"]["height"] >= 56 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
+                        # Grown chrome can exceed the window; composer must stay above the product line.
+                        assert g["history"]["height"] >= 8 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
                         # And back: the pane shrinks again by itself, as a fresh fit (a window resize) would size it.
                         page.evaluate("() => window.dispatchEvent(new Event('resize'))")
                         page.wait_for_timeout(300)
@@ -2971,7 +3013,11 @@ def chat_height_views(run: Run, browser) -> None:
             m = page.evaluate(CHAT_MEASURE)
             where = f"Chats with the sign-in banner, agt-a then cnv-0007, at {width}x{height}"
             assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
-            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            # Banner stays for this switch: on a phone the group pane's chrome can leave
+            # less than the preferred history floor while the composer stays above the product line.
+            assert m["history"]["height"] >= 8 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            if fits and width >= 1280:
+                assert m["history"]["height"] >= 56, f"{where}: history {m['history']['height']:.0f} (preferred floor)"
             page.evaluate("() => window.dispatchEvent(new Event('resize'))")
             page.wait_for_timeout(300)
             fresh = page.evaluate(CHAT_MEASURE)
