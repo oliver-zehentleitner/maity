@@ -928,8 +928,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = ohGet;
   // An answer that comes back after its inbox was left draws nothing and keeps the selection of the inbox that
   // stands (web roll-up 3, nte-m2sa9prk3d48). The answer is held and comes back as the request answered; nothing
-  // is written to the fixture. The control: no answer comes while the next inbox stands.
-  for (const anLate of [true, false]) {
+  // is written to the fixture. The control: no answer comes while the next inbox stands. The control runs first
+  // (#1574 review): on main a late answer leaves the inbox's module state changed (the request it answered loses its
+  // buttons, the selection moves), which is the fault itself, so a round after it would not start clean there.
+  for (const anLate of [false, true]) {
     const anPost = win.Maity.api.post, anGet = win.Maity.api.get;
     let anFree = null;
     win.Maity.api.post = (p, b) => (/\/answer$/.test(p)
@@ -937,8 +939,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       : anPost(p, b));
     await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
     if (byId("inbox-project") && byId("inbox-project").value) { byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick(); }
+    // Each round selects the request itself, the first with an answer button, so what the round before left
+    // current decides nothing ("Edit" opens the proposal's editor and answers nothing).
+    const anButton = (li) => li.querySelectorAll("button").slice(1).find((b) => !["Later", "Talk", "Send", "Withdraw", "Edit"].includes(b.textContent) && !b.disabled);
+    const anTarget = main.querySelectorAll("li.entry").find((li) => anButton(li));
+    if (anTarget && !anTarget.className.split(" ").includes("current")) { anTarget.querySelector(".entry-head").click(); for (let k = 0; k < 2; k++) await tick(); }
     const anCur = main.querySelector("li.entry.current");
-    const anReply = anCur && anCur.querySelectorAll("button").slice(1).find((b) => !["Later", "Talk", "Send", "Withdraw"].includes(b.textContent) && !b.disabled);
+    const anReply = anCur && anCur.getAttribute("data-request") === (anTarget && anTarget.getAttribute("data-request")) && anButton(anCur);
     if (anReply) { anReply.click(); for (let k = 0; k < 2; k++) await tick(); }
     const anHeld = !!anFree;
     await go("#/maintainer/maity/settings"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
@@ -954,7 +961,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(anHeld && anEntries.length >= 2 && anAfter === anId,
       "inbox: " + (anLate ? "an answer coming back after its inbox was left" : "no answer after its inbox was left")
       + " keeps the open inbox's selection " + JSON.stringify([anHeld, anEntries.length, anId, anAfter]));
-    if (!anLate && anFree) { anFree(); for (let k = 0; k < 8; k++) await tick(); }
+    // The control's answer never comes back: released after it, it would be a late answer itself, and on main put
+    // the inbox into the fault before the round that tests it.
     win.Maity.api.post = anPost;
   }
   // A project joined elsewhere, brought by /me on the counts round, draws the inbox again when it follows the
@@ -8052,6 +8060,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-0001", "jfs-0002"]) && text(jfItem("jfs-0001")).includes("Weekly on Monday at 09:00 (Europe/Vienna)")
       && text(jfItem("jfs-0001")).includes("on schedule") && text(jfItem("jfs-0002")).includes("paused") && text(jfItem("jfs-0002")).includes("My agents: how the queue feels")
       && !jfForm() && btn(main, "New series"), "jour fixe: the settings list the series with their topic, circle, state and schedule; no form until one is asked for");
+    // A new series proposes the reader's zone (web roll-up 3, #1574 review): the account's when one is set, the
+    // browser's while none is; each form opened afresh, closed with Cancel.
+    const jfZones = [];
+    for (const account of [null, "Asia/Tokyo"]) {
+      win.Maity.i18n.setZone(account);
+      btn(main, "New series").click(); await tick();
+      jfZones.push(byId("jfs-timezone").value);
+      btn(jfForm(), "Cancel").click(); await tick();
+    }
+    win.Maity.i18n.setZone(null);
+    const jfBrowser = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    expect(JSON.stringify(jfZones) === JSON.stringify([jfBrowser, "Asia/Tokyo"]) && jfBrowser !== "Asia/Tokyo" && !jfForm(),
+      "jour fixe: a new series proposes the account's time zone, the browser's while none is set " + JSON.stringify([jfZones, jfBrowser]));
     btn(main, "New series").click(); await tick();
     expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden
       && byId("jfs-enabled").parentNode.querySelector("label") && text(byId("jfs-enabled").parentNode.querySelector("label")) === " Activated"
