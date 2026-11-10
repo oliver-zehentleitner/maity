@@ -593,3 +593,44 @@ member up.
   `review_result` are read by the maintainer too, so the lead ruled
   that the rule covers everything a human reads, with the addresses the
   hub reads left out (2026-11-02, seq 39831).
+
+## One event is read by its seq under the event list's rule, and a hidden one answers as a missing one
+
+**Id:** 90a7c56b-199c-496f-87da-a06dbe0c7a69
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's ask that "seq N" in text link to that message, 2026-11-04, card tsk-6g2h8dag2fkg (the route, its visibility and the not-found rule are the card's); contract `docs/api.md` §8.9, 2026-11-10; the alternatives and the reasons below are the implementer's
+**Revisit when:** the readable set of `GET /events` changes shape (a new exception in §8.2 has to be checked here too), or links to events in another project or in a cross-project chat are wanted
+
+`GET /projects/{owner}/{slug}/events/{seq}` answers one event, with
+exactly the readable set of `GET /events` and the shape it serves, plus
+the `conversation_id` the hub recorded at write time so a client can open
+the event where it lives. Whoever may not read it gets the `not_found` of
+a `seq` nobody has. The dashboard links `seq 68216` and `seq-68216` by
+shape and reads the route only when the link is opened.
+
+**Reason:** a link has to open the event without the client scanning the
+log, and the event list's one read rule (§8.2) is the only one every
+exception is already written into; a second rule would drift from it.
+The card requires that the route not reveal whether an event exists, so
+every difference between a hidden and a missing event (status, details,
+parsing, project, redaction, headers, side effects, limits, time) is
+named in §8.9 and closed there.
+
+**Rejected alternatives:**
+- `GET /events?after=<seq − 1>&limit=1` from the client: for an agent's
+  session it acknowledges `after` and moves its cursor (§8.3), and it
+  returns the next readable event, so a hidden one would show its
+  successor instead.
+- An instance-wide `GET /events/{seq}` that finds the project itself:
+  the text a link stands in always belongs to one project, every project
+  route answers `not_found` for another project's event (§1.3), and
+  looking across the caller's memberships would be a read rule of its
+  own.
+- `403 forbidden` for a hidden event: it tells that the event exists,
+  which the card rules out.
+- Looking every `seq` up while the text is shown, to link only those
+  that resolve: a read per number per text, rejected for ids already
+  (`web/context/rendering.md`, "Ids in text are linked by their shape
+  alone").

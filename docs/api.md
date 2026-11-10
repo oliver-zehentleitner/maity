@@ -12555,6 +12555,111 @@ shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
 
+### 8.9 Reading one event by its seq
+
+```
+GET /projects/{owner}/{slug}/events/{seq}
+```
+
+Scope `project:read`, cookie sessions included: the callers of
+`GET /events` (§8.3), with the same `Maity-For` rule (§2.3). It answers
+one event, the one with that `seq`, so that a text which says "seq
+68216" can open what it names (the dashboard's rule is below) without
+scanning the log. Not built yet (tsk-6g2h8dag2fkg); the hub follows in
+its own pull request.
+
+**Who sees what.** Exactly the readable set of `GET /events` with
+`wait=0` (§8.2, "Readable"), judged at the read, and nothing besides:
+the event is answered when `GET /events?after=<seq − 1>` would serve
+it to the same caller at the same moment, and in no other case. That
+includes every exception §8.2 makes — a conversation's events only to
+those their audience names and to the owner a group chat's event names
+(§9.2), never to the see-all; a `cross_chat_mention` and a
+`chat_unread` only to the agent they name; a `restricted_changed` only
+to a member on its private list who is in the restricted-access set now
+(§6.4); an event in one of the reader's isolation windows to nothing of
+the reader (§6.2); a `ticker` `decision` item, and its `event_redacted`,
+not to a reader who may not read its request (§17.5); another member's
+`ticker_subscription_changed` not to an admin agent or a proxy. An
+isolated agent's credential is `forbidden` (`isolated`) here as on every
+route of its project (§6.2). Nothing is readable through this route
+that `GET /events` does not serve, and nothing `GET /events` serves is
+withheld here.
+
+**The answer.** `200` with the event as `GET /events` serves it to this
+caller (§8.1, §8.3): the same shape, a `ticker` event shaped per reader
+(§17.5), a redacted event as its tombstone, with `reason` as §8.5 gives
+it to this reader. One field is added: `conversation_id`, the
+conversation the hub recorded for the event when it was written, `null`
+for an event that is not a conversation's. It survives a redaction, as
+that record does (§8.8), so a client can still open a redacted chat
+message where it stood; it is read only by those who read the event,
+which for a conversation's event are the chat's own readers (above).
+Where an event lives is then: its conversation when `conversation_id` is
+set, else its `subject` (a card, a request), else the project's
+messages (§8.8) or its event log.
+
+```json
+{ "seq": 68216, "kind": "message", "at": "2026-11-04T09:12:40Z",
+  "actor": { "member_id": "agt-b", "instance": "wqe2", … },
+  "subject": { "type": "task", "id": "tsk-0004" }, "audience": ["all"],
+  "payload": { "type": "notice", "to": "all", "body": "…", … },
+  "redacted": false, "conversation_id": null }
+```
+
+**A hidden event answers as a missing one.** A caller who may not read
+the event gets `404 not_found`, exactly the answer for a `seq` that no
+event has, so the route never tells whether the event exists. Every way
+the two could be told apart, and how each is closed:
+
+- The status and the error: `404`, `code: "not_found"`, `details: {}`
+  and one fixed `message` for both, never naming the `seq`'s kind,
+  project, audience or redaction.
+- The `seq` itself: parsed from the path alone before anything is read
+  — ASCII digits, at most 2⁶³ − 1, else `invalid` with
+  `details.fields.seq: "not_a_seq"`. `0`, a `seq` beyond the head and a
+  gap are `not_found` like any other number nobody may read.
+- Another project: an event of another project is `not_found` here,
+  whether or not the caller is a member there (§1.3); a caller who is no
+  member of `{owner}/{slug}` gets `not_found` for every `seq`, an owner
+  reading along in a group chat (§9.2) included, as on `GET /events`.
+- A redaction: a redacted event the caller could read is its tombstone
+  (`200`); one it could not read is `not_found`, as before the
+  redaction. A tombstone never widens who reads the event (§8.5).
+- Headers: neither answer carries an `ETag`, `Last-Modified` or a
+  cache header that depends on the event; both are `Cache-Control:
+  no-store`, as every API response (§1.1).
+- Side effects: reading acknowledges nothing, moves no event cursor,
+  sets no `delivered_at`, wakes nobody and writes no event or audit row;
+  like every call it is presence (§2.4). Nobody can learn from the
+  project's state that someone looked a `seq` up.
+- Limits: both answers count alike against any rate limit (§1.7).
+- Time: the hub reads the row by project and `seq` and judges it with
+  the one read rule of `GET /events` in the same pass; a hidden event is
+  not loaded further than a missing one is looked for. The contract does
+  not promise constant time; the difference is the in-process check.
+
+What the route does not hide is what the log already shows: `seq` is
+one instance-wide sequence, so a reader may infer from a gap that some
+event has a number (§8.2). The route adds nothing to that.
+
+**The dashboard's links.** Wherever the dashboard links ids in text
+(messages, notes, cards, requests, the rule of `web/js/ids.js`), it also
+links two forms of an event's number: `seq 68216` (lowercase `seq`, one
+space) and `seq-68216` (one hyphen), the number 1 to 19 digits without a
+leading zero and at most 2⁶³ − 1, not part of a longer word or number,
+not inside a path, a URL or a query (`?seq=68216` stays text). `#…`
+stays a pull request or issue number (§6.13) and is never read as a
+`seq`. Code stays plain, as for ids. A text with no project of its own
+links no `seq` — a cross-project group chat, whose `seq` is the chat's
+own counter (§9.5), a chat read along from outside, `/observe` — since
+there is no project to read it in. Linked by shape alone: nothing is
+looked up while the text is shown. Opened, the link reads this route in
+the text's project and shows the event where it lives (above) —
+the chat, the thread or the card — scrolled to and highlighted; a `404`
+shows "not visible", the same for an event the reader may not see and
+one that does not exist.
+
 ## 9. Conversations
 
 Two kinds in one family. The **direct** conversation is a human's
@@ -14473,6 +14578,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/requests/{id}/withdraw` | asker / `requests:answer`; a cross-owner `reports_to` request also the two owners (a non-member under `/requests/{id}/withdraw`), of the agents only the asker | 7 |
 | GET, POST | `/projects/{owner}/{slug}/events` | `project:read` / `events:post` | 8 |
 | GET | `/projects/{owner}/{slug}/messages` | `project:read` | 8.8 |
+| GET | `/projects/{owner}/{slug}/events/{seq}` | `project:read`; exactly the readable set of `GET /events`, a hidden event `not_found` as a missing one | 8.9 |
 | POST | `/projects/{owner}/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
 | GET | `/projects/{owner}/{slug}/conversations` | human / agent | 9.3 |
 | POST | `/projects/{owner}/{slug}/conversations` | human | 9.2 |
