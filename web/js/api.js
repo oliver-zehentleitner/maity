@@ -914,7 +914,8 @@ window.Maity = window.Maity || {};
     // The header holds at most four links: only an enabled section with a label is one (§16.7).
     let labelled = 0;
     sections.forEach((s, i) => {
-      if (s && s.enabled === true && s.nav_label) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
+      // A label of blanks counts for nothing; it is refused below, as the hub does (landing.py).
+      if (s && s.enabled === true && typeof s.nav_label === "string" && s.nav_label.trim()) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
     });
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
@@ -922,7 +923,13 @@ window.Maity = window.Maity || {};
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
-      if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
+      // A label sent is 1–24 characters once trimmed: one of blanks is refused, not taken as no label (the hub's
+      // text rule, landing.py _text; web roll-up 3, nte-m2e51amspdtr 2).
+      if (s.nav_label !== undefined && s.nav_label !== null) {
+        const label = typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label;
+        if (label === "") errors[sp + ".nav_label"] = "invalid";
+        else landingText(label, sp + ".nav_label", 24, false, errors);
+      }
       if (s.type !== "hero" && known.includes("eyebrow")) landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
