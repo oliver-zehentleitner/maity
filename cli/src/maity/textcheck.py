@@ -30,8 +30,17 @@ _FILE_LINE = re.compile(
 _UUID_AT = re.compile(
     r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})(?![0-9A-Za-z])"
 )
+# A hyphenated id that is not 8-4-4-4-12. The last group may be 1–11 hex digits, so a cut
+# of five to eleven characters is refused too; a full last group of twelve is `_UUID_AT`.
 _UUID_SHORT = re.compile(
-    r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{1,4}){1,4})(?![0-9A-Za-z-])"
+    r"(?<![0-9A-Za-z])("
+    r"[0-9a-fA-F]{8}"
+    r"(?:"
+    r"(?:-[0-9a-fA-F]{1,4}){3}-[0-9a-fA-F]{1,11}"
+    r"|"
+    r"(?:-[0-9a-fA-F]{1,4}){1,3}"
+    r")"
+    r")(?![0-9A-Za-z-])"
 )
 _TEST_NAME = re.compile(r"test_[A-Za-z0-9_]+")
 # Form 3: lowercase hex as a word bounded by anything but letters, digits, `_` and `-`.
@@ -200,9 +209,13 @@ class _Repo:
         return found.returncode == 0
 
     def has_test(self, name: str) -> bool:
-        """`def name(` at the head, so a longer test that only begins with `name` does not count."""
-        needle = f"def {name}("
-        found = self._git("grep", "-q", "-F", "-e", needle, self.revs[0], "--")
+        """A definition at the head: after indentation, `def` or `async def`, the name,
+        optional whitespace and `(`. A comment line is not one, a space before `(` is,
+        and a longer name does not count as this one."""
+        if _TEST_NAME.fullmatch(name) is None:
+            return False
+        pattern = f"^[ \t]*(async[ \t]+)?def[ \t]+{name}[ \t]*\\("
+        found = self._git("grep", "-q", "-E", "-e", pattern, self.revs[0], "--")
         return found.returncode == 0
 
     def flat_text(self, rev: str, path: str) -> tuple[str, ...]:
@@ -262,13 +275,15 @@ def _name(repo: _Repo, span: str) -> str | None:
     cores = _CORE.findall(span)
     if not cores:
         return None
-    core = max(cores, key=len)
-    if _TEST_NAME.fullmatch(core):
-        # A test is `def name(` at the head. Text that only contains the name, or a longer
-        # test that begins with it, is not that test. No fallback to the default branch.
-        if repo.has_test(core):
+    # `test_real[longer-parameter-than-test]` has two cores; the parameter can be the
+    # longer one. A core that is a test name is what gets checked.
+    tests = [core for core in cores if _TEST_NAME.fullmatch(core)]
+    if tests:
+        name = max(tests, key=len)
+        if repo.has_test(name):
             return None
         return "not a test"
+    core = max(cores, key=len)
     if repo.has_text(core) or repo.has_file_name(core):
         return None
     parts = [part for part in core.split(".") if len(part) >= 3]

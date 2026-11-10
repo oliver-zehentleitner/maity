@@ -901,9 +901,9 @@ Three holes in the text check, on top of the decision this follows.
 
 A contrast ratio is not a file and a line. `5.60:1` and `4.5:1` matched the file-and-line form because the part before the colon was digits and a dot, which the form took as a name and an extension. They are skipped. `3:1` has no extension, so it was never that form, and it stays that way.
 
-A Keep-the-Why id is the full UUID, eight hex digits, three groups of four and a group of twelve. It has to stand in a file at the head, the same characters; the case of the hex digits does not matter. One that shares the first eight with a real id and differs after them is refused. A hyphenated shorter form is refused too, including when an id at the head starts with it. Eight hex digits and no hyphen stay an object hash, as before, so a short commit is still a commit.
+A Keep-the-Why id is the full UUID, eight hex digits, three groups of four and a group of twelve. It has to stand in a file at the head, the same characters; the case of the hex digits does not matter. One that shares the first eight with a real id and differs after them is refused. A hyphenated shorter form is refused too, including one that stops before the last group and one whose last group has one to eleven hex digits, and including when an id at the head starts with it. Eight hex digits and no hyphen stay an object hash, as before, so a short commit is still a commit.
 
-A name in a code span that is a test (`test_` and then only letters, digits and `_`) has to be a test at the head: a file holds `def`, the name and `(`. A longer test that only begins with the name does not count, and neither does the name in a comment. There is no fallback to the default branch for it. Other names stay a text search, at the head or the default branch.
+A name in a code span that is a test (`test_` and then only letters, digits and `_`) has to be that test at the head. The definition is a line whose first token, after indentation, is `def` or `async def`, then the name, optional whitespace and `(`. A space before `(` counts; a `def` in a comment does not, and a longer name that only begins with it does not. In `test_real[longer-parameter-than-test]` the test name is the core that is checked, not the longer parameter. There is no fallback to the default branch. Other names stay a text search, at the head or the default branch.
 
 **Reason:** on main `126b030c` the check reported `5.60:1` and `4.5:1` as paths that are not files, and it accepted a fabricated UUID that shared the first eight hex digits of an id in `web/context/rendering.md`, and a hyphenated prefix of that id. It also accepted `test_names_that_stand`, which is not a test: the string occurs inside `test_names_that_stand_at_the_head_pass`. The card says the same acceptance of a fabricated id happened in a review of #1525.
 
@@ -912,6 +912,7 @@ A name in a code span that is a test (`test_` and then only letters, digits and 
 - Leaving every UUID skipped: a fabricated id then passes, which is what the card says happened in that review.
 - Treating eight hex digits with no hyphen as a Keep-the-Why prefix and refusing it: that is also a short object hash, and a real commit prefix would be refused.
 - Searching for a test name as text: `test_real` is then found inside `test_real_widget`.
+- Matching the fixed string `def name(`: a comment that contains those characters counts as a test, and a space before `(` does not.
 
 ## A quote in a review's text is checked only where the text ties it to one file
 

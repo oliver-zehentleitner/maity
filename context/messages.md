@@ -465,8 +465,10 @@ the clone, bounded so that the groups of a UUID do not count (both
 found in review of #1224, the lead's ruling). A later decision
 (cli/context/commands.md, "A Keep-the-Why id in a review is the whole
 UUID, and a cited test is a test") no longer skips a UUID: it has to be
-the full id at the head. The same decision requires a cited test name
-to be that test at the head, and does not read a ratio such as
+the full id at the head, and a shorter hyphenated form is refused,
+including a last group cut short of twelve hex digits. The same decision
+requires a cited test name to be a `def` or `async def` of that name at
+the head (a comment does not count), and does not read a ratio such as
 `5.60:1` as a file and line. A path in a code span that is no
 file still passes as text in a file, so that routes and parts of URLs
 are not refused, and a hash needs a digit, so that English words made

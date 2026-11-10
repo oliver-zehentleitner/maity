@@ -11636,9 +11636,12 @@ is not there is not sent:
    part of the core between dots that has three characters or more is
    (`_Facts.key`, `public_page.body`). A span without such a core is
    skipped. A core that is a test name (`test_` and then only letters,
-   digits and `_`) is a test at `head` and only there: a file holds
-   `def`, that name and `(`. A longer name that merely begins with it,
-   or the same characters in a comment, does not count, and the default
+   digits and `_`) is a test at `head` and only there. In a span such as
+   `test_real[longer-parameter-than-test]` the test name is that core,
+   not the longer parameter. A test is a line whose first token, after
+   indentation, is `def` or `async def`, then the name, optional
+   whitespace and `(`. A longer name that merely begins with it does not
+   count, and a `def` that sits in a comment does not count. The default
    branch is no fallback for it. Any other path or name counts as there
    when it stands at `head` or
    at the tip of the clone's default branch (`origin/HEAD`), so that a
@@ -11693,7 +11696,9 @@ id. The full form, eight hex digits, three groups of four and a group
 of twelve, stands in a file at `head`; the case of the hex digits does
 not matter, and sharing the first eight with an id that does stand
 there does not. A hyphenated form shorter than that is refused,
-including when an id at the head starts with it. Eight hex digits and
+including one that stops before the last group and one whose last group
+has one to eleven hex digits, and including when an id at the head
+starts with it. Eight hex digits and
 no hyphen stay an object (form 3).
 
 Not checked: a fenced code block; everything under a heading `Ran` up

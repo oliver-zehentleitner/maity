@@ -166,6 +166,39 @@ def test_a_cited_test_name_is_a_test_at_the_head(clone: Path) -> None:
     assert missing == ["body: `test_no_such_widget`: not a test at the head"], missing
 
 
+def test_a_spaced_or_async_definition_counts_and_a_commented_one_does_not(clone: Path) -> None:
+    head = _commit(
+        {
+            **FILES,
+            "pkg/tests/test_widget.py": (
+                "def test_space ():\n    return 1\n"
+                "async def test_async():\n    return 1\n"
+                "# def test_commented():\n    return 1\n"
+            ),
+        }
+    )
+    assert textcheck.check(clone, head, "`test_space` covers it.").bad == []
+    assert textcheck.check(clone, head, "`test_async` covers it.").bad == []
+    commented = textcheck.check(clone, head, "`test_commented` covers it.").bad
+    assert commented == ["body: `test_commented`: not a test at the head"], commented
+
+
+def test_a_parametrized_name_uses_the_test_not_the_longer_parameter(clone: Path) -> None:
+    head = _commit({**FILES, "pkg/tests/test_widget.py": "def test_real():\n    return 1\n"})
+    assert (
+        textcheck.check(clone, head, "`test_real[longer-parameter-than-test]` covers it.").bad == []
+    )
+
+
+@pytest.mark.parametrize("tail", ["01234", "01234567", "0123456789a"])
+def test_a_truncated_last_group_is_not_a_full_id(clone: Path, tail: str) -> None:
+    assert len(tail) in (5, 8, 11)
+    short = f"c0ffee00-1234-4abc-8def-{tail}"
+    head = _commit({**FILES, "context/sample.md": f"**Id:** {KTW_ID}\n"})
+    found = textcheck.check(clone, head, f"See `{short}`.").bad
+    assert found == [f"body: {short}: not a full id"], found
+
+
 def test_a_hex_word_needs_a_digit_to_be_a_hash(clone: Path) -> None:
     assert bad(clone, "the page was defaced, then acceded") == []
 
