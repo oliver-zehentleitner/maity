@@ -387,3 +387,37 @@ def test_a_tag_named_like_the_branch_does_not_change_whose_key_is_set(clone: Pat
     assert git(clone, "config", "branch.work.merge") == "refs/heads/work"
     assert git(clone, "config", "branch.heads/work.merge") == "refs/heads/main"
     assert gitfacts.collect(clone).branch == "work"
+
+
+def test_a_remote_branch_whose_name_only_ends_in_the_branch_is_not_the_branch(
+    clone: Path,
+) -> None:
+    """`ls-remote` takes `refs/heads/work` as a suffix and also lists
+    `refs/heads/x/refs/heads/work`; that branch is not work, for the retrack or the facts."""
+    _track_main(clone, set_head=True)
+    git(clone, "push", "--quiet", "origin", "work:refs/heads/x/refs/heads/work")
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    assert git(clone, "ls-remote", "--heads", "--", "origin", "refs/heads/work")  # the suffix
+    done = gitfacts.track_own_branch(clone)
+    assert done.note is None and done.problem is not None and "has no branch work" in done.problem
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+    git(clone, "config", "branch.work.merge", "refs/heads/work")
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch == "work" and facts.remote_head is None
+    assert any("does not exist" in p for p in gitfacts.mismatches(facts))
+
+
+@posix
+def test_the_upstream_is_checked_before_the_retrack_asks_the_remote(clone: Path) -> None:
+    """A second URL naming a helper: `ls-remote` would use the first, valid one and the retrack
+    would go through; the check refuses before any question to the remote, nothing is set."""
+    _track_main(clone, set_head=True)
+    marker = clone.parent / "ran"
+    helper = "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS)
+    git(clone, "config", "--add", "remote.origin.url", helper)
+    before = git(clone, "config", "--list", "--local")
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.track_own_branch(clone)
+    assert git(clone, "config", "--list", "--local") == before
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/main"
+    assert not marker.exists()

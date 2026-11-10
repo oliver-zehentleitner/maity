@@ -230,6 +230,17 @@ def _branch(cwd: Path) -> str | None:
     return ref.removeprefix("refs/heads/")
 
 
+def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
+    """The commit the remote's `ref` points at, None when it has no such ref. `ls-remote` takes
+    the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
+    a line naming exactly `ref` counts."""
+    for line in _git_required(cwd, "ls-remote", "--heads", "--", remote, ref).splitlines():
+        sha, _, name = line.partition("\t")
+        if name == ref:
+            return sha
+    return None
+
+
 @dataclass(frozen=True)
 class Retrack:
     """What `track_own_branch` did: `note` when it set the upstream, `problem` when the branch
@@ -258,7 +269,7 @@ def track_own_branch(cwd: Path) -> Retrack:
         return Retrack()
     own = f"refs/heads/{branch}"
     shown = without_userinfo(remote)
-    if not _git_required(cwd, "ls-remote", "--heads", "--", remote, own):
+    if _remote_head(cwd, remote, own) is None:
         return Retrack(
             problem=f"branch {branch} tracks {shown}/{tracked}, the default branch, and "
             f"{shown} has no branch {branch}; push it with `git push -u {shown} {branch}`"
@@ -287,10 +298,7 @@ def collect(cwd: Path) -> Facts:
         if remote and merge_ref:
             _check_upstream(cwd, branch, remote, merge_ref)
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            listing = _git_required(
-                cwd, "ls-remote", "--heads", "--", remote, merge_ref
-            ).splitlines()
-            remote_head = listing[0].split()[0] if listing else None
+            remote_head = _remote_head(cwd, remote, merge_ref)
 
     unknown = _forge_unknown(cwd, remote)
     pr = forge_error = None
