@@ -3444,6 +3444,7 @@ window.MAITY_I18N["en"] = {
   "picture.uploaded": "Picture uploaded.",
   "picture.uploading": "Uploading {name}'s picture…",
   "picture.uploading_own": "Uploading your picture…",
+  "pin.column": "Show the pin buttons",
   "pin.mark": "pinned",
   "pin.not_pinned": "Not pinned: {reason}",
   "pin.not_unpinned": "Not unpinned: {reason}",
