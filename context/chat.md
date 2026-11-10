@@ -465,8 +465,8 @@ exactly that and keep the activity order inside each.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-0km9ys53dynd; contract `docs/api.md` §9.3
-**Revisit when:** a conversation's unread count or the header's chat badge no longer shows a new message
+**Source:** card tsk-0km9ys53dynd, request req-cch3p5aszxpy (the maintainer chose option o1 on 2026-11-05; the four bands match it exactly); contract `docs/api.md` §9.3
+**Revisit when:** a human participant's unread count or the header's chat badge no longer shows a new message that participant has not read
 **See:** chat.md#a-human-pins-chats-a-pin-keeps-a-chat-on-top-only-while-nothing-newer-waits-elsewhere — d39e2f76-8cfd-4d23-9408-5c03bf39c014 — as of 2026-11-10
 **See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-11-10
 
@@ -477,16 +477,18 @@ cursor follows that order. The pin stays the human's own, stored by the
 hub so it holds across devices, emits no event, and is limited to 20.
 
 **Reason:** a pinned chat stays on top of the list, including when it is
-quiet. A new message does not have to rise above those quiet pins to be
-noticed: it stays visible through the conversation's unread count and
-the header's chat badge.
+quiet. A new message a human participant has not read does not have to
+rise above those quiet pins to be noticed: it stays visible through that
+conversation's unread count and the header's chat badge. An observer's
+unread is null and adds nothing to the badge.
 
 **Rejected alternatives:**
 - The previous order (pinned with unread, then unpinned with unread,
   then quiet pins, then the rest): a quiet pin sat below every chat with
-  something new, so a pin did not keep its chat on top. The unread count
-  and the header's chat badge already show a new message, so the list
-  no longer lifts that chat above a quiet pin.
+  something new, so a pin did not keep its chat on top. For a human
+  participant, the unread count and the header's chat badge already show
+  a new message, so the list no longer lifts that chat above a quiet pin.
+  An observer's unread is null and adds nothing to either.
 
 ## A human switches the meat-proxy mode per chat; the profile gives the default
 
