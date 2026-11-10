@@ -14,14 +14,14 @@ from typing import Any
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
-from maity_hub import avatars, catalog, clock, events, inbox, namespace
+from maity_hub import avatars, catalog, clock, events, inbox, invitations, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
 from maity_hub.views import deleted, deleted_person
 
 WINDOW = timedelta(days=30)
-KINDS = ("inbox", "chat", "mention", "security")
+KINDS = ("inbox", "chat", "mention", "security", "invitation")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (
@@ -671,6 +671,14 @@ def _from_records(
     return _record_items(conn, where, now, conn.execute(_record_rows(where, now, types)).all())
 
 
+def _personal_kind(request: Any) -> str:
+    """The kind of a personal request's item (§18.1): `invitation` for the consent request
+    an invitation by handle files (§3.4), so that its bell, push and mail follow that kind's
+    settings (§18.4); `inbox` for every other."""
+    proposal = request.proposal if isinstance(request.proposal, dict) else {}
+    return "invitation" if proposal.get("kind") == invitations.KIND else "inbox"
+
+
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:
     """The items of these account records (§18.1)."""
     waiting = _waiting_registrations(conn, rows)
@@ -717,7 +725,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
             )
             items.append(
                 Item(
-                    kind="inbox",
+                    kind=_personal_kind(request),
                     at=row.at,
                     record=row.n,
                     project_id=request.project_id,
