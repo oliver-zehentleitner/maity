@@ -165,7 +165,8 @@ log showed pool timeouts at a low request rate, with no lock wait found on these
 The stamp's project heads count every event kind that can make an item, and `message` is one
 of them. So every message agents send each other moved the stamp of every human in the
 project, and each such move derived the whole answer again (about 70 statements) although the
-held call answers only on an item past `after`. When the stamp moved in its heads alone (the
+held call answers only on an item past `after` or a changed `sessions_rev` (a session's record,
+§18.2). When the stamp moved in its heads alone (the
 same memberships, account records and read marks), the held long-poll now first reads one
 statement over the rows of each moved project between the seen head and the new one, with
 `items.derive_page`'s own superset filters: a request's event only where its request may
