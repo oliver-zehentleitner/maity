@@ -716,7 +716,7 @@ window.Maity = window.Maity || {};
     };
     // shown(cards), where given, is called once the four open groups have answered, with their cards,
     // before the closed group's pages (tsk-a5pxwgkgr73e): on the maintainer's project that group was
-    // 783 cards in four pages one after the other, so it held the first draw by seconds.
+    // 783 cards in four pages one after the other, about 0.9 s after the other groups had answered.
     const readList = async (shown) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
       const groups = listPaths.map((path) => M.api.getAll(path));
@@ -807,6 +807,7 @@ window.Maity = window.Maity || {};
       boardItems = fresh;
       closedPending = false;
       closedError = null;
+      sayClosed();
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
@@ -976,15 +977,40 @@ window.Maity = window.Maity || {};
       },
       h("h3", { class: "column-head" }, label, closedWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
       closedWaiting(s) && !cards.length
-        ? (closedError
-          ? h("p", { class: "send-status failed closed-read" }, M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
-          : h("p", { class: "muted closed-read", role: "status" }, M.t("board.closed.loading")))
+        ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
         : cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+      if (closedWaiting(s) && !closedError) col.setAttribute("aria-busy", "true");
       return col;
     }
 
     // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
     const closedWaiting = (s) => (closedPending || !!closedError) && !hubResults && (s === "done" || s === "cancelled");
+    const closedWords = () => (closedError
+      ? M.t("board.closed.failed", { reason: closedError.message || String(closedError) }) : M.t("board.closed.loading"));
+    // What the closed read is doing, said once for a screen reader: the columns are drawn anew, so
+    // the live region stands outside them and keeps its place from pending to done or failed.
+    const closedStatus = h("p", { class: "visually-hidden", role: "status", "aria-live": "polite" });
+    const sayClosed = () => { closedStatus.textContent = closedPending || closedError ? closedWords() : ""; };
+    // The focused element in the columns, so that the next draw can find it again: its data-focus
+    // key, or its card and its place among that card's controls and links (a card's title link has
+    // no key). Returns what puts the focus back after the draw, or null when it was elsewhere.
+    const FOCUSABLE = "a, button, select, input, textarea";
+    function focusSpot() {
+      const at = document.activeElement;
+      if (!at || !columnsBox.contains(at)) return null;
+      const key = at.getAttribute("data-focus");
+      let article = at;
+      while (article && article !== columnsBox && !(article.tagName === "ARTICLE" && article.getAttribute("data-card"))) article = article.parentNode;
+      const id = article && article !== columnsBox ? article.getAttribute("data-card") : null;
+      const place = id ? Array.from(article.querySelectorAll(FOCUSABLE)).indexOf(at) : -1;
+      return () => {
+        if (key) { refocus(key); if (columnsBox.contains(document.activeElement)) return; }
+        const again = id ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === id) : null;
+        const target = again && place >= 0 ? Array.from(again.querySelectorAll(FOCUSABLE))[place] : null;
+        if (target) target.focus();
+        else status.el.focus();
+      };
+    }
 
     let byId = {};
     // The opened card's panel (js/card-panel.js), beside or above the columns.
@@ -1048,7 +1074,8 @@ window.Maity = window.Maity || {};
       clear(intro);
       if (!items.length && !searchInput.value && !closedPending && !closedError) {
         append(intro, h("p", { class: "first-hint" }, M.t("board.empty")));
-      } else if (!visible.length) {
+      } else if (!visible.length && !(closedWaiting("done") && inGroup(filter.column, "done"))) {
+        // No verdict while the closed cards the filter would show are still unknown.
         append(intro, h("p", { class: "muted" }, M.t("board.no_match")));
       }
       append(clear(columnsBox),
@@ -1192,31 +1219,37 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-area" }, M.t("board.filter.area")), areaSel,
         h("label", { for: "board-needs" }, M.t("cards.new.field.needs")), needsFilter,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
-      searchStatus, formBox, status.el, intro, wantedNote, boardBody);
+      searchStatus, formBox, status.el, intro, wantedNote, closedStatus, boardBody);
+    sayClosed();
     let markedCard = draw();
     // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
-    // search filters it too), the focus kept on the control that had it. A board left from a closed
-    // card finds that card only now, and its title takes the focus if nothing else took it meanwhile.
-    // A reload drawn meanwhile supersedes it.
+    // search filters it too; a hub search keeps its own results), and the focus put back on the
+    // element in the columns that had it (focusSpot), after a failed read too. A board left from a
+    // closed card finds that card only now, and its title takes the focus if nothing else took it
+    // meanwhile. A reload drawn meanwhile supersedes it.
     const markedFirst = !!markedCard;
     firstRead.then((all) => {
       if (!apply(1)) return;
       const at = document.activeElement;
-      const key = at && columnsBox.contains(at) ? at.getAttribute("data-focus") : null;
+      const back = focusSpot();
       boardItems = all;
       closedPending = false;
+      sayClosed();
       if (!hubResults) items = boardItems;
       const found = draw();
-      if (key) refocus(key);
+      if (back) back();
       else if (found && !markedFirst && returning && (!at || at === document.body)) {
         const title = found.querySelector("a.card-open");
         window.setTimeout(() => (title || found).focus(), 0);
       }
     }, (err) => {
       if (applied > 1) return;
+      const back = focusSpot();
       closedPending = false;
       closedError = err;
+      sayClosed();
       draw();
+      if (back) back();
     });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {

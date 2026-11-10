@@ -4947,10 +4947,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
     const clOpen = clCards("open");
     clHeld.fail(); for (let k = 0; k < 6; k++) await tick();
-    win.Maity.api.getAll = clAll;
     expect(clOpen > 0 && clCards("open") === clOpen && text(clColumn("done")).includes("The closed cards could not be read: hub unreachable")
       && !main.querySelector(".columns .error"),
       "board: a failed closed read says so in the closed columns and keeps the open ones " + JSON.stringify([clOpen, text(clColumn("done"))]));
+    // One live region outside the redrawn columns says it, from pending to failed; the columns are busy while read.
+    const clLive = () => main.querySelectorAll("p.visually-hidden").find((x) => x.getAttribute("role") === "status");
+    expect(clLive() && text(clLive()) === "The closed cards could not be read: hub unreachable",
+      "board: the closed read's failure is said in a live region that outlives the redraw " + JSON.stringify(clLive() && text(clLive())));
+
+    // The focus stays where it was when the closed cards come in, on a card's title link (no data-focus key)
+    // and on a keyed control, and when their read fails.
+    const clProto = Object.getPrototypeOf(main), clFocus = clProto.focus;
+    clProto.focus = function () { document.activeElement = this; };
+    const clTitle = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0006").querySelector("a.card-open");
+    const clKeyed = () => main.querySelector(".columns").querySelectorAll("button, select").find((x) => x.getAttribute("data-focus"));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clBusy = clColumn("done").getAttribute("aria-busy") === "true" && text(clLive()) === "Reading the closed cards…";
+    clTitle().focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clTitleKept = document.activeElement === clTitle() && clColumn("done").getAttribute("aria-busy") !== "true" && text(clLive()) === "";
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clKey = clKeyed().getAttribute("data-focus");
+    clKeyed().focus();
+    clHeld.fail(); for (let k = 0; k < 6; k++) await tick();
+    const clKeyKept = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-focus") === clKey
+      && main.contains(document.activeElement);
+    expect(clBusy && clTitleKept && clKeyKept,
+      "board: the focus stays on a title link when the closed cards come in and on a keyed control when their read fails "
+      + JSON.stringify([clBusy, clTitleKept, clKey, clKeyKept]));
+    clProto.focus = clFocus; document.activeElement = undefined;
+
+    // The Closed filter gives no "No card matches" while the closed cards are still read.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    byId("board-column").value = "closed"; byId("board-column").dispatch("change"); await tick();
+    const clNoVerdict = !text(main).includes("No card matches the filter.") && text(clColumn("done")).includes("Reading the closed cards…");
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clFilled = clCards("done") > 0;
+    byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+    win.Maity.api.getAll = clAll;
+    expect(clNoVerdict && clFilled, "board: a filter on the closed columns says no verdict while they are read " + JSON.stringify([clNoVerdict, clFilled]));
   }
 
   // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is

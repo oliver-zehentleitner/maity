@@ -5894,10 +5894,17 @@ answered, with their cards, while the closed group (`done,cancelled` with
 the 14-day window) is still paging. Until the whole read is in, the Done
 and Cancelled columns hold no count and say that the closed cards are
 being read; if that read fails, those columns say so and the open ones
-stay as drawn. Then the board draws again with every card. The control
-that had the focus keeps it, and a board left from a closed card finds
-that card now. A reload after a write supersedes the first read: an
-answer is drawn only if no later read's answer has been.
+stay as drawn. A live region outside the columns says the same once for a
+screen reader, and the two columns are marked busy while read. A filter
+that shows the closed columns gives no "no card matches" while they are
+unknown. A hub search keeps its own results, closed cards and counts
+included, as before: all of this is the board's own state without one.
+Then the board draws again with every card (with the search's results
+where one is active). The element in the columns that had the focus, a
+card's title link included, keeps it, after a failed read too, and a board
+left from a closed card finds that card now. A reload after a write
+supersedes the first read: an answer is drawn only if no later read's
+answer has been.
 
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
@@ -5908,7 +5915,8 @@ columns, the ones a reader works in, had long answered.
 - Waiting for every group, as before: the reason above. The objection
   recorded then, that the closed columns and counts change under the
   reader, is met by showing no count and a loading line in those columns
-  until they are complete.
+  until they are complete (on the board without a hub search, whose
+  results come complete).
 - A leaner card shape for the board, or a shorter closed window by default:
   each a contract or product change, held until this change and a faster
   200-card page on the hub have been measured.
