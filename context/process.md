@@ -1480,7 +1480,7 @@ keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others a
 deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
 service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
 over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
-check. Locally the three shards together collect the whole suite (2125, 2288 and 2207 of 6620 tests).
+check. Locally the three shards together collect the whole suite (2125, 2288 and 2227 of 6640 tests, counted at the head that adds `hub/tests/test_test_shard.py`).
 
 **Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
 only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
