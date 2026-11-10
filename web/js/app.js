@@ -2308,10 +2308,11 @@ window.Maity = window.Maity || {};
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
-      // Notifications never stop the page, nor hold it up: the counts read runs beside it, the
-      // page draws with the counts M.notify has so far (until the first read, /me's), and the
-      // header follows when the read answers (tsk-hyfqc0sp2bvc: ~2 s on prod). A failed read is
-      // said in the notice (watch), and the counts stay as they were.
+      // Notifications never stop the page, and hold up only the inbox's list (below): the counts
+      // read runs beside the page's reads, the page draws with the counts M.notify has so far
+      // (until the first read, /me's), and the header follows when the read answers
+      // (tsk-hyfqc0sp2bvc: ~2 s on prod). A failed read is said in the notice (watch), and the
+      // counts stay as they were.
       countsRead = M.notify.read().then(() => null, (err) => err);
       // The project's own reads are kept only for a switch inside the same project.
       keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
