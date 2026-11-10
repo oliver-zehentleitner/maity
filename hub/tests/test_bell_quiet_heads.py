@@ -1,9 +1,11 @@
 """docs/api.md §18.2, tsk-a5pxwgkgr73e: a held bell long-poll whose stamp moved only by rows
 that make no item of the human (agents writing to each other) keeps holding without deriving
 its answer again (`listing.quietly_moved`); a row that may make an item (a chat with the
-human, a mention of them, a request to them) still derives and answers at once, and so do an
-account record (a personal request, with or without a membership in its project; a security
-item) and a row that changes a relation the derive reads (a cover, a role) among the chatter.
+human, a mention of them, a request to them) still derives and answers at once among the
+chatter, and so does an account record (a personal request, a security item). A personal
+request from a project the human is no member of answers at once on its own, without chatter.
+A row that changes a relation the derive reads (a cover, a role) makes the next move of a head
+derive again, in its own project or, for a cover, with the chatter in another one.
 
 Counting rule: a full derivation is one call of `listing.answer`'s page derive,
 `items.derive_page`, counted by wrapping it; the look itself is one statement per pass."""
@@ -51,11 +53,11 @@ def derives(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return calls
 
 
-def _between(agent: flow.Agent, other: flow.Agent, n: int) -> None:
+def _between(agent: flow.Agent, other: flow.Agent, n: int, project: str = PROJECT) -> None:
     """`n` messages from one agent to another: no item of the human's."""
     for k in range(n):
         said = agent.post(
-            f"{PROJECT}/events",
+            f"{project}/events",
             {"kind": "message", "type": "notice", "to": other.id, "body": f"between us {k}"},
         )
         assert said.status_code in (200, 201), said.text
@@ -67,12 +69,6 @@ def _held(owner: flow.Human, after: str, wait: int) -> tuple[threading.Thread, l
     waiter.start()
     time.sleep(0.6)  # the first pass is done and the wait holds
     return waiter, answers
-
-
-def _settled(one: flow.Agent, two: flow.Agent) -> None:
-    """A message between the agents before the wait: the head then stands past their joins, which
-    a first look would otherwise count once as rows it does not pass over (`QUIET_KINDS`)."""
-    _between(one, two, 1)
 
 
 def _while_held(
@@ -91,7 +87,6 @@ def test_agents_writing_to_each_other_derive_nothing_while_held(
     make_client: ClientFactory, owner: flow.Human, derives: list[int]
 ) -> None:
     one, two = flow.agent(make_client, owner), flow.agent(make_client, owner)
-    _settled(one, two)
 
     def chatter() -> None:
         for _ in range(4):
@@ -109,7 +104,6 @@ def test_a_chat_with_the_human_after_agent_chatter_answers_at_once(
     make_client: ClientFactory, owner: flow.Human, derives: list[int]
 ) -> None:
     one, two = flow.agent(make_client, owner), flow.agent(make_client, owner)
-    _settled(one, two)
 
     def chatter_then_chat() -> None:
         _between(one, two, 3)
@@ -234,25 +228,55 @@ def test_a_cover_among_agent_chatter_makes_an_older_request_an_item_at_once(
     def cover_then_chatter() -> None:
         asked = one.post(f"{PROJECT}/requests", {"class": "decision", "title": "Go?", "to": two.id})
         assert asked.status_code == 201, asked.text
-        request_id = asked.json()["id"]
         time.sleep(1.2)  # a pass sees the request's head move and holds: it is not the human's
-        with events.transaction(migrated) as conn:  # as cover.py writes it, its wakes included
-            row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
-            since = clock.now().isoformat()
-            cover = {"for": two.id, "by": owner.id, "since": since}
-            conn.execute(update(t.request).where(t.request.c.id == request_id).values(cover=cover))
-            events.emit(
-                conn,
-                row.project_id,
-                "cover_started",
-                [f"member:{two.id}"],
-                {"member_id": two.id, "substitute_id": owner.id, "tasks": [],
-                 "requests": [request_id], "left": []},  # fmt: skip
-            )
+        _cover(migrated, asked.json()["id"], two.id, owner.id)
         time.sleep(0.6)
         _between(one, two, 3)
 
     answers, _, took = _while_held(owner, derives, cover_then_chatter)
+    _at_once(answers, took, "inbox")
+
+
+def _cover(migrated: Engine, request_id: str, member_id: str, by: str) -> None:
+    """A cover of `member_id` by `by` that takes the request, written as cover.py writes it,
+    its wakes included: it moves no head of an item kind."""
+    with events.transaction(migrated) as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+        cover = {"for": member_id, "by": by, "since": clock.now().isoformat()}
+        conn.execute(update(t.request).where(t.request.c.id == request_id).values(cover=cover))
+        events.emit(
+            conn,
+            row.project_id,
+            "cover_started",
+            [f"member:{member_id}"],
+            {"member_id": member_id, "substitute_id": by, "tasks": [],
+             "requests": [request_id], "left": []},  # fmt: skip
+        )
+
+
+def test_a_cover_in_one_project_and_chatter_in_another_answers_at_once(
+    make_client: ClientFactory, owner: flow.Human, derives: list[int], migrated: Engine
+) -> None:
+    """The cover moves no head in its project, and only the other project's head moves after it:
+    the look still reads the first project past its seen position (spq4, review of #1623)."""
+    flow.project(owner, "other")
+    other = "/projects/maintainer/other"
+    one, two = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    three, four = flow.agent(make_client, owner, "other"), flow.agent(make_client, owner, "other")
+    # A message in each project before the wait: its item head then stands past the agents'
+    # joins, so of the rows after the wait began only the cover is one the look does not pass.
+    _between(one, two, 1)
+    _between(three, four, 1, other)
+
+    def cover_here_chatter_there() -> None:
+        asked = one.post(f"{PROJECT}/requests", {"class": "decision", "title": "Go?", "to": two.id})
+        assert asked.status_code == 201, asked.text
+        time.sleep(1.2)  # a pass sees the request's head move and holds: it is not the human's
+        _cover(migrated, asked.json()["id"], two.id, owner.id)
+        time.sleep(0.6)
+        _between(three, four, 3, other)
+
+    answers, _, took = _while_held(owner, derives, cover_here_chatter_there)
     _at_once(answers, took, "inbox")
 
 

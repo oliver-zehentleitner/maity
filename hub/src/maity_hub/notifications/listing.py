@@ -173,50 +173,74 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
     )
 
 
+def held_stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
+    """What a held long-poll compares between passes: `stamp`, and each member project's
+    highest `seq` of any kind, the position `quietly_moved` looks past. Only the held call reads
+    the second part; the mail pass stores `stamp` alone, which card churn does not move."""
+    found = stamp(conn, human_id)
+    project_ids = [project_id for _, project_id in found[0]]
+    tops = (
+        sorted(
+            conn.execute(
+                select(t.event.c.project_id, func.max(t.event.c.seq))
+                .where(t.event.c.project_id.in_(project_ids))
+                .group_by(t.event.c.project_id)
+            ).all()
+        )
+        if project_ids
+        else []
+    )
+    return found, tuple(tops)
+
+
 def quietly_moved(
     conn: Connection, human_id: str, seen: tuple[Any, ...], now: tuple[Any, ...]
 ) -> bool:
-    """Whether a stamp moved by nothing but rows that can make no item of the human: the same
-    memberships, account records and read marks, and in each project whose head moved only
-    rows past the seen head that `items.derive_page` would leave out in SQL. A held long-poll
-    then keeps holding with `now` as its stamp instead of deriving everything again (§18.2):
-    agents writing to each other move the heads all the time and are no item of the human's
-    (tsk-a5pxwgkgr73e).
+    """Whether a held stamp (`held_stamp`) moved by nothing but rows that can make no item of
+    the human: the same memberships, account records and read marks, and in every member
+    project only rows past the seen position, of any kind, that `items.derive_page` would leave
+    out in SQL. A held long-poll then keeps holding with `now` as its stamp instead of deriving
+    everything again (§18.2): agents writing to each other move the heads all the time and are
+    no item of the human's (tsk-a5pxwgkgr73e).
 
     The look is a superset of the derive's own rows in the range: a request's event unless its
     request is personal or another member's alone (`_may_concern`), a message only where its
     text may mention the human (`_names`) or its audience names them in a chat (`_addressed`),
     every other kind that makes items. Any row of a kind outside those and `QUIET_KINDS` makes
     the move not quiet: a change of a relation the derive reads with its state of now (a
-    cover, a claim, a role) can make an item of an older row, which the next derive then
-    finds, as it did before this look. A relation change with no later move of a head stays
-    unseen until the deadline, as without the look. A head is the newest row of an item kind,
-    so the first range may also hold rows written before the wait and after that row (an
-    agent's join): each such row counts once, one derive more, never an item lost.
+    cover, a claim, a role) can make an item of an older row, in its own project or in another
+    (a cover in one project, chatter in a second), which the next derive then finds, as it did
+    before this look. The look runs only when `stamp` moved, so a relation change with no later
+    move of a head or mark stays unseen until the deadline, as without the look; the position
+    it is seen past stays where it was until then.
 
-    It reads one bounded range per moved project, `(seen head, new head]`: within a project
-    `seq` follows commit order (`events.emit` inserts under `lock_project`), so no row below a
-    visible head is still to commit, the argument the held events wait rests on
-    (hub/context/events.md, 2263cf0a)."""
-    members, heads = now[0], now[1]
-    if members != seen[0] or now[2:] != seen[2:]:
+    It reads one bounded range per project whose position moved, `(seen position, new
+    position]`: within a project `seq` follows commit order (`events.emit` inserts under
+    `lock_project`), so no row below a visible position is still to commit, the argument the
+    held events wait rests on (hub/context/events.md, 2263cf0a)."""
+    (seen_stamp, seen_tops), (now_stamp, now_tops) = seen, now
+    members = now_stamp[0]
+    if members != seen_stamp[0] or now_stamp[2:] != seen_stamp[2:]:
         return False
-    before = dict(seen[1])
-    if len(dict(heads)) != len(heads) or set(before) - {p for p, _ in heads}:
+    before = dict(seen_tops)
+    after = dict(now_tops)
+    if len(after) != len(now_tops) or any(
+        after.get(project_id, -1) < floor for project_id, floor in before.items()
+    ):
         return False
     member_of = {project_id: member_id for member_id, project_id in members}
     ranges = []
-    for project_id, top in heads:
-        floor = before.get(project_id)
+    for project_id, top in now_tops:
+        floor = before.get(project_id, 0)
         if floor == top:
             continue
-        if project_id not in member_of:  # cannot be: the heads are read for these memberships
+        if project_id not in member_of:  # cannot be: the positions are read for these memberships
             return False
         e = t.event.c
         ranges.append(
             and_(
                 e.project_id == project_id,
-                e.seq > (floor if floor is not None else 0),
+                e.seq > floor,
                 e.seq <= top,
                 or_(
                     e.kind.notin_(REQUEST_EVENTS), derived.may_concern_member(member_of[project_id])

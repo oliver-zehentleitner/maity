@@ -35,7 +35,7 @@ IDS_MAX = 200
 POLL = 0.5  # seconds between looks while a long-poll holds
 # Full answers (and marks) at once per hub process. Each derives every item of 30 days
 # and holds a pooled connection while it does; more of them would take the pool from
-# every other call. A held long-poll looks at `listing.stamp` between them instead.
+# every other call. A held long-poll looks at `listing.held_stamp` between them instead.
 AT_ONCE = 4
 
 # One notifications long-poll per cookie session; a newer one supersedes it (§18.2).
@@ -143,7 +143,7 @@ async def list_notifications(
             # while the request waited receives nothing more (§18.2).
             _require_live(conn, session)
             found = _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
-            return found, listing.stamp(conn, human_id)
+            return found, listing.held_stamp(conn, human_id)
 
     def unchanged(seen: tuple[Any, ...]) -> tuple[bool, tuple[Any, ...]]:
         """Whether nothing an answer reads moved since `seen`, and the stamp to compare
@@ -152,8 +152,8 @@ async def list_notifications(
         and the new stamp is the one seen from then on."""
         with engine_of(request).begin() as conn:
             _require_live(conn, session)
-            now = listing.stamp(conn, human_id)
-            if now == seen:
+            now = listing.held_stamp(conn, human_id)
+            if now[0] == seen[0]:  # the positions alone moved: nothing to look at yet
                 return True, seen
             if listing.quietly_moved(conn, human_id, seen, now):
                 return True, now
