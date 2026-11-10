@@ -3213,7 +3213,8 @@ window.Maity = window.Maity || {};
       data[body.slug + "/credentials.json"] = {};
       data[body.slug + "/conversations.json"] = {};
       if (url !== null) makeSetupCards(body.slug, setup, owner.id, url);
-      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", trust: "owner", role: "coder", open_requests: 0 });
+      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", trust: "owner", role: "coder", open_requests: 0,
+        public_page: created.public_page });
       return created;
     }],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => servedProject(m[1], project(m[1], path))],
@@ -3404,6 +3405,9 @@ window.Maity = window.Maity || {};
       if ("public_page" in body) {
         if (!["on", "off"].includes(body.public_page)) fail(400, "invalid", "the request does not validate", path, { fields: { public_page: "required" } });
         p.public_page = body.public_page;
+        // As the hub, /me's list carries the setting too (§5.1), for the tabs' lock.
+        const mine = me().projects.find((q) => q.full_name === p.full_name);
+        if (mine) mine.public_page = body.public_page;
       }
       if ("public_about" in body) {
         // Bytes, as the hub counts them.

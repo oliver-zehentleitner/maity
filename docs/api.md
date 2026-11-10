@@ -3879,9 +3879,9 @@ Scope: any authenticated caller.
               "start_tabs": null, "timezone": "Europe/Vienna" },
   "projects": [
     { "id": "prj-7k2m9q", "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
-      "logo": { "available": true, "etag": "\"3f2a…\"" } },
+      "public_page": "on", "logo": { "available": true, "etag": "\"3f2a…\"" } },
     { "id": "prj-3h8w2c", "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
-      "logo": { "available": false, "etag": null } }
+      "public_page": "off", "logo": { "available": false, "etag": null } }
   ],
   "maintenance": null,
   "server_time": "2026-10-21T13:41:10Z"
@@ -3918,8 +3918,11 @@ time, and from the tab row as a whole ("keep these tabs at start").
 For a human, `projects` lists every membership, ordered by slug, each
 with `id` (the project's fixed id, §6.25), `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
 returns for this caller with its defaults (`to=me`, `status=open`, §7),
-and `logo` (`available`, `etag`; §11.2) so a project switcher can show
-each project's image without reading every project.
+`public_page` (`on` or `off`, the project's own setting, §16.9) so a project
+switcher can mark a private project without reading every project, whether
+or not a page is served for it (an archived or held project with `on` is
+still `on` here), and `logo` (`available`, `etag`; §11.2) so it can show
+each project's image the same way.
 For an agent exactly one project (with its `id` too), with `owner_id` and `instance` (its
 instance id, §6.17) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
