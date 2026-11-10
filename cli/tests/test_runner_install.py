@@ -518,6 +518,28 @@ def test_a_kept_configuration_for_another_hub_is_refused_before_any_change(
     assert not host.path(install.UNIT_PATH).exists()
 
 
+def test_force_does_not_pair_over_another_hub_s_credential(tmp_path: Path) -> None:
+    """--force writes this hub's configuration, but a paired runner keeps its credential:
+    serve would then refuse one another hub issued, so install refuses first."""
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)  # paired with hub.example.org
+    host.calls.clear()
+    other = args(url="https://other.example.org/r/tok-xyz", force=True)
+    with pytest.raises(install.Refused, match="--force does not pair over it"):
+        install.cmd_install(other, host)
+    assert host.calls == []
+    assert "https://hub.example.org" in host.path(install.CONFIG).read_text()
+
+
+def test_a_url_that_is_not_utf_8_is_refused_before_any_change(tmp_path: Path) -> None:
+    """What Python makes of invalid UTF-8 on argv: a lone surrogate, which no file takes."""
+    host = FakeHost(tmp_path)
+    with pytest.raises(install.Refused, match="not valid UTF-8"):
+        install.cmd_install(args(url="https://h\udcff.example/r/tok-abc"), host)
+    assert host.calls == []
+    assert not host.path(install.RECORD).exists()
+
+
 def test_the_starter_configuration_quotes_any_url_as_toml_reads_it() -> None:
     """`json.dumps` would write the non-BMP character as a surrogate pair, which TOML refuses."""
     url = 'https://h\U0001f600.example/a"b\\c\x7f'

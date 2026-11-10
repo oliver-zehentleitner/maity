@@ -1799,7 +1799,11 @@ of `maity runner unit`.
      directory or a file of root's that others can write, a kept configuration whose `state_dir` is
      not the fixed one as `serve` resolves it, or whose `hub.url` names
      another hub than the pairing URL — stops the command before
-     the first change. A file of root's is checked on the descriptor it
+     the first change. `--force` writes install's own configuration
+     instead, but not over a credential paired under one for another
+     hub: that credential is the other hub's, and `serve` would refuse
+     it. A pairing URL that is not valid UTF-8 is refused before the
+     account is made, since no file can hold it. A file of root's is checked on the descriptor it
      is read from, so what is read is what was checked. The `workspaces`
      of a kept configuration are not checked: that directory is the
      service user's to write, so no root write depends on it. Whether the

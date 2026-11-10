@@ -1286,7 +1286,10 @@ file of `maity-runner`'s, read without following a link. An existing
 configuration it keeps must use that `state_dir` (`~/state` counts, as
 `serve` reads `~` as the service user's home) and the hub of the pairing
 URL as `hub.url`; another one is refused before any change, and
-`--force` writes install's own, which then pairs. It keeps an existing file that differs unless
+`--force` writes install's own, which then pairs an unpaired runner. A
+runner already paired under a configuration for another hub keeps that
+hub's credential, so `--force` refuses it too: run
+`maity runner uninstall --purge` first. It keeps an existing file that differs unless
 `--force`; a file with install's own text but another mode is put back to
 0644.
 

@@ -459,16 +459,33 @@ def _preconditions(host: Host) -> None:
             raise Refused(f"`{tool}` is not installed; the runner needs it")
 
 
-def _check_state_dir(host: Host, base: str, force: bool) -> None:
+def _kept_hub(text: str) -> str | None:
+    """The hub base a configuration's `hub.url` names; None when it does not parse or names
+    none that is a hub URL."""
+    try:
+        table = tomllib.loads(text).get("hub")
+    except tomllib.TOMLDecodeError:
+        return None
+    url = table.get("url") if isinstance(table, dict) else None
+    try:
+        return hub.hub_base(url) if isinstance(url, str) else None
+    except hub.HubError:
+        return None
+
+
+def _check_state_dir(host: Host, base: str, force: bool) -> bool:
     """The configuration install leaves in place, its own (written now) or the existing one
     kept, must keep the credential in the fixed state directory: install pairs and checks
     there, and nowhere else. Resolved as `serve` resolves it for the service user: `~` is
     that user's HOME, the default as config.py has it."""
     text = _read_root(host, CONFIG)
-    if text is None:
-        return
-    if force or text == starter_config(base):
-        return
+    if text is None or text == starter_config(base):
+        return False
+    if force:
+        # install's own replaces it; a credential paired under one that names another hub is
+        # that hub's. One that names no hub tells nothing, and --force is the way to repair it.
+        kept = _kept_hub(text)
+        return kept is not None and kept != base
     try:
         table = tomllib.loads(text).get("hub")
     except tomllib.TOMLDecodeError:
@@ -503,6 +520,7 @@ def _check_state_dir(host: Host, base: str, force: bool) -> None:
             "(--force writes its own configuration; other paths are the manual steps of "
             "`maity runner unit`)"
         )
+    return False
 
 
 def _paired(host: Host, user: User | None) -> bool:
@@ -548,6 +566,10 @@ def _incomplete(host: Host) -> list[str]:
 def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
     host = host or Host()
     _preconditions(host)
+    try:
+        args.url.encode("utf-8")  # written to the configuration, after the account is made
+    except UnicodeEncodeError:
+        raise Refused("the pairing URL is not valid UTF-8; nothing was changed") from None
     base = hub.hub_base(args.url)
     hub.pair_token(args.url)  # a pairing URL, checked before anything changes
     # Everything below is checked before the first change.
@@ -555,8 +577,16 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
     for path in (CONFIG, UNIT_PATH, RECORD):
         _root_file(host, path)
     user = _check_user(host)
-    _check_state_dir(host, base, args.force)
+    other_hub = _check_state_dir(host, base, args.force)
     paired = _paired(host, user)
+    if paired and other_hub:
+        # --force writes this hub's configuration but cannot pair over the credential: serve
+        # would then refuse a credential another hub issued.
+        raise Refused(
+            f"{STATE_DIR} holds a credential paired under {CONFIG} for another hub, not "
+            f"{base}; --force does not pair over it: `maity runner uninstall --purge`, then "
+            "install again"
+        )
     code = None if paired else _code(args)
     if user is None:
         user = _make_user(host)
