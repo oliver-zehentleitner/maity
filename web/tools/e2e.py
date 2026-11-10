@@ -119,8 +119,11 @@ class Run:
         phone check after an a11y pass measured the desktop)."""
         size = page.viewport_size or {"width": 1280, "height": 900}
         dark = page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
-        # The restore is in a finally, so a pass that fails (axe throwing) still leaves the page as it
-        # was; the error goes on (#1614 review).
+        # The restore is in a finally, so a pass that fails (axe throwing) still asks for the page as it
+        # was, and that error is the one that goes on (#1614 review). Each of the two restores is tried
+        # on its own; one the browser refuses cannot be undone here, and it is raised only when no
+        # pass error is already on its way, which it would otherwise replace.
+        failed: BaseException | None = None
         try:
             for width, height, scheme in PASSES:
                 page.set_viewport_size({"width": width, "height": height})
@@ -158,9 +161,23 @@ class Run:
                             ][:5],
                         }
                     )
+        except BaseException as err:
+            failed = err
+            raise
         finally:
-            page.set_viewport_size({"width": size["width"], "height": size["height"]})
-            page.emulate_media(color_scheme="dark" if dark else "light")
+            refused: list[Exception] = []
+            for restore in (
+                lambda: page.set_viewport_size({"width": size["width"], "height": size["height"]}),
+                lambda: page.emulate_media(color_scheme="dark" if dark else "light"),
+            ):
+                try:
+                    restore()
+                except Exception as err:  # noqa: BLE001 - every refusal is said or raised below
+                    refused.append(err)
+            if refused and failed is None:
+                raise refused[0]
+            for err in refused:
+                print(f"   a11y {view}: the page could not be restored after the failed pass: {err!r}", flush=True)
         print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
 
     def a11y_report(self) -> list[dict]:

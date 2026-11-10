@@ -224,14 +224,20 @@ class FakePage:
 
     def __init__(self, width: int, height: int, scheme: str):
         self.viewport_size = {"width": width, "height": height}
+        self.start = (width, height)
         self.scheme = scheme
         self.sizes, self.schemes = [], []
 
     def set_viewport_size(self, size: dict) -> None:
+        # The restore is the one call back to the step's own size, which no pass uses.
+        if getattr(self, "refuse", None) == "viewport" and (size["width"], size["height"]) == self.start:
+            raise RuntimeError("viewport refused")
         self.viewport_size = dict(size)
         self.sizes.append((size["width"], size["height"]))
 
     def emulate_media(self, color_scheme: str | None = None, **_: object) -> None:
+        if getattr(self, "refuse", None) == "media" and (self.viewport_size["width"], self.viewport_size["height"]) == self.start:
+            raise RuntimeError("media refused")
         if color_scheme is not None:
             self.scheme = color_scheme
             self.schemes.append(color_scheme)
@@ -286,6 +292,28 @@ def a11y_cases() -> int:
         back = page.viewport_size == {"width": 360, "height": 780} and page.scheme == "dark"
         cases.append((f"a11y: axe failing in pass {fail_on} goes on as an error, the page back at 360x780 dark",
                       raised == "axe failed in pass %d" % fail_on and back, (raised, page.viewport_size, page.scheme)))
+    # A restore the browser refuses (#1614 review): the other one is still tried, a pass error stays the error
+    # that goes on, and with no pass error the refusal itself is raised.
+    # Each start scheme differs from the one the passes leave (light after pass 1, dark after pass 3), so a
+    # refused scheme restore shows.
+    for fail_on, start, refuse, want, viewport_back, scheme_back in (
+        (1, "dark", "viewport", "axe failed in pass 1", False, True),
+        (1, "dark", "media", "axe failed in pass 1", True, False),
+        (None, "light", "viewport", "viewport refused", False, True),
+        (None, "light", "media", "media refused", True, False),
+    ):
+        page = FakePage(360, 780, start)
+        page.fail_on, page.refuse = fail_on, refuse
+        raised = None
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                a11y(Self(), page, "a view")
+        except RuntimeError as err:
+            raised = str(err)
+        got = (raised, page.viewport_size == {"width": 360, "height": 780}, page.scheme == start)
+        what = f"axe failing in pass {fail_on}" if fail_on else "no axe failure"
+        cases.append((f"a11y: {what}, the {refuse} restore refused: {want!r} goes on, the other restore still made",
+                      got == (want, viewport_back, scheme_back), got))
     failed = 0
     for name, ok, detail in cases:
         failed += not ok
