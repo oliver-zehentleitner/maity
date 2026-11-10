@@ -208,6 +208,24 @@ def test_a_hidden_entry_in_a_placeholder_is_refused(placed: Path, entry: str) ->
         gitfacts.collect(placed)
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root lists any directory")
+@pytest.mark.parametrize("entry", ["remotes", "info/.claude-sandbox-noreplace"])
+def test_a_placeholder_that_cannot_be_listed_is_refused(placed: Path, entry: str) -> None:
+    """Unlisted, a directory would look empty and pass as a placeholder, with a file in it
+    git reads (gb8w: a `remotes/other` behind mode 0311). Both listings refuse it."""
+    from maity.runner.asuser import RUNNER
+
+    _leave(placed, SANDBOX_LEFT)
+    here = placed / ".git" / entry
+    (here / "other").write_text("URL: https://example.invalid/other.git\n")
+    here.chmod(0o311)
+    try:
+        for files in (clonecheck.LOCAL, RUNNER):
+            assert clonecheck.not_inspectable(placed, files) == "its .git cannot be listed in full"
+    finally:
+        here.chmod(0o755)
+
+
 def test_without_git_common_dir_nothing_runs(placed: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GIT_COMMON_DIR")
     with pytest.raises(gitfacts.FactsError, match="without GIT_COMMON_DIR"):

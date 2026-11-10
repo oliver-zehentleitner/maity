@@ -51,13 +51,17 @@ GIT_DENIED = (
 )  # fmt: skip
 
 
-# What in a clone's .git would turn a git call into running something, or into reading
-# another repository: never written by the agent, so its allowed git calls stay git. The
+# What in a clone's .git redirects git's configuration, hooks or object sources: never
+# written by the agent. Not everything that can make git run something: a rebase state
+# (`rebase-merge/`) the agent wrote runs on `rebase --continue` (cli/context/runner.md). The
 # rest of .git (refs, index, objects, logs, FETCH_HEAD) is what commit, fetch and push need
 # between them: a commit writes the index, a fetch FETCH_HEAD, both refs, objects and logs.
 # Not `commondir`: GIT_COMMON_DIR pins the session's git to the real .git (below),
 # and the sandbox's guard on a missing commondir leaves git unable to read it at all.
 # Verified on a sandboxed Claude Code run (cli/context/runner.md).
+# Not `objects/info/http-alternates`: only a dumb-HTTP fetch reads it (the forge speaks smart
+# HTTP), clonecheck refuses it with content, and a deny on a missing file would leave one
+# more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter

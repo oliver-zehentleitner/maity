@@ -1,14 +1,14 @@
 ### Fixed
 
-- cli runner: a Claude Code agent with the sandbox on can fetch, commit and push again. The runner
+- cli runner: a Claude Code agent with the sandbox on can fetch and commit again. The runner
   denied edits to all of the clone's `.git`, and the sandbox turned that into a read-only `.git`
   for every command, so `git fetch` failed on `.git/FETCH_HEAD`. The deny now names only
   `config`, `config.worktree`, `hooks/`, `info/`, `objects/info/alternates` and `.git/maity`.
 - cli: maity's git check of a runner's clone accepts the empty placeholders Claude Code's sandbox
   leaves in `.git` (`config.worktree`, `objects/info/alternates` and `http-alternates`, `remotes/`,
-  `.claude-sandbox-noreplace/` anywhere in `.git`). A placement whose session ran sandboxed no longer refuses its
-  own clone at the next start. Any of them with content is refused as before, and so is a FIFO,
-  socket or device anywhere in `.git`.
+  `.claude-sandbox-noreplace/` anywhere in `.git`). A placement whose session ran sandboxed no
+  longer refuses its own clone at the next start. Any of them with content, or that cannot be
+  listed, is refused as before, and so is a FIFO, socket or device anywhere in `.git`.
 
 ### Added
 

@@ -15457,7 +15457,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `credential_missing` | `join_failed`: a credential was expected (`credential_id` set) and the file is not there |
 | `network`, or the hub's error code: `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `instance_quota`, `pickup_not_allowed`, `pickup_used`, a `forbidden`'s reason such as `member_join_limit`, `member_agents_max` or `project_not_allowed` (§3.1, §6.3), and any other | `join_failed` |
 | `origin_mismatch`, `other_agent`, `workspace_unrecorded`, `locked_by_process` | `workspace_in_use` |
-| `not_a_plain_clone` | `workspace_in_use`: the clone's `.git` has an entry or a configuration key a plain clone has not, such as a `commondir`, `worktrees/` or a `config.worktree` with content, which an earlier session of the agent may have left; the runner starts nothing in it and deletes nothing, and its log names what it found, without file contents (req-2adhtsb3ct75) |
+| `not_a_plain_clone` | `workspace_in_use`: the clone's `.git` has an entry outside the layout maity accepts or a configuration key outside its list, such as a `commondir`, `worktrees/` or a `config.worktree` with content, which an earlier session of the agent may have left; the runner starts nothing in it and deletes nothing, and its log names what it found, without file contents (req-2adhtsb3ct75) |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `hot_loop` | `crash_loop` in `supervised` mode |

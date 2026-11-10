@@ -660,8 +660,11 @@ plain clone has not) is not started: it is reported `failed`,
 `workspace_in_use` with `not_a_plain_clone` (§15.7), the finding goes to
 the runner's log, and the runner deletes nothing in it and does not try
 again. The sandbox's empty placeholders pass. A person runs git in a
-runner's clone only through `maity` or after the runner's check: the
-check of the next start, or `gc`'s. A session that runs on after the
+runner's clone only through `maity` or after the runner's check (the
+check of the next start, or `gc`'s), and then only git that reads: the
+check does not look inside `rebase-merge/`, `rebase-apply/` or
+`sequencer/`, which the agent may write, so a `rebase --continue` would
+run an `exec` line planted there. A session that runs on after the
 check can plant again, so the check covers the clone as it was then;
 otherwise the work is read from the pushed branch.
 
@@ -676,8 +679,8 @@ are refused when the configuration is read, and an adapter skips such a
 rule as well.
 `maity` stays the runner's own rule. Claude Code's `.git` write denies
 are `Edit(…)` rules, which cover its file-editing tools; it does not
-check a `Write(…)` deny rule. They name only what would make an allowed
-git call run something or read another repository: `config`,
+check a `Write(…)` deny rule. They name what redirects git's
+configuration, hooks and object sources: `config`,
 `config.worktree`, `hooks/`, `info/` and `objects/info/alternates`, the
 same paths as sandbox write denies, plus `.git/maity`. The rest of `.git`
 stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
@@ -733,6 +736,10 @@ one version, not a contract.
 - Relying on the pin alone for a clone a session ran in: a person's plain
   `git` there has no pin and would follow the plant. Checking at the
   start costs one read of `.git` per start, the read `gc` already does.
+- Refusing a rebase or sequencer state (`rebase-merge/`, `rebase-apply/`,
+  `sequencer/`) at the start: an agent's own interrupted rebase would
+  then keep its placement from restarting. Only git that continues such
+  a state runs what it holds, and the docs tell a person not to.
 - Removing a planted `commondir` or `worktrees/` at the start: the runner
   deletes nothing in an agent's clone, so what was planted stays there
   for someone to look at.
@@ -1658,8 +1665,9 @@ those six: an empty `config.worktree`, `objects/info/alternates` or
 `.claude-sandbox-noreplace/` directory wherever it appears in `.git`,
 not only in the three places observed. Empty means an empty regular
 file or directory: a link, a FIFO, a socket or a device anywhere in
-`.git` is refused, under any name. Any of them with something in it is refused as
-before. This
+`.git` is refused, under any name, and so is a directory in `.git` that
+cannot be listed, since unlisted it would look empty. Any of them with
+something in it is refused as before. This
 holds for every maity user, not only the runner. Empty, they change
 nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
