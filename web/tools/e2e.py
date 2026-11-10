@@ -1881,7 +1881,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     def own_pause() -> dict | None:
         # The agent's own pause is its instance's (§6.17); the membership's stays clear.
-        members = run.api(alpha, "GET", "/projects/owner/e2e-alpha/team")["items"]
+        members = run.api(alpha, "GET", "/projects/owner/e2e-alpha/members")["items"]
         member = next(m for m in members if m["id"] == agent_id)
         assert member.get("paused") is None, member
         (instance,) = member["instances"]  # the one CLI agent of this run
@@ -4467,7 +4467,7 @@ def notifications_step(run: Run, page: Page) -> None:
     # On a phone the Chats page carries the Lead the header hides there. The scenario's agents are
     # members, so no project has a lead to reach: the members list of E2E Alpha is answered with its
     # agents as admins for this check alone, which gives the header a Lead (spq4 at #1271).
-    members = re.compile(r"/api/v1/projects/owner/e2e-alpha/team(\?|$)")
+    members = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
 
     def as_admins(route) -> None:
         body = route.fetch().json()
@@ -4567,7 +4567,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     E2E Agent under them, E2E Reviewer (which reports to it) under that; each agent's instances
     as dots linking to their sessions; light and dark at 1280 and 390 px, nothing wider than the window."""
     run.step("agents: the Organisation tab shows one's own agents as a tree under oneself")
-    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/team").json()["items"]
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     reviewer = next(m for m in members if m.get("handle") == "e2e-reviewer")
     assert reviewer["reports_to"] == agent_id, reviewer
@@ -4607,7 +4607,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
 
     # Drawn with a boss of someone else's and a lead instance, as the hub would send them (the run
     # has one owner): the stub is the boss's handle as text, nothing else of theirs is on the page.
-    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/team(\?|$)")
+    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
     foreign = {"id": "agt-e2eforeign01", "kind": "agent", "handle": "e2e-foreign-boss", "display_name": "Foreign Boss E2E",
                "owner_id": "hum-e2eelsewhere", "trust": "member", "role": "manager", "areas": ["/"], "presence": "online",
                "instances": [{"id": "zi0l", "presence": "online", "lead": True, "claims": 4}]}
@@ -4657,7 +4657,7 @@ def join_reports_to_step(run: Run, page: Page, agent_id: str) -> None:
     its boss reports to it after the exchange; an agent already here gets a new boss in the panel,
     sent as its owner's PATCH before the join, said beside the new line and read back from the hub."""
     run.step("reports to: chosen in the join panel, for a new agent and for one already here")
-    members_path = f"{run.base}/api/v1/projects/owner/e2e-alpha/team"
+    members_path = f"{run.base}/api/v1/projects/owner/e2e-alpha/members"
     by_handle = lambda: {m.get("handle"): m for m in page.request.get(members_path).json()["items"]}
     found = by_handle()
     assert found["e2e-agent"]["reports_to"] is None, found["e2e-agent"]
@@ -4926,7 +4926,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     bridges.get_by_label("What for").fill("git for the reviewer's files")
     bridges.get_by_role("button", name="Connect with a bridge", exact=True).click()
     expect(bridges.locator("ul.bridges-serving-this li.bridge")).to_contain_text("lends its hands: git for the reviewer's files")
-    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/team").json()["items"]
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
     served = next(m for m in members if m["handle"] == "e2e-agent")
     bridge = next(m for m in members if m["handle"] == "e2e-reviewer")
     assert [c["member_id"] for c in served["bridges"]] == [bridge["id"]], served["bridges"]
@@ -4934,7 +4934,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.a11y(page, "members, a bridge connected")
     bridges.get_by_role("button", name="End the bridge for git for the reviewer's files", exact=True).click()
     expect(bridges).to_contain_text("No bridges.")
-    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/team").json()["items"]
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
     assert not next(m for m in members if m["handle"] == "e2e-agent")["bridges"], "the bridge is still there"
     project_settings(page)
     page.locator("#signing-select").select_option("required")
