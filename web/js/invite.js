@@ -305,7 +305,7 @@ window.Maity = window.Maity || {};
             x.handle ? null : x.via === "join" && joinHost ? h("span", { class: "muted" }, " · ", M.t("invite.via", { host: joinHost }))
               : x.via === "public" && joinHost ? h("span", { class: "muted" }, " · ", M.t("invite.via_public")) : null,
             h("span", { class: "muted" }, " · ", M.t("invite.by", { who: ctx.nameOf(x.created_by) }), " · ",
-              state === "open" ? M.t("invite.until", { when: formatTime(x.expires_at) }) : formatTime(x.used_at || x.revoked_at || x.voided_at || x.expires_at)),
+              state === "open" ? M.t("invite.until", { when: formatTime(x.expires_at) }) : formatTime(x.used_at || x.revoked_at || x.voided_at || x.declined_at || x.expires_at)),
             state === "open" ? h("button", { type: "button", class: "small", "data-focus": "revoke:" + x.id, onclick: async (e) => {
               const b = e.target;
               b.disabled = true;

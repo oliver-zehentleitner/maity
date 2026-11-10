@@ -1575,7 +1575,8 @@ window.Maity = window.Maity || {};
       if (x.read) return;
       // A personal request of a project one is no member of (§7): counted
       // in inbox, on an entry with member false; the rest come from /me.
-      if (x.kind === "inbox") {
+      // An invitation by handle's request is one of them (`invitation`, §18.2).
+      if (x.kind === "inbox" || x.kind === "invitation") {
         if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false; }
         return;
       }

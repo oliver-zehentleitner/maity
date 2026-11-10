@@ -211,7 +211,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Every field that asks for a handle explains the word (tsk-srzrkf2parzt): a hint the input names
   // in its aria-describedby. Which kinds of field smoke saw, and any without the hint.
   const HANDLE_FIELDS = [["own", /^handle-[a-z0-9]{1,8}$/], ["agent-new", /^agent-new-handle$/], ["agent-edit", /^agent-handle-/],
-    ["join", /^join-handle$/], ["org-new", /^org-new-handle$/], ["org-invite", /^org-invite-handle$/], ["org-rename", /^org-handle$/]];
+    ["join", /^join-handle$/], ["org-new", /^org-new-handle$/], ["org-invite", /^org-invite-handle$/], ["org-rename", /^org-handle$/], ["invite", /^invite-handle$/]];
   const handleSeen = new Set(), handleBare = new Map();
   function checkHandleHints(at) {
     main.querySelectorAll("input").forEach((input) => {
@@ -11632,6 +11632,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("invite-handle").value = ""; byId("invite-handle").dispatch("input");
   expect(win.Maity.invite.stateOf({ declined_at: "2026-11-10T10:00:00Z", expires_at: "2099-01-01T00:00:00Z" }) === "declined",
     "invite: an invitation by handle the person said no to is declined");
+  // Drawn in the list: declined, with the time it was declined, not its expiry.
+  {
+    const dcGetAll = win.Maity.api.getAll;
+    const dcRow = { id: "inv-dec1", project: "maintainer/maity", trust: "member", role: "coder", address: null, handle: "wolfgang", note: null,
+      created_by: "hum-maintainer", created_at: "2026-11-09T09:00:00Z", expires_at: "2099-01-01T00:00:00Z", used_at: null, used_by: null,
+      revoked_at: null, voided_at: null, declined_at: "2026-11-10T10:00:00Z", via: "public" };
+    win.Maity.api.getAll = (p) => dcGetAll(p).then((r) => (p.endsWith("/invitations") ? Object.assign({}, r, { items: [dcRow].concat(r.items) }) : r));
+    await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+    const dcLi = ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-dec1");
+    win.Maity.api.getAll = dcGetAll;
+    expect(dcLi && text(dcLi.querySelector(".invite-state")) === "declined" && text(dcLi).includes(win.Maity.dom.formatTime(dcRow.declined_at))
+      && !text(dcLi).includes(win.Maity.dom.formatTime(dcRow.expires_at)) && !btn(dcLi, "Revoke"),
+      "invite: a declined invitation is listed as declined, with the time it was declined, and no Revoke " + (dcLi ? text(dcLi) : "none"));
+    await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+  }
   btn(ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-0003"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
   expect(ivDels[0] === "/projects/maintainer/maity/invitations/inv-0003" && ivItems().includes("inv-0003:revoked") && text(ivBox()).includes("Revoked; the link no longer works."),
     "invite: an open invitation revoked, said so");
@@ -13727,6 +13742,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
+
+  // The mock counts an unread invitation as the open personal request it is (§18.2): in inbox, on an
+  // entry with member false for a project one is no member of, and the counts keep their five keys.
+  {
+    const icFixtures = win.MAITY_FIXTURES;
+    const icRead = async () => (await win.Maity.api.get("/me/notifications?limit=0"));
+    // Both reads from the fixtures as shipped, the mock loaded afresh: the steps above have read and answered items.
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    const icBase = await icRead();
+    const icF = JSON.parse(JSON.stringify(icFixtures));
+    icF["notifications.json"].items.push({ id: "ntf-4401", kind: "invitation", at: "2026-10-22T13:51:00Z",
+      project: { slug: "lab2", full_name: "olga/lab2", name: "Lab 2", member: false }, title: "Olga asks you: Join olga/lab2 as coder (member)",
+      target: { type: "request", id: "req-iv02" }, read: false, redacted: false });
+    win.MAITY_FIXTURES = icF;
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    const icWith = await icRead();
+    win.MAITY_FIXTURES = icFixtures;
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    const icLab = (icWith.by_project || {})["olga/lab2"];
+    expect(JSON.stringify(Object.keys(icWith.counts).sort()) === JSON.stringify(Object.keys(icBase.counts).sort())
+      && icWith.counts.inbox === icBase.counts.inbox + 1 && icWith.counts.total === icBase.counts.total + 1
+      && icLab && icLab.member === false && icLab.inbox === 1 && !("invitation" in icLab),
+      "notifications: the mock counts an unread invitation in inbox, on its project with member false, with the five keys "
+      + JSON.stringify([icBase.counts, icWith.counts, icLab]));
+  }
 
   // An invitation by handle is its own kind (§18.1 `invitation`, tsk-8xsrzjv7f0yr): the bell lists it,
   // /notifications lists it and filters by it, and a browser notification shows it when its switch is on.

@@ -1478,7 +1478,7 @@
   "invite.handle.unknown": "このハンドルを持つ人はいません。",
   "invite.handle.not_a_person": "このハンドルは組織のもので、個人のものではありません。",
   "invite.handle.member": "この人はすでにメンバーです。",
-  "invite.handle.invited": "この人宛ての招待がすでに開いています。",
+  "invite.handle.invited": "この人宛ての有効な招待がすでにあります。",
   "invite.handle.with_address": "ハンドルかメールアドレスのどちらか一方だけを指定してください。",
   "invite.hint": "1 人に対して、1 つのロールで、1 回限り使えます。ハンドルで招待すると、相手は受信トレイで回答します。メールアドレスで招待すると、そのアドレスだけがリンクを承諾できます。どちらも指定しない場合は、リンクを持つ人なら誰でも承諾できます。",
   "invite.join_heading": "{project} に参加",

@@ -1491,7 +1491,7 @@ window.MAITY_I18N["ja"] = {
   "invite.for_link": "リンクを持つ人宛ての{what}",
   "invite.handle": "ハンドル",
   "invite.handle.format": "ハンドルの形式ではありません。",
-  "invite.handle.invited": "この人宛ての招待がすでに開いています。",
+  "invite.handle.invited": "この人宛ての有効な招待がすでにあります。",
   "invite.handle.member": "この人はすでにメンバーです。",
   "invite.handle.not_a_person": "このハンドルは組織のもので、個人のものではありません。",
   "invite.handle.placeholder": "@ハンドル",
