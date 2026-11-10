@@ -8,7 +8,7 @@
 **Evidence:** confirmed
 **Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
 **Revisit when:** an agent moderator's work (the statement, the report) is to be done in the dashboard
-**See:** jour-fixe.md#the-jour-fixe-is-kept-per-series-in-project-settings-and-the-tab-groups-its-rounds-by-series — d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998 — as of 2026-10-31
+**See:** views.md#the-jour-fixe-is-kept-per-series-in-project-settings-and-the-tab-groups-its-rounds-by-series — d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998 — as of 2026-10-31
 
 **Jour fixe** is a tab of the project. At `jour-fixe` it lists the
 rounds, grouped by series (below). At `jour-fixe/<id>` it shows one
@@ -63,7 +63,7 @@ round's page never shows one, only the count.
 **Status:** active
 **Evidence:** confirmed
 **Source:** `docs/api.md` §20.1, §20.2, §20.7, §20.9 (contracts #934 and #936); the card tsk-39sjeqre25gw
-**See:** jour-fixe.md#the-jour-fixe-is-a-tab-of-its-own-its-rounds-and-what-each-reader-may-do-under-one-its-series-are-the-next-entry — 8310dfc9-6e1c-48ed-a069-4579214194da — as of 2026-10-31
+**See:** views.md#the-jour-fixe-is-a-tab-of-its-own-its-rounds-and-what-each-reader-may-do-under-one-its-series-are-the-next-entry — 8310dfc9-6e1c-48ed-a069-4579214194da — as of 2026-10-31
 **Revisit when:** the hub names the link targets of the two jour fixe inbox items (§18.1), the shape of `pending_moderators`, `own_agents` and the 202 body is fixed, or a series' keeper who is no project admin is to keep it from the dashboard
 
 Where that section sits is the next entry's since 2026-11-06 (folded at the top of the jour fixe tab); what follows about its content holds there.
@@ -91,7 +91,7 @@ The fixture hub's start of a round by hand refuses in the hub's order (routes/jo
 **Status:** active
 **Evidence:** unknown
 **Source:** the maintainer's request on the card tsk-3526xb7mqg9r, 2026-11-06
-**See:** jour-fixe.md#the-jour-fixe-is-kept-per-series-in-project-settings-and-the-tab-groups-its-rounds-by-series — d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998 — as of 2026-11-06
+**See:** views.md#the-jour-fixe-is-kept-per-series-in-project-settings-and-the-tab-groups-its-rounds-by-series — d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998 — as of 2026-11-06
 **Revisit when:** a series' keeper who is no project admin is to keep it from the dashboard
 
 The section "Jour fixe series" (`js/jour-fixe-series.js`) moved from

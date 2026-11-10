@@ -169,7 +169,7 @@ browser lifted or saw rejected, not what the hub holds.
 **Status:** active
 **Evidence:** inferred
 **Source:** the review of #660 (P3), web/js/admin-registration.js, docs/api.md §16.4, 2026-10-29
-**See:** admin.md — 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0 — as of 2026-10-29
+**See:** views.md — 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0 — as of 2026-10-29
 **Revisit when:** the settings form and the pending list move to separate views, or the hub sends the counts with the decision's answer
 
 After Approve or Reject the Registration section reads
@@ -342,7 +342,7 @@ legal training. The English and German are not changed by them.
 **Evidence:** confirmed
 **Source:** the maintainer's instruction on the card tsk-pfn7yg91d1y7, 2026-11-01, and the coordinator's word on the same card that **Check the file** is enough for the real file; the maintainer named no reason for the move
 **Revisit when:** a public template for operators is wanted again
-**See:** admin.md#the-whole-site-is-one-json-maity-site1-checked-part-by-part-and-saved-in-turn-by-the-dashboard — 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd — as of 2026-11-01
+**See:** views.md#the-whole-site-is-one-json-maity-site1-checked-part-by-part-and-saved-in-turn-by-the-dashboard — 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd — as of 2026-11-01
 
 The site file of the instance the project runs is kept outside this
 repository, and an operator writes their own. Tests, smoke and e2e read
@@ -363,7 +363,7 @@ texts kept as a template: that is what the instruction ends.
 **Evidence:** confirmed
 **Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source; the template in the repository ended with 68502afd-2713-4ea1-b341-73a6efb50537, 2026-11-01), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
-**See:** admin.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
+**See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
 Since tsk-fct4awzw3k30 it stands folded at the top of the admin's **Pages**
 tab, over the sub-tabs, as it spans them; `/admin/site` is gone without a
@@ -382,7 +382,7 @@ holds for 10 minutes; each call still goes through the step-up helper, so
 an expired window asks again rather than fails. A save that stops says
 what is saved and what is not and goes no further, with no rollback. The
 template that replaced `landing-v3-complete.json` has since left the
-repository (admin.md#an-instances-site-file-is-not-in-the-public-repository).
+repository (views.md#an-instances-site-file-is-not-in-the-public-repository).
 A site file need carry no registration: registration is the instance's own,
 and a file imported whole would otherwise close an open registration without
 a word.
@@ -395,7 +395,7 @@ path, down to each part and legal page (deeper, in a page's languages or
 the landing page's pages, the hub's preview refuses the part with its own
 field names); a landing value of the wrong kind refuses its part. `variants` and
 `campaigns` are in the landing part, as in the landing editor's import
-(admin.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
+(views.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
 the format's name stays `maity-site/1`, since a file without them still
 means what it did and nothing has to read an older one. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that
@@ -424,7 +424,7 @@ follows the first word.
 **Evidence:** inferred
 **Source:** the card tsk-knb9me77f32t (the maintainer, 2026-10-31, after importing Landing V3: the same importer for the legal pages and registration); the coordinator's note that a preview of an imported but not loaded draft should say so instead of flickering (2026-10-31); docs/api.md §16.4, §16.7.1; the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers a dry check for the registration setting, or a PATCH of the legal pages may change several pages at once
-**See:** admin.md#the-landing-page-is-imported-and-exported-as-json-in-its-editor-an-import-is-checked-by-the-preview-call-and-saved-only-by-save — c174a492-2691-4887-9507-e1ba2e805a1f — as of 2026-10-31
+**See:** views.md#the-landing-page-is-imported-and-exported-as-json-in-its-editor-an-import-is-checked-by-the-preview-call-and-saved-only-by-save — c174a492-2691-4887-9507-e1ba2e805a1f — as of 2026-10-31
 
 Each legal page has its own Import or export JSON, for its languages (or
 the same under the page's key). A load is checked by the page's preview

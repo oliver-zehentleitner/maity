@@ -127,7 +127,7 @@ the human would see fields that do nothing.
 **Evidence:** inferred
 **Source:** docs/api.md §3.1, §5.2, §6.2 (contract #896); the card tsk-tj523m1r2z7y; the hub's part (#900); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub gives a message a page of its own, or offers a search for cards and messages a field could use
-**See:** agents.md#a-join-for-an-agent-that-is-already-a-member-asks-which-instance-it-makes-replace-preselected — 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90 — as of 2026-10-31
+**See:** views.md#a-join-for-an-agent-that-is-already-a-member-asks-which-instance-it-makes-replace-preselected — 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90 — as of 2026-10-31
 
 The join panel has two more fields for a first join, hidden like the
 membership's fields when the chosen agent is already a member:
@@ -192,7 +192,7 @@ the hub for each credential to decide on `rejoin`: the view has them.
 **Evidence:** inferred
 **Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
 **Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
-**See:** agents.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
+**See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
 Where they run, on the project's Agents, has **Start an agent on a runner**
 for a human with members:admin. It offers the runners attached here
@@ -419,7 +419,7 @@ If that `PATCH` is refused, no join is sent. If it is taken and the join then fa
 **Evidence:** confirmed
 **Source:** the maintainer's wish to fold the Agents page into Members (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut, whose second PR moves joining and the placements and removes the Agents page, 2026-10-27; the decided Team page's Members tab (context/members.md f0ca2279)
 **Revisit when:** the Team page's Members tab lands, or joins get a lifecycle beyond open, used, expired, burned and revoked
-**See:** agents.md#joining-an-agent-happens-in-agents-a-panel-under-the-title-open-joins-as-seats-in-the-grid — d80f865d-5b59-4ad1-8cc2-c1079d13869c — as of 2026-10-27
+**See:** views.md#joining-an-agent-happens-in-agents-a-panel-under-the-title-open-joins-as-seats-in-the-grid — d80f865d-5b59-4ad1-8cc2-c1079d13869c — as of 2026-10-27
 
 The agents' heading on Members has **+ Add an agent** (owner and admin),
 which opens the join panel under it: closed by default, open at once in a
@@ -601,7 +601,7 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Evidence:** confirmed
 **Source:** the maintainer's answer on the card tsk-mzaf9w83emn6, 2026-11-01; the split of the two words proposed on the card and accepted by the coordinator
 **Revisit when:** a member's limit needs its own wording on the button, or profiles and joins merge into one form
-**See:** agents.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
+**See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
 
 Both pages have **+ Add an agent** and **Join an agent** at their head, and
 a click opens the matching form, one at a time. Add makes a new profile. Join
@@ -668,7 +668,7 @@ cause but still leave no way to give the code.
 **Evidence:** inferred
 **Source:** card tsk-q155psrk6tzz, step 3 (the dashboard's part of the hub's motifs, 1c51a4c6); docs/api.md §6.10, "An agent's motif" (the dashboard shows its catalogue's `avatar.motif.<name>` where it has one)
 **Revisit when:** the catalog gets the motifs' names in other languages, or the set grows past what one list can show
-**See:** agents.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-07
+**See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-07
 
 The owner chooses an agent's motif in the same picture editor as the upload, on the agent's card on
 Agents and in its Manage row on Members, with `PATCH /agents/{id}` (`avatar_motif`, `null` to clear

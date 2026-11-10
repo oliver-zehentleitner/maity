@@ -52,7 +52,7 @@ shows.
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 (`POST /auth/sessions/{id}/confirm`, `confirmed_at`, the banner), §18.2 and §18.3, contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
 **Revisit when:** the session view gains a field that says what a session may do
-**See:** account.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
+**See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
 **See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-03
 **See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-04
 
@@ -239,7 +239,7 @@ slot in place keeps the focus and the context where the human was.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-6dk86ej9s0fq (the owner, 2026-11-09: pairing a runner on /runners showed only "This needs your second factor first."; the lead's scope: the fix, an audit of every route that calls `require_step_up`, a guard, the fixture refusing); hub/src/maity_hub (the routes), docs/api.md §2.8.4; the guard's form is the implementer's, as the card left it
-**See:** account.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-09
+**See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-09
 **Revisit when:** the hub publishes which routes ask (in its OpenAPI, say), or the dashboard's calls go through typed per-route functions
 
 `tools/step-up-routes.json` lists the hub's routes that ask for the factor (method and path under the API prefix; `body` where the hub asks only for one field, `when` where it asks only in some cases). Three readers keep it true:
@@ -279,7 +279,7 @@ Known limits, each a way a new guarded call could go unseen (tsk-4zrnkb3gh6mq re
 **Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §2.8.2 (the second-factor session reaches only `GET /auth/session`, the verify, the mail's resend and the logout), §2.8.7 and §2.8.8 after the contract #925 and the hub's first part #943 (`via: email`, `mail`, the link `/sign-in/second-factor/email#<token>` bound to the signing-in browser, the step-up by a mailed code); the coordinator's card tsk-ekpb0pvgw4bh and the lead's answers of 2026-11-01 (the step for both ways in this change, TOTP enrolment and the security page on tsk-94jtz06aps4b; `address_hint` to come with the hub's second part, "your address" until then; Admin → Sign-in in a second web change); the page's shape is the implementer's, 2026-11-01
-**See:** account.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-01
+**See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-01
 **Revisit when:** the hub sends `address_hint` (drop "your address"), TOTP enrolment gets its page (tsk-94jtz06aps4b), or the e2e gets a hub with a secret key and a mail catcher
 
 A session that owes the second factor (`GET /auth/session` answers
@@ -357,7 +357,7 @@ the wording.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §2 `GET /me`, §5.2 "Meat proxy" and the `PATCH /me` row after the contract #702 (two stored parts, the switch derived, the order in which a body applies); the coordinator's card tsk-j9mgn2z3e7pf (two sub-points, both ticked on switching on, each cleared alone, the note under them from `GET /me`), 2026-10-30; the page's shape is the implementer's, 2026-10-30; the review of #720 (the answer's shape), 2026-10-30
-**See:** account.md#the-meat-proxy-hint-quotes-the-hubs-note-as-me-carries-it-and-no-text-of-its-own — 8eb486bb-357a-477c-aaf5-2a4d51024cc4 — as of 2026-10-30
+**See:** views.md#the-meat-proxy-hint-quotes-the-hubs-note-as-me-carries-it-and-no-text-of-its-own — 8eb486bb-357a-477c-aaf5-2a4d51024cc4 — as of 2026-10-30
 **Revisit when:** the hub adds a third part, or the note gets text per human or a translation
 
 Under **I am a meat proxy** the account shows the two parts, *Lead me
@@ -531,7 +531,7 @@ reset.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §18.4; the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02; the owner's decision on the account time zone (message seq 94723) and the approved plan on card tsk-j8s6n725a06r, 2026-11-08
-**See:** account.md#when-mail-goes-out-the-page-sends-only-what-changed-the-browsers-zone-only-offered — 444115c8-aaaf-408e-a16c-571aa48f69cf — as of 2026-11-08
+**See:** views.md#when-mail-goes-out-the-page-sends-only-what-changed-the-browsers-zone-only-offered — 444115c8-aaaf-408e-a16c-571aa48f69cf — as of 2026-11-08
 **Revisit when:** the hub can reset a kind to its default
 
 The modes and times on `/account/notifications` are compared with the hub's merged answer, and

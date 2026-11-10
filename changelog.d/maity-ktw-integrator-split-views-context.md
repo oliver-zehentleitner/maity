@@ -2,4 +2,6 @@
 
 - web: `web/context/views.md` is split into one topic file per view family,
   each with its own line in `web/context/index.md`, so a Keep the Why
-  entry no longer shares that single index line (tsk-x3rh56ryfd6s).
+  entry no longer shares that single index line. `tools/views_context_map.py`
+  maps each moved entry's id to its topic file and reads an entry id or a
+  hunk of `views.md` (tsk-x3rh56ryfd6s).

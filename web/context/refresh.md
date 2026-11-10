@@ -104,7 +104,7 @@ prompt nobody asked for is what people learn to deny.
 **Evidence:** confirmed
 **Source:** docs/api.md §2.6.5 and §18.3 (marking a `session_created` item read gives the reported session good standing); the coordinator's ruling on the review of the dashboard's notifications (PR #194), 2026-10-23
 **Revisit when:** the hub lets the bell confirm a sign-in itself, or §2.6.5 changes who may mark a security item
-**See:** account.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-10-23
+**See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-10-23
 **See:** refresh.md#notification-counts-ride-on-the-15-second-me-read-browser-notifications-long-poll-their-own-endpoint-and-only-after-the-human-turned-them-on — e849f49d-bbdf-462c-972d-a67e7f6740e6 — as of 2026-10-23
 
 In the bell, opening an item marks it read, except an item of kind
@@ -177,7 +177,7 @@ type it carries, and the hub already ships that target.
 **Source:** docs/api.md §2.6.5 ("This was me" its own call), §18.2 (`pinned`), §18.3 (`include_security`, `skipped`) and §18.8 (the dashboard's part), contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
 **Revisit when:** the hub confirms a sign-in by anything but its own call, or `pinned` changes what it holds
 **See:** refresh.md#a-sign-in-or-address-alert-is-never-marked-read-by-opening-it-or-by-mark-all-read — 4c95abfb-95af-4c4d-85e0-6fb1cddfd79f — as of 2026-11-03
-**See:** account.md#sessions-say-what-this-session-may-not-do-and-a-sign-in-is-confirmed-by-its-own-call — 0d50b2d4-2841-4510-a204-90d3aa574927 — as of 2026-11-03
+**See:** views.md#sessions-say-what-this-session-may-not-do-and-a-sign-in-is-confirmed-by-its-own-call — 0d50b2d4-2841-4510-a204-90d3aa574927 — as of 2026-11-03
 
 The bell shows the hub's `pinned` block above the latest items: every unread
 security alert, each once, with **This was me** for a sign-in this session may
@@ -214,7 +214,7 @@ as well: the same alert twice in a panel of twenty.
 **Source:** docs/api.md §2.6.5 ("A sign-in is no notification"), §18.2 (`sessions_rev`) and §18.8, contract PR #1331; card tsk-0baaez2895sb, 2026-11-04
 **Revisit when:** the hub pins a sign-in again, or `sessions_rev` stops moving on a session record
 **See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-04
-**See:** account.md#sessions-say-what-this-session-may-not-do-and-a-sign-in-is-confirmed-by-its-own-call — 0d50b2d4-2841-4510-a204-90d3aa574927 — as of 2026-11-04
+**See:** views.md#sessions-say-what-this-session-may-not-do-and-a-sign-in-is-confirmed-by-its-own-call — 0d50b2d4-2841-4510-a204-90d3aa574927 — as of 2026-11-04
 
 What the earlier entry says about the pinned block and Mark all read stands for the
 security alerts the hub still pins: an address change, a second factor, forge access.
@@ -344,7 +344,7 @@ session ends elsewhere with the count unchanged, which only a read finds.
 **Source:** the card tsk-hn2wa8a7e2eq (measured waterfalls of a page switch) and the owner's choice of what to build from that report, 2026-11-06
 **Revisit when:** the hub offers a session, /me and the project in one read, or the dashboard gains a shared request cache
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-06
-**See:** shell.md#the-view-being-left-is-inert-until-the-next-one-is-drawn — 1d888f69-9233-40b4-b9f3-cd679825ef82 — as of 2026-11-06
+**See:** views.md#the-view-being-left-is-inert-until-the-next-one-is-drawn — 1d888f69-9233-40b4-b9f3-cd679825ef82 — as of 2026-11-06
 
 A change of the address inside the dashboard draws the next view from
 `/auth/session`, `/me` and, inside the same project, its project and

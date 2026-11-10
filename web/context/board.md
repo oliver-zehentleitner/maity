@@ -8,7 +8,7 @@
 **Evidence:** confirmed
 **Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22; re-checked by the coordinator after card order arrived (its revisit condition), 2026-10-22: the Move menu and the transition rule still hold, the order within a column is its own entry
 **Revisit when:** the hub exposes the moves a caller may make
-**See:** board.md#cards-are-placed-within-a-column-by-a-place-menu-and-by-dragging-over-a-card-and-the-order-changes-only-once-the-hub-answered — 3785a685-e976-400f-b088-9321804d29fc — as of 2026-10-22
+**See:** views.md#cards-are-placed-within-a-column-by-a-place-menu-and-by-dragging-over-a-card-and-the-order-changes-only-once-the-hub-answered — 3785a685-e976-400f-b088-9321804d29fc — as of 2026-10-22
 
 Each card a human may move has a **Move** menu with exactly the moves the
 hub allows them, mirrored from its transition check (proposed ↔ open for
@@ -40,7 +40,7 @@ window, so filtering there is instant and needs no new contract.
 **Evidence:** inferred
 **Source:** the coordinator's card for card order (tsk-9cxxnmr3srx1) and docs/api.md §6.4, 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the hub answers a move with the column's new order, or closed cards get a reason to be ordered
-**See:** board.md#cards-move-by-a-move-menu-and-by-dragging-only-where-the-hubs-transition-table-allows-nothing-is-drag-only — c285771a-0b3a-4867-b66b-a1c7faa837de — as of 2026-10-22
+**See:** views.md#cards-move-by-a-move-menu-and-by-dragging-only-where-the-hubs-transition-table-allows-nothing-is-drag-only — c285771a-0b3a-4867-b66b-a1c7faa837de — as of 2026-10-22
 
 The board draws each column in the hub's card order (§6.4). With
 `tasks:admin` an open card has a **Place** menu next to **Move**, built
