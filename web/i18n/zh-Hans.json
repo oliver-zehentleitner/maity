@@ -364,6 +364,7 @@
   "bell.item.unread": "（未读）",
   "bell.kind.chat": "聊天",
   "bell.kind.inbox": "请求",
+  "bell.kind.invitation": "邀请",
   "bell.kind.mention": "提及",
   "bell.kind.security": "安全提醒",
   "bell.mark_all": "全部标为已读",
