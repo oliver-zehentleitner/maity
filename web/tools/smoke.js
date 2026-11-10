@@ -11716,6 +11716,56 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tabCountOf("Chat") === "5", "notifications: a refresh of the counts updates the project's Chat tab in place " + tabCountOf("Chat"));
   win.Maity.api.get = tcGet;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  // The counts never hold the page up (tsk-hyfqc0sp2bvc: /me/notifications?limit=0 took ~2 s on prod): with that
+  // read held back, the page draws with the counts read so far, and the header follows when it answers.
+  const hbGet = win.Maity.api.get;
+  let hbRelease = null;
+  const hbHold = (answer) => (p) => (p.startsWith("/me/notifications?limit=0")
+    ? new Promise((resolve, reject) => { hbRelease = () => hbGet(p).then((r) => resolve(answer(r)), reject); }) : hbGet(p));
+  hbRelease = null;
+  win.Maity.api.get = hbHold((r) => ({ ...r, counts: { ...r.counts, mention: (r.counts.mention || 0) + 5, chat: 4 } }));
+  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  expect(hbRelease && main.querySelector("section.view-board") && bellBtn() && bellBtn().getAttribute("aria-label") === "2 new notifications"
+    && chatBtn().getAttribute("aria-label") === "1 unread chat message",
+    "notifications: with the counts read held back, the page draws, with the counts read before " + (bellBtn() && bellBtn().getAttribute("aria-label")));
+  hbRelease(); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector("section.view-board") && bellBtn().getAttribute("aria-label") === "10 new notifications"
+    && chatBtn().getAttribute("aria-label") === "4 unread chat messages" && /^\(\d+\) Board · /.test(document.title),
+    "notifications: when the held counts answer, the bell, Chat and the title follow on the drawn page " + bellBtn().getAttribute("aria-label") + " " + document.title);
+  // A held read that fails: the page stands, and the notice says so when the answer comes.
+  hbRelease = null;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? new Promise((resolve, reject) => { hbRelease = () => reject(new Error("held and lost")); }) : hbGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(hbRelease && main.querySelector("section.view-inbox") && !text(main).includes("Could not read your notifications"),
+    "notifications: a held counts read that has not answered says nothing yet");
+  hbRelease(); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector("section.view-inbox") && text(main.querySelector(".notice")).includes("Could not read your notifications: held and lost"),
+    "notifications: a held counts read that fails is said in the notice of the drawn page");
+  // No counts read yet, and the first answer comes after the inbox drew: that answer is where its count starts, not a
+  // change (§18.2's inbox counts personal requests, /me's open_requests does not).
+  const hbCounts = win.Maity.notify.state.counts;
+  win.Maity.notify.state.counts = null;
+  const hbMore = (r) => {
+    const by = { ...(r.by_project || {}) };
+    by["maintainer/sample"] = { ...(by["maintainer/sample"] || {}), inbox: ((by["maintainer/sample"] || {}).inbox || 0) + 3 };
+    return { ...r, by_project: by, counts: { ...r.counts, inbox: (r.counts.inbox || 0) + 3 } };
+  };
+  hbRelease = null;
+  const hbBefore = main.querySelector("section.view-inbox");
+  win.Maity.api.get = hbHold(hbMore);
+  await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(hbRelease && hbBefore && main.querySelector("section.view-inbox") && main.querySelector("section.view-inbox") !== hbBefore && !win.Maity.notify.state.counts,
+    "notifications: the inbox draws before any counts are read");
+  hbRelease(); for (let k = 0; k < 4; k++) await tick();
+  // The next round reads the same counts: nothing changed since the first answer.
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0") ? hbGet(p).then(hbMore) : hbGet(p));
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector("section.view-inbox") && !text(main).includes("What waits for you changed"),
+    "notifications: the first counts after the inbox drew are where its count starts, no \"changed\" offer");
+  win.Maity.api.get = hbGet;
+  if (!win.Maity.notify.state.counts) win.Maity.notify.state.counts = hbCounts;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chat-list a.conv");
   expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")

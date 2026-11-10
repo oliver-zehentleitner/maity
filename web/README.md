@@ -87,6 +87,8 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
   every counts read fills that line again.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
+- **No wait for the counts.** A page draws without waiting for this read,
+  with the counts read so far, and the header follows when it answers.
 
 **Theme.** **System** (the default: the browser's light or dark),
 **Light** or **Dark**, kept per browser (`localStorage`, `maity.theme`; without storage the pick holds for

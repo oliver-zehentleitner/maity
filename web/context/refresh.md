@@ -62,6 +62,18 @@ An item's link is built from its `target`, never from its `url`. A hub
 that answers 404 leaves the page as it was, with no bell. Any other
 failure is said in the notice and stops nothing.
 
+The read a page starts when it is drawn does not hold that page up
+(tsk-hyfqc0sp2bvc). It runs beside the page's own reads. The page
+draws with the counts read so far, or /me's open requests before the
+first read. The header (the switcher, Chat, the bell, the tabs, the
+title) follows when it answers. Awaiting it with the page's own reads
+was the way before: on prod it took about 2 s, and every page waited
+that long. The first counts that come
+after the page was drawn are where the page's inbox count starts, not
+a change: §18.2's inbox counts personal requests that /me's
+`open_requests` does not. A failure that comes late is said in the
+same notice.
+
 Browser notifications run only when the account wants them and the
 browser allows them. They use the long-poll `?after=<position>&wait=55`,
 starting from a `limit=0` head read when the loop starts (on, after a
