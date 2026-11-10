@@ -159,8 +159,8 @@ def source_spans(entries: list[Entry], order: list[str]) -> list[tuple[int, int,
     """1-based line spans of views.md: ``# Views``, a blank line, then entries.
 
     The blank line between entries belongs to the entry before it, so every
-    line of that file falls in exactly one span. ``order`` is the source order
-    of the ids.
+    line after the ``# Views`` header and its blank line falls in exactly
+    one span. ``order`` is the source order of the ids.
     """
     by_id = {entry.id: entry for entry in entries}
     spans: list[tuple[int, int, Entry]] = []
