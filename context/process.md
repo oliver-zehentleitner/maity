@@ -1353,17 +1353,18 @@ for the newest run to finish.
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
 
 (2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs before the change (ids
-42825184191 to 42853402637, 13:30 to 16:19 UTC), its 44 green jobs took 835 s median and up to 893 s, 12 of them 870 s or
-more, and on #1610 one ran past 900 s and was cancelled after its end-to-end step had passed, in `pseudo_run.py --strict`.
-Card tsk-w81egrhwz7a7. The same day `hub-postgresql` went to 120; see the paragraph after the rejected alternatives.)
+42825184191 to 42853402637, 13:30 to 16:19 UTC; the jobs that had finished by 16:35 UTC), its 44 green jobs took 835 s
+median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its end-to-end
+step had passed, in `pseudo_run.py --strict`. Card tsk-w81egrhwz7a7. The same day `hub-postgresql` went to 120; see the
+paragraph after the rejected alternatives.)
 
 `hub-sqlite` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`, `hub-postgresql` 120 since
-2026-11-10 (90 before); every other job
-`ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15 until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one
-running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
-MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
-(MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
-slow runner and still fail a hang the same evening.
+2026-11-10 (90 before); every other job `ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15
+until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one running ci run hangs, every newer
+push only replaces the waiting run (the entry above), so nothing on main finishes and the MariaDB start from `ci` never
+comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29 (MariaDB, on the rented runners);
+the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a slow runner and still fail a hang
+the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
@@ -1377,14 +1378,15 @@ hung MariaDB run ended without a word.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
 
-(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to
-42872347637, 12:52 to 18:09 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and up to 88, 9 of them 70
-or more; on main, its green jobs took 68 minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about
-6,600 tests on a hosted runner with 4 cpus and 4 workers (read from their logs), so the time grew on the runners, not
-with the suite. `hub-postgresql` now carries 120 so that a slow runner does not cancel a green run; the title's "90
-minutes for the database jobs" holds for `hub-sqlite` and `hub-mariadb` only. Whether 90 stays the rule for the database
-jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite` keeps 90: its 15 green jobs
-took 44 minutes median and up to 54.)
+(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to 42872347637,
+12:52 to 18:09 UTC; the jobs that had finished by 18:19 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and
+up to 88, 9 of them 70 or more; in main's last 60 `ci` runs (from 2026-11-09 11:51 UTC), its green jobs took about 68
+minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about 6,600 tests on a hosted runner with 4 cpus and 4
+workers (read from their logs), so the growth did not come from the number of tests; that it came from the runners is an
+inference, since no run compares one commit on two runners. `hub-postgresql` now carries 120 so that a slow runner does not
+cancel a green run; the title's "90 minutes for the database jobs" holds for `hub-sqlite` and `hub-mariadb` only. Whether 90
+stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
+keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
 
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
