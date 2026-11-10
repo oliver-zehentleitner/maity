@@ -433,7 +433,8 @@ bounded:
 
 **Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1820f379-0c1f-47c1-9352-672d62cdaf62
 **Evidence:** confirmed
 **Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
 **See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
@@ -457,6 +458,35 @@ exactly that and keep the activity order inside each.
 - The dashboard sorting the pins into the list the hub returns: the list
   is paged (§1.4), so a pinned chat on a later page would stay hidden;
   the hub orders, and the cursor follows the bands.
+
+## Pinned chats stay above every unpinned one
+
+**Id:** 1820f379-0c1f-47c1-9352-672d62cdaf62
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0km9ys53dynd; contract `docs/api.md` §9.3
+**Revisit when:** a conversation's unread count or the header's chat badge no longer shows a new message
+**See:** chat.md#a-human-pins-chats-a-pin-keeps-a-chat-on-top-only-while-nothing-newer-waits-elsewhere — d39e2f76-8cfd-4d23-9408-5c03bf39c014 — as of 2026-11-10
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-11-10
+
+A human pins conversations. Both lists are ordered in four bands, and
+each band keeps its activity order: pinned with unread messages, quietly
+pinned (pinned, no unread), unpinned with unread, then the rest. The
+cursor follows that order. The pin stays the human's own, stored by the
+hub so it holds across devices, emits no event, and is limited to 20.
+
+**Reason:** a pinned chat stays on top of the list, including when it is
+quiet. A new message does not have to rise above those quiet pins to be
+noticed: it stays visible through the conversation's unread count and
+the header's chat badge.
+
+**Rejected alternatives:**
+- The previous order (pinned with unread, then unpinned with unread,
+  then quiet pins, then the rest): a quiet pin sat below every chat with
+  something new, so a pin did not keep its chat on top. The unread count
+  and the header's chat badge already show a new message, so the list
+  no longer lifts that chat above a quiet pin.
 
 ## A human switches the meat-proxy mode per chat; the profile gives the default
 
