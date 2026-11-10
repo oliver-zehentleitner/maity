@@ -150,7 +150,7 @@ tomorrow. Presence as a line of its own: the dot already says it.
 
 Where the theme menu was, the signed-in header has Chat; since
 2026-10-31 the order is Chat, Lead, "+", the gear, the bell and the
-profile (views.md#the-header-gets-a-menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc). Chat leads to `/chats` and carries
+profile (shell.md#the-header-gets-a--menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc). Chat leads to `/chats` and carries
 `counts.chat` from `/me/notifications`, which the header already reads,
 worded "N unread chat messages". `/chats` reads the conversations
 across projects (§9.3, `GET /me/conversations`) and shows them in the

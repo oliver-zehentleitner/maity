@@ -382,7 +382,7 @@ holds for 10 minutes; each call still goes through the step-up helper, so
 an expired window asks again rather than fails. A save that stops says
 what is saved and what is not and goes no further, with no rollback. The
 template that replaced `landing-v3-complete.json` has since left the
-repository (views.md#an-instances-site-file-is-not-in-the-public-repository).
+repository (admin.md#an-instances-site-file-is-not-in-the-public-repository).
 A site file need carry no registration: registration is the instance's own,
 and a file imported whole would otherwise close an open registration without
 a word.
@@ -395,7 +395,7 @@ path, down to each part and legal page (deeper, in a page's languages or
 the landing page's pages, the hub's preview refuses the part with its own
 field names); a landing value of the wrong kind refuses its part. `variants` and
 `campaigns` are in the landing part, as in the landing editor's import
-(views.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
+(admin.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
 the format's name stays `maity-site/1`, since a file without them still
 means what it did and nothing has to read an older one. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that

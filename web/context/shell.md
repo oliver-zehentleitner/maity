@@ -200,7 +200,7 @@ something broken, and a timer that keeps asking costs a request every
 15 seconds for nothing.
 
 **Rejected alternative:** a check of the machine form before every call,
-as for the controls (views.md: controls only for routes the hub lists):
+as for the controls (shell.md: controls only for routes the hub lists):
 the answer of the call itself already says it, and these reads happen
 whether or not a control is drawn. Caching every 404 by its full path: a
 card or a request that is gone answers 404 too, and must not be taken for
