@@ -126,6 +126,11 @@ def launch(ctx: Context) -> Launch:
     raise NotYet(f"no adapter for {harness.id}")
 
 
+def headless(ctx: Context) -> bool:
+    """A supervised placement: the harness runs without a person at the pane (§6.2)."""
+    return ctx.placement.get("mode") != "interactive"
+
+
 def _write(ctx: Context, path: Path, data: Any) -> Path:
     """A file for the agents' side, written as the agents' user (§7.6)."""
     return ctx.as_user.write(path, json.dumps(data, indent=2) + "\n")
@@ -171,6 +176,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{ws}/.git/**)"]
     deny += [f"Read(/{ws}/.git/maity/**)"]
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
+    if headless(ctx):
+        # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
+        # stays in the model's context; the bare name removes it, so the agent never plans
+        # around asking (cli/context/runner.md).
+        deny += ["AskUserQuestion"]
     settings: dict[str, Any] = {
         "permissions": {"allow": allow, "deny": deny, "defaultMode": "dontAsk"},
     }
@@ -279,6 +289,8 @@ def codex_config(ctx: Context) -> str:
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
+        # Nobody answers a headless run: the question tool is not offered (cli/context/runner.md).
+        + ("\n[tools.experimental_request_user_input]\nenabled = false\n" if headless(ctx) else "")
     )
 
 
