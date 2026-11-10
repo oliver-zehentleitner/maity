@@ -11614,7 +11614,8 @@ is not there is not sent:
    path from the repository's root to a file at `head`, and the file has
    at least `n` (or `b`) lines. A bare file name is refused even when
    one file alone has it; the client then names that file. A line always
-   refers to `head`.
+   refers to `head`. A run of digits and dots before the colon is not a
+   path (`5.60:1`, `4.5:1`), and neither is `3:1`, which has no extension.
 2. **A name in a code span** (between single backticks, paired as
    CommonMark pairs them), after one pair of surrounding `"` or `'` is
    dropped. Letters here are ASCII letters. Skipped are a span with
@@ -11622,7 +11623,7 @@ is not there is not sent:
    character outside ASCII (a word in another script); one with `#`,
    `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
    instance, a pull request, a placeholder); one shaped like an id the
-   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span) or a UUID; one that is only digits and punctuation; and
+   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span); one that is only digits and punctuation; and
    an object hash or a range `a..b` of them (form 3). A span with a `/`
    names a path: it is a file or a directory, and with a `*` the part
    before the first `*` begins one (`hub/tests/test_public_*`); anything
@@ -11634,7 +11635,12 @@ is not there is not sent:
    more), is text in some file or the name of a file; failing that, each
    part of the core between dots that has three characters or more is
    (`_Facts.key`, `public_page.body`). A span without such a core is
-   skipped. A path or name counts as there when it stands at `head` or
+   skipped. A core that is a test name (`test_` and then only letters,
+   digits and `_`) is a test at `head` and only there: a file holds
+   `def`, that name and `(`. A longer name that merely begins with it,
+   or the same characters in a comment, does not count, and the default
+   branch is no fallback for it. Any other path or name counts as there
+   when it stands at `head` or
    at the tip of the clone's default branch (`origin/HEAD`), so that a
    name the change removed, or one only the default branch has, passes;
    a file and line (form 1) does not get that fallback. A name the review
@@ -11681,6 +11687,14 @@ is not there is not sent:
    the change removed next to the line that replaced it is therefore
    written in a code span (a span with whitespace in it is skipped, form
    2) or without double quotes.
+
+A UUID in the checked text, in a code span or not, is a Keep-the-Why
+id. The full form, eight hex digits, three groups of four and a group
+of twelve, stands in a file at `head`; the case of the hex digits does
+not matter, and sharing the first eight with an id that does stand
+there does not. A hyphenated form shorter than that is refused,
+including when an id at the head starts with it. Eight hex digits and
+no hyphen stay an object (form 3).
 
 Not checked: a fenced code block; everything under a heading `Ran` up
 to the next heading of the same or a higher level, where the reviewer

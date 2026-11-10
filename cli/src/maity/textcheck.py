@@ -4,7 +4,9 @@ names only what stands at its head", §13)
 The cites are checked by `citecheck`; reviews still passed with prose that named tests, keys or
 files that were not there. This reads the message's text in the same clone and looks for four
 forms: a file and line, a name in a code span, an object hash, and a quotation from a file that
-the text ties to that file. It catches names and quotes that are not there, not wrong claims.
+the text ties to that file. A numeric ratio is not a file and line. A Keep-the-Why id has to be
+the full UUID at the head, and a cited test name has to be a test there. It catches names and
+quotes that are not there, not wrong claims.
 """
 
 from __future__ import annotations
@@ -24,6 +26,14 @@ _TICKS = re.compile(r"`+")
 _FILE_LINE = re.compile(
     r"(?<![\w./-])((?:[\w-][\w.-]*/)*[\w-][\w-]*(?:\.[\w-]+)*\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?(?!\w)"
 )
+# A Keep-the-Why id is the full UUID. A hyphenated shorter form is a prefix, not an id.
+_UUID_AT = re.compile(
+    r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})(?![0-9A-Za-z])"
+)
+_UUID_SHORT = re.compile(
+    r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{1,4}){1,4})(?![0-9A-Za-z-])"
+)
+_TEST_NAME = re.compile(r"test_[A-Za-z0-9_]+")
 # Form 3: lowercase hex as a word bounded by anything but letters, digits, `_` and `-`.
 _HEX = re.compile(r"(?<![A-Za-z0-9_-])[0-9a-f]{7,40}(?![A-Za-z0-9_-])")
 _HUB_ID = re.compile(r"[a-z]+-[0-9a-z]{12}")
@@ -184,6 +194,17 @@ class _Repo:
     def has_object(self, word: str) -> bool:
         return self._git("cat-file", "-e", word).returncode == 0
 
+    def has_id(self, ident: str) -> bool:
+        """The full UUID stands in a file at the head. A prefix of it does not match."""
+        found = self._git("grep", "-q", "-i", "-F", "-e", ident, self.revs[0], "--")
+        return found.returncode == 0
+
+    def has_test(self, name: str) -> bool:
+        """`def name(` at the head, so a longer test that only begins with `name` does not count."""
+        needle = f"def {name}("
+        found = self._git("grep", "-q", "-F", "-e", needle, self.revs[0], "--")
+        return found.returncode == 0
+
     def flat_text(self, rev: str, path: str) -> tuple[str, ...]:
         """The file with every run of whitespace as one space, so that a quote of wrapped
         prose matches, once as it is and once without the comment markers at the lines'
@@ -198,10 +219,20 @@ class _Repo:
         return self._flat[key]
 
 
+def _file_lines_in(text: str) -> list[re.Match[str]]:
+    """File-and-line cites. A ratio such as `5.60:1` or `4.5:1` is digits and dots, not a path;
+    `3:1` has no extension, so the pattern never takes it."""
+    return [
+        match
+        for match in _FILE_LINE.finditer(text)
+        if not match.group(1).replace(".", "").isdigit()
+    ]
+
+
 def _file_lines(repo: _Repo, head: str, text: str) -> list[str]:
     bad = []
     files = repo.files(head)
-    for match in _FILE_LINE.finditer(text):
+    for match in _file_lines_in(text):
         path, first, last = match.group(1), int(match.group(2)), match.group(3)
         end = int(last) if last else first
         if path not in files:
@@ -216,7 +247,8 @@ def _file_lines(repo: _Repo, head: str, text: str) -> list[str]:
 
 
 def _name(repo: _Repo, span: str) -> str | None:
-    """Why the span names nothing at the head or on the default branch, or None."""
+    """Why the span names nothing at the head or on the default branch, or None.
+    A test name is checked at the head only; the reason is then `not a test`."""
     if "/" in span:
         path = span.split(":", 1)[0]
         if "*" in path:
@@ -231,6 +263,12 @@ def _name(repo: _Repo, span: str) -> str | None:
     if not cores:
         return None
     core = max(cores, key=len)
+    if _TEST_NAME.fullmatch(core):
+        # A test is `def name(` at the head. Text that only contains the name, or a longer
+        # test that begins with it, is not that test. No fallback to the default branch.
+        if repo.has_test(core):
+            return None
+        return "not a test"
     if repo.has_text(core) or repo.has_file_name(core):
         return None
     parts = [part for part in core.split(".") if len(part) >= 3]
@@ -288,7 +326,7 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
             return
         para = "\n".join(paragraph)
         blanked = _ESCAPED_QUOTE.sub(lambda m: " " * len(m.group()), _blank_spans(para))
-        lines = [m for m in _FILE_LINE.finditer(para) if m.group(1) in files]
+        lines = [m for m in _file_lines_in(para) if m.group(1) in files]
         nearest = next((named for _, named in reversed(section) if named), [])
         here = nearest[0] if len(nearest) == 1 else None
         used = -1  # the end of the brackets the last quote took: no place before the next one
@@ -347,6 +385,34 @@ def _quote_stands(repo: _Repo, revs: list[str], quote: str, path: str) -> bool:
     return False
 
 
+def _ids(repo: _Repo, text: str) -> list[str]:
+    """A Keep-the-Why id is the full UUID at the head. A hyphenated shorter form is refused,
+    even when an id at the head starts with it. Eight hex digits and no hyphen stay an object
+    hash (form 3), checked apart from this."""
+    bad: list[str] = []
+    full = list(_UUID_AT.finditer(text))
+    seen: set[str] = set()
+    for match in full:
+        ident = match.group(1).lower()
+        if ident in seen:
+            continue
+        seen.add(ident)
+        if not repo.has_id(ident):
+            bad.append(f"body: {match.group(1)}: no such id at the head")
+    covered = [(match.start(), match.end()) for match in full]
+    seen_short: set[str] = set()
+    for match in _UUID_SHORT.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in covered):
+            continue
+        ident = match.group(1)
+        key = ident.lower()
+        if key in seen_short:
+            continue
+        seen_short.add(key)
+        bad.append(f"body: {ident}: not a full id")
+    return bad
+
+
 def _short(quote: str) -> str:
     return quote if len(quote) <= 80 else quote[:79] + "…"
 
@@ -364,8 +430,13 @@ def check(cwd: Path, head: str, body: str) -> Result:
         seen.add(span)
         problem = _name(repo, span)
         if problem is not None:
-            where = "the head nor the default branch" if len(repo.revs) > 1 else "the head"
+            # A test is resolved at the head only. Other names also stand on the default branch.
+            if problem == "not a test":
+                where = "the head"
+            else:
+                where = "the head nor the default branch" if len(repo.revs) > 1 else "the head"
             bad.append(f"body: `{span}`: {problem} at {where}")
+    bad.extend(_ids(repo, text))
     for word in sorted(set(_HEX.findall(text))):
         if is_object_hash(word) and not repo.has_object(word):
             bad.append(f"body: {word}: no such object in this clone")

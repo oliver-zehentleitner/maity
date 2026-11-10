@@ -41,6 +41,12 @@ FILES = {
     "hub/tests/test_public_pages.py": "def test_a_page_is_public():\n    get('/api/v1/events')\n",
 }
 
+# A Keep-the-Why id in the full form. The fabricated id and the prefix share its first
+# eight hex digits; only the full id is written into the committed file.
+KTW_ID = "c0ffee00-1234-4abc-8def-0123456789ab"
+KTW_FAKE = "c0ffee00-0000-4000-8000-000000000000"
+KTW_PREFIX = "c0ffee00-1234"
+
 
 def bad(clone: Path, body: str) -> list[str]:
     head = _commit(FILES)
@@ -59,7 +65,7 @@ def test_names_that_stand_at_the_head_pass(clone: Path) -> None:
 @pytest.mark.parametrize(
     ("body", "named"),
     [
-        ("`test_invented_name` covers it", "`test_invented_name`: not found"),
+        ("`test_invented_name` covers it", "`test_invented_name`: not a test at the head"),
         ("see `hub/src/maity_hub/nope.py`", "`hub/src/maity_hub/nope.py`: no such file"),
         ("`hub/nothing_*` matches", "`hub/nothing_*`: no such file"),
         ("hub/src/maity_hub/rules.py:9 says", "rules.py:9: the file has 5 lines"),
@@ -91,7 +97,6 @@ def test_each_part_of_a_dotted_name_may_stand_alone(clone: Path) -> None:
         "@owner/handle",
         "<path>",
         "agt-1wjr47d6vkyx",
-        "66b1e1f9-4641-4a55-be2d-d60963606cb3",
         "1.5",
         "--",
     ],
@@ -122,8 +127,43 @@ def test_trees_and_blobs_are_objects_and_uuid_groups_are_no_hash(clone: Path) ->
     head = _commit(FILES)
     tree = _git("rev-parse", "HEAD^{tree}")[:10]
     blob = _git("rev-parse", "HEAD:web/i18n/nl.json")[:10]
+    # The UUID's groups are not object hashes. The id itself is not at the head, so it is
+    # named, and nothing else is.
     body = f"tree {tree}, blob {blob}, KTW 66b1e1f9-4641-4a55-be2d-d60963606cb3"
-    assert textcheck.check(clone, head, body).bad == []
+    assert textcheck.check(clone, head, body).bad == [
+        "body: 66b1e1f9-4641-4a55-be2d-d60963606cb3: no such id at the head"
+    ]
+
+
+def test_a_numeric_ratio_is_not_a_file_and_line(clone: Path) -> None:
+    assert bad(clone, "The contrast is 5.60:1, above 4.5:1 and 3:1.") == []
+
+
+def test_a_keep_the_why_id_is_the_full_uuid_at_the_head(clone: Path) -> None:
+    head = _commit({**FILES, "context/sample.md": f"**Id:** {KTW_ID}\n"})
+    assert textcheck.check(clone, head, f"See `{KTW_ID}`.").bad == []
+    fake = textcheck.check(clone, head, f"See `{KTW_FAKE}`.").bad
+    assert fake == [f"body: {KTW_FAKE}: no such id at the head"], fake
+    short = textcheck.check(clone, head, f"See `{KTW_PREFIX}`.").bad
+    assert short == [f"body: {KTW_PREFIX}: not a full id"], short
+
+
+def test_a_cited_test_name_is_a_test_at_the_head(clone: Path) -> None:
+    head = _commit(
+        {
+            **FILES,
+            "pkg/tests/test_widget.py": (
+                "def test_real_widget():\n    return 1\n# see test_real_widget_note\n"
+            ),
+        }
+    )
+    assert textcheck.check(clone, head, "`test_real_widget` covers it.").bad == []
+    prefix = textcheck.check(clone, head, "`test_real` covers it.").bad
+    assert prefix == ["body: `test_real`: not a test at the head"], prefix
+    noted = textcheck.check(clone, head, "`test_real_widget_note` covers it.").bad
+    assert noted == ["body: `test_real_widget_note`: not a test at the head"], noted
+    missing = textcheck.check(clone, head, "`test_no_such_widget` covers it.").bad
+    assert missing == ["body: `test_no_such_widget`: not a test at the head"], missing
 
 
 def test_a_hex_word_needs_a_digit_to_be_a_hash(clone: Path) -> None:
@@ -199,7 +239,7 @@ def test_say_refuses_a_text_that_names_what_is_not_there(
     assert _send(tmp_path, head, "`test_invented` covers it.") == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert "not sent: 1 name(s) in the text are not there" in err
-    assert "`test_invented`: not found as text or as a file name" in err
+    assert "`test_invented`: not a test at the head" in err
     assert [r for r in fake.signed()[before:] if r.path.endswith("/events")] == []
 
 

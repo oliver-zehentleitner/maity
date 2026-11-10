@@ -459,10 +459,15 @@ head in the local clone, as it already checks the cites: a file and line
 (full path, the file long enough), a name in a code span (a path, or an
 identifier or key found as text), and an object hash. A name counts as
 there at the head or at the tip of the default branch; a file and line
-only at the head. Addresses, hub ids, UUIDs, placeholders and words
+only at the head. Addresses, hub ids, placeholders and words
 outside ASCII in a code span are skipped, and a hash is any object in
 the clone, bounded so that the groups of a UUID do not count (both
-found in review of #1224, the lead's ruling). A path in a code span that is no
+found in review of #1224, the lead's ruling). A later decision
+(cli/context/commands.md, "A Keep-the-Why id in a review is the whole
+UUID, and a cited test is a test") no longer skips a UUID: it has to be
+the full id at the head. The same decision requires a cited test name
+to be that test at the head, and does not read a ratio such as
+`5.60:1` as a file and line. A path in a code span that is no
 file still passes as text in a file, so that routes and parts of URLs
 are not refused, and a hash needs a digit, so that English words made
 of `a`–`f` are not taken for one (the lead's rulings after #1224). Commands and their output go under a heading `Ran`,
