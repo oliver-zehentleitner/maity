@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import pwd
 import shutil
 import subprocess
 import sys
@@ -63,6 +62,8 @@ class Host:
         return self.path(Path("/run/systemd/system")).is_dir()
 
     def user_ids(self, name: str) -> tuple[int, int] | None:
+        import pwd  # POSIX only; the CLI imports this module on Windows too
+
         try:
             entry = pwd.getpwnam(name)
         except KeyError:
