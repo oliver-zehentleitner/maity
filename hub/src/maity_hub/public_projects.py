@@ -11,6 +11,7 @@ deleted. Whatever changes one of these calls `public_pages.touch` in its transac
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -387,10 +388,12 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
-            select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
+            select(t.project.c.id)
+            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
+            .order_by(t.project.c.id)
         ).scalars()
     )
 

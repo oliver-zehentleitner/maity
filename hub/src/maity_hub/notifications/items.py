@@ -228,12 +228,9 @@ def derive_page(
             floor = max(since.projects.get(mine.project.id, start), start)
             window = (*window, t.event.c.seq > floor)
         # A personal request's events never make an item (`_classify`: it is one item,
-        # from its record), so they are left out in SQL, not read and dropped one by one.
-        personal = (
-            select(t.request.c.id)
-            .where(t.request.c.id == t.event.c.subject_id, t.request.c.personal.is_(True))
-            .exists()
-        )
+        # from its record), nor do a request's that is another member's alone, so both
+        # are left out in SQL, not read and dropped one by one.
+        concerned = _may_concern(mine)
         # One item per request, the latest addressed one (`ADDRESSED`): `_items_of` keeps
         # it only among the rows it is given, so a page read in chunks takes only the
         # newest such event of each request. Every one of them is classified alike, since
@@ -253,7 +250,7 @@ def derive_page(
         others = (
             t.event.c.kind.in_(EVENT_KINDS),
             or_(t.event.c.kind != "message", _names(where.human_id)),
-            or_(t.event.c.kind.notin_(REQUEST_EVENTS), ~personal),
+            or_(t.event.c.kind.notin_(REQUEST_EVENTS), concerned),
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
@@ -270,6 +267,32 @@ def derive_page(
     return found
 
 
+def _may_concern(mine: Membership) -> Any:
+    """A request event's request is not personal and may concern the member: a superset of
+    `_request_concerns` (the exact test, in `_classify`). Left out is a request filed to
+    another member that no admin pool holds, nobody covers, and the member neither holds
+    nor asked: agents asking each other, which make no item of the human's
+    (tsk-spa1tad26vs1)."""
+    r = t.request.c
+    return (
+        select(r.id)
+        .where(
+            r.id == t.event.c.subject_id,
+            r.personal.is_(False),
+            or_(
+                r.to_kind != "member",
+                r.to_member == mine.id,
+                r.holder_member == mine.id,
+                r.holder_pool.is_(True),
+                r.cover.is_not(None),
+                r.asked_by == mine.id,
+                r.on_behalf_of == mine.id,
+            ),
+        )
+        .exists()
+    )
+
+
 def _names(human_id: str) -> Any:
     """A message row whose payload text has a `member_id` and the human's id: a superset
     of the rows that mention them (the exact test is `_classify`). The id alone would not
@@ -278,6 +301,12 @@ def _names(human_id: str) -> Any:
     return and_(
         text.contains("member_id", autoescape=True), text.contains(human_id, autoescape=True)
     )
+
+
+def _addressed(human_id: str) -> Any:
+    """A row whose audience text holds the human's `member:` token: a superset of the rows
+    whose audience lists it (the exact test is `_classify`)."""
+    return cast(t.event.c.audience, String).contains(f'"member:{human_id}"', autoescape=True)
 
 
 def _paged(
@@ -335,8 +364,16 @@ def _chats(
     newest_first: bool,
     wanted: Callable[[Item], bool],
 ) -> list[Item]:
-    """The first `count` plain chat items of one project that `wanted` accepts."""
-    plain = (t.event.c.kind == "message", ~_names(where.human_id))
+    """The first `count` plain chat items of one project that `wanted` accepts. A chat
+    item is a conversation's message whose audience names the human (`_classify`), so
+    only those rows are read: the other messages of the project, agents writing to each
+    other, are no item of the human's however many there are (tsk-spa1tad26vs1)."""
+    plain = (
+        t.event.c.kind == "message",
+        ~_names(where.human_id),
+        t.event.c.conversation_id.is_not(None),
+        _addressed(where.human_id),
+    )
     return _paged(
         conn, where, mine, window, plain, lambda i: i.kind == "chat", count, newest_first, wanted
     )
