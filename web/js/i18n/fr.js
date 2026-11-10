@@ -3440,6 +3440,7 @@ window.MAITY_I18N["fr"] = {
   "picture.uploaded": "Image téléversée.",
   "picture.uploading": "Téléversement de l'image de {name}…",
   "picture.uploading_own": "Téléversement de votre image…",
+  "pin.column": "Afficher les boutons d'épinglage",
   "pin.mark": "épinglée",
   "pin.not_pinned": "Non épinglée : {reason}",
   "pin.not_unpinned": "Non désépinglée : {reason}",

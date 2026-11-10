@@ -3440,6 +3440,7 @@ window.MAITY_I18N["nl"] = {
   "picture.uploaded": "Afbeelding geüpload.",
   "picture.uploading": "Afbeelding van {name} wordt geüpload…",
   "picture.uploading_own": "Je afbeelding wordt geüpload…",
+  "pin.column": "Vastzetknoppen tonen",
   "pin.mark": "vastgezet",
   "pin.not_pinned": "Niet vastgezet: {reason}",
   "pin.not_unpinned": "Niet losgemaakt: {reason}",
