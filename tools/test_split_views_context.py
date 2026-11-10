@@ -29,7 +29,6 @@ class Split(unittest.TestCase):
     def test_table_covers_the_views_file_it_was_built_from(self) -> None:
         table = split.load_table()
         entries = split.parse_entries(show("web/context/views.md"))
-        self.assertEqual(len(table), len(entries))
         self.assertEqual(
             [entry_id for entry_id, _ in table],
             [split.id_of(entry) for entry in entries],
@@ -73,3 +72,23 @@ class Split(unittest.TestCase):
         self.assertTrue(
             any(split.id_of(entry).startswith("33333333") for entry in grouped["shell"])
         )
+
+    def test_live_scan_ignores_changelog_vendor_and_dashboard_views(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "changelog.d").mkdir()
+            (root / "changelog.d" / "old.md").write_text("see web/context/views.md\n", encoding="utf-8")
+            vendor = root / "web" / "vendor" / "keep-the-why"
+            vendor.mkdir(parents=True)
+            (vendor / "README.md").write_text("docs/dashboard-views.md\n", encoding="utf-8")
+            (root / "web").mkdir(exist_ok=True)
+            (root / "web" / "README.md").write_text(
+                "docs/dashboard-views.md is not ours\nsee context/views.md\n",
+                encoding="utf-8",
+            )
+            (root / "tools").mkdir()
+            (root / "tools" / "split_views_context.py").write_text(
+                "the views.md it is given\n", encoding="utf-8"
+            )
+            self.assertEqual(split.live_views_references(root), ["web/README.md:2"])
+        self.assertEqual(split.views_md_lines("docs/dashboard-views.md\n"), [])

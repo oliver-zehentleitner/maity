@@ -12,7 +12,10 @@ for this run only; it is not written back into the table.
 
 ``--check`` builds the topic files, the index and the See and prose locators
 in memory and compares them with web/context here. It prints the lossless
-counts and exits 1 when a byte differs or an id is missing, extra or repeated.
+counts and exits 1 when a byte differs, an id is missing, extra or repeated,
+or a live ``views.md`` reference remains outside ``changelog.d/``,
+``web/vendor/`` and ``tools/``. The files it writes are refused if they
+still name ``views.md``. ``dashboard-views.md`` is not that file.
 
 Standard library only.
 """
@@ -71,6 +74,11 @@ ANCHOR_DROP = re.compile(r"[^\w\- ]", re.UNICODE)
 FAMILY_ARG = re.compile(
     r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})=([a-z0-9-]+)$"
 )
+# dashboard-views.md is the vendored library's document, not this split.
+VIEWS_REF = re.compile(r"(?<![\w-])views\.md")
+# Historical fragments describe a past edit. Vendored files are not ours.
+# The tools name views.md as the file they are given.
+LIVE_SKIP = ("changelog.d/", "web/vendor/", "tools/")
 
 
 class Unclassified(Exception):
@@ -304,7 +312,46 @@ def build(
         files[f"web/context/{name}"] = updated
         if n:
             counts[name] = counts.get(name, 0) + n
+    assert_repairs_kept(files)
     return files, counts
+
+
+def views_md_lines(text: str) -> list[int]:
+    """Lines that name this split's views.md. dashboard-views.md does not count."""
+    return [number for number, line in enumerate(text.splitlines(), 1) if VIEWS_REF.search(line)]
+
+
+def live_views_references(root: Path) -> list[str]:
+    """Live views.md references. Changelog fragments, vendored files and tools are skipped."""
+    hits: list[str] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        if rel.startswith(LIVE_SKIP) or rel.startswith(".git/"):
+            continue
+        if path.suffix.lower() not in {".md", ".js", ".py", ".yml", ".yaml", ".txt", ".html", ".css"} and path.name not in {
+            "CONTRIBUTING.md",
+            "AGENTS.md",
+        }:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hits.extend(f"{rel}:{number}" for number in views_md_lines(text))
+    return hits
+
+
+def assert_repairs_kept(produced: dict[str, str]) -> None:
+    """The files this tool writes must not put views.md back."""
+    left = [
+        f"{relative}:{number}"
+        for relative, text in sorted(produced.items())
+        for number in views_md_lines(text)
+    ]
+    if left:
+        raise SystemExit("generator left a views.md reference:\n" + "\n".join(left))
 
 
 def lossless_report(views_text: str, produced: dict[str, str], counts: dict[str, int]) -> str:
@@ -412,6 +459,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(report, end="")
         print("matches web/context")
+        live = live_views_references(ROOT)
+        if live:
+            print("live views.md reference:", file=sys.stderr)
+            print("\n".join(live), file=sys.stderr)
+            return 1
     if args.write:
         dest = Path(args.write)
         for relative, text in produced.items():

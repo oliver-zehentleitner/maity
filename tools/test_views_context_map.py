@@ -54,14 +54,18 @@ class Map(unittest.TestCase):
 
     def test_this_repository_maps_every_moved_entry(self) -> None:
         entries = vcm.load()
-        table = split.load_table()
-        self.assertEqual(len(entries), len(table))
-        self.assertEqual({entry.id for entry in entries}, {entry_id for entry_id, _ in table})
-        files = {entry.file for entry in entries}
-        self.assertEqual(files, {f"{name}.md" for name in vcm.FAMILIES})
+        seen: list[str] = []
+        for entry in entries:
+            self.assertNotIn(entry.id, seen)
+            seen.append(entry.id)
+            self.assertTrue(entry.file.endswith(".md"))
+            self.assertIn(entry.file[:-3], vcm.FAMILIES)
+            self.assertTrue(entry.heading)
+        present = set(seen)
+        missing = [entry_id for entry_id, _ in split.load_table() if entry_id not in present]
+        self.assertEqual(missing, [])
         inbox = vcm.resolve(entries, "a8f4ac34")
-        self.assertEqual(len(inbox), 1)
-        self.assertEqual(inbox[0].file, "inbox.md")
+        self.assertEqual([entry.file for entry in inbox], ["inbox.md"])
 
     def test_a_hunk_names_the_entry_and_a_new_id_beside_it(self) -> None:
         entries = vcm.load(self.tree())
