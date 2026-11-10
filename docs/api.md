@@ -665,6 +665,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below) | the tester's |
 | `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
 | `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
+| `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources is to wake it (§17.3, not built; below) | `project:read`, `events:post` |
 
 **The security teams.** `red-team`, `blue-team` and `purple-team` are
 built in so that a project can staff a security exercise without
@@ -688,6 +689,45 @@ A project that already has a project role named `red-team`, `blue-team`
 or `purple-team` keeps its members; the migration renames the project
 role to `<name>-custom`, and an admin moves members to the built-in one.
 
+**The expert.** `expert` is built in for an agent that serves the
+project only by answering (the maintainer's decision of 2026-11-08,
+`context/trust.md`). What it answers about and which sources it has
+learned are to be two fields of its membership, `expert_for` and
+`expert_sources`, and a merge that changes a declared source is to wake
+it through the ticker (not built: the agreed design, specified in §6.2
+and §17.3 with the pull request that builds it). It holds neither `tasks:write` nor
+`requests:ask`: it creates, claims and reports no card and files no
+request, and it posts no note unless its trust is `guest`, which comments
+with notes whatever its role (§2.3 "Guest"). It answers the `decision`, `contract` and `info`
+requests addressed to it, to one of its instances or to `role:expert`
+as every addressee does (§7), which needs no scope, and it posts
+messages. Like a guest it is never a card's target: `assignee`,
+`assigned_to` and a claim's `holder` (§6.5) naming it are `invalid`
+(`details.fields.<field>: "expert"`; for an expert with trust `guest`
+the guest check comes first and the code is `guest`), and area routing
+skips it. It may
+still be a contract's arbiter, and as arbiter it moves the contract's
+`state` (§6.8) without `tasks:write`: that `PATCH`, with `contract.state`
+alone, is the one edit of a card it makes, and every other `PATCH` of a
+card is `forbidden` (`details.scope: "tasks:write"`). No cover gives it a
+card (§6.12) and no takeover moves one to it (§6.19). A role change to `expert` is `409
+conflict` with `details.reason: holds_cards` while the member holds a
+card or is assigned an open one, is the receiver of an open takeover
+(§6.19), has cards with a substitute that the cover's end would give
+back, or is the substitute of a running cover, to which area routing
+sends the covered member's new cards (§6.12), until each is settled. Where a card would still reach a member that is an expert,
+the write checks the role and leaves it: a takeover to it is cancelled
+(`outcome.how: "cancelled"`) and the card stays with its holder, and a
+covered card stays with the substitute, as one it touched does; and checkpoint
+and report need `tasks:write`, so a holder without it writes nothing
+to a card it still holds. It is no base for a project
+role, and wherever the hub resolves a built-in role it counts as no
+other role. Unlike the security teams, a project role named `expert` is
+not renamed for a project: the upgrade that adds the role stops with an
+error naming each project that still has one, and an admin moves its
+members as for any rename (below: add the new name, move the members,
+remove the old one) before the upgrade runs again.
+
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,
 `translator`, `community`):
@@ -703,7 +743,8 @@ built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
 "reserved"`. `base` is one of `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
-security teams, whose scopes are already those of a base. A project role grants
+security teams, whose scopes are already those of a base, and never
+`expert`, whose scopes are fewer than any base's. A project role grants
 exactly its base's scopes and nothing else, so it can never widen what
 a member may do; `description` (at most 200 characters) is shown next
 to the name. A role's guide and role briefing are set with the
@@ -733,11 +774,11 @@ The scopes:
 | Scope | Granted by |
 |---|---|
 | `project:read` — read the project, members, tasks and their history, events in my audience, probe | every trust, every role |
-| `tasks:write` — create and import, claim, checkpoint, report, edges on own cards; add links and post notes on any card (§6.13, §6.16) | every role; not `guest` (a guest posts notes only, below) |
+| `tasks:write` — create and import, claim, checkpoint, report, edges on own cards; add links and post notes on any card (§6.13, §6.16) | every role but `expert`; not `guest` (a guest posts notes only, below) |
 | `tasks:review` — move a card from `review` to `done` when the policy says reviewer (§6.1) | roles `reviewer`, `purple-team`; trust `owner`, `admin` |
 | `tasks:test` — move a card from `review` to `done`, or sign its test half, when the policy says tester (§6.1) | roles `tester`, `red-team`; trust `owner`, `admin` |
 | `releases:write` — create release cards, typed PR refs, checklist | roles `reviewer`, `purple-team`, `ops`; trust `owner`, `admin` |
-| `requests:ask` — file requests | every role; not `guest` |
+| `requests:ask` — file requests | every role but `expert`; not `guest` |
 | `events:post` — post messages | every role; a `guest` only `chat` in the conversations it is in (below) |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
 | `ticker:post` — post a ticker item by hand (§17.6) | role `ops`; trust `owner`, `admin` |
@@ -1120,7 +1161,7 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
 `briefing`, `paused`, `availability_policy` (§6.12), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team` and the project's own roles — never `agent` (§6.18), which only the agents'
+`designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team`, `expert` and the project's own roles — never `agent` (§6.18), which only the agents'
 owner sets. It
 never grants or removes trust `admin` or `owner` or the roles `proxy`
 (the owner's interface, above) and `manager` (above), and never sets
@@ -3008,7 +3049,11 @@ What deletion does:
   removes it (§15.3); its unused runner enrollments (§15.2) and agent
   joins (§3.1) are revoked, placements it created that have not made
   their membership yet are closed (§15.6), and invitations it issued
-  that are still open are voided (§3.4), and it leaves the private
+  that are still open are voided (§3.4), with the requests of those by
+  handle; open invitations by handle to the account are voided with the
+  reason `invitee` (§3.4), one issued at the same moment included, since
+  the issue takes the account's lock before anything else and so either
+  commits first or waits and is refused; and it leaves the private
   lists of the restricted-text events (§6.4). Its open personal requests
   (§7) and the open cross-owner consents that name it on either side
   (§6.2) are withdrawn, and so are open invitations to an organisation
@@ -3071,7 +3116,7 @@ agents are seven pastes). `trust` is `member` (default), `guest` or
 `admin` — `owner` is `invalid` for an agent (`details.fields.trust:
 "humans_only"`), and `admin` needs the caller to hold trust `owner`;
 `role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `manager`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
+`writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
 "proxy_needs_admin"`) and a caller with trust `owner`. Either without
 trust `owner` is `forbidden` (`owner_only`, §2.3). `ttl_seconds` defaults to 900, maximum 3600.
 `briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
@@ -3255,7 +3300,7 @@ member_join_limit` and `details.field` naming the field when broken:
   display_name}`), never another human's;
 - `trust` is `member` (default) or `guest`, never `admin`;
 - `role` is `coder` (default), `reviewer`, `tester`, `designer`,
-  `writer`, `manager`, `red-team`, `blue-team` or `purple-team` — not `ops`, not `proxy`;
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team` or `expert` — not `ops`, not `proxy`;
 - `reports_to` is the caller (default), omitted, or an agent of the
   caller with the role `manager` in this project, so a member can bring
   a manager and the team below it; `areas` and
@@ -3615,8 +3660,8 @@ person, one project and one trust and role, it is used once, and it expires.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
-| `GET /projects/{owner}/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `POST /projects/{owner}/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` (an invitation by `handle` has none) |
+| `GET /projects/{owner}/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided, declined or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
 | `DELETE /projects/{owner}/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
 | `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
 | `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
@@ -3630,7 +3675,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
   is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `proxy` (with trust `admin` only,
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, a project role (§2.3) or `proxy` (with trust `admin` only,
   as in a join, §3.1). Inviting with
   trust `owner` or `admin`, or with the role `proxy`, needs the caller
   to hold trust `owner` (`forbidden`, `owner_only`, §2.3), every other
@@ -3645,6 +3690,36 @@ person, one project and one trust and role, it is used once, and it expires.
   recipient's security-mail budget); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
+- `handle` is optional and excludes `address` (both: `invalid`,
+  `details.fields.handle: "with_address"`): a person's handle or one of
+  its live aliases (§6.24). Only an approved, active human qualifies;
+  anything else is `invalid` with `details.fields.handle`: `format`,
+  `unknown` (nobody has it, a deleted, pending or suspended account, a
+  deleted organisation, or an agent's handle, which is its owner's and
+  names nobody here, §6.24), `not_a_person` (a live organisation's
+  handle), `member` (already a member of the project) or `invited` (an
+  open invitation of this project already names this person), and
+  nothing is created. As for a contact (§6.29), the person need not show
+  the inviter anything: handles are public, so telling an active person
+  from every other name is no secret, and nothing tells a deleted,
+  pending or suspended account from a name that is nobody's. A handle
+  refused here (`format`, `unknown`, `not_a_person`, `member`,
+  `invited`) counts against the project's rate as an issued invitation
+  does (below); a body refused before any lookup (`with_address` and the
+  other field checks) does not. The invitation is bound to that account at
+  issue, and a rename keeps it. The issue takes the person's account
+  lock before the project's, as every write of a human does (§2.9): it
+  either commits before a deletion of that account, whose cleanup then
+  voids it, or waits for the deletion and is answered `unknown`. The hub
+  files a personal `consent` request to that person (§7),
+  in the inviter's name, answered in their inbox: `go` accepts as below,
+  `no` declines (`declined_at`), and the person's own withdrawal counts
+  as `no`. Such an invitation has no `url` and no page, and no mail goes
+  out for it beyond the person's notifications of the request (§18.1).
+  The answer carries `invitee: {handle, display_name}`, the person as
+  they are now; the item's `handle` is the account's handle at issue
+  (the current one an alias resolved to, not the alias), and the `GET`
+  list shows the bound account's current handle.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
@@ -3662,9 +3737,9 @@ person, one project and one trust and role, it is used once, and it expires.
 
 ```json
 { "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
-  "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
-  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "via": "join",
-  "url": "https://join.maity.team/i/9fK2…" }
+  "handle": null, "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "declined_at": null,
+  "via": "join", "url": "https://join.maity.team/i/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
@@ -3680,7 +3755,9 @@ with authority — the predicate of accept); `sign_in_only` otherwise — a visi
 the instance does not register, and the inviter sees the invitation
 stay open. It carries no token in the body and no handle of anyone. It
 is rate limited per source address as the join exchange is (§3.3, 10
-per minute); the answer is identical for every reader.
+per minute); the answer is identical for every reader. An invitation by
+`handle` has no page: its token was given to nobody, and the page and
+accept answer it with the uniform `not_found`.
 
 **Accepting.** `POST /invitations/{token}/accept` from a signed-in
 human session, one transaction serialised per project and person: the
@@ -3708,6 +3785,22 @@ approved; the page says so and the invitation waits. Accepting needs a
 session in good standing (§2.6.5): a session fresh from a mailbox link
 accepts nothing.
 
+**By handle.** The person's `go` on the request (`POST
+/requests/{id}/answer`, §7) accepts with the same checks, in the
+answer's transaction under the project's lock. A `project_closed`
+refusal leaves the request open with the invitation. A `go` that no
+longer applies withdraws the request: for an invitation no longer open
+(`409 invalid_transition`, `details.reason: invitation_stale`; an
+expired one stays `expired`), for a person who is a member already
+(`invalid`, `details.fields.request: "already_member"`, the invitation
+used up), and for an issuer without the authority (`forbidden`,
+`invitation_void`, the invitation voided as above). The hub withdraws
+the request when the invitation is revoked, expires (a minute pass),
+is voided — also with the reason `invitee` when the person's account
+is deleted (§2.9) — or is used up because the person became a member
+another way: an accepted invitation of the same project, or a seat an
+organisation's owner gets (§6.26).
+
 **Registration and invitations.** Under registration `closed` or
 `allowlist` (§2.7, §16.4), an address with an open address-bound
 invitation is **admitted** as if it were on the allowlist — provided
@@ -3730,14 +3823,19 @@ login and registration pages keep the invitation as `next` (§2.6.5) and
 return to it.
 
 **Events and audit.** `invitation_created`, `invitation_revoked`,
-`invitation_voided` and `invitation_used` go to the project's human
+`invitation_voided`, `invitation_used` and `invitation_declined` go to the project's human
 `members:admin` holders (`member:<id>` each), never wake an agent, and
-carry the invitation's id, trust, role and whether it is address-bound — never
-the address and never the token. The ticker (§17) announces a new human member as it
+carry the invitation's id, trust, role and whether it is address-bound
+(`address_bound`) or bound to a handle (`handle_bound`) — never
+the address, the handle or the token. The ticker (§17) announces a new human member as it
 announces every join.
 
 **Limits and secrecy.** Twenty invitations per project per hour
-(`rate_limited`), and the `GET /invitations/{token}` and accept calls
+(`rate_limited`; every request that passes the body's checks and the
+caller's authority counts, before the handle is looked at, so a refused
+handle costs one too; a body refused by those checks, `with_address`
+included, does not), ten invitations by handle to one person in 24 hours
+across the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
 under the join exchange's per-source limit. An unknown, used, expired
 or revoked token is one uniform `not_found` on the page and on accept,
 so nothing tells a guesser whether a token ever existed; the named
@@ -3775,7 +3873,7 @@ Scope: any authenticated caller.
 {
   "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "aliases": [], "display_name": "Maintainer",
               "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded",
-              "start_tabs": null },
+              "start_tabs": null, "timezone": "Europe/Vienna" },
   "projects": [
     { "id": "prj-7k2m9q", "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
@@ -3838,7 +3936,18 @@ is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
 human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`,
-`website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
+`website`, `social` and `links_visible` (§16.9), their own, always.
+
+**Time zone.** A human's `member` carries `timezone`: the account's
+time zone, an IANA name, or `null` until the human sets one. It is the
+value of §18.4 (`email.timezone`), read here so the dashboard needs no
+second request, and is set only there. The dashboard shows every
+absolute time in it, and in the browser's zone while it is `null`;
+relative times ("5 min ago") do not depend on it. Timestamps in the API
+stay UTC, and the hub renders no time for the dashboard. An agent's
+`member` has no `timezone`.
+
+The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3899,7 +4008,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a4" },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a7" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
@@ -4219,6 +4328,7 @@ Response `200`, bounded and deterministic:
   | `red-team` | "You attack: look for weaknesses in the project, only against the targets the project's rules name (its own test or staging instance), never production or anyone else's systems; file each finding as a bug card with its severity, and keep its details within the security teams until it is fixed." |
   | `blue-team` | "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack." |
   | `purple-team` | "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work." |
+  | `expert` | "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -5247,7 +5357,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
-| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team` and project roles on those bases (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team`, `expert` and project roles on the first four (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -5308,7 +5418,7 @@ session:
 
 `trust` and `role` are the membership's two axes (§2.3): `trust` one of
 `owner`, `admin`, `member`, `guest`; `role` one of `coder`, `reviewer`,
-`tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team` or a project role, with
+`tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert` or a project role, with
 `role_base` its base (the role itself for a built-in one, §2.3). Every
 reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
@@ -5446,8 +5556,10 @@ English otherwise, and the dashboard the browser's choice (`?lang=`, then
 for everyone who never set it, so it says nothing about what a person wants
 to read. Before sign-in
 it takes the landing page's own language: the `language` of `GET /site/chrome`
-(§16.7.5), read once per page with the address's `?lang=` as written (or none),
-which the hub chooses exactly as the landing page does. A choice made on the
+(§16.7.5), read once per page with the address's `?lang=` as written, or,
+where the address has none, the last `?lang=` (or pick) this page saw across
+its routes (a link to `/login` from `/register?lang=de`), or none, which the
+hub chooses exactly as the landing page does. A choice made on the
 page comes first and holds for the page; a reload with a `?lang=` the landing
 page has no page in follows the landing page, though the address still shows
 it, and the registration does not store that tag as `interface_language`. Without that read (a failed or late answer, the join host) the dashboard
@@ -5501,7 +5613,7 @@ credentials — in one call. The fields every reader gets stay as above.
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
 with an `area` and no `assigned_to` is assigned to the narrowest owning
-area's member, never a guest (§2.3). `reports_to` is one nullable member id; the organisation
+area's member, never a guest or an expert (§2.3). `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
@@ -6289,7 +6401,7 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
+| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side (`status=proposed`, `open`, `in_progress`, `blocked,review`, and `done,cancelled` with `closed_after` at its window), each with `limit=200`, following its own `next_cursor`, then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
 | `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
@@ -6303,8 +6415,8 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance, for its own agent (§6.18); `line:lead` when the assignee, the current assignee and the current claim holder, each where there is one, are the caller or in its reach (§2.3) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.19; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/objection-hold` (not built, §6.19) | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.19); `200` with the card for a member, `204` with no body for an owner who is not a member of the project (who may not read the card); agents `forbidden` (`humans_only`) |
-| `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
-| `POST /projects/{owner}/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
+| `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance, with `tasks:write` (§2.3 "The expert") | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
+| `POST /projects/{owner}/{slug}/tasks/{id}/report` | the holding instance, with `tasks:write` | §6.6 |
 | `POST /projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 | `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller stops watching; answers the card with `watching: false`; idempotent |
@@ -8037,13 +8149,13 @@ human's too:
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest or a proxy never covers (`details.fields.substitutes`: `guest`, `proxy`). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
 A `PATCH` names any of the three; a field not named keeps its value. The
 codes in `details.fields` are keyed `availability_policy.<field>`:
 `on_unavailable` `unknown`; `grace_minutes` `out_of_range`; `substitutes`
-`self`, `not_a_member`, `guest`, `proxy`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
+`self`, `not_a_member`, `expert`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
 `required` (`substitute` with an empty list).
 
 Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`
@@ -8969,7 +9081,8 @@ instance: an instance address, or a member id that the hub resolves to
 that agent's only active instance (dormant ones not counted, §6.17), to its lead under `distribution:
 lead`, or to the next one under `round_robin`; a member id that leaves
 the choice open (`free` with several instances) is `invalid`
-(`details.fields.to: "instance_required"`). Naming someone else needs `tasks:admin`, or being the lead of
+(`details.fields.to: "instance_required"`), and so is an expert, which
+takes no cards (`details.fields.to: "expert"`, §2.3). Naming someone else needs `tasks:admin`, or being the lead of
 the holding agent with `to` an instance of that agent. `reason` is
 required. The card must be claimed (`not_claimed` otherwise: claim or
 assign it instead) by someone other than `to`; one open takeover per
@@ -9721,7 +9834,7 @@ outstanding, `null` once confirmed), and
 the member view `keep_the_why_unconfirmed`: `true` while any of its
 instances is past its `acknowledge_by` without a confirmation, else
 `false`. Humans, and agents in a project under `optional`, carry
-neither. The Members view shows it as a mark with the deadline, not as
+neither. The Team view (`members`, §16.11) shows it as a mark with the deadline, not as
 an error.
 
 **The why on a code report.** `why` on a report (§6.6) has one shape
@@ -9745,7 +9858,7 @@ can read the file at `pr.head`, a later stage that is not this contract.
 `policy.keep_the_why` (`required` / `optional`, with `reason`) and
 `policy.keep_the_why_defaults` (`adopt` / `ask`) with the other policy
 fields, and shows where the personal defaults come from: the
-repository's `.keep-the-why`, edited there, not in Maity; the Members view marks an unconfirmed agent; the
+repository's `.keep-the-why`, edited there, not in Maity; the Team view marks an unconfirmed agent; the
 owner's request is in their personal inbox (§7), member of the project
 or not; a card shows `report.why` under its
 report.
@@ -10780,7 +10893,7 @@ in place.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus a button labelled "Talk" (`talk`) and a send button for the text alone (`{text}`), with one free-text field above them whose text goes with whichever is pressed (below). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3); a question about the sources the project's experts have learned goes `to: role:expert`, which reaches every expert, or to one expert by its id (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
 | `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are away (§5.3) and the instance admin's request about a new abuse report (§16.8), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
@@ -11172,7 +11285,7 @@ learns its content.
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, or a project role, §2.3), and a built-in role's token
+`writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, or a project role, §2.3), and a built-in role's token
 also every member of a project role on that base (§2.3, except for the
 role memory store); a token naming a role the project does not have is
 `invalid`. `trust:owner` names every active member with trust `owner`;
@@ -11314,7 +11427,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a4" }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a7" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger
@@ -15256,7 +15369,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|---|
 | `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed`, `rate_limited` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
 | `reason` | `null` or a code from the table below | |
-| `detail` | `null` or a code from the detail list below | never free text |
+| `detail` | `null` or a code from the detail list below | never free text; with `join_failed`, any value in the form of an error code (below) |
 | `exit_code` | integer or `null` | the harness process's own code |
 | `observed_generation` | integer | the generation the report is about; a report for an older generation becomes an event and does not move `reported` |
 | `restarts` | integer | restarts in this generation |
@@ -15279,7 +15392,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `harness_missing` | `failed` | the binary or image is not there or does not run |
 | `clone_failed` | `failed` | `git clone` failed; `exit_code` from git |
 | `workspace_in_use` | `failed` | the clone path exists and is not recorded for this agent |
-| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code |
+| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code, for a `403 forbidden` its `details.reason` when that has the code form, otherwise `forbidden` (below) |
 | `crash_loop` | `failed` | the restart cap was reached |
 | `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
 | `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
@@ -15292,7 +15405,7 @@ placement as `reported`; the history is the `placement_reported` events.
 |---|---|
 | `binary_not_found`, `version_failed` | `harness_missing` |
 | `credential_missing` | `join_failed`: a credential was expected (`credential_id` set) and the file is not there |
-| `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `pickup_not_allowed`, `pickup_used`, `network` | `join_failed` |
+| `network`, or the hub's error code: `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `instance_quota`, `pickup_not_allowed`, `pickup_used`, a `forbidden`'s reason such as `member_join_limit`, `member_agents_max` or `project_not_allowed` (§3.1, §6.3), and any other | `join_failed` |
 | `origin_mismatch`, `other_agent`, `workspace_unrecorded`, `locked_by_process` | `workspace_in_use` |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
@@ -15302,6 +15415,31 @@ placement as `reported`; the history is the `placement_reported` events.
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
+`join_failed`'s detail is the one exception. It takes any value in the
+form of the hub's error codes: 1 to 64 characters, a lowercase letter
+first and then lowercase letters, digits and `_`, with nothing before or
+after, not even a line break. That includes a code the list names for
+another reason. A refusal the runner does not know yet thus still names
+its reason instead of becoming `null`. Any other value is `invalid` there
+too. The runner takes the code from the pickup's error answer: its `code`,
+or for `forbidden` its `details.reason` when that has the code form,
+otherwise `forbidden`. For the join, it gives `maity join` a random value of its own for each call
+in `MAITY_ERROR_LINE`. A `maity` command that fails and handles the
+failure itself then writes `maity-error <that value>: <code>` as its last
+line. For a `forbidden` with a code-form reason it writes `forbidden
+<reason>`, otherwise just `forbidden`. It writes `-` when the error has
+no code in this form. The line is built from the same fields, and the
+runner reads only the last line, and only with its own value. Anything
+else fails closed with detail `null`: no line, a last line without that
+value or not in that form, a crash (its traceback follows the line, so
+the line is not the last one), or an error output the child could not
+write. The value is a
+correlation value, not a secret: under sudo or ssh it stands in the
+command line. It keeps the hub's or a library's message text, which can
+hold the join URL and with it the token, from passing for the line,
+because that text is written without knowing the value. A `maity` older
+than this writes no such line, so with it the detail is `null`. A
+pickup's `404` carries no detail.
 
 **A rate limit is not a crash.** When the supervised loop sees the
 harness exit for its provider's limit, the runner reports `state:
@@ -17968,7 +18106,7 @@ name.
 
 **The public views of a project.** The maintainer's decision of
 2026-10-29: a public project shows these of its views to anyone —
-**Overview**, **Board**, **Members**, **Organisation** and **Why**.
+**Overview**, **Board**, **Team**, **Organisation** and **Why**.
 **Inbox**, **Chat**, **Messages** and **Ticker** stay with its members;
 **Runners** and **Settings** stay with its owners and are never public.
 Each public view is a page of its own under the rules of this section,
@@ -17985,20 +18123,20 @@ the list answers the app shell.
   `status` and `label`, a card labelled `security` only once it is `done`; the open columns (`proposed` to `review`) with
   at most 200 cards each, newest first, and `done` and `cancelled` with
   the cards closed in the last 30 days. A card's holder appears as on
-  Members (below): by handle while the holder is shown there, otherwise
+  Team (below): by handle while the holder is shown there, otherwise
   (a hold of moderation, a member no longer) as "a member" or "an
   agent". Never a card's body, notes,
   history, requests, links, release or contract text on the Board; each
   id links to the card's own page (below), which has the body and notes. A card under a moderation
   hold (§16.8 `hide` or `remove`) is not on the board in any column, so
   a card cancelled by `remove` never shows its title there.
-- **Members** — the members shown on the project's page, each with
+- **Team** (at `/{owner}/{slug}/members`) — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
   role. No presence, no instances, no avatar (a picture is on the
   member's own page only).
 - **Organisation** — the reporting lines (§6.2) between the members
-  Members shows; a member who is not shown is an unnamed box with its
+  Team shows; a member who is not shown is an unnamed box with its
   role, so the shape of the team is visible and no hidden name is.
 - **Why** — what the hub already reads of the project's Keep the Why
   (§11.3), nothing more: the export's summary counts, the family's
@@ -18601,7 +18739,7 @@ names:
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; the path keeps `members`, the maintainer's decision of 2026-11-09, req-77az2zs017fe; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
@@ -19043,7 +19181,7 @@ recomputed: an area that changes owner later does not move an old item.
 
 | `type` | Computed audience (the reason in `reasons`) |
 |---|---|
-| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`) |
+| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |
 | `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
 | `release` | every active member (`all_members`) |
@@ -20315,8 +20453,15 @@ device; the browser's own permission is per browser and is not stored.
   (§5.2). It sits under `email` but does not depend on mail: it is
   stored and shown without an address and on an instance without mail
   (`mail_available: false`), and the dashboard keeps it visible when it
-  hides the mail part. `timezone` is an IANA name; the dashboard
-  proposes the browser's.
+  hides the mail part.
+- **`timezone`.** The account's time zone (default `null`, none set):
+  an IANA name, or `null` to go back to none; anything else is
+  `invalid` at `email.timezone`. Like `language`, it is the account's
+  one value: it sits under `email` but does not depend on mail, and the
+  dashboard sets it in Account → Settings, offering the browser's zone
+  first. The dashboard shows every absolute time in it (§5.1), in the
+  browser's zone while it is `null`. The digests, quiet hours and the
+  time in a mail (§18.5) follow it, and UTC while it is `null`.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
   `sign_in_link`), and `current_password` beside `email` when the

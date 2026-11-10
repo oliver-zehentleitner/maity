@@ -226,9 +226,7 @@ window.Maity = window.Maity || {};
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
   function releasedDay(project) {
-    const d = new Date(project.released_at);
-    return Number.isNaN(d.getTime()) ? project.released_at
-      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return M.fmt.date(project.released_at);
   }
   // The selected project's two places one goes to often, beside its state
   // (the maintainer, tsk-n161gf6h8feb): its repository, with its forge's
@@ -797,8 +795,9 @@ window.Maity = window.Maity || {};
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
-          const when = new Date(until.value);
-          if (!until.value || Number.isNaN(when.getTime())) { until.focus(); return; }
+          // The field holds the account's time zone, the one the absence is shown in (§5.1).
+          const when = M.fmt.fromWall(until.value);
+          if (!when) { until.focus(); return; }
           if (!scope.value.trim()) { scope.focus(); return; }
           save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
         },
@@ -1647,17 +1646,19 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // "+": a new project, or bring someone in, an agent or a person (the maintainer, 2026-10-31):
-    // the create form, the agents page with its join, the invitations page. Humans only.
+    // "+": bring someone in, an agent or a person, pair a runner, or a new project (the maintainer,
+    // 2026-10-31; the order and the runner, tsk-45fhe2yrwzb7): the agents page with its join, the
+    // invitations page, the runners page with its pairing form, the create form. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
       face: M.icons.plus(18),
       items: () => [
-        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
-        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+        { label: M.t("menu.add.runner"), href: "/runners", current: ctx.scope === "runners" },
+        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
+        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
       ],
     }) : null;
     // The human: their picture, the account, signing out.
@@ -1827,11 +1828,16 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         // A window announced, changed or started meanwhile: the banner, or the full page (§16.12).
         if ("maintenance" in fresh) M.maintenance.know(fresh.maintenance);
+        // A project joined or left elsewhere: the views that follow the tabs (the inbox filtered to
+        // open tabs or grouped) draw again too, not only the switcher (web roll-up 3).
+        const names = (list) => (list || []).map((p) => p.full_name).join(" ");
+        const moved = names(fresh.projects) !== names(ctx.projects);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
         renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
+        if (moved) tabsChanged(ctx);
         document.title = M.notify.title(baseTitle);
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
@@ -2154,7 +2160,13 @@ window.Maity = window.Maity || {};
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
-    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
+    // The first segment is decoded on its own, as parseRoute() decodes it, so /%69nvite/<token> is an
+    // invitation here too (#1574 review); a token with a broken escape, which parseRoute() refuses
+    // as a whole, still gets the policy (web roll-up 3, nte-2e1kq5r85vaj).
+    const rawParts = M.route.current().path.split("/").filter(Boolean);
+    let firstWord = rawParts[0] || "";
+    try { firstWord = decodeURIComponent(firstWord); } catch { /* a broken first segment is no invitation */ }
+    if (M.invite && firstWord === "invite" && rawParts.length > 1) M.invite.noReferrer();
     await M.i18n.ready;
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page

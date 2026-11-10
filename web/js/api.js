@@ -46,6 +46,58 @@ window.Maity = window.Maity || {};
   const mockSoulVersions = {};
   const mockSoul = (id) => mockSouls[id] || { agent_id: id, markdown: "", version: 0, by: null, confirmed_by: null, updated_at: null };
   let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
+  // The fixture hub's step-up (§2.8.4), only where a test sets window.MAITY_FIXTURE_STEP_UP: these
+  // routes, the ones of tools/step-up-routes.json (tools/check.py keeps the two equal), refuse with
+  // step_up_required until a code was verified in the last 10 minutes, and, where the flag is a time
+  // (Date.now()), after it. Off, nothing asks, as for a session that has just given its factor.
+  const STEP_UP_ROUTES = [
+    "GET /me/export",
+    "POST /me/deletion",
+    "POST /auth/password",
+    "POST /auth/second-factor/totp",
+    "POST /auth/second-factor/recovery-codes",
+    "DELETE /auth/second-factor",
+    "POST /auth/device-codes/{code_id}/approve",
+    "PATCH /me/notification-settings",
+    "POST /me/notification-settings/email/address-change/approve",
+    "POST /me/notification-settings/email/address-change/reject",
+    "POST /me/forge/github/link",
+    "PUT /me/forge/github/token",
+    "POST /runners/enrollments",
+    "DELETE /orgs/{org}",
+    "PATCH /projects/{owner}/{slug}",
+    "POST /projects/{owner}/{slug}/transfer",
+    "POST /projects/{owner}/{slug}/repository/confirm",
+    "POST /projects/{owner}/{slug}/joins",
+    "POST /projects/{owner}/{slug}/requests/{request_id}/answer",
+    "POST /requests/{request_id}/answer",
+    "POST /admin/users/{human_id}/second-factor/reset",
+    "PATCH /admin/settings/auth-pages",
+    "PATCH /admin/settings/landing",
+    "PATCH /admin/settings/legal",
+    "PATCH /admin/settings/limits",
+    "PATCH /admin/settings/mail",
+    "PATCH /admin/settings/registration",
+    "PATCH /admin/settings/sign-in",
+    "PATCH /admin/settings/site-values",
+  ];
+  // Where the hub asks only in some cases: a change of restricted_access, of the address, a go
+  // (the hub on a project transfer's go only), never on a reject.
+  const STEP_UP_WHEN = {
+    "PATCH /projects/{owner}/{slug}": (b) => !!(b.settings && "restricted_access" in b.settings),
+    "PATCH /me/notification-settings": (b) => !!(b.email && "address" in b.email),
+    "POST /me/notification-settings/email/address-change/reject": () => false,
+    "POST /projects/{owner}/{slug}/requests/{request_id}/answer": (b) => b.reply_id === "go",
+    "POST /requests/{request_id}/answer": (b) => b.reply_id === "go",
+  };
+  const STEP_UP_MATCH = STEP_UP_ROUTES.map((r) => {
+    const [verb, template] = r.split(" ");
+    return [verb, new RegExp("^" + template.replace(/\{[^}]+\}/g, "[^/]+") + "$"), STEP_UP_WHEN[r]];
+  });
+  let mockSteppedAt = 0;
+  const stepUpOwed = (method, path, body) => !!window.MAITY_FIXTURE_STEP_UP
+    && mockSteppedAt < Math.max(Number(window.MAITY_FIXTURE_STEP_UP) || 0, Date.now() - 600000)
+    && STEP_UP_MATCH.some(([verb, pattern, when]) => verb === method && pattern.test(path) && (!when || when(body || {})));
   let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
@@ -270,6 +322,8 @@ window.Maity = window.Maity || {};
       if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
     });
     data.server_time = nowIso();
+    // §5.1: the account's time zone is §18.4's one value, read here as well.
+    if (data.member.kind === "human") data.member.timezone = fixtures()["notifications.json"].settings.email.timezone;
     // §5.1, §16.12: the window, upcoming or running, for every caller.
     data.maintenance = maintenanceView(false);
     // A renamed project: its directory stays, its slug is the project's now (§6.25).
@@ -860,7 +914,8 @@ window.Maity = window.Maity || {};
     // The header holds at most four links: only an enabled section with a label is one (§16.7).
     let labelled = 0;
     sections.forEach((s, i) => {
-      if (s && s.enabled === true && s.nav_label) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
+      // A label of blanks counts for nothing; it is refused below, as the hub does (landing.py).
+      if (s && s.enabled === true && typeof s.nav_label === "string" && s.nav_label.trim()) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
     });
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
@@ -868,7 +923,13 @@ window.Maity = window.Maity || {};
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
-      if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
+      // A label sent is 1–24 characters once trimmed: one of blanks is refused, not taken as no label (the hub's
+      // text rule, landing.py _text; web roll-up 3, nte-m2e51amspdtr 2).
+      if (s.nav_label !== undefined && s.nav_label !== null) {
+        const label = typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label;
+        if (label === "") errors[sp + ".nav_label"] = "invalid";
+        else landingText(label, sp + ".nav_label", 24, false, errors);
+      }
       if (s.type !== "hero" && known.includes("eyebrow")) landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
@@ -2275,6 +2336,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
       if (body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
       mockFactorOn = true;
+      mockSteppedAt = Date.now(); // the code just given counts (§2.8.1)
       return { recovery_codes: Array.from({ length: 10 }, (_, i) => "abcde-fghi" + i) };
     }],
     ["POST", /^\/auth\/second-factor\/recovery-codes$/, () => ({ recovery_codes: Array.from({ length: 10 }, (_, i) => "klmno-pqrs" + i) })],
@@ -2286,6 +2348,7 @@ window.Maity = window.Maity || {};
       if (body.code !== "123456" && body.recovery_code !== "abcde-fghij" && body.email_code !== "654321" && body.email_token !== "mailtoken") {
         fail(403, "code_invalid", "the code is wrong or was used", path);
       }
+      mockSteppedAt = Date.now();
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z"), member: me().member, next: "/" };
     }],
     ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
@@ -2318,7 +2381,7 @@ window.Maity = window.Maity || {};
         });
         if ("daily_at" in e && !hhmm.test(String(e.daily_at))) fields["email.daily_at"] = "invalid";
         if ("weekly_on" in e && !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(e.weekly_on)) fields["email.weekly_on"] = "invalid";
-        if ("timezone" in e && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
+        if ("timezone" in e && e.timezone !== null && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
         if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
         if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
         if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
@@ -2700,6 +2763,68 @@ window.Maity = window.Maity || {};
     ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       project(m[1], path);
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+    }],
+    // A human with members:admin places an agent on a runner of their own attached here: one of
+    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
+    // the placement quota or the spec's other validations (review of #1558); the repository's
+    // offer with `*` and `?` only (tsk-wn6qp27090qy). The placement waits for the runner
+    // (reported null) and needs no consent.
+    ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
+      const prj = project(m[1], path);
+      const caller = me().member;
+      if (caller.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path);
+      const r = runnersFile().items.find((x) => x.id === body.runner && !x.removed_at);
+      if (!r || !activeAttachments(m[1]).some((a) => a.runner_id === r.id)) fail(409, "runner_not_attached", "the runner is not attached here", path);
+      if (r.owner_id !== caller.id) fail(403, "forbidden", "only the runner's owner places agents on it", path);
+      if (["plan", "review"].includes(prj.state) && !body.reason) fail(400, "invalid", "the project is in " + prj.state + ": say why", path, { fields: { reason: "required" } });
+      if (prj.state === "archived") fail(409, "project_closed", "the project is closed", path);
+      if (r.credential_state !== "active") fail(409, "runner_revoked", "the runner has no live credential", path);
+      const live = placementsOf(m[1]).filter((x) => x.active);
+      const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
+      let agent;
+      if (body.agent && body.agent.id) {
+        const a = members.find((x) => x.id === body.agent.id && !x.removed_at);
+        if (!a || a.kind !== "agent") fail(400, "invalid", "not an agent of this project", path, { fields: { "agent.id": "not_a_member" } });
+        if (a.owner_id !== caller.id) fail(400, "invalid", "name one of your own agents", path, { fields: { "agent.id": "not_yours" } });
+        if (live.some((x) => x.agent.id === a.id)) fail(409, "placement_exists", "an active placement holds this", path);
+        agent = { id: a.id, handle: a.handle, display_name: a.display_name, avatar_url: null };
+      } else {
+        const handle = body.agent && body.agent.handle, name = body.agent && body.agent.display_name;
+        if (!handle || !name) fail(400, "invalid", "name an agent by id, or give handle and name", path, { fields: { agent: "id_or_handle" } });
+        if (members.some((x) => x.handle === handle) || fixtures()["agents.json"].items.some((x) => x.handle === handle)) {
+          fail(400, "invalid", "you already have an agent with this handle", path, { fields: { handle: "taken" } });
+        }
+        if (live.some((x) => !x.agent.id && x.agent.handle === handle)) fail(409, "placement_exists", "an active placement holds this", path);
+        agent = { id: null, handle, display_name: name, avatar_url: null };
+      }
+      const clone = (body.workspace && body.workspace.clone) || agent.handle;
+      if (live.some((x) => x.runner.id === r.id && x.workspace.clone === clone)) fail(409, "placement_exists", "an active placement holds this", path);
+      const c = r.capabilities || {};
+      const tool = (c.harnesses || []).find((x) => x.id === body.harness && x.available !== false && (!body.target || (x.targets || []).includes(body.target)));
+      const mode = body.mode || (tool && tool.default_mode);
+      if (!tool || !(tool.modes || []).includes(mode) || (body.model && !(tool.models || []).includes(body.model))
+        || (body.target && !(c.targets || []).some((t) => t.name === body.target))) {
+        fail(409, "harness_not_offered", "not in the runner's advertised capabilities", path, { offered: c.harnesses || [] });
+      }
+      if (!prj.repository) fail(409, "repository_not_offered", "the project has no repository", path);
+      const repoName = prj.repository.url.replace(/^https:\/\//, "").replace(/\/+$/, "");
+      const glob = (p) => new RegExp("^" + p.split("").map((ch) => (ch === "*" ? "[\\s\\S]*" : ch === "?" ? "[\\s\\S]" : ch.replace(/[.+^${}()|[\]\\/]/g, "\\$&"))).join("") + "$");
+      if (!(c.repositories || []).some((p) => typeof p === "string" && glob(p).test(repoName))) {
+        fail(409, "repository_not_offered", "the runner does not offer the project's repository", path);
+      }
+      const at = nowIso();
+      const made = {
+        id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
+        runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
+        workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
+        desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
+        approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
+        session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
+        created_by: caller.id, proposed_by: null, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
+      };
+      made.logs_hint = "maity runner logs " + made.id;
+      placementsOf(m[1]).push(made);
+      return made;
     }],
     ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
       const p = placementFor(m[1], m[2], path);
@@ -3956,6 +4081,8 @@ window.Maity = window.Maity || {};
           return { ...card, match };
         }).filter((card) => card.match.length);
       }
+      // `order=updated` (§6): the old updated_at desc order, as the board's reconciling read asks it.
+      if (query.get("order") === "updated") items = items.slice().sort((a, b) => (Date.parse(b.updated_at || 0) || 0) - (Date.parse(a.updated_at || 0) || 0));
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and
@@ -5170,6 +5297,7 @@ window.Maity = window.Maity || {};
       }
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
       if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
+      if (stepUpOwed(method, path, body)) fail(403, "forbidden", "this call needs your second factor first", fullPath, { reason: "step_up_required" });
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;
@@ -5265,7 +5393,24 @@ window.Maity = window.Maity || {};
   let sessionBlocked = false;
   const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
+  // §5.1: every absolute time is shown in the account's zone, or the browser's without one. A GET
+  // /me answer sets it only when it passed the session check (an answer of an ended session is
+  // refused before this) and no change of the zone was saved while it was on its way; a saved
+  // change of the settings sets it from their answer.
+  let zoneSaves = 0;
   function request(method, path, body, raw, signal) {
+    const saves = zoneSaves;
+    const answer = requestOnce(method, path, body, raw, signal);
+    const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
+    if (method === "GET" && path === "/me") {
+      return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
+    }
+    if (method === "PATCH" && path === "/me/notification-settings") {
+      return answer.then((s) => { if (s && s.email && "timezone" in s.email) { zoneSaves += 1; setZone(s.email.timezone); } return s; });
+    }
+    return answer;
+  }
+  function requestOnce(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     if (method !== "GET" && M.onWrite) M.onWrite();
@@ -5340,6 +5485,8 @@ window.Maity = window.Maity || {};
       sessionCsrf = null;
       lastSession = null;
       M.sessionEpoch = (M.sessionEpoch || 0) + 1;
+      // The next person in this tab sees times in the browser's zone until their own /me.
+      if (M.i18n && M.i18n.setZone) M.i18n.setZone(null);
     },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),

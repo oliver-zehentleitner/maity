@@ -280,14 +280,18 @@ registry alone.
 **See:** https://github.com/oliver-zehentleitner/maity — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-05
 **See:** https://github.com/oliver-zehentleitner/maity — a8dd1473-5aff-4f32-a3fe-89c0498a208d — as of 2026-11-05
 **See:** packaging.md#the-sdist-carries-the-dashboard-and-the-join-page-under-bundled — c36f4a54-432f-4fe2-82ab-377690759268 — as of 2026-11-05
+**See:** https://github.com/oliver-zehentleitner/maity — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-09
 
 A tag `v<version>` runs `release-hub.yml` beside `publish-image.yml`, so
 one tag gives the package and the image the same version. The workflow
 stops unless the tag names the version in `hub/pyproject.toml`, which
 is the only place it is written (`__version__` reads the package
 metadata). Versions are pre-releases (`0.1.0a1`, …) before the beta, as
-the CLI's are. As in the CLI's release, a `check` job runs the hub's
-checks with the hashed dev lock, a `build` job installs only
+the CLI's are. As in the CLI's release, a `check` job (which ran the
+hub's checks with the hashed dev lock until 2026-11-09 and now holds the
+tag to ci's result on its commit and to a green hub-mariadb run on a
+commit of main with the same hub files, the entry
+ea58fdd2-6e3f-45df-ae48-4ce6825cafde in the root context), a `build` job installs only
 `hub/requirements/release.txt` (build, twine and hatchling, compiled
 with the `build.txt` pins as constraints) into a fresh environment and
 builds without isolation (`make release-build`), and `publish` uploads

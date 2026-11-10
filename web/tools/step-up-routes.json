@@ -1,0 +1,102 @@
+{
+  "about": "The hub's routes that call second_factor.require_step_up (docs/api.md §2.8.4), under the API prefix. hub/tests/test_step_up_routes.py keeps this list equal to the hub; tools/check.py keeps js/api.js's fixture list equal to it and fails on a web call to one of them outside M.stepUp.run (tsk-6dk86ej9s0fq). `body`: the call counts only when its body names that key; `when`: where the hub asks only in some cases.",
+  "routes": [
+    {
+      "route": "GET /me/export"
+    },
+    {
+      "route": "POST /me/deletion"
+    },
+    {
+      "route": "POST /auth/password"
+    },
+    {
+      "route": "POST /auth/second-factor/totp",
+      "when": "enrolling again"
+    },
+    {
+      "route": "POST /auth/second-factor/recovery-codes"
+    },
+    {
+      "route": "DELETE /auth/second-factor"
+    },
+    {
+      "route": "POST /auth/device-codes/{code_id}/approve"
+    },
+    {
+      "route": "PATCH /me/notification-settings",
+      "body": "address",
+      "when": "changing or removing the verified address"
+    },
+    {
+      "route": "POST /me/notification-settings/email/address-change/approve"
+    },
+    {
+      "route": "POST /me/notification-settings/email/address-change/reject",
+      "when": "the hub asks on approve only; the dashboard sends both through the question"
+    },
+    {
+      "route": "POST /me/forge/github/link"
+    },
+    {
+      "route": "PUT /me/forge/github/token"
+    },
+    {
+      "route": "POST /runners/enrollments",
+      "when": "mints a credential"
+    },
+    {
+      "route": "DELETE /orgs/{org}"
+    },
+    {
+      "route": "PATCH /projects/{owner}/{slug}",
+      "body": "restricted_access",
+      "when": "a change of settings.restricted_access"
+    },
+    {
+      "route": "POST /projects/{owner}/{slug}/transfer"
+    },
+    {
+      "route": "POST /projects/{owner}/{slug}/repository/confirm"
+    },
+    {
+      "route": "POST /projects/{owner}/{slug}/joins",
+      "when": "mints a credential"
+    },
+    {
+      "route": "POST /projects/{owner}/{slug}/requests/{request_id}/answer",
+      "when": "a go on a project transfer"
+    },
+    {
+      "route": "POST /requests/{request_id}/answer",
+      "when": "a go on a project transfer"
+    },
+    {
+      "route": "POST /admin/users/{human_id}/second-factor/reset"
+    },
+    {
+      "route": "PATCH /admin/settings/auth-pages"
+    },
+    {
+      "route": "PATCH /admin/settings/landing"
+    },
+    {
+      "route": "PATCH /admin/settings/legal"
+    },
+    {
+      "route": "PATCH /admin/settings/limits"
+    },
+    {
+      "route": "PATCH /admin/settings/mail"
+    },
+    {
+      "route": "PATCH /admin/settings/registration"
+    },
+    {
+      "route": "PATCH /admin/settings/sign-in"
+    },
+    {
+      "route": "PATCH /admin/settings/site-values"
+    }
+  ]
+}

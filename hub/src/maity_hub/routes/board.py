@@ -128,9 +128,8 @@ def post_link(
     slug: str, card_id: str, body: links.LinkIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
-        mine.require("tasks:write")
-        mine = _locked(conn, mine)
+        mine = _locked(conn, membership(conn, caller, slug))
+        mine.require("tasks:write")  # on the row read under the project lock
         card = _card(conn, mine, card_id)
         _refuse_closed(mine)
         shown = links.add(conn, card, body, mine.project.repository_url, mine.id)
@@ -421,10 +420,9 @@ def post_note(
         raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         if mine.trust != "guest":  # a guest comments with notes, whatever its role (§2.3)
-            mine.require("tasks:write")
-        mine = _locked(conn, mine)
+            mine.require("tasks:write")  # on the row read under the project lock
         card = _card(conn, mine, card_id)
         _refuse_closed(mine)
         open_count, total, by_agents = notes.counts(conn, card.id)

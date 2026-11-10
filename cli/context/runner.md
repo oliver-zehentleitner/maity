@@ -938,6 +938,90 @@ the agents' side.
   macOS that is the read that fails anyway, and elsewhere it would keep
   two ways of reading alive. No exit code is the safe answer.
 
+## The runner records Claude Code's folder trust for the clone before an interactive start
+
+**Id:** 71f94925-ab96-4e3e-81e6-3ea0cbaf9356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-2ekq5dsy8anz (the first live runner test, 2026-11-09: Claude Code 2.1.319 in a fresh clone waited at "Is this a project you created or one you trust?" and the agent never came online); the team lead's card; the key, file, lock and lookup checked against the installed 2.1.319 and by starting it with and without the entry; the maintainer's decision req-bebf2krde3pp (2026-11-09) to accept the scope as a known limit
+**Revisit when:** Claude Code changes where or how it records an accepted trust dialog, gains a flag that trusts a folder for an interactive start, or the runner starts sessions with `CLAUDE_CODE_IGNORE_PERSISTED_TRUST` or `CLAUDE_CONFIG_DIR` set
+**See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-09
+
+Before an `interactive` Claude Code session starts, the runner sets
+`projects[<the clone's real path>].hasTrustDialogAccepted: true` in the
+agents' Claude Code configuration: `~/.claude/.config.json` when that is
+a non-empty file, or an empty one with a write bit while
+`~/.claude.json` is missing; otherwise `~/.claude.json`. It writes under
+`<file>.lock`, the directory Claude Code's own saves take, the way
+proper-lockfile takes it: by `mkdir`, with the lock's mtime renewed
+while it is held, and a lock not renewed for 10 s taken as given up and
+removed. Right before it replaces the file it checks that the mtime is
+still its own; a runner that finds it lost the lock writes nothing and
+fails. Nothing is put inside the lock directory, which must stay
+removable with `rmdir`. In the `agent_user` and `ssh` layouts the
+runner's own module (`maity.runner.trust`) does this on the agents'
+side, as for the limit file. When the entry cannot be written (a file
+that is not UTF-8 text holding a JSON object or whose text cannot be
+written back as UTF-8, a lock held past 15 s, a stale lock that
+cannot be removed, a lost lock, a failed read or write, any other
+`Exception` on the way), the start fails with the cause in the log. `supervised` sets nothing: headless (`-p`),
+Claude Code asks for no trust and records none.
+
+Apart from the clone's entry nothing in the file changes, with one
+accepted exception. The lock is advisory, as proper-lockfile's is, and
+the check and the replace are two steps. A runner stopped between them
+for longer than the stale time (SIGSTOP, a suspended machine) can
+replace a write another process made after taking the lock over. That
+newer write is then lost. If it was another clone's trust entry, that
+agent meets the trust question again on its next start.
+
+The entry is Claude Code's own trust record, so it outlives the
+placement and is not limited to the runner's session. The runner never
+removes it. The runner's own session loads no project configuration
+either way (`--setting-sources user`, an MCP configuration of the
+runner's). An unrestricted `claude` that someone starts later in the
+same clone asks no question, though, and loads the clone's
+`.claude/settings.json` hooks and `.mcp.json`, including ones an agent
+wrote into the clone. In the `single` layout the file is the operator's
+own Claude Code configuration, chosen by the rule above. A Claude Code
+configuration directory per placement would avoid this (the rejected
+alternative below). The maintainer accepted the scope as a known limit on
+2026-11-09, with one rule: do not start your own `claude` in a runner
+workspace.
+
+**Reason:** the placement is the owner's trust decision, made before the
+runner starts anything. Without the entry, every placement in a fresh
+clone sat at the question while the runner reported `running`. A start
+that fails with a cause is better than that.
+
+**Rejected alternatives:**
+- Answering the question in the pane with tmux keys: it reads a screen
+  whose wording can change, and types into a session the agent then owns.
+- A Claude Code configuration directory per placement
+  (`CLAUDE_CONFIG_DIR`, as Codex gets its own home): the operator's
+  login and the session history live there, so it is a larger change
+  than the trust record the card asks for. It is also the alternative
+  that would keep the trust inside the placement: an unrestricted
+  `claude` in the clone would still ask.
+- One entry for the workspaces root: in 2.1.319 the lookup walks up from
+  the working directory only as far as the git root, so a parent entry
+  is not read for a clone, and it would trust every later clone too.
+- Writing the file without the lock: a session saving at the same time
+  could drop the entry, or lose its own change.
+- A mechanism that also closes the window between the ownership check
+  and the replace: the lock has to work with Claude Code's own saves,
+  which use proper-lockfile (`mkdir`, mtime, `rmdir`), so a kernel lock
+  would not exclude them, and proper-lockfile has the same window. The
+  window needs a writer frozen past the stale time, a scheduling fault
+  rather than normal operation; the project lead accepted it (#1560 R2).
+- A token file inside the lock directory to mark the owner: a runner
+  that died while holding it would leave a directory `rmdir` cannot
+  remove, and Claude Code's saves would then never get the lock again.
+  The renewed mtime is how proper-lockfile itself tells its own lock.
+- Starting anyway when the entry cannot be written: the session waits at
+  the question and passes for `running`, the failure this fixes.
+
 ## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
 
 **Id:** 2718b0d9-cf5b-4758-9fca-a143fafce1d3
@@ -1570,3 +1654,45 @@ every call can run that way.
   missing: that is the directory the check cannot vouch for.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
+
+## A headless placement is offered no tool for asking a person
+
+**Id:** e71f0da3-46ed-4276-b88a-3fcd6af905bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-1pxc2shwk43p (the maintainer, 2026-11-10: agents work autonomously, so a headless placement must not be able to ask an interactive question nobody can answer); `cli/src/maity/runner/adapters.py`; Claude Code's permission documentation (`dontAsk` denies `AskUserQuestion` even when an allow rule matches; a bare tool name in a deny rule removes the tool from the model's context); Codex's configuration source (`[tools.experimental_request_user_input] enabled`, on by default; `codex exec` rejects the tool's request)
+**Revisit when:** a supervised placement gets a way to put a question to a person and wake with the answer, or a harness renames its question tool or the switch that turns it off
+
+For a supervised placement, where the harness runs headless on each event,
+the runner's generated configuration takes away the harness's tool for
+asking the person at the terminal:
+
+- Claude Code: `AskUserQuestion` as a bare name in `permissions.deny`.
+  `--permission-mode dontAsk` already denies the call, but leaves the tool
+  in the model's context; the bare deny removes it.
+- Codex: `[tools.experimental_request_user_input] enabled = false` in the
+  placement's `config.toml`. The tool is registered by default, and
+  `codex exec` rejects its request.
+- opencode: nothing to add; its configuration denies every tool it does not
+  name.
+
+Interactive placements, where a person is at the pane, keep what they had.
+
+**Reason:** agents in Maity work autonomously, and nobody sits at a headless
+run. Both harnesses refuse the question tool's call there, so a question
+put through it reaches no one. A harness that answered it empty instead
+would be worse: the run would go on as if a person had chosen. A person's
+decision is asked for through Maity (`maity ask`), which reaches the human's
+inbox and wakes the agent with the answer. With the tool not offered, that
+is the way left to put a question to a person.
+
+**Rejected alternatives:**
+- Relying on `dontAsk` alone for Claude Code: the call is refused, but the
+  tool stays in the model's context and offered.
+- Taking the tool away from interactive placements too: their
+  configuration is left as it was. For Claude Code, interactive placements
+  run with `dontAsk` as well, which already refuses the call, so a person
+  at the pane is not asked through this tool either; letting them ask would
+  mean changing `dontAsk` for every other prompt there, a decision of its
+  own. Codex keeps its question tool in an interactive placement.

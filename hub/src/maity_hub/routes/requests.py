@@ -688,8 +688,12 @@ def create_request(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("requests:ask")
-        _validate(body, mine)
         mine = _locked(conn, mine)
+        # Again on the row read under the lock: a role change to expert that committed
+        # since the first read leaves no `requests:ask` (§2.3 "The expert"), and the
+        # checks that read the trust or the role (`urgent`, `action`) see the same row.
+        mine.require("requests:ask")
+        _validate(body, mine)
         on_behalf = None
         if body.on_behalf_of is not None and body.on_behalf_of != mine.principal_id:
             mine.require("requests:answer")
@@ -798,7 +802,16 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    return replace(mine, project=lock_project(conn, mine.project.id))
+    """The caller's membership with the project row and its own row as read under the
+    project lock, as `tasks._locked`: a role change takes the same lock, so a scope checked
+    on what this returns holds until the write commits (§2.3 "The expert")."""
+    project = lock_project(conn, mine.project.id)
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
+    ).first()
+    if row is None:  # the membership ended meanwhile
+        raise not_found()
+    return replace(mine, project=project, row=row)
 
 
 def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
@@ -2463,6 +2476,7 @@ def answer_personal(
             actor,
             reply_id=body.reply_id,
             hub=settings_of(request),
+            answerer=caller,
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
@@ -2484,8 +2498,15 @@ def answer_personal(
         return idempotency.run(engine_of(request), request, caller, action)
     except proposals.Stale as stale:
         # The go no longer applies (an expired invitation): the request is withdrawn and the
-        # kind's own clean-up runs, nothing else changes, as on the project route.
+        # kind's own clean-up runs, nothing else changes, as on the project route. Under its
+        # project's lock first, as the answer took it: the clean-up of a project's invitation
+        # (§3.4) writes the invitation as a revocation does, project before request.
         with events.transaction(engine_of(request)) as conn:
+            project_id = conn.execute(
+                select(t.request.c.project_id).where(t.request.c.id == stale.request_id)
+            ).scalar()
+            if project_id is not None:
+                lock_project(conn, project_id)
             close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
         raise stale.error from None
 

@@ -703,12 +703,15 @@ window.Maity = window.Maity || {};
         else reload().then(() => redraw(), () => {});
       });
     }
-    // Where the agents run (js/placements.js);
-    // the credentials (for a restart's new join) are read for one's own only.
+    // Where the agents run (js/placements.js); the credentials (for a restart's new join) are
+    // read for one's own agents only, and of those only for the ones placed here, once the
+    // placements are known (tsk-d61rvjm6gteh: one list per agent of the project at once was the
+    // page's slowest part).
     if (M.placements && M.agentParts) {
-      const agentsNow = items.filter((m) => P.ownAgent(m) && !m.removed_at);
-      Promise.all(agentsNow.map((m) => M.agentParts.loadCredentials(ctx, m)))
-        .then((creds) => M.placements.section(ctx, Object.fromEntries(agentsNow.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]))))
+      const own = new Map(items.filter((m) => P.ownAgent(m) && !m.removed_at).map((m) => [m.id, m]));
+      const credentialsOf = (ids) => Promise.all(ids.filter((id) => own.has(id)).map((id) => M.agentParts.loadCredentials(ctx, own.get(id))
+        .then((got) => [id, (got.list && got.list.items) || []]))).then((pairs) => Object.fromEntries(pairs));
+      M.placements.section(ctx, credentialsOf)
         .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});
     }
     // A card asked for by the URL: its title, or its rulebook, takes the

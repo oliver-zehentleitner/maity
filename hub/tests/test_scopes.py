@@ -29,6 +29,7 @@ ROLE_TABLE = {
     "red-team": CODER | {"tasks:test"},
     "blue-team": CODER,
     "purple-team": CODER | {"tasks:review", "releases:write"},
+    "expert": {"project:read", "events:post"},  # §2.3 "The expert"
 }
 HUMAN_ONLY = {"project:admin", "members:admin", "events:admin", "credentials:admin"}
 
