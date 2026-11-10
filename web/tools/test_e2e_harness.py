@@ -230,13 +230,15 @@ class FakePage:
 
     def set_viewport_size(self, size: dict) -> None:
         # The restore is the one call back to the step's own size, which no pass uses.
-        if getattr(self, "refuse", None) == "viewport" and (size["width"], size["height"]) == self.start:
+        if getattr(self, "refuse", None) in ("viewport", "both") and (size["width"], size["height"]) == self.start:
             raise RuntimeError("viewport refused")
         self.viewport_size = dict(size)
         self.sizes.append((size["width"], size["height"]))
 
     def emulate_media(self, color_scheme: str | None = None, **_: object) -> None:
-        if getattr(self, "refuse", None) == "media" and (self.viewport_size["width"], self.viewport_size["height"]) == self.start:
+        refuse = getattr(self, "refuse", None)
+        restoring = (self.viewport_size["width"], self.viewport_size["height"]) == self.start or (refuse == "both" and getattr(self, "runs", 0) >= 3)
+        if refuse in ("media", "both") and restoring:
             raise RuntimeError("media refused")
         if color_scheme is not None:
             self.scheme = color_scheme
@@ -314,6 +316,18 @@ def a11y_cases() -> int:
         what = f"axe failing in pass {fail_on}" if fail_on else "no axe failure"
         cases.append((f"a11y: {what}, the {refuse} restore refused: {want!r} goes on, the other restore still made",
                       got == (want, viewport_back, scheme_back), got))
+    # Both restores refused with no pass error: the first refusal is raised, the second is printed (#1614 review).
+    page = FakePage(360, 780, "light")
+    page.refuse = "both"
+    out = io.StringIO()
+    raised = None
+    try:
+        with contextlib.redirect_stdout(out):
+            a11y(Self(), page, "a view")
+    except RuntimeError as err:
+        raised = str(err)
+    cases.append(("a11y: no axe failure, both restores refused: the first is raised, the second printed",
+                  raised == "viewport refused" and "media refused" in out.getvalue(), (raised, out.getvalue())))
     failed = 0
     for name, ok, detail in cases:
         failed += not ok

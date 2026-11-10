@@ -121,8 +121,9 @@ class Run:
         dark = page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
         # The restore is in a finally, so a pass that fails (axe throwing) still asks for the page as it
         # was, and that error is the one that goes on (#1614 review). Each of the two restores is tried
-        # on its own; one the browser refuses cannot be undone here, and it is raised only when no
-        # pass error is already on its way, which it would otherwise replace.
+        # on its own; one the browser refuses cannot be undone here. With no pass error the first
+        # refusal is raised and any other printed; with one, every refusal is printed, so the pass
+        # error is never replaced.
         failed: BaseException | None = None
         try:
             for width, height, scheme in PASSES:
@@ -174,10 +175,13 @@ class Run:
                     restore()
                 except Exception as err:  # noqa: BLE001 - every refusal is said or raised below
                     refused.append(err)
+            # Without a pass error the first refusal is raised and any further one printed; with one,
+            # every refusal is printed, so none goes unsaid (#1614 review).
+            said = refused[1:] if failed is None else refused
+            for err in said:
+                print(f"   a11y {view}: the page could not be restored: {err!r}", flush=True)
             if refused and failed is None:
                 raise refused[0]
-            for err in refused:
-                print(f"   a11y {view}: the page could not be restored after the failed pass: {err!r}", flush=True)
         print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
 
     def a11y_report(self) -> list[dict]:
@@ -1726,7 +1730,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
             assert grown >= reading * 1.5, f"hiding the composer left the history at {grown} px from {reading} px"
             run.shot(page, "phone-390-chat-composer-hidden")
             run.a11y(page, "chat, the composer hidden")
-            # At the phone, where the button is (a11y keeps the step's size; this says it here).
+            # Set to the phone explicitly, where the button is (a11y has kept that size already).
             page.set_viewport_size({"width": phone, "height": 780})
             compose.get_by_role("button", name="Write a message", exact=True).click()
             expect(page.locator("#chat-text")).to_be_focused()
