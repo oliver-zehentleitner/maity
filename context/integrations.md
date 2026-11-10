@@ -305,3 +305,76 @@ so whoever runs it is the operator who also sets the list.
 - Holding the name for `owner create` too: the operator could create
   their own listed account or organisation only after taking the name
   off the list and restarting.
+
+## A repository on any https host is stored and linked; the hub reads GitHub only
+
+**Id:** 8830ddef-89dc-4359-ac22-b74b77e6ee74
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-rzhydxnsav4m, the contract in `docs/api.md` §6.1 and §11
+**Verification:** corroborated — the reads a repository URL can start were checked against the hub: `forge.py` maps only `github.com`, and `images.py`, `ktw.py`, `ktw_reads.py`, `forge_access.py`, `probe.py` and `forge_webhook.py` do not request any other host
+**Revisit when:** a forge other than GitHub is actually read (card tsk-sqpcbndm0tvd), or a self-hosted host whose name does not say its product needs a merge-request link before that read exists
+**See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-11-10
+**See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-10
+
+`repository.url` accepts `https://<host>/<segment>/…` on any DNS host,
+including a nested GitLab group, and the hub stores it and links it.
+`forge` is `github` only for the exact host `github.com`. A host whose
+leftmost label is `gitlab`, `bitbucket`, `gitea` or `forgejo`, and the
+host `codeberg.org`, is that kind; every other host is `other`. Off
+GitHub the hub probes nothing (`probe_configured: false`), sends no
+token, and makes no request to the host. The probe, the first look at
+visibility, the forge logo and banner, the Keep the Why contents read
+and the reads of §11.5 stay on GitHub's fixed hosts. The webhook
+checks a GitHub signature and does not call the sender; a delivery
+does not start a read when the probe is not configured. Real probes,
+CI status and merge-request reads for a reachable GitLab stay out of
+this decision.
+
+**Reason:** a person has to be able to create a project and point
+agents at the repository when it lives on a forge the operator does
+not run, including a private GitLab behind a firewall. The contract
+used to require "a forge host the operator configured", and the hub
+has no such list: `HOSTS` is `github.com` alone, so every other URL
+was refused. Accepting the URL without reading it is what makes the
+project usable. Reading it would send the hub at a host a member
+chose, which is the request a private address and a stolen token both
+come from. `github` is therefore an exact host and never a label: a
+label match on `github` would classify `github.example` as the one
+kind whose token leaves the machine.
+
+**Rejected alternatives:**
+- Keeping the operator allowlist as the condition for accepting a URL:
+  the list was never implemented, and a private forge would wait on
+  the operator before a project could exist.
+- An operator map that is optional for acceptance but required for the
+  kind: a second configuration surface, and a wrong map would be the
+  only way a self-hosted host got a merge-request link. The host's own
+  leftmost label does that for the names people actually give those
+  forges, and a host that does not say (`git.corp.example`) stays
+  `other`, with the repository link and no merge-request link.
+- Probing the host, or fetching its avatar, to discover that it is
+  GitLab or Gitea: that fetch is the one this decision forbids. The
+  same for using the forge's own host as an image host, which §11.2
+  used to leave open for "when the operator can configure those
+  forges".
+- Guessing GitLab from a path of more than two segments: a top-level
+  GitLab project has two segments, like GitHub, and a longer GitHub
+  path must not be stored as a repository the probe then reads as
+  `owner/name` of the first two. `github.com` keeps exactly two
+  segments; every other host may have up to twenty-one, so a project
+  under twenty nested groups fits.
+- Allowing a single-label host (`https://gitlab/group/proj`): the same
+  DNS rule as a person's website, so an address literal and
+  `localhost` cannot be stored. A firewall GitLab with a dotted name
+  still fits.
+- Sending no merge-request link even when the kind is known: the
+  dashboard already derives `/pulls`, `/-/merge_requests` and
+  `/pull-requests` from `forge`, and that derivation is a browser
+  link, not a read.
+
+**Consequence:** the stored `repository_url` column is 255 characters
+today, and a nested group path does not fit in it. The contract allows
+2048. The change that implements this contract widens the column; this
+decision does not.
