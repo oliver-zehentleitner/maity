@@ -5792,8 +5792,9 @@ def handle_hints_step(run: Run, page: Page) -> None:
         expect(field).to_have_value(old)
         field.fill(new)
         page.locator(".handle-editor").first.get_by_role("button", name="Rename", exact=True).click()
-        expect(page.locator(".handle-editor").first).to_contain_text(f"is now @{new}")
+        # The editor is drawn again with the new handle; the old one is listed as an alias.
         expect(page.locator(".handle-editor input[type=text]").first).to_have_value(new)
+        expect(page.locator(".handle-editor").first).to_contain_text(f"@{old}")
 
     rename_owner("owner", long_owner)
     page.goto(f"{run.base}/account/orgs")
