@@ -9090,8 +9090,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
     "invite: the page sets <meta name=referrer content=no-referrer>, once");
   expect(productLine.querySelectorAll("a").length === 4, "invite: the page ends with the product line");
-  // A token with a broken escape still gets the policy: the check is a raw prefix on the path, as the hub's header
-  // (web roll-up 3, nte-2e1kq5r85vaj); before, parseRoute() threw and the swallowed error set nothing.
+  // A token with a broken escape still gets the policy: the check decodes the first segment on its own and asks
+  // only that a token follows, so a broken escape in the token does not undo it (web roll-up 3, nte-2e1kq5r85vaj);
+  // before, parseRoute() threw on the whole path and the swallowed error set nothing.
   head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
   await go("#/invite/%E0%A4%A"); for (let k = 0; k < 4; k++) await tick();
   expect(ivNoRef(), "invite: an invitation address with a broken escape still sets the no-referrer policy");
