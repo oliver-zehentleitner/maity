@@ -1068,8 +1068,9 @@ connection driven through SQLAlchemy's greenlet bridge. About 1,900 functions th
 
 What the bridge has to keep:
 - **The cursor events.** They hang on `async_engine.sync_engine`, where SQLAlchemy runs them:
-  `write_guard` and `timing` install there (`create_app`), and so do the statement counts of the
-  tests. Both read a context variable the request sets; SQLAlchemy's greenlet runs in the
+  `write_guard` and `timing` install there (`create_app`), and the statement counts of the
+  tests (`tests/statements.py`) must hang there too once a route moves; none does yet. The
+  two hooks read a context variable the request sets; SQLAlchemy's greenlet runs in the
   context of the task that awaits `run_sync`, so the request's human and tally reach them as the
   thread pool's copy of the context did. `hub/tests/test_async_engine.py` checks both.
 - **Nothing that blocks on the loop.** The body under `run_sync` runs on the event loop's thread.
