@@ -623,14 +623,15 @@ runner that refuses the harness by configuration.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused; a reviewer's reproduction of a `commondir` written from inside the sandbox, and the start check put to the maintainer as option (c) of req-2adhtsb3ct75, 2026-11-10 (pending his answer)
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused; a reviewer's reproduction of a `commondir` written from inside the sandbox, and the maintainer's choice of option (c), the start check with its detail code, req-2adhtsb3ct75, 2026-11-10
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
 **Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration or runs a program, Claude Code stops turning `Edit(…)` denies into sandbox write denies, or a harness version other than the one in `capabilities.CHECKED` is in use
 
 Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
 environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
-`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. Git then ignores
-a `.git/commondir` the agent wrote from inside its sandbox, and does not
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. The session's
+git then ignores a `.git/commondir` the agent wrote from inside its
+sandbox, and does not
 run a program from a nested repository the agent registered as a
 submodule (whose configuration the pin does not reach). That covers the
 harness's own git calls, which run outside the sandbox, and any other git
@@ -659,9 +660,10 @@ plain clone has not) is not started: it is reported `failed`,
 `workspace_in_use` with `not_a_plain_clone` (§15.7), the finding goes to
 the runner's log, and the runner deletes nothing in it and does not try
 again. The sandbox's empty placeholders pass. A person runs git in a
-runner's clone only through `maity`; otherwise they look at the work
-through the pushed branch. The start check catches a plant before the
-next session, not before a person's git while the clone is in use.
+runner's clone only through `maity` or after the runner's check: the
+check of the next start, or `gc`'s. A session that runs on after the
+check can plant again, so the check covers the clone as it was then;
+otherwise the work is read from the pushed branch.
 
 A repository's grant may only add plain commands, a grammar rather
 than a list of bad spellings: a program name or path, then arguments of
@@ -715,7 +717,9 @@ one version, not a contract.
   or push (the first sandboxed placements, 2026-11-10).
 - `commondir` in the list: for a file that does not exist, the sandbox
   leaves something git cannot read, and every git call in the session
-  failed on it. `GIT_COMMON_DIR` already makes git ignore it.
+  failed on it. `GIT_COMMON_DIR` makes the session's and maity's git
+  ignore it, and the start check keeps the runner from starting in a
+  clone that has one.
 - A read-only `.git` with write access to `objects`, `refs` and the
   index only: git creates its lock files and `ORIG_HEAD` in `.git`
   itself, so commits fail.

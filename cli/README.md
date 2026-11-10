@@ -1140,7 +1140,9 @@ above. It reads every existing clone with that check at each start too,
 and starts nothing in one whose `.git` is not a plain clone's (a planted
 `commondir` or `worktrees/`, for example): the placement fails with
 `workspace_in_use`, `not_a_plain_clone`, the runner's log says what it
-found, and nothing in the clone is removed. **Never run git in an agent's clone as yourself in the `single`
+found, and nothing in the clone is removed. Run git in a runner's clone
+only through `maity` or after the runner's check; a session that ran on
+since may have planted something again. **Never run git in an agent's clone as yourself in the `single`
 layout:** a planted `.git/commondir`, submodule, hook or configuration
 runs as you. Look at the work through the pushed branch or the pull
 request instead. The `agent_user` layout keeps you out by itself: git
