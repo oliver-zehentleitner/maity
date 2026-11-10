@@ -318,31 +318,59 @@ so whoever runs it is the operator who also sets the list.
 **See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-11-10
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-10
 
-`repository.url` accepts `https://<host>/<segment>/…` on any DNS host,
-including a nested GitLab group, and the hub stores it and links it.
-`forge` is `github` only for the exact host `github.com`. A host whose
-leftmost label is `gitlab`, `bitbucket`, `gitea` or `forgejo`, and the
-host `codeberg.org`, is that kind; every other host is `other`. Off
-GitHub the hub probes nothing (`probe_configured: false`), sends no
-token, and makes no request to the host. The probe, the first look at
-visibility, the forge logo and banner, the Keep the Why contents read
-and the reads of §11.5 stay on GitHub's fixed hosts. The webhook
+This is the proposed target, not what the hub does today.
+`repository.url` is to accept `https://<host>/<segment>/…` on any DNS
+host, including a nested GitLab group, and the hub is to store it and
+link it. Today the hub refuses every URL whose host is not
+`github.com`, with `not_a_configured_forge`, and the dashboard reports
+that same reason. `forge` is `github` only for the exact host
+`github.com`, which selects the only supported forge kind; that kind's
+API credential goes to `api.github.com`, and the installation exchange
+with `github.com` stays separate. A host whose leftmost label is
+`gitlab`, `bitbucket`, `gitea` or `forgejo`, and the host
+`codeberg.org`, is that kind; every other host is `other`. Off GitHub
+the hub probes nothing (`probe_configured: false`), sends no token,
+and makes no request to a host taken from `repository.url`. The probe,
+the first look at visibility, the forge logo and banner, and the Keep
+the Why contents and metadata reads stay on GitHub's fixed hosts. The
+state and bodies downloads of §11.5 use the validated export URL,
+which is taken from the repository file and is never derived from
+`repository.url`; that file may name the same host. The webhook
 checks a GitHub signature and does not call the sender; a delivery
 does not start a read when the probe is not configured. Real probes,
 CI status and merge-request reads for a reachable GitLab stay out of
-this decision.
+this decision. What waits is Oliver's release of this contract, and
+the implementation card that lands the target in the hub and the
+dashboard.
 
 **Reason:** a person has to be able to create a project and point
 agents at the repository when it lives on a forge the operator does
 not run, including a private GitLab behind a firewall. The contract
 used to require "a forge host the operator configured", and the hub
 has no such list: `HOSTS` is `github.com` alone, so every other URL
-was refused. Accepting the URL without reading it is what makes the
+is refused. Accepting the URL without reading it is what makes the
 project usable. Reading it would send the hub at a host a member
 chose, which is the request a private address and a stolen token both
 come from. `github` is therefore an exact host and never a label: a
 label match on `github` would classify `github.example` as the one
-kind whose token leaves the machine.
+kind whose token leaves the machine. A non-GitHub path runs from two
+to twenty-two segments, and each segment is at most 255 characters.
+GitLab documents that subgroups can be nested up to 20 levels
+(https://docs.gitlab.com/user/group/subgroups/) and that the maximum
+hierarchy depth is 20 levels (https://docs.gitlab.com/user/group/).
+The group model allows a group 20 ancestors
+(`NUMBER_OF_ANCESTORS_ALLOWED` is 20; a group is refused when
+`ancestors.count` is greater than 20) and does not apply that check to
+a project namespace, so the deepest group path has 21 segments and a
+project in it is the 22nd. Twenty-one would refuse that project.
+GitLab's user-facing naming rules do not state a character maximum;
+the namespace path (`URL_MAX_LENGTH`) and the project path are each at
+most 255 characters in the models
+(https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/models/namespace.rb,
+https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/models/project.rb).
+A cap of 100 would refuse a path GitLab stores. The stored URL is
+still at most 2048 characters, which bounds the whole value: a long
+segment and a deep path cannot both be maximal.
 
 **Rejected alternatives:**
 - Keeping the operator allowlist as the condition for accepting a URL:
@@ -363,8 +391,8 @@ kind whose token leaves the machine.
   GitLab project has two segments, like GitHub, and a longer GitHub
   path must not be stored as a repository the probe then reads as
   `owner/name` of the first two. `github.com` keeps exactly two
-  segments; every other host may have up to twenty-one, so a project
-  under twenty nested groups fits.
+  segments; every other host may have up to twenty-two, so a project
+  in GitLab's deepest group fits.
 - Allowing a single-label host (`https://gitlab/group/proj`): the same
   DNS rule as a person's website, so an address literal and
   `localhost` cannot be stored. A firewall GitLab with a dotted name
@@ -373,8 +401,16 @@ kind whose token leaves the machine.
   dashboard already derives `/pulls`, `/-/merge_requests` and
   `/pull-requests` from `forge`, and that derivation is a browser
   link, not a read.
+- Capping a non-GitHub path at twenty-one segments, or a segment at
+  100 characters. Twenty-one is one short of a project in GitLab's
+  deepest group, and 100 is shorter than the 255-character path that
+  model stores. The purpose is to point at that repository. The
+  2048-character maximum on the stored URL remains the bound on the
+  whole value.
 
 **Consequence:** the stored `repository_url` column is 255 characters
-today, and a nested group path does not fit in it. The contract allows
-2048. The change that implements this contract widens the column; this
-decision does not.
+today. Widening it is needed for the contract's new maximum of 2048
+characters, not because every nested group path overflows 255: the
+example `https://gitlab.corp.example/acme/platform/api` is 45
+characters. The change that implements this contract widens the
+column; this decision does not.
