@@ -11614,7 +11614,8 @@ messages are read back, without scanning the log, through §8.8.
 sends a `review_result` checks its `body` against `review.head` in its
 local clone before it sends, as it checks the cites (§13); the hub
 reads no repository and checks neither. What the text names is
-checkable in four forms, and a text that names or quotes something that
+checkable in four forms, and a UUID in the text is checked as a
+Keep-the-Why id. A text that names or quotes something that
 is not there is not sent:
 
 1. **A file and line**, anywhere in the text, in a code span or not: a
@@ -11623,7 +11624,9 @@ is not there is not sent:
    path from the repository's root to a file at `head`, and the file has
    at least `n` (or `b`) lines. A bare file name is refused even when
    one file alone has it; the client then names that file. A line always
-   refers to `head`.
+   refers to `head`. A path part that is only digits and dots is not a
+   path (`5.60:1`, `4.5:1`), and `3:1` has no extension, so it is not one
+   either.
 2. **A name in a code span** (between single backticks, paired as
    CommonMark pairs them), after one pair of surrounding `"` or `'` is
    dropped. Letters here are ASCII letters. Skipped are a span with
@@ -11631,11 +11634,20 @@ is not there is not sent:
    character outside ASCII (a word in another script); one with `#`,
    `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
    instance, a pull request, a placeholder); one shaped like an id the
-   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span) or a UUID; one that is only digits and punctuation; and
+   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span); one that is only digits and punctuation; and
    an object hash or a range `a..b` of them (form 3). A span with a `/`
    names a path: it is a file or a directory, and with a `*` the part
    before the first `*` begins one (`hub/tests/test_public_*`); anything
-   after a `:` is left out. A path that is no file or directory still
+   after a single `:` is left out. A `::` names a test as well
+   (`pkg/tests/test_widget.py::test_real`, or with a class before the
+   test): a `[` and the parameter after it are removed first, so a
+   parameter may contain `::`. Then the part before the first `::` has to
+   be a file or a directory at `head`, and the part after the last `::`
+   has to be a test at `head`. The name is searched in every file at
+   `head`, not bound to the file before the `::`, and a class in
+   `path::Class::test` is not checked. A missing path and a missing test are
+   both refused, and the text fallback below does not apply to a `::`
+   span. A path that is no file or directory still
    passes as text in some file, verbatim, so that a route such as
    `/api/v1/events` or a part of a URL is not refused. Any other span names an identifier or a key:
    its core, the longest run that starts with a letter or `_` and goes
@@ -11643,7 +11655,15 @@ is not there is not sent:
    more), is text in some file or the name of a file; failing that, each
    part of the core between dots that has three characters or more is
    (`_Facts.key`, `public_page.body`). A span without such a core is
-   skipped. A path or name counts as there when it stands at `head` or
+   skipped. A core that is a test name (`test_` and then only letters,
+   digits and `_`) is a test at `head` and only there. In a span such as
+   `test_real[longer-parameter-than-test]` the test name is that core,
+   not the longer parameter. A test is a line whose first token, after
+   indentation, is `def` or `async def`, then the name, optional
+   whitespace and `(`. A longer name that merely begins with it does not
+   count, and a `def` that sits in a comment does not count. The default
+   branch is no fallback for it. Any other path or name counts as there
+   when it stands at `head` or
    at the tip of the clone's default branch (`origin/HEAD`), so that a
    name the change removed, or one only the default branch has, passes;
    a file and line (form 1) does not get that fallback. A name the review
@@ -11691,13 +11711,29 @@ is not there is not sent:
    written in a code span (a span with whitespace in it is skipped, form
    2) or without double quotes.
 
+A UUID in the checked text, in a code span or not, is a Keep-the-Why
+id. The full form, eight hex digits, three groups of four and a group
+of twelve, stands in a file at `head`; the case of the hex digits does
+not matter, and sharing the first eight with an id that does stand
+there does not. Any other token that starts with eight hex digits and
+a hyphen and is only hyphenated hex groups is refused as not a full id,
+including a shortened middle group, a last group that is not twelve
+hex digits, and one that shares its start with an id at the head. A
+known limit of that rule: a short commit of eight hex digits followed
+by a hex-only suffix, such as `-add` or `-1`, is refused as not a full
+id too. A token of digits only, such as `20261110-1530`, is not an id.
+An id the change removed is written in a fenced block or under a heading
+`Ran`, which are not checked: unlike a name, an id in prose is checked,
+and the default branch is no fallback. Eight hex digits and
+no hyphen stay an object (form 3).
+
 Not checked: a fenced code block; everything under a heading `Ran` up
 to the next heading of the same or a higher level, where the reviewer
 lists the commands it ran and what they printed (the review line,
 §6.9) — an ATX heading (`#` to `######`) whose text is `Ran` and
 nothing else, in any case, not a setext heading and not `Ran (head)`;
 a pull request number `#<n>`; and what no form covers: prose above
-all, a quote that nothing ties to a file among it. The check catches
+all, apart from a UUID in it, a quote that nothing ties to a file among it. The check catches
 names and quotes that are not there, not wrong claims: a wrong line in
 a long enough file, a wrong count, or a test said to cover what it
 does not all pass, and reading the review stays the lead's work. A
