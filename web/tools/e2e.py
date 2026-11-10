@@ -119,44 +119,48 @@ class Run:
         phone check after an a11y pass measured the desktop)."""
         size = page.viewport_size or {"width": 1280, "height": 900}
         dark = page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
-        for width, height, scheme in PASSES:
-            page.set_viewport_size({"width": width, "height": height})
-            page.emulate_media(color_scheme=scheme)
-            # From the page's top: content scrolled under the sticky header by an
-            # earlier step would be measured against the header's links.
-            page.evaluate("window.scrollTo(0, 0)")
-            # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
-            if not page.evaluate("typeof window.axe === 'object'"):
-                page.evaluate(self.axe)
-            result = page.evaluate(
-                "tags => axe.run(document, {runOnly: {type: 'tag', values: tags},"
-                " resultTypes: ['violations']})",
-                AXE_TAGS,
-            )
-            for v in result["violations"]:
-                self.a11y_findings.append(
-                    {
-                        "view": view,
-                        "width": width,
-                        "scheme": scheme,
-                        "id": v["id"],
-                        "impact": v["impact"],
-                        "help": v["help"],
-                        "url": v["helpUrl"],
-                        "nodes": [n["target"] for n in v["nodes"]][:10],
-                        "count": len(v["nodes"]),
-                        # axe's own words for the first node: which check failed and against what.
-                        "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
-                        # ...and the elements it was measured against (a neighbour, an overlap).
-                        "related": [
-                            r["target"]
-                            for c in (v["nodes"][0].get("any", []) + v["nodes"][0].get("all", []) if v["nodes"] else [])
-                            for r in c.get("relatedNodes", [])
-                        ][:5],
-                    }
+        # The restore is in a finally, so a pass that fails (axe throwing) still leaves the page as it
+        # was; the error goes on (#1614 review).
+        try:
+            for width, height, scheme in PASSES:
+                page.set_viewport_size({"width": width, "height": height})
+                page.emulate_media(color_scheme=scheme)
+                # From the page's top: content scrolled under the sticky header by an
+                # earlier step would be measured against the header's links.
+                page.evaluate("window.scrollTo(0, 0)")
+                # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
+                if not page.evaluate("typeof window.axe === 'object'"):
+                    page.evaluate(self.axe)
+                result = page.evaluate(
+                    "tags => axe.run(document, {runOnly: {type: 'tag', values: tags},"
+                    " resultTypes: ['violations']})",
+                    AXE_TAGS,
                 )
-        page.set_viewport_size({"width": size["width"], "height": size["height"]})
-        page.emulate_media(color_scheme="dark" if dark else "light")
+                for v in result["violations"]:
+                    self.a11y_findings.append(
+                        {
+                            "view": view,
+                            "width": width,
+                            "scheme": scheme,
+                            "id": v["id"],
+                            "impact": v["impact"],
+                            "help": v["help"],
+                            "url": v["helpUrl"],
+                            "nodes": [n["target"] for n in v["nodes"]][:10],
+                            "count": len(v["nodes"]),
+                            # axe's own words for the first node: which check failed and against what.
+                            "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
+                            # ...and the elements it was measured against (a neighbour, an overlap).
+                            "related": [
+                                r["target"]
+                                for c in (v["nodes"][0].get("any", []) + v["nodes"][0].get("all", []) if v["nodes"] else [])
+                                for r in c.get("relatedNodes", [])
+                            ][:5],
+                        }
+                    )
+        finally:
+            page.set_viewport_size({"width": size["width"], "height": size["height"]})
+            page.emulate_media(color_scheme="dark" if dark else "light")
         print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
 
     def a11y_report(self) -> list[dict]:

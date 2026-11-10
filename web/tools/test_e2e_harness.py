@@ -242,6 +242,9 @@ class FakePage:
         if "typeof window.axe" in expression:
             return True
         if "axe.run" in expression:
+            self.runs = getattr(self, "runs", 0) + 1
+            if self.runs == getattr(self, "fail_on", None):
+                raise RuntimeError("axe failed in pass %d" % self.runs)
             return {"violations": []}
         return None
 
@@ -270,6 +273,19 @@ def a11y_cases() -> int:
         back = page.viewport_size == {"width": width, "height": height} and page.scheme == scheme
         cases.append((f"a11y: the passes run, then the page is back at {width}x{height} {scheme}",
                       passes and back, (page.sizes, page.schemes)))
+    # A pass that fails (axe throwing) still leaves the page as the step had it, and the error goes on (#1614 review).
+    for fail_on in (1, 2, 3):
+        page = FakePage(360, 780, "dark")
+        page.fail_on = fail_on
+        raised = None
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                a11y(Self(), page, "a view")
+        except RuntimeError as err:
+            raised = str(err)
+        back = page.viewport_size == {"width": 360, "height": 780} and page.scheme == "dark"
+        cases.append((f"a11y: axe failing in pass {fail_on} goes on as an error, the page back at 360x780 dark",
+                      raised == "axe failed in pass %d" % fail_on and back, (raised, page.viewport_size, page.scheme)))
     failed = 0
     for name, ok, detail in cases:
         failed += not ok
