@@ -12663,6 +12663,10 @@
     "en": "6be5f99ed86c9297",
     "text": "c0aaa0782d83a463"
   },
+  "pin.column": {
+    "en": "ae35d7a4fb5fa9df",
+    "text": "a5d22a17a422c4e2"
+  },
   "pin.mark": {
     "en": "36e0b7062f77d8cf",
     "text": "07d5945c3add9a08"
@@ -13462,6 +13466,14 @@
   "profile_delete.type": {
     "en": "b4d2a7708710850e",
     "text": "140dad2b9e7e15fa"
+  },
+  "project.link.actions": {
+    "en": "aa6d82bdb3cc1d9a",
+    "text": "aa6d82bdb3cc1d9a"
+  },
+  "project.link.actions_on": {
+    "en": "848f3941b7bf5df3",
+    "text": "c2fac8628edbe903"
   },
   "project.link.chat": {
     "en": "0adf70d5dd00616b",

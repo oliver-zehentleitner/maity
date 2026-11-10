@@ -14,6 +14,7 @@ changes a card or its notes calls `public_pages.touch` for the kind `card`.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -190,13 +191,13 @@ def of_project(conn: Connection, project_id: str) -> list[str]:
     )
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     """Every card of a project that may have a page; `render_card` decides for each."""
     return list(
         conn.execute(
             select(t.card.c.id)
             .select_from(t.card.join(t.project, t.project.c.id == t.card.c.project_id))
-            .where(t.project.c.public_page == "on")
+            .where(t.project.c.public_page == "on", *public_pages.only(t.card.c.id, among))
             .order_by(t.card.c.id)
         ).scalars()
     )

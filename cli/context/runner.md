@@ -1654,3 +1654,45 @@ every call can run that way.
   missing: that is the directory the check cannot vouch for.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
+
+## A headless placement is offered no tool for asking a person
+
+**Id:** e71f0da3-46ed-4276-b88a-3fcd6af905bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-1pxc2shwk43p (the maintainer, 2026-11-10: agents work autonomously, so a headless placement must not be able to ask an interactive question nobody can answer); `cli/src/maity/runner/adapters.py`; Claude Code's permission documentation (`dontAsk` denies `AskUserQuestion` even when an allow rule matches; a bare tool name in a deny rule removes the tool from the model's context); Codex's configuration source (`[tools.experimental_request_user_input] enabled`, on by default; `codex exec` rejects the tool's request)
+**Revisit when:** a supervised placement gets a way to put a question to a person and wake with the answer, or a harness renames its question tool or the switch that turns it off
+
+For a supervised placement, where the harness runs headless on each event,
+the runner's generated configuration takes away the harness's tool for
+asking the person at the terminal:
+
+- Claude Code: `AskUserQuestion` as a bare name in `permissions.deny`.
+  `--permission-mode dontAsk` already denies the call, but leaves the tool
+  in the model's context; the bare deny removes it.
+- Codex: `[tools.experimental_request_user_input] enabled = false` in the
+  placement's `config.toml`. The tool is registered by default, and
+  `codex exec` rejects its request.
+- opencode: nothing to add; its configuration denies every tool it does not
+  name.
+
+Interactive placements, where a person is at the pane, keep what they had.
+
+**Reason:** agents in Maity work autonomously, and nobody sits at a headless
+run. Both harnesses refuse the question tool's call there, so a question
+put through it reaches no one. A harness that answered it empty instead
+would be worse: the run would go on as if a person had chosen. A person's
+decision is asked for through Maity (`maity ask`), which reaches the human's
+inbox and wakes the agent with the answer. With the tool not offered, that
+is the way left to put a question to a person.
+
+**Rejected alternatives:**
+- Relying on `dontAsk` alone for Claude Code: the call is refused, but the
+  tool stays in the model's context and offered.
+- Taking the tool away from interactive placements too: their
+  configuration is left as it was. For Claude Code, interactive placements
+  run with `dontAsk` as well, which already refuses the call, so a person
+  at the pane is not asked through this tool either; letting them ask would
+  mean changing `dontAsk` for every other prompt there, a decision of its
+  own. Codex keeps its question tool in an interactive placement.
