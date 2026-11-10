@@ -44,9 +44,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """One shard of the suite, by test file: a file's tests stay in one shard, so its module
-    fixtures (the two processes, the workers) are not set up again in the other shards; inside
-    the shard each xdist worker that runs some of them sets them up, as without shards. The file
+    """One shard of the suite, by test file: a file's tests stay in one shard, so its
+    module-scoped fixtures start in that shard only (in it, once per xdist worker that runs some
+    of the file's tests, as without shards; the session fixtures start once per worker in every
+    shard). The file
     path's CRC-32 picks the shard, the same on every run and machine, so each file runs in
     exactly one shard and the shards together run the whole suite (CI's `hub-postgresql`)."""
     shard = _shard()

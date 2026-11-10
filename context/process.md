@@ -1388,6 +1388,9 @@ cancel a green run; the title's "90 minutes for the database jobs" holds for `hu
 stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
 keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
 
+(2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
+19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
+
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
 **Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
@@ -1468,7 +1471,7 @@ value is the author's weighing, not measured against a real hang beyond #1255.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; `.github/workflows/ci.yml`, `hub/tests/conftest.py`
+**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
 **Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
 **See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
 
@@ -1481,11 +1484,14 @@ check. Locally the three shards together collect the whole suite (2125, 2288 and
 
 **Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
 only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
-over the suite. Three legs side by side are expected to cut the wall time to about a third plus
-setup, as far as the shards take about the same time and three runners are free at once; that is
-not measured yet. By file, a module's fixtures (a hub, a database set up once per module) stay in
-one leg and are not set up again in the other two; inside a leg each xdist worker that runs some
-of the module's tests sets them up, as without shards.
+over the suite. Three legs side by side cut the wall time as far as the shards take about the same
+time and three runners are free at once: the first sharded run, ci 42909006763 on hosted runners
+(2026-11-10), took 25.0, 29.1 and 19.4 minutes per leg, so about 29 minutes against 59 to 85 for
+the whole suite; one run, not yet a median. By file, a test file stays in one leg, so a fixture set
+up once per file (today only the S3 server of `test_attachments_s3.py`, scope `module`) starts in
+one leg only. The session fixtures start once per xdist worker in every leg whichever way the
+suite is split, and within a leg a module fixture starts once per worker that runs some of its
+file's tests.
 
 **Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set and `pg` among `HUB_RUNNER_TYPES`
 (unset means all three) the job asks for the maintainer's
@@ -1497,8 +1503,9 @@ and it needs no commit.
 **Rejected alternatives:**
 - Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
   time.
-- Sharding by test node id, as the card's plan said first: a module's tests would spread over the
-  legs and each leg would repeat its module setups.
+- Sharding by test node id, as the card's plan said first: a file's tests would spread over the
+  legs, and each leg would set up that file's module fixtures again. Today that is one fixture, so
+  the gain is small; the split by file keeps it from growing with new ones.
 - A random host port for the service, so that two legs could share a runner: not needed for hosted
   runners, and the self-hosted machine runs one job per type by design (the entry on one runner
   service per database job type).
