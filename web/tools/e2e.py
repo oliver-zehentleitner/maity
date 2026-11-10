@@ -114,7 +114,11 @@ class Run:
         self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
 
     def a11y(self, page: Page, view: str) -> None:
-        """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
+        """axe-core on the page as it stands, in each pass; after them the page is back at the
+        viewport and colour scheme the step had (tsk-7eq8y3gymek2: it went to 1280 px, light, so a
+        phone check after an a11y pass measured the desktop)."""
+        size = page.viewport_size or {"width": 1280, "height": 900}
+        dark = page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
         for width, height, scheme in PASSES:
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
@@ -151,8 +155,8 @@ class Run:
                         ][:5],
                     }
                 )
-        page.set_viewport_size({"width": 1280, "height": 900})
-        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": size["width"], "height": size["height"]})
+        page.emulate_media(color_scheme="dark" if dark else "light")
         print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
 
     def a11y_report(self) -> list[dict]:

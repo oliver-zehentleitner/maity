@@ -218,6 +218,65 @@ def lock_cases(ns: dict) -> int:
     return sum(not ok for _, ok in cases)
 
 
+class FakePage:
+    """What Run.a11y asks of a page: its viewport, the colour scheme it emulates, axe answering
+    with no violations. It records every viewport and scheme it is given."""
+
+    def __init__(self, width: int, height: int, scheme: str):
+        self.viewport_size = {"width": width, "height": height}
+        self.scheme = scheme
+        self.sizes, self.schemes = [], []
+
+    def set_viewport_size(self, size: dict) -> None:
+        self.viewport_size = dict(size)
+        self.sizes.append((size["width"], size["height"]))
+
+    def emulate_media(self, color_scheme: str | None = None, **_: object) -> None:
+        if color_scheme is not None:
+            self.scheme = color_scheme
+            self.schemes.append(color_scheme)
+
+    def evaluate(self, expression: str, *args: object) -> object:
+        if "prefers-color-scheme: dark" in expression:
+            return self.scheme == "dark"
+        if "typeof window.axe" in expression:
+            return True
+        if "axe.run" in expression:
+            return {"violations": []}
+        return None
+
+
+def a11y_cases() -> int:
+    """Run.a11y, taken out of e2e.py's syntax tree: its passes run at their own sizes and schemes,
+    and afterwards the page is back at the step's own (tsk-7eq8y3gymek2)."""
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    run = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Run")
+    method = next(n for n in run.body if isinstance(n, ast.FunctionDef) and n.name == "a11y")
+    consts = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in ("PASSES", "AXE_TAGS") for t in n.targets)]
+    namespace = {"Page": object}
+    exec(compile(ast.Module(body=consts + [method], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    a11y = namespace["a11y"]
+
+    class Self:
+        axe = "/* axe */"
+        a11y_findings: list = []
+
+    cases = []
+    for width, height, scheme in ((390, 844, "dark"), (360, 780, "light"), (1280, 900, "light")):
+        page = FakePage(width, height, scheme)
+        with contextlib.redirect_stdout(io.StringIO()):
+            a11y(Self(), page, "a view")
+        passes = page.sizes[:3] == [(1280, 900), (390, 844), (1280, 900)] and page.schemes[:3] == ["light", "light", "dark"]
+        back = page.viewport_size == {"width": width, "height": height} and page.scheme == scheme
+        cases.append((f"a11y: the passes run, then the page is back at {width}x{height} {scheme}",
+                      passes and back, (page.sizes, page.schemes)))
+    failed = 0
+    for name, ok, detail in cases:
+        failed += not ok
+        print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {detail}"))
+    return failed
+
+
 def main() -> int:
     ns = load()
     cases = [
@@ -235,6 +294,7 @@ def main() -> int:
     failed += trace_cases(ns)
     failed += environment_cases(ns)
     failed += lock_cases(ns)
+    failed += a11y_cases()
     print("all ok" if not failed else f"{failed} failure(s)")
     return 1 if failed else 0
 
