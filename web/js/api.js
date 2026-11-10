@@ -1568,27 +1568,36 @@ window.Maity = window.Maity || {};
     const byProject = {};
     const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security").map((k) => ({ [k]: 0 }))));
     me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.full_name).inbox += n; });
-    // A personal request of a project one is no member of (§7, §18.2): counted in inbox, on an
-    // entry with member false, once per request. One the fixtures hold (personal-requests.json)
+    // Every open personal request addressed to the human (§7, §18.2), member of its project or
+    // not, counts once in inbox and on its project's entry, member false when one is no member
+    // of it: the fixtures hold them in personal-requests.json, and /me never carries them. It
     // counts while it is open, whether its item is read or not, since it falls when it is
     // answered or withdrawn; the consent request of an invitation by handle is one of them
-    // (`invitation`). One whose request the fixtures do not hold counts while its item is
-    // unread. The projects' own requests come from /me (`openFor`).
+    // (`invitation`). An item of a project one is no member of whose request the fixtures do
+    // not hold counts while it is unread. The projects' own requests come from /me (`openFor`).
+    const memberOf = (fullName) => me().projects.some((p) => p.full_name === fullName);
     const personalCounted = new Set();
-    const outside = (x) => {
-      const id = x.target && x.target.type === "request" ? x.target.id : null;
-      if (id && personalCounted.has(id)) return;
-      if (id) personalCounted.add(id);
-      counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false;
+    const personal = (fullName) => {
+      counts.inbox += 1;
+      if (!fullName) return;
+      of(fullName).inbox += 1;
+      if (!memberOf(fullName)) of(fullName).member = false;
     };
+    personalRequests().forEach((r) => {
+      if (r.status !== "open" || (/^human:/.test(r.to || "") && r.to !== "human:" + me().member.id)) return;
+      personalCounted.add(r.id);
+      personal(r.project && r.project.full_name);
+    });
     fixtures()["notifications.json"].items.forEach((x) => {
       // A pending registration or a disabled address counts until the matter
       // is closed, read or not (§18.2).
       if (x.kind === "inbox" && x.open_matter) { counts.inbox += 1; return; }
       if (x.kind === "inbox" || x.kind === "invitation") {
-        if (!x.project || x.project.member !== false) return;
-        const request = x.target && x.target.type === "request" ? personalRequests().find((r) => r.id === x.target.id) : null;
-        if (request ? request.status === "open" : !x.read) outside(x);
+        const id = x.target && x.target.type === "request" ? x.target.id : null;
+        if (id && personalRequests().some((r) => r.id === id)) return;
+        if (x.read || !x.project || x.project.member !== false || (id && personalCounted.has(id))) return;
+        if (id) personalCounted.add(id);
+        personal(x.project.full_name);
         return;
       }
       if (x.read) return;

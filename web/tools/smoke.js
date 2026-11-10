@@ -314,11 +314,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
-  // The total also holds a personal request of a project the human is no member of (member: false), on no project's pill.
-  expect(chipCount("All projects") === "11" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 11 / 9 / 1");
-  expect(document.title.startsWith("(11) "), "the tab title starts with what asks for the human");
+  // The total also holds the open personal requests addressed to the human (§18.2): one of a project the human
+  // is no member of (member: false), a preference proposal and two reports, on no project's pill.
+  expect(chipCount("All projects") === "14" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 14 / 9 / 1");
+  expect(document.title.startsWith("(14) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
-  expect(allChip.getAttribute("aria-label") === "9 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
+  expect(allChip.getAttribute("aria-label") === "12 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
   expect(main.querySelectorAll(".project-label").length === 12, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
@@ -344,14 +345,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
   expect(cur && text(cur).includes("Argon2id"), "Later moves to the next entry without answering");
-  expect(chipCount("All projects") === "11", "Later sends nothing, counts unchanged");
+  expect(chipCount("All projects") === "14", "Later sends nothing, counts unchanged");
   // Answers as the page sends them (§7): the text goes along with a reply or Talk, alone with Send.
   const ansCalls = [];
   const ansPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/answer")) ansCalls.push([p, b]); return ansPost(p, b); };
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ reply_id: "sha" }]), "answer: only a reply, no text key " + JSON.stringify(ansCalls));
-  expect(chipCount("All projects") === "10" && chipCount("Maity") === "8", "answer re-reads /me counts");
+  expect(chipCount("All projects") === "13" && chipCount("Maity") === "8", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   const sortLabels = main.querySelectorAll(".project-label").map((el) => el.textContent);
   expect(sortLabels[0].startsWith("Personal") && sortLabels.find((t) => !t.startsWith("Personal")).startsWith("Maity"), "sort by project: the personal requests first, then the projects");
@@ -13763,24 +13764,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       on_behalf_of: null, task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null, report: null,
       personal: true, status: "open", answer: null, created_at: "2026-10-22T13:51:00Z", answered_at: null,
       project: { slug: "lab2", full_name: "olga/lab2", name: "Lab 2", state: "build" } });
+    // A personal request of a project the human is a member of, with its item: it counts once too, there,
+    // and the entry keeps member true (§18.2: "member of its project or not").
+    icF["notifications.json"].items.push({ id: "ntf-4402", kind: "inbox", at: "2026-10-22T13:52:00Z",
+      project: { slug: "maity", full_name: "maintainer/maity", name: "Maity", member: true }, title: "Agent A asks you: Keep the deploy notes",
+      target: { type: "request", id: "req-iv03" }, read: false, redacted: false });
+    icF["personal-requests.json"].items.push(Object.assign(JSON.parse(JSON.stringify(icF["personal-requests.json"].items.find((r) => r.id === "req-iv02"))),
+      { id: "req-iv03", title: "Keep the deploy notes", replies: [{ id: "go", label: "Go" }], while_open: "proceed_provisionally",
+        asked_by: { member_id: "agt-a", display_name: "Agent A", trust: "member", role: "coder", session_id: null },
+        project: { slug: "maity", full_name: "maintainer/maity", name: "Maity", state: "build" } }));
+    // An open personal request with no item counts as well: the count follows the requests, not the items.
+    icF["personal-requests.json"].items.push(Object.assign(JSON.parse(JSON.stringify(icF["personal-requests.json"].items.find((r) => r.id === "req-iv02"))),
+      { id: "req-iv04", title: "Join olga/lab3 as coder (member)", project: { slug: "lab3", full_name: "olga/lab3", name: "Lab 3", state: "build" } }));
     win.MAITY_FIXTURES = icF;
     vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
     const icWith = await icRead();
     // Reading the invitation's notification leaves its request open, so both counts stay.
-    await win.Maity.api.post("/me/notifications/read", { ids: ["ntf-4401"] });
+    await win.Maity.api.post("/me/notifications/read", { ids: ["ntf-4401", "ntf-4402"] });
     const icAfterRead = await icRead();
     win.MAITY_FIXTURES = icFixtures;
     vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
     const icLab = (icWith.by_project || {})["olga/lab2"];
+    const icMaity = (icWith.by_project || {})["maintainer/maity"], icMaityBase = (icBase.by_project || {})["maintainer/maity"];
     expect(JSON.stringify(Object.keys(icWith.counts).sort()) === JSON.stringify(Object.keys(icBase.counts).sort())
-      && icWith.counts.inbox === icBase.counts.inbox + 1 && icWith.counts.total === icBase.counts.total + 1
+      && icWith.counts.inbox === icBase.counts.inbox + 3 && icWith.counts.total === icBase.counts.total + 3
       && icLab && icLab.member === false && icLab.inbox === 1 && !("invitation" in icLab),
-      "notifications: the mock counts an unread invitation in inbox, on its project with member false, with the five keys "
+      "notifications: the mock counts an unread invitation in inbox (with the member request and the one without an item below), on its project with member false, with the five keys "
       + JSON.stringify([icBase.counts, icWith.counts, icLab]));
     const icLabRead = (icAfterRead.by_project || {})["olga/lab2"];
     expect(icAfterRead.counts.inbox === icWith.counts.inbox && icLabRead && icLabRead.member === false && icLabRead.inbox === 1,
       "notifications: an invitation read while its request is open still counts, in inbox and on its project "
       + JSON.stringify([icWith.counts, icAfterRead.counts, icLabRead]));
+    const icMaityRead = (icAfterRead.by_project || {})["maintainer/maity"];
+    expect(icMaity && icMaityBase && icMaity.member === true && icMaity.inbox === icMaityBase.inbox + 1
+      && icMaityRead && icMaityRead.member === true && icMaityRead.inbox === icMaity.inbox,
+      "notifications: a personal request of a project one is a member of counts once, there, read or not, and member stays true "
+      + JSON.stringify([icMaityBase, icMaity, icMaityRead]));
+    const icLab3 = (icWith.by_project || {})["olga/lab3"];
+    expect(icLab3 && icLab3.member === false && icLab3.inbox === 1,
+      "notifications: an open personal request without an item counts, in inbox and on its project " + JSON.stringify(icLab3));
   }
 
   // An invitation by handle is its own kind (§18.1 `invitation`, tsk-8xsrzjv7f0yr): the bell lists it,
