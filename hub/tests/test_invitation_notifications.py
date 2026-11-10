@@ -61,6 +61,7 @@ def test_the_request_of_an_invitation_by_handle_is_an_invitation_item(
     invite(olga)
     [item] = [i for i in items(anna) if i["target"]["type"] == "request"]
     assert item["kind"] == "invitation"
+    assert " asks you: Join olga/lab" in item["title"]  # docs/api.md §18.1, its `invitation` row
     assert item["project"]["full_name"] == "olga/lab" and item["project"]["member"] is False
     assert [i["id"] for i in items(anna, kind="invitation")] == [item["id"]]
     assert [i for i in items(anna, kind="inbox") if i["id"] == item["id"]] == []
