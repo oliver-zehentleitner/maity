@@ -1729,3 +1729,31 @@ is the way left to put a question to a person.
   at the pane is not asked through this tool either; letting them ask would
   mean changing `dontAsk` for every other prompt there, a decision of its
   own. Codex keeps its question tool in an interactive placement.
+
+## A failed clone says why in the runner's log, not in the report
+
+**Id:** e814c00b-fde7-4c0a-a3ca-f7b3510900df
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3w09my9zkrez (two placements on a fresh runner reported `clone_failed` with no exit code and no detail, and nothing showed why); `cli/src/maity/runner/workspace.py`, `supervisor.py`
+**Revisit when:** §15.7 gets detail codes for `clone_failed`
+
+When the clone fails, the runner's log gets one line with the reason:
+`<placement>: clone_failed: <why>`. The reason is maity's own message when
+git could not run (not found, refused by maity's clone check, timed out),
+or git's last line of output when it exited with an error. The report to
+the hub is unchanged: `clone_failed`, the exit code, no detail.
+- The text stays out of the report. `detail` is a closed list of codes
+  (§15.7), and a tool's message is no code. The log line for a new state
+  carries codes and numbers only for the same reason.
+- The reason is printable, capped at 300 characters (the line adds the
+  placement and the reason code), and every URL in it loses its userinfo,
+  through the same redactor as the rest of the CLI (`redact.without_userinfo`).
+  An https repository URL the runner accepts carries none, and an ssh one
+  at most a user name. A redirect or a helper's message could carry a
+  password.
+- Rejected: free text in `detail`. The hub would then store and show a
+  tool's message, which is outside the contract.
+- Rejected: logging nothing, as before. `clone_failed` without an exit code
+  covers several unrelated causes, so nobody could tell which one it was.

@@ -9873,7 +9873,7 @@ outstanding, `null` once confirmed), and
 the member view `keep_the_why_unconfirmed`: `true` while any of its
 instances is past its `acknowledge_by` without a confirmation, else
 `false`. Humans, and agents in a project under `optional`, carry
-neither. The Team view (`members`, §16.11) shows it as a mark with the deadline, not as
+neither. The Team view (`team`, §16.11) shows it as a mark with the deadline, not as
 an error.
 
 **The why on a code report.** `why` on a report (§6.6) has one shape
@@ -18162,7 +18162,7 @@ name.
 Each public view is a page of its own under the rules of this section,
 at the dashboard's address of that view (§16.11): Overview is the
 project's page above (`/{owner}/{slug}`), the others are
-`/{owner}/{slug}/board`, `/{owner}/{slug}/members`,
+`/{owner}/{slug}/board`, `/{owner}/{slug}/team`,
 `/{owner}/{slug}/organisation` and `/{owner}/{slug}/why`. Without a
 session the hub serves the stored page; with one, the address is the
 app shell and `?as=public` shows the stored page, as for every page here.
@@ -18180,7 +18180,7 @@ the list answers the app shell.
   id links to the card's own page (below), which has the body and notes. A card under a moderation
   hold (§16.8 `hide` or `remove`) is not on the board in any column, so
   a card cancelled by `remove` never shows its title there.
-- **Team** (at `/{owner}/{slug}/members`) — the members shown on the project's page, each with
+- **Team** (at `/{owner}/{slug}/team`) — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
   role. No presence, no instances, no avatar (a picture is on the
@@ -18612,7 +18612,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
-| `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
+| `team` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
 | `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
@@ -18789,10 +18789,10 @@ names:
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; the path keeps `members`, the maintainer's decision of 2026-11-09, req-77az2zs017fe; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
-public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
+public views `/<owner>/<slug>/board`, `/team`, `/organisation` and
 `/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>`, a person's agents at `/<handle>/agents` and an agent's `/<owner>/agents/<handle>`,
 where the first segment is not reserved (below):
 
