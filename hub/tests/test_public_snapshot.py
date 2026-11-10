@@ -3,6 +3,7 @@ a visitor may read and who is online, rendered with the page and again by its ow
 
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from datetime import timedelta
 from typing import Any
@@ -15,6 +16,25 @@ from maity_hub import tables as t
 from tests.conftest import ClientFactory
 from tests.test_public_project_views import BASE, TASKS, World
 from tests.test_reports import report
+
+# The threads of `public_pages.Worker` and `public_snapshot.Worker`.
+WORKER_THREADS = ("maity-public-pages", "maity-public-snapshot")
+
+
+def count_renders(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """Every page the writers render from now on, as (kind, target). The page workers of the
+    world's clients render too, each in its own thread and whenever its pass arrives (its first
+    renders `project_views` again for every public project): those are not counted."""
+    rendered: list[tuple[str, str]] = []
+    real = public_pages.refresh
+
+    def counted(conn: Any, hub: Any, kind: str, target_id: str, **options: Any) -> None:
+        if threading.current_thread().name not in WORKER_THREADS:
+            rendered.append((kind, target_id))
+        real(conn, hub, kind, target_id, **options)
+
+    monkeypatch.setattr(public_pages, "refresh", counted)
+    return rendered
 
 
 @pytest.fixture
@@ -171,14 +191,7 @@ def test_a_card_event_renders_no_other_card_s_page_under_the_project_lock(
     every card of a public project per `task_updated` held the row for seconds)."""
     others = [world.card(title=f"Card {n}") for n in range(12)]
     edited = world.card(title="Edited", label="fix")
-    rendered: list[tuple[str, str]] = []
-    real = public_pages.refresh
-
-    def counted(conn: Any, hub: Any, kind: str, target_id: str) -> None:
-        rendered.append((kind, target_id))
-        real(conn, hub, kind, target_id)
-
-    monkeypatch.setattr(public_pages, "refresh", counted)
+    rendered = count_renders(monkeypatch)
     board = [("card", edited), ("project_views", world.project_id)]
     for change, own_page in (
         ({"title": "Edited again"}, []),
@@ -200,14 +213,7 @@ def test_a_member_change_no_page_shows_renders_nothing_under_the_project_lock(
     the project with its dependents."""
     for n in range(5):
         world.card(title=f"Card {n}")
-    rendered: list[tuple[str, str]] = []
-    real = public_pages.refresh
-
-    def counted(conn: Any, hub: Any, kind: str, target_id: str) -> None:
-        rendered.append((kind, target_id))
-        real(conn, hub, kind, target_id)
-
-    monkeypatch.setattr(public_pages, "refresh", counted)
+    rendered = count_renders(monkeypatch)
     got = world.owner.patch("/me/notification-settings", {"email": {"language": "de"}})
     assert got.status_code == 200, got.text
     assert rendered == []

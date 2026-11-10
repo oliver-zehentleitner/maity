@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Collection
 from datetime import datetime
 from html import escape
 from typing import Any, NamedTuple
@@ -453,11 +454,15 @@ def touch_owner_of(
     public_pages.touch(conn, KIND, owner.id, removal=removal, dependents=False)
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
             select(t.human.c.id)
-            .where(t.human.c.account_status == "active", t.human.c.deleted_at.is_(None))
+            .where(
+                t.human.c.account_status == "active",
+                t.human.c.deleted_at.is_(None),
+                *public_pages.only(t.human.c.id, among),
+            )
             .order_by(t.human.c.id)
         ).scalars()
     )

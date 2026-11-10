@@ -37,7 +37,7 @@ After a change of these words run `make -C web fixtures`, or the web job is red 
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23
 **Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or several hub replicas serve long-polls
@@ -473,6 +473,53 @@ the memberships, which are few beside the history. Rejected: a first chunk of `c
 page's size, which reads less for a quiet bell but takes more chunks, each with its lookups,
 the more read items lie in front, so it grows with the history the load test guards. The load
 test measures one project; a human in many projects is not measured yet.
+
+## The bell's scans pick their candidate rows in SQL, leaving out the agents' traffic among themselves; `limit=0` derives no page
+
+**Id:** 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-spa1tad26vs1; prod timing of rev 29, 2026-11-10 06:55–07:30 UTC (`GET /me/notifications` median 230 statements, `db_ms` 2141, over half of all database time); `tests/test_notifications.py` `test_the_bell_costs_the_same_statements_for_more_traffic_between_agents`, red on main
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-11-10
+**Revisit when:** `_classify` makes an item from a row these SQL conditions leave out (a new way a message or a request reaches a human), or a project's bell is slow again with these conditions in place
+
+A project where agents talk to each other has most of its messages and requests between
+agents. None of them is an item of the human's, but `derive_page` read them anyway. The plain
+chat scan (`_chats`) and the scan of the other kinds (requests above all) took rows chunk by
+chunk until a page was full. A human with few items reached the end of the 30-day window, at
+about 6 statements per chunk of 200 rows, so the cost grew with the agents' traffic. That was
+also true for `limit=0`, the counts the dashboard reads on every page, whose page is empty.
+
+Now:
+- `limit=0` skips `derive_page`: its page is empty, and its cursor and position need no item. The counts
+  (`count_items`) and the pinned alerts are derived as before.
+- `_chats` reads only messages of a conversation whose audience text holds the human's
+  `member:` token.
+- Request events are read only where the request may concern the member (`_may_concern`):
+  - addressed to a role or the owner, or to the member;
+  - held by the member or the admin pool;
+  - covered by someone;
+  - or asked by the member.
+
+Both conditions only pick candidates: they are supersets of the exact test, which stays in
+`_classify`. They admit rows it rejects (a request to a role the member does not hold, a cover
+by someone else); those are classified and dropped as before. A row they leave out could never
+have been an item.
+
+**Reason:** the answer is unchanged, and the cost follows what concerns the human, not the
+project's traffic. Supersets keep one place deciding (`_classify`, `inbox.addressed_to`)
+instead of a second copy of those rules in SQL, which would drift.
+
+**Rejected alternatives:**
+- The exact test in SQL (roles through `tokens_of`, covers, the current holder): a second copy
+  of `_request_concerns` and of the chat rules, to keep in step by hand.
+- Only deferring the counts call in the dashboard: it helps the page draw (a separate web
+  card), but the bell's own click stays as slow.
+- 24ca001c rejected filtering chat messages by the human in SQL ("every message of the human's
+  own chats matches and nothing is saved"). That held for a human's own direct chats. It does
+  not hold where the window is mostly messages between agents, which the measurement of
+  2026-10-28 did not have.
 
 ## The counts of the bell classify only their candidates; the mentions stay exact
 

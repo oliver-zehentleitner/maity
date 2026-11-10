@@ -468,10 +468,12 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     return pages
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
-            select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
+            select(t.project.c.id)
+            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
+            .order_by(t.project.c.id)
         ).scalars()
     )
 

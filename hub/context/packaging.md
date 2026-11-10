@@ -326,6 +326,21 @@ placeholder, which has no `maity-hub` command (the review of this change).
 The quickstart switches to `pipx install maity-hub` in a pull request of
 its own once the release is verified.
 
+**Since 2026-11-09:** `0.1.0a1` is on PyPI, the maintainer removed the
+`0.0.0` placeholder the same day (deleted rather than yanked, so the
+simple index lists only `0.1.0a1`), and the quickstart installs with the
+plain `pipx install maity-hub`, as `pipx install maity` for the CLI.
+(Source: card tsk-g5me3qzet9dp. Before the removal, the index listed
+`0.0.0` with `yanked: false`, and in a throwaway pipx home the plain line
+failed building the placeholder's sdist, while `--pip-args=--pre` and
+`==0.1.0a1` installed `0.1.0a1`. After it, the plain line installed
+`0.1.0a1` without pip's cache.) Rejected: `--pip-args=--pre` as the
+documented line (it worked with the placeholder, but it is a flag every
+reader has to carry, and pip would then also prefer later pre-releases
+to finals); a pinned `==0.1.0a1` as the main line (stale with the next
+release, and kept only as the way to pin); and keeping the Git URL (no
+version to name, and the package path stays untested).
+
 **Rejected alternatives:**
 - A tag prefix of its own, `hub-v*`, as the CLI has `cli-v*`: two tags
   for one hub version, and the image and the package could name the

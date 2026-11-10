@@ -15,10 +15,10 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -220,6 +220,18 @@ class Page:
     indexed: bool = True  # false: `noindex` and out of the sitemap (§16.9)
 
 
+class Targets(Protocol):
+    """Which targets of a kind exist, by id in order; with `among`, only those of these ids,
+    by the same rule: a keyed read for one candidate instead of the whole list."""
+
+    def __call__(self, conn: Connection, among: Collection[str] | None = None) -> list[str]: ...
+
+
+def only(column: Any, among: Collection[str] | None) -> tuple[Any, ...]:
+    """The condition `targets` adds for `among`: none without it."""
+    return () if among is None else (column.in_(list(among)),)
+
+
 @dataclass(frozen=True)
 class Kind:
     """A kind of page: how to render the pages of one target (a person, a project, …), and
@@ -227,7 +239,7 @@ class Kind:
 
     name: str
     render: Callable[[Connection, Settings, str], list[Page]]
-    targets: Callable[[Connection], list[str]]
+    targets: Targets
     # The pages of other kinds that show this target (a person on the pages of their
     # projects): `touch` renders them again with it, `(kind, target_id)` each.
     dependents: Callable[[Connection, str], list[tuple[str, str]]] | None = None
@@ -430,7 +442,7 @@ def render_all(
         for target_id in sorted(gone):
             with engine.begin() as conn:
                 xact_lock(conn, f"public_page:{kind.name}:{target_id}")
-                if target_id not in set(kind.targets(conn)):
+                if not kind.targets(conn, [target_id]):  # keyed: one candidate, not every target
                     remove(conn, kind.name, target_id)
     if skipped:
         with engine.begin() as conn:
