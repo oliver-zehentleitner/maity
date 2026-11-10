@@ -983,7 +983,7 @@ menu per press would make that slow.
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
-a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
+a link to `/<owner>/<slug>/team/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
 project does not list (removed, outside) and every member in a view read
 from outside the project are plain text. The inbox of all projects
@@ -1693,7 +1693,7 @@ an anchor. Waiting for a hub-made URL: none is in the contract.
 
 The `keep_the_why` item names the agent as `target: {type: "member"}`.
 Where the owner is a member of the project it opens
-`#/p/<slug>/members/<agent id>`; where not, `#/account/picture/<agent
+`#/p/<slug>/team/<agent id>`; where not, `#/account/picture/<agent
 id>`, the list of one's agents on the account, with that agent marked
 and focused.
 
@@ -2008,7 +2008,7 @@ as before. An id that is not an instance id is not shown. In a chat two
 instances of one agent are two senders: their messages are never grouped
 under one name. The handle leads to the member's page, the `#id` to
 the same page's Sessions with that instance's line marked and focused
-(`…/members/<id>/sessions/<instance>`), where no link is possible (a
+(`…/team/<id>/sessions/<instance>`), where no link is possible (a
 member the project does not list, a view from outside) both stay text.
 A stored mention `@handle#id` in a text reads the same: two links, the
 member and its instance. The @ picker offers, after each agent, its
@@ -2756,7 +2756,7 @@ slug: §6.25 forbade it, since another project may carry that slug by now.
 
 The agents' heading on Members has **+ Add an agent** (owner and admin),
 which opens the join panel under it: closed by default, open at once in a
-project without agents or at `/<owner>/<slug>/members/join`. The panel is read beside the
+project without agents or at `/<owner>/<slug>/team/join`. The panel is read beside the
 list, never before it, so the rows and a member asked for by the URL do
 not wait for the joins. Open joins stand as seats under the agents'
 table, the placements after it, the earlier joins at the end. A count
@@ -2979,6 +2979,7 @@ reporting line that is not there.
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
 
 2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+2026-11-10: the path follows the name: the view and its member pages are at /<owner>/<slug>/team (the maintainer's decision, so that the name and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word, the maintainer's wish, so no slug or later view takes it; /members is a word that is no view, with no redirect. The Members tab keeps its name.
 
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
@@ -3201,7 +3202,7 @@ those branches untested.
 **See:** views.md — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-29
 **Revisit when:** the maintainer moves the admin's actions out of the Manage row, or a member page of its own takes over what the Agents card does
 
-`/<owner>/<slug>/members/<id>` is a member's page: breadcrumb, header,
+`/<owner>/<slug>/team/<id>` is a member's page: breadcrumb, header,
 and the tabs Activity, Cards, Briefing, Sessions & credentials, all read
 only. Its **Actions ▾** holds only links: **Manage on Members**
 (`?manage=<id>`, the list with that row open) for an admin, **Manage on
@@ -3238,7 +3239,7 @@ when the first such row opens, since the member list carries no
 `avatar_source`. The account still lists, under **Agents in other
 projects**, the owner's agents that are in no project the owner can
 open, and only those. `/account/picture/<agent id>` for an agent that
-Members reaches leads to `/<owner>/<slug>/members/<agent id>/picture`,
+Members reaches leads to `/<owner>/<slug>/team/<agent id>/picture`,
 the row open. The checks before sending and the missing preview stay as
 the entry this one replaces describes them.
 
@@ -4061,6 +4062,7 @@ taken, and the rule for what holds is the contract's. The icons as
 **Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
 
 2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+2026-11-10: the path follows the name: the view and its member pages are at /<owner>/<slug>/team (the maintainer's decision, so that the name and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word, the maintainer's wish, so no slug or later view takes it; /members is a word that is no view, with no redirect. The Members tab keeps its name.
 
 The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
 **Swarm** (`overview/swarm`) and **Project** (`overview/project`), as
@@ -4073,7 +4075,7 @@ policy, contract, Keep the Why) and the README badge, read from what
 the header already has. A tab the page does not know shows Summary.
 The organisation tree left the Overview: it is the Team page's
 **Organisation** tab at `/<owner>/<slug>/organisation`, a project view
-the contract already lists, beside **Members** at `members`; both
+the contract already lists, beside **Members** at `team`; both
 pages carry the same two links (`M.teamTabs`), and the project's row
 of tabs marks Members for either. The tree is drawn again when a member
 event arrives.

@@ -333,7 +333,7 @@ window.Maity = window.Maity || {};
 
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
-    const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
+    const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "team", id));
     // Drawn by the one renderer of chats, cards and messages (js/markdown.js): code with its Copy, links, mentions.
     const said = (field, text, mentions) => M.markdown(text, at, { mentions, field, hrefOf: memberHref, ctx });
     if (req.summary) append(body, h("div", { class: "md summary" }, said("summary", req.summary, req.mentions)));

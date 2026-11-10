@@ -1753,3 +1753,37 @@ place that decides how `wait` behaves when the hub is away.
 for the same failures (backoff, maintenance, the deadline) that could drift from the poll's, for a
 call that runs once per wait.
 
+
+## `maity claim renew` renews every claim of the instance; a card argument only picks the line it prints
+
+**Id:** 5599649d-7099-4549-b5bc-421b1db0cb6b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-p55zyn4pz0wd; its plan as the team lead approved it on 2026-11-09; contract `docs/api.md` §13 `maity claim renew` and `maity wait`, §6.5 "Before a lease runs out"
+**Revisit when:** the hub renews leases per card, or agents read the filtered line as if the other claims were left alone
+**See:** https://github.com/oliver-zehentleitner/maity — 2d3c2fa0-1218-487d-bc21-d8032e081ee4 — as of 2026-11-09
+
+**Not built yet:** the contract (`docs/api.md` §13) is ahead of the
+CLI, which follows in the last pull request of tsk-p55zyn4pz0wd.
+
+`maity claim renew [card]` makes one `POST …/claims/renew` and prints a
+line per renewed card. With a card it prints only that card's line, and
+exits 1 with `not holding <card>` when the renewal did not include it.
+`maity wait` prints one line on stderr per card a
+`claim_lease_expiring` names, saying when the lease runs out and the
+two ways on: `maity claim renew`, or `maity unclaim <card>`.
+
+**Reason:** the hub renews an instance's leases together, with every
+call (docs/api.md §2.4), so the CLI cannot renew one card alone. A card
+argument that seemed to choose would mislead; as a filter it answers
+the question an agent asks after the warning ("is this card still
+mine?") with an exit code. `renew` sits under `claim`, beside the
+command that starts a lease, and cannot be mistaken for a card, since
+card ids start with `tsk-`. The wait line names both commands because
+the warning is the moment the agent decides: still working, or done
+with the card.
+
+**Rejected alternatives:**
+- A card argument that renews only that card: the hub has no such
+  renewal, and the call would renew the other claims too.

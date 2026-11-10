@@ -879,7 +879,7 @@ def scenario(run: Run, page: Page) -> None:
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
     view_tab(page, "Team").click()
-    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/team$"))
     agents = page.locator("main .members-agents")
     expect(agents).to_contain_text("@e2e-agent")
     expect(agents).to_contain_text("member")
@@ -1134,7 +1134,7 @@ def scenario(run: Run, page: Page) -> None:
             ("inbox", "Inbox"),
             ("board", "Board"),
             ("overview", "Overview"),
-            ("members", "Team"),
+            ("team", "Team"),
             ("agents", "Agents"),
         )
         # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
@@ -1215,7 +1215,7 @@ def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
             entry.locator(".entry-head").first.click()
         facts = entry.locator(".entry-body dd").filter(has=page.locator(f"a.member-ref[data-member='{member_id}']")).first
         handle = facts.locator(f"a.member-ref[data-member='{member_id}']")
-        expect(handle).to_have_attribute("href", f"/owner/e2e-alpha/members/{member_id}")
+        expect(handle).to_have_attribute("href", f"/owner/e2e-alpha/team/{member_id}")
         mark = facts.locator("a.member-instance")
         expect(mark).to_have_text(f"#{instance}")
         if inbox == "/all":
@@ -1223,14 +1223,14 @@ def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
             # The project's link and the asker's in the rows one above the other: 24 px apart (WCAG 2.2).
             run.a11y(page, "/all, the asker's links under the project's")
         handle.click()
-        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}$"))
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/team/{member_id}$"))
         expect(page.locator(".member-head")).to_contain_text("E2E Agent")
         page.go_back()
         entry = page.locator(f"li.entry[data-request='{request_id}']")
         if entry.locator(".entry-body").count() == 0:
             entry.locator(".entry-head").first.click()
         entry.locator(".entry-body a.member-instance").first.click()
-        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}/sessions/{instance}$"))
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/team/{member_id}/sessions/{instance}$"))
         expect(page.locator(f"#member-instance-{instance}")).to_have_attribute("aria-current", "true")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
     current = page.locator("li.entry.current")
@@ -2027,7 +2027,7 @@ def tiny_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
 
 def images_step(run: Run, page: Page, alpha: Path) -> None:
     """The project's logo and banner (docs/api.md §11.2)."""
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     chip = page.locator("nav.switcher a", has_text="E2E Alpha")
     run.step("images: the owner uploads a logo and a banner, then removes the logo")
     expect(chip.locator(".project-mark.monogram")).to_have_text(
@@ -3787,10 +3787,10 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     # A hash-only goto returns before the page renders anew, and that render
     # replaces the header: a menu opened on the old one is gone mid-click.
-    expect(page.locator("main section.view-members")).to_be_visible()
+    expect(page.locator("main section.view-team")).to_be_visible()
     # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
     expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
@@ -4225,7 +4225,7 @@ def board_order_step(run: Run, page: Page) -> None:
 
 def ticker_step(run: Run, page: Page) -> None:
     """The change ticker (docs/api.md §17)."""
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     view_tab(page, "Ticker").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/ticker$"))
     main = page.locator("main section.view-ticker")
@@ -4252,7 +4252,7 @@ def ticker_step(run: Run, page: Page) -> None:
 
 def overview_step(run: Run, page: Page) -> None:
     """The project at a glance (docs/api.md §6.11): links, members, counts that link on."""
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     view_tab(page, "Overview").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview$"))
     main = page.locator("main")
@@ -4325,7 +4325,7 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(body).to_have_value(f"Hi {address} ")
     instance = address.split("#", 1)[1]
     body.fill("")
-    page.goto(f"{run.base}/owner/e2e-alpha/members/{agent_id}/sessions/{instance}")
+    page.goto(f"{run.base}/owner/e2e-alpha/team/{agent_id}/sessions/{instance}")
     chosen = page.locator(f"#member-instance-{instance}")
     expect(chosen).to_have_attribute("aria-current", "true")
     expect(chosen).to_be_focused()
@@ -4610,7 +4610,7 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
 def why_step(run: Run, page: Page, alpha: Path) -> None:
     """The Keep the Why export (docs/api.md §11.3)."""
     project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     tab = view_tab(page, "Why")
     # The e2e project has no repository: the export is not configured.
     run.step("why: the project has no repository, so the Why view says what it needs")
@@ -4654,7 +4654,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     dots = node(agent_id).locator(":scope > .fleet-node a.fleet-dot")
     live = [i for i in next(m for m in members if m["id"] == agent_id)["instances"] if not i.get("revoked_at")]
     expect(dots).to_have_count(len(live))
-    expect(dots.first).to_have_attribute("href", re.compile(rf"/owner/e2e-alpha/members/{agent_id}/sessions/"))
+    expect(dots.first).to_have_attribute("href", re.compile(rf"/owner/e2e-alpha/team/{agent_id}/sessions/"))
     try:
         for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
             page.set_viewport_size({"width": width, "height": height})
@@ -4979,7 +4979,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     status, _ = bearer_get(run, alpha, "/me")
     assert status == 200, status
     # The credentials are in the agent's row on Members (tsk-7v2snhk002ak).
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
     # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
@@ -5787,7 +5787,7 @@ def availability_step(run: Run, page: Page, clone: Path) -> None:
     run.step("members: an agent's declared limit shows until when and why")
     until = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     run.maity(clone, "limit", "--until", until, "--reason", "e2e quota")
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     note = page.locator("table.members tr.member", has_text="E2E Agent").locator(".availability-note")
     expect(note).to_contain_text("Away until")
     expect(note).to_contain_text("(e2e quota)")
@@ -5816,7 +5816,7 @@ def isolate_step(run: Run, page: Page) -> None:
     """Isolation (docs/api.md §6.2) on the real hub. Last of the agent's steps: isolating
     releases its claims, which the steps before rely on, and lifting does not bring them back."""
     run.step("members: the owner isolates the agent with a reason, sees the badge, and lifts the isolation")
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     agents = page.locator("main .members-agents")
     row = agents.locator("tr.member", has_text="E2E Agent")
     row.get_by_role("button", name="Manage E2E Agent").click()
@@ -5825,7 +5825,7 @@ def isolate_step(run: Run, page: Page) -> None:
     asked = []
     page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
     manage.get_by_role("button", name="Isolate", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("E2E Agent is isolated.")
+    expect(page.locator("main section.view-team > .send-status")).to_contain_text("E2E Agent is isolated.")
     assert asked and asked[0].startswith("Isolate E2E Agent?"), asked
     expect(row.locator(".badge.member-isolated")).to_have_text("Isolated")
     expect(row.locator(".badge.member-isolated")).to_have_attribute("title", "Isolated: e2e: isolated on purpose")
@@ -5837,7 +5837,7 @@ def isolate_step(run: Run, page: Page) -> None:
     expect(hide).not_to_be_checked()
     hide.check()
     manage.get_by_role("button", name="Lift isolation", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text(
+    expect(page.locator("main section.view-team > .send-status")).to_contain_text(
         "The isolation of E2E Agent is lifted; what happened meanwhile stays hidden from it."
     )
     expect(row.locator(".badge.member-isolated")).to_have_count(0)
@@ -6021,7 +6021,7 @@ def invitations_step(run: Run, page: Page) -> None:
     in the hub's words (the only human there is a member already: without mail the e2e hub makes
     no second account); revoked, the link is one uniform answer."""
     run.step("invitations: the owner invites a person from /invite, reached by Members' Invite user; the link is shown once")
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     expect(page.locator("section.invitations")).to_have_count(0)
     page.get_by_role("link", name="Invite user", exact=True).click()
     expect(page).to_have_url(re.compile(r"/invite\?project=owner%2Fe2e-alpha$"))
@@ -6219,7 +6219,7 @@ def members_step(run: Run, page: Page) -> None:
     run.step("members: the owner and the agent in two tables; an agent's role changed and back")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     view_tab(page, "Team").click()
-    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/team$"))
     # Two tables, humans first; the levels by trust are the Organisation tree's (the maintainer, 2026-11-01).
     table = page.locator("table.members")
     expect(table).to_have_count(2)
@@ -6251,7 +6251,7 @@ def members_step(run: Run, page: Page) -> None:
     expect(page.locator("table.members tr.member")).to_have_count(2)
     # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
     row.locator("a.member-ref").first.click()
-    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members/agt-[0-9a-z]+$"))
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/team/agt-[0-9a-z]+$"))
     head = page.locator(".member-head")
     expect(head).to_contain_text("E2E Agent")
     expect(head.locator(".member-pill", has_text="agent of")).to_have_count(1)
@@ -6262,7 +6262,7 @@ def members_step(run: Run, page: Page) -> None:
     run.a11y(page, "member page")
     page.locator("nav.member-tabs").get_by_role("link", name="Sessions & credentials").click()
     expect(page.locator(".member-section")).to_contain_text("Instances")
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     expect(table.locator("tr.member", has_text="E2E Agent")).to_be_visible()
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
@@ -6276,7 +6276,7 @@ def members_step(run: Run, page: Page) -> None:
     # Reports to: the agent under the owner, at once in the organisation.
     manage.locator("select[id^=member-reports-]").select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
+    expect(page.locator("main section.view-team > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
@@ -6284,7 +6284,7 @@ def members_step(run: Run, page: Page) -> None:
     instance_link = owner_node.locator("ul .org-node .org-instances a.member-instance").first
     expect(instance_link).to_have_text(re.compile(r"^#\S+$"))
     instance_link.click()
-    expect(page).to_have_url(re.compile(r"/members/agt-[0-9a-z]+/sessions/[0-9a-z]+$"))
+    expect(page).to_have_url(re.compile(r"/team/agt-[0-9a-z]+/sessions/[0-9a-z]+$"))
     expect(page.locator(".member-instances li.chosen")).to_have_count(1)
     page.go_back()
     expect(page.locator("main .org-tree")).to_be_visible()
@@ -6303,12 +6303,12 @@ def members_step(run: Run, page: Page) -> None:
     owner_manage = page.locator("tr.member-manage")
     owner_manage.locator("select[id^=member-reports-]").select_option(label="E2E Agent (@e2e-agent)")
     owner_manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("That would close a circle")
+    expect(page.locator("main section.view-team > .send-status")).to_contain_text("That would close a circle")
     table.get_by_role("button", name="Done managing Owner").click()
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage.locator("select[id^=member-reports-]").select_option("")
     manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
+    expect(page.locator("main section.view-team > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.
     page.set_viewport_size({"width": 360, "height": 780})
     for button in (row.get_by_role("button", name=re.compile("^(Manage|Done managing) E2E Agent$")),
@@ -6355,7 +6355,7 @@ def dormant_step(run: Run, page: Page) -> None:
     """A dormant instance on the real hub (docs/api.md §6.17, tsk-3djwtefkr3yv): the owner puts the agent's
     instance to rest in the Manage row, it is said with its address and as the team's limit, and it wakes."""
     run.step("members: the owner puts an agent's instance to rest and wakes it")
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
     table = page.locator("table.members")
     row = table.locator("tr.member", has_text="E2E Agent")
     row.get_by_role("button", name="Manage E2E Agent").click()
@@ -6364,7 +6364,7 @@ def dormant_step(run: Run, page: Page) -> None:
     expect(rest).to_have_count(1)
     address = (rest.text_content() or "").removeprefix("Put ").removesuffix(" to rest")
     rest.click()
-    status = page.locator("main section.view-members > .send-status")
+    status = page.locator("main section.view-team > .send-status")
     expect(status).to_contain_text(f"{address} is dormant.")
     expect(row).to_contain_text(f"dormant — ask {address} directly")
     # Its only instance: the whole team member rests (§6.12), with no end to name.
