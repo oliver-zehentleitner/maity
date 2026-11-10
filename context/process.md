@@ -1347,21 +1347,24 @@ for the newest run to finish.
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
 
-(2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs, its 44 green jobs took
-835 s median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its tests had
-passed. Card tsk-w81egrhwz7a7.)
+(2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs before the change (ids
+42825184191 to 42853402637, 13:30 to 16:19 UTC; the jobs that had finished by 16:35 UTC), its 44 green jobs took 835 s
+median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its end-to-end
+step had passed, in `pseudo_run.py --strict`. Card tsk-w81egrhwz7a7. The same day `hub-postgresql` went to 120; see the
+paragraph after the rejected alternatives.)
 
-`hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`; every other job
-`ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15 until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one
-running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
-MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
-(MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
-slow runner and still fail a hang the same evening.
+`hub-sqlite` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`, `hub-postgresql` 120 since
+2026-11-10 (90 before); every other job `ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15
+until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one running ci run hangs, every newer
+push only replaces the waiting run (the entry above), so nothing on main finishes and the MariaDB start from `ci` never
+comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29 (MariaDB, on the rented runners);
+the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a slow runner and still fail a hang
+the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
@@ -1374,6 +1377,16 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to 42872347637,
+12:52 to 18:09 UTC; the jobs that had finished by 18:19 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and
+up to 88, 9 of them 70 or more; in main's last 60 `ci` runs (from 2026-11-09 11:51 UTC), its green jobs took about 68
+minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about 6,600 tests on a hosted runner with 4 cpus and 4
+workers (read from their logs), so the growth did not come from the number of tests; that it came from the runners is an
+inference, since no run compares one commit on two runners. `hub-postgresql` now carries 120 so that a slow runner does not
+cancel a green run; the title's "90 minutes for the database jobs" holds for `hub-sqlite` and `hub-mariadb` only. Whether 90
+stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
+keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
 
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
@@ -1403,9 +1416,11 @@ depends on a human; the approval has to come from Oliver).
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
 **See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
-`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
+with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
-once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's limit (90 minutes,
+120 since 2026-11-10, 97f338fd). The log then
 already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
 when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
 fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
@@ -1415,8 +1430,9 @@ about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
 (`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
-300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
-an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s was
+an eighteenth of the then 90 minutes (a twenty-fourth of the 120 since 2026-11-10), so a hang shows where it waits early
+in the run.
 
 **Rejected alternatives:**
 - `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
