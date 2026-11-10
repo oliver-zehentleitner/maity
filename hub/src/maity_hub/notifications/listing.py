@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import Connection, and_, func, insert, or_, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
-from maity_hub import clock, conversation_list, namespace, wakeups
+from maity_hub import clock, conversation_list, events, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.notifications import items as derived
@@ -94,6 +94,26 @@ def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
 
 # --- positions -----------------------------------------------------------------------
 
+# The kinds a held long-poll's look passes over as quiet besides the item kinds it filters
+# (`quietly_moved`): an agent's own work on cards, notes, sessions and probes, which changes no
+# relation `items.derive_page` reads. Every other kind (a cover starting or ending, a claim, a
+# membership's role or trust, a chat's participants, and any kind added later) is not quiet:
+# the derive judges older rows with the relations of now, so such a row may make an item of a
+# row below the seen head (review of #1623).
+QUIET_KINDS = frozenset(
+    {
+        *events.CARD_KINDS,
+        *events.NOTE_KINDS,
+        "task_checkpoint",
+        "placement_reported",
+        "probe_observed",
+        "link_observed",
+        "session_started",
+        "session_paused",
+        "session_model_changed",
+    }
+)
+
 
 def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
     """A few aggregate reads that change whenever a notifications answer could: the
@@ -163,12 +183,19 @@ def quietly_moved(
     agents writing to each other move the heads all the time and are no item of the human's
     (tsk-a5pxwgkgr73e).
 
-    The look is a superset of the derive's own rows, so it never skips a row that makes an
-    item: a request's event unless its request is personal or another member's alone
-    (`_may_concern`), a message only where its text may mention the human (`_names`) or its
-    audience names them in a chat (`_addressed`), every other kind that makes items. It reads
-    one bounded range per moved project, `(seen head, new head]`: within a project `seq`
-    follows commit order (`events.emit` inserts under `lock_project`), so no row below a
+    The look is a superset of the derive's own rows in the range: a request's event unless its
+    request is personal or another member's alone (`_may_concern`), a message only where its
+    text may mention the human (`_names`) or its audience names them in a chat (`_addressed`),
+    every other kind that makes items. Any row of a kind outside those and `QUIET_KINDS` makes
+    the move not quiet: a change of a relation the derive reads with its state of now (a
+    cover, a claim, a role) can make an item of an older row, which the next derive then
+    finds, as it did before this look. A relation change with no later move of a head stays
+    unseen until the deadline, as without the look. A head is the newest row of an item kind,
+    so the first range may also hold rows written before the wait and after that row (an
+    agent's join): each such row counts once, one derive more, never an item lost.
+
+    It reads one bounded range per moved project, `(seen head, new head]`: within a project
+    `seq` follows commit order (`events.emit` inserts under `lock_project`), so no row below a
     visible head is still to commit, the argument the held events wait rests on
     (hub/context/events.md, 2263cf0a)."""
     members, heads = now[0], now[1]
@@ -183,7 +210,7 @@ def quietly_moved(
         floor = before.get(project_id)
         if floor == top:
             continue
-        if project_id not in member_of:
+        if project_id not in member_of:  # cannot be: the heads are read for these memberships
             return False
         e = t.event.c
         ranges.append(
@@ -203,7 +230,7 @@ def quietly_moved(
         select(e.seq)
         .where(
             or_(*ranges),
-            e.kind.in_(EVENT_KINDS),
+            e.kind.notin_(QUIET_KINDS),
             or_(
                 e.kind != "message",
                 derived.names(human_id),

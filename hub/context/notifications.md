@@ -160,11 +160,11 @@ log showed pool timeouts at a low request rate, with no lock wait found on these
 **Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
 **See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
 **See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
-**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, `seq` stops following commit order within a project, or the stamp gains a part besides the heads that agents' chatter moves
+**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, or the stamp gains a part besides the heads that agents' chatter moves
 
 The stamp's project heads count every event kind that can make an item, and `message` is one
 of them. So every message agents send each other moved the stamp of every human in the
-project, and each such move derived the whole answer again (about 70 statements) although the
+project, and each such move derived the whole answer again although the
 held call answers only on an item past `after` or a changed `sessions_rev` (a session's record,
 §18.2). When the stamp moved in its heads alone (the
 same memberships, account records and read marks), the held long-poll now first reads one
@@ -173,11 +173,23 @@ statement over the rows of each moved project between the seen head and the new 
 concern the human's membership, a message only where its text may mention the human or its
 audience names them in a chat, every other kind that makes items. With no such row, the new
 stamp becomes the seen one and the wait keeps holding; with one, the answer is derived as
-before. Supersession, a session's end, the shutdown and the deadline are where they were.
+before. Any row in the range of a kind that is neither an item kind nor one of
+`listing.QUIET_KINDS` (an agent's work on cards, notes, sessions and probes) makes the move not
+quiet as well: the derive judges older rows with the relations of now (who holds a request,
+who covers whom, a membership's trust and role, a chat's participants), so a cover starting, a
+claim or a role changed can make an item of a row below the seen head, and the next derive
+finds it, as it did before the look whenever the next move of a head came. The list names the
+kinds passed over, not the kinds that count, so a kind added later counts until it is listed.
+A row written before the wait and after the newest item row (an agent's join) lies in the
+first range too and counts once: a derive more, never an item lost. A relation change with no
+later move of a head stays unseen until the deadline, as it was before. Supersession, a
+session's end, the shutdown and the deadline are where they were.
 
 The look is safe on the same ground as the held events wait's: within one project `seq`
 follows commit order (`events.emit` inserts under `lock_project`), so no row below a visible
-head is still to commit, and the range read now is the whole of what moved the head.
+head is still to commit, and the range read now is the whole of what moved the head. For the
+rows below it, what may change their verdict is a relation, and its change is a row of a
+counted kind in a later range.
 
 **Reason:** the derivation's cost per held call came from wakes the human has no item in;
 the look costs one statement per such wake and needs no state beyond the stamp already kept.
@@ -186,6 +198,12 @@ the look costs one statement per such wake and needs no state beyond the stamp a
 - Narrowing the stamp's heads to the rows that may make an item: the filters read the payload
   text, so the head would read the project's whole history on every look, where the range read
   is bounded by the two heads.
+- Only the item kinds in the range, as the first version had it: a cover (`cover_started`,
+  not an item kind) made an older request the human's without being looked at, and the chatter
+  that followed held to the deadline where main derived at once (review of #1623).
+- The relations in the stamp (trust and role per membership, the requests the human covers):
+  the stamp would read every request's cover on each look, and each new relation would need
+  its own part; the list of kinds passed over fails safe for a kind nobody thought of.
 - Other alternatives were not weighed in this change.
 
 ## Deriving items reads each kind of lookup once per batch, not once per event
