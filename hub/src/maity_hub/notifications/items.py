@@ -208,6 +208,8 @@ def derive_page(
     newest_first: bool,
     wanted: Callable[[Item], bool],
     since: Any = None,
+    kinds: set[str] | None = None,
+    projects: set[str] | None = None,
 ) -> list[Item]:
     """The items a page of `count` can reach: of each project's events, of its plain chat
     messages and of the account records, only the first `count` that `wanted` accepts,
@@ -216,10 +218,19 @@ def derive_page(
     the counts read `count_items` instead.
 
     A message row whose payload text names the human may be a mention, so it is derived
-    with the rest; the text test only selects (a false hit is classified like any row)."""
+    with the rest; the text test only selects (a false hit is classified like any row).
+
+    `kinds` and `projects`, the page's filters (`wanted` applies them too): a source that can
+    give no item of them is not read at all, since every row it holds would be rejected one
+    chunk at a time to the end of the window (tsk-p8w1s1zwsx2y). The plain chats give only
+    `chat`; the events besides them give `inbox` only from requests and the jour fixe, so
+    without `inbox` only their messages and mentions are read; the records give no `chat` and
+    no `mention`; a project outside `projects` gives nothing."""
     now = clock.now()
     found: list[Item] = []
     for mine in where.memberships:
+        if projects is not None and mine.project.id not in projects:
+            continue
         window = _event_window(where, mine, now)
         if since is not None:
             # Read after a position (`after`, oldest first): start right behind it, so a held
@@ -247,22 +258,42 @@ def derive_page(
             )
             .exists()
         )
-        others = (
+        others: tuple[Any, ...] = (
             t.event.c.kind.in_(EVENT_KINDS),
             or_(t.event.c.kind != "message", _names(where.human_id)),
             or_(t.event.c.kind.notin_(REQUEST_EVENTS), concerned),
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
+        if kinds is not None and "inbox" not in kinds:
+            others = (*others, t.event.c.kind.in_(("message", "mentioned")))
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
         # Its first chunk is a whole one: few of these rows are rejected, so one statement
         # covers a page whatever the history, as the load test keeps (test_load.py).
-        found += _paged(
-            conn, where, mine, window, others, lambda i: True, count, newest_first, wanted, CHUNK
+        if kinds is None or kinds & {"inbox", "mention", "chat"}:
+            found += _paged(
+                conn,
+                where,
+                mine,
+                window,
+                others,
+                lambda i: True,
+                count,
+                newest_first,
+                wanted,
+                CHUNK,
+            )
+        if kinds is None or "chat" in kinds:
+            found += _chats(conn, where, mine, window, count, newest_first, wanted)
+    if kinds is None or kinds - {"chat", "mention"}:
+        found += _records_paged(
+            conn,
+            where,
+            now,
+            count,
+            newest_first,
+            wanted,
+            None if since is None else since.account,
         )
-        found += _chats(conn, where, mine, window, count, newest_first, wanted)
-    found += _records_paged(
-        conn, where, now, count, newest_first, wanted, None if since is None else since.account
-    )
     found.sort(key=lambda item: item.order, reverse=True)
     return found
 
