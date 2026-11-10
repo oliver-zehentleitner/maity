@@ -77,7 +77,9 @@ FAMILY_ARG = re.compile(
 # dashboard-views.md is the vendored library's document, not this split.
 VIEWS_REF = re.compile(r"(?<![\w-])views\.md")
 # Historical fragments describe a past edit. Vendored files are not ours.
-# The tools name views.md as the file they are given.
+# The tools name views.md as the file they are given. The pre-split copies
+# the tests read live under tools/fixtures/ and stay inside this skip:
+# a views.md outside it is a live reference, so the skip is not widened for them.
 LIVE_SKIP = ("changelog.d/", "web/vendor/", "tools/")
 
 
