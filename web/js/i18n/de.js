@@ -3443,6 +3443,7 @@ window.MAITY_I18N["de"] = {
   "picture.uploaded": "Bild hochgeladen.",
   "picture.uploading": "Das Bild von {name} wird hochgeladen …",
   "picture.uploading_own": "Dein Bild wird hochgeladen …",
+  "pin.column": "Anheft-Schaltflächen zeigen",
   "pin.mark": "angeheftet",
   "pin.not_pinned": "Nicht angeheftet: {reason}",
   "pin.not_unpinned": "Nicht gelöst: {reason}",

@@ -3353,6 +3353,7 @@ window.MAITY_I18N["ja"] = {
   "picture.uploaded": "画像をアップロードしました。",
   "picture.uploading": "{name} の画像をアップロードしています…",
   "picture.uploading_own": "あなたの画像をアップロードしています…",
+  "pin.column": "ピン留めボタンを表示",
   "pin.mark": "ピン留め中",
   "pin.not_pinned": "ピン留めできませんでした: {reason}",
   "pin.not_unpinned": "ピン留めを外せませんでした: {reason}",

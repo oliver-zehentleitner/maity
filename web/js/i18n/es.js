@@ -3441,6 +3441,7 @@ window.MAITY_I18N["es"] = {
   "picture.uploaded": "Imagen subida.",
   "picture.uploading": "Subiendo la imagen de {name}…",
   "picture.uploading_own": "Subiendo tu imagen…",
+  "pin.column": "Mostrar los botones para fijar",
   "pin.mark": "fijado",
   "pin.not_pinned": "No fijado: {reason}",
   "pin.not_unpinned": "No desfijado: {reason}",

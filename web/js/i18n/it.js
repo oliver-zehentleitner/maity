@@ -3441,6 +3441,7 @@ window.MAITY_I18N["it"] = {
   "picture.uploaded": "Immagine caricata.",
   "picture.uploading": "Caricamento dell'immagine di {name} in corso…",
   "picture.uploading_own": "Caricamento della tua immagine in corso…",
+  "pin.column": "Mostra i pulsanti per fissare",
   "pin.mark": "fissata",
   "pin.not_pinned": "Non fissata: {reason}",
   "pin.not_unpinned": "Non rimossa dai fissati: {reason}",

@@ -3441,6 +3441,7 @@ window.MAITY_I18N["pt"] = {
   "picture.uploaded": "Foto enviada.",
   "picture.uploading": "Enviando a foto de {name}…",
   "picture.uploading_own": "Enviando a sua foto…",
+  "pin.column": "Mostrar os botões para fixar",
   "pin.mark": "fixado",
   "pin.not_pinned": "Não fixado: {reason}",
   "pin.not_unpinned": "Não desafixado: {reason}",

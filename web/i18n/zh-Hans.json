@@ -3331,6 +3331,7 @@
   "picture.uploaded": "头像已上传。",
   "picture.uploading": "正在上传 {name} 的头像…",
   "picture.uploading_own": "正在上传你的头像…",
+  "pin.column": "显示置顶按钮",
   "pin.mark": "已置顶",
   "pin.not_pinned": "未置顶：{reason}",
   "pin.not_unpinned": "未取消置顶：{reason}",
