@@ -976,7 +976,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "toolbar" },
         heading,
         fullScreen(ctx, pane),
-        h("span", { class: "muted" }, agent.session
+        h("span", { class: "muted chat-session" }, agent.session
           ? (agent.session.listening ? M.t("chat.session.listening", { id: agent.session.id }) : M.t("chat.session", { id: agent.session.id }))
           : M.t("chat.session.none")),
         target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, M.t("chat.instance.label")), target,

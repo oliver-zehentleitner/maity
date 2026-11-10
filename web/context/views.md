@@ -4249,7 +4249,7 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
 **Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
@@ -4260,7 +4260,7 @@ At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
 
 Wider than that, nothing changes.
 
-Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
+Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. Where the chat list and the chat are one pane (`max-width: 720px`, a phone), it stands at the chat head's top right instead, on the row of the back link (← Conversations), and while full 8 px from the window's top and 12 px from its right; in the document it stays after the heading, so Tab still reaches it there. There a direct chat with an agent also shows no session line (`chat.session`) beside its heading. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
 
 The full screen ends:
 - with the button again;
@@ -4286,11 +4286,11 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects)
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
 **Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
-The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). On a phone (600 px) the row wraps by the tabs' full width, which put the menu on a line of its own; there the tabs fill the room the menu leaves (`flex: 1 1 0`) and scroll, the menu keeps the row's right end, and the project's state takes the next row. New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
 
 While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
 

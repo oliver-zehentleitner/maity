@@ -4,6 +4,7 @@ have a page. Who belongs to it is not public, so its members are never read here
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -67,10 +68,12 @@ def render_org(conn: Connection, hub: Settings, org_id: str) -> list[public_page
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
-            select(t.org.c.id).where(t.org.c.public_page == "on").order_by(t.org.c.id)
+            select(t.org.c.id)
+            .where(t.org.c.public_page == "on", *public_pages.only(t.org.c.id, among))
+            .order_by(t.org.c.id)
         ).scalars()
     )
 

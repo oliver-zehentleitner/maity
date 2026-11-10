@@ -17,6 +17,7 @@ does the owner's person page), and when a session in one of its public projects 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from datetime import timedelta
 from html import escape
 from typing import Any
@@ -207,7 +208,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     m = t.membership.c
     return list(
         conn.execute(
@@ -218,6 +219,7 @@ def targets(conn: Connection) -> list[str]:
                 m.agent_id.is_not(None),
                 m.active.is_(True),
                 m.isolated_since.is_(None),
+                *public_pages.only(m.agent_id, among),
             )
             .distinct()
             .order_by(m.agent_id)
