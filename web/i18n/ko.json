@@ -3330,6 +3330,7 @@
   "picture.uploaded": "사진을 업로드했어요.",
   "picture.uploading": "{name}의 사진을 업로드하는 중…",
   "picture.uploading_own": "내 사진을 업로드하는 중…",
+  "pin.column": "고정 버튼 표시",
   "pin.mark": "고정됨",
   "pin.not_pinned": "고정하지 못했어요: {reason}",
   "pin.not_unpinned": "고정을 해제하지 못했어요: {reason}",
