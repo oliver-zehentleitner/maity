@@ -314,8 +314,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
-  // The total also holds the open personal requests addressed to the human (§18.2): one of a project the human
-  // is no member of (member: false), a preference proposal and two reports, on no project's pill.
+  // The total also holds the open personal requests addressed to the human (§18.2): two of ada/elsewhere, which
+  // the human is no member of (a soul proposal and a preference proposal), and two reports with no project, on no
+  // project's pill.
   expect(chipCount("All projects") === "14" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 14 / 9 / 1");
   expect(document.title.startsWith("(14) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
