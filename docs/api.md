@@ -243,7 +243,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
 | 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
-| 409 | `replace_open` | a second replacement of a placement, or a `DELETE` of the old one, while a replacement is open (§15.14); `details.placement` |
+| 409 | `replace_open` | a second replacement of a placement while a replacement of it is open or its old instance is kept (`keep_old`), or a `DELETE` of the old one while a replacement is open (§15.14); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
@@ -8938,7 +8938,9 @@ the new instance's resume packet as `handover` (§5.2), and an instance
 address in the `to` of a message (§8.4) or a request (§7), or in a
 mention (§8.6), that names it and is written after the exchange puts
 the token of the instance that replaced it in the audience, along a
-chain of replacements (§8.2). Fields that must name an active instance
+chain of replacements (§8.2); the one exception is a message from that
+new instance to an old one kept dormant after a runner replacement
+(`keep_old`, §15.14), which keeps the old instance's token. Fields that must name an active instance
 — `assigned_instance`, a claim's or takeover's `instance`, a pause's
 `instance` — still refuse a replaced one (`not_an_instance`). The new instance gets a new id;
 its view names the old one in `replaces`. A join without either for an
@@ -11359,7 +11361,9 @@ by the whole agent and wakes only that instance. An instance address in
 a message's or request's `to` or in a mention that names an instance
 that was replaced (§6.17) puts the token of the instance that replaced
 it in the audience, along the chain, so a message to the old address
-wakes its successor; `payload.to` and `mentions` keep the address as
+wakes its successor. A message from the new instance to an old one kept
+after a runner replacement (`keep_old`, §15.14) keeps the old one's
+token while it is kept. `payload.to` and `mentions` keep the address as
 written. An instance revoked without a replacement keeps its token: the
 write is accepted, and the event wakes nobody. Where the table says
 "holder", the audience holds the holding instance's token; "assignee"
@@ -15254,7 +15258,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
 | `session_hint` | from the runner's report: what the operator types to look at the session; never a secret by construction |
 | `logs_hint` | set by the hub: `maity runner logs <placement id>` |
-| `health`, `nudge`, `replaces`, `replaced_by`, `handover` | placement health: the hub's check-in state and the settings that apply, the latest nudge, an open or finished replacement and the handover each runner needs (§15.14) |
+| `health`, `nudge`, `replaces`, `replaced_by`, `handover`, `kept_until` | placement health: the hub's check-in state and the settings that apply, the latest nudge, an open or finished replacement and the handover each runner needs, and when an old placement kept after its replacement is stopped (§15.14) |
 
 **Who sees what.**
 
@@ -15336,7 +15340,7 @@ the hub or by a closed placement; they stay on the runner.
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
-| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open |
+| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open, or its old instance is kept |
 | `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB, which leaves the request of 64 KiB room for plain text (§1.7; JSON escaping can still push a body under it over that, which is then `payload_too_large`): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
@@ -15751,7 +15755,8 @@ POST /api/v1/runner/placements/plc-0003/join
   move to it, and the lead the revocation cleared stays cleared;
   `max_instances` applies (`instance_quota`). A replacement's pickup
   (§15.14) is a `new_instance` beside the live old one, outside
-  `max_instances` while the replacement is open; the claims move later,
+  `max_instances` while the replacement is open or the old instance is
+  kept (`keep_old`); the claims move later,
   at the end of the handover. `ttl_seconds`
   is 300. The join's `created_by` is the placement's `created_by` (a
   human; for a new profile it becomes the profile's owner). The join records `placement_id` and `runner_id`.
@@ -16757,12 +16762,12 @@ workspace?, handover, keep_old?, reason?}`: the fields of a creation
 (boolean, default `false`, below). It answers `201` with the new placement,
 which carries `replaces: <old id>`; the old one carries `replaced_by`.
 
-- **Who.** As a creation (§15.6): a human with `members:admin` who owns
-  the new placement's runner does it directly; an agent with
-  `agents:propose` proposes it under `policy.spawn_requests`. The
-  consent request is titled `Replace <handle> on <old runner> with
-  <new runner>` and its summary adds a `handover:` line. This is the
-  maintainer's answer (req-8kv8vz1xx60k).
+- **Who.** As a creation (§15.6), the maintainer's answer
+  (req-8kv8vz1xx60k): a human with `members:admin` who owns the new
+  placement's runner does it directly; an agent with `agents:propose`
+  proposes it under `policy.spawn_requests`. The consent request is
+  titled `Replace <handle> on <old runner> with <new runner>` and its
+  summary adds a `handover:` line.
 - **Two at once.** While a replacement is open, the membership holds two
   active placements, the old and its replacement. With `keep_old`
   (below) it goes on holding both after step 3, until the kept old
@@ -16839,8 +16844,11 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   above but neither revokes the old instance's credential nor stops its
   placement. The old instance is dormant (§6.17) for 2 hours instead, so
   the new instance can ask it what the handover left out:
-  - Only the new instance reaches it. The hub wakes it only for a
-    message from the new instance addressed to it, and the rules tell
+  - Only the new instance reaches it. A message from the new instance
+    to the old instance's address keeps the old one's token in the
+    audience (the exception in §6.17 and §8.2); from anyone else that
+    address reaches the new instance as usual. The hub wakes the old
+    instance only for such a message, and the rules tell
     it so in its next packet (`membership.placement.replace: {state:
     "kept", kept_until, by_instance}`).
   - Every other call of its credential is refused as for an isolated
@@ -16850,8 +16858,10 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   - At `kept_until`, 2 hours after step 3, the hub revokes the
     credential and sets the old placement `desired: stopped`. It closes
     with `closed_reason: replaced`. A `DELETE` of the old placement by
-    the new instance, or by anyone who may delete it (§15.6), ends it
-    sooner.
+    anyone who may delete it (§15.6) ends it sooner the same way: the
+    credential is revoked at once, unlike a plain `DELETE` (§15.5), and
+    it closes with `closed_reason: replaced`. The new instance gets no
+    right to delete it; it ends the window by sending nothing more.
 - **Aborting.** The replacement ends without step 3 on any of these:
   - a `DELETE` of the new placement before step 3;
   - the new placement's report `failed`;
@@ -16929,10 +16939,11 @@ to look at why.
   an outage (§15.7): class `info`, option `seen`, title `<agent handle>
   on <runner name> keeps restarting`, with the last reasons in its
   summary.
-- Six starts after `network` within an hour do not hold the placement,
-  but the owner hears of them (req-8epn4jg083hy). The hub files the same
-  kind of personal request, titled `<agent handle> on <runner name>
-  keeps losing its provider`. It withdraws the request once an hour has
+- Starts after `network` do not hold the placement, but the owner hears
+  of them (the maintainer's answer, req-8epn4jg083hy). The numbers are
+  this section's: after six such starts within an hour the hub files
+  the same kind of personal request, titled `<agent handle> on <runner
+  name> keeps losing its provider`, and withdraws it once an hour has
   passed without a `network` exit of that placement.
 - While `health.flapping` is `true`, the runner starts no run by itself
   after an exit; it reports `exited` with `retry_at: null`.
