@@ -15277,8 +15277,9 @@ clone Z. It is the only thing the hub asks of a runner.
   with that handle (`placement_exists`). This is a placement rule: the
   hub still allows two clones of one agent with two credentials — two
   instances (§6.17) — when they are joined by hand (§10). The one
-  exception is an open replacement, which holds the old placement and
-  its replacement at once (§15.14).
+  exception is a replacement, which holds the old placement and its
+  replacement at once while it is open and, with `keep_old`, after it
+  is done until the kept old placement closes (§15.14).
 - **One placement per clone.** At most one active placement per
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
@@ -15851,7 +15852,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   is `"self"`. The packet gains `membership.placement`: `{id,
   runner_name, harness, mode, stop_grace_seconds, replace}` or `null`.
   `replace` is `null` unless the placement is the new one of an open or
-  just finished replacement (§15.14).
+  just finished replacement, or the old one while it is kept
+  (`state: "kept"`, §15.14).
 - **Supervised wake set** (§8.2). A long-poll (`wait > 0`) of a session
   opened with `supervisor` is woken by the usual wake-relevant set minus
   the events whose audience is only `all`, except `state_changed`,
@@ -16762,14 +16764,19 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   <new runner>` and its summary adds a `handover:` line. This is the
   maintainer's answer (req-8kv8vz1xx60k).
 - **Two at once.** While a replacement is open, the membership holds two
-  active placements, the old and its replacement. That is the one
+  active placements, the old and its replacement. With `keep_old`
+  (below) it goes on holding both after step 3, until the kept old
+  placement closes at `kept_until` or by a `DELETE`. That is the one
   exception to "one placement per membership" (§15.5). The replacement's
   pickup joins as a new instance (`new_instance`, §6.17) and does not
-  count toward `max_instances` while the replacement is open, nor while
-  the old instance is kept (below; the maintainer's answer,
-  req-5eprep6ndrjf). A second
-  replacement of either is `replace_open`, and so is a `DELETE` of the
-  old one while it is open.
+  count toward `max_instances` while the replacement is open (the
+  maintainer's answer, req-5eprep6ndrjf). It does not count while the
+  old instance is kept either, so the kept window cannot push the
+  membership over its limit; that extension is this section's detail.
+  A second replacement of either is `replace_open` while the
+  replacement is open or the old instance is kept, so the membership
+  never holds more than two; a `DELETE` of the old one is
+  `replace_open` while the replacement is open.
 - **Its own clone.** The one-placement-per-clone rule (§15.5) holds for
   a replacement too. On the same runner the body names another
   `workspace.clone` (`placement_exists` otherwise), because two instances
