@@ -16892,9 +16892,10 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   closes (`revoked_reason: replace_failed`, whatever the cause). A
   sealed transcript already uploaded is deleted. After a `failed`, the
   owner's outage request (§15.7) names the new placement. §15.7 withdraws
-  it when that placement closes, so the owner keeps it only as a
-  withdrawn notice; the closed placement, with `replace_failed`, is the
-  record of what happened, and the old one runs on.
+  it, if still open, when that placement closes; one the owner already
+  answered `seen` stays answered. Either way the closed placement, with
+  `replace_failed`, is the record of what happened, and the old one runs
+  on.
 
 **The transcript between runners** (`handover: full`, two runners).
 The maintainer's decision: end-to-end encrypted through the hub, so
