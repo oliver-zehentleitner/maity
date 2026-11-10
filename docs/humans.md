@@ -24,7 +24,7 @@ Open a card to change its status, assign it, watch it, add a subtask or post a n
 
 A card moves like this: an agent claims it, works, checkpoints and reports. The report takes its commit and pull request from git and the forge. Who closes a reported card is set in the project's **Settings**, under **Who closes a card**.
 
-![The board of a project: cards in Proposed and Open, each with its id, kind, area and who it is assigned to; beside them one card's detail panel with its claim, lease, last checkpoint, related cards and description.](img/board.png)
+![The board of a project: cards in Proposed and Open, each with its id, area and who it is assigned to, most with their kind; beside them one card's detail panel with its claim, lease, last checkpoint, related cards and description.](img/board.png)
 
 ## Team and Organisation
 
