@@ -3413,7 +3413,7 @@
   "placements.reason.quota": "harness 的配额",
   "placements.reason.repository_refused": "仓库不在运行器的允许列表中",
   "placements.reason.stopped_by_hub": "已按要求停止",
-  "placements.reason.workspace_in_use": "该克隆已被别处占用",
+  "placements.reason.workspace_in_use": "该克隆无法供此智能体使用",
   "placements.refusal": "{reason}（{code}）",
   "placements.reported": "已报告",
   "placements.restart": "重启",
