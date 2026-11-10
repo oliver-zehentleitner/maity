@@ -690,6 +690,10 @@ nothing").
 the event. Calling that read makes it true by construction, including every exception §8.2
 adds later, and `tests/test_event_by_seq.py` checks it seq by seq for several callers. The same
 holds for the chat: the field is given exactly when the chat route answers.
+`reads_messages` calls `_party` with `hidden=True` where the messages route passes
+`hidden=False`; the flag only chooses `not_found` over `forbidden`, both an `ApiError` it turns
+into `False`, and that route's `Outsider` branch cannot apply, as an outsider never passes
+`membership` here, so it is not a divergence.
 
 **Rejected alternatives:**
 - Reading the row and calling `readable_by` on it here: the batch-level lookups of
