@@ -7,6 +7,7 @@
     {"method": "GET", "path": "/me"},
     {"method": "GET", "path": "/projects/{project}"},
     {"method": "GET", "path": "/projects/{project}/members"},
+    {"method": "GET", "path": "/projects/{project}/roles"},
     {"method": "GET", "path": "/projects/{project}/conversations?observed=true"},
     {"method": "GET", "path": "/me/conversations?observed=true"},
     {"method": "GET", "path": "/projects/{project}/conversations/{group}"},

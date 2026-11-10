@@ -13694,6 +13694,61 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
+  // An invitation by handle is its own kind (§18.1 `invitation`, tsk-8xsrzjv7f0yr): the bell lists it,
+  // /notifications lists it and filters by it, and a browser notification shows it when its switch is on.
+  {
+    const ivItem = { id: "ntf-4400", seq: 4400, kind: "invitation", at: "2026-10-22T13:50:00Z",
+      project: { slug: "lab", full_name: "olga/lab", name: "Lab", member: false }, actor: { member_id: "hum-olga" },
+      title: "Olga invites you to Lab", target: { type: "request", id: "req-iv01" }, read: false, redacted: false };
+    const ivGet = win.Maity.api.get, ivGets = [], ivPolls = [];
+    // The long-poll held by the page answers nothing; once the browser's switches are set below,
+    // the next one answers the invitation.
+    let ivArmed = false;
+    const ivHeld = [];
+    win.Maity.api.get = (p, o) => {
+      ivGets.push(p);
+      if (p.startsWith("/me/notifications?limit=20")) {
+        return ivGet(p, o).then((r) => Object.assign({}, r, { items: [ivItem], pinned: [], next_cursor: null }));
+      }
+      if (p.startsWith("/me/notifications?limit=50")) return Promise.resolve({ counts: {}, items: [ivItem], next_after: "4400.0", next_cursor: null });
+      if (p.startsWith("/me/notifications?after=")) {
+        ivPolls.push(p);
+        if (!ivArmed) return new Promise((resolve) => ivHeld.push(resolve));
+        ivArmed = false;
+        return Promise.resolve({ counts: {}, items: [ivItem], next_after: "4400.1" });
+      }
+      return ivGet(p, o);
+    };
+    const ivHas = (root) => root.querySelectorAll("li").some((li) => text(li).includes("Olga invites you to Lab"));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    bellBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const ivBell = ivHas(bellPanel());
+    await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+    const ivListed = ivHas(main);
+    await go("#/notifications?kind=invitation"); for (let k = 0; k < 6; k++) await tick();
+    const ivAsked = ivGets.filter((p) => p.startsWith("/me/notifications?limit=50")).pop() || "";
+    const ivBar = main.querySelector(".toolbar");
+    const ivH2 = ivBar ? ivBar.childNodes.find((x) => x.tagName === "H2") : null;
+    const ivHeading = ivH2 ? text(ivH2) : null;
+    const ivFiltered = ivHas(main);
+    const ivShown = [], ivOld = win.Notification;
+    win.Notification = function (title, opts) { ivShown.push([title, opts]); this.close = () => {}; };
+    win.Notification.permission = "granted";
+    ivArmed = true;
+    win.Maity.notify.startBrowser({ me: { id: "hum-maintainer" } },
+      { browser: { enabled: true, kinds: { inbox: true, chat: true, mention: true, security: true, invitation: true }, content: {} } });
+    ivHeld.splice(0).forEach((resolve) => resolve({ counts: {}, items: [], next_after: "4399.9" }));
+    for (let k = 0; k < 8; k++) await tick();
+    win.Maity.notify.stopBrowser();
+    if (ivOld) win.Notification = ivOld; else delete win.Notification;
+    win.Maity.api.get = ivGet;
+    expect(ivBell && ivListed, "invitation: the bell and /notifications list an invitation item " + JSON.stringify([ivBell, ivListed]));
+    expect(ivAsked.includes("&kind=invitation") && ivHeading === "Invitations" && ivFiltered,
+      "invitation: /notifications?kind=invitation asks the hub for that kind and names it " + JSON.stringify([ivAsked, ivHeading, ivFiltered]));
+    expect(ivPolls.length >= 1 && ivShown.length === 1 && ivShown[0][0] === "Olga invites you to Lab" && ivShown[0][1].tag === "ntf-4400",
+      "invitation: with its browser switch on, a new invitation is shown " + JSON.stringify([ivPolls.length, ivShown.map((n) => n[0])]));
+  }
+
   // The window and the session are read together (tsk-y8gkq1kvt63c): the session is asked while
   // the window's read still waits, /me only once the session has answered, and the page draws.
   {
