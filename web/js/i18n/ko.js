@@ -371,6 +371,7 @@ window.MAITY_I18N["ko"] = {
   "bell.item.unread": "(읽지 않음)",
   "bell.kind.chat": "채팅",
   "bell.kind.inbox": "요청",
+  "bell.kind.invitation": "초대",
   "bell.kind.mention": "멘션",
   "bell.kind.security": "보안 알림",
   "bell.mark_all": "모두 읽음 표시",

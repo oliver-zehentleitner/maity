@@ -388,6 +388,7 @@ window.MAITY_I18N["nl"] = {
   "bell.item.unread": "(ongelezen)",
   "bell.kind.chat": "Chats",
   "bell.kind.inbox": "Verzoeken",
+  "bell.kind.invitation": "Uitnodigingen",
   "bell.kind.mention": "Vermeldingen",
   "bell.kind.security": "Beveiligingswaarschuwingen",
   "bell.mark_all": "Alles als gelezen markeren",

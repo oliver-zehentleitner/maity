@@ -78,7 +78,7 @@ DEFAULTS: dict[str, Any] = {
             "mention": {"mode": "daily", "content": False},
             "security": {"mode": "immediate"},
             # An invitation by handle at once, like the inbox (tsk-8xsrzjv7f0yr, part 4);
-            # `daily` or `off` keeps it on the platform only.
+            # `daily` mails it with the daily digest, `off` keeps it on the platform only.
             "invitation": {"mode": "immediate"},
         },
         "sign_in_link": True,

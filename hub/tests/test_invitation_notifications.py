@@ -1,7 +1,8 @@
 """docs/api.md §18.1, §18.4: the consent request an invitation by handle files (§3.4) reaches the
 person under the notification kind `invitation`, with its own browser switch and mail mode
-(`immediate` by default; `daily` or `off` keeps it on the platform only). Every other personal
-request stays `inbox`, and the counts stay as they are: open requests count in `inbox`."""
+(`immediate` by default; `daily` mails it with the daily digest, `off` keeps it on the platform
+only). Every other personal request stays `inbox`, and the counts stay as they are: open
+requests count in `inbox`."""
 
 from __future__ import annotations
 
@@ -75,6 +76,27 @@ def test_an_invitation_mail_follows_its_own_kind_not_the_inbox(
     assert anna.patch(S, {"email": {"kinds": {"inbox": {"mode": "off"}}}}).status_code == 200
     invite(olga)
     at(minutes=5)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.recipient == "me@example.org"
+    assert "Stop these mails (invitation): https://hub.example/mail/unsubscribe/" in mail.body
+
+
+def test_a_daily_invitation_waits_for_the_daily_digest(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    anna, olga = setup(make_client, migrated)
+    due = (clock.now() + timedelta(hours=2)).strftime("%H:%M")
+    changed = anna.patch(
+        S, {"email": {"daily_at": due, "kinds": {"invitation": {"mode": "daily"}}}}
+    )
+    assert changed.status_code == 200, changed.text
+    run(migrated)
+    invite(olga)
+    at(hours=1)
+    run(migrated)
+    assert notifications(migrated) == []  # not before the digest is due
+    at(hours=2, minutes=5)
     run(migrated)
     [mail] = notifications(migrated)
     assert mail.recipient == "me@example.org"

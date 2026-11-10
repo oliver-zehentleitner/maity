@@ -1,6 +1,6 @@
 """Notification mail (docs/api.md §18.4, §18.5): which items a human gets by mail, when,
-and what the mail says. The kinds are `inbox`, `chat` and `mention`; `security` is a mail
-of its own for a new sign-in.
+and what the mail says. The kinds are `inbox`, `chat`, `mention` and `invitation`; `security`
+is a mail of its own for a new sign-in.
 
 Per kind the human chose `immediate` (within about two minutes, every item that fell due
 in that window in one mail, at most ten such mails an hour), `hourly` (at the full hour),

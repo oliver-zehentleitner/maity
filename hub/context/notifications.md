@@ -949,19 +949,25 @@ instances an owner ever saw.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4
+**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4; the web part in the same change: the lead's decision in the change's review (2026-11-10)
 **See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-09
 **Revisit when:** another personal request (an organisation's invitation) is to join the kind, or the kind defaults are decided again
 
 The consent request an invitation by handle files is an item of the kind `invitation`, not
 `inbox` (`items._personal_kind`, from the request's proposal kind). The kind has its own
-browser switch and mail mode, `immediate` by default, so the person may keep invitations on
-the platform only (`daily` or `off`) without touching the inbox's mail. The counts do not
-change: an open request counts in `inbox` whatever its item's kind, and the five keys stay.
+browser switch and mail mode, `immediate` by default, so the person may take invitations
+with the daily digest (`daily`) or keep them on the platform only (`off`) without touching
+the inbox's mail. The counts do not change: an open request counts in `inbox` whatever its
+item's kind, and the five keys stay.
 
 **Reason:** the maintainer wanted the invitation's mail switchable on its own and at once by
 default. The general rule of 2026-11-02, that a kind added later mails as a daily digest, is
 for informing kinds against filled mailboxes; an invitation waits for an answer and expires.
+
+The web learns the kind in the same change (the bell, the notifications page and its filter,
+the browser notifications): it drops an item of a kind it does not know, so a hub with the kind
+and a web without it would hide every invitation from the bell. Shipping the web part with the
+later Members change instead was rejected: it ties the two to one deploy.
 
 **Rejected alternatives:**
 - Leaving it under `inbox`: its mail could only be turned off with every other request's.
@@ -970,4 +976,3 @@ for informing kinds against filled mailboxes; an invitation waits for an answer 
 - A count of its own: the counts' five keys are a contract the dashboard's badges read; the
   request is an open request like any other.
 - Moving an organisation's invitation into the kind too: not decided, left to a later card.
-

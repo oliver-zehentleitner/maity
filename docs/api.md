@@ -19804,7 +19804,8 @@ writes one account record of the addressed human, `{request_id,
 project, org, status}` and nothing of the request's content (`org: {id, handle}` for one that concerns an organisation, with
 `project: null` when no project is concerned, §7, §6.26; else `org:
 null`). The
-`personal_request_created` record is the human's `inbox` item for it;
+`personal_request_created` record is the human's `inbox` item for it
+(for an invitation by handle, §3.4, its `invitation` item);
 the other two only move the position (§18.2) and close the count. So a
 personal request has the same id scheme, position and read flag as
 every other record, member or not, and nobody but the addressed human
@@ -20404,9 +20405,9 @@ device; the browser's own permission is per browser and is not stored.
   mailboxes filled by mention mails: `inbox` and `security`
   `immediate`; `mention`, `chat` and every kind added later `daily`,
   except `invitation`, `immediate` by the maintainer's decision of
-  2026-11-08 for an invitation by handle (§3.4): its `daily` or `off`
-  keeps the invitation on the platform only, and the `inbox` mode does
-  not carry it.
+  2026-11-08 for an invitation by handle (§3.4): its `daily` mails it
+  with the daily digest, its `off` keeps it on the platform only, and
+  the `inbox` mode does not carry it.
   The `inbox` mode never covers a `registration_pending` or
   `mail_disabled` item: neither is mailed (§18.1). What the `security`
   mode governs is the mail of a new sign-in (`session_created`, §2.6.5,
