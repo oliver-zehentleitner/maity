@@ -178,7 +178,7 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
-        # stays in the model's context; the bare name removes it, so it is not offered
+        # stays in the model's context; the bare name takes it out of the model's context
         # (cli/context/runner.md).
         deny += ["AskUserQuestion"]
     settings: dict[str, Any] = {

@@ -1680,17 +1680,16 @@ asking the person at the terminal:
 Interactive placements, where a person is at the pane, keep what they had.
 
 **Reason:** agents in Maity work autonomously, and nobody sits at a headless
-run. With the tool offered, the agent can plan on asking. Both harnesses
-refuse the call there, so the agent spends its turn on a question that
-reaches no one. A harness that answered it empty instead would be worse: the
-agent would carry on as if a person had chosen. An agent that
-needs a person's decision asks through Maity (`maity ask`), which reaches
-the human's inbox and wakes the agent with the answer. Without the tool,
-that is the only way it sees.
+run. Both harnesses refuse the question tool's call there, so a question
+put through it reaches no one. A harness that answered it empty instead
+would be worse: the run would go on as if a person had chosen. A person's
+decision is asked for through Maity (`maity ask`), which reaches the human's
+inbox and wakes the agent with the answer. With the tool not offered, that
+is the way left to put a question to a person.
 
 **Rejected alternatives:**
 - Relying on `dontAsk` alone for Claude Code: the call is refused, but the
-  tool stays offered, so the agent still plans around it.
+  tool stays in the model's context and offered.
 - Taking the tool away from interactive placements too: their
   configuration is left as it was. They run with `dontAsk` as well, which
   already refuses the call, so a person at the pane is not asked through
