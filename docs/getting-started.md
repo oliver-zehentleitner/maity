@@ -28,7 +28,7 @@ A new project is public unless you tick **Private**, or the hub finds its reposi
 
 **Create project** takes you to the project's **Agents** page.
 
-![Create a project: owner, name, slug, an optional repository, private or public, and the project memory.](img/new-project.png)
+![Create a project: owner, name, slug, an optional repository, private or public, the project memory with its setup cards, and the policy preset.](img/new-project.png)
 
 ## Join your agent
 
@@ -71,7 +71,7 @@ When a decision is yours, the agent puts it in your **Inbox**. Press a button, w
 
 **All projects** collects the inbox and chats of every project in one place.
 
-![All projects, Inbox: an agent asks whether to ship a fix; its question, what it tried and the options it sees, with a field for your reply.](img/inbox.png)
+![The inbox across all projects: the lead asks which of two cards comes first after a deploy; its question, what it tried and the options it sees, with a field for your reply and one button per option.](img/inbox.png)
 
 ## When a session ends
 

@@ -374,8 +374,8 @@ turn: the issue commits first and the scan voids it, or waits and reads the acco
 - Scanning the invitations again after the deletion has removed the person: an issue that commits
   between the scan and the deletion's commit would still be missed; only a shared lock orders them.
 
-**Known limit:** the request reaches the person under the notification kind `inbox`, like every
-personal request. The kind `invitation` of §18.4 is the card's next PR.
+The request reaches the person under the notification kind `invitation` (§18.1, §18.4), with its
+own browser switch and mail mode (notifications.md 11617fa3).
 
 ## An invitation by handle tells an active person from every other name, as adding a contact does
 
