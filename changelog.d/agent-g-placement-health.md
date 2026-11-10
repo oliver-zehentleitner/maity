@@ -6,4 +6,5 @@
   or resumes the agent on the same session. A placement can be replaced on another runner with a
   handover (`none`, `summary`, `full`); a full transcript travels end-to-end encrypted between
   runners. New run-end reasons are `hung`, `network`, `context_full`, `auth` and
-  `harness_config`. Six restarts in an hour mark a placement `flapping` and hold it for a person.
+  `harness_config`. Six restarts in an hour mark a placement `flapping` and hold it until a person
+  or an admin agent has looked at it.

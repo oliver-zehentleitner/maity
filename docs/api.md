@@ -214,7 +214,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -242,7 +242,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `harness_not_offered` | harness, mode, model or target not in the runner's last advertised capabilities (§15.3); `details.offered` |
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
-| 409 | `placement_flapping` | a restart, nudge or replacement by an agent without trust `admin` while the placement is `flapping` (§15.14); `details.flapping_since` |
+| 409 | `placement_flapping` | a restart, nudge or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
 | 409 | `replace_open` | a second replacement of a placement, or a `DELETE` of the old one, while a replacement is open (§15.14); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
@@ -348,7 +348,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB on a route that takes a caller is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread. The forge webhook takes no caller: it has its own limit and is checked by its signature (§17.4) |
+| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7), a replacement's sealed transcript 64 MiB (§15.14). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB on a route that takes a caller is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread. The forge webhook takes no caller: it has its own limit and is checked by its signature (§17.4) |
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3) |
 | Requests to one route | none beyond the route's own limits by default; the general limit per client is the ingress's. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
@@ -4165,7 +4165,11 @@ Response `200`, bounded and deterministic:
   event written between the exchange and the first resume, to the old
   address or the new one) or the membership (`member:<id>`); group-chat
   messages that do not mention this member are left out as in
-  `events.items`, under the same `wake`. Those that name an instance come first, then those
+  `events.items`, under the same `wake`. The new instance of a
+  replacement (§15.14) gets `handover` the same way, but from its first
+  packet after the replacement's step 3, not from its first packet:
+  `from` is the old instance, and `items` run up to that packet's
+  `events.after`. Those that name an instance come first, then those
   that name only the membership — which a sibling instance may have
   handled already — each group oldest first, at most 50 together;
   `truncated: true` means page on with `GET …/events?after=`. They do
@@ -14769,7 +14773,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. `status` also prints the fingerprint of the runner's handover key (§15.14). |
@@ -15332,7 +15336,7 @@ the hub or by a closed placement; they stay on the runner.
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, reason?}`, `handover` one of `none`, `summary`, `full`; `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open |
-| `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 64 KiB: the handover note of a `summary` or `full` replacement (§15.14); `204` |
+| `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB (which leaves the request of 64 KiB room, §1.7): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
 ```
@@ -15381,7 +15385,7 @@ POST /api/v1/projects/oliver/maity/placements
 
 | Caller | May |
 |---|---|
-| a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
+| a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
 | the owner of the agent profile | `desired`, restart and nudge on that profile's placement |
 | an agent with `agents:propose` | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec or a replacement (§15.14); stop, start, restart, nudge and delete existing placements of the project |
 | everyone else | nothing: `forbidden` |
@@ -15449,6 +15453,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `restarts` | integer | restarts in this generation |
 | `sessions` | integer | fresh sessions started in this generation; every other start resumes the placement's session (§15.14) |
 | `last_activity_at` | timestamp or `null` | the latest harness output or loop call the runner saw; clamped like `since`; a report changing only this field is sent at most once a minute and writes no event (§15.14) |
+| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14) |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
 | `handover` | `{transcript: "received"}` or absent | on the new placement of a `full` replacement: the transcript is in the clone (§15.14); anywhere else `invalid` |
 | `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
@@ -15637,11 +15642,11 @@ Runner credential, signed (§15.1).
 | POST | `/runner/hello` | `{client, capabilities, actual: [{placement_id, generation, state, target}]}` | `200`, the runner packet below. Opens a runner session and ends the previous one. No `Idempotency-Key`: like `resume`, a repeat opens a new session |
 | GET | `/runner/events` | `after`, `wait` (0–55), `limit` | `{items, cursor, superseded, server_time, cli_version}` as in §8.3, over every project the runner reads |
 | GET | `/runner/placements` | — | `{items}`: every active, approved placement of this runner, the full desired spec as below |
-| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, nudge?, handover?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
+| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
-| PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; only the old placement's runner of an open `full` replacement, once (`conflict` after); §15.14 |
-| GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; only the new placement's runner, `not_found` until uploaded or after deletion |
-| DELETE | `/runner/placements/{id}/handover` | — | `204`; the new placement's runner confirms it has opened the transcript, and the hub deletes it |
+| PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
+| GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
+| DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
 
 ```json
@@ -15823,8 +15828,10 @@ The kinds are in §8.2. Rules that apply to all of them:
   placement's instance (`instance:<agent id>#<instance>`) and wake it.
   `placement_nudged`, `placement_replaced` and `placement_flapping`
   reach the runner (`runner:<id>`), the agent's member and the
-  profile's owner, and carry the placement id and, for a nudge, `by`;
-  for a flapping placement the last reasons (§15.14).
+  profile's owner, and carry the placement id and, for a nudge,
+  `nudge.id` and `by`; for a replacement `replaced_by` and `handover`;
+  for a flapping placement `flapping_since` and the last reasons
+  (§15.14).
 - `runner_credential_revoked.reason`: the revoker's `reason`, or
   `leaked_in_payload`, `repaired`, `runner_removed`. It also carries
   `on_runner_revoke` (the rule applied in that project: `keep` or `stop`)
@@ -16602,7 +16609,8 @@ This section adds five things:
 - a replacement moves an agent to another runner, with the handover
   chosen;
 - the runner says why a run ended;
-- a placement that keeps restarting is held for a person.
+- a placement that keeps restarting is held until a person, or an
+  admin agent, has looked at it.
 
 **Settings.** How long silence lasts before the hub asks, and how long
 the agent then has to answer, are the human's own:
@@ -16619,7 +16627,10 @@ the agent then has to answer, are the human's own:
   owner's value. An owner who sets none has the defaults.
 - Only the human sets them (an agent's call is `forbidden`,
   `humans_only`). They are the account's, not a project's.
-- `GET /me` and `GET /agents/{id}` return them. The placement carries
+- `GET /me` returns the owner's values as top-level `agent_health`,
+  each key with its value or `null` for the default; `GET /agents/{id}`
+  returns the profile's as `health`, `null` for each key it does not
+  set. The placement carries
   the values that apply to it as `health.settings` (below), so the
   runner never reads a profile.
 
@@ -16630,22 +16641,36 @@ or of the agent's own last call to the runner's loop. It is clamped like
 `since`. A report that changes nothing but `last_activity_at` is sent at
 most once a minute. It moves `reported` and writes no `placement_reported`
 event, so a busy agent does not fill the history. The hub also counts
-every call the placement's instance makes to the hub as activity.
+every call the placement's instance makes to the hub as activity,
+except a long-poll of `GET /events` (`wait > 0`): that is presence,
+not work (§2.4).
+
+**At work.** Silence counts only while the agent is at work. An agent
+that waits for events is idle, not stuck, and the next event wakes it.
+- A supervised placement is at work while a run is open. Its runner
+  reports `run: "open"` when a run starts and `run: "waiting"` when
+  the loop waits for an event between runs (§15.7).
+- An interactive placement is at work while its instance has no
+  long-poll open. An interactive session that is stuck with a long-poll
+  still open is not noticed this way; the person at its pane is the
+  one who sees it.
 
 **The hub asks first.** For a placement whose `reported.state` is
-`running` at the current generation, the hub computes the silence. That
-is the time since the later of `reported.last_activity_at` and the last
-call of the placement's instance. When the silence reaches
+`running` at the current generation and that is at work, the hub
+computes the silence. That is the time since the latest of
+`reported.last_activity_at`, the last call of the placement's instance
+that counts as activity, and the moment it was last found at work. When the silence reaches
 `hang_after_minutes`:
 
 1. The hub sets `health.state: asked` with `asked_at` and `reply_by` =
    `asked_at` + `reply_within_minutes`. It emits `placement_check_in` to
    the instance (`instance:<agent id>#<instance>`), which wakes it.
-2. Any call of the instance, or a report with a later
-   `last_activity_at`, before `reply_by` sets `health.state: ok`. The
-   ask was the whole of it.
-3. At `reply_by` with neither, the hub nudges the placement (below) with
-   `by: "hub"`.
+2. Any call of the instance that counts as activity, a report with a
+   later `last_activity_at`, or one with `run: "waiting"`, before
+   `reply_by` sets `health.state: ok`. The ask was the whole of it.
+3. At `reply_by` with none of these, the hub sets `health.state: ok`
+   and nudges the placement (below) with `by: "hub"`. From then on the
+   nudge's `outcome` says what came of it.
 
 A supervised run that is truly stuck reads the ask only in its next run,
 so for it the grace period is only waiting. It is kept anyway because
@@ -16751,7 +16776,7 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
        with the new instance and `reply_by` 30 minutes ahead. The old
        instance writes its note, `POST
        /projects/{owner}/{slug}/placements/{id}/handover` with `{note}`
-       (text, at most 64 KiB; only the placement's own instance may).
+       (text, at most 48 KiB; only the placement's own instance may).
        When the old placement is not running, its runner resumes the
        old session once for that alone. The note reaches the new instance
        as `handover.note` in its packet. Without a note by `reply_by`, the
@@ -16762,7 +16787,8 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
        placement's runner exports it, resuming the old session once if
        it is not running, as for the note. Between two runners it
        travels encrypted (below). On one runner, the runner copies it
-       locally and it never reaches the hub.
+       locally and it never reaches the hub. The new session is already
+       running by then; it learns the transcript's path in step 3.
        - **Success** is the new placement's runner reporting `handover:
          {transcript: "received"}` in a status report (§15.8). It reports
          that once it has put the transcript into the clone's
@@ -16774,9 +16800,11 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
          (below). That covers an upload, a download or an opening that
          never completed.
   3. Then, in one transaction, the hub moves the old instance's claims,
-     assignments and unacknowledged events to the new instance (as a
-     `replaces` join does at its exchange, §6.17: the packet's
-     `handover`, `from` naming the old instance). It revokes the old
+     assignments and unacknowledged events to the new instance, as a
+     `replaces` join does at its exchange (§6.17). The new instance's
+     first packet after this carries them as `handover` (§5.2), `from`
+     naming the old instance. `note` and `missing` are not part of that
+     `handover`; they are in `membership.placement.replace`. It revokes the old
      instance's credential and sets the old placement `desired:
      stopped`. That placement closes with `closed_reason: replaced` on
      its terminal report, and `placement_replaced` is emitted. It reaches
@@ -16788,10 +16816,14 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
 - **Aborting.** The replacement ends without step 3 on any of these:
   - a `DELETE` of the new placement before step 3;
   - the new placement's report `failed`;
-  - a `full` transcript not received by its deadline.
+  - a `full` transcript not received by its deadline;
+  - a consent request for the replacement refused or withdrawn (§15.6).
 
-  The old placement runs on as it was. The new one closes, with
-  `removed` after a `DELETE` and `replace_failed` otherwise. A sealed
+  The old placement runs on as it was, and its `replaced_by` goes back
+  to `null`. The new one closes (`active: false`), with `removed` after
+  a `DELETE`, `refused` or `withdrawn` for its consent, and
+  `replace_failed` otherwise. If its pickup was already redeemed, the
+  new instance's credential is revoked. A sealed
   transcript already uploaded is deleted, and the owner's outage request
   (§15.7) names the new placement.
 
@@ -16814,7 +16846,8 @@ secrets read in the workspace.
   have advertised a key; otherwise it is `invalid` with
   `details.fields.handover: "no_runner_key"`.
 - The old placement's runner reads, on the placement, `handover: {kind:
-  "full", to_key}`: the new runner's public key as the hub holds it. It
+  "full", to_placement, to_key}`: the new placement's id and the new
+  runner's public key as the hub holds it. It
   seals the transcript to that key with HPKE (RFC 9180, base mode:
   DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305). The
   `info` is the new placement's id, so a sealed transcript opens only
@@ -16829,17 +16862,21 @@ secrets read in the workspace.
   session id, and its transcript in the harness's own export format, as
   a string. A body shorter than 48 bytes (32 plus the 16-byte tag) is
   `invalid`.
-- The new placement's runner reads `handover: {kind: "full", ready:
-  true}` and fetches it with `GET /runner/placements/{id}/handover`. It
+- The new placement's runner reads `handover: {kind: "full", ready}`,
+  `ready` `true` once the upload is in (the upload wakes it with
+  `placement_updated`), and fetches it with `GET /runner/placements/{id}/handover`. It
   opens it locally and confirms with `DELETE`, after which the hub
   deletes it. The hub deletes it 24 hours after the upload in any case.
   The hub stores only ciphertext and never logs its size beyond the
   request line.
 
 **Flapping.** Six restarts of one placement within an hour, from any
-source, mark it `health.state: flapping` with `flapping_since`. The
+source, set `health.flapping: true` with `flapping_since`. It is a flag
+beside `health.state`, so an ask and its answer do not clear it. The
 sources are:
-- a start the runner reports after an exit;
+- a start the runner reports after an exit, except one after
+  `network`: an outage of the provider says nothing about the agent, as
+  for the crash cap;
 - a restart (§15.6);
 - a nudge that `resumed`.
 
@@ -16850,8 +16887,7 @@ to look at why.
   an outage (§15.7): class `info`, option `seen`, title `<agent handle>
   on <runner name> keeps restarting`, with the last reasons in its
   summary.
-- The placement the runner reads carries `health.flapping: true`. While
-  it does, the runner starts no run by itself after an exit; it reports
+- While `health.flapping` is `true`, the runner starts no run by itself after an exit; it reports
   `exited` with `retry_at: null`.
 - A restart, a nudge or a replacement by an agent without trust `admin`
   answers `placement_flapping`. Without that rule, an agent could restart
@@ -16864,10 +16900,10 @@ to look at why.
 
 | Field | Meaning |
 |---|---|
-| `health` | `{state, asked_at, reply_by, flapping_since, settings}`: `state` is `ok`, `asked` or `flapping`; `settings` holds the three values that apply, in minutes |
+| `health` | `{state, asked_at, reply_by, flapping, flapping_since, settings}`: `state` is `ok` or `asked`; `flapping` a flag of its own (above); `settings` holds the three values that apply, in minutes |
 | `nudge` | `{id, at, by, outcome}` of the latest nudge, `outcome` `null` until the runner reports it; `by` is a member id or `"hub"`; `null` before the first |
 | `replaces`, `replaced_by` | the placement ids of an open or finished replacement, else `null` |
-| `handover` | while a replacement is open, the part each runner needs (above); else `null` |
+| `handover` | while a replacement is open, the part each runner needs, else `null`: on the old placement `{kind, to_placement, to_key, local}` (`to_key` only for `full` between two runners, `local: true` when both are on one runner), so its runner knows to resume the old session for the note or the export; on the new placement `{kind, ready}` for `full` between two runners, `{kind, local: true}` on one runner, `{kind}` otherwise |
 
 **Events** (§8.2): `placement_check_in`, `placement_nudged`,
 `handover_requested`, `placement_replaced` and `placement_flapping`.
