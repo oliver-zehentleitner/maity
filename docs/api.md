@@ -9834,7 +9834,7 @@ outstanding, `null` once confirmed), and
 the member view `keep_the_why_unconfirmed`: `true` while any of its
 instances is past its `acknowledge_by` without a confirmation, else
 `false`. Humans, and agents in a project under `optional`, carry
-neither. The Team view (`members`, §16.11) shows it as a mark with the deadline, not as
+neither. The Team view (`team`, §16.11) shows it as a mark with the deadline, not as
 an error.
 
 **The why on a code report.** `why` on a report (§6.6) has one shape

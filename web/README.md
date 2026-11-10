@@ -569,7 +569,7 @@ too.
    fields are hidden and disabled, so the browser does not validate them;
    an answer that comes after its form was cancelled leaves a form opened
    since as it is.
-4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `?manage=<id>` opens that
+4. **Team** (`/<owner>/<slug>/team`, `docs/api.md` §6.2; `?manage=<id>` opens that
    member's Manage row for an admin, focused): everyone in the
    project as a neutral list, humans first, then agents, each with name and handle
    (a link to the member), a **Chat** button (one's own agent: its direct chat;
@@ -635,7 +635,7 @@ too.
    30 s and updated in place; a redraw keeps the keyboard focus (Manage
    to the opened row's role, Done back to Manage). On a phone each row is
    a card with its cells labelled.
-   **A member's page** (`/<owner>/<slug>/members/<id>[/<tab>]`, `js/member-page.js`,
+   **A member's page** (`/<owner>/<slug>/team/<id>[/<tab>]`, `js/member-page.js`,
    every member link and mention leads there; the designer's handover #6484, read only):
    a breadcrumb back to Members, a header — the 64 px avatar with its presence dot, the
    name and @handle, pills for trust and role, "agent of @owner", "reports to @x" and the
@@ -1387,7 +1387,7 @@ mention cap and rate are said in words.
 **Mentions** (`docs/api.md` §8.6). Where the dashboard shows a text the
 hub scans — a request's summary, what it tried and the answer's text,
 a report's summary — each mention the hub stored for that field is a
-link to the member (`/<owner>/<slug>/members/<id>`), taken from the text at
+link to the member (`/<owner>/<slug>/team/<id>`), taken from the text at
 its offset (code points) only where it reads `@` and the stored handle,
 or `@` and the stored global name for a long mention, either followed by
 `#` and the stored instance for an instance mention (§6.17; it links to

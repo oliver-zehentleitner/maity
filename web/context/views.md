@@ -4068,7 +4068,7 @@ policy, contract, Keep the Why) and the README badge, read from what
 the header already has. A tab the page does not know shows Summary.
 The organisation tree left the Overview: it is the Team page's
 **Organisation** tab at `/<owner>/<slug>/organisation`, a project view
-the contract already lists, beside **Members** at `members`; both
+the contract already lists, beside **Members** at `team`; both
 pages carry the same two links (`M.teamTabs`), and the project's row
 of tabs marks Members for either. The tree is drawn again when a member
 event arrives.
