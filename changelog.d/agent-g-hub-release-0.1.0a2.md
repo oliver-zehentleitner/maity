@@ -13,3 +13,5 @@
 - ci: a `v*` tag with a PEP 440 pre-release (`v0.1.0a2`) now pushes the image under its version
   as well (`ghcr.io/oliver-zehentleitner/maity-hub:0.1.0a2`); `type=semver` dropped it as invalid
   SemVer, so `v0.1.0a1` was pushed under its commit SHA only.
+- tools: `tools/changelog.py release` takes a PEP 440 pre-release (`0.1.0a2`, `0.1.0b1`,
+  `0.1.0rc1`), so the section names the version as the tag and PyPI do; it took SemVer only.
