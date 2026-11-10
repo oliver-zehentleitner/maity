@@ -1691,8 +1691,8 @@ is the way left to put a question to a person.
 - Relying on `dontAsk` alone for Claude Code: the call is refused, but the
   tool stays in the model's context and offered.
 - Taking the tool away from interactive placements too: their
-  configuration is left as it was. They run with `dontAsk` as well, which
-  already refuses the call, so a person at the pane is not asked through
-  this tool either. Whether interactive placements should be able to ask
-  is a decision of its own and would change `dontAsk` for every other
-  prompt there.
+  configuration is left as it was. For Claude Code, interactive placements
+  run with `dontAsk` as well, which already refuses the call, so a person
+  at the pane is not asked through this tool either; letting them ask would
+  mean changing `dontAsk` for every other prompt there, a decision of its
+  own. Codex keeps its question tool in an interactive placement.
