@@ -16861,7 +16861,8 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
     anyone who may delete it (§15.6) ends it sooner the same way: the
     credential is revoked at once, unlike a plain `DELETE` (§15.5), and
     it closes with `closed_reason: replaced`. The new instance gets no
-    right to delete it; it ends the window by sending nothing more.
+    right to delete it; it can stop asking and let the window run out at
+    `kept_until`.
 - **Aborting.** The replacement ends without step 3 on any of these:
   - a `DELETE` of the new placement before step 3;
   - the new placement's report `failed`;
