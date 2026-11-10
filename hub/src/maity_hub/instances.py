@@ -9,7 +9,7 @@ the team.
 from __future__ import annotations
 
 import re
-from collections.abc import Container, Iterable, Sequence
+from collections.abc import Container, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -134,13 +134,19 @@ def split_address(text: str) -> tuple[str, str | None]:
     return member, (instance if sep else None)
 
 
-def team(conn: Connection, row: Any) -> dict[str, Any]:
-    """The rulebook as the member view and the resume packet carry it (§6.18)."""
+def team(conn: Connection, row: Any, people: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The rulebook as the member view and the resume packet carry it (§6.18). `people`, the
+    human rows a caller read already by id, gives the editor's handle without a read of its
+    own: a member list builds one view per agent (tsk-xrtxsvv6f974)."""
     by = None
     if row.team_updated_by is not None:
-        handle = conn.execute(
-            select(t.human.c.handle).where(t.human.c.id == row.team_updated_by)
-        ).scalar()
+        if people is not None:
+            editor = people.get(row.team_updated_by)
+            handle = editor.handle if editor is not None else None
+        else:
+            handle = conn.execute(
+                select(t.human.c.handle).where(t.human.c.id == row.team_updated_by)
+            ).scalar()
         by = {"kind": "human", "id": row.team_updated_by, "handle": handle}
     return {
         "max_instances": row.max_instances,
