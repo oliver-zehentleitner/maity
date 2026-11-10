@@ -432,7 +432,7 @@ window.Maity = window.Maity || {};
     // the same. Not where the hub refuses them (a takeover's reply is required) or reads them as
     // No (a consent's proposal or placement, §15.6): the request view does not say which consent
     // carries one, so no consent, action or takeover gets the words alone; it stays, disabled,
-    // and says why (web/context/inbox.md).
+    // and says why (web/context/views.md).
     const wordsAlone = req.class !== "consent" && !req.action && !req.placement && !req.takeover_id;
     const sendWords = () => {
       const value = text.value.trim();

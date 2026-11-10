@@ -1,7 +1,7 @@
 // Shell: sign-in, project switcher, header with project state and the
 // owner's absence, navigation, the router on paths (js/route.js, §16.11).
 // Each view is a function
-// (ctx, root, args) registered in Maity.views; see inbox.md in context/
+// (ctx, root, args) registered in Maity.views; see views.md in context/
 // for the order.
 //
 // Routes:
@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "all" && parts[1] === "why") return { scope: "all-why" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
-    // /account/orgs[/<handle>]: organisations (§6.26), under the account (organisations.md).
+    // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
     // /settings/forge: the account's Forge access (§11.4, §16.11), where the hub's setup redirect lands.
     if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };

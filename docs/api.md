@@ -8091,7 +8091,7 @@ web owner's:
 
 - Route `/<owner>/<slug>/overview` (§16.11), a view of the project like the others
   (`web/README.md`, **Views**). The inbox stays the landing page
-  (`web/context/inbox.md`).
+  (`web/context/views.md`).
 - On open: `GET /projects/{owner}/{slug}` and `…/members` (already held for the
   header), and `…/overview?closed_after=<the board's window>`. On the
   project's event poll (`web/README.md`, **Refresh**), `task_*`,

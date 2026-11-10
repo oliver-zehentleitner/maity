@@ -475,7 +475,7 @@ window.Maity = window.Maity || {};
 
     // A watcher's news on the card (§6.4). The status changes it also brings
     // are in the history below. The hub's listing has no card filter: the
-    // newest page of updates, this card's among them (context/board.md).
+    // newest page of updates, this card's among them (context/views.md).
     async function updates() {
       const run = ++updatesRun; // a read still on its way when the watch changes draws nothing
       clear(updatesBox);

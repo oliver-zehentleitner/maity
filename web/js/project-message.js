@@ -13,7 +13,7 @@ window.Maity = window.Maity || {};
   const { h, append, clear } = M.dom;
 
   // No review_result: it carries its verdict, head and cites (§8.4), which
-  // come from the CLI's --review-file (context/messages.md).
+  // come from the CLI's --review-file (context/views.md).
   const TYPES = [
     ["notice", () => M.t("projectmessage.type.notice")],
     ["handover", () => M.t("projectmessage.type.handover")],

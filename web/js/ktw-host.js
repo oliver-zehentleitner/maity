@@ -3,7 +3,7 @@
 // on the first visit to Why, given a provider over the hub's §11.5 reads, the dashboard's
 // paths as its navigation, the browser's storage as its settings and Maity's colours as its
 // tokens (css/app.css). Its UI words are English for now and marked translate="no"
-// (context/why.md); entry text is the repository's and rendered as text by the library.
+// (context/views.md); entry text is the repository's and rendered as text by the library.
 "use strict";
 
 window.Maity = window.Maity || {};

@@ -3,7 +3,7 @@
 // is one organisation: its members and their roles, the open invitations,
 // its settings, picture and deletion. Every route is the humans' business
 // alone; a caller who is not a member is told not_found, as for a handle
-// that names nothing. Why under /account and not /orgs: web/context/organisations.md.
+// that names nothing. Why under /account and not /orgs: web/context/views.md.
 "use strict";
 
 window.Maity = window.Maity || {};

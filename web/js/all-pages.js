@@ -1,7 +1,7 @@
 // Two pages of All projects (/all/jour-fixe, /all/why): a project's Jour fixe
 // and Why side by side, read per project from the endpoints the project's own
 // pages use, so each project's rules on who sees what stay as they are. The
-// hub has no read across projects (context/shell.md).
+// hub has no read across projects (context/views.md).
 "use strict";
 
 window.Maity = window.Maity || {};
