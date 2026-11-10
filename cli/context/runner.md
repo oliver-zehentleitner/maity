@@ -1761,6 +1761,15 @@ of `maity runner unit`.
      credential whose runner is gone.
    - Rejected: warning and going on. A purge would then delete what running
      agents still use.
+   - What it can know without stopping anything (the account, whether the
+     configuration is there and loads) is checked before the service is
+     disabled, so a refusal leaves the service as it was. `--purge` removes
+     the account before the trees: a `userdel` that fails then leaves
+     everything for the next `--purge`, and one that stopped after the
+     account was gone finishes on the record that names it.
+   - Rejected: the trees first, then the account. A failed `userdel` left a
+     record without a configuration, and the next `--purge` refused until
+     `--force`.
 5. **Fixed paths, and root refuses rather than repairs.**
    - `install` and `uninstall` take no `--config`; they use
      `/etc/maity-runner/runner.toml`, the unit under

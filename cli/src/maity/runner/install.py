@@ -577,22 +577,29 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
         raise Refused(f"the user {USER} was not made by install; --purge changes nothing")
     has_unit = _root_file(host, UNIT_PATH)
     has_config = _usable_config(host, args.force)
+    # A user install made whose userdel succeeded on an earlier --purge that stopped later:
+    # root's record still names it, so this --purge may finish removing what install made.
+    leftover = user is None and _record_left(host)
     if ours:
         _check_user(host)
-    elif args.purge:
+    elif args.purge and not leftover:
         with _root_dir(host, HOME.parent, create=False) as parent:
             if _entry(parent, HOME.name) is not None:
                 raise Refused(f"{HOME} exists, but install made no user {USER}; nothing changed")
+    # The unit's KillMode=process leaves the agents running when the service stops; nothing
+    # would supervise them once it is gone (cli/context/runner.md). Not knowing whether any
+    # run stops the removal as a failed stop-all does, and is known before the first change.
+    stop_agents = (has_unit or ours) and _can_stop_agents(args, host, ours, has_config)
     if has_unit:
         if host.run(["systemctl", "disable", "--now", SERVICE]) != 0:
             _halt(args, f"`systemctl disable --now {SERVICE}` failed")
         else:
             _say(f"stopped {SERVICE}")
-    # The unit's KillMode=process leaves the agents running when the service stops; nothing
-    # would supervise them once it is gone (cli/context/runner.md). Not knowing whether any
-    # run stops the removal as a failed stop-all does.
-    if has_unit or ours:
-        _stop_agents(args, host, ours, has_config)
+    if stop_agents:
+        if host.run(_as_runner(host, ["runner", "stop-all", "--config", str(CONFIG)])) != 0:
+            _halt(args, "`maity runner stop-all` could not stop every agent (above)")
+        else:
+            _say("stopped the agents")
     failed = False
     if has_unit:
         _remove(host, UNIT_PATH, tree=False)
@@ -605,18 +612,35 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
             "--purge removes them"
         )
         return 1 if failed else 0
-    _remove(host, HOME, tree=True)
-    _remove(host, CONFIG.parent, tree=True)
+    # The account first: a userdel that fails (a process of the user's still running) leaves
+    # everything as it was, and the next --purge starts over.
     if ours:
         if host.run(["userdel", USER]) != 0:
-            raise Refused(f"could not remove the user {USER}")
-        _remove(host, RECORD, tree=False)
+            raise Refused(f"could not remove the user {USER}; nothing more was removed")
         _say(f"removed user {USER}")
+    _remove(host, HOME, tree=True)
+    _remove(host, CONFIG.parent, tree=True)
+    if ours or leftover:
+        _remove(host, RECORD, tree=False)
     _say("the hub still lists this runner: remove it under Runners in the dashboard")
     return 1 if failed else 0
 
 
-def _stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: bool) -> None:
+def _record_left(host: Host) -> bool:
+    """Root's record of install's account, with no such account any more."""
+    text = _read_root(host, RECORD)
+    try:
+        record = json.loads(text) if text is not None else None
+    except ValueError:
+        return False
+    return (
+        isinstance(record, dict) and record.get("user") == USER and record.get("home") == str(HOME)
+    )
+
+
+def _can_stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: bool) -> bool:
+    """Whether `stop-all` can run, checked before any change: when it cannot, uninstall stops
+    here, or with `--force` goes on without it."""
     if not ours:
         _halt(args, f"no user {USER} of install's, so `stop-all` cannot run as it")
     elif not has_config:
@@ -627,10 +651,9 @@ def _stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: b
             f"{CONFIG} does not load, so `stop-all` cannot find the agents (if the service "
             "never ran, there are none)",
         )
-    elif host.run(_as_runner(host, ["runner", "stop-all", "--config", str(CONFIG)])) != 0:
-        _halt(args, "`maity runner stop-all` could not stop every agent (above)")
     else:
-        _say("stopped the agents")
+        return True
+    return False
 
 
 def _usable_config(host: Host, force: bool) -> bool:

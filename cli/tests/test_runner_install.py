@@ -85,7 +85,7 @@ class FakeHost(install.Host):
             uid, gid = os.getuid(), os.getgid()  # what the test can own, standing in for 990
             self.users[argv[-1]] = install.User(uid, gid, str(install.HOME), comment)
             self.path(install.HOME).mkdir(parents=True)
-        if argv[0] == "userdel":
+        if argv[0] == "userdel" and "userdel" not in self.failing:
             self.users.pop(argv[-1], None)
         if "pair" in argv:
             # What the real pair does: the credential under the configured state_dir.
@@ -511,7 +511,8 @@ def test_agents_that_cannot_be_stopped_stop_the_removal(tmp_path: Path, broken: 
     host.calls.clear()
     with pytest.raises(install.Refused, match=f"{broken}.*nothing was removed"):
         install.cmd_uninstall(args(purge=True), host)
-    assert not any("stop-all" in line for line in host.commands())
+    # Known before the first change: the service is not even disabled (e5kk R3 F1).
+    assert host.calls == []
     assert host.path(install.UNIT_PATH).exists() and host.path(install.HOME).is_dir()
     assert install.USER in host.users
     # --force goes on, as after a failed stop-all.
@@ -724,3 +725,47 @@ def test_the_record_is_checked_on_the_file_that_is_read(
     monkeypatch.setattr(os, "fstat", fstat)
     with pytest.raises(install.Refused, match="writable by group or others"):
         install._ours(host, host.users[install.USER])
+
+
+def test_a_plain_uninstall_after_an_unedited_install_changes_nothing(tmp_path: Path) -> None:
+    """The starter configuration does not load, so `stop-all` could not find the agents: the
+    refusal comes before `systemctl disable` (e5kk R3 F1)."""
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    host.calls.clear()
+    with pytest.raises(install.Refused, match="does not load"):
+        install.cmd_uninstall(args(), host)
+    assert host.calls == []
+
+
+def test_a_failed_userdel_leaves_everything_for_the_next_purge(tmp_path: Path) -> None:
+    """The account goes first: a userdel that fails removes nothing else, and the next
+    --purge finishes without --force (e5kk R3 F1)."""
+    host = FakeHost(tmp_path)
+    complete_config(host)
+    install.cmd_install(args(), host)
+    host.failing = {"userdel"}
+    with pytest.raises(install.Refused, match="could not remove the user"):
+        install.cmd_uninstall(args(purge=True), host)
+    assert host.path(install.HOME).is_dir() and host.path(install.CONFIG).is_file()
+    assert host.path(install.RECORD).is_file() and install.USER in host.users
+    host.failing = set()
+    assert install.cmd_uninstall(args(purge=True), host) == 0
+    assert install.USER not in host.users
+    for path in (install.HOME, install.CONFIG.parent, install.RECORD):
+        assert not host.path(path).exists()
+
+
+def test_a_purge_finishes_after_the_user_alone_is_gone(tmp_path: Path) -> None:
+    """Root's record names install's account, which is gone: the rest is install's to remove."""
+    host = FakeHost(tmp_path)
+    complete_config(host)
+    install.cmd_install(args(), host)
+    # Where an earlier --purge stopped after its userdel: the unit is gone too.
+    del host.users[install.USER]
+    host.path(install.UNIT_PATH).unlink()
+    host.calls.clear()
+    assert install.cmd_uninstall(args(purge=True), host) == 0
+    assert not any(line.startswith("userdel") for line in host.commands())
+    for path in (install.HOME, install.CONFIG.parent, install.RECORD):
+        assert not host.path(path).exists()

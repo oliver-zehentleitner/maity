@@ -1313,14 +1313,19 @@ started (`stop-all`), then removes the unit. If it cannot tell that the
 agents stopped, it removes nothing and exits 2: stopping the service or
 the agents failed, the configuration is missing or does not load (as
 install's own starter configuration does not), or there is no account of
-install's to run `stop-all` as. A link or anything but a regular file of
+install's to run `stop-all` as. Whatever of these it can know without
+stopping anything (the configuration, the account) is checked before it
+disables the service. A link or anything but a regular file of
 root's at `/etc/maity-runner/runner.toml` is refused before any change;
 with `--force` uninstall goes on without reading it. `--force` goes on
 anyway in the other cases too. `--purge` also
-removes `/var/lib/maity-runner` (state, credential, and workspaces with any
-work not pushed), `/etc/maity-runner`, the account and its record. The
-account goes only if install's record names it; `--purge` checks all of
-this before it touches anything. The hub keeps listing the runner until you
+removes the account, then `/var/lib/maity-runner` (state, credential, and
+workspaces with any work not pushed), `/etc/maity-runner` and the
+account's record. The account goes only if install's record names it;
+`--purge` checks all of this before it touches anything. The account goes
+first: if `userdel` fails (a process of the user's still runs), nothing
+else is removed, and the next `--purge` starts over. One that stopped
+after the account was gone finishes, since the record still names it. The hub keeps listing the runner until you
 remove it in the dashboard.
 
 `maity runner unit` prints the systemd unit shipped in the package

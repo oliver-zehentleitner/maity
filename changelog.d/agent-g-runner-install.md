@@ -11,7 +11,8 @@
   only differs from install's is set back.
   While the configuration is not one `serve` would accept, the service is enabled but not
   started. `maity runner uninstall` stops the service and its agents, then removes the unit; if
-  it cannot tell that the agents stopped, it removes nothing unless `--force`. `--purge` also
+  it cannot tell that the agents stopped, it removes nothing unless `--force`, and what it can
+  know beforehand is checked before the service is disabled. `--purge` also
   removes state, workspaces, the configuration and the account install made.
 
 ### Fixed
