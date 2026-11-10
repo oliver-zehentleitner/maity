@@ -4766,6 +4766,181 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: a card closed before its panel took the focus leaves no panel and no error " + JSON.stringify(rrOpenedFirst));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
 
+  // The board reads its column groups side by side, each with its own pages, the closed window on the closed
+  // group alone (tsk-d61rvjm6gteh); answered in any order, each column holds what one status=all read gives it.
+  {
+    const bgAll = win.Maity.api.getAll, bgHeld = [];
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=")
+      ? new Promise((res, rej) => { bgHeld.push({ p, go: () => bgAll(p).then(res, rej) }); }) : bgAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const bgStarted = bgHeld.map((x) => decodeURIComponent(x.p.split("?")[1]));
+    const bgDrawnEarly = !!main.querySelector(".columns article.card");
+    bgHeld.slice().reverse().forEach((x) => x.go()); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.getAll = bgAll;
+    const closedAt = (bgStarted.find((q) => q.startsWith("status=done,cancelled&closed_after=")) || "").split("closed_after=")[1];
+    const all = (await bgAll("/projects/maintainer/maity/tasks?status=all&closed_after=" + encodeURIComponent(closedAt || ""))).items;
+    const shownIds = new Set(all.map((t) => t.id));
+    const bgWant = {}, bgGot = {};
+    main.querySelectorAll("section.column").forEach((col) => {
+      const st = col.getAttribute("data-status");
+      if (!st) return;
+      bgGot[st] = col.querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+      bgWant[st] = all.filter((t) => t.status === st && !(t.parent && shownIds.has(t.parent))).sort(win.Maity.boardEdit.byOrder).map((t) => t.id);
+    });
+    expect(JSON.stringify(bgStarted.map((q) => q.split("&")[0])) === JSON.stringify(["status=proposed", "status=open", "status=in_progress", "status=blocked,review", "status=done,cancelled"])
+      && bgStarted.filter((q) => q.includes("closed_after=")).length === 1 && !!closedAt && !bgDrawnEarly,
+      "board: the column groups are asked side by side, the closed window on the closed group alone " + JSON.stringify(bgStarted));
+    expect(Object.keys(bgWant).length === 7 && JSON.stringify(bgGot) === JSON.stringify(bgWant),
+      "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
+  }
+
+  // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is
+  // open, it is moved open → proposed, then the open group answers without it. The read of the cards changed
+  // since the reads began puts it on the board, once, in proposed.
+  {
+    const mvAll = win.Maity.api.getAll, mvHeld = [];
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=")
+      ? new Promise((res, rej) => { mvHeld.push({ p, go: () => mvAll(p).then(res, rej) }); }) : mvAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const mvGroup = (g) => mvHeld.find((x) => x.p.includes("status=" + g + "&") || x.p.endsWith("status=" + g));
+    mvGroup("proposed").go(); for (let k = 0; k < 2; k++) await tick();
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "proposed" });
+    mvHeld.filter((x) => x !== mvGroup("proposed")).forEach((x) => x.go()); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.getAll = mvAll;
+    const mvWhere = main.querySelectorAll("section.column").filter((col) => col.querySelectorAll("article.card").some((a) => a.attrs["data-card"] === "tsk-0006"))
+      .map((col) => col.getAttribute("data-status"));
+    const mvCopies = main.querySelectorAll("article.card").filter((a) => a.attrs["data-card"] === "tsk-0006").length;
+    expect(mvCopies === 1 && JSON.stringify(mvWhere) === JSON.stringify(["proposed"]),
+      "board: a card moved between two group reads is on the board once, where it is now " + JSON.stringify([mvCopies, mvWhere]));
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "open" });
+  }
+
+  // The changed-cards read pages by an updated_at keyset (review of #1536, delta 1): the target missed by both
+  // groups, 50 cards changed after it fill the first page, and before the second page it is changed again,
+  // which moves it ahead of the cursor. The pass after a paged pass reads the first page again and finds it.
+  // The reconcile read is served here as the hub pages it (updated_at desc, then id desc; after = the last row).
+  {
+    const kpAll = win.Maity.api.getAll, kpGet = win.Maity.api.get, kpHeld = [];
+    const kpNow = Date.now();
+    const kpIso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const kpBase = (await kpGet("/projects/maintainer/maity/tasks/tsk-0006"));
+    const kpFillers = Array.from({ length: 50 }, (_, i) => Object.assign({}, kpBase, { id: "tsk-k" + String(100 + i), title: "Filler " + i,
+      status: "done", closed_at: kpIso(kpNow - 20000), parent: null, depends_on: [], related: [], updated_at: kpIso(kpNow - 30000 + i * 100) }));
+    let kpFirstAt = kpIso(kpNow - 45000), kpSecond = false, kpPages = [];
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=") && !p.includes("order=")
+      ? new Promise((res, rej) => { kpHeld.push({ p, go: () => kpAll(p).then(res, rej) }); }) : kpAll(p));
+    win.Maity.api.get = async (p) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return kpGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      const cursor = q.get("cursor");
+      if (cursor && !kpSecond) { kpSecond = true; await kpGet("/projects/maintainer/maity/tasks/tsk-0006"); await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { title: "Moved twice" }); kpFirstAt = null; }
+      const real = (await kpGet("/projects/maintainer/maity/tasks?status=all")).items.map((t) => (t.id === "tsk-0006" && kpFirstAt ? Object.assign({}, t, { updated_at: kpFirstAt }) : t));
+      const rows = real.concat(kpFillers).sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0) || (a.id < b.id ? 1 : -1));
+      let from = rows;
+      if (cursor) {
+        const [at, id] = cursor.split("|");
+        from = rows.filter((t) => (Date.parse(t.updated_at) || 0) < Number(at) || ((Date.parse(t.updated_at) || 0) === Number(at) && t.id < id));
+      }
+      const limit = Number(q.get("limit")) || 50;
+      const items = from.slice(0, limit);
+      const last = items[items.length - 1];
+      kpPages.push(items.length);
+      return { items, next_cursor: from.length > limit ? (Date.parse(last.updated_at) || 0) + "|" + last.id : null };
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const kpGroup = (g) => kpHeld.find((x) => x.p.includes("status=" + g + "&") || x.p.endsWith("status=" + g));
+    kpGroup("proposed").go(); for (let k = 0; k < 2; k++) await tick();
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "proposed" });
+    kpHeld.filter((x) => x !== kpGroup("proposed")).forEach((x) => x.go()); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.getAll = kpAll; win.Maity.api.get = kpGet;
+    const kpCopies = main.querySelectorAll("article.card").filter((a) => a.attrs["data-card"] === "tsk-0006").length;
+    expect(kpSecond && kpPages.length >= 3 && kpCopies === 1,
+      "board: a card changed again between two pages of the changed-cards read is still on the board once " + JSON.stringify([kpSecond, kpPages, kpCopies]));
+    await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { status: "open", title: kpBase.title });
+    await go("#/maintainer/maity/inbox");
+  }
+
+  // Tied updated_at (review of #1536, delta 2): 51 cards sharing the newest time in the window, nothing written
+  // during the reads. Every pass takes the ties again (the inclusive comparison recovers a card changed in that
+  // same second), so all three page and the board reads the one list instead; with 49 the second pass fits one page.
+  // (Ties that fill a page fall back when older cards follow in the window, as the fixture's do: a full page then
+  // has a next cursor. Exactly 50 cards in the whole window would fit one page and end it.)
+  for (const [tbCount, tbFallback] of [[51, 1], [50, 1], [49, 0]]) {
+    const tbAll = win.Maity.api.getAll, tbGet = win.Maity.api.get;
+    const tbIso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const tbAt = tbIso(Date.now() + 5000);
+    const tbBase = await tbGet("/projects/maintainer/maity/tasks/tsk-0003");
+    const tbTied = Array.from({ length: tbCount }, (_, i) => Object.assign({}, tbBase, { id: "tsk-t" + String(100 + i), title: "Tied " + i,
+      status: "done", parent: null, depends_on: [], related: [], updated_at: tbAt }));
+    const tbPages = [];
+    let tbLists = 0;
+    win.Maity.api.getAll = (p) => {
+      if (/^\/projects\/maintainer\/maity\/tasks\?status=all&closed_after=[^&]*$/.test(p)) tbLists += 1;
+      return tbAll(p);
+    };
+    win.Maity.api.get = async (p) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return tbGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      const cursor = q.get("cursor");
+      const rows = (await tbGet("/projects/maintainer/maity/tasks?status=all")).items.concat(tbTied)
+        .sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0) || (a.id < b.id ? 1 : -1));
+      let from = rows;
+      if (cursor) {
+        const [at, id] = cursor.split("|");
+        from = rows.filter((t) => (Date.parse(t.updated_at) || 0) < Number(at) || ((Date.parse(t.updated_at) || 0) === Number(at) && t.id < id));
+      }
+      const limit = Number(q.get("limit")) || 50;
+      const items = from.slice(0, limit);
+      const last = items[items.length - 1];
+      tbPages.push(items.length);
+      return { items, next_cursor: from.length > limit ? (Date.parse(last.updated_at) || 0) + "|" + last.id : null };
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.getAll = tbAll; win.Maity.api.get = tbGet;
+    const tbPasses = tbPages.filter((n, i) => i % 2 === 0).length;
+    expect(tbLists === tbFallback && (tbFallback ? tbPages.length === 6 && [0, 2, 4].every((i) => tbPages[i] === 50) : tbPages.length === 3),
+      "board: " + tbCount + " cards tied at the newest time in the window " + (tbFallback ? "make three passes page, then the one list is read" : "end the reading on the second pass, no list")
+      + " " + JSON.stringify([tbPages, tbLists, tbPasses]));
+  }
+  await go("#/maintainer/maity/inbox");
+
+  // The page boundary (review of #1536, delta 3): the window served alone, as the hub would. Exactly 50 tied cards
+  // in the whole window fit one page with no next cursor: one request, no fallback. 100 recent cards and one older:
+  // the first pass reads [50, 50, 1], the last page only to find the end.
+  for (const [pbName, pbRows, pbWant] of [
+    ["exactly 50 tied cards in the whole window are one page, no fallback", (base, now) => Array.from({ length: 50 }, (_, i) => ({ ...base, id: "tsk-e" + String(100 + i), updated_at: now(5000) })), (pages, lists) => JSON.stringify(pages) === "[50]" && lists === 0],
+    ["100 recent cards and one older read [50,50,1], the last page to find the end", (base, now) => Array.from({ length: 100 }, (_, i) => ({ ...base, id: "tsk-r" + String(100 + i), updated_at: now(5000 - i * 50) }))
+      .concat([{ ...base, id: "tsk-r999", updated_at: now(-7200000) }]), (pages, lists) => JSON.stringify(pages.slice(0, 3)) === "[50,50,1]" && lists === 0],
+  ]) {
+    const pbAll = win.Maity.api.getAll, pbGet = win.Maity.api.get;
+    const pbNow = Date.now();
+    const pbIso = (d) => new Date(pbNow + d).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const pbBase = { ...(await pbGet("/projects/maintainer/maity/tasks/tsk-0003")), status: "done", parent: null, depends_on: [], related: [] };
+    const rows = pbRows(pbBase, pbIso).sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0) || (a.id < b.id ? 1 : -1));
+    const pbPages = [];
+    let pbLists = 0;
+    win.Maity.api.getAll = (p) => { if (/^\/projects\/maintainer\/maity\/tasks\?status=all&closed_after=[^&]*$/.test(p)) pbLists += 1; return pbAll(p); };
+    win.Maity.api.get = async (p) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return pbGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      const cursor = q.get("cursor");
+      let from = rows;
+      if (cursor) {
+        const [at, id] = cursor.split("|");
+        from = rows.filter((t) => (Date.parse(t.updated_at) || 0) < Number(at) || ((Date.parse(t.updated_at) || 0) === Number(at) && t.id < id));
+      }
+      const limit = Number(q.get("limit")) || 50;
+      const items = from.slice(0, limit);
+      const last = items[items.length - 1];
+      pbPages.push(items.length);
+      return { items, next_cursor: from.length > limit ? (Date.parse(last.updated_at) || 0) + "|" + last.id : null };
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.getAll = pbAll; win.Maity.api.get = pbGet;
+    expect(pbWant(pbPages, pbLists), "board: " + pbName + " " + JSON.stringify([pbPages, pbLists]));
+  }
+  await go("#/maintainer/maity/inbox");
+
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
   const cfStore = {};
   const cfLs = win.localStorage;
@@ -10958,7 +11133,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ktReport = (why) => ({ summary: "Done.", mentions: [], reported_at: "2026-10-22T13:10:00Z", verification: "signed", code: true, head: ktHead,
     pr: null, pr_status: "none", observed: null, mismatch: false, why });
   const ktWhys = { "tsk-0005": { ref: "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" }, "tsk-0006": { none: "a mechanical rename" }, "tsk-0007": { ref: "../secret.md#x" } };
-  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? ktGetAll(p).then((r) => ({ ...r, items: r.items.map((c) => (ktWhys[c.id] ? { ...c, report: ktReport(ktWhys[c.id]) } : c)) })) : ktGetAll(p));
+  const ktDress = (r) => ({ ...r, items: r.items.map((c) => (ktWhys[c.id] ? { ...c, report: ktReport(ktWhys[c.id]) } : c)) });
+  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? ktGetAll(p).then(ktDress) : ktGetAll(p));
+  // The board's read of the cards changed during its reads (order=updated) is a list of cards too.
+  win.Maity.api.get = (p) => (p.includes("/tasks?") ? ktGet(p).then(ktDress) : ktGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
   const ktCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
   const ktLink = ktCard("tsk-0005").querySelector(".report-why a");
@@ -10968,7 +11146,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ktCard("tsk-0006").querySelector(".report-why")) === "No why: a mechanical rename"
     && !ktCard("tsk-0007").querySelector(".report-why a") && text(ktCard("tsk-0007").querySelector(".report-why")).includes("../secret.md"),
     "keep the why: no why says the reason; a path out of the repository stays text");
-  win.Maity.api.getAll = ktGetAll;
+  win.Maity.api.getAll = ktGetAll; win.Maity.api.get = ktGet;
   // Since 2026-10-26 the owner's notice is a personal request in the inbox (§6.23, §18.1): no kind of its own.
   // A personal request of a project the reader is no member of carries project.member false (§7, §18.2):
   // its notification leads to /all, also once by_project no longer lists that project.

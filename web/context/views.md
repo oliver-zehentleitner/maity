@@ -1840,6 +1840,81 @@ part, and most of them served nothing: few agents have a placement.
 - The revoked state in the placements or member list: one read less, but a
   contract change, which this card's boundary excludes.
 
+## The board reads its column groups side by side
+
+**Id:** 145f0bf3-3024-414a-8026-19dad1960ff7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: six serial pages of 200 for 1,135 cards, 1.37 s, 2.8 s with gaps); the plan on tsk-d61rvjm6gteh (PR B), approved by the coordinator the same day
+**Revisit when:** the contract gains a card status, the hub serves a larger page or the whole board in one answer, or the board reads only the open columns at first
+
+The board asked for every card of its window in one list (`status=all`
+with `closed_after`), page after page, each page waiting for the one
+before. It now asks five groups at once: `proposed`, `open`,
+`in_progress`, `blocked,review`, and `done,cancelled` with the closed
+window. Each group follows its own pages. The board orders every column
+itself, so the groups may answer in any order. Five reads are not one
+snapshot: a card moved from a group not yet answered into one already
+answered would be in neither, and one moved the other way in both. So once
+all five have answered, the board reads the cards changed since a minute
+before the reads began (the start taken on the hub's clock, the minute a
+margin for its skew): `status=all` with the window and `order=updated`,
+newest first, pages of 50, until the first card older than that. Each card
+it returns replaces or adds its card. That read pages by an `updated_at`
+keyset, and a card changed again between two of its pages moves ahead of
+the cursor. So a pass that followed a cursor is followed by another from
+the first page, taking every card at least as new as the newest the pass
+before saw. The comparison includes that time itself: a card changed in
+the same second as the newest one is recovered too. A pass of one page has
+no gap and ends the reading. After three passes that each followed a
+cursor, one list of every status in the window (`status=all` with the
+window, all its pages) is read instead and replaces the cards.
+What is guaranteed: every card that did not change during the reads is
+shown as its group read it, and every card that did is shown once, as the
+last pass, or the one list, has it. The one list has the gaps between its
+own pages that the board always had. A change after the last read is the
+board's usual news, offered as a reload. The reload after a write reads the
+same way; the hub search still asks one list over every status
+(`status=all&q=`).
+When the board falls back to the one list: when all three passes followed
+a cursor, that is, when cards keep changing while the passes read, or when
+the cards at or after a pass's start fill its first page and more cards
+follow in the window (for example many cards changed in the same second).
+The cost: one request per group, each following its own pages, then the
+changed-cards read, whose passes each read pages until a card older than
+their start or the end of the window, and where all three passes followed
+a cursor, the one list with all its pages. At most five requests are in
+flight at once. The wait is the longest group plus the changed-cards
+read's pages, one after the other, not the sum of every page.
+
+**Reason:** the pages were the board's longest wait, and nothing in one
+page depends on another. Side by side, the wait is the longest group,
+not the sum.
+
+**Rejected alternatives:**
+- A larger `limit`: fewer pages, but a contract change, which this card's
+  boundary excludes.
+- The open columns first and the closed window after them: the board
+  would draw twice, and its closed columns and counts would change under
+  the reader.
+- One request per status: seven instead of five, for groups (`blocked`,
+  `review`; `done`, `cancelled`) that are small next to the rest.
+- Reconciling from the project's event feed (the cards a task event names
+  during the reads): a reader who is neither owner nor admin is in few
+  events' audiences (§6.11), so a move could stay unseen. The changed-cards
+  read depends on no audience.
+- One list again whenever the board fits a page: the first page decides,
+  so every larger board waits for it before its groups start.
+- Falling back to the one list whenever the changed-cards read pages: more
+  than 50 cards changed during the reads is rare, and when it happens the
+  first page read again finds what moved ahead of the cursor for one more
+  request instead of a whole list.
+
+The group lists name the contract's seven statuses (§6.4). A status the
+contract adds would not be read until the board names it; the board's
+column for an unknown status stays for a hub that sends one anyway.
+
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
 **Id:** f1e41ebd-42a8-484b-b260-f69ee036a00c

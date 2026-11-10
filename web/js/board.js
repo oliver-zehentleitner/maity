@@ -13,6 +13,13 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
+  // The open column groups the board reads side by side; the closed one, with its window, after them.
+  const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
+  // The read of the cards changed while the groups were read (below): a page of the newest, and how
+  // far before the reads began it looks.
+  const RECENT_PAGE = 50;
+  const RECONCILE_MARGIN_MS = 60000;
+  const RECONCILE_PASSES = 3;
   // The overview counts closed cards over the same window (js/overview.js).
   M.boardWindowDays = CLOSED_WINDOW_DAYS;
 
@@ -669,8 +676,58 @@ window.Maity = window.Maity || {};
     ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const listPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
-    let items = (await M.api.getAll(listPath)).items;
+    // The cards in column groups read side by side, each following its own pages, instead of one
+    // list of every status paged one after the other (tsk-d61rvjm6gteh: six pages in a row on a
+    // project of 1,135 cards). The closed window applies to the closed group alone. Each column is
+    // ordered by the board itself (byOrder), so the groups may answer in any order. The statuses are
+    // the contract's seven (§6.4).
+    // The groups are five snapshots, not one: a card moved from a group not yet answered into one
+    // already answered would be in neither (review of #1536). So, once they have all answered, the
+    // cards changed since the reads began are read again, newest first (`order=updated`, §6), until
+    // the first one older than that; each replaces or adds its card. The start is taken on the hub's
+    // clock (M.api.now) with a margin, so a skew of the clocks reads a little more, never less.
+    // That read pages by an updated_at keyset: a card changed again between two of its pages moves
+    // ahead of the cursor, and no later page returns it (review of #1536, delta 1). A pass that
+    // followed a cursor is therefore followed by another from the first page, taking every card at
+    // least as new as the newest the pass before saw; a pass of one page has no gap and ends it.
+    // After RECONCILE_PASSES passes that all paged (the board changing faster than it can be read),
+    // one list of every status in the window is read instead and replaces the cards.
+    const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g)
+      .concat([ctx.base + "/tasks?status=done,cancelled&closed_after=" + encodeURIComponent(since)]);
+    const windowPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
+    const recentPath = windowPath + "&order=updated&limit=" + RECENT_PAGE;
+    // One pass: from the first page, every card updated at or after `from`; whether it followed a
+    // cursor, and the newest updated_at it saw.
+    const recentPass = async (cards, from) => {
+      let newest = from;
+      let paged = false;
+      for (let cursor = null; ;) {
+        const page = await M.api.get(recentPath + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+        let older = false;
+        page.items.forEach((t) => {
+          const at = Date.parse(t.updated_at) || 0;
+          if (at >= from) { cards.set(t.id, t); if (at > newest) newest = at; } else older = true;
+        });
+        if (older || !page.next_cursor) break;
+        cursor = page.next_cursor;
+        paged = true;
+      }
+      return { paged, newest };
+    };
+    const readList = async () => {
+      const began = M.api.now() - RECONCILE_MARGIN_MS;
+      const parts = await Promise.all(listPaths.map((path) => M.api.getAll(path)));
+      const cards = new Map();
+      parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
+      let from = began;
+      for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
+        const { paged, newest } = await recentPass(cards, from);
+        if (!paged) return [...cards.values()];
+        from = newest;
+      }
+      return (await M.api.getAll(windowPath)).items;
+    };
+    let items = await readList();
     let boardItems = items;
     let searchVersion = 0;
     let hubResults = false;
@@ -720,7 +777,7 @@ window.Maity = window.Maity || {};
     }
 
     async function reload(focusKey, inPanel) {
-      boardItems = (await M.api.getAll(listPath)).items;
+      boardItems = await readList();
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
