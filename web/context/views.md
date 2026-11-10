@@ -4212,33 +4212,39 @@ types and still does not give a phone its screen.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); browser measurements at 1280 × 800 and 390 × 844 in the PR
+**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); card tsk-df4tcq83pnf6 (the maintainer, 2026-11-02: the chat input ran past the bottom of the screen and the page had to be scrolled; wanted the input inside the viewport on desktop and phone, light and dark); browser measurements at 1280 × 800, 390 × 844 and 375 × 667 in the PR
 **Revisit when:** the chat stops sizing itself with `--chat-h`, or the product line moves out of the page's flow
-**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
+**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-05
 
 The open chat's height (`--chat-h`, `fitToScreen` in `js/chat.js`) is the window's height less where
 the chat layout starts on the page and less what stands below it down to the end of the page
-(main's padding, the product line of §16.13). The page then ends at the window's bottom edge, the
-product line under the composer is in sight, and only the history and the chat list scroll. It is
+(main's padding, the product line of §16.13). Where that leaves room for the pane's fixed chrome
+(heading, composer, and the like) plus about 60 px of history, the page ends at the window's bottom
+edge, the product line under the composer is in sight, and only the history and the chat list scroll.
+When the fixed chrome fits in the window but that comfortable height would run past the bottom edge
+(a short phone, a tall header), the height stops at the window edge so the input stays on screen; the
+product line may then sit just below the fold rather than pushing the composer off. That needs room
+for at least about 24 px of history next to the fixed chrome; only when the fixed chrome with those
+24 px is taller than the window below the layout (a tall sign-in banner on a short phone) does the
+page scroll, and then the product line stays below the composer, never over it. It is
 measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
-body: a banner above, the product line below). It is never less than what the open chat cannot
-shrink (its heading, the composer) plus 60 px of history, about three lines: on a screen too small
-for that, the page scrolls and the product line stays below the composer, never over it. The
-observer measures in the next frame, not in its own round, where a new height would resize the
-body again and the browser would report a ResizeObserver loop. Besides the body it watches the
-pane's fixed parts and the panes the layout holds: folding the composer or making it taller, and on
-Chats a group chat taking a direct chat's place, change the floor without resizing the body; only the
-current pane's parts are watched. A layout not yet in the page,
-as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
-most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
-at all, Chats measures the layout the pane moves into. While a
-message is sent, "Sending…" and a failure stand in the composer's row, after the meat-proxy switch
-and before Send, so no line appears below the row and nothing moves.
+body: a banner above, the product line below), and on the visual viewport so a phone's on-screen
+keyboard is followed. The observer measures in the next frame, not in its own round, where a new
+height would resize the body again and the browser would report a ResizeObserver loop. Besides the
+body it watches the pane's fixed parts and the panes the layout holds: folding the composer or making
+it taller, and on Chats a group chat taking a direct chat's place, change the floor without resizing
+the body; only the current pane's parts are watched. A layout not yet in the page, as Chats builds it
+while its view is still drawn, is measured once it is there, a few tries at most, and then lets go of
+its listeners; the holder a pane is drawn into on Chats is not measured at all, Chats measures the
+layout the pane moves into. While a message is sent, "Sending…" and a failure stand in the composer's
+row, after the meat-proxy switch and before Send, so no line appears below the row and nothing moves.
 
 **Reason:** the earlier measure took the header's bottom and 16 px. It left out what stands between
 the header and the chat and everything below it, so the product line pushed the composer past the
 window's edge. On Chats the first measure came before the layout was in the page and stopped for
-good, leaving the CSS fallback `calc(100dvh - 140px)`.
+good, leaving the CSS fallback `calc(100dvh - 140px)`. A later floor of fixed chrome plus 60 px of
+history kept the product line under the composer on a short phone, but forced `--chat-h` taller than
+the window, so the input sat past the bottom edge and the page had to be scrolled to reach it.
 
 **Rejected alternatives:**
 - No product line on chat views: §16.13 puts it at the end of every page the dashboard draws.
@@ -4251,6 +4257,12 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   more than that, so the composer ran past the pane and under the product line.
 - A floor of 120 px of history: a group chat on a 390 × 844 phone no longer fitted the window
   even without a banner above it.
+- Keeping `max(fixed + 60 px, space to the footer)` on every screen: on a 375 × 667 phone without a
+  banner that floor was taller than the window, so the composer ran past the bottom edge and the
+  page scrolled; the input has to stay in the viewport when the fixed chrome fits there.
+- Stopping at the window edge whenever the fixed chrome alone fits: on Chats at 375 × 667 with the
+  sign-in banner that left 3 px of history, an input in view with no message above it; below about
+  24 px of history the page scrolls instead.
 - A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
   inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
   another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
