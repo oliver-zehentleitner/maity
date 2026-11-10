@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
       heading,
       cardSlot,
       h("h3", null, M.t("cardpanel.description")),
-      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("members", id), ctx }))
+      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("team", id), ctx }))
         : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
       (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       // The restricted text (§6.4): a box for a member in the set alone, read when the card opens.
@@ -200,7 +200,7 @@ window.Maity = window.Maity || {};
 
     function noteBody(n) {
       return removedNote(n) ? noteTombstone(ctx, n.body)
-        : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx }));
+        : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("team", id), ctx }));
     }
 
     // A note's author as the byline says it (@handle), as plain text for a button's label,
@@ -487,7 +487,7 @@ window.Maity = window.Maity || {};
         append(updatesBox, h("h3", null, M.t("cardpanel.updates")), items.length
           ? h("ul", { class: "card-update-list" }, items.map((m) => h("li", null,
             h("p", { class: "muted" }, byline(ctx, { member_id: m.from, instance: m.from_instance }), " · " + formatTime(m.sent_at)),
-            h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
+            h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("team", id), ctx })))))
           : h("p", { class: "muted" }, page.next_cursor === null ? M.t("cardpanel.updates.none") : M.t("cardpanel.updates.none_latest")));
       } catch (err) {
         if (run !== updatesRun) return;

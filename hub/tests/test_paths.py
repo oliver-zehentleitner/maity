@@ -57,6 +57,10 @@ def test_every_project_view_the_contract_names_is_reserved_as_a_slug() -> None:
     assert views - {"jour-fixe"} <= paths.PROJECT_VIEWS, views - paths.PROJECT_VIEWS
 
 
+def test_team_is_a_view_and_members_stays_reserved_beside_it() -> None:
+    assert {"team", "members"} <= paths.PROJECT_VIEWS
+
+
 def test_the_hub_paths_are_the_contracts() -> None:
     section = _section()
     table = section[section.index("**Hub paths.**") : section.index("The join host is unchanged")]
