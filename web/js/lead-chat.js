@@ -66,14 +66,16 @@ window.Maity = window.Maity || {};
 
   // Every project's targets, for the header outside a project: each
   // project's view and members read once per page drawn (per ctx), so the
-  // counts' refresh asks nothing again.
+  // counts' refresh asks nothing again. The members come from M.membersOnce,
+  // which the all-projects inbox reads too, so a project's list is read once
+  // for both (tsk-f78z1dvbs26a).
   const everywhereOf = new WeakMap();
   function targetsEverywhere(ctx) {
     if (!everywhereOf.has(ctx)) {
       everywhereOf.set(ctx, Promise.all(ctx.projects.map(async (p) => {
         const base = "/projects/" + M.api.projectPath(p.full_name);
         try {
-          const [project, page] = await Promise.all([M.api.get(base), M.api.getAll(base + "/members")]);
+          const [project, page] = await Promise.all([M.api.get(base), M.membersOnce(ctx, p.full_name)]);
           const memberById = Object.fromEntries(page.items.map((m) => [m.id, m]));
           const pctx = { ...ctx, slug: p.full_name, base, project, members: page.items, memberById,
             nameOf: (id) => (memberById[id] || {}).display_name || id,

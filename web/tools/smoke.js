@@ -270,6 +270,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
+  // All projects reads each project's members once per page drawn: the Lead button and the inbox
+  // share the read (tsk-f78z1dvbs26a; before, each read them, twice per project).
+  {
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const before = gets.length;
+    await go("#/all"); for (let k = 0; k < 10; k++) await tick();
+    const reads = (slug) => gets.slice(before).filter((p) => p === "/projects/maintainer/" + slug + "/members").length;
+    expect(main.querySelector("section.view-all") && reads("maity") === 1 && reads("sample") === 1,
+      "All projects reads each project's members once, for the Lead button and the inbox together " + JSON.stringify([reads("maity"), reads("sample")]));
+  }
   // The product line (docs/api.md §16.13) after <main>: the year, the credit with two icon links, the issues, the security policy.
   {
     const links = productLine.querySelectorAll("a");
