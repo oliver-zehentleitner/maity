@@ -6,7 +6,7 @@
   a hidden event answers `not_found` as a missing one, every way to tell
   them apart listed and closed but time: the route does not promise
   constant time, and a caller may tell a hidden event from a missing one
-  by response time; the dashboard links `seq 68216` and `seq-68216` in
+  by response time, as the maintainer accepted (req-r6hmhaszf4e6); the dashboard links `seq 68216` and `seq-68216` in
   text by shape to its page `/<owner>/<slug>/events/<seq>` (§16.11),
   which opens the event where it lives and shows "not visible" on a
   `404`; the §12 index row. Contract only, besides `events` in the hub's

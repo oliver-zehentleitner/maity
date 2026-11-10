@@ -600,8 +600,8 @@ member up.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's ask that "seq N" in text link to that message, 2026-11-04, card tsk-6g2h8dag2fkg (the route, its visibility and the not-found rule are the card's); contract `docs/api.md` §8.9, 2026-11-10; the alternatives and the reasons below are the implementer's
-**Revisit when:** the readable set of `GET /events` changes shape (a new exception in §8.2 has to be checked here too), links to events in another project or in a cross-project chat are wanted, the card's owner rules that the time channel must be closed, or a later participant's links to a group chat's earlier messages should open them
+**Source:** the maintainer's ask that "seq N" in text link to that message, 2026-11-04, card tsk-6g2h8dag2fkg (the route, its visibility and the not-found rule are the card's); contract `docs/api.md` §8.9, 2026-11-10; the maintainer's acceptance that §8.9 states openly that time is not closed, request req-r6hmhaszf4e6 (option o1), 2026-11-10; the alternatives and the reasons below are the implementer's
+**Revisit when:** the readable set of `GET /events` changes shape (a new exception in §8.2 has to be checked here too), links to events in another project or in a cross-project chat are wanted, the maintainer withdraws req-r6hmhaszf4e6 and wants the time channel closed, or a later participant's links to a group chat's earlier messages should open them
 
 `GET /projects/{owner}/{slug}/events/{seq}` answers one event, with
 exactly the readable set of `GET /events` and the shape it serves, plus
@@ -625,8 +625,8 @@ before it decides, and a missing row has none to read, so a caller may
 tell a hidden event from a missing one by response time — that this
 project has an event at that `seq` it may not read, nothing of what the
 event is. §8.9 says so plainly rather than claim a closure it does not
-have; that this is narrower than the card's wording is the card owner's
-to accept or overrule.
+have; that this is narrower than the card's wording the maintainer
+accepted (req-r6hmhaszf4e6).
 Who gets `conversation_id` is who may open the conversation, not who
 reads the event: the admin of a blind redaction reads its
 `event_redacted` in a closed group chat without reading the chat
@@ -657,8 +657,8 @@ new tab, copies and reloads.
   rule and must follow each new exception of §8.2, and still not
   constant time, since a lookup that finds a row costs more than one that
   finds none. A fixed minimum time under every answer would delay every
-  link opened. Both open if the card's owner rules that time must be
-  closed.
+  link opened. The maintainer chose to state the limit instead
+  (req-r6hmhaszf4e6); both reopen only if that is withdrawn.
 - `conversation_id` to every reader of the event: it would name a
   closed chat to the admin of a blind redaction (§8.5).
 - A link with no `href` that reads the route on click: it could not be

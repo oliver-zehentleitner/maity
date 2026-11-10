@@ -12681,7 +12681,7 @@ that finds a row costs more than one that finds none); a fixed floor
 under every answer would put a delay on every link opened. Neither is
 taken. This is narrower than the card's wording ("the route doesn't
 reveal whether the event exists"), which the answers meet and time does
-not; whether to close it is the card owner's call (tsk-6g2h8dag2fkg).
+not; the maintainer accepted it so (req-r6hmhaszf4e6, tsk-6g2h8dag2fkg).
 
 What the route does not hide is what the log already shows: `seq` is
 one instance-wide sequence, so a reader may infer from a gap that some
