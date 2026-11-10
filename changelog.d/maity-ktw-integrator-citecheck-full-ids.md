@@ -5,4 +5,4 @@
   UUID as it stands at the head; any other hyphenated hex token that starts
   with eight hex digits and contains a letter `a`–`f` is refused. A cited
   test name, including `path::name`, has to be a `def` or `async def` of
-  that name at the head, and the path has to be a file there.
+  that name at the head, and the path has to be a file or a directory there.

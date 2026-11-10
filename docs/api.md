@@ -11631,10 +11631,12 @@ is not there is not sent:
    before the first `*` begins one (`hub/tests/test_public_*`); anything
    after a single `:` is left out. A `::` names a test as well
    (`pkg/tests/test_widget.py::test_real`, or with a class before the
-   test): the part before the first `::` has to be a file or a directory
-   at `head`, and the part after the last `::`, up to a `[`, has to be a
-   test at `head`. A missing path and a missing test are both refused,
-   and the text fallback below does not apply to a `::` span. A path that is no file or directory still
+   test): a `[` and the parameter after it are removed first, so a
+   parameter may contain `::`. Then the part before the first `::` has to
+   be a file or a directory at `head`, and the part after the last `::`
+   has to be a test at `head`. A missing path and a missing test are
+   both refused, and the text fallback below does not apply to a `::`
+   span. A path that is no file or directory still
    passes as text in some file, verbatim, so that a route such as
    `/api/v1/events` or a part of a URL is not refused. Any other span names an identifier or a key:
    its core, the longest run that starts with a letter or `_` and goes

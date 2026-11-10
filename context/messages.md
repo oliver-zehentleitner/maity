@@ -470,8 +470,8 @@ with eight hex digits and contains a letter `a`–`f` is refused, a
 shortened middle group included; a token of digits only is not an id.
 The same decision requires a cited test name, including `path::name`,
 to be a `def` or `async def` of that name at the head, and the path to
-be a file there (a comment does not count), and does not read a ratio such as
-`5.60:1` as a file and line. A path in a code span that is no
+be a file or a directory there (a comment does not count), and does not
+read a ratio such as `5.60:1` as a file and line. A path in a code span that is no
 file still passes as text in a file, so that routes and parts of URLs
 are not refused, and a hash needs a digit, so that English words made
 of `a`–`f` are not taken for one (the lead's rulings after #1224). Commands and their output go under a heading `Ran`,

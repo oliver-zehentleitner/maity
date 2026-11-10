@@ -215,6 +215,41 @@ def test_a_test_cited_with_a_path_checks_the_path_and_the_test(clone: Path) -> N
     ], gone
 
 
+def test_a_node_path_only_on_the_default_branch_is_refused(clone: Path) -> None:
+    """`path::test` requires the path at the head. The file still being on the default
+    branch, and the same test defined in another file at the head, does not pass it."""
+    main = _commit(
+        {
+            **FILES,
+            "pkg/removed.py": "def test_other():\n    return 1\n",
+            "pkg/kept.py": "def test_real():\n    return 1\n",
+        }
+    )
+    _git("update-ref", "refs/remotes/origin/HEAD", main)
+    _git("rm", "-q", "pkg/removed.py")
+    _git("commit", "-qm", "delete the cited file")
+    head = _git("rev-parse", "HEAD")
+    found = textcheck.check(clone, head, "`pkg/removed.py::test_real` covers it.").bad
+    assert found == [
+        "body: `pkg/removed.py::test_real`: no such file or directory at the head"
+    ], found
+
+
+def test_a_parameter_with_colons_is_stripped_before_the_node_is_split(clone: Path) -> None:
+    head = _commit(
+        {
+            **FILES,
+            "pkg/test_widget.py": "class Widget:\n    def test_real(self):\n        return 1\n",
+        }
+    )
+    plain = textcheck.check(clone, head, "`pkg/test_widget.py::test_real[a::b]` covers it.").bad
+    assert plain == [], plain
+    nested = textcheck.check(
+        clone, head, "`pkg/test_widget.py::Widget::test_real[a::b]` covers it."
+    ).bad
+    assert nested == [], nested
+
+
 @pytest.mark.parametrize(
     "short",
     [

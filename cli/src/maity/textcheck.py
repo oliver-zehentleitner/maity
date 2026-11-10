@@ -179,9 +179,12 @@ class _Repo:
             for rev in self.revs
         )
 
-    def has_path(self, path: str, prefix: bool) -> bool:
+    def has_path(self, path: str, prefix: bool, *, at_head: bool = False) -> bool:
+        """A file or a directory. `at_head` looks only at the reviewed head; otherwise
+        the default branch counts too."""
         path = path.removeprefix("./")
-        for rev in self.revs:
+        revs = self.revs[:1] if at_head else self.revs
+        for rev in revs:
             for name in self.files(rev):
                 if prefix and name.startswith(path):
                     return True
@@ -255,12 +258,15 @@ def _name(repo: _Repo, span: str) -> str | None:
     """Why the span names nothing at the head or on the default branch, or None.
     A test name is checked at the head only; the reason is then `not a test`."""
     if "/" in span and "::" in span:
-        # `pkg/test_widget.py::test_real`, or `...::Class::test_real`. The path is the part
-        # before the first `::`; the test is the part after the last `::`, up to a `[`.
-        path = span.split("::", 1)[0]
-        name = span.rsplit("::", 1)[-1].split("[", 1)[0]
-        if not repo.has_path(path, prefix=False):
-            return "no such file or directory"
+        # `pkg/test_widget.py::test_real`, or `...::Class::test_real[a::b]`. A `[` starts
+        # the parameter, which may itself contain `::`, so it is removed before the node
+        # is split. The path is the part before the first `::` and is a file or a directory
+        # at the head only; the test is the part after the last `::`.
+        node = span.split("[", 1)[0]
+        path = node.split("::", 1)[0]
+        name = node.rsplit("::", 1)[-1]
+        if not repo.has_path(path, prefix=False, at_head=True):
+            return "missing path"
         if repo.has_test(name):
             return None
         return "not a test"
@@ -450,8 +456,12 @@ def check(cwd: Path, head: str, body: str) -> Result:
         seen.add(span)
         problem = _name(repo, span)
         if problem is not None:
-            # A test is resolved at the head only. Other names also stand on the default branch.
-            if problem == "not a test":
+            # A test, and the path of a `path::test` cite, are resolved at the head only.
+            # Other names also stand on the default branch.
+            if problem == "missing path":
+                problem = "no such file or directory"
+                where = "the head"
+            elif problem == "not a test":
                 where = "the head"
             else:
                 where = "the head nor the default branch" if len(repo.revs) > 1 else "the head"
