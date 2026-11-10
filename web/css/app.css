@@ -880,7 +880,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 :is(.view-team, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
 :is(.view-team, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-card); box-shadow: var(--shadow); }
-:is(.view-team, .view-agents) .members th, :is(.view-members, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
+:is(.view-team, .view-agents) .members th, :is(.view-team, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
 :is(.view-team, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--muted); padding-block: var(--s2); }
 :is(.view-team, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
@@ -896,7 +896,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
 .placement button:not(:disabled):not(.primary) { border-color: var(--field); }
 @media (max-width: 600px) {
-  .view-members .table-wrap { background: none; border: 0; box-shadow: none; }
+  .view-team .table-wrap { background: none; border: 0; box-shadow: none; }
   :is(.view-team, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
   :is(.view-team, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
   :is(.view-team, .view-agents) .members tr.member:hover > * { background: none; }
