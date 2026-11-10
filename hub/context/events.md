@@ -648,8 +648,10 @@ answers nothing and keeps the cursor, as the read would have. Anything else read
 The look is safe because the read reads only rows with `seq > since`, and within one project
 `seq` follows commit order: `events.emit` inserts under `lock_project` (`SELECT … FOR UPDATE`
 on the server engines, SQLite's write lock at BEGIN) held to the commit. The waiter's event is
-cleared before the look, so an event committed after it still wakes the pause. A pass costs
-one statement where the read cost about four (two for a bridge, whose carrying check stays).
+cleared before the look, so an event committed after it still wakes the pause. Counting
+neither SQLite's `BEGIN IMMEDIATE` nor the wait's `long_poll` row, a skipped pass costs one
+statement where the read cost four for an agent, two where it cost four for a bridge (its
+carrying check stays) and one where it cost two for a human.
 
 **Reason:** an idle wait's cost was its fallback re-reads, not its wakes. The look keeps the
 fallback and every end of a wait (supersession, a disconnect, the shutdown, the deadline,

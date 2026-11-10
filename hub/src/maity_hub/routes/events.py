@@ -215,7 +215,8 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         """Whether a later pass of the wait may skip its read (tsk-x1rsd4r6htcv): no event of
         the project past `since`, and the reader as the read would find it, an agent's row
         present and not isolated, a bridge's connection still carrying it. One statement
-        (and the bridge's check) where the read costs about four. Under the project's lock
+        (two with the bridge's check) where the read costs four for an agent or a bridge and
+        two for a human, without `BEGIN IMMEDIATE` and the `long_poll` row. Under the project's lock
         `seq` follows commit order (`events.emit`), and the read reads only `seq > since`,
         so it could only answer nothing. Anything else is not quiet and reads in full,
         which ends the wait or delivers exactly as it does without this check."""

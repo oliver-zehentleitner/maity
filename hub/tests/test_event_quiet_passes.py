@@ -1,6 +1,7 @@
 """docs/api.md §8.3, tsk-x1rsd4r6htcv step 1: a held events wait reads in full on its first
 pass; a later pass first looks at the project's head (one statement, with the reader's own
-checks) and reads only when an event lies past its cursor. The conditions the design review set
+checks) and reads in full only when an event lies past its cursor or a check fails (not quiet).
+The conditions the design review set
 for it, each with its tests here:
 
 1. Scope: only the held wait's later passes. Wait 0, `after=latest` and the first pass read as
@@ -11,7 +12,8 @@ for it, each with its tests here:
 3. Every skipped pass checks the reader first: isolation, a missing row, a bridge's connection
    and the bridge's own membership end the wait as a read would.
 4. No pass skips supersession, a disconnect, the shutdown or the deadline.
-5. The cost is pinned: one statement a pass (two for a bridge), no read, in the real wait."""
+5. The cost is pinned: one query a pass (two for a bridge), no read, in the real wait, by the
+   counting rule of `_recorded`."""
 
 from __future__ import annotations
 
@@ -68,11 +70,12 @@ def _is_look(statement: str) -> bool:
 
 
 def _recorded(engine: Engine, call: Callable[[], Any]) -> tuple[list[str], Any]:
-    """The statements the engine sends during `call`, but two that belong to no pass:
-    SQLite's `BEGIN IMMEDIATE`, the start of a transaction there (`db._sqlite_begin_immediate`),
-    which the server engines send through no cursor; every pass has one transaction, with the
-    look as without it. And on PostgreSQL the wait's row in `long_poll` (`wakeups.opened`),
-    written once per wait and deleted in its `finally`, which may run after the answer is out."""
+    """The queries the engine sends during `call`: every statement but two kinds. SQLite's
+    `BEGIN IMMEDIATE` (`db._sqlite_begin_immediate`) is a real statement of every pass, sent
+    the same with the look as without it, and the server engines send their BEGIN through no
+    cursor, so it is left out of the metric on all engines alike. On PostgreSQL the wait's row
+    in `long_poll` (`wakeups.opened`) is written once per wait and deleted in its `finally`,
+    which may run after the answer is out, so it belongs to no pass."""
     seen: list[str] = []
 
     def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
