@@ -11763,6 +11763,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector("section.view-inbox") && !text(main).includes("What waits for you changed"),
     "notifications: the first counts after the inbox drew are where its count starts, no \"changed\" offer");
+  // Counts known from an earlier page, and a request came meanwhile: the inbox draws it from its own list, and its own
+  // counts read, answering later, is where its count starts too, not a change (e5zv at #1582).
+  win.Maity.api.get = hbGet;
+  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const hbKnown = !!win.Maity.notify.state.counts;
+  const hbTwo = (r) => {
+    const by = { ...(r.by_project || {}) };
+    by["maintainer/sample"] = { ...(by["maintainer/sample"] || {}), inbox: ((by["maintainer/sample"] || {}).inbox || 0) + 2 };
+    return { ...r, by_project: by, counts: { ...r.counts, inbox: (r.counts.inbox || 0) + 2 } };
+  };
+  hbRelease = null;
+  win.Maity.api.get = hbHold(hbTwo);
+  await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
+  hbRelease(); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0") ? hbGet(p).then(hbTwo) : hbGet(p));
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(hbKnown && main.querySelector("section.view-inbox") && !text(main).includes("What waits for you changed"),
+    "notifications: with counts known from an earlier page, the inbox's own late counts are where its count starts, no \"changed\" offer");
+  // A page left before its held read answers: the answer reaches neither the next page's notice nor its header.
+  hbRelease = null;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? new Promise((resolve, reject) => { hbRelease = () => reject(new Error("answered too late")); }) : hbGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const hbLate = hbRelease;
+  win.Maity.api.get = hbGet;
+  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  hbLate(); for (let k = 0; k < 4; k++) await tick();
+  expect(hbLate && main.querySelector("section.view-board") && !text(main).includes("answered too late"),
+    "notifications: a held read of a page already left says nothing on the next page");
   win.Maity.api.get = hbGet;
   if (!win.Maity.notify.state.counts) win.Maity.notify.state.counts = hbCounts;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();

@@ -68,11 +68,12 @@ draws with the counts read so far, or /me's open requests before the
 first read. The header (the switcher, Chat, the bell, the tabs, the
 title) follows when it answers. Awaiting it with the page's own reads
 was the way before: on prod it took about 2 s, and every page waited
-that long. The first counts that come
-after the page was drawn are where the page's inbox count starts, not
-a change: §18.2's inbox counts personal requests that /me's
-`open_requests` does not. A failure that comes late is said in the
-same notice.
+that long. When the page's own read answers, its counts are where the
+page's inbox count starts, not a change: the page counts from what an
+earlier page read, or from /me's `open_requests` before any read, and
+§18.2's inbox also counts personal requests. Where that read fails, the
+next round's read is the start. A failure that comes late is said in
+the same notice.
 
 Browser notifications run only when the account wants them and the
 browser allows them. They use the long-poll `?after=<position>&wait=55`,

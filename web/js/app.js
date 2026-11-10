@@ -1933,13 +1933,14 @@ window.Maity = window.Maity || {};
       ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
       : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
     let seen = openNow();
-    // The page draws before its counts read answers (render, tsk-hyfqc0sp2bvc). The first counts
-    // that arrive are where the count starts, not a change: open_requests and §18.2's inbox differ
-    // by the personal requests.
-    let counted = !!notified();
-    const firstCounts = () => {
-      if (counted || !notified()) return false;
-      counted = true;
+    // The page draws before its counts read answers (render, tsk-hyfqc0sp2bvc), so seen is at first
+    // what an earlier page read, or /me's open_requests before any read. The page's own read is
+    // where the count starts, not a change: it counts what the list drawn beside it shows, an
+    // earlier page's counts may not (e5zv at #1582). Where that read fails, the next round's is.
+    let based = false;
+    const baseline = () => {
+      if (based || !notified()) return false;
+      based = true;
       seen = openNow();
       return true;
     };
@@ -1958,7 +1959,7 @@ window.Maity = window.Maity || {};
     async function counts() {
       await ctx.refreshCounts();
       clear(countLine);
-      if (firstCounts()) return;
+      if (baseline()) return;
       const now = openNow();
       if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
         // Nothing open on screen and nobody busy in the header (the State &
@@ -1979,12 +1980,12 @@ window.Maity = window.Maity || {};
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, M.t("watch.refresh_failed", { message: err.message })));
     const notifyFailed = (err) => append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: err.message })));
     if (notifyError) { notifyFailed(notifyError); notifyError = null; }
-    // The page's own counts read, said here when it answers: a failure in the notice, the
+    // The page's own counts read, said here when it answers: a failure in the notice, else the
     // counts as the place the inbox count starts.
     countsRead.then((err) => {
       if (!live()) return;
-      firstCounts();
       if (err) notifyFailed(err);
+      else baseline();
     });
     // A hidden tab asks nothing; shown again, it reads what it missed.
     let missed = false;
