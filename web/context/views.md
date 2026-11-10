@@ -869,7 +869,7 @@ tell from the request today; the Revisit when names it.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"
+**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10 (chats 102080 and 103539)
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
 
 A project's pill counts its open requests, unread chats and unread mentions (§18.2 `by_project`),
@@ -879,6 +879,13 @@ reads both filters from its address and asks the hub with them (§18.2). Its hea
 ("Mentions in Maity"), a link leads back to all notifications, and Mark all read sends the same
 `kind` and `project` with `up_to` (§18.3), so it marks nothing outside the filter. The line is
 filled again with every count read, so it follows the pill.
+
+The line is left out on the Chat tab, on its list and in an open chat: the maintainer asked for it
+gone there, since the chat list shows a chat with an unread mention as an @, visible at once
+(tsk-sesdq48m9ewk, 2026-11-10, chat 102080). The @ covers chat mentions only: the line also counts
+mentions in project messages and on cards (§18.1), which the Chat tab does not show. Asked about
+those, the maintainer kept the removal because they stay in the bell and on the line of every other
+tab, as on the pill and /notifications (chat 103539).
 
 **Reason:** a count on a project should lead to what it counts in one step, and mentions have no
 place in the project: the inbox is the requests alone (see 2ff6afe9). The hub already filters
@@ -976,7 +983,7 @@ menu per press would make that slow.
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
-a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
+a link to `/<owner>/<slug>/team/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
 project does not list (removed, outside) and every member in a view read
 from outside the project are plain text. The inbox of all projects
@@ -1686,7 +1693,7 @@ an anchor. Waiting for a hub-made URL: none is in the contract.
 
 The `keep_the_why` item names the agent as `target: {type: "member"}`.
 Where the owner is a member of the project it opens
-`#/p/<slug>/members/<agent id>`; where not, `#/account/picture/<agent
+`#/p/<slug>/team/<agent id>`; where not, `#/account/picture/<agent
 id>`, the list of one's agents on the account, with that agent marked
 and focused.
 
@@ -2001,7 +2008,7 @@ as before. An id that is not an instance id is not shown. In a chat two
 instances of one agent are two senders: their messages are never grouped
 under one name. The handle leads to the member's page, the `#id` to
 the same page's Sessions with that instance's line marked and focused
-(`…/members/<id>/sessions/<instance>`), where no link is possible (a
+(`…/team/<id>/sessions/<instance>`), where no link is possible (a
 member the project does not list, a view from outside) both stay text.
 A stored mention `@handle#id` in a text reads the same: two links, the
 member and its instance. The @ picker offers, after each agent, its
@@ -2749,7 +2756,7 @@ slug: §6.25 forbade it, since another project may carry that slug by now.
 
 The agents' heading on Members has **+ Add an agent** (owner and admin),
 which opens the join panel under it: closed by default, open at once in a
-project without agents or at `/<owner>/<slug>/members/join`. The panel is read beside the
+project without agents or at `/<owner>/<slug>/team/join`. The panel is read beside the
 list, never before it, so the rows and a member asked for by the URL do
 not wait for the joins. Open joins stand as seats under the agents'
 table, the placements after it, the earlier joins at the end. A count
@@ -2972,6 +2979,7 @@ reporting line that is not there.
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
 
 2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+2026-11-10: the path follows the name: the view and its member pages are at /<owner>/<slug>/team (the maintainer's decision, so that the name and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word, the maintainer's wish, so no slug or later view takes it; /members is a word that is no view, with no redirect. The Members tab keeps its name.
 
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
@@ -3194,7 +3202,7 @@ those branches untested.
 **See:** views.md — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-29
 **Revisit when:** the maintainer moves the admin's actions out of the Manage row, or a member page of its own takes over what the Agents card does
 
-`/<owner>/<slug>/members/<id>` is a member's page: breadcrumb, header,
+`/<owner>/<slug>/team/<id>` is a member's page: breadcrumb, header,
 and the tabs Activity, Cards, Briefing, Sessions & credentials, all read
 only. Its **Actions ▾** holds only links: **Manage on Members**
 (`?manage=<id>`, the list with that row open) for an admin, **Manage on
@@ -3231,7 +3239,7 @@ when the first such row opens, since the member list carries no
 `avatar_source`. The account still lists, under **Agents in other
 projects**, the owner's agents that are in no project the owner can
 open, and only those. `/account/picture/<agent id>` for an agent that
-Members reaches leads to `/<owner>/<slug>/members/<agent id>/picture`,
+Members reaches leads to `/<owner>/<slug>/team/<agent id>/picture`,
 the row open. The checks before sending and the missing preview stay as
 the entry this one replaces describes them.
 
@@ -4054,6 +4062,7 @@ taken, and the rule for what holds is the contract's. The icons as
 **Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
 
 2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+2026-11-10: the path follows the name: the view and its member pages are at /<owner>/<slug>/team (the maintainer's decision, so that the name and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word, the maintainer's wish, so no slug or later view takes it; /members is a word that is no view, with no redirect. The Members tab keeps its name.
 
 The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
 **Swarm** (`overview/swarm`) and **Project** (`overview/project`), as
@@ -4066,7 +4075,7 @@ policy, contract, Keep the Why) and the README badge, read from what
 the header already has. A tab the page does not know shows Summary.
 The organisation tree left the Overview: it is the Team page's
 **Organisation** tab at `/<owner>/<slug>/organisation`, a project view
-the contract already lists, beside **Members** at `members`; both
+the contract already lists, beside **Members** at `team`; both
 pages carry the same two links (`M.teamTabs`), and the project's row
 of tabs marks Members for either. The tree is drawn again when a member
 event arrives.
@@ -4249,7 +4258,7 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
 **Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
@@ -4260,7 +4269,7 @@ At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
 
 Wider than that, nothing changes.
 
-Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
+Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. Where the chat list and the chat are one pane (`max-width: 720px`, a phone), it stands at the chat head's top right instead, on the row of the back link (← Conversations), and while full 8 px from the window's top and 12 px from its right; in the document it stays after the heading, so Tab still reaches it there. There a direct chat with an agent also shows no session line (`chat.session`) beside its heading. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
 
 The full screen ends:
 - with the button again;
@@ -4286,11 +4295,11 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects)
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
 **Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
-The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). On a phone (600 px) the row wraps by the tabs' full width, which put the menu on a line of its own; there the tabs fill the room the menu leaves (`flex: 1 1 0`) and scroll, the menu keeps the row's right end, and the project's state takes the next row. New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
 
 While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
 
@@ -4817,12 +4826,12 @@ so it was dropped.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 **See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
-The header's row shows the repository, then Pull Requests, then the
+The header's row shows the repository, then Actions, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
 with its mark), then the
 Keep the Why dashboard, and after them, at the right end, the state: the
@@ -4831,6 +4840,16 @@ button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
 own links, Pull Requests is derived in the browser from the repository's
 URL and forge, and a forge outside the table gets no button; the hub knows
 only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Actions, which the maintainer asked for (tsk-kdkdy864q11r, 2026-11-10), is
+derived the same way, but only for the forges that call their workflows
+Actions (GitHub, Gitea): GitLab and Bitbucket call theirs Pipelines, a word
+of its own that no card has asked for yet. Its screen-reader name says the
+forge ("Actions on GitHub"), as the repository's does. A second derived
+button is not the "fifth kind of link" the Revisit condition below means
+(an own link of §6.11, which the hub stores): it follows the forge table,
+and on a phone the row still holds every button in one row that scrolls
+(e2e at 390 and 360 px, light and dark). Neither derived button is on the
+overview's Project tab, which shows the own links only.
 Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
@@ -4854,6 +4873,31 @@ would overwrite another admin's change to a link it did not touch.
 - Sending all four links on every save (#846): it loses another admin's
   change made meanwhile.
 
+
+## The chat lists' pin buttons are a mode for managing pins: hidden on every load, stored nowhere
+
+**Id:** 8d534643-d67c-4da0-b383-075c5cc4e6a0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-4nf344w4c52c; the maintainer's description, relayed by the coordinator: the pin buttons show only while he manages pins, then he hides them again (chat 102521, 2026-11-10)
+**Revisit when:** someone wants the buttons kept shown across reloads or devices, or the hub stores display choices for a human
+
+Pins themselves are the hub's, per human (§9.3), and a pinned chat keeps its 📌 mark in the list
+whatever the mode. The pin/unpin button on each row of the project's chat list and of /chats is
+hidden until the toggle in the list's heading row shows it; pressed again, or after a reload, the
+buttons are hidden again. The choice lives in the page alone (`pinColumn` in `js/chat.js`), shared by
+both lists while the page stands. On /chats the toggle stands after the Lead's slot, so that on a
+phone the heading keeps its row and the Lead its place under it at the left edge.
+
+**Rejected alternatives:**
+- Keeping the choice in the browser (localStorage, as the board's column filter is): the
+  maintainer uses the buttons only to set pins up, so a choice that outlives the page would leave
+  the column shown when he no longer wants it.
+- A field on the account (`PATCH /me`): a contract and hub change for the same unwanted
+  persistence, across devices as well.
+- Hiding the pin mark with the buttons: the mark says which chats are pinned, which the list's
+  order alone does not.
 
 ## The settings form says what an unset agent_owners reads now, from the page's public_page and state
 

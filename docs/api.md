@@ -1453,7 +1453,10 @@ not those of its agent's other instances, with one exception: the events
 long-poll (`wait > 0`, §8.3) is presence, not work — a session that only
 listens keeps showing `online` while its leases run out, so that a
 stuck holder becomes reassignable without anyone guessing. There is no
-heartbeat endpoint. A runner's calls update the runner's own
+heartbeat endpoint: a holder that listens while still at work is warned
+before its leases run out (`claim_lease_expiring`) and renews them on
+purpose with `POST …/claims/renew` (§6.5; not built yet,
+tsk-p55zyn4pz0wd). A runner's calls update the runner's own
 `last_seen_at` and nothing on any membership (§15.3).
 
 ### 2.5 Forwarded headers and plain HTTP
@@ -3049,7 +3052,11 @@ What deletion does:
   removes it (§15.3); its unused runner enrollments (§15.2) and agent
   joins (§3.1) are revoked, placements it created that have not made
   their membership yet are closed (§15.6), and invitations it issued
-  that are still open are voided (§3.4), and it leaves the private
+  that are still open are voided (§3.4), with the requests of those by
+  handle; open invitations by handle to the account are voided with the
+  reason `invitee` (§3.4), one issued at the same moment included, since
+  the issue takes the account's lock before anything else and so either
+  commits first or waits and is refused; and it leaves the private
   lists of the restricted-text events (§6.4). Its open personal requests
   (§7) and the open cross-owner consents that name it on either side
   (§6.2) are withdrawn, and so are open invitations to an organisation
@@ -3656,8 +3663,8 @@ person, one project and one trust and role, it is used once, and it expires.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
-| `GET /projects/{owner}/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `POST /projects/{owner}/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` (an invitation by `handle` has none) |
+| `GET /projects/{owner}/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided, declined or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
 | `DELETE /projects/{owner}/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
 | `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
 | `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
@@ -3686,6 +3693,36 @@ person, one project and one trust and role, it is used once, and it expires.
   recipient's security-mail budget); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
+- `handle` is optional and excludes `address` (both: `invalid`,
+  `details.fields.handle: "with_address"`): a person's handle or one of
+  its live aliases (§6.24). Only an approved, active human qualifies;
+  anything else is `invalid` with `details.fields.handle`: `format`,
+  `unknown` (nobody has it, a deleted, pending or suspended account, a
+  deleted organisation, or an agent's handle, which is its owner's and
+  names nobody here, §6.24), `not_a_person` (a live organisation's
+  handle), `member` (already a member of the project) or `invited` (an
+  open invitation of this project already names this person), and
+  nothing is created. As for a contact (§6.29), the person need not show
+  the inviter anything: handles are public, so telling an active person
+  from every other name is no secret, and nothing tells a deleted,
+  pending or suspended account from a name that is nobody's. A handle
+  refused here (`format`, `unknown`, `not_a_person`, `member`,
+  `invited`) counts against the project's rate as an issued invitation
+  does (below); a body refused before any lookup (`with_address` and the
+  other field checks) does not. The invitation is bound to that account at
+  issue, and a rename keeps it. The issue takes the person's account
+  lock before the project's, as every write of a human does (§2.9): it
+  either commits before a deletion of that account, whose cleanup then
+  voids it, or waits for the deletion and is answered `unknown`. The hub
+  files a personal `consent` request to that person (§7),
+  in the inviter's name, answered in their inbox: `go` accepts as below,
+  `no` declines (`declined_at`), and the person's own withdrawal counts
+  as `no`. Such an invitation has no `url` and no page, and no mail goes
+  out for it beyond the person's notifications of the request (§18.1).
+  The answer carries `invitee: {handle, display_name}`, the person as
+  they are now; the item's `handle` is the account's handle at issue
+  (the current one an alias resolved to, not the alias), and the `GET`
+  list shows the bound account's current handle.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
@@ -3703,9 +3740,9 @@ person, one project and one trust and role, it is used once, and it expires.
 
 ```json
 { "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
-  "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
-  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "via": "join",
-  "url": "https://join.maity.team/i/9fK2…" }
+  "handle": null, "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "declined_at": null,
+  "via": "join", "url": "https://join.maity.team/i/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
@@ -3721,7 +3758,9 @@ with authority — the predicate of accept); `sign_in_only` otherwise — a visi
 the instance does not register, and the inviter sees the invitation
 stay open. It carries no token in the body and no handle of anyone. It
 is rate limited per source address as the join exchange is (§3.3, 10
-per minute); the answer is identical for every reader.
+per minute); the answer is identical for every reader. An invitation by
+`handle` has no page: its token was given to nobody, and the page and
+accept answer it with the uniform `not_found`.
 
 **Accepting.** `POST /invitations/{token}/accept` from a signed-in
 human session, one transaction serialised per project and person: the
@@ -3749,6 +3788,22 @@ approved; the page says so and the invitation waits. Accepting needs a
 session in good standing (§2.6.5): a session fresh from a mailbox link
 accepts nothing.
 
+**By handle.** The person's `go` on the request (`POST
+/requests/{id}/answer`, §7) accepts with the same checks, in the
+answer's transaction under the project's lock. A `project_closed`
+refusal leaves the request open with the invitation. A `go` that no
+longer applies withdraws the request: for an invitation no longer open
+(`409 invalid_transition`, `details.reason: invitation_stale`; an
+expired one stays `expired`), for a person who is a member already
+(`invalid`, `details.fields.request: "already_member"`, the invitation
+used up), and for an issuer without the authority (`forbidden`,
+`invitation_void`, the invitation voided as above). The hub withdraws
+the request when the invitation is revoked, expires (a minute pass),
+is voided — also with the reason `invitee` when the person's account
+is deleted (§2.9) — or is used up because the person became a member
+another way: an accepted invitation of the same project, or a seat an
+organisation's owner gets (§6.26).
+
 **Registration and invitations.** Under registration `closed` or
 `allowlist` (§2.7, §16.4), an address with an open address-bound
 invitation is **admitted** as if it were on the allowlist — provided
@@ -3771,14 +3826,19 @@ login and registration pages keep the invitation as `next` (§2.6.5) and
 return to it.
 
 **Events and audit.** `invitation_created`, `invitation_revoked`,
-`invitation_voided` and `invitation_used` go to the project's human
+`invitation_voided`, `invitation_used` and `invitation_declined` go to the project's human
 `members:admin` holders (`member:<id>` each), never wake an agent, and
-carry the invitation's id, trust, role and whether it is address-bound — never
-the address and never the token. The ticker (§17) announces a new human member as it
+carry the invitation's id, trust, role and whether it is address-bound
+(`address_bound`) or bound to a handle (`handle_bound`) — never
+the address, the handle or the token. The ticker (§17) announces a new human member as it
 announces every join.
 
 **Limits and secrecy.** Twenty invitations per project per hour
-(`rate_limited`), and the `GET /invitations/{token}` and accept calls
+(`rate_limited`; every request that passes the body's checks and the
+caller's authority counts, before the handle is looked at, so a refused
+handle costs one too; a body refused by those checks, `with_address`
+included, does not), ten invitations by handle to one person in 24 hours
+across the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
 under the join exchange's per-source limit. An unknown, used, expired
 or revoked token is one uniform `not_found` on the page and on accept,
 so nothing tells a guesser whether a token ever existed; the named
@@ -4417,7 +4477,11 @@ under `next_free` the instance in `wakes`, or, when the hub chose none
 because nobody was listening, the lead instance when one is set and
 otherwise every instance, as such an event waits in every instance's
 next resume (§8.2); an `instance:` token
-waits for the instance it names only. For a dormant instance (§6.17)
+waits for the instance it names only. A `claim_lease_expiring` (§6.5;
+not built yet, tsk-p55zyn4pz0wd) wakes its holder but never waits for
+it: a holder that does not answer it is reported when the lease runs
+out (`claim_expired`), and a second report of the same outage would
+only repeat it. For a dormant instance (§6.17)
 only its own `instance:` token counts, under every rule above and in
 the fallback, so an agent's event never makes it not listening, while a
 message addressed to it that it leaves unread still does. The session is not listening
@@ -6355,6 +6419,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is archived; allowed in `plan` and `review` without a `reason`, because it changes no status |
 | `POST /projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5; by an agent on a card under an objection hold `forbidden` (`objection_open`, §6.19) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry, or `line:lead` after expiry when the holder is in the caller's reach (§2.3) | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.19) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.19); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
+| `POST /projects/{owner}/{slug}/claims/renew` (not built, §6.5) | any member; renews only the caller's own claims, or with `Maity-For` the served agent's (§2.3) | `200 {"claims": [{task_id, title, lease_until}]}` (§6.5, "Before a lease runs out") |
 | `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance, for its own agent (§6.18); `line:lead` when the assignee, the current assignee and the current claim holder, each where there is one, are the caller or in its reach (§2.3) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.19; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/objection-hold` (not built, §6.19) | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.19); `200` with the card for a member, `204` with no body for an owner who is not a member of the project (who may not read the card); agents `forbidden` (`humans_only`) |
@@ -6836,6 +6901,37 @@ and with the project.
   of the same instance — or the instance that replaced it (§6.17) —
   inherits it (`claims` in the resume packet) and `claim.session_id`
   moves to the new session on its first call.
+
+**Before a lease runs out** (not built yet, tsk-p55zyn4pz0wd). A holder
+that only listens — for a review, a merge or an answer — renews nothing
+(§2.4), and its leases run out while it is still at work. The hub warns
+it, and it renews on purpose:
+
+- `claim_lease_expiring` (§8.2) when the hub's worker (every minute)
+  finds claims whose `lease_until` is still ahead but at most
+  `min(300, max(120, lease_seconds / 10))` seconds away (`warn_seconds`,
+  from the project's `policy.lease_seconds`, the tenth rounded down to
+  whole seconds, so 1201 gives 120; the same integer is the threshold
+  and the payload's `warn_seconds`): one event per holder and
+  pass, as `claim_expired` — an instance, or for claims a bridge holds
+  for an agent (§2.3) the agent, with `instance` and `session_id`
+  `null` — naming each such claim once — `{member_id, instance,
+  session_id, tasks: [{id, title, lease_until}], warn_seconds}`. A
+  claim is warned once per lease period; a renewal of its lease makes
+  the next approach count again. A claim whose `lease_until` has
+  already passed is not warned, only reported by `claim_expired`.
+- `POST /projects/{owner}/{slug}/claims/renew`, no body: renews every
+  claim the calling instance holds in the project — with `Maity-For`
+  (§2.3), the claims the bridge holds for the served agent — exactly as
+  any other call renews them (§2.4; while a limit holds them, §6.12),
+  expired ones included, since nothing is released automatically. `200
+  {"claims": [{"task_id", "title", "lease_until"}]}` with the new
+  leases, `[]` when it holds none. The call exists so that the renewal
+  is one deliberate, cheap call that says what it renewed; it renews
+  nothing that another call would not.
+- The rules text's lease sentence (§6.9) adds what to do on the
+  warning: renew while still working on the card, release it
+  otherwise.
 
 Events: `task_claimed`, `task_released`, `task_assigned`; each one that
 moves a card away from an instance has that instance in its audience
@@ -8153,8 +8249,8 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
   the first entry that is `available`, not itself covered, and may take
   that item (below); a human substitute takes items as an agent does.
   Claims move, they are not dropped: holder and `claim.session_id`
-  change, the lease restarts at `policy.lease_seconds`, checkpoint and
-  branch stay on the card. An assignment moves `assigned_to`. A request
+  change, `claim.since` becomes the move, the lease restarts at
+  `policy.lease_seconds`, checkpoint and branch stay on the card. An assignment moves `assigned_to`. A request
   keeps its `to` and gains `cover`; the substitute reads it, finds it in
   its inbox and answers it as the addressee would (§7), recorded with
   `on_behalf_of` = the covered member. Each moved card and request
@@ -8212,8 +8308,8 @@ ping-pong. Touched means: for a card, the substitute claimed it,
 checkpointed, reported or changed its status after the move (a claim
 that only moved with the cover does not count); for a request, it
 answered it. Everything else returns to the member, with `cover`
-cleared: a held card goes back to the member as holder with the lease
-restarted, an assignment back to `assigned_to` = the member, an open
+cleared: a held card goes back to the member as holder, `claim.since`
+the return and the lease restarted, an assignment back to `assigned_to` = the member, an open
 request simply loses `cover`. `cover_ended` lists the first as `kept`
 and the rest as `returned`. While a cover runs, area routing sends a new
 card for the member to its substitute, with `cover` set; area routing is
@@ -9777,7 +9873,7 @@ outstanding, `null` once confirmed), and
 the member view `keep_the_why_unconfirmed`: `true` while any of its
 instances is past its `acknowledge_by` without a confirmation, else
 `false`. Humans, and agents in a project under `optional`, carry
-neither. The Team view (`members`, §16.11) shows it as a mark with the deadline, not as
+neither. The Team view (`team`, §16.11) shows it as a mark with the deadline, not as
 an error.
 
 **The why on a code report.** `why` on a report (§6.6) has one shape
@@ -10875,9 +10971,15 @@ member without `requests:answer` is `invalid`
 silently; `trust:owner` is the same as `owner`; `needs_in_session` is sent
 as `{reason, member_id, session_id?}` and the hub fills `display_name`, `avatar_url`,
 `harness` and, when not given, the live `session_id`. A card stays
-`blocked` while any `while_open: wait` request of its holder on it is
+`blocked` while any `while_open: wait` request of its holder on it, filed
+at or after the start of the holder's current claim (`claim_since`), is
 open; `blocked_by_request` names the oldest open one, and the remembered
 status is restored only when the last of them is answered or withdrawn.
+A wait filed earlier keeps no block once a later one is answered or
+withdrawn: one filed while the card was unheld, which blocked nothing,
+and one from an earlier claim the holder released. The request itself
+stays open. The cut is a timestamp, so a wait filed at the very instant
+the claim began still counts.
 
 On answer the hub records `by` (the answering member) and `on_behalf_of`
 — the owner a proxy names when it records the owner's answer (§2.3);
@@ -11194,6 +11296,7 @@ learns its content.
 | `member_not_listening` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null` or that boss is of another owner), `ended: true` when it ends (wakes nobody) |
 | `holder_stalled` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent, and nobody when `reports_to` is `null` or that boss is of another owner; never the holding instance, for which it is not wake-relevant |
 | `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
+| `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd) | `instance:` of the holder; for claims a bridge holds, `member:` of the served agent | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], warn_seconds}` (§6.5), one per holder and worker pass, each claim once per lease period (`instance` and `session_id` `null` for claims a bridge holds). Wakes the holding instance, or the served agent's bridges as any event for it (§2.3); never waits for anyone (§5.3) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -11268,7 +11371,9 @@ resume. A token `instance:` and the broadcast set (`all`) are not
 narrowed: they wake their instance, and every instance — except the
 holder's `instance:` token on `holder_stalled` and `claim_expired`
 (§6.5), which is not wake-relevant, so such an event never waits for
-the holder (§5.3).
+the holder (§5.3). `claim_lease_expiring` (not built yet,
+tsk-p55zyn4pz0wd) is the opposite: it is meant for the holder and
+wakes it, and waits for nobody (§5.3).
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,
@@ -14336,6 +14441,7 @@ and `resolveEntry`, and any write.
 | GET, PATCH | `/projects/{owner}/{slug}/tasks/{id}` | `project:read` / holder, creator, `tasks:admin` | 6.4 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/release` | holder / `tasks:admin` | 6.5 |
+| POST | `/projects/{owner}/{slug}/claims/renew` (not built, tsk-p55zyn4pz0wd) | any member, its own claims | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin` / the agent's lead instance | 6.5, 6.18 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/takeover` | `tasks:write` | 6.19 |
 | DELETE | `/projects/{owner}/{slug}/tasks/{id}/objection-hold` (not built, §6.19) | the human who objected (member or not), or a human with `tasks:admin` | 6.19 |
@@ -14613,7 +14719,7 @@ try again then` and exits with 7, its own code, never 1.
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
-| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
+| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that names the card id in neither its title, its body nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
 | `maity task list [--parent ID] [--status S] [--json]` | `GET /tasks` with `limit=200` and the filters, every page; `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |
@@ -14624,6 +14730,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity ask "…" --to T --class C --option … --priority P --task ID [--action "METHOD PATH[?QUERY]" [--action-body FILE\|-]]` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default); `--action` (a proxy asking the owner's go for one call, §2.3) sends `action: {method, path, query, body}`, `body` read verbatim from `--action-body`; the later `maity api … --on-request` must send the same bytes |
 | `maity request withdraw <request> [--reason R]` | `POST /projects/{owner}/{slug}/requests/{id}/withdraw` with `{reason}` for a request the caller asked, or with `requests:answer` any open request of the project that is not personal (§7); prints `withdrawn`. The hub's refusals as they come, `not_found` for a personal request among them. Beside `request forward` and `request claim`, not under `maity ask`, so that a question that starts with the word stays a question |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
+| `maity claim renew [card]` (not built yet, tsk-p55zyn4pz0wd) | `POST …/claims/renew` (§6.5); renews every claim of the calling instance, whatever the argument, and prints one line per renewed card, `renewed <card> (<title>); lease until <lease_until>`, or `no claims` (exit 0). With a card, only that card's line, and `not holding <card>` (exit 1) when the renewal did not include it. `renew` is no card id (those start with `tsk-`), so it never shadows `maity claim <card>` |
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
 | `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. |
 | `maity memory [--agent\|--role\|--community\|--soul] [--json]` | `GET /projects/{owner}/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. |
@@ -18055,7 +18162,7 @@ name.
 Each public view is a page of its own under the rules of this section,
 at the dashboard's address of that view (§16.11): Overview is the
 project's page above (`/{owner}/{slug}`), the others are
-`/{owner}/{slug}/board`, `/{owner}/{slug}/members`,
+`/{owner}/{slug}/board`, `/{owner}/{slug}/team`,
 `/{owner}/{slug}/organisation` and `/{owner}/{slug}/why`. Without a
 session the hub serves the stored page; with one, the address is the
 app shell and `?as=public` shows the stored page, as for every page here.
@@ -18073,7 +18180,7 @@ the list answers the app shell.
   id links to the card's own page (below), which has the body and notes. A card under a moderation
   hold (§16.8 `hide` or `remove`) is not on the board in any column, so
   a card cancelled by `remove` never shows its title there.
-- **Team** (at `/{owner}/{slug}/members`) — the members shown on the project's page, each with
+- **Team** (at `/{owner}/{slug}/team`) — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
   role. No presence, no instances, no avatar (a picture is on the
@@ -18505,7 +18612,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
-| `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
+| `team` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
 | `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
@@ -18682,10 +18789,10 @@ names:
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; the path keeps `members`, the maintainer's decision of 2026-11-09, req-77az2zs017fe; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
-public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
+public views `/<owner>/<slug>/board`, `/team`, `/organisation` and
 `/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>`, a person's agents at `/<handle>/agents` and an agent's `/<owner>/agents/<handle>`,
 where the first segment is not reserved (below):
 
@@ -18928,6 +19035,12 @@ the other three parts are not shown. The maintainer's request of
 wrapped over three rows on a phone. From 601 pixels on, all four parts
 show as above. This holds on every page with the line, the dashboard's
 and the hub's own.
+
+**Target size.** Every link of the line is at least 24 CSS pixels high,
+and each icon link (GitHub, Maity) is 24 pixels wide as well: the target
+size of WCAG 2.5.8, whatever stands on the row above or below it when
+the line wraps between its parts. A link never wraps inside itself. This
+too holds on the dashboard's pages and on the hub's own.
 
 Every link is absolute and the same on every instance. The Maity link
 names maity.team, not the instance's own host: the maintainer's page

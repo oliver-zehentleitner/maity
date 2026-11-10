@@ -44,7 +44,7 @@ sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. To their left, where the project has them,
 links in tabs of their own: its repository, with the forge's name and
 mark (GitHub and GitLab their own; Gitea and any other a branch mark),
-**Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
+**Actions** on GitHub and Gitea, **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
 links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
 member at `path: ""`); each only when its address is plain `https`. On a
@@ -84,7 +84,10 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
   and by no tab: while there are some, a line beside the tabs ("1 unread
   mention") links to them on **All notifications**, filtered to this
   project (`/notifications?kind=mention&project=<owner>/<slug>`), and
-  every counts read fills that line again.
+  every counts read fills that line again. The **Chat** tab leaves the
+  line out (the maintainer's choice): its list marks a chat with an unread
+  mention (`@`); mentions in project messages and on cards stay in the
+  bell and on the other tabs' line.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 
@@ -182,7 +185,7 @@ pages itself where it serves them. There are no `#/` routes and no redirects fro
 |---|---|
 | `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard, which shows a visitor "not found" in the frame ("does not exist, or it is not public", `js/not-found.js`) with the sign-in one link away; signed in, **View public page** opens it with `?as=public` where one is served |
 | `/<owner>/<slug>` | a project: where it has a public page, a visitor and a signed-in non-member read it in the dashboard at the same address, read-only (`js/visitor.js`, `docs/api.md` §16.9); so do its `/overview` and `/overview/project`, which show the public overview. A visitor at any other view of the project gets the sign-in, which goes on there, and at a word that is no view "not found" in the frame (`js/not-found.js`); a non-member at `/overview/swarm` is taken to `/overview`. Signed in as a member, the project's inbox, with **View public page** (`?as=public`) where one is served |
-| `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream brings a chat or mention or moves the chat counts, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
+| `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream brings a chat or mention or moves the chat counts, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover); a pinned chat shows its 📌, and the pin buttons to pin or unpin show only while the 📌 toggle beside the heading is pressed (for this page, never stored), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context, going from one to another changes the pane alone; **← Conversations** goes back to `/chats` |
 | `/all/jour-fixe`, `/all/why` | a project's Jour fixe and Why side by side for every project of the reader (`js/all-pages.js`), one read per project, each section filled when its answer comes |
 | `/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
@@ -569,7 +572,7 @@ too.
    fields are hidden and disabled, so the browser does not validate them;
    an answer that comes after its form was cancelled leaves a form opened
    since as it is.
-4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `?manage=<id>` opens that
+4. **Team** (`/<owner>/<slug>/team`, `docs/api.md` §6.2; `?manage=<id>` opens that
    member's Manage row for an admin, focused): everyone in the
    project as a neutral list, humans first, then agents, each with name and handle
    (a link to the member), a **Chat** button (one's own agent: its direct chat;
@@ -635,7 +638,7 @@ too.
    30 s and updated in place; a redraw keeps the keyboard focus (Manage
    to the opened row's role, Done back to Manage). On a phone each row is
    a card with its cells labelled.
-   **A member's page** (`/<owner>/<slug>/members/<id>[/<tab>]`, `js/member-page.js`,
+   **A member's page** (`/<owner>/<slug>/team/<id>[/<tab>]`, `js/member-page.js`,
    every member link and mention leads there; the designer's handover #6484, read only):
    a breadcrumb back to Members, a header — the 64 px avatar with its presence dot, the
    name and @handle, pills for trust and role, "agent of @owner", "reports to @x" and the
@@ -1387,7 +1390,7 @@ mention cap and rate are said in words.
 **Mentions** (`docs/api.md` §8.6). Where the dashboard shows a text the
 hub scans — a request's summary, what it tried and the answer's text,
 a report's summary — each mention the hub stored for that field is a
-link to the member (`/<owner>/<slug>/members/<id>`), taken from the text at
+link to the member (`/<owner>/<slug>/team/<id>`), taken from the text at
 its offset (code points) only where it reads `@` and the stored handle,
 or `@` and the stored global name for a long mention, either followed by
 `#` and the stored instance for an instance mention (§6.17; it links to

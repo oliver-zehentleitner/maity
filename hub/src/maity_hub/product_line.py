@@ -61,10 +61,14 @@ _GITHUB_MARK = (
 # without a `--muted` of its own gets the dashboard's light muted colour. At phone width,
 # at most 600 CSS pixels, only the first part shows, "Maity 2026", as on the dashboard
 # (§16.13, tsk-fnch2yxp2kk1): the rest wrapped the line over three rows there. The rule is
-# part of the block, so the strict pages' hash allows it with the rest.
+# part of the block, so the strict pages' hash allows it with the rest. Every link is at least
+# 24 px high and each icon link 24 px wide, the dashboard's targets (WCAG 2.5.8; web/css/app.css
+# `.product-line a`, `.product-icon`), and a link never wraps inside itself.
 STYLE = (
     ".product-line{text-align:center;color:var(--muted,#5f6b76);margin:1.5rem 0;padding:0 1rem;"
-    "border:0}.product-line p{margin:0}.product-line a{color:inherit;margin:0}"
+    "border:0}.product-line p{margin:0}.product-line a{color:inherit;margin:0;"
+    "display:inline-flex;align-items:center;justify-content:center;min-height:24px;"
+    "white-space:nowrap}.product-line .product-icon{min-width:24px;vertical-align:middle}"
     ".product-line svg{vertical-align:-2px}"
     "@media (max-width:600px){.product-line .product-sep,"
     ".product-line .product-part~.product-part{display:none}}"
@@ -86,7 +90,8 @@ HEADERS = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer"}
 
 
 def _link(href: str, inner: str, label: str | None = None) -> str:
-    named = f' aria-label="{escape(label)}"' if label else ""
+    """A link of the line; one with a `label` is an icon and gets the icon's target width."""
+    named = f' class="product-icon" aria-label="{escape(label)}"' if label else ""
     return f'<a href="{href}" target="_blank" rel="noopener noreferrer"{named}>{inner}</a>'
 
 

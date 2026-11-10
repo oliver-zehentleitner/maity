@@ -133,6 +133,7 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
             t.invitation.c.used_at.is_(None),
             t.invitation.c.revoked_at.is_(None),
             t.invitation.c.voided_at.is_(None),
+            t.invitation.c.declined_at.is_(None),
             t.invitation.c.expires_at > now,
         )
     ).first():

@@ -107,7 +107,7 @@ window.Maity = window.Maity || {};
     if (!c.assigned_to) return null;
     const m = (ctx.memberById || {})[c.assigned_to];
     const name = ctx.nameOf(c.assigned_to);
-    return h("a", { class: "card-assignee kind-" + (m && m.kind === "human" ? "human" : "agent"), href: ctx.link("members", c.assigned_to),
+    return h("a", { class: "card-assignee kind-" + (m && m.kind === "human" ? "human" : "agent"), href: ctx.link("team", c.assigned_to),
       title: name, "aria-label": M.t("board.assigned_to", { name }) },
       m ? M.avatar(m, 16) : null, h("span", { "aria-hidden": "true" }, handleOf(ctx, c.assigned_to)));
   }
@@ -289,7 +289,7 @@ window.Maity = window.Maity || {};
     if (rc) observed = M.t("board.report.required_check", { text: observed, name: rc.name, status: word(CHECK_WORDS, rc.status) });
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: word(VERIFICATION_WORDS, r.verification) })),
-      h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("members", id), ctx })),
+      h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("team", id), ctx })),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, M.t("board.report.mismatch")) : null,
       whyLine(ctx, r));

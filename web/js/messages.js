@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
         head(h("span", { class: "badge" }, typeWord(x.type))),
         review,
         // Its mentions are links where they stand (the one renderer, js/markdown.js).
-        x.body ? h("div", { class: "md" }, M.markdown(x.body, M.ids.where(ctx), { mentions: x.mentions, hrefOf: (id) => ctx.link("members", id), ctx })) : null,
+        x.body ? h("div", { class: "md" }, M.markdown(x.body, M.ids.where(ctx), { mentions: x.mentions, hrefOf: (id) => ctx.link("team", id), ctx })) : null,
         M.attachments ? M.attachments.render(ctx, { attachments: x.attachments, body: x.body || "" }, canDelete) : null,
         ctx.canAdmin ? h("div", { class: "actions" },
           h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(x) }, M.t("messages.remove"))) : null);

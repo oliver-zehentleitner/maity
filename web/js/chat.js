@@ -81,6 +81,27 @@ window.Maity = window.Maity || {};
     onDone();
   }
 
+  // Whether the chat lists show the pin buttons (tsk-4nf344w4c52c): a mode for managing pins, as
+  // the maintainer uses it, so hidden on every load and stored nowhere; the toggle shows them for
+  // this page until it is pressed again or the page is reloaded. A pinned chat keeps its mark
+  // either way. The lists ask isShown(), so a stored choice could take its place in one spot.
+  const pinColumn = {
+    on: false,
+    isShown() { return pinColumn.on; },
+    // The toggle in a list's heading row; onChange() draws the list again.
+    toggle(ctx, onChange) {
+      const btn = h("button", { type: "button", class: "icon-button pin-column-toggle", "aria-pressed": String(pinColumn.isShown()),
+        "aria-label": M.t("pin.column"), title: M.t("pin.column") }, h("span", { "aria-hidden": "true" }, "📌"));
+      btn.addEventListener("click", () => {
+        const next = !pinColumn.isShown();
+        pinColumn.on = next;
+        btn.setAttribute("aria-pressed", String(next));
+        onChange();
+      });
+      return btn;
+    },
+  };
+
   // Up to three participants' pictures (js/avatar.js); with one, its
   // presence as a dot.
   function avatars(chat) {
@@ -169,7 +190,7 @@ window.Maity = window.Maity || {};
         ? document.activeElement.getAttribute("href") : null;
       clear(ul);
       // A human pins (§9.3): the list is read again for the hub's order.
-      const onPin = ctx.me.kind === "human" ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
+      const onPin = ctx.me.kind === "human" && pinColumn.isShown() ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
       ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId, onPin)));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
@@ -217,7 +238,9 @@ window.Maity = window.Maity || {};
         closedProject || M.trust.guest(ctx) ? null : iconLink("new-group", ctx.link("chat", "new"), M.t("chat.new_group"), M.icons.newGroup),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
-        ctx.outsider ? null : iconLink("message-project", ctx.link("message"), M.t("chat.message_project"), M.icons.writeProject)),
+        ctx.outsider ? null : iconLink("message-project", ctx.link("message"), M.t("chat.message_project"), M.icons.writeProject),
+        // Only a human pins (§9.3); the pin buttons show on asking (tsk-4nf344w4c52c).
+        ctx.me.kind === "human" ? pinColumn.toggle(ctx, () => draw()) : null),
       none, ul, status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };
@@ -336,7 +359,7 @@ window.Maity = window.Maity || {};
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
     const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
-      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("members", id) : null), ctx }));
+      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("team", id) : null), ctx }));
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
@@ -643,7 +666,7 @@ window.Maity = window.Maity || {};
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
   M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, togglePin, LIST_MS, RESYNC };
+    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -976,7 +999,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "toolbar" },
         heading,
         fullScreen(ctx, pane),
-        h("span", { class: "muted" }, agent.session
+        h("span", { class: "muted chat-session" }, agent.session
           ? (agent.session.listening ? M.t("chat.session.listening", { id: agent.session.id }) : M.t("chat.session", { id: agent.session.id }))
           : M.t("chat.session.none")),
         target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, M.t("chat.instance.label")), target,

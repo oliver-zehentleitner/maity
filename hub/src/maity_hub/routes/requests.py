@@ -1223,15 +1223,22 @@ def _status_moved(conn: Connection, card_id: str | None, actor: Any) -> None:
 
 def _unblock(conn: Connection, row: Any) -> str | None:
     """After `row` was answered or withdrawn: the card stays blocked while any other
-    waiting request of its holder on it is open, naming the oldest; when none is
-    left, the remembered status comes back (§7). Returns the card whose status moved, for
-    `_status_moved` after the caller's event."""
+    waiting request of its holder on it, filed at or after the current claim's start
+    (`claim_since`), is open, naming the oldest; when none is left, the remembered status
+    comes back (§7). Returns the card whose status moved, for `_status_moved` after the
+    caller's event."""
     if row.task_id is None:
         return None
     card = conn.execute(select(t.card).where(t.card.c.id == row.task_id)).one()
     if card.status != "blocked":
         return None
     holder = card.claim_holder
+    # Only the waits filed at or after this claim's start count: one filed while the card was
+    # unheld blocked nothing, one from an earlier claim lost its block at the release. The cut
+    # is a timestamp, so a wait at the claim's very instant still counts. Every change of
+    # holder sets `claim_since` (a claim, the expired claim's move, a takeover, a cover's move
+    # and its return), a renewal does not; a claim without it counts every wait.
+    since = [] if card.claim_since is None else [t.request.c.created_at >= card.claim_since]
     still_waiting = conn.execute(
         select(t.request.c.id)
         .where(
@@ -1241,6 +1248,7 @@ def _unblock(conn: Connection, row: Any) -> str | None:
             t.request.c.personal.is_(False),  # never a card's blocker: its id stays hidden (§7)
             t.request.c.id != row.id,
             (t.request.c.asked_by == holder) | (t.request.c.on_behalf_of == holder),
+            *since,
         )
         .order_by(t.request.c.created_at, t.request.c.id)
     ).first()
@@ -2476,6 +2484,7 @@ def answer_personal(
             actor,
             reply_id=body.reply_id,
             hub=settings_of(request),
+            answerer=caller,
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
@@ -2497,8 +2506,15 @@ def answer_personal(
         return idempotency.run(engine_of(request), request, caller, action)
     except proposals.Stale as stale:
         # The go no longer applies (an expired invitation): the request is withdrawn and the
-        # kind's own clean-up runs, nothing else changes, as on the project route.
+        # kind's own clean-up runs, nothing else changes, as on the project route. Under its
+        # project's lock first, as the answer took it: the clean-up of a project's invitation
+        # (§3.4) writes the invitation as a revocation does, project before request.
         with events.transaction(engine_of(request)) as conn:
+            project_id = conn.execute(
+                select(t.request.c.project_id).where(t.request.c.id == stale.request_id)
+            ).scalar()
+            if project_id is not None:
+                lock_project(conn, project_id)
             close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
         raise stale.error from None
 

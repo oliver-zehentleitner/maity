@@ -97,6 +97,10 @@ def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = N
             subject=("member", human_id),
         )
         _entered(conn, project, in_set_before, "joined", by or human_id)
+        from maity_hub import invitations
+
+        # A member now: their open invitations by handle to it end (§3.4).
+        invitations.joined(conn, project.id, human_id, HUB)
         return
     if found.trust == "owner":
         return  # their own ownership, or one the hub keeps already

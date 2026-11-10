@@ -208,6 +208,8 @@ def derive_page(
     newest_first: bool,
     wanted: Callable[[Item], bool],
     since: Any = None,
+    kinds: set[str] | None = None,
+    projects: set[str] | None = None,
 ) -> list[Item]:
     """The items a page of `count` can reach: of each project's events, of its plain chat
     messages and of the account records, only the first `count` that `wanted` accepts,
@@ -216,10 +218,19 @@ def derive_page(
     the counts read `count_items` instead.
 
     A message row whose payload text names the human may be a mention, so it is derived
-    with the rest; the text test only selects (a false hit is classified like any row)."""
+    with the rest; the text test only selects (a false hit is classified like any row).
+
+    `kinds` and `projects`, the page's filters (`wanted` applies them too): a source that can
+    give no item of them is not read at all, since every row it holds would be rejected one
+    chunk at a time to the end of the window (tsk-p8w1s1zwsx2y). The plain chats give only
+    `chat`; the events besides them give `inbox` only from requests and the jour fixe, so
+    without `inbox` only their messages and mentions are read; the records give no `chat` and
+    no `mention`; a project outside `projects` gives nothing."""
     now = clock.now()
     found: list[Item] = []
     for mine in where.memberships:
+        if projects is not None and mine.project.id not in projects:
+            continue
         window = _event_window(where, mine, now)
         if since is not None:
             # Read after a position (`after`, oldest first): start right behind it, so a held
@@ -228,12 +239,9 @@ def derive_page(
             floor = max(since.projects.get(mine.project.id, start), start)
             window = (*window, t.event.c.seq > floor)
         # A personal request's events never make an item (`_classify`: it is one item,
-        # from its record), so they are left out in SQL, not read and dropped one by one.
-        personal = (
-            select(t.request.c.id)
-            .where(t.request.c.id == t.event.c.subject_id, t.request.c.personal.is_(True))
-            .exists()
-        )
+        # from its record), nor do a request's that is another member's alone, so both
+        # are left out in SQL, not read and dropped one by one.
+        concerned = _may_concern(mine)
         # One item per request, the latest addressed one (`ADDRESSED`): `_items_of` keeps
         # it only among the rows it is given, so a page read in chunks takes only the
         # newest such event of each request. Every one of them is classified alike, since
@@ -250,24 +258,70 @@ def derive_page(
             )
             .exists()
         )
-        others = (
+        others: tuple[Any, ...] = (
             t.event.c.kind.in_(EVENT_KINDS),
             or_(t.event.c.kind != "message", _names(where.human_id)),
-            or_(t.event.c.kind.notin_(REQUEST_EVENTS), ~personal),
+            or_(t.event.c.kind.notin_(REQUEST_EVENTS), concerned),
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
+        if kinds is not None and "inbox" not in kinds:
+            others = (*others, t.event.c.kind.in_(("message", "mentioned")))
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
         # Its first chunk is a whole one: few of these rows are rejected, so one statement
         # covers a page whatever the history, as the load test keeps (test_load.py).
-        found += _paged(
-            conn, where, mine, window, others, lambda i: True, count, newest_first, wanted, CHUNK
+        if kinds is None or kinds & {"inbox", "mention", "chat"}:
+            found += _paged(
+                conn,
+                where,
+                mine,
+                window,
+                others,
+                lambda i: True,
+                count,
+                newest_first,
+                wanted,
+                CHUNK,
+            )
+        if kinds is None or "chat" in kinds:
+            found += _chats(conn, where, mine, window, count, newest_first, wanted)
+    if kinds is None or kinds - {"chat", "mention"}:
+        found += _records_paged(
+            conn,
+            where,
+            now,
+            count,
+            newest_first,
+            wanted,
+            None if since is None else since.account,
         )
-        found += _chats(conn, where, mine, window, count, newest_first, wanted)
-    found += _records_paged(
-        conn, where, now, count, newest_first, wanted, None if since is None else since.account
-    )
     found.sort(key=lambda item: item.order, reverse=True)
     return found
+
+
+def _may_concern(mine: Membership) -> Any:
+    """A request event's request is not personal and may concern the member: a superset of
+    `_request_concerns` (the exact test, in `_classify`). Left out is a request filed to
+    another member that no admin pool holds, nobody covers, and the member neither holds
+    nor asked: agents asking each other, which make no item of the human's
+    (tsk-spa1tad26vs1)."""
+    r = t.request.c
+    return (
+        select(r.id)
+        .where(
+            r.id == t.event.c.subject_id,
+            r.personal.is_(False),
+            or_(
+                r.to_kind != "member",
+                r.to_member == mine.id,
+                r.holder_member == mine.id,
+                r.holder_pool.is_(True),
+                r.cover.is_not(None),
+                r.asked_by == mine.id,
+                r.on_behalf_of == mine.id,
+            ),
+        )
+        .exists()
+    )
 
 
 def _names(human_id: str) -> Any:
@@ -278,6 +332,12 @@ def _names(human_id: str) -> Any:
     return and_(
         text.contains("member_id", autoescape=True), text.contains(human_id, autoescape=True)
     )
+
+
+def _addressed(human_id: str) -> Any:
+    """A row whose audience text holds the human's `member:` token: a superset of the rows
+    whose audience lists it (the exact test is `_classify`)."""
+    return cast(t.event.c.audience, String).contains(f'"member:{human_id}"', autoescape=True)
 
 
 def _paged(
@@ -335,8 +395,16 @@ def _chats(
     newest_first: bool,
     wanted: Callable[[Item], bool],
 ) -> list[Item]:
-    """The first `count` plain chat items of one project that `wanted` accepts."""
-    plain = (t.event.c.kind == "message", ~_names(where.human_id))
+    """The first `count` plain chat items of one project that `wanted` accepts. A chat
+    item is a conversation's message whose audience names the human (`_classify`), so
+    only those rows are read: the other messages of the project, agents writing to each
+    other, are no item of the human's however many there are (tsk-spa1tad26vs1)."""
+    plain = (
+        t.event.c.kind == "message",
+        ~_names(where.human_id),
+        t.event.c.conversation_id.is_not(None),
+        _addressed(where.human_id),
+    )
     return _paged(
         conn, where, mine, window, plain, lambda i: i.kind == "chat", count, newest_first, wanted
     )
