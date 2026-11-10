@@ -1696,3 +1696,56 @@ is the way left to put a question to a person.
   at the pane is not asked through this tool either; letting them ask would
   mean changing `dontAsk` for every other prompt there, a decision of its
   own. Codex keeps its question tool in an interactive placement.
+
+## `maity runner install` sets up the system service; an incomplete configuration is enabled, not started
+
+**Id:** 84732ea1-d314-465d-939c-fd274b2f8b0d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); `cli/src/maity/runner/install.py`. The four choices below are the implementer's within that scope, not confirmed by the maintainer.
+**Revisit when:** a per-user (`systemctl --user`) variant is wanted, the shipped unit's `ExecStart` line changes, or `install` learns to write `[limits]` and a harness itself
+
+`sudo maity runner install <pairing url> --code-file -` does the steps the
+unit's header lists:
+1. It checks for Linux, root, systemd, tmux and runuser.
+2. It creates the `maity-runner` system user and `/var/lib/maity-runner`
+   (state, workspaces; 0700, owned by that user).
+3. It writes `/etc/maity-runner/runner.toml` and the unit.
+4. It pairs as that user.
+5. It runs `systemctl daemon-reload` and `enable`.
+6. It runs `maity runner check`.
+
+Files that already exist and differ are kept unless `--force`. A second run
+skips what is done, and a runner already paired needs no code.
+`uninstall` stops and disables the service, ends its agents and removes the
+unit. `--purge` also removes state, workspaces, the configuration and the
+user.
+
+1. **`ExecStart` names the interpreter of the `maity` that runs `install`**
+   (`<python> -I -m maity runner serve …`), the way the agents' side already
+   starts it.
+   - Rejected: keeping `/usr/local/bin/maity`. A pipx install lives
+     elsewhere.
+   - Rejected: looking `maity` up on PATH. `sudo` resets PATH to its
+     secure path, so the lookup would find another copy, or none.
+2. **Before pairing, `install` checks that the service user can run that
+   interpreter.** A pipx install under a home the service user cannot
+   enter would otherwise only fail when the service starts. That would
+   come after the single-use code is spent.
+3. **A configuration still missing `[limits]` or a harness gets the service
+   enabled, not started, with the missing keys listed.** `serve` exits 78
+   on such a configuration, and the unit does not restart 78. A started
+   service would sit failed until someone restarted it by hand.
+   - Rejected: refusing `install` until the configuration is complete. The
+     person would then write the file `install` exists to write.
+   - Rejected: guessing projects, repositories or a harness. Those are the
+     operator's choices.
+4. **`uninstall` ends the agents (`stop-all`) after stopping the service.**
+   The unit's `KillMode=process` keeps agents running across a service
+   stop. Once the unit is gone, nothing would supervise or stop them.
+   - Rejected: leaving them running. Agents would go on working with a
+     credential whose runner is gone.
+
+Every call that touches the system goes through one `Host` seam, so the tests
+run without root or systemd.

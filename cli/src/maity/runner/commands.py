@@ -20,6 +20,7 @@ from .. import hub, onboarding, state
 from . import (
     capabilities,
     config,
+    install,
     limitread,
     loop,
     operate,
@@ -629,6 +630,19 @@ def _operate(name: str) -> Any:
     return handler
 
 
+def _installer(command: Any) -> Any:
+    """install/uninstall, their refusals as this module's (exit 2)."""
+
+    def handler(args: argparse.Namespace) -> int:
+        try:
+            result: int = command(args)
+        except install.Refused as exc:
+            raise Refused(str(exc)) from None
+        return result
+
+    return handler
+
+
 # --- parser ----------------------------------------------------------------------------------
 
 
@@ -723,10 +737,44 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "unit",
         help="print the systemd unit for running serve as a service",
         description="Print the systemd unit shipped with this package; its comments say how "
-        "to install it (`maity runner unit > /etc/systemd/system/maity-runner.service`).",
+        "to install it by hand (`maity runner unit > /etc/systemd/system/maity-runner.service`). "
+        "`sudo maity runner install` does those steps.",
         formatter_class=fmt,
     )
     r.set_defaults(handler=cmd_unit)
+
+    r = rsub.add_parser(
+        "install",
+        help="as root: set this machine up to run the runner as a systemd service",
+        description=f"Linux with systemd and tmux, as root. Creates the {install.USER} system "
+        f"user and {install.HOME} (state, workspaces), writes {install.CONFIG} and "
+        f"{install.UNIT_PATH} with the path of this maity, pairs as {install.USER}, enables the "
+        "service and runs `maity runner check`. Existing files are left as they are unless "
+        "--force. While the configuration still lacks [limits] or a [harness.<id>], the service "
+        "is enabled but not started, and what is missing is listed. Run again after a change: "
+        "steps already done are skipped, a runner already paired needs no code.",
+        formatter_class=fmt,
+    )
+    r.add_argument("url", help="the pairing URL (https://<hub>/r/<token>)")
+    code = r.add_mutually_exclusive_group()
+    code.add_argument("--code", help="the single-use pairing code")
+    code.add_argument("--code-file", help="read the code from this file, or stdin with -")
+    r.add_argument("--config", help=f"configuration file (default {install.CONFIG})")
+    r.add_argument("--force", action="store_true", help="rewrite the configuration and the unit")
+    r.set_defaults(handler=_installer(install.cmd_install))
+
+    r = rsub.add_parser(
+        "uninstall",
+        help="as root: stop and remove the runner's systemd service",
+        description=f"Stops and disables the service, ends the agents it started (`stop-all`) "
+        f"and removes {install.UNIT_PATH}. With --purge also {install.HOME} (state, credential, "
+        f"workspaces with any unpushed work), the configuration and the {install.USER} user. "
+        "The hub keeps listing the runner until it is removed in the dashboard.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {install.CONFIG})")
+    r.add_argument("--purge", action="store_true", help="also remove state, workspaces and user")
+    r.set_defaults(handler=_installer(install.cmd_uninstall))
 
     def runner_cmd(name: str, summary: str, description: str) -> argparse.ArgumentParser:
         r: argparse.ArgumentParser = rsub.add_parser(
