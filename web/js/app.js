@@ -1477,6 +1477,10 @@ window.Maity = window.Maity || {};
           { label: M.t("tabs.keep_at_start"), onSelect: () => {
             M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
           } },
+          // A new project here too, beside the projects, where one looks for it (the owner,
+          // 2026-11-10, tsk-c4dz5x6rb2h8); the "+" menu keeps its entry. Humans only, as there.
+          ctx.me.kind === "human" ? { separator: true } : null,
+          ctx.me.kind === "human" ? { label: M.t("view.new_project"), href: "/new", current: ctx.scope === "new" } : null,
         ].filter(Boolean);
       },
     });
