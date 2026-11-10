@@ -37,13 +37,32 @@ _lock = threading.Lock()
 
 
 class Refused(Exception):
-    """The workspace cannot be used: `reason` and `detail` as reported (§15.7)."""
+    """The workspace cannot be used: `reason` and `detail` as reported (§15.7). `why` is
+    for the runner's own log only, never for the hub: the report carries codes, and a
+    tool's message is no code."""
 
-    def __init__(self, reason: str, detail: str | None = None, exit_code: int | None = None):
+    def __init__(
+        self,
+        reason: str,
+        detail: str | None = None,
+        exit_code: int | None = None,
+        why: str | None = None,
+    ):
         super().__init__(f"{reason}/{detail}" if detail else reason)
         self.reason = reason
         self.detail = detail
         self.exit_code = exit_code
+        self.why = why
+
+
+def said(text: str) -> str | None:
+    """The last line a tool wrote, for the runner's log: printable, at most 300 characters,
+    and a URL's user part masked (a repository URL carries none, but a redirect could)."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return None
+    line = "".join(ch if ch.isprintable() else "?" for ch in lines[-1])
+    return re.sub(r"://[^/\s@]+@", "://…@", line)[:300]
 
 
 @dataclass(frozen=True)
@@ -180,10 +199,14 @@ def prepare(
                 command, cwd=workspace.path.parent, timeout=CLONE_TIMEOUT,
                 transports=":".join(PROTOCOLS),
             )  # fmt: skip
-    except (proc.ToolError, subprocess.TimeoutExpired):
-        raise Refused("clone_failed") from None
+    except proc.ToolError as exc:
+        raise Refused("clone_failed", why=said(str(exc))) from None
+    except subprocess.TimeoutExpired:
+        why = f"git clone did not end within {CLONE_TIMEOUT:.0f} s"
+        raise Refused("clone_failed", why=why) from None
     if done.returncode != 0:
-        raise Refused("clone_failed", exit_code=done.returncode)
+        why = said(done.stderr or "") or f"git clone exited {done.returncode}"
+        raise Refused("clone_failed", exit_code=done.returncode, why=why)
     record(cfg.state_dir, workspace, agent, placement_id)
 
 
