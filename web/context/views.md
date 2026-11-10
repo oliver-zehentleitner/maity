@@ -5842,7 +5842,8 @@ reports nothing).
 In an agent's credentials list (its row on Team, its Details on Agents) each credential names its
 instance after its id as `<handle>#<id>`: the `#id` links to that instance on the member's
 Sessions tab, and an active one shows its presence from the member list. The revoke confirmation
-names the same address ("Revoke maity-coder-claude-001#qwju (crd-…)?").
+names the same address, by the same handle rule (owner/handle where two members share the
+short one): "Revoke maity-coder-claude-001#qwju (crd-…)?".
 
 **Reason:** revoking a credential ends that instance's session at once. With two instances of one
 agent the list showed only ids, client, created and last used, so the right one was picked by its

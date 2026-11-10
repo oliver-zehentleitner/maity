@@ -1370,6 +1370,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.confirm = credConfirm; win.Maity.api.post = credPost;
     expect(asked === "Revoke agent-c#k3pa (crd-c-0003)? Its session loses access at once." && posted === 0,
       "credentials: the revoke confirmation names the instance; declined, nothing is revoked " + JSON.stringify(asked));
+    // Two members share the short handle: the row and the confirmation both say owner/handle#id.
+    const dupMembers = [
+      { id: "agt-x1", kind: "agent", handle: "agent-c", name: "owner/agent-c", display_name: "C", instances: [{ id: "k3pa", presence: "online" }] },
+      { id: "agt-x2", kind: "agent", handle: "agent-c", name: "anna/agent-c", display_name: "Anna's C", instances: [] }];
+    const dupCtx = { members: dupMembers, memberById: { "agt-x1": dupMembers[0], "agt-x2": dupMembers[1] }, base: "/synthetic",
+      link: (...parts) => "/maintainer/maity/" + parts.join("/") };
+    const dupBox = win.Maity.agentParts.credentials(dupCtx, dupMembers[0], { items: [{ id: "crd-shared", instance: "k3pa", client: "cli", created_at: "2026-11-01T09:00:00Z" }] });
+    let dupAsked = null;
+    win.confirm = (q) => { dupAsked = q; return false; };
+    btn(dupBox, "Revoke").click(); for (let k = 0; k < 2; k++) await tick();
+    win.confirm = credConfirm;
+    const dupInst = dupBox.querySelector(".credential-instance");
+    expect(dupInst && text(dupInst) === " · owner/agent-c#k3pa Online"
+      && dupAsked === "Revoke owner/agent-c#k3pa (crd-shared)? Its session loses access at once.",
+      "credentials: where two members share the handle, the row and the confirmation both name owner/handle#id " + JSON.stringify([dupInst && text(dupInst), dupAsked]));
   }
   expect(text(agCRow).includes("Areas") && text(agCRow).includes("Capabilities"), "areas and capabilities");
   expect(!text(agCRow).includes("The agent was told at once"), "an agent's own pause is a declaration, without that line");

@@ -38,9 +38,11 @@ window.Maity = window.Maity || {};
       : null;
     return h("span", { class: "credential-instance" }, " · ", ref, presence);
   }
-  // What the revoke confirmation names: the instance's address as people read it.
-  function addressOf(m, c) {
-    return (m.handle || m.display_name || m.id) + (c.instance ? "#" + c.instance : "");
+  // What the revoke confirmation names: the instance's address as its row says it, by the
+  // project's handle rule (M.dom.handleOf: owner/handle where two members share the short one).
+  function addressOf(ctx, m, c) {
+    const known = (ctx.memberById && ctx.memberById[m.id]) || m;
+    return (M.dom.handleOf(ctx, known) || m.display_name || m.id) + (c.instance ? "#" + c.instance : "");
   }
 
   // revoked(): what follows a revocation; the whole view drawn anew without one.
@@ -72,7 +74,7 @@ window.Maity = window.Maity || {};
             type: "button",
             class: "danger",
             onclick: async (e) => {
-              if (!window.confirm(M.t("agentparts.credential.revoke_confirm", { id: c.id, address: addressOf(m, c) }))) return;
+              if (!window.confirm(M.t("agentparts.credential.revoke_confirm", { id: c.id, address: addressOf(ctx, m, c) }))) return;
               e.target.disabled = true;
               status.busy(M.t("agentparts.credential.revoking"));
               try {
