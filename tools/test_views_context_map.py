@@ -7,11 +7,15 @@ Standard library only, so CI runs them without installing anything:
 from __future__ import annotations
 
 import io
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import split_views_context as split
 import views_context_map as vcm
 
 ONE = "11111111-1111-4111-8111-111111111111"
@@ -50,8 +54,9 @@ class Map(unittest.TestCase):
 
     def test_this_repository_maps_every_moved_entry(self) -> None:
         entries = vcm.load()
-        self.assertEqual(len(entries), 179)
-        self.assertEqual(len({entry.id for entry in entries}), 179)
+        table = split.load_table()
+        self.assertEqual(len(entries), len(table))
+        self.assertEqual({entry.id for entry in entries}, {entry_id for entry_id, _ in table})
         files = {entry.file for entry in entries}
         self.assertEqual(files, {f"{name}.md" for name in vcm.FAMILIES})
         inbox = vcm.resolve(entries, "a8f4ac34")
@@ -88,6 +93,27 @@ class Map(unittest.TestCase):
             code = vcm.main([target.id])
         self.assertEqual(code, 0)
         self.assertTrue(out.getvalue().startswith(f"{target.id}\t{target.file}\t"))
+
+    def test_zero_context_hunk_uses_the_old_line_number(self) -> None:
+        entries = vcm.load()
+        spans = vcm.source_spans(entries, vcm.source_order())
+        hunk = "@@ -567 +567 @@\n-place.\n+one place.\n"
+        rows = vcm.match_hunk(hunk, entries, spans)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], "561b77f6-2a12-4352-aa50-36a8aa773fbe")
+        self.assertEqual(rows[0][1], "account.md")
+
+    def test_new_id_before_a_mapped_neighbour_names_it(self) -> None:
+        entries = vcm.load()
+        hunk = (
+            f"**Id:** {NEW}\n"
+            "\n"
+            "## The inbox is the first screen; board, agents, organisation and chat follow in that order\n"
+        )
+        rows = vcm.match_hunk(hunk, entries)
+        self.assertEqual(rows[0][0], NEW)
+        self.assertEqual(rows[0][1], "new")
+        self.assertIn("beside a8f4ac34-b7be-47f0-aaec-dc494e6c2080 in inbox.md", rows[0][2])
 
     def test_cli_unknown_id(self) -> None:
         out = io.StringIO()

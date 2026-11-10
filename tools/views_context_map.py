@@ -2,7 +2,9 @@
 """Map each entry that was in web/context/views.md to the topic file it moved to.
 
 The split is a move: an entry's id is the same, and its text is the text it
-had in views.md. This reads those entries back out of the topic files.
+had in views.md, except a See or prose locator whose path was views.md and is
+now the topic file that holds the cited id. This reads those entries back out
+of the topic files.
 
     python3 tools/views_context_map.py
         One line per entry, id then topic file then heading, then a count
@@ -13,9 +15,14 @@ had in views.md. This reads those entries back out of the topic files.
 
     python3 tools/views_context_map.py --hunk <file>
     python3 tools/views_context_map.py --hunk -
-        A views.md diff hunk, or a piece of that file. Each entry the hunk
-        touches is printed. An id the map does not have is printed as new,
-        with the mapped entry the hunk places it beside, when one is there.
+        A views.md diff hunk, or a piece of that file. A mapped entry is
+        printed when the hunk carries its id, a line of its text at least
+        24 characters long that no other entry has, or an ``@@ -N`` old
+        line number that falls in that entry of the views.md this split
+        was built from (or of the file given with --views). An id the map
+        does not have is printed as new. Its beside note names the mapped
+        entry before it in the hunk, or, when it has none, the mapped
+        entry after it.
 
 Standard library only. Run from anywhere; the files are found from this script.
 """
@@ -145,25 +152,101 @@ def hunk_lines(text: str) -> list[str]:
     return lines
 
 
-def match_hunk(text: str, entries: list[Entry]) -> list[tuple[str, str, str]]:
+HUNK_AT = re.compile(r"^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@")
+
+
+def source_spans(entries: list[Entry], order: list[str]) -> list[tuple[int, int, Entry]]:
+    """1-based line spans of views.md: ``# Views``, a blank line, then entries.
+
+    The blank line between entries belongs to the entry before it, so every
+    line of that file falls in exactly one span. ``order`` is the source order
+    of the ids.
+    """
+    by_id = {entry.id: entry for entry in entries}
+    spans: list[tuple[int, int, Entry]] = []
+    line = 3
+    last = len(order) - 1
+    for index, entry_id in enumerate(order):
+        entry = by_id.get(entry_id)
+        if entry is None:
+            continue
+        start = line
+        end = line + len(entry.lines) - 1
+        if index != last:
+            end += 1
+        spans.append((start, end, entry))
+        line = end + 1
+    return spans
+
+
+def spans_from_views(text: str, entries: list[Entry]) -> list[tuple[int, int, Entry]]:
+    """Line spans of a views.md text, for hunks made against that file."""
+    by_id = {entry.id: entry for entry in entries}
+    spans: list[tuple[int, int, Entry]] = []
+    start: int | None = None
+    entry: Entry | None = None
+    lines = text.splitlines()
+    for number, line in enumerate(lines, 1):
+        if line.startswith("## "):
+            if start is not None and entry is not None:
+                spans.append((start, number - 1, entry))
+            start = number
+            entry = None
+        found = ID_RE.search(line)
+        if found and start is not None and entry is None and found.group(1) in by_id:
+            entry = by_id[found.group(1)]
+    if start is not None and entry is not None:
+        spans.append((start, len(lines), entry))
+    return spans
+
+
+def entry_at(spans: list[tuple[int, int, Entry]], number: int) -> Entry | None:
+    for start, end, entry in spans:
+        if start <= number <= end:
+            return entry
+    return None
+
+
+def old_line_numbers(text: str) -> list[int]:
+    """Old-file line numbers a unified diff hunk deletes or keeps as context."""
+    numbers: list[int] = []
+    old: int | None = None
+    for raw in text.splitlines():
+        match = HUNK_AT.match(raw)
+        if match:
+            old = int(match.group(1))
+            continue
+        if old is None or raw.startswith(("diff --git ", "index ", "--- ", "+++ ", "\\")):
+            continue
+        if raw.startswith("+"):
+            continue
+        if raw.startswith(("-", " ")):
+            numbers.append(old)
+            old += 1
+    return numbers
+
+
+def match_hunk(
+    text: str,
+    entries: list[Entry],
+    spans: list[tuple[int, int, Entry]] | None = None,
+) -> list[tuple[str, str, str]]:
     """Rows for a hunk: (id, file or 'new', note).
 
-    A mapped entry's note is its heading. A new id's note says it is not in
-    the map and, when the hunk sits against a mapped entry, which one.
+    A mapped entry's note is its heading. A new id's note names the mapped
+    entry before it in the hunk, or the one after it when the new id comes first.
     """
     by_id = {entry.id: entry for entry in entries}
     by_line = line_index(entries)
-    rows: list[tuple[str, str, str]] = []
-    seen: set[str] = set()
-    last_mapped: Entry | None = None
+    events: list[tuple[str, Entry | str]] = []
+    seen_mapped: set[str] = set()
+    seen_new: set[str] = set()
 
     def add_mapped(entry: Entry) -> None:
-        nonlocal last_mapped
-        last_mapped = entry
-        if entry.id in seen:
+        if entry.id in seen_mapped:
             return
-        seen.add(entry.id)
-        rows.append((entry.id, entry.file, entry.heading))
+        seen_mapped.add(entry.id)
+        events.append(("mapped", entry))
 
     for line in hunk_lines(text):
         stripped = line.strip()
@@ -174,22 +257,42 @@ def match_hunk(text: str, entries: list[Entry]) -> list[tuple[str, str, str]]:
             entry_id = id_line.group(1)
             entry = by_id.get(entry_id)
             if entry is None:
-                if entry_id not in seen:
-                    seen.add(entry_id)
-                    if last_mapped is None:
-                        note = "not in the views.md map"
-                    else:
-                        note = (
-                            "not in the views.md map; "
-                            f"beside {last_mapped.id} in {last_mapped.file}"
-                        )
-                    rows.append((entry_id, "new", note))
+                if entry_id not in seen_new:
+                    seen_new.add(entry_id)
+                    events.append(("new", entry_id))
             else:
                 add_mapped(entry)
             continue
         owner = by_line.get(line)
         if owner is not None:
             add_mapped(owner)
+    if spans is not None:
+        for number in old_line_numbers(text):
+            owner = entry_at(spans, number)
+            if owner is not None:
+                add_mapped(owner)
+    rows: list[tuple[str, str, str]] = []
+    for index, (kind, value) in enumerate(events):
+        if kind == "mapped":
+            entry = value
+            assert isinstance(entry, Entry)
+            rows.append((entry.id, entry.file, entry.heading))
+            continue
+        entry_id = str(value)
+        before = next(
+            (events[pos][1] for pos in range(index - 1, -1, -1) if events[pos][0] == "mapped"),
+            None,
+        )
+        after = next(
+            (events[pos][1] for pos in range(index + 1, len(events)) if events[pos][0] == "mapped"),
+            None,
+        )
+        neighbour = before or after
+        if isinstance(neighbour, Entry):
+            note = f"not in the views.md map; beside {neighbour.id} in {neighbour.file}"
+        else:
+            note = "not in the views.md map"
+        rows.append((entry_id, "new", note))
     return rows
 
 
@@ -218,6 +321,17 @@ def print_summary(entries: list[Entry]) -> None:
             print(f"{file}\t{counts[file]}")
 
 
+def source_order(path: Path | None = None) -> list[str]:
+    """Ids in views.md order, from tools/views_families.tsv."""
+    path = path or Path(__file__).resolve().parent / "views_families.tsv"
+    order = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip() or raw.startswith("#"):
+            continue
+        order.append(raw.split("\t", 1)[0])
+    return order
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("id", nargs="?", help="an entry id, or a unique prefix of one")
@@ -225,6 +339,12 @@ def main(argv: list[str] | None = None) -> int:
         "--hunk",
         metavar="FILE",
         help="a views.md hunk; - reads stdin",
+    )
+    parser.add_argument(
+        "--views",
+        metavar="FILE",
+        help="views.md the hunk's @@ -N line numbers refer to; "
+        "without it, N refers to the views.md this split was built from",
     )
     args = parser.parse_args(argv)
     if args.id and args.hunk:
@@ -244,7 +364,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"no such hunk file: {args.hunk}", file=sys.stderr)
                 return 2
             text = path.read_text(encoding="utf-8")
-        rows = match_hunk(text, entries)
+        if args.views:
+            spans = spans_from_views(Path(args.views).read_text(encoding="utf-8"), entries)
+        else:
+            spans = source_spans(entries, source_order())
+        rows = match_hunk(text, entries, spans)
         if not rows:
             print("no views.md entry in this hunk")
             return 1
