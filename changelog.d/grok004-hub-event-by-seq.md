@@ -8,5 +8,5 @@
   project and a `seq` nobody has all get the same `404 not_found`, and a
   `seq` that is no number `invalid` (`not_a_seq`). A bridge reads for an
   agent with `Maity-For`; a `for` query is `invalid` (`fields.for`).
-  Reading acknowledges, delivers, counts as no listening and writes
-  nothing (tsk-6g2h8dag2fkg).
+  Reading acknowledges nothing, delivers nothing, does not count as
+  listening and writes nothing (tsk-6g2h8dag2fkg).
