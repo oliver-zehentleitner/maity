@@ -4855,6 +4855,31 @@ would overwrite another admin's change to a link it did not touch.
   change made meanwhile.
 
 
+## The chat lists' pin buttons are a mode for managing pins: hidden on every load, stored nowhere
+
+**Id:** 8d534643-d67c-4da0-b383-075c5cc4e6a0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-4nf344w4c52c; the maintainer's description, relayed by the coordinator: the pin buttons show only while he manages pins, then he hides them again (chat 102521, 2026-11-10)
+**Revisit when:** someone wants the buttons kept shown across reloads or devices, or the hub stores display choices for a human
+
+Pins themselves are the hub's, per human (§9.3), and a pinned chat keeps its 📌 mark in the list
+whatever the mode. The pin/unpin button on each row of the project's chat list and of /chats is
+hidden until the toggle in the list's heading row shows it; pressed again, or after a reload, the
+buttons are hidden again. The choice lives in the page alone (`pinColumn` in `js/chat.js`), shared by
+both lists while the page stands. On /chats the toggle stands after the Lead's slot, so that on a
+phone the heading keeps its row and the Lead its place under it at the left edge.
+
+**Rejected alternatives:**
+- Keeping the choice in the browser (localStorage, as the board's column filter is): the
+  maintainer uses the buttons only to set pins up, so a choice that outlives the page would leave
+  the column shown when he no longer wants it.
+- A field on the account (`PATCH /me`): a contract and hub change for the same unwanted
+  persistence, across devices as well.
+- Hiding the pin mark with the buttons: the mark says which chats are pinned, which the list's
+  order alone does not.
+
 ## The settings form says what an unset agent_owners reads now, from the page's public_page and state
 
 **Id:** deb3b4e8-266a-42c8-ab30-6cdeeb0da50c

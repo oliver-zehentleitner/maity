@@ -1809,6 +1809,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
     expect(page.locator(".chat-list a.conv[aria-current=page]")).to_have_count(1)
     # A pin (§9.3, tsk-645p1nw2v7y4): kept by the hub, shown as a mark, the button pressed; then taken off again.
+    # The pin buttons are hidden until the toggle in the heading row shows them (tsk-4nf344w4c52c).
+    column = page.locator(".chat-list-pane button.pin-column-toggle")
+    expect(column).to_have_attribute("aria-pressed", "false")
+    expect(page.locator(".chat-list button.pin-toggle")).to_have_count(0)
+    column.click()
+    expect(column).to_have_attribute("aria-pressed", "true")
     pin = page.locator(".chat-list li").filter(has_text="E2E Agent").first.locator("button.pin-toggle")
     expect(pin).to_have_attribute("aria-pressed", "false")
     pin.click()
@@ -1820,6 +1826,8 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(pin).to_have_attribute("aria-pressed", "false")
     mine = page.request.get(f"{run.base}/api/v1/me/conversations").json()["items"]
     assert not any(c["pinned"] for c in mine), mine
+    column.click()
+    expect(page.locator(".chat-list button.pin-toggle")).to_have_count(0)
     page.locator("#chat-text").fill("Hello from the global chat.")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     expect(page.locator("ol.messages li.msg.out").last).to_contain_text("Hello from the global chat.")
@@ -1833,6 +1841,19 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page).to_have_url(re.compile(r"/chats$"))
     expect(page.locator(".chat-list-pane")).to_be_visible()
     fits("the global chat list at 390 px")
+    # The toggle stays on screen beside the heading's row on a phone, shown or not, light and dark.
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        for shown in ("false", "true"):
+            toggle = page.locator(".chat-list-pane button.pin-column-toggle")
+            if toggle.get_attribute("aria-pressed") != shown:
+                toggle.click()
+            box = toggle.bounding_box()
+            assert box and box["x"] >= 0 and box["x"] + box["width"] <= 390, f"the pin toggle leaves the screen at 390 px {scheme}: {box}"
+            fits(f"the global chat list at 390 px, {scheme}, pin buttons {'shown' if shown == 'true' else 'hidden'}")
+    if page.locator(".chat-list-pane button.pin-column-toggle").get_attribute("aria-pressed") == "true":
+        page.locator(".chat-list-pane button.pin-column-toggle").click()
+    page.emulate_media(color_scheme="light")
     # 360 px as well, where a wrap shows whatever the fonts (tsk-et029v5k73f1).
     page.set_viewport_size({"width": 360, "height": 780})
     expect(page.locator(".chat-list-pane")).to_be_visible()

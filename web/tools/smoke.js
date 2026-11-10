@@ -6242,6 +6242,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const pnPut = win.Maity.api.put, pnDel = win.Maity.api.del;
     win.Maity.api.put = (p, b) => { if (p.endsWith("/pin")) pinCalls.push(["PUT", p]); return pnPut(p, b); };
     win.Maity.api.del = (p) => { if (p.endsWith("/pin")) pinCalls.push(["DELETE", p]); return pnDel(p); };
+    // The pin buttons are hidden until asked for (tsk-4nf344w4c52c): the toggle in the heading row shows them on every
+    // row, the choice is kept when the list is drawn again, and hiding them keeps a pinned chat's mark (checked below).
+    const pcToggle = () => main.querySelector(".chat-list-pane button.pin-column-toggle");
+    expect(pcToggle() && pcToggle().getAttribute("aria-pressed") === "false" && pcToggle().getAttribute("aria-label") === "Show the pin buttons"
+      && !main.querySelectorAll("button.pin-toggle").length,
+      "pin column: hidden by default, its toggle in the list's heading row, not pressed");
+    pcToggle().click(); await tick();
+    expect(pcToggle().getAttribute("aria-pressed") === "true" && main.querySelectorAll("button.pin-toggle").length === convs().length,
+      "pin column: the toggle shows a pin button on every row " + JSON.stringify([main.querySelectorAll("button.pin-toggle").length, convs().length]));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); for (let k = 0; k < 4; k++) await tick();
+    expect(pcToggle().getAttribute("aria-pressed") === "true" && main.querySelectorAll("button.pin-toggle").length === convs().length,
+      "pin column: the choice is kept when the list is drawn again");
     expect(pinBtn("Agent B") && pinBtn("Agent B").getAttribute("aria-pressed") === "false" && pinBtn("Agent B").getAttribute("aria-label") === "Pin Agent B",
       "pins: each chat has a pin button beside its link, not pressed");
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
@@ -6253,10 +6265,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.put = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { pin: "too_many" } }));
     pinBtn("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
     expect(text(main).includes("Not pinned: you have 20 pinned chats already") && !conv("Agent C").querySelector(".pin-mark"), "pins: the 20-limit refusal is said, nothing pinned");
+    pcToggle().click(); await tick();
+    expect(pcToggle().getAttribute("aria-pressed") === "false" && !main.querySelectorAll("button.pin-toggle").length && conv("Agent B").querySelector(".pin-mark"),
+      "pin column: hidden again, no row has a pin button and a pinned chat keeps its mark");
+    pcToggle().click(); await tick();
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
     expect(pinCalls.slice(-1)[0][0] === "DELETE" && !conv("Agent B").querySelector(".pin-mark")
       && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
       "pins: unpinned, the chat goes back to its place");
+    pcToggle().click(); await tick();  // back to the default for the cases after
     win.Maity.api.put = pnPut; win.Maity.api.del = pnDel;
   }
   const convA = conv("Agent A");
