@@ -5836,3 +5836,29 @@ the rejected alternatives below are inferred, nobody stated them.
 word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
+
+## All projects reads each project's members once per page drawn, shared by the Lead button and the inbox
+
+**Id:** e66cb966-b6f3-417b-bb0a-0bd84ce1899d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f78z1dvbs26a: prod's access log (17fce84f, 2026-11-09) counted `…/members` twice on a page, and the smoke harness found the double read on All projects, not on Settings; the lead's go for one shared per-render read (2026-11-10)
+**Revisit when:** the hub offers one call for the members of several projects, or a page outside a project keeps project data across drawings
+
+`M.membersOnce(ctx, slug)` (web/js/app.js) reads a project's member list once for one ctx,
+which is one page drawn. On All projects the Lead button (`targetsEverywhere`, web/js/lead-chat.js)
+reads every project's list, and the all-projects inbox (web/js/inbox.js) reads the lists of the
+projects its requests come from; both take them from there, so for a project with requests in the
+inbox `GET …/members` runs once instead of twice (one without requests was read once before too).
+The next drawing has a ctx of its own and reads afresh.
+
+**Reason:** All projects is the start page for anyone with two or more projects, and the members
+read takes about 150 ms median on prod, so reading it a second time for each project with
+requests in the inbox costs that page's load directly.
+
+**Rejected alternative:** weighed while building it, a members cache kept across drawings of
+All projects. A switch inside one project already keeps its members for at most a minute
+(`KEPT_MS` in web/js/app.js) and reads them again behind the view; a cache without that re-read
+would show a member list from before a change on the next visit, and adding it was more than the
+card asked for. Alternatives beyond that were not discussed.
