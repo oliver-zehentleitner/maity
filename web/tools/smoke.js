@@ -5182,6 +5182,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
   }
 
+  // A closed column draws the 50 cards closed last and offers the rest (tsk-a5pxwgkgr73e, the owner's decision,
+  // seq 109362); the count is the column's whole; Show more draws the column whole and focuses the first card it
+  // added; a marked card older than the 50 is drawn. The column's order (rank, then id here) runs against the
+  // closing order, so the first 50 in the column are not the 50 closed last.
+  {
+    const smAll = win.Maity.api.getAll;
+    const smBase = (await smAll("/projects/maintainer/maity/tasks?status=done,cancelled")).items.find((t) => t.status === "done");
+    const smNow = Date.now();
+    const smExtra = Array.from({ length: 60 }, (_, i) => Object.assign({}, smBase, { id: "tsk-m" + String(100 + i), title: "Closed " + i,
+      closed_at: new Date(smNow - (60 - i) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at, parent: null, depends_on: [], related: [] }));
+    win.Maity.api.getAll = async (p) => {
+      const got = await smAll(p);
+      return /^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p) ? { items: got.items.concat(smExtra), next_cursor: null } : got;
+    };
+    const smColumn = () => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "done");
+    const smCards = () => smColumn().querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+    const smMore = () => smColumn().querySelectorAll("button").find((b) => b.className.includes("show-more"));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
+    const smFirstCards = smCards();
+    const smNewest = smExtra.slice(10).map((t) => t.id);  // closed last: tsk-m110 … tsk-m159
+    const smFirst = { drawn: smFirstCards.length, count: text(smColumn().querySelector(".count")), button: smMore() && text(smMore()),
+      newest: smNewest.every((id) => smFirstCards.includes(id)), oldest: smFirstCards.includes("tsk-m100") };
+    const smProto = Object.getPrototypeOf(main), smFocus = smProto.focus;
+    smProto.focus = function () { document.activeElement = this; };
+    smMore().dispatch("click"); await tick();
+    const smAfter = smCards();
+    const smFocused = document.activeElement && document.activeElement.className === "card-open"
+      ? document.activeElement.parentNode : null;
+    const smFocusedCard = (() => { for (let x = document.activeElement; x; x = x.parentNode) if (x.attrs && x.attrs["data-card"]) return x.attrs["data-card"]; return null; })();
+    smProto.focus = smFocus; document.activeElement = undefined;
+    const smAdded = smAfter.find((id) => !smFirstCards.includes(id));
+    expect(smFirst.drawn === 50 && smFirst.newest && !smFirst.oldest && smFirst.count === "61" && smFirst.button === "Show 11 more closed cards"
+      && smAfter.length === 61 && !smMore() && !!smAdded && smFocusedCard === smAdded,
+      "board: a closed column draws the 50 closed last and Show more the rest, focusing the first card it added "
+      + JSON.stringify([smFirst, smAfter.length, smFocusedCard, smAdded, !!smFocused]));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-m100"); for (let k = 0; k < 8; k++) await tick();
+    expect(smCards().length === 51 && smCards().includes("tsk-m100") && text(smMore()) === "Show 10 more closed cards",
+      "board: a card linked from older than the 50 closed last is drawn with them " + JSON.stringify([smCards().length, smMore() && text(smMore())]));
+    win.Maity.api.getAll = smAll;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  }
+
   // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is
   // open, it is moved open → proposed, then the open group answers without it. The read of the cards changed
   // since the reads began puts it on the board, once, in proposed.
