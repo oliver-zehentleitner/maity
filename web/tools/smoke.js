@@ -13633,7 +13633,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mnLink = () => header.querySelectorAll(".mention-note a").find((a) => a.textContent === "1 unread mention");
   expect(mnLink() && mnLink().getAttribute("href") === "#/notifications?kind=mention&project=maintainer%2Fmaity",
     "mention count: beside the tabs, a link to the project's mentions on /notifications");
-  // Not on the Chat tab, where each chat's @ in the list already says it (the maintainer, tsk-sesdq48m9ewk): neither
+  // Not on the Chat tab, the maintainer's choice, where the list shows chat mentions as an @ (tsk-sesdq48m9ewk): neither
   // on the list nor in an open chat, nor after a counts round there; back on the inbox the line is there again.
   await go("#/maintainer/maity/chat"); for (let k = 0; k < 6; k++) await tick();
   const mnOnChat = !header.querySelector(".mention-note");

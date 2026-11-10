@@ -85,7 +85,9 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
   mention") links to them on **All notifications**, filtered to this
   project (`/notifications?kind=mention&project=<owner>/<slug>`), and
   every counts read fills that line again. The **Chat** tab leaves the
-  line out: its list marks each chat with a mention (`@`) already.
+  line out (the maintainer's choice): its list marks a chat with an unread
+  mention (`@`); mentions in project messages and on cards stay in the
+  bell and on the other tabs' line.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 

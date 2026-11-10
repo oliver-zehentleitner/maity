@@ -4587,7 +4587,7 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     expect(line).to_be_visible(timeout=20000)
     expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
     run.a11y(page, "the unread mention line")
-    # Not on the Chat tab, where the chat list's @ already says it (the maintainer, tsk-sesdq48m9ewk); back on the
+    # Not on the Chat tab, the maintainer's choice, where the list shows chat mentions as an @ (tsk-sesdq48m9ewk); back on the
     # inbox the line is there again.
     page.goto(f"{run.base}/owner/e2e-alpha/chat")
     expect(page.locator(".chat-list-pane")).to_be_visible()
