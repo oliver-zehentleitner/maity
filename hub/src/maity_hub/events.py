@@ -467,6 +467,7 @@ HUMANS_ONLY_KINDS = frozenset(
         "invitation_revoked",
         "invitation_voided",
         "invitation_used",
+        "invitation_declined",
     }
 )
 

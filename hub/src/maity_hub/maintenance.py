@@ -373,6 +373,7 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
         invitation.used_at.is_(None),
         invitation.revoked_at.is_(None),
         invitation.voided_at.is_(None),
+        invitation.declined_at.is_(None),
     )
     move(t.org_invitation, t.org_invitation.c.expires_at, t.org_invitation.c.closed_at.is_(None))
     move(
