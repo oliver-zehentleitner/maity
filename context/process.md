@@ -1415,7 +1415,7 @@ depends on a human; the approval has to come from Oliver).
 **See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
 `hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
-with `--durations=50` beside it, 97f338fd). A test whose
+with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
 once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's limit (90 minutes,
 120 since 2026-11-10, 97f338fd). The log then
