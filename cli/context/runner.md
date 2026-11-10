@@ -1691,5 +1691,9 @@ that is the only way it sees.
 **Rejected alternatives:**
 - Relying on `dontAsk` alone for Claude Code: the call is refused, but the
   tool stays offered, so the agent still plans around it.
-- Taking the tool away from interactive placements too: there a person is
-  at the pane and can answer.
+- Taking the tool away from interactive placements too: their
+  configuration is left as it was. They run with `dontAsk` as well, which
+  already refuses the call, so a person at the pane is not asked through
+  this tool either. Whether interactive placements should be able to ask
+  is a decision of its own and would change `dontAsk` for every other
+  prompt there.
