@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import stat
 import subprocess
 import sys
 import tomllib
@@ -367,7 +368,7 @@ def test_uninstall_refuses_a_linked_configuration_and_never_reads_it(tmp_path: P
     config_file.unlink()
     config_file.symlink_to(target)
     host.calls.clear()
-    with pytest.raises(install.Refused, match="is a link or not a regular file"):
+    with pytest.raises(install.Refused, match="is a link, not a regular file"):
         install.cmd_uninstall(args(purge=True), host)
     assert host.calls == []
     # --force goes on without reading it: no stop-all on it, the link goes, not its target.
@@ -687,3 +688,39 @@ def test_a_configuration_the_service_user_cannot_read_is_refused(tmp_path: Path)
     with pytest.raises(install.Refused, match="cannot read"):
         install.cmd_install(args(), host)
     assert not any(" pair " in line for line in host.commands())
+
+
+@pytest.mark.parametrize("name", ["RECORD", "CONFIG", "UNIT_PATH"])
+def test_a_file_of_root_s_others_can_write_is_refused(tmp_path: Path, name: str) -> None:
+    """A record others can write may name any account (4hv7 R3): install and uninstall trust
+    none of root's files that the service user could have rewritten."""
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    host.path(getattr(install, name)).chmod(0o666)
+    host.calls.clear()
+    for run, kwargs in ((install.cmd_install, {"code": None}), (install.cmd_uninstall, {})):
+        with pytest.raises(install.Refused, match="writable by (group or )?others"):
+            run(args(**kwargs), host)
+    with pytest.raises(install.Refused, match="writable by (group or )?others|not made by install"):
+        install.cmd_uninstall(args(purge=True), host)
+    assert host.calls == []
+    assert host.path(install.HOME).is_dir()
+
+
+def test_the_record_is_checked_on_the_file_that_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The record's mode is read from the opened file, not from a lookup by name before it."""
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    real = os.fstat
+
+    def fstat(fd: int) -> os.stat_result:
+        st = real(fd)
+        if stat.S_ISREG(st.st_mode):
+            return os.stat_result((st.st_mode | 0o002, *tuple(st)[1:]))
+        return st
+
+    monkeypatch.setattr(os, "fstat", fstat)
+    with pytest.raises(install.Refused, match="writable by group or others"):
+        install._ours(host, host.users[install.USER])

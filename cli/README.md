@@ -1291,12 +1291,18 @@ and `--force` writes install's own, which then pairs. It keeps an existing file 
 
 The paths are fixed: `/etc/maity-runner/runner.toml`,
 `/etc/systemd/system/maity-runner.service` and `/var/lib/maity-runner`.
-For other paths, follow the steps in `maity runner unit` by hand. Root
-refuses rather than repairs: every directory on the way to these paths
-must be a real directory of root's that group and others cannot write,
-and the service user's directories real directories of that user's. A
-link, another owner or such a directory anywhere there stops `install`
-and `uninstall` before any change. Directories are opened from `/` one at
+For other paths, follow the steps in `maity runner unit` by hand. The
+`workspaces` a kept configuration names are not checked: that directory
+is the service user's to write, not root's. Root refuses what someone
+else may have set up, and puts only modes right. Every directory on the
+way to these paths must be a real directory of root's that group and
+others cannot write, root's files there regular files of root's that
+group and others cannot write, and the service user's directories real
+directories of that user's. A link, another owner, or such a directory
+or file anywhere there stops `install` and `uninstall` before any
+change. A mode that is otherwise not install's is set back:
+`/etc/maity-runner` to 0755, the service user's directories to 0700, and
+a file with install's own text to 0644. Directories are opened from `/` one at
 a time without following a link, and files are written and removed
 through their directory's descriptor. `--code` puts the code on the
 command line, where other users can see it; `--code-file -` reads it from

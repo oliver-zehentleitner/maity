@@ -1776,9 +1776,13 @@ of `maity runner unit`.
      user's; they are opened the same way and changed through their
      descriptor.
    - Anything not as install would have made it — a link, another owner, a
-     directory others can write, a kept configuration whose `state_dir` is
+     directory or a file of root's that others can write, a kept configuration whose `state_dir` is
      not the fixed one as `serve` resolves it — stops the command before
-     the first change. Whether the runner is paired is read the same way:
+     the first change. A file of root's is checked on the descriptor it
+     is read from, so what is read is what was checked. The `workspaces`
+     of a kept configuration are not checked: that directory is the
+     service user's to write, so no root write depends on it. Whether the
+     runner is paired is read the same way:
      the credential must be a regular file of the service user's, reached
      without following a link, so root never answers for a file a link
      points to.
@@ -1789,8 +1793,12 @@ of `maity runner unit`.
    - Rejected: a custom `--config`. Its directories can sit under paths the
      service user can rename, and checking each such tree is more than the
      manual steps cost.
-   - Rejected: repairing owners and modes. A wrong owner or a link is a sign
-     someone else has been there; root fixing it would act on their setup.
+   - Rejected: repairing owners, links and writable files or directories of
+     root's. Each is a sign someone else has been there, or could have been;
+     root fixing it would act on their setup. Modes that only differ from
+     install's (0755 for `/etc/maity-runner`, 0700 for the service user's
+     directories, 0644 for a file with install's own text) are set back:
+     nobody else could have written through them.
    - Rejected: a marker in the account's comment field. Where users may
      change their own full name, an account's owner can set it.
    - Rejected: adopting any existing `maity-runner` account. An account of

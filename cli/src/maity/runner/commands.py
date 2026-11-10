@@ -755,8 +755,9 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "listed. Running it again is safe: it creates only what is missing and pairs only an "
         "unpaired runner; an already paired one needs no code. The paths are fixed; other paths "
         "are the manual steps of `maity runner unit`. Anything on those paths that is not as "
-        "install would have made it (a link, another owner, a directory others can write) "
-        "stops it before any change.",
+        "install would have made it (a link, another owner, a directory or a file of root's "
+        "others can write) stops it before any change; a mode that only differs from "
+        "install's is set back. The workspaces a kept configuration names are not checked.",
         formatter_class=fmt,
     )
     r.add_argument("url", help="the pairing URL (https://<hub>/r/<token>)")

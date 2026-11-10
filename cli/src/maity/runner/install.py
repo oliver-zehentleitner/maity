@@ -6,11 +6,14 @@ the `maity` that runs this command, pairing as that user, `systemctl enable`, an
 runner check`. Every call that touches the system goes through `Host`, so the tests run
 without root or systemd (cli/context/runner.md).
 
-The paths are fixed: other paths are the manual steps of `maity runner unit`. Root refuses
-rather than repairs. Every directory on the way to a file it writes or removes must be a
-real directory of root's that nobody else can write, opened from `/` one component at a time
-without following a link; the service user's directories must be real directories of that
-user's. Whatever is not as install would have made it stops the command before any change.
+The paths are fixed: other paths are the manual steps of `maity runner unit`; the workspaces
+a kept configuration names are the service user's and not checked. Root refuses what someone
+else may have set up and puts only modes right. Every directory on the way to a file it writes
+or removes must be a real directory of root's that nobody else can write, opened from `/` one
+component at a time without following a link, and root's files there regular files of root's
+that nobody else can write, checked on the descriptor they are read from; the service user's
+directories must be real directories of that user's. Whatever is not as install would have
+made it stops the command before any change; a mode that only differs is set back.
 """
 
 from __future__ import annotations
@@ -213,16 +216,46 @@ def _entry(fd: int | None, name: str) -> os.stat_result | None:
         return None
 
 
+def _check_root_file(host: Host, st: os.stat_result, absolute: Path) -> None:
+    """A file install trusts: a regular file of root's that group and others cannot write.
+    A writable one may have been rewritten by anyone, the service user included."""
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != host.root_uid():
+        raise Refused(f"{absolute} is not a regular file of root's; nothing was changed")
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise Refused(f"{absolute} is writable by group or others; nothing was changed")
+
+
 def _root_file(host: Host, absolute: Path) -> bool:
-    """Whether `absolute` exists; refused unless it is a regular file of root's below a chain
+    """Whether `absolute` exists; refused unless it is a file install trusts below a chain
     of root's."""
     with _root_dir(host, absolute.parent, create=False) as fd:
         st = _entry(fd, absolute.name)
     if st is None:
         return False
-    if not stat.S_ISREG(st.st_mode) or st.st_uid != host.root_uid():
-        raise Refused(f"{absolute} is not a regular file of root's; nothing was changed")
+    _check_root_file(host, st, absolute)
     return True
+
+
+def _read_root(host: Host, absolute: Path) -> str | None:
+    """The text of a file install trusts, or `None` when there is none. Opened through its
+    directory's descriptor without following a link or waiting on a pipe, and checked on the
+    opened file itself, so what is read is what was checked."""
+    with _root_dir(host, absolute.parent, create=False) as fd:
+        if fd is None:
+            return None
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        try:
+            opened = os.open(absolute.name, flags, dir_fd=fd)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise Refused(f"{absolute} is a link or cannot be read; nothing was changed") from None
+        with os.fdopen(opened, encoding="utf-8") as f:
+            _check_root_file(host, os.fstat(f.fileno()), absolute)
+            try:
+                return f.read()
+            except UnicodeDecodeError:
+                return ""
 
 
 def _write(host: Host, absolute: Path, text: str, force: bool) -> None:
@@ -233,10 +266,8 @@ def _write(host: Host, absolute: Path, text: str, force: bool) -> None:
             raise Refused("a directory install checked has gone; nothing more was changed")
         st = _entry(fd, absolute.name)
         if st is not None:
-            if not stat.S_ISREG(st.st_mode) or st.st_uid != host.root_uid():
-                raise Refused(f"{absolute} is not a regular file of root's; it was not touched")
-            with os.fdopen(os.open(absolute.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)) as f:
-                same = f.read() == text
+            current = _read_root(host, absolute)
+            same = current == text
             if same and stat.S_IMODE(st.st_mode) == 0o644:
                 _say(f"ok     {absolute}")
                 return
@@ -280,16 +311,13 @@ def _remove(host: Host, absolute: Path, tree: bool) -> None:
 
 def _ours(host: Host, user: User) -> bool:
     """Made by install: root's record names this account's uid and home."""
-    if not _root_file(host, RECORD):
+    text = _read_root(host, RECORD)
+    if text is None:
         return False
-    with _root_dir(host, RECORD.parent, create=False) as fd:
-        if fd is None:  # checked above; gone since
-            raise Refused("a directory install checked has gone; nothing more was changed")
-        with os.fdopen(os.open(RECORD.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)) as f:
-            try:
-                record = json.load(f)
-            except (ValueError, UnicodeDecodeError):
-                return False
+    try:
+        record = json.loads(text)
+    except ValueError:
+        return False
     return (
         isinstance(record, dict)
         and record.get("user") == USER
@@ -411,13 +439,9 @@ def _check_state_dir(host: Host, base: str, force: bool) -> None:
     kept, must keep the credential in the fixed state directory: install pairs and checks
     there, and nowhere else. Resolved as `serve` resolves it for the service user: `~` is
     that user's HOME, the default as config.py has it."""
-    if not _root_file(host, CONFIG):
+    text = _read_root(host, CONFIG)
+    if text is None:
         return
-    with _root_dir(host, CONFIG.parent, create=False) as fd:
-        if fd is None:  # checked above; gone since
-            raise Refused("a directory install checked has gone; nothing more was changed")
-        with os.fdopen(os.open(CONFIG.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)) as f:
-            text = f.read()
     if force or text == starter_config(base):
         return
     try:
@@ -610,15 +634,20 @@ def _stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: b
 
 
 def _usable_config(host: Host, force: bool) -> bool:
-    """Whether the configuration is there to read: a regular file of root's. Anything else at
-    its path stops uninstall before any change, or with `--force` is never read."""
+    """Whether the configuration is there to read: a regular file of root's that group and
+    others cannot write. Anything else at its path stops uninstall before any change, or with
+    `--force` is never read."""
     with _root_dir(host, CONFIG.parent, create=False) as fd:
         st = _entry(fd, CONFIG.name)
     if st is None:
         return False
-    if stat.S_ISREG(st.st_mode) and st.st_uid == host.root_uid():
+    if (
+        stat.S_ISREG(st.st_mode)
+        and st.st_uid == host.root_uid()
+        and not st.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    ):
         return True
-    what = f"{CONFIG} is a link or not a regular file of root's"
+    what = f"{CONFIG} is a link, not a regular file of root's, or writable by others"
     if not force:
         raise Refused(f"{what}; nothing was changed (--force goes on without reading it)")
     _say(f"{what}; going on without reading it (--force)")
