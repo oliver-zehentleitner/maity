@@ -2473,11 +2473,11 @@ def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     code = section.locator("#admin-sign-in-code")
     expect(code).to_be_visible()
     run.shot(page, "admin-sign-in-code")
-    mailed = re.search(r"(\d{3} \d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    mailed = re.search(r"(?<![\w-])(\d{6})(?![\w-])", newest_mail(catcher, MAIL_ADDRESS, seen))
     assert mailed, "no code in the mail"
     # Nothing has changed until the code is typed, and a wrong one is said.
     assert page.evaluate("""() => window.Maity.api.get("/admin/settings/sign-in")""")["second_factor"]["value"] == "optional"
-    wrong = "000 001" if mailed.group(1) != "000 001" else "000 002"
+    wrong = "000 001" if mailed.group(1) != "000001" else "000 002"
     code.fill(wrong)
     section.get_by_role("button", name="Turn on", exact=True).click()
     expect(section.locator("#admin-sign-in-code-error")).to_have_text("That code is wrong or was used.")

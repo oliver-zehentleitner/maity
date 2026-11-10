@@ -1746,7 +1746,8 @@ link`. Body:
 
 - the link `<MAITY_PUBLIC_URL>/mail/sign-in/{token}`, valid 15 minutes;
 - "Or enter this code in the browser where you asked for it:
-  `482 913`" — six digits;
+  `482913`" — six digits, without a space, so a double-click selects
+  them;
 - when and from which browser, operating system and address the request
   came;
 - "If you did not ask for this, ignore this mail; nothing happens
