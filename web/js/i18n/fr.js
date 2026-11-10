@@ -388,6 +388,7 @@ window.MAITY_I18N["fr"] = {
   "bell.item.unread": "(non lue)",
   "bell.kind.chat": "Discussions",
   "bell.kind.inbox": "Demandes",
+  "bell.kind.invitation": "Invitations",
   "bell.kind.mention": "Mentions",
   "bell.kind.security": "Alertes de sécurité",
   "bell.mark_all": "Tout marquer comme lu",

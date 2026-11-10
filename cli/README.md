@@ -930,7 +930,7 @@ again. A revoked credential, an answer the hub will not change (401, 403,
 SIGTERM exits 0. In every case the agents keep running.
 
 ```sh
-maity runner serve            # in the foreground; as a service: `maity runner unit`
+maity runner serve            # in the foreground; as a service: `sudo maity runner install`
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
 ```
 
@@ -1255,6 +1255,100 @@ is listed as "not inspected" and never removed, as is one where git
 fails. `--yes` needs
 the service stopped, and a record whose path is not the workspace it
 names is never followed.
+
+On Linux with systemd, one command sets the runner up as a system
+service:
+
+```sh
+sudo maity runner install https://<hub>/r/<token> --code-file -   # the code on stdin
+sudo maity runner uninstall [--purge]
+```
+
+`install` checks for Linux, root, systemd, tmux and `runuser`, then:
+1. It creates the `maity-runner` system user and `/var/lib/maity-runner`
+   (`state/`, `workspaces/`; 0700, owned by that user), and records the
+   account in `/var/lib/maity-runner-install.json` (root's, with its uid).
+   An existing `maity-runner` account without that record, or a
+   `/var/lib/maity-runner` without the account, is refused.
+2. It writes `/etc/maity-runner/runner.toml`: the hub, `state_dir` and
+   `[backend.local] workspaces`. The directory is 0755 and the file 0644,
+   root's, whatever root's umask is.
+3. It checks that `maity-runner` can run this `maity` and read the
+   configuration.
+4. It writes `/etc/systemd/system/maity-runner.service`, whose
+   `ExecStart` runs this `maity`'s Python interpreter (`<python> -I -m maity
+   runner serve --config <file>`). Each word is quoted for systemd, and a
+   path with a control character is refused.
+5. It pairs as `maity-runner`, unless the configuration's `state_dir`
+   already holds a credential.
+6. It enables the service with `systemctl enable --now`, then runs
+   `maity runner check`.
+
+`maity` has to be installed where the service user can run it; `sudo pipx
+install --global maity` does that. While the configuration still lacks
+`[limits]` or a `[harness.<id>]`, or names a key this version does not
+support yet, the service is enabled but not started, and `install`
+lists what is missing. Fix it, then `sudo systemctl start maity-runner`.
+The harness itself (installed and logged in as `maity-runner`) is yours
+to set up.
+
+Running `install` again is safe. It creates only what is missing and
+pairs only an unpaired runner; an already paired one needs no code.
+Paired means a credential in `/var/lib/maity-runner/state`, a regular
+file of `maity-runner`'s, read without following a link. An existing
+configuration it keeps must use that `state_dir` (`~/state` counts, as
+`serve` reads `~` as the service user's home) and the hub of the pairing
+URL as `hub.url`; another one is refused before any change, and
+`--force` writes install's own, which then pairs an unpaired runner. A
+runner already paired under a configuration for another hub keeps that
+hub's credential, so `--force` refuses it too: run
+`maity runner uninstall --purge` first. It keeps an existing file that differs unless
+`--force`; a file with install's own text but another mode is put back to
+0644.
+
+The paths are fixed: `/etc/maity-runner/runner.toml`,
+`/etc/systemd/system/maity-runner.service` and `/var/lib/maity-runner`.
+For other paths, follow the steps in `maity runner unit` by hand. The
+`workspaces` a kept configuration names are not checked: that directory
+is the service user's to write, not root's. Root refuses what someone
+else may have set up, and puts only modes right. Every directory on the
+way to these paths must be a real directory of root's that group and
+others cannot write, root's files there regular files of root's that
+group and others cannot write, and the service user's directories real
+directories of that user's. A link, another owner, or such a directory
+or file anywhere there stops `install` and `uninstall` before any
+change. A mode that is otherwise not install's is set back:
+`/etc/maity-runner` to 0755, the service user's directories to 0700, and
+a file with install's own text to 0644. Directories are opened from `/` one at
+a time without following a link, and files are written and removed
+through their directory's descriptor. `--code` puts the code on the
+command line, where other users can see it; `--code-file -` reads it from
+stdin.
+
+`uninstall` stops and disables the service, then ends the agents it
+started (`stop-all`), then removes the unit. If it cannot tell that the
+agents stopped, it removes nothing and exits 2: stopping the service or
+the agents failed, the configuration is missing or does not load (as
+install's own starter configuration does not), or there is no account of
+install's to run `stop-all` as. Whatever of these it can know without
+stopping anything (the configuration, the account) is checked before it
+disables the service. A link or anything but a regular file of
+root's at `/etc/maity-runner/runner.toml` is refused before any change;
+with `--force` uninstall goes on without reading it. `--force` goes on
+anyway in the other cases too. `--purge` also
+removes the account, then `/var/lib/maity-runner` (state, credential, and
+workspaces with any work not pushed), `/etc/maity-runner` and the
+account's record. The account goes only if install's record names it;
+without that account or its record, an existing `/var/lib/maity-runner`
+or `/etc/maity-runner` stops `--purge` before any change.
+`--purge` checks all of this before it touches anything. The account goes
+first: if `userdel` fails (a process of the user's still runs), nothing
+more is removed (the unit is already gone), and the next `--purge` goes
+on from there. One that stopped
+after the account was gone finishes, since the record still names it;
+its directories are first checked against the uid in the record (owned
+by it, no link, not writable by group or others). The hub keeps listing the runner until you
+remove it in the dashboard.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/src/maity/runner/maity-runner.service)). It runs the

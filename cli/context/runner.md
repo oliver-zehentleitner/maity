@@ -138,6 +138,9 @@ only the runner's own process may be signalled.
   upgrade would end every agent mid-work.
 - `PrivateTmp` in the unit: with the agents outliving the service, the
   next start would replace their `/tmp` under them.
+- A `TMPDIR` under `/var/lib/maity-runner` instead of `/tmp` in
+  `ReadWritePaths`: tools that hardcode `/tmp` would fail, and in the
+  `agent_user` layout the agents' user cannot write there.
 
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on
 
@@ -1775,6 +1778,142 @@ is the way left to put a question to a person.
   at the pane is not asked through this tool either; letting them ask would
   mean changing `dontAsk` for every other prompt there, a decision of its
   own. Codex keeps its question tool in an interactive placement.
+
+## `maity runner install` sets up the system service; an incomplete configuration is enabled, not started
+
+**Id:** 84732ea1-d314-465d-939c-fd274b2f8b0d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); the team lead narrowed it on 2026-11-10 to fixed paths, refusing instead of repairing, a root-owned creation record, and no removal while agents may run; `cli/src/maity/runner/install.py`. The choices below are the implementer's within that scope, not confirmed by the maintainer.
+**Revisit when:** a per-user (`systemctl --user`) variant is wanted, the shipped unit's `ExecStart` line changes, or `install` learns to write `[limits]` and a harness itself
+
+`sudo maity runner install <pairing url> --code-file -` does the steps the
+unit's header lists:
+1. It checks for Linux, root, systemd, tmux and runuser.
+2. It creates the `maity-runner` system user, records it in
+   `/var/lib/maity-runner-install.json`, and makes `/var/lib/maity-runner`
+   (state, workspaces; 0700, owned by that user).
+3. It writes `/etc/maity-runner/runner.toml` and checks the service user can
+   read it.
+4. It writes the unit.
+5. It pairs as that user.
+6. It runs `systemctl daemon-reload` and `enable`.
+7. It runs `maity runner check`.
+
+A second run is safe. It creates only what is missing, pairs only an
+unpaired runner, and keeps a file that differs unless `--force`.
+`uninstall` stops and disables the service, ends its agents and removes the
+unit. `--purge` also removes state, workspaces, the configuration and the
+account install made. The paths are fixed; other paths are the manual steps
+of `maity runner unit`.
+
+1. **`ExecStart` names the interpreter of the `maity` that runs `install`**
+   (`<python> -I -m maity runner serve …`), the way the agents' side already
+   starts it. Every word is quoted for systemd: `%` and `$` are doubled, and
+   control characters are refused.
+   - Rejected: keeping `/usr/local/bin/maity`. A pipx install lives
+     elsewhere.
+   - Rejected: looking `maity` up on PATH. `sudo` resets PATH to its
+     secure path, so the lookup would find another copy, or none.
+2. **Before pairing, `install` checks that the service user can run that
+   interpreter and read the configuration.** A pipx install under a home
+   the service user cannot enter would otherwise only fail when the service
+   starts, after the single-use code is spent. The same goes for a
+   configuration directory a restrictive umask made 0700.
+   `/etc/maity-runner` is install's own and is always set to 0755.
+3. **A configuration `serve` would refuse gets the service enabled, not
+   started, with the reasons listed.** That covers missing `[limits]` or a
+   harness, and a key this version does not support. `serve` exits 78 on
+   such a configuration, and the unit does not restart 78, so a started
+   service would sit failed until someone restarted it by hand.
+   - Rejected: refusing `install` until the configuration is complete. The
+     person would then write the file `install` exists to write.
+   - Rejected: guessing projects, repositories or a harness. Those are the
+     operator's choices.
+4. **`uninstall` ends the agents (`stop-all`) after stopping the service,
+   and removes nothing unless it knows they stopped, or `--force`.** Not
+   knowing counts as failing: no configuration, one that does not load
+   (install's own starter does not), or no account of install's to run
+   `stop-all` as. The
+   unit's `KillMode=process` keeps agents running across a service stop.
+   Once the unit is gone nothing would supervise them, and once `--purge`
+   has removed the state their workspaces would be gone from under them.
+   - Rejected: leaving them running. Agents would go on working with a
+     credential whose runner is gone.
+   - Rejected: warning and going on. A purge would then delete what running
+     agents still use.
+   - What it can know without stopping anything (the account, whether the
+     configuration is there and loads) is checked before the service is
+     disabled, so a refusal leaves the service as it was. `--purge` removes
+     the account before the trees: a `userdel` that fails then leaves the
+     account, its trees, the configuration and the record for the next
+     `--purge` (the service is stopped and its unit removed by then), and
+     one that stopped after the
+     account was gone finishes on the record that names it. The
+     directories then keep the gone account's uid, so they are checked
+     against the uid in that record, before anything changes: owned by
+     it, no link, and not writable by group or others, since nothing
+     sets their modes back on the way to removing them. A record without
+     a usable uid names no account, and its home is refused like any
+     other.
+   - Rejected: the trees first, then the account. A failed `userdel` left a
+     record without a configuration, and the next `--purge` refused until
+     `--force`.
+5. **Fixed paths, and root refuses rather than repairs.**
+   - `install` and `uninstall` take no `--config`; they use
+     `/etc/maity-runner/runner.toml`, the unit under
+     `/etc/systemd/system` and `/var/lib/maity-runner`. Other paths are the
+     manual steps of `maity runner unit`.
+   - Every directory on the way to a file root writes or removes is opened
+     from `/` one component at a time with `O_NOFOLLOW`, and each must be a
+     directory of root's that group and others cannot write. Files are made
+     and renamed, or removed, through the last descriptor. Nobody but root
+     can then swap anything on the way between the check and the change.
+   - The service user's directories (writable by that user, and in the
+     `single` layout by every agent) must be real directories of that
+     user's; they are opened the same way and changed through their
+     descriptor.
+   - Anything not as install would have made it — a link, another owner, a
+     directory or a file of root's that others can write, a kept configuration whose `state_dir` is
+     not the fixed one as `serve` resolves it, or whose `hub.url` names
+     another hub than the pairing URL — stops the command before
+     the first change. `--force` writes install's own configuration
+     instead, but not over a credential paired under one for another
+     hub: that credential is the other hub's, and `serve` would refuse
+     it. A pairing URL that is not valid UTF-8 is refused before the
+     account is made, since no file can hold it. A file of root's is checked on the descriptor it
+     is read from, so what is read is what was checked. The `workspaces`
+     of a kept configuration are not checked: that directory is the
+     service user's to write, so no root write depends on it. Whether the
+     runner is paired is read the same way:
+     the credential must be a regular file of the service user's, reached
+     without following a link, so root never answers for a file a link
+     points to.
+   - Root's record `/var/lib/maity-runner-install.json` (uid, home, time)
+     says install made the account. `install` does not take over, and
+     `--purge` does not delete, an account the record does not name.
+     Without that account or its record, `--purge` refuses before any
+     change when `/var/lib/maity-runner` or `/etc/maity-runner` exists:
+     nothing shows install made them. The account's comment is only a
+     label.
+   - Rejected: a custom `--config`. Its directories can sit under paths the
+     service user can rename, and checking each such tree is more than the
+     manual steps cost.
+   - Rejected: repairing owners, links and writable files or directories of
+     root's. Each is a sign someone else has been there, or could have been;
+     root fixing it would act on their setup. Modes that only differ from
+     install's (0755 for `/etc/maity-runner`, 0700 for the service user's
+     directories, 0644 for a file with install's own text) are set back:
+     nobody else could have written through them.
+   - Rejected: a marker in the account's comment field. Where users may
+     change their own full name, an account's owner can set it.
+   - Rejected: adopting any existing `maity-runner` account. An account of
+     the same name made for something else would be taken over, and later
+     deleted.
+
+Every call that touches the system goes through one `Host` seam, so the tests
+run without root or systemd.
 
 ## A failed clone says why in the runner's log, not in the report
 

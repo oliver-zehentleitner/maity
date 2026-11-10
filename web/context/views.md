@@ -60,7 +60,14 @@ qualified `owner/handle` where another member shares the short one,
 no name, no link to its page, no tooltip. Where the member list gives no
 handle, the stub is the neutral sentence "reports to someone who is not
 yours", never an id or a name. Its instances are dots in their presence's
-colour, the lead ringed. Built from the same member list, so no second tree and no hub field.
+colour, the lead ringed. Each state also has a shape of its own, so that colour is never the only
+cue (WCAG 1.4.1; a review of #1485, nte-s2dqhn1n4bez; the coordinator chose these shapes, batch 3c of
+tsk-tsb8528rank1, 2026-11-10): online a filled disc, away a ring half filled, offline a smaller
+disc, dormant a hollow ring. In forced colours, where the browser drops gradients, background
+colours and shadows, the same four shapes and the lead ring are drawn with borders, size and an
+outline alone, in the user's system colours (#1598 review). The state stays in each dot's name and
+tooltip as well.
+Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
@@ -869,7 +876,7 @@ tell from the request today; the Revisit when names it.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"
+**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10 (chats 102080 and 103539)
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
 
 A project's pill counts its open requests, unread chats and unread mentions (§18.2 `by_project`),
@@ -879,6 +886,13 @@ reads both filters from its address and asks the hub with them (§18.2). Its hea
 ("Mentions in Maity"), a link leads back to all notifications, and Mark all read sends the same
 `kind` and `project` with `up_to` (§18.3), so it marks nothing outside the filter. The line is
 filled again with every count read, so it follows the pill.
+
+The line is left out on the Chat tab, on its list and in an open chat: the maintainer asked for it
+gone there, since the chat list shows a chat with an unread mention as an @, visible at once
+(tsk-sesdq48m9ewk, 2026-11-10, chat 102080). The @ covers chat mentions only: the line also counts
+mentions in project messages and on cards (§18.1), which the Chat tab does not show. Asked about
+those, the maintainer kept the removal because they stay in the bell and on the line of every other
+tab, as on the pill and /notifications (chat 103539).
 
 **Reason:** a count on a project should lead to what it counts in one step, and mentions have no
 place in the project: the inbox is the requests alone (see 2ff6afe9). The hub already filters
