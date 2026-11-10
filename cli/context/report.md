@@ -325,10 +325,10 @@ contradict: the refusals that rest on facts keep no override.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-8qwmbw5xydpw from the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg): `report` refused with exit 4 and the fix was two `git config` lines, which agents hit repeatedly; the lead's assignment (Maity notice 104980, "contract first" where a contract line is needed); reproduced on main 126b030c with a branch cut by `git switch -c <b> --track origin/main` and pushed without `-u` ("origin/main is at …, local HEAD is at …; push or pull until they agree"); the boundaries (default branch only, only when the remote has the branch) are the author's, put to review in PR for tsk-8qwmbw5xydpw; `cli/src/maity/gitfacts.py` `track_own_branch`
+**Source:** card tsk-8qwmbw5xydpw from the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg): `report` refused with exit 4 and the fix was two `git config` lines, which agents hit repeatedly; the lead's assignment (Maity notice 104980, "contract first" where a contract line is needed); reproduced on main 126b030c with a branch cut by `git switch -c <b> --track origin/main` and pushed without `-u` ("origin/main is at …, local HEAD is at …; push or pull until they agree"); the boundaries (default branch only, only when the remote has the branch) are the author's, put to review in PR for tsk-8qwmbw5xydpw; `cli/src/maity/gitfacts.py` `track_own_branch`; review of PR #1608 (Maity review results 105408 and 105493, the lead's notices 105413 and 105495): the read of the branch name, the push-configuration sentence and the two gaps not covered
 **See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-10
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-10
-**Revisit when:** agents report from branches that deliberately track another branch than their own and want it kept, or a refusal shows that the default branch could not be told (no `origin/HEAD` and a remote whose `HEAD` is not readable)
+**Revisit when:** agents report from branches that deliberately track another branch than their own and want it kept, or a refusal shows that the default branch could not be told (no `origin/HEAD` and a remote whose `HEAD` is not readable), or agents push to another remote than the one the branch tracks (a fork with `remote.pushDefault`) and the named `git push -u` misleads them, or agents hit the refusal on a merged and deleted branch
 
 A branch cut from main (`git switch -c <b> origin/main`, a worktree made
 with `-b <b> origin/main`) has `branch.<b>.merge` set to
@@ -342,11 +342,25 @@ The default branch is what `refs/remotes/<remote>/HEAD` names, else what
 the remote's `HEAD` names (`ls-remote --symref`). When the remote has no
 `<b>`, nothing changes and the report is refused (exit 4) naming
 `git push -u <remote> <b>`. Any other upstream is left as it is. The
-upstream is checked as before (4f4e8ada) before git is asked anything.
-`--no-code` reads no git and changes nothing.
+upstream is checked as before (4f4e8ada) before git is asked about the
+remote or its refs.
+`--no-code` reads no git and changes nothing. The branch is read as the
+full ref (`symbolic-ref HEAD`, `refs/heads/` cut off), here and when the
+facts are read: `--short` gives `heads/<b>` when a tag `<b>` exists as
+well, and `branch.heads/<b>.merge` would be another branch's key.
 
 No hub contract change: the report's body and the hub's checks are the
 same; the CLI mapping row of §13 says what `report` now does locally.
+
+Not covered: the refusal names `git push -u <remote> <b>` with the
+branch's configured remote. In a fork whose branches track the upstream
+repository and are pushed elsewhere (`remote.pushDefault`), that is the
+wrong remote to push to; it was refused before as well (its head
+compared with main's), without naming a push.
+A branch that tracks main and was deleted on the remote after its merge
+is refused naming `git push -u` too, not with the advice to report from
+the merged head; that branch was refused before as well (its head
+compared with main's).
 
 **Reason:** a branch's upstream on the default branch is git's default
 for a branch cut from it, not a choice the agent made, and it is never
@@ -360,15 +374,17 @@ default branch is retracked because that is the case the card names and
 the one that is never meant: a branch tracking another branch, as a
 stacked one tracking the branch below it, may be meant, and maity cannot
 tell. Only a branch the remote has is set, so an upstream never points
-at a branch that does not exist.
+at a branch that does not exist when it is set.
 
 **Rejected alternatives:**
 - A better refusal that prints the two `git config` lines: the card's
   reject case; agents already knew the fix and still hit the refusal.
 - Reading the remote branch of the same name without writing the
   configuration: the report would then describe another upstream than
-  the one git uses for `push` and `pull`, and every later git command
-  would still go to main.
+  the one git uses for `push` and `pull`. The configured upstream would
+  stay main, and what a later `git push` or `git pull` does would depend
+  on git's push configuration (with `push.default=simple` a plain
+  `git push` refuses, the names differ).
 - Retracking any upstream whose name differs from the branch: changes
   a stacked branch's deliberate upstream.
 - Setting the merge ref before the branch is pushed: the upstream would

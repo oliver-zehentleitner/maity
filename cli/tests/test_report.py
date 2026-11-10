@@ -371,3 +371,19 @@ def test_the_default_branch_itself_and_its_own_upstream_are_left(clone: Path) ->
     git(clone, "switch", "--quiet", "work")
     git(clone, "config", "branch.work.merge", "refs/heads/work")
     assert gitfacts.track_own_branch(clone) == gitfacts.Retrack()
+
+
+def test_a_tag_named_like_the_branch_does_not_change_whose_key_is_set(clone: Path) -> None:
+    """`symbolic-ref --short` gives `heads/work` next to a tag `work`; the key is still work's."""
+    _track_main(clone, set_head=True)
+    git(clone, "tag", "work")
+    git(clone, "update-ref", "refs/heads/heads/work", "HEAD")  # `git branch` refuses the name
+    git(clone, "config", "branch.heads/work.remote", "origin")
+    git(clone, "config", "branch.heads/work.merge", "refs/heads/main")
+    git(clone, "push", "--quiet", "origin", "refs/heads/heads/work:refs/heads/heads/work")
+    assert git(clone, "symbolic-ref", "--quiet", "--short", "HEAD") == "heads/work"
+    done = gitfacts.track_own_branch(clone)
+    assert done.problem is None and done.note is not None and "branch.work.merge" in done.note
+    assert git(clone, "config", "branch.work.merge") == "refs/heads/work"
+    assert git(clone, "config", "branch.heads/work.merge") == "refs/heads/main"
+    assert gitfacts.collect(clone).branch == "work"

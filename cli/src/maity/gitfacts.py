@@ -220,6 +220,16 @@ def _default_branch(cwd: Path, remote: str) -> str | None:
     return None
 
 
+def _branch(cwd: Path) -> str | None:
+    """The branch HEAD is on, None when detached. Read as the full ref and cut, not with
+    `--short`: that gives `heads/<b>` when a tag `<b>` exists too, and `branch.<b>.*` would then
+    name another branch's configuration."""
+    ref = _git(cwd, "symbolic-ref", "--quiet", "HEAD")
+    if not ref or not ref.startswith("refs/heads/"):
+        return None
+    return ref.removeprefix("refs/heads/")
+
+
 @dataclass(frozen=True)
 class Retrack:
     """What `track_own_branch` did: `note` when it set the upstream, `problem` when the branch
@@ -235,7 +245,7 @@ def track_own_branch(cwd: Path) -> Retrack:
     `branch.<b>.merge` becomes `refs/heads/<b>`, the remote stays. Only when the remote has that
     branch; else nothing changes and the problem names `git push -u`. Any other upstream, the
     default branch itself and a detached HEAD are left as they are (cli/context/report.md)."""
-    branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch = _branch(cwd)
     if not branch:
         return Retrack()
     remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
@@ -264,7 +274,7 @@ def collect(cwd: Path) -> Facts:
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
         raise FactsError(f"{cwd} is not a Git clone with at least one commit")
-    branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch = _branch(cwd)
     # proc.GIT's diff.ignoreSubmodules keeps git out of submodules; a staged gitlink still shows.
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 

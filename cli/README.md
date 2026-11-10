@@ -353,8 +353,8 @@ It refuses with exit 4, before anything is sent, on any of these:
   (`git switch -c <branch> <merged head>`)
 
 A branch whose upstream is the remote's default branch, as
-`git switch -c <branch> origin/main` leaves it, would report main's head
-as its own. `report` sets such a branch to track its own branch of the
+`git switch -c <branch> origin/main` leaves it, would be compared with
+main's head and refused. `report` sets such a branch to track its own branch of the
 same name on that remote (`branch.<branch>.merge` becomes
 `refs/heads/<branch>`, the remote stays) and says so on standard error,
 when the remote has that branch; when it has none, nothing is changed and
