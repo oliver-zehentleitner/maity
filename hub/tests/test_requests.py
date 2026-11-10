@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import avatar_generated, avatars, images
+from maity_hub import avatar_generated, avatars, clock, images
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -638,6 +639,29 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     agent.post(f"/projects/maintainer/maity/requests/{second['id']}/withdraw", {})
     freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+
+
+def test_a_wait_filed_before_the_claim_keeps_nothing_blocked(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """A wait on an unheld card blocks nothing (below), so after the claim it does not hold the
+    block that a later wait set: answering that one restores the card (§7)."""
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    start = clock.now()
+    clock.set_source(lambda: start)
+    early = asked(agent, task_id=card["id"], while_open="wait")
+    clock.set_source(lambda: start + timedelta(seconds=1))
+    _claim(agent, card)
+    clock.set_source(lambda: start + timedelta(seconds=2))
+    later = asked(agent, task_id=card["id"], while_open="wait")
+    held = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (held["status"], held["blocked_by_request"]) == ("blocked", later["id"])
+    answer(owner, later, text="yes")
+    freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+    still = owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()
+    assert still["status"] == "open"  # the request itself stays as it is
 
 
 # --- review round ----------------------------------------------------------------------

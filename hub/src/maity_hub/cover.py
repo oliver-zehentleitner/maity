@@ -315,11 +315,13 @@ def _move_card(
     values: dict[str, Any] = {"cover": cover, "updated_at": now}
     if holds:
         # Claims move, they are not dropped: holder and session change, the lease
-        # restarts, checkpoint and branch stay on the card.
+        # restarts, checkpoint and branch stay on the card. `claim_since` is the move: the
+        # start of the current holder, as on every change of holder (requests `_unblock`).
         values.update(
             claim_holder=sub.id,
             claim_instance=instance,
             claim_session_id=None,
+            claim_since=now,
             lease_until=now + timedelta(seconds=project.lease_seconds),
         )
     else:
@@ -436,6 +438,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
                     claim_holder=row.id,
                     claim_instance=cover.get("instance"),
                     claim_session_id=None,
+                    claim_since=now,  # the return is a change of holder too
                     lease_until=now + timedelta(seconds=project.lease_seconds),
                 )
             elif cover.get("moved") == "assignment":
