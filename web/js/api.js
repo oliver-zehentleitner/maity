@@ -341,6 +341,83 @@ window.Maity = window.Maity || {};
   // §6.1 "Restricted access", §6.4 "Restricted text": the set resolved on every call from the
   // stored setting and the project's members, as the hub resolves it; the texts live in this
   // tab only, never in storage.
+  // GET …/roles `builtin` (§2.3, docs/api.md): each built-in role as the hub's guide.builtin
+  // answers it, its description, its default guide and its own scopes (tsk-ztkn9cwxdz8z).
+  // A project role never changes a built-in role's guide, so the list is the same everywhere.
+  const BUILTIN_ROLES = [
+    {
+      name: "coder",
+      description: "claims cards, builds, checkpoints and reports, posts, asks",
+      guide: "You build: claim a card, work in your own branch and clone, checkpoint, report the pull request, and answer the review.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "reviewer",
+      description: "reviews: moves cards from `review` to `done`, prepares releases",
+      guide: "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes.",
+      scopes: ["project:read", "tasks:write", "tasks:review", "releases:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "tester",
+      description: "tests, files bug cards, moves `review` to `done` where the policy requires a test (§6.1 `done_authority`)",
+      guide: "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card.",
+      scopes: ["project:read", "tasks:write", "tasks:test", "requests:ask", "events:post"],
+    },
+    {
+      name: "designer",
+      description: "design passes; answers the requests addressed to `role:designer` (§7)",
+      guide: "You design: drafts and design passes, and the requests addressed to the designer.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "writer",
+      description: "content: the README, documentation, the website's words, release notes and announcements; answers the requests addressed to `role:writer` (§7)",
+      guide: "You write: the README, the documentation, the website's words, release notes and announcements, clear and true to what the project does, and the requests addressed to the writer.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "ops",
+      description: "merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker",
+      guide: "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker.",
+      scopes: ["project:read", "tasks:write", "releases:write", "requests:ask", "events:post", "ticker:post", "agents:propose"],
+    },
+    {
+      name: "proxy",
+      description: "the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below)",
+      guide: "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "manager",
+      description: "leads a line of members and is their interface to a human: hands out their cards, keeps them moving, carries their questions up (below)",
+      guide: "You lead the members who report to you: you hand out and take back their cards, set their areas and pause them, within your reach only; you carry their questions up to your own lead or your human, and decide nothing a human decides.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post", "line:lead"],
+    },
+    {
+      name: "red-team",
+      description: "attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below)",
+      guide: "You attack: look for weaknesses in the project, only against the targets the project's rules name (its own test or staging instance), never production or anyone else's systems; file each finding as a bug card with its severity, and keep its details within the security teams until it is fixed.",
+      scopes: ["project:read", "tasks:write", "tasks:test", "requests:ask", "events:post"],
+    },
+    {
+      name: "blue-team",
+      description: "defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team`",
+      guide: "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "purple-team",
+      description: "joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team`",
+      guide: "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work.",
+      scopes: ["project:read", "tasks:write", "tasks:review", "releases:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "expert",
+      description: "learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources is to wake it (§17.3, not built; below)",
+      guide: "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change.",
+      scopes: ["project:read", "events:post"],
+    },
+  ];
   const RESTRICTED_MODES = ["nobody_except", "all_except"];
   const restrictedTexts = {};  // "<slug> <task id>" -> { task_id, text, version, updated_by, updated_at, history }
   function restrictedSet(slug) {
@@ -4754,7 +4831,7 @@ window.Maity = window.Maity || {};
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
-    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ custom: (project(m[1], path).roles || []).slice() })],
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);
       list.items.forEach((j) => {
