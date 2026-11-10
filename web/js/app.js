@@ -1903,6 +1903,18 @@ window.Maity = window.Maity || {};
   // listeners and no events feed of its own. chatLink builds the links of
   // its chats, so that they stay in that view.
   M.withMembers = (ctx, members) => withMembers(ctx, members);
+  // A project's member list read once per page drawn (per ctx) for the views outside a project
+  // that need several projects' members: on All projects the Lead button (js/lead-chat.js) reads
+  // every project's members and the inbox (js/inbox.js) those of the projects its requests come
+  // from, so a project with requests was read twice before (tsk-f78z1dvbs26a). The next drawing
+  // has a ctx of its own and reads afresh.
+  const membersDrawn = new WeakMap();
+  M.membersOnce = (ctx, slug) => {
+    let bySlug = membersDrawn.get(ctx);
+    if (!bySlug) { bySlug = new Map(); membersDrawn.set(ctx, bySlug); }
+    if (!bySlug.has(slug)) bySlug.set(slug, M.api.getAll("/projects/" + M.api.projectPath(slug) + "/members"));
+    return bySlug.get(slug);
+  };
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError(M.t("error.not_member", { slug }), 404, "/me", "not_found");

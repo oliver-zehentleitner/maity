@@ -25,6 +25,7 @@ collect_ignore = (
         "test_confinement.py",
         "test_operate.py",
         "test_runner.py",
+        "test_runner_install.py",
         "test_serve.py",
         "test_ssh.py",
         "test_supervisor.py",

@@ -11608,7 +11608,8 @@ messages are read back, without scanning the log, through §8.8.
 sends a `review_result` checks its `body` against `review.head` in its
 local clone before it sends, as it checks the cites (§13); the hub
 reads no repository and checks neither. What the text names is
-checkable in four forms, and a text that names or quotes something that
+checkable in four forms, and a UUID in the text is checked as a
+Keep-the-Why id. A text that names or quotes something that
 is not there is not sent:
 
 1. **A file and line**, anywhere in the text, in a code span or not: a
@@ -11617,7 +11618,9 @@ is not there is not sent:
    path from the repository's root to a file at `head`, and the file has
    at least `n` (or `b`) lines. A bare file name is refused even when
    one file alone has it; the client then names that file. A line always
-   refers to `head`.
+   refers to `head`. A path part that is only digits and dots is not a
+   path (`5.60:1`, `4.5:1`), and `3:1` has no extension, so it is not one
+   either.
 2. **A name in a code span** (between single backticks, paired as
    CommonMark pairs them), after one pair of surrounding `"` or `'` is
    dropped. Letters here are ASCII letters. Skipped are a span with
@@ -11625,11 +11628,20 @@ is not there is not sent:
    character outside ASCII (a word in another script); one with `#`,
    `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
    instance, a pull request, a placeholder); one shaped like an id the
-   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span) or a UUID; one that is only digits and punctuation; and
+   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span); one that is only digits and punctuation; and
    an object hash or a range `a..b` of them (form 3). A span with a `/`
    names a path: it is a file or a directory, and with a `*` the part
    before the first `*` begins one (`hub/tests/test_public_*`); anything
-   after a `:` is left out. A path that is no file or directory still
+   after a single `:` is left out. A `::` names a test as well
+   (`pkg/tests/test_widget.py::test_real`, or with a class before the
+   test): a `[` and the parameter after it are removed first, so a
+   parameter may contain `::`. Then the part before the first `::` has to
+   be a file or a directory at `head`, and the part after the last `::`
+   has to be a test at `head`. The name is searched in every file at
+   `head`, not bound to the file before the `::`, and a class in
+   `path::Class::test` is not checked. A missing path and a missing test are
+   both refused, and the text fallback below does not apply to a `::`
+   span. A path that is no file or directory still
    passes as text in some file, verbatim, so that a route such as
    `/api/v1/events` or a part of a URL is not refused. Any other span names an identifier or a key:
    its core, the longest run that starts with a letter or `_` and goes
@@ -11637,7 +11649,15 @@ is not there is not sent:
    more), is text in some file or the name of a file; failing that, each
    part of the core between dots that has three characters or more is
    (`_Facts.key`, `public_page.body`). A span without such a core is
-   skipped. A path or name counts as there when it stands at `head` or
+   skipped. A core that is a test name (`test_` and then only letters,
+   digits and `_`) is a test at `head` and only there. In a span such as
+   `test_real[longer-parameter-than-test]` the test name is that core,
+   not the longer parameter. A test is a line whose first token, after
+   indentation, is `def` or `async def`, then the name, optional
+   whitespace and `(`. A longer name that merely begins with it does not
+   count, and a `def` that sits in a comment does not count. The default
+   branch is no fallback for it. Any other path or name counts as there
+   when it stands at `head` or
    at the tip of the clone's default branch (`origin/HEAD`), so that a
    name the change removed, or one only the default branch has, passes;
    a file and line (form 1) does not get that fallback. A name the review
@@ -11685,13 +11705,29 @@ is not there is not sent:
    written in a code span (a span with whitespace in it is skipped, form
    2) or without double quotes.
 
+A UUID in the checked text, in a code span or not, is a Keep-the-Why
+id. The full form, eight hex digits, three groups of four and a group
+of twelve, stands in a file at `head`; the case of the hex digits does
+not matter, and sharing the first eight with an id that does stand
+there does not. Any other token that starts with eight hex digits and
+a hyphen and is only hyphenated hex groups is refused as not a full id,
+including a shortened middle group, a last group that is not twelve
+hex digits, and one that shares its start with an id at the head. A
+known limit of that rule: a short commit of eight hex digits followed
+by a hex-only suffix, such as `-add` or `-1`, is refused as not a full
+id too. A token of digits only, such as `20261110-1530`, is not an id.
+An id the change removed is written in a fenced block or under a heading
+`Ran`, which are not checked: unlike a name, an id in prose is checked,
+and the default branch is no fallback. Eight hex digits and
+no hyphen stay an object (form 3).
+
 Not checked: a fenced code block; everything under a heading `Ran` up
 to the next heading of the same or a higher level, where the reviewer
 lists the commands it ran and what they printed (the review line,
 §6.9) — an ATX heading (`#` to `######`) whose text is `Ran` and
 nothing else, in any case, not a setext heading and not `Ran (head)`;
 a pull request number `#<n>`; and what no form covers: prose above
-all, a quote that nothing ties to a file among it. The check catches
+all, apart from a UUID in it, a quote that nothing ties to a file among it. The check catches
 names and quotes that are not there, not wrong claims: a wrong line in
 a long enough file, a wrong count, or a test said to cover what it
 does not all pass, and reading the review stays the lead's work. A
@@ -19791,9 +19827,11 @@ for a human's cookie session; an agent credential is `forbidden` with
 
 A notification is something the human has to react to: someone trying
 to reach them (`chat`, `mention`) or something waiting in their inbox
-(`inbox`) — plus the `security` alerts that protect their account. It
+(`inbox`), an invitation to a project by their handle (`invitation`,
+§3.4) — plus the `security` alerts that protect their account. It
 is not an activity log. The maintainer's decision of 2026-10-26
-narrowed the kinds to these four: what only informs — a change on a
+narrowed the kinds to four, and `invitation` was split off `inbox`
+later so that its mail can be set on its own: what only informs — a change on a
 card, a ticker item, a jour fixe step, an agent's outage as such —
 is shown by the board, the ticker and the project's feed, and what
 needs the human's action reaches them as a request in their inbox.
@@ -19819,7 +19857,8 @@ when it is read or sent, from two sources, plus a read flag per human:
   is no longer addressed to them drops out, and a redacted event shows
   as `redacted: true` without a title.
 - **Account records** — the `security` items, the `inbox` items of
-  personal requests (below), and the `inbox` items
+  personal requests and the `invitation` item of an invitation by
+  handle's (below), and the `inbox` items
   `registration_pending`, `moderation_applied` and
   `mail_disabled`. An account
   record is an audit record the hub writes about a human's own
@@ -19860,7 +19899,8 @@ writes one account record of the addressed human, `{request_id,
 project, org, status}` and nothing of the request's content (`org: {id, handle}` for one that concerns an organisation, with
 `project: null` when no project is concerned, §7, §6.26; else `org:
 null`). The
-`personal_request_created` record is the human's `inbox` item for it;
+`personal_request_created` record is the human's `inbox` item for it
+(for an invitation by handle, §3.4, its `invitation` item);
 the other two only move the position (§18.2) and close the count. So a
 personal request has the same id scheme, position and read flag as
 every other record, member or not, and nobody but the addressed human
@@ -19877,7 +19917,8 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9); `restricted_changed` of a card whose restricted text the human is on the event's list for and may read at read and send time (§6.4), an ordinary notice like `moderation_applied`, counted in no `inbox` count, at most one per card and human in 10 minutes; `restricted_changed` of the set (`restricted:set`, §6.4) for a human on its list who is in the set at read and send time and is not among the members it names, an ordinary notice too, counted in no `inbox` count, at most one per human and project in 10 minutes | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3; the request about a new abuse report, §16.8, titled `Report: <reason> — <type>`); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators; `A restricted text changed`, linking to the card, for a `set` and a `cleared` alike; never the text, its length or the card's title, in the bell, the mail and the push (§6.4); `The restricted-access set changed`, linking to the project's restricted-access setting, for `entered` and `left` alike, naming no card and no member |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not, except the consent request of an invitation by handle (`invitation`, below) — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9); `restricted_changed` of a card whose restricted text the human is on the event's list for and may read at read and send time (§6.4), an ordinary notice like `moderation_applied`, counted in no `inbox` count, at most one per card and human in 10 minutes; `restricted_changed` of the set (`restricted:set`, §6.4) for a human on its list who is in the set at read and send time and is not among the members it names, an ordinary notice too, counted in no `inbox` count, at most one per human and project in 10 minutes | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>` for a project's request; for a personal request `<asker> asks you: <request title>`, the asker `Maity` for one the hub files with `asked_by: null` (the digest, §5.3; the request about a new abuse report, §16.8, titled `Report: <reason> — <type>`); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators; `A restricted text changed`, linking to the card, for a `set` and a `cleared` alike; never the text, its length or the card's title, in the bell, the mail and the push (§6.4); `The restricted-access set changed`, linking to the project's restricted-access setting, for `entered` and `left` alike, naming no card and no member |
+| `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -19940,7 +19981,7 @@ no membership.
 | `limit` | 0–50, default 20; `0` lists no item and answers the counts, `by_project` and `next_after` only (below) |
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
-| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; any other value is `invalid` with `details.fields.kind: "unknown"` |
+| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`, `invitation`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
 | `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
@@ -20139,7 +20180,9 @@ rules that make a position safe to resume from:
   human across projects — the sum of `open_requests` in `/me` (§5.1),
   which never contains a personal request (the project's list does not
   carry it), plus every open personal request addressed to the human
-  (#162, §7), member of its project or not, each counted exactly once;
+  (#162, §7), member of its project or not, each counted exactly once,
+  the consent request of an invitation by handle too, whose item is of
+  the kind `invitation` (§18.1): the counts keep their five keys;
   it
   falls when a request is answered or withdrawn, not when its
   notification is read; for an instance admin it also counts every
@@ -20299,11 +20342,11 @@ device; the browser's own permission is per browser and is not stored.
 
 ```json
 {
-  "kinds": ["inbox", "chat", "mention", "security"],
+  "kinds": ["inbox", "chat", "mention", "security", "invitation"],
   "not_listening": { "mode": "inbox", "minutes": 60 },
   "browser": {
     "enabled": true,
-    "kinds": { "inbox": true, "chat": true, "mention": true, "security": true }
+    "kinds": { "inbox": true, "chat": true, "mention": true, "security": true, "invitation": true }
   },
   "email": {
     "address": "maintainer@example.org",
@@ -20316,7 +20359,8 @@ device; the browser's own permission is per browser and is not stored.
       "inbox":     { "mode": "immediate" },
       "chat":      { "mode": "daily", "content": false },
       "mention":   { "mode": "daily", "content": false },
-      "security":  { "mode": "immediate" }
+      "security":  { "mode": "immediate" },
+      "invitation": { "mode": "immediate" }
     },
     "sign_in_link": true,
     "daily_at": "08:00",
@@ -20339,7 +20383,7 @@ device; the browser's own permission is per browser and is not stored.
   `security` here governs only the browser
   pop-up; the item is always in the bell (§18.1).
 - **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`
-  name exactly `inbox`, `chat`, `mention` and `security` (§18.1).
+  name exactly `inbox`, `chat`, `mention`, `security` and `invitation` (§18.1).
   A `PATCH` that names any other kind in `browser.kinds` or
   `email.kinds` is `invalid` with `details.fields["browser.kinds.<kind>"]`
   (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
@@ -20454,7 +20498,11 @@ device; the browser's own permission is per browser and is not stored.
   on `weekly_on` in `timezone`), or `off`. Every kind takes every mode.
   The defaults, by the maintainer's decision of 2026-11-02 against
   mailboxes filled by mention mails: `inbox` and `security`
-  `immediate`; `mention`, `chat` and every kind added later `daily`.
+  `immediate`; `mention`, `chat` and every kind added later `daily`,
+  except `invitation`, `immediate` by the maintainer's decision of
+  2026-11-08 for an invitation by handle (§3.4): its `daily` mails it
+  with the daily digest, its `off` keeps it on the platform only, and
+  the `inbox` mode does not carry it.
   The `inbox` mode never covers a `registration_pending` or
   `mail_disabled` item: neither is mailed (§18.1). What the `security`
   mode governs is the mail of a new sign-in (`session_created`, §2.6.5,

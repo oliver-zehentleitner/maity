@@ -371,6 +371,7 @@ window.MAITY_I18N["ja"] = {
   "bell.item.unread": "(未読)",
   "bell.kind.chat": "チャット",
   "bell.kind.inbox": "リクエスト",
+  "bell.kind.invitation": "招待",
   "bell.kind.mention": "メンション",
   "bell.kind.security": "セキュリティ通知",
   "bell.mark_all": "すべて既読にする",

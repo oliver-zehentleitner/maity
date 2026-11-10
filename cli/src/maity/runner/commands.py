@@ -20,6 +20,7 @@ from .. import hub, onboarding, state
 from . import (
     capabilities,
     config,
+    install,
     limitread,
     loop,
     operate,
@@ -629,6 +630,19 @@ def _operate(name: str) -> Any:
     return handler
 
 
+def _installer(command: Any) -> Any:
+    """install/uninstall, their refusals as this module's (exit 2)."""
+
+    def handler(args: argparse.Namespace) -> int:
+        try:
+            result: int = command(args)
+        except install.Refused as exc:
+            raise Refused(str(exc)) from None
+        return result
+
+    return handler
+
+
 # --- parser ----------------------------------------------------------------------------------
 
 
@@ -723,10 +737,57 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "unit",
         help="print the systemd unit for running serve as a service",
         description="Print the systemd unit shipped with this package; its comments say how "
-        "to install it (`maity runner unit > /etc/systemd/system/maity-runner.service`).",
+        "to install it by hand (`maity runner unit > /etc/systemd/system/maity-runner.service`). "
+        "`sudo maity runner install` does those steps.",
         formatter_class=fmt,
     )
     r.set_defaults(handler=cmd_unit)
+
+    r = rsub.add_parser(
+        "install",
+        help="as root: set this machine up to run the runner as a systemd service",
+        description=f"Linux with systemd and tmux, as root. Creates the {install.USER} system "
+        f"user and {install.HOME} (state, workspaces), writes {install.CONFIG} and "
+        f"{install.UNIT_PATH} with the path of this maity, pairs as {install.USER}, enables the "
+        "service and runs `maity runner check`. Existing files are left as they are unless "
+        "--force. While the configuration is not one serve would accept (no [limits] or "
+        "[harness.<id>] yet), the service is enabled but not started, and what is missing is "
+        "listed. Running it again is safe: it creates only what is missing and pairs only an "
+        "unpaired runner; an already paired one needs no code. The paths are fixed; other paths "
+        "are the manual steps of `maity runner unit`. Anything on those paths that is not as "
+        "install would have made it (a link, another owner, a directory or a file of root's "
+        "others can write) stops it before any change; a mode that only differs from "
+        "install's is set back. The workspaces a kept configuration names are not checked.",
+        formatter_class=fmt,
+    )
+    r.add_argument("url", help="the pairing URL (https://<hub>/r/<token>)")
+    code = r.add_mutually_exclusive_group()
+    code.add_argument("--code", help="the single-use pairing code")
+    code.add_argument("--code-file", help="read the code from this file, or stdin with -")
+    r.add_argument("--force", action="store_true", help="rewrite the configuration and the unit")
+    r.set_defaults(handler=_installer(install.cmd_install))
+
+    r = rsub.add_parser(
+        "uninstall",
+        help="as root: stop and remove the runner's systemd service",
+        description=f"Stops and disables the service, ends the agents it started (`stop-all`) "
+        f"and removes {install.UNIT_PATH}; when stopping fails, nothing is removed unless "
+        f"--force. With --purge also {install.HOME} (state, credential, workspaces with any "
+        f"unpushed work), {install.CONFIG.parent} and the {install.USER} user, if install made "
+        f"them ({install.RECORD} says so); otherwise --purge refuses before any change "
+        f"while either directory exists. When it cannot tell that the agents stopped (no "
+        "configuration, one that does not load), it removes nothing either, and those are "
+        "checked before the service is disabled. --purge removes the account first, so a "
+        "failed userdel leaves the account, its files and the configuration for the next "
+        "--purge; the unit is already gone by then. "
+        "The hub keeps listing the runner until it is removed in the dashboard.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--purge", action="store_true", help="also remove state, workspaces and user")
+    r.add_argument(
+        "--force", action="store_true", help="go on when stopping the service or its agents fails"
+    )
+    r.set_defaults(handler=_installer(install.cmd_uninstall))
 
     def runner_cmd(name: str, summary: str, description: str) -> argparse.ArgumentParser:
         r: argparse.ArgumentParser = rsub.add_parser(

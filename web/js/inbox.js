@@ -600,7 +600,7 @@ window.Maity = window.Maity || {};
     let own = new Set();
     if (ctx.scope !== "project") {
       const slugs = [...new Set(items.map((r) => r.slug))].filter((s) => s && ctx.projects.some((p) => p.full_name === s));
-      await Promise.all(slugs.map((s) => M.api.getAll("/projects/" + M.api.projectPath(s) + "/members")
+      await Promise.all(slugs.map((s) => M.membersOnce(ctx, s)
         .then((r) => { members[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
       if (left) return;
     }
