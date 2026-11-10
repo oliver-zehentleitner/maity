@@ -1270,7 +1270,10 @@ lists what is missing; add it, then `sudo systemctl start maity-runner`.
 The harness itself (installed and logged in as `maity-runner`) is yours
 to set up. Existing files are kept unless `--force`; run `install` again
 after a change, and steps already done are skipped (a paired runner needs
-no code). `--config` names another configuration file.
+no code). `--config` names another configuration file, by its absolute
+path; the unit then starts `serve` with it. As root, `install` never
+follows a link in the service user's directories or at a file it writes:
+a link there, or a configuration directory others can write, is refused.
 
 `uninstall` stops and disables the service, ends the agents it started
 (`stop-all`) and removes the unit. `--purge` also removes

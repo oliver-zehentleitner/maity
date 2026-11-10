@@ -1703,7 +1703,7 @@ is the way left to put a question to a person.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); `cli/src/maity/runner/install.py`. The four choices below are the implementer's within that scope, not confirmed by the maintainer.
+**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); `cli/src/maity/runner/install.py`. The choices below are the implementer's within that scope, not confirmed by the maintainer.
 **Revisit when:** a per-user (`systemctl --user`) variant is wanted, the shipped unit's `ExecStart` line changes, or `install` learns to write `[limits]` and a harness itself
 
 `sudo maity runner install <pairing url> --code-file -` does the steps the
@@ -1746,6 +1746,20 @@ user.
    stop. Once the unit is gone, nothing would supervise or stop them.
    - Rejected: leaving them running. Agents would go on working with a
      credential whose runner is gone.
+
+5. **Root never follows a link where others can write.** The service user's
+   home, and in the `single` layout every agent, can write
+   `/var/lib/maity-runner`. Its directories are therefore opened with
+   `O_NOFOLLOW` from the parent's descriptor and owned and moded through
+   that descriptor. A link there is refused.
+   Files are written to a temporary file in a root-owned directory that
+   others cannot write, then renamed into place. A link or non-regular file
+   at the path is refused.
+   `--purge` removes a link itself, never what it points to.
+   `ExecStart` quotes each word for systemd and refuses control characters,
+   since an interpreter path is free text that becomes unit syntax.
+   - Rejected: plain `chmod`/`chown`/`write_text` on paths. A link swapped
+     in by the service user would hand root's files to it.
 
 Every call that touches the system goes through one `Host` seam, so the tests
 run without root or systemd.
