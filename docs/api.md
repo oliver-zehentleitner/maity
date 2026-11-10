@@ -11634,7 +11634,9 @@ is not there is not sent:
    test): a `[` and the parameter after it are removed first, so a
    parameter may contain `::`. Then the part before the first `::` has to
    be a file or a directory at `head`, and the part after the last `::`
-   has to be a test at `head`. A missing path and a missing test are
+   has to be a test at `head`. The name is searched in every file at
+   `head`, not bound to the file before the `::`, and a class in
+   `path::Class::test` is not checked. A missing path and a missing test are
    both refused, and the text fallback below does not apply to a `::`
    span. A path that is no file or directory still
    passes as text in some file, verbatim, so that a route such as
@@ -11708,10 +11710,12 @@ there does not. Any other token that starts with eight hex digits and
 a hyphen and is only hyphenated hex groups is refused as not a full id,
 including a shortened middle group, a last group that is not twelve
 hex digits, and one that shares its start with an id at the head. A
-token of digits only, such as `20261110-1530`, is not an id. An id the
-change removed is written in a fenced block or under a heading `Ran`,
-which are not checked: unlike a name, an id in prose is checked, and
-the default branch is no fallback. Eight hex digits and
+known limit of that rule: a short commit of eight hex digits followed
+by a hex-only suffix, such as `-add` or `-1`, is refused as not a full
+id too. A token of digits only, such as `20261110-1530`, is not an id.
+An id the change removed is written in a fenced block or under a heading
+`Ran`, which are not checked: unlike a name, an id in prose is checked,
+and the default branch is no fallback. Eight hex digits and
 no hyphen stay an object (form 3).
 
 Not checked: a fenced code block; everything under a heading `Ran` up
