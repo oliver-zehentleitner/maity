@@ -1168,6 +1168,13 @@ def cmd_report(args: argparse.Namespace) -> int:
         task = session.client.call("POST", path, body=body)
         status = task.get("status") if isinstance(task, dict) else None
         return _done(args, task, f"reported {args.task} (no code); task is now {status}")
+    retrack = gitfacts.track_own_branch(Path.cwd())  # a branch cut from main (tsk-8qwmbw5xydpw)
+    if retrack.problem:
+        _err("report refused, the code does not match what would be reported:")
+        print(f"  - {retrack.problem}", file=sys.stderr)
+        return EXIT_REFUSED
+    if retrack.note:
+        _err(retrack.note)
     facts = gitfacts.collect(Path.cwd())
     card: Any = None
     probed = False
@@ -4308,7 +4315,12 @@ def build_parser() -> argparse.ArgumentParser:
         "Send a completion report. The head commit comes from git, the remote head from "
         "`git ls-remote`, the pull request from `gh` when it is installed; nothing is typed by "
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
-        "changes exist, the branch is not pushed, or the pull request's head differs. On a card "
+        "changes exist, the branch is not pushed, or the pull request's head differs. A branch "
+        "other than the default branch itself whose upstream is the remote's default branch "
+        "(as `git switch -c <branch> origin/main` leaves it) gets its own branch of the same "
+        "name there as its upstream (`branch.<branch>.merge`), and the report says so; while "
+        "the remote has no such "
+        "branch, it is refused with the `git push -u` to run. On a card "
         "with two stacked pull requests, once the card's last report names the first, the "
         "second is reported only after the first has merged (or closed): while the card's "
         "last report names the first and the hub last saw it open, a report from the second's "
