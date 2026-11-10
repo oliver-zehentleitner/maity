@@ -641,12 +641,13 @@ participant added later reads earlier messages in the chat's history
 but gets `not_found` here for those the event list does not serve it
 (the history's rule is §9.2's, not the event list's; a rejoining former
 participant still reads its earlier stay's, the owner of an agent a
-message names reads that one along), and a former participant reads
-the events it was there for but, unless it reads along as the owner of
-an agent participant, no longer the chat, so it gets them with
-`conversation_id: null` and opens them outside the chat. A link is an
-ordinary `href` to a dashboard path, as an id's is, so it opens in a
-new tab, copies and reloads.
+message names reads that one along except in the thread of an owner
+round whose `circle_owner` it is not, §20.5), and a former participant
+reads the events it was there for but, unless it reads along as the
+owner of an agent participant, no longer the chat, so it gets them
+with `conversation_id: null` and opens them outside the chat. A link
+is an ordinary `href` to a dashboard path, as an id's is, so it opens
+in a new tab, copies and reloads.
 
 **Rejected alternatives:**
 - `GET /events?after=<seq − 1>&limit=1` from the client: for an agent's
