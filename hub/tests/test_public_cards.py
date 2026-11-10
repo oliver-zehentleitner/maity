@@ -244,16 +244,22 @@ def test_every_kind_reads_one_target_by_the_rule_of_its_whole_list(world: World)
     `render_all` decides each candidate by it (tsk-ay4htr4s4w88), so a kind must answer one id
     exactly as its whole list does, before and after the project goes off."""
     world.card(status="open", title="Public while the page is")
-    with world.migrated.connect() as conn:
-        before = {name: kind.targets(conn) for name, kind in public_pages.KINDS.items()}
+
+    def check(known: dict[str, list[str]]) -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        with world.migrated.connect() as conn:
+            for name, kind in public_pages.KINDS.items():
+                every = found[name] = kind.targets(conn)
+                assert kind.targets(conn, every) == every, name
+                for target_id in sorted({*known.get(name, []), *every}):
+                    expected = [target_id] if target_id in every else []
+                    assert kind.targets(conn, [target_id]) == expected, (name, target_id)
+                assert kind.targets(conn, ["nothing-by-this-id"]) == [], name
+                assert kind.targets(conn, []) == [], name
+        return found
+
+    before = check({})
     assert all(before[name] for name in ("project", "card", "person", "agent")), before
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
-    with world.migrated.connect() as conn:
-        for name, kind in public_pages.KINDS.items():
-            every = kind.targets(conn)
-            assert kind.targets(conn, every) == every, name
-            for target_id in sorted({*before[name], *every}):
-                expected = [target_id] if target_id in every else []
-                assert kind.targets(conn, [target_id]) == expected, (name, target_id)
-            assert kind.targets(conn, ["nothing-by-this-id"]) == [], name
-        assert kind.targets(conn, []) == []
+    after = check(before)
+    assert not after["project"] and not after["card"], after
