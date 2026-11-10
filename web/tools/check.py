@@ -644,6 +644,13 @@ GLOSSARY_OTHER_ADDRESS = {
     ("ko", "해요체"): None,
     ("zh-Hans", "你"): None,
 }
+# French "ton" is also "tone" (le ton, un ton): the possessive ton/ta counts only right before a noun
+# the catalog itself writes after "votre", so a list kept here cannot go stale, and never after an
+# article, so "Le ton, la longueur" and "le ton compte" stay clean (nte-fvbb75pa1ym8). "tes" needs
+# no guard and is in the table above.
+GLOSSARY_OTHER_POSSESSIVE = {
+    ("fr", "vous"): (re.compile(r"\bvotre\s+([^\W\d_][\w'-]*)", re.I), ("ton", "ta")),
+}
 # What a text says beside its words: code spans and placeholders (`{harness}` is no harness).
 # A placeholder reads as a number, as it mostly is one ("{count} u" is hours in Dutch).
 GLOSSARY_CODE = re.compile(r"`[^`]*`")
@@ -679,10 +686,30 @@ def glossary_term(term):
     return re.compile(r"[ \-]".join(re.escape(word) for word in term.split()), re.I)
 
 
+def glossary_possessive(lang, said, data):
+    """The other address's possessives before the nouns a language's catalog uses with its own
+    (GLOSSARY_OTHER_POSSESSIVE), or None."""
+    rule = GLOSSARY_OTHER_POSSESSIVE.get((lang, said))
+    if not rule:
+        return None
+    learn, possessives = rule
+    nouns = set()
+    for entry in data.values():
+        for text in entry.values() if isinstance(entry, dict) else [entry]:
+            if isinstance(text, str):
+                nouns.update(m.group(1).lower() for m in learn.finditer(glossary_words(text)))
+    if not nouns:
+        return None
+    # A possessive never follows an article: "le ton compte" is the tone and the verb.
+    article = r"(?<!\ble\s)(?<!\bun\s)(?<!\bce\s)(?<!\bdu\s)(?<!\bau\s)(?<!\bcet\s)(?<!\bquel\s)"
+    return re.compile(article + r"\b(?:%s)\s+(?:%s)\b" % ("|".join(possessives), "|".join(sorted(map(re.escape, nouns)))), re.I)
+
+
 def glossary_problems(lang, data, english, fixed, address):
     """A translation against glossary_rules: a fixed term translated, the other address used."""
     problems = []
     other = GLOSSARY_OTHER_ADDRESS.get((lang, address.get(lang)))
+    possessive = glossary_possessive(lang, address.get(lang), data)
     terms = [(term, glossary_term(term)) for term in fixed]
     for key, entry in sorted(data.items()):
         source = english.get(key)
@@ -696,7 +723,7 @@ def glossary_problems(lang, data, english, fixed, address):
             for term, pattern in terms:
                 if pattern.search(said) and not pattern.search(words):
                     problems.append("%s: %r is translated; glossary.md keeps it unchanged" % (key, term))
-            found = other.search(words) if other else None
+            found = (other.search(words) if other else None) or (possessive.search(words) if possessive else None)
             if found:
                 problems.append("%s: %r is not the address glossary.md names (%s)" % (key, found.group(0), address[lang]))
     return sorted(set(problems))

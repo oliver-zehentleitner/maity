@@ -21,6 +21,10 @@ const path = require("path");
 const vm = require("vm");
 const WEB = process.argv[2];
 
+function dropSelection(n) {
+  if (typeof n.selectionStart === "number") n.selectionStart = n.selectionEnd = String(n.value || "").length;
+  for (const c of n.childNodes || []) dropSelection(c);
+}
 class Node_ {
   constructor() { this.childNodes = []; this.parentNode = null; }
   get firstChild() { return this.childNodes[0] || null; }
@@ -29,7 +33,10 @@ class Node_ {
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text_(c) : c)); }
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
   insertBefore(c, ref) { c.parentNode = this; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); return c; }
-  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; return c; }
+  // A field taken out of the document does not keep its caret in a browser (the e2e step at
+  // tools/e2e.py's note-edit redraw guards the restore in Chromium): a removed subtree's fields
+  // get the caret at the end, so a smoke case that needs the caret back needs the code that puts it back.
+  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; dropSelection(c); return c; }
   replaceChild(c, old) { const i = this.childNodes.indexOf(old); if (i < 0) return old; if (c.parentNode) c.parentNode.removeChild(c); this.childNodes[i] = c; c.parentNode = this; old.parentNode = null; return old; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
@@ -276,6 +283,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(links[0].getAttribute("aria-label") === "GitHub" && links[1].getAttribute("aria-label") === "Maity"
       && productLine.querySelectorAll("svg").every((svg) => svg.getAttribute("aria-hidden") === "true"),
       "product line: the icon links named GitHub and Maity, every icon aria-hidden");
+    // Names stay as they are in a page translator, the catalog's sentence is translated (nte-zvjjfj9g95bh (b)): exactly
+    // the word Maity, the name and the two icon links carry translate="no", nothing else on the line.
+    const fixedWords = productLine.all().filter((e) => e.getAttribute && e.getAttribute("translate") === "no")
+      .map((e) => e.getAttribute("aria-label") || text(e));
+    expect(JSON.stringify(fixedWords) === JSON.stringify(["Maity", "Oliver Zehentleitner", "GitHub", "Maity"]),
+      "product line: the word Maity, the name and the two icon links carry translate=no, the sentence does not " + JSON.stringify(fixedWords));
     const heart = productLine.querySelector(".product-heart");
     expect(heart && heart.getAttribute("role") === "img" && heart.getAttribute("aria-label") === "love", "product line: the heart is a symbol named love");
     expect(productLine.all().every((e) => e.attrs.style === undefined && e.tagName !== "STYLE" && e.tagName !== "USE" && e.tagName !== "TITLE"),

@@ -1352,12 +1352,37 @@ single character `您`, which a pattern finds; neither Chinese catalog holds `�
 **Rejected alternatives:**
 - Checking `resume` with the other fixed terms: the glossary translates it as an ordinary verb, so the check would flag
   correct sentences; it stays a reviewer's call (`GLOSSARY_NOT_CHECKED`).
-- Flagging French `ton` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses it so
-  (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with no
-  reason of their own; neither occurs in a French catalog today.
+- Flagging French `ton` beside `tu`, `toi` and `tes` with no guard: `ton` is also a noun, and the French catalog uses
+  it so (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with
+  no reason of their own; neither occurs in a French catalog today. `ton` and `ta` are checked since with a guard:
+  see rendering.md#french-ton-and-ta-count-only-before-a-noun-the-catalog-writes-after-votre — 4d23c5af-13e4-44f8-a836-424b857854fc.
 - A word list for Japanese and Korean: their address is a register (です・ます, 해요체), not a set of words a pattern
   can find; nothing is checked there and reviewers keep it.
 - Leaving both rules to review alone: the same findings came back on #1451 after the glossary named them.
+
+## French `ton` and `ta` count only before a noun the catalog writes after `votre`
+
+**Id:** 4d23c5af-13e4-44f8-a836-424b857854fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** note nte-fvbb75pa1ym8 (a review of #1457); the batch 3b plan on tsk-tsb8528rank1, approved by the lead and the review lead, who asked for a narrow guard with a test where `ton` is the tone, 2026-11-10
+**Revisit when:** the French catalog writes "ton" or "ta" as a possessive after an article, or the check misses an informal possessive before a noun the catalog never uses with `votre`
+
+See: rendering.md#make-check-holds-every-translation-to-the-glossarys-fixed-terms-and-form-of-address — 7d49c1e3-32a6-4a9e-af9e-c385ee719ee0 — as of 2026-11-10
+
+The French address check (`GLOSSARY_OTHER_ADDRESS`, `vous`) found `tu`, `toi` and `tes` but not the possessives `ton`
+and `ta`, because `ton` is also "tone". `web/tools/check.py` now flags `ton` or `ta` only right before a noun that the
+French catalog itself writes after `votre`, learnt from the catalog on every run (`GLOSSARY_OTHER_POSSESSIVE`), and
+never after an article (`le`, `un`, `ce`, `du`, `au`, `cet`, `quel`): a possessive does not follow one. So « ton
+compte » is a finding, while « Le ton, la longueur » and « le ton compte » are not. A catalog without `votre` teaches
+no noun, and nothing is flagged.
+
+**Rejected alternatives:**
+- A noun list kept in `check.py`: it would go stale as the catalog grows; the catalog's own `votre` nouns are the
+  nouns its texts speak of.
+- Flagging every `ton` and `ta`: « Le ton, la longueur … » in the catalog would be a false finding.
+- The noun alone as the guard: « le ton compte » (the tone counts) would be flagged; the article guard keeps it out.
 
 ## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
 

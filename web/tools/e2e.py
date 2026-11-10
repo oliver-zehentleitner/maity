@@ -1107,7 +1107,7 @@ def scenario(run: Run, page: Page) -> None:
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
     images_step(run, page, alpha)
-    board_cards_step(run, page)
+    board_cards_step(run, page, alpha)
 
     why_step(run, page, alpha)
     runners_step(run, page)
@@ -3770,7 +3770,7 @@ def runners_step(run: Run, page: Page) -> None:
     no_problems(run, "runners")
 
 
-def board_cards_step(run: Run, page: Page) -> None:
+def board_cards_step(run: Run, page: Page, alpha: Path) -> None:
     """Cards from the board (docs/api.md §6.4): create, move by menu and by dragging."""
     run.step("board: the owner writes a card, moves it with the menu, drags it to a refused and an allowed column")
     page.goto(f"{run.base}/owner/e2e-alpha/board")
@@ -3825,7 +3825,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     board_order_step(run, page)
     overview_step(run, page)
     ticker_step(run, page)
-    notifications_step(run, page)
+    notifications_step(run, page, alpha)
 
 
 def request_action_step(run: Run, page: Page) -> None:
@@ -4369,7 +4369,7 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     expect(open_form).to_be_focused()
 
 
-def notifications_step(run: Run, page: Page) -> None:
+def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     """Notifications, stage 1 (docs/api.md §18.2): the bell, its list, its keyboard."""
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
@@ -4415,6 +4415,19 @@ def notifications_step(run: Run, page: Page) -> None:
             page.set_viewport_size({"width": phone_width, "height": phone_height})
             expect(page.locator("header .me .lead-button")).to_be_hidden()
             expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
+            # The global list keeps its plain toolbar (#1483 left it alone): the heading takes the full
+            # row and the lead control sits under it at the left edge, so a later shared toolbar rule
+            # that wraps or moves it shows here (nte-9ezzv8khdtsz).
+            row = page.evaluate("""() => {
+              const bar = document.querySelector('main section.view-chats .toolbar');
+              const box = (e) => e.getBoundingClientRect();
+              const b = box(bar), cs = getComputedStyle(bar), h = box(bar.querySelector('h2'));
+              const l = box(bar.querySelector('.chats-lead .lead-button'));
+              const inner = b.left + parseFloat(cs.paddingLeft), right = b.right - parseFloat(cs.paddingRight);
+              return { headLeft: h.left - inner, headRight: right - h.right, below: l.top - h.bottom, leadLeft: l.left - inner };
+            }""")
+            assert abs(row["headLeft"]) <= 1 and abs(row["headRight"]) <= 1 and row["below"] >= 0 and abs(row["leadLeft"]) <= 1, (
+                f"the Chats toolbar at {phone_width} px: the heading the full row, the lead under it at the left edge: {row}")
             # Several leads are a menu; under the heading at the left edge it opens from that edge, on
             # screen (e5kk at #1271). Drawn with a second lead beside the real one.
             box = page.evaluate("""() => new Promise((ok) => {
@@ -4469,6 +4482,26 @@ def notifications_step(run: Run, page: Page) -> None:
     page.keyboard.press("Escape")  # the focus is on the bell after the click
     expect(panel).to_be_hidden()
     expect(bell).to_be_focused()
+    # A mention of the owner (nte-nkwh5y6n4ve2): the unread line beside the project's tabs and the
+    # filtered All notifications page it leads to, each under axe; Mark all read there marks the
+    # mentions of that project only, and the line goes.
+    run.step("notifications: a mention of the owner shows its line beside the tabs and the filtered list, both under axe")
+    run.maity(alpha, "say", "all", "A mention for @owner in the e2e run.", "--type", "notice")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    line = page.locator("main p.mention-note a")
+    expect(line).to_be_visible(timeout=20000)
+    expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
+    run.a11y(page, "the unread mention line")
+    line.click()
+    expect(page).to_have_url(re.compile(r"/notifications\?kind=mention&project=owner%2Fe2e-alpha$"))
+    mark_all = page.get_by_role("button", name="Mark all read", exact=True)
+    expect(mark_all).to_be_enabled(timeout=10000)  # the unread mention is listed
+    run.a11y(page, "notifications filtered to mentions in a project")
+    mark_all.click()
+    expect(mark_all).to_be_disabled()
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    expect(page.locator("main section.view-inbox")).to_be_visible()
+    expect(page.locator("main p.mention-note")).to_be_hidden(timeout=20000)
     no_problems(run, "notifications")
 
 
@@ -5743,10 +5776,26 @@ def handle_hints_step(run: Run, page: Page) -> None:
     """Every field that asks for a handle explains the word (tsk-srzrkf2parzt): one sentence the field
     names in its aria-describedby, at most two lines at 390 and 360 px, light and dark. The seven fields:
     your own handle, an agent's when it is added, renamed or joined, an organisation's when it is
-    created or renamed (here with a handle of the full 31 characters), and the person invited to one."""
+    created or renamed (here with a handle of the full 31 characters), and the person invited to one.
+    The owner is renamed to 31 characters for the step and back after it, so /account's own hint is
+    measured with a long handle too: a hint that filled in the handle (2026c18b) took three lines there
+    (nte-j9ae0tjdqykf). Two of the three renames a day the hub allows; no other step renames the owner."""
     run.step("handle hints: every handle field explains the word, at most two lines on a phone")
     org = "e2e-hints-organisation-handle-x"
     assert len(org) == 31, org
+    long_owner = "e2e-hints-owner-handle-31-chars"
+    assert len(long_owner) == 31, long_owner
+
+    def rename_owner(old: str, new: str) -> None:
+        page.goto(f"{run.base}/account")
+        field = page.locator(".handle-editor input[type=text]").first
+        expect(field).to_have_value(old)
+        field.fill(new)
+        page.locator(".handle-editor").first.get_by_role("button", name="Rename", exact=True).click()
+        expect(page.locator(".handle-editor").first).to_contain_text(f"is now @{new}")
+        expect(page.locator(".handle-editor input[type=text]").first).to_have_value(new)
+
+    rename_owner("owner", long_owner)
     page.goto(f"{run.base}/account/orgs")
     page.locator("#org-new-handle").fill(org)
     page.locator("#org-new-name").fill("E2E Hints Organisation")
@@ -5802,10 +5851,11 @@ def handle_hints_step(run: Run, page: Page) -> None:
                     "org-invite": "org-invite-handle" in fields,
                 }
                 assert all(kinds.values()), f"handle hints at {at}: {kinds} from {sorted(fields)}"
-                print(f"   handle hints: 7 kinds, each at most two lines at {at}")
+                print(f"   handle hints: 7 kinds, each at most two lines at {at}, the owner's handle of 31 characters")
     finally:
         page.emulate_media(color_scheme="light")
         page.set_viewport_size({"width": 1280, "height": 900})
+        rename_owner(long_owner, "owner")
     no_problems(run, "handle hints")
 
 
