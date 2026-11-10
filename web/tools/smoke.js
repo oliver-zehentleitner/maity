@@ -1359,8 +1359,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(activeInst && text(activeInst) === " · agent-c#k3pa Online" && activeInst.querySelector(".dot.online")
       && activeInst.querySelector("a.member-instance").getAttribute("href") === "#/maintainer/maity/team/agt-c/sessions/k3pa",
       "credentials: an active one names its instance with its presence and links the #id to its Sessions " + (activeInst && JSON.stringify(text(activeInst))));
-    expect(goneInst && text(goneInst) === " · agent-c#q7rd" && !goneInst.querySelector(".credential-presence"),
-      "credentials: a revoked one names its instance, without a presence " + (goneInst && JSON.stringify(text(goneInst))));
+    expect(goneInst && text(goneInst) === " · agent-c#q7rd" && !goneInst.querySelector(".credential-presence")
+      && !goneInst.querySelector("a.member-instance") && goneInst.querySelector("a.member-ref").getAttribute("href") === "#/maintainer/maity/team/agt-c",
+      "credentials: a revoked one, its instance unlisted, names it without a presence and without a link to Sessions " + (goneInst && JSON.stringify(text(goneInst))));
     // The revoke confirmation names the instance; declined, nothing is sent.
     const credConfirm = win.confirm, credPost = win.Maity.api.post;
     let asked = null, posted = 0;

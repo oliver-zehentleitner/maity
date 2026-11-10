@@ -18,9 +18,11 @@ window.Maity = window.Maity || {};
     return M.t("agentparts.credential.last_used_via", { ago, via: c.last_used_via });
   }
 
-  // The instance a credential belongs to (§6.17, §10): <handle>#<id>, the #id a link to that
-  // instance's Sessions, and for an active one its presence as the member list reads it, so two
-  // instances of one agent are told apart before one of them is revoked (tsk-s0jb9wkdp41j).
+  // The instance a credential belongs to (§6.17, §10): <handle>#<id>, and for an active one its
+  // presence as the member list reads it, so two instances of one agent are told apart before one
+  // of them is revoked (tsk-s0jb9wkdp41j). The #id links to that instance's Sessions only where the
+  // member lists it: Sessions shows the active instances (§6.2), so a revoked one's would lead to
+  // "not listed"; its #id is then plain text beside the linked handle.
   const PRESENCES = {
     online: () => M.t("members.presence.online"), away: () => M.t("members.presence.away"),
     offline: () => M.t("members.presence.offline"), paused: () => M.t("members.presence.paused"),
@@ -31,7 +33,10 @@ window.Maity = window.Maity || {};
   function credentialInstance(ctx, m, c) {
     if (!c.instance) return null;
     const inst = instanceOfCredential(m, c);
-    const ref = M.dom.memberRef(ctx, m.id, { instance: inst ? { instance: c.instance, harness: inst.harness, model: inst.model } : c.instance });
+    const ref = inst
+      ? M.dom.memberRef(ctx, m.id, { instance: { instance: c.instance, harness: inst.harness, model: inst.model } })
+      : h("span", { class: "member-ref-instance" }, M.dom.memberRef(ctx, m.id, { text: handleIn(ctx, m) }),
+        h("span", { class: "member-instance muted" }, "#" + c.instance));
     const presence = !c.revoked_at && inst && Object.prototype.hasOwnProperty.call(PRESENCES, inst.presence)
       ? h("span", { class: "credential-presence" }, " ", h("span", { class: "dot " + inst.presence, "aria-hidden": "true" }), " ",
         PRESENCES[inst.presence]())
@@ -40,9 +45,12 @@ window.Maity = window.Maity || {};
   }
   // What the revoke confirmation names: the instance's address as its row says it, by the
   // project's handle rule (M.dom.handleOf: owner/handle where two members share the short one).
-  function addressOf(ctx, m, c) {
+  function handleIn(ctx, m) {
     const known = (ctx.memberById && ctx.memberById[m.id]) || m;
-    return (M.dom.handleOf(ctx, known) || m.display_name || m.id) + (c.instance ? "#" + c.instance : "");
+    return M.dom.handleOf(ctx, known) || m.display_name || m.id;
+  }
+  function addressOf(ctx, m, c) {
+    return handleIn(ctx, m) + (c.instance ? "#" + c.instance : "");
   }
 
   // revoked(): what follows a revocation; the whole view drawn anew without one.

@@ -5840,8 +5840,10 @@ reports nothing).
 **Revisit when:** an instance can be revoked from its own line on the member's Sessions tab, or the member list carries the credentials
 
 In an agent's credentials list (its row on Team, its Details on Agents) each credential names its
-instance after its id as `<handle>#<id>`: the `#id` links to that instance on the member's
-Sessions tab, and an active one shows its presence from the member list. The revoke confirmation
+instance after its id as `<handle>#<id>`: where the member lists that instance, the `#id` links
+to it on the member's Sessions tab, and an active one shows its presence from the member list.
+A revoked credential's instance is usually no longer listed (Sessions shows the active instances,
+docs/api.md §6.2), so its `#id` is plain text: a link would only lead to "not listed". The revoke confirmation
 names the same address, by the same handle rule (owner/handle where two members share the
 short one): "Revoke maity-coder-claude-001#qwju (crd-…)?".
 
