@@ -4484,17 +4484,15 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     expect(bell).to_be_focused()
     # A mention of the owner (nte-nkwh5y6n4ve2): the unread line beside the project's tabs and the
     # filtered All notifications page it leads to, each under axe; Mark all read there marks the
-    # mentions of that project only, and the line goes.
+    # mentions of that project only, and the line goes. "@owner" is a group word, never a member
+    # (§8.6), so the agent names the owner by the alias handle_hints_step left (LONG_OWNER).
     run.step("notifications: a mention of the owner shows its line beside the tabs and the filtered list, both under axe")
     cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
-    run.maity(alpha, "say", "all", "A mention for @owner in the e2e run.", "--type", "notice")
+    run.maity(alpha, "say", "all", f"A mention for @{LONG_OWNER} in the e2e run.", "--type", "notice")
     said = [e for e in run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after=cursor, wait=0)["items"]
             if e.get("kind") == "message"]
+    assert len(said) == 1 and len(said[0]["payload"].get("mentions") or []) == 1, said  # the alias resolved to the owner
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    seen = page.evaluate("""() => window.Maity.api.get("/me/notifications?limit=5")""")
-    print("   mention: payload mentions", [e["payload"].get("mentions") for e in said],
-          "counts", seen.get("counts"), "by_project", seen.get("by_project"),
-          "items", [(i.get("kind"), i.get("title")) for i in seen.get("items", [])][:3])
     line = page.locator("header p.mention-note a")
     expect(line).to_be_visible(timeout=20000)
     expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
@@ -5779,6 +5777,11 @@ HANDLE_HINTS = """() => Array.from(document.querySelectorAll("p.handle-explain")
 })"""
 
 
+# The owner's 31-character handle while handle_hints_step runs; an alias of the owner after it,
+# which notifications_step mentions, since "@owner" is a group word, never a member (§8.6).
+LONG_OWNER = "e2e-hints-owner-handle-31-chars"
+
+
 def handle_hints_step(run: Run, page: Page) -> None:
     """Every field that asks for a handle explains the word (tsk-srzrkf2parzt): one sentence the field
     names in its aria-describedby, at most two lines at 390 and 360 px, light and dark. The seven fields:
@@ -5790,7 +5793,7 @@ def handle_hints_step(run: Run, page: Page) -> None:
     run.step("handle hints: every handle field explains the word, at most two lines on a phone")
     org = "e2e-hints-organisation-handle-x"
     assert len(org) == 31, org
-    long_owner = "e2e-hints-owner-handle-31-chars"
+    long_owner = LONG_OWNER
     assert len(long_owner) == 31, long_owner
 
     def rename_owner(old: str, new: str) -> None:
