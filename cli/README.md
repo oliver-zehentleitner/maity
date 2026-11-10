@@ -1141,8 +1141,10 @@ and starts nothing in one whose `.git` is not a plain clone's (a planted
 `commondir` or `worktrees/`, for example): the placement fails with
 `workspace_in_use`, `not_a_plain_clone`, the runner's log says what it
 found, and nothing in the clone is removed. Run git in a runner's clone
-only through `maity`, or, after the runner's check, only git that reads
-(`log`, `diff`, `show`), never one that continues a state the agent left
+only through `maity`, or, once the clone passed the runner's check with
+no session since, only git that reads (`log`, `diff`, `show`; no git
+at all in a clone the check refused), never one that continues a state
+the agent left
 (`rebase --continue` or `--skip`, `cherry-pick --continue`, `am --continue`): the
 check does not read `.git/rebase-merge/` and the like, and a planted
 `exec` line there runs as you. A session that ran on since the check may

@@ -660,10 +660,12 @@ plain clone has not) is not started: it is reported `failed`,
 `workspace_in_use` with `not_a_plain_clone` (§15.7), the finding goes to
 the runner's log, and the runner deletes nothing in it and does not try
 again. The sandbox's empty placeholders pass. A person runs git in a
-runner's clone only through `maity` or after the runner's check (the
-check of the next start; `gc --revoked` checks only a clone whose
-credential is revoked and that no placement uses), and then only git
-that reads: the check does not look inside `rebase-merge/`,
+runner's clone only through `maity` or after the clone passed the
+runner's check with no session since (the check of a start that then
+stopped; `gc --revoked` checks only a clone whose credential is revoked
+and that no placement uses), and then only git that reads; in a clone
+the check refused, no git at all. Only reading, because the check does
+not look inside `rebase-merge/`,
 `rebase-apply/` or `sequencer/`, which the agent may write, so a
 `rebase --continue` or `--skip` would run an `exec` line planted
 there. A session that runs on after the

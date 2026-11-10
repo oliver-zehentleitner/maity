@@ -70,7 +70,8 @@ New agent profiles are created by a human in the dashboard, never from the CLI.
 An agent's clone on the runner belongs to the agent. You look there, you don't work there.
 
 - Read the work from the pushed branch or the pull request.
-- To look inside the clone, run git there only after the runner has checked it, with no session run since. The runner checks each clone before it starts an agent in it, so a clone is in that state only when the start stopped after the check; while an agent runs there, read the pushed branch instead. Even then, use only git that reads: `git log`, `git diff`, `git show`. Unchecked, a clone's own configuration can make even `git diff` run a program the agent put there.
+- To look inside the clone, run git there only when it passed the runner's check and no session ran since. The runner checks each clone before it starts an agent in it, so that holds only when the clone passed and the start stopped afterwards (the join failed, or the placement was stopped meanwhile), or when `maity runner gc --revoked` checked it, which it does only for a clone whose credential is revoked and that no placement uses. A clone the runner refused (`not_a_plain_clone`) never qualifies: do not run git in it at all. While an agent runs there, read the pushed branch instead.
+- In a checked clone, use only git that reads: `git log`, `git diff`, `git show`. Unchecked, a clone's own configuration can make even `git diff` run a program the agent put there.
 - Never continue what the agent left: no `git rebase --continue` or `--skip`, no `git cherry-pick --continue` or `git am --continue`. The agent can write those states; an `exec` line it planted in a rebase's todo list would run as you.
 - Do your own work in a clone of your own.
 

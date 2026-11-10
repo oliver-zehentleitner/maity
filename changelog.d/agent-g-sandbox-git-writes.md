@@ -18,7 +18,8 @@
   `workspace_in_use` and the detail `not_a_plain_clone`; the runner's log names what it found,
   and nothing in the clone is removed.
 - docs: the runner page has a section "Working in an agent's clone": a person runs git there
-  only after the runner's check with no session run since, and then only git that reads (`log`,
+  only after the clone passed the runner's check with no session run since (never in one it
+  refused), and then only git that reads (`log`,
   `diff`, `show`), never continues a rebase, am or cherry-pick the agent left, and works in a
   clone of their own (req-ynqaa1dkt1pe).
 - contract, hub: §15.7 lists `not_a_plain_clone` as a detail of `workspace_in_use`, and the hub
