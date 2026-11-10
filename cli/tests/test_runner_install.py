@@ -317,6 +317,59 @@ def test_a_link_in_the_service_users_home_is_not_followed(tmp_path: Path) -> Non
     assert (victim.stat().st_mode & 0o777) == 0o755
 
 
+@pytest.mark.parametrize("code", [None, "K3PF-9QZD-1MWA"])
+def test_a_credential_linked_to_a_root_file_is_refused_not_read(
+    tmp_path: Path, code: str | None
+) -> None:
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    sentinel = tmp_path / "root-only" / "secret"
+    sentinel.parent.mkdir(mode=0o700)
+    sentinel.write_text("root's")
+    credential = host.path(install.STATE_DIR) / "credential"
+    credential.unlink()
+    credential.symlink_to(sentinel)
+    host.calls.clear()
+    with pytest.raises(install.Refused, match="credential is a link"):
+        install.cmd_install(args(code=code), host)
+    assert host.calls == []
+    assert sentinel.read_text() == "root's"
+
+
+def test_a_linked_state_dir_without_a_code_is_refused_as_a_link(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    install.cmd_install(args(), host)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()  # no credential there: a plain read would ask for a code instead
+    state_dir = host.path(install.STATE_DIR)
+    (state_dir / "credential").unlink()
+    state_dir.rmdir()
+    state_dir.symlink_to(elsewhere)
+    host.calls.clear()
+    with pytest.raises(install.Refused, match="is a link or not a directory"):
+        install.cmd_install(args(code=None), host)
+    assert host.calls == []
+
+
+def test_uninstall_refuses_a_linked_configuration_and_never_reads_it(tmp_path: Path) -> None:
+    host = FakeHost(tmp_path)
+    complete_config(host)
+    install.cmd_install(args(), host)
+    target = tmp_path / "operators.toml"
+    target.write_text(COMPLETE)
+    config_file = host.path(install.CONFIG)
+    config_file.unlink()
+    config_file.symlink_to(target)
+    host.calls.clear()
+    with pytest.raises(install.Refused, match="is a link or not a regular file"):
+        install.cmd_uninstall(args(purge=True), host)
+    assert host.calls == []
+    # --force goes on without reading it: no stop-all on it, the link goes, not its target.
+    assert install.cmd_uninstall(args(purge=True, force=True), host) == 0
+    assert not any("stop-all" in line for line in host.commands())
+    assert not os.path.lexists(config_file) and target.read_text() == COMPLETE
+
+
 def test_a_home_without_its_user_is_refused(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
     host.path(install.HOME).mkdir(parents=True)
@@ -394,11 +447,12 @@ def srv_state(host: FakeHost) -> None:
     (host.path(Path("/srv/runner-state")) / "credential").write_text("x")
 
 
-def test_paired_is_read_from_the_configured_state_dir(tmp_path: Path) -> None:
+def test_a_kept_configuration_with_another_state_dir_is_refused(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
     srv_state(host)
-    assert install.cmd_install(args(code=None), host) == 0
-    assert not any(" pair " in line for line in host.commands())
+    with pytest.raises(install.Refused, match="install uses only /var/lib/maity-runner/state"):
+        install.cmd_install(args(code=None), host)
+    assert host.calls == []
 
 
 def test_a_forced_configuration_is_paired_against_its_own_state_dir(tmp_path: Path) -> None:
@@ -499,8 +553,10 @@ def test_purge_leaves_a_user_install_did_not_make(tmp_path: Path) -> None:
 
 def test_an_account_without_root_s_record_is_not_taken_over(tmp_path: Path) -> None:
     host = FakeHost(tmp_path)
-    # install's home and its comment, as an account's owner could set them: still not proof.
-    host.users[install.USER] = install.User(990, 990, str(install.HOME), install.COMMENT)
+    # install's home and the comment an earlier version took as proof, which an account's
+    # owner can set where users may change their full name: still not install's.
+    forged = "Maity runner (made by maity runner install)"
+    host.users[install.USER] = install.User(990, 990, str(install.HOME), forged)
     host.path(install.HOME).mkdir(parents=True)
     with pytest.raises(install.Refused, match="install did not make"):
         install.cmd_install(args(), host)

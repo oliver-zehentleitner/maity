@@ -1281,9 +1281,11 @@ to set up.
 
 Running `install` again is safe. It creates only what is missing and
 pairs only an unpaired runner; an already paired one needs no code.
-Whether it is paired is read from the `state_dir` of the configuration
-it leaves in place, so a `--force` that writes install's own
-configuration pairs again. It keeps an existing file that differs unless
+Paired means a credential in `/var/lib/maity-runner/state`, a regular
+file of `maity-runner`'s, read without following a link. An existing
+configuration it keeps must use that `state_dir` (`~/state` counts, as
+`serve` reads `~` as the service user's home); another one is refused,
+and `--force` writes install's own, which then pairs. It keeps an existing file that differs unless
 `--force`; a file with install's own text but another mode is put back to
 0644.
 
@@ -1305,7 +1307,10 @@ started (`stop-all`), then removes the unit. If it cannot tell that the
 agents stopped, it removes nothing and exits 2: stopping the service or
 the agents failed, the configuration is missing or does not load (as
 install's own starter configuration does not), or there is no account of
-install's to run `stop-all` as. `--force` goes on anyway. `--purge` also
+install's to run `stop-all` as. A link or anything but a regular file of
+root's at `/etc/maity-runner/runner.toml` is refused before any change;
+with `--force` uninstall goes on without reading it. `--force` goes on
+anyway in the other cases too. `--purge` also
 removes `/var/lib/maity-runner` (state, credential, and workspaces with any
 work not pushed), `/etc/maity-runner`, the account and its record. The
 account goes only if install's record names it; `--purge` checks all of

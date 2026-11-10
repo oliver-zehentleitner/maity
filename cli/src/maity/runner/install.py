@@ -401,19 +401,20 @@ def _preconditions(host: Host) -> None:
             raise Refused(f"`{tool}` is not installed; the runner needs it")
 
 
-def _final_state_dir(host: Host, base: str, force: bool) -> Path:
-    """Where the credential lives under the configuration install leaves in place: its own
-    (written now) or the existing one, kept. Resolved as `serve` resolves it for the service
-    user: `~` is that user's HOME, the default as config.py has it."""
+def _check_state_dir(host: Host, base: str, force: bool) -> None:
+    """The configuration install leaves in place, its own (written now) or the existing one
+    kept, must keep the credential in the fixed state directory: install pairs and checks
+    there, and nowhere else. Resolved as `serve` resolves it for the service user: `~` is
+    that user's HOME, the default as config.py has it."""
     if not _root_file(host, CONFIG):
-        return STATE_DIR
+        return
     with _root_dir(host, CONFIG.parent, create=False) as fd:
         if fd is None:  # checked above; gone since
             raise Refused("a directory install checked has gone; nothing more was changed")
         with os.fdopen(os.open(CONFIG.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)) as f:
             text = f.read()
     if force or text == starter_config(base):
-        return STATE_DIR
+        return
     try:
         table = tomllib.loads(text).get("hub")
     except tomllib.TOMLDecodeError:
@@ -423,10 +424,49 @@ def _final_state_dir(host: Host, base: str, force: bool) -> Path:
     if not isinstance(value, str):
         raise Refused(f"{CONFIG}: hub.state_dir is not a path; fix it, or --force")
     if value == "~" or value.startswith("~/"):
-        return HOME / value[2:]
-    if value.startswith("/"):
-        return Path(value)
-    raise Refused(f"{CONFIG}: hub.state_dir {value!r} is not absolute; fix it, or --force")
+        resolved = HOME / value[2:]
+    elif value.startswith("/"):
+        resolved = Path(value)
+    else:
+        raise Refused(f"{CONFIG}: hub.state_dir {value!r} is not absolute; fix it, or --force")
+    if resolved != STATE_DIR:
+        raise Refused(
+            f"{CONFIG} keeps the credential in {resolved}; install uses only {STATE_DIR} "
+            "(--force writes its own configuration; other paths are the manual steps of "
+            "`maity runner unit`)"
+        )
+
+
+def _paired(host: Host, user: User | None) -> bool:
+    """Whether the fixed state directory holds a credential, read as everything here is:
+    each directory opened without following a link, the credential a regular file of the
+    service user's. A link or another owner there stops install before any change."""
+    if user is None:
+        return False  # no account, no home (_check_user): nothing paired
+    with _root_dir(host, HOME.parent, create=False) as parent:
+        home = _entry(parent, HOME.name)
+        if parent is None or home is None:
+            return False
+        fd = os.open(HOME.name, _DIR, dir_fd=parent)
+    try:
+        if _entry(fd, STATE_DIR.name) is None:
+            return False
+        try:
+            below = os.open(STATE_DIR.name, _DIR, dir_fd=fd)
+        except OSError:
+            raise Refused(f"{STATE_DIR} is a link or not a directory; move it away first") from None
+        try:
+            st = _entry(below, state.CREDENTIAL_FILE)
+        finally:
+            os.close(below)
+    finally:
+        os.close(fd)
+    if st is None:
+        return False
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != user.uid:
+        shown = STATE_DIR / state.CREDENTIAL_FILE
+        raise Refused(f"{shown} is a link or not a file of {USER}'s; nothing was changed")
+    return True
 
 
 def _incomplete(host: Host) -> list[str]:
@@ -447,8 +487,8 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
     for path in (CONFIG, UNIT_PATH, RECORD):
         _root_file(host, path)
     user = _check_user(host)
-    state_dir = _final_state_dir(host, base, args.force)
-    paired = state.has_credential(host.path(state_dir))
+    _check_state_dir(host, base, args.force)
+    paired = _paired(host, user)
     code = None if paired else _code(args)
     if user is None:
         user = _make_user(host)
@@ -465,7 +505,7 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
         raise Refused(f"{USER} cannot read {CONFIG}; let it traverse that directory")
     _write(host, UNIT_PATH, unit, args.force)
     if paired:
-        _say(f"ok     already paired ({state_dir} holds a credential)")
+        _say(f"ok     already paired ({STATE_DIR} holds a credential)")
     else:
         pair = ["runner", "pair", args.url, "--code-file", "-", "--config", str(CONFIG)]
         if host.run(_as_runner(host, pair), stdin=code) != 0:
@@ -507,7 +547,7 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
     if args.purge and user is not None and not ours:
         raise Refused(f"the user {USER} was not made by install; --purge changes nothing")
     has_unit = _root_file(host, UNIT_PATH)
-    has_config = _root_file(host, CONFIG)
+    has_config = _usable_config(host, args.force)
     if ours:
         _check_user(host)
     elif args.purge:
@@ -551,7 +591,7 @@ def _stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: b
     if not ours:
         _halt(args, f"no user {USER} of install's, so `stop-all` cannot run as it")
     elif not has_config:
-        _halt(args, f"{CONFIG} is missing, so `stop-all` cannot find the agents")
+        _halt(args, f"{CONFIG} is missing or not usable, so `stop-all` cannot find the agents")
     elif not _loads(host):
         _halt(
             args,
@@ -562,6 +602,22 @@ def _stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: b
         _halt(args, "`maity runner stop-all` could not stop every agent (above)")
     else:
         _say("stopped the agents")
+
+
+def _usable_config(host: Host, force: bool) -> bool:
+    """Whether the configuration is there to read: a regular file of root's. Anything else at
+    its path stops uninstall before any change, or with `--force` is never read."""
+    with _root_dir(host, CONFIG.parent, create=False) as fd:
+        st = _entry(fd, CONFIG.name)
+    if st is None:
+        return False
+    if stat.S_ISREG(st.st_mode) and st.st_uid == host.root_uid():
+        return True
+    what = f"{CONFIG} is a link or not a regular file of root's"
+    if not force:
+        raise Refused(f"{what}; nothing was changed (--force goes on without reading it)")
+    _say(f"{what}; going on without reading it (--force)")
+    return False
 
 
 def _loads(host: Host) -> bool:

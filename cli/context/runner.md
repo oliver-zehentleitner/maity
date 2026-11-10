@@ -1776,9 +1776,12 @@ of `maity runner unit`.
      user's; they are opened the same way and changed through their
      descriptor.
    - Anything not as install would have made it — a link, another owner, a
-     directory others can write, a configuration whose `state_dir` it
-     cannot resolve as `serve` does — stops the command before the first
-     change.
+     directory others can write, a kept configuration whose `state_dir` is
+     not the fixed one as `serve` resolves it — stops the command before
+     the first change. Whether the runner is paired is read the same way:
+     the credential must be a regular file of the service user's, reached
+     without following a link, so root never answers for a file a link
+     points to.
    - Root's record `/var/lib/maity-runner-install.json` (uid, home, time)
      says install made the account. `install` does not take over, and
      `--purge` does not delete, an account the record does not name. The
