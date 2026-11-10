@@ -32,8 +32,9 @@ def _shard() -> tuple[int, int] | None:
     raw = os.environ.get("MAITY_TEST_SHARD", "").strip()
     if not raw:
         return None
-    # ASCII digits only: str.isdigit also takes "²", which int() refuses (review of #1625).
-    match = re.fullmatch(r"([0-9]+)/([0-9]+)", raw)
+    # ASCII digits only, four at most: str.isdigit also takes "²", which int() refuses, and
+    # int() refuses more than 4300 digits (review of #1625).
+    match = re.fullmatch(r"([0-9]{1,4})/([0-9]{1,4})", raw)
     if not match or not 1 <= int(match[1]) <= int(match[2]):
         raise pytest.UsageError(f"MAITY_TEST_SHARD must be <k>/<n> with 1 <= k <= n, not {raw!r}")
     return int(match[1]), int(match[2])
