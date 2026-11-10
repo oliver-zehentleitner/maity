@@ -4477,10 +4477,11 @@ under `next_free` the instance in `wakes`, or, when the hub chose none
 because nobody was listening, the lead instance when one is set and
 otherwise every instance, as such an event waits in every instance's
 next resume (§8.2); an `instance:` token
-waits for the instance it names only. A `claim_lease_expiring` (§6.5)
-wakes its holder but never waits for it: a holder that does not answer
-it is reported when the lease runs out (`claim_expired`), and a second
-report of the same outage would only repeat it. For a dormant instance (§6.17)
+waits for the instance it names only. A `claim_lease_expiring` (§6.5;
+not built yet, tsk-p55zyn4pz0wd) wakes its holder but never waits for
+it: a holder that does not answer it is reported when the lease runs
+out (`claim_expired`), and a second report of the same outage would
+only repeat it. For a dormant instance (§6.17)
 only its own `instance:` token counts, under every rule above and in
 the fallback, so an agent's event never makes it not listening, while a
 message addressed to it that it leaves unread still does. The session is not listening
@@ -6909,7 +6910,9 @@ it, and it renews on purpose:
 - `claim_lease_expiring` (§8.2) when the hub's worker (every minute)
   finds claims whose `lease_until` is still ahead but at most
   `min(300, max(120, lease_seconds / 10))` seconds away (`warn_seconds`,
-  from the project's `policy.lease_seconds`): one event per holder and
+  from the project's `policy.lease_seconds`, the tenth rounded down to
+  whole seconds, so 1201 gives 120; the same integer is the threshold
+  and the payload's `warn_seconds`): one event per holder and
   pass, as `claim_expired` — an instance, or for claims a bridge holds
   for an agent (§2.3) the agent, with `instance` and `session_id`
   `null` — naming each such claim once — `{member_id, instance,
@@ -11362,8 +11365,9 @@ resume. A token `instance:` and the broadcast set (`all`) are not
 narrowed: they wake their instance, and every instance — except the
 holder's `instance:` token on `holder_stalled` and `claim_expired`
 (§6.5), which is not wake-relevant, so such an event never waits for
-the holder (§5.3). `claim_lease_expiring` is the opposite: it is meant
-for the holder and wakes it, and waits for nobody (§5.3).
+the holder (§5.3). `claim_lease_expiring` (not built yet,
+tsk-p55zyn4pz0wd) is the opposite: it is meant for the holder and
+wakes it, and waits for nobody (§5.3).
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,

@@ -174,7 +174,8 @@ follow in the next pull requests of tsk-p55zyn4pz0wd.
 
 The hub's minute worker sends the holder one `claim_lease_expiring`
 when its leases are at most `min(300, max(120, lease_seconds / 10))`
-seconds from running out, once per lease period. The holder renews them
+seconds from running out (the tenth rounded down to whole seconds),
+once per lease period. The holder renews them
 all with `POST …/claims/renew` (`maity claim renew`), or releases the
 card. The long-poll still renews nothing. The event wakes the holder
 but never waits for it: a holder that does not answer is reported by
