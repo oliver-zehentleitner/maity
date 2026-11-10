@@ -341,27 +341,38 @@ def _check_user(host: Host) -> User | None:
                 f"a user {USER} exists that install did not make (no record in {RECORD}); "
                 "remove or rename it first, install does not take over an account"
             )
-        if home is None:
-            return user
-        _their_dir(host, home, HOME, user)
-        if parent is None:  # checked above; gone since
-            raise Refused("a directory install checked has gone; nothing more was changed")
-        fd = os.open(HOME.name, _dir_flags(), dir_fd=parent)
-        try:
-            for below in (STATE_DIR, WORKSPACES):
-                st = _entry(fd, below.name)
-                if st is not None:
-                    _their_dir(host, st, below, user)
-        finally:
-            os.close(fd)
+        _check_dirs(host, parent, home, user.uid)
     return user
 
 
-def _their_dir(host: Host, st: os.stat_result, shown: Path, user: User) -> None:
+def _check_dirs(
+    host: Host, parent: int | None, home: os.stat_result | None, uid: int, closed: bool = False
+) -> None:
+    """The home, and the state and workspaces in it, as install made them for `uid`; refused
+    otherwise. `closed` also refuses one that group or others can write: nothing sets its mode
+    back on the way to removing it."""
+    if home is None:
+        return
+    _their_dir(host, home, HOME, uid, closed)
+    if parent is None:  # checked above; gone since
+        raise Refused("a directory install checked has gone; nothing more was changed")
+    fd = os.open(HOME.name, _dir_flags(), dir_fd=parent)
+    try:
+        for below in (STATE_DIR, WORKSPACES):
+            st = _entry(fd, below.name)
+            if st is not None:
+                _their_dir(host, st, below, uid, closed)
+    finally:
+        os.close(fd)
+
+
+def _their_dir(host: Host, st: os.stat_result, shown: Path, uid: int, closed: bool = False) -> None:
     if not stat.S_ISDIR(st.st_mode):
         raise Refused(f"{shown} is a link or not a directory; move it away first")
-    if st.st_uid != user.uid:
+    if st.st_uid != uid:
         raise Refused(f"{shown} does not belong to {USER}; nothing was changed")
+    if closed and st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise Refused(f"{shown} is writable by others; nothing was changed")
 
 
 def _make_user(host: Host) -> User:
@@ -411,7 +422,7 @@ def _open_dir(host: Host, name: str, parent_fd: int, shown: Path, user: User) ->
         if made:
             host.fchown(fd, user.uid, user.gid)
         else:
-            _their_dir(host, os.fstat(fd), shown, user)
+            _their_dir(host, os.fstat(fd), shown, user.uid)
         os.fchmod(fd, 0o700)
     except BaseException:
         os.close(fd)
@@ -579,10 +590,15 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
     has_config = _usable_config(host, args.force)
     # A user install made whose userdel succeeded on an earlier --purge that stopped later:
     # root's record still names it, so this --purge may finish removing what install made.
-    leftover = user is None and _record_left(host)
+    left_uid = _record_uid(host) if user is None else None
+    leftover = left_uid is not None
     if ours:
         _check_user(host)
-    elif args.purge and not leftover:
+    elif args.purge and left_uid is not None:
+        # The account is gone, its directories keep its uid: checked against the record's.
+        with _root_dir(host, HOME.parent, create=False) as parent:
+            _check_dirs(host, parent, _entry(parent, HOME.name), left_uid, closed=True)
+    elif args.purge:
         with _root_dir(host, HOME.parent, create=False) as parent:
             if _entry(parent, HOME.name) is not None:
                 raise Refused(f"{HOME} exists, but install made no user {USER}; nothing changed")
@@ -626,16 +642,20 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
     return 1 if failed else 0
 
 
-def _record_left(host: Host) -> bool:
-    """Root's record of install's account, with no such account any more."""
+def _record_uid(host: Host) -> int | None:
+    """The uid root's record names for install's account, read as `_ours` reads it; None
+    without a record of this account and home."""
     text = _read_root(host, RECORD)
     try:
         record = json.loads(text) if text is not None else None
     except ValueError:
-        return False
-    return (
+        return None
+    if not (
         isinstance(record, dict) and record.get("user") == USER and record.get("home") == str(HOME)
-    )
+    ):
+        return None
+    uid = record.get("uid")
+    return uid if isinstance(uid, int) and not isinstance(uid, bool) else None
 
 
 def _can_stop_agents(args: argparse.Namespace, host: Host, ours: bool, has_config: bool) -> bool:

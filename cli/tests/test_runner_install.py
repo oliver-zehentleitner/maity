@@ -9,7 +9,7 @@ import stat
 import subprocess
 import sys
 import tomllib
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -769,3 +769,61 @@ def test_a_purge_finishes_after_the_user_alone_is_gone(tmp_path: Path) -> None:
     assert not any(line.startswith("userdel") for line in host.commands())
     for path in (install.HOME, install.CONFIG.parent, install.RECORD):
         assert not host.path(path).exists()
+
+
+def _left(tmp_path: Path) -> FakeHost:
+    """install's account gone, root's record and the unit still there."""
+    host = FakeHost(tmp_path)
+    complete_config(host)
+    install.cmd_install(args(), host)
+    del host.users[install.USER]
+    host.calls.clear()
+    return host
+
+
+def _set_record(host: FakeHost, **kw: object) -> None:
+    path = host.path(install.RECORD)
+    record = json.loads(path.read_text())
+    record.update(kw)
+    path.write_text(json.dumps(record))
+
+
+def _home_to_link(host: FakeHost) -> None:
+    home = host.path(install.HOME)
+    home.rename(home.with_name("elsewhere"))
+    home.symlink_to(home.with_name("elsewhere"))
+
+
+@pytest.mark.parametrize(
+    "change, refusal",
+    [
+        (lambda h: _set_record(h, uid=os.getuid() + 1), "does not belong to maity-runner"),
+        (_home_to_link, "is a link or not a directory"),
+        (lambda h: h.path(install.STATE_DIR).chmod(0o770), "is writable by others"),
+        (lambda h: h.path(install.HOME).chmod(0o702), "is writable by others"),
+    ],
+    ids=["another-uid", "home-a-link", "state-group-writable", "home-other-writable"],
+)
+def test_a_purge_after_the_user_is_gone_checks_its_directories_first(
+    tmp_path: Path, change: Callable[[FakeHost], None], refusal: str
+) -> None:
+    """The account is gone, its directories keep its uid: they are checked against the uid in
+    root's record, before the service is touched (e5kk R4 F1)."""
+    host = _left(tmp_path)
+    change(host)
+    with pytest.raises(install.Refused, match=refusal):
+        install.cmd_uninstall(args(purge=True, force=True), host)
+    assert host.calls == []
+    for path in (install.UNIT_PATH, install.CONFIG, install.RECORD):
+        assert host.path(path).is_file()
+    assert host.path(install.HOME).exists()
+
+
+@pytest.mark.parametrize("uid", [None, True, "1000"])
+def test_a_record_without_a_usable_uid_is_no_leftover(tmp_path: Path, uid: object) -> None:
+    """Read as `_ours` reads it: without the uid, the home is nobody's install made."""
+    host = _left(tmp_path)
+    _set_record(host, uid=uid)
+    with pytest.raises(install.Refused, match="install made no user"):
+        install.cmd_uninstall(args(purge=True, force=True), host)
+    assert host.calls == [] and host.path(install.HOME).is_dir()

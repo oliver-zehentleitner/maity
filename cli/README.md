@@ -1325,7 +1325,9 @@ account's record. The account goes only if install's record names it;
 `--purge` checks all of this before it touches anything. The account goes
 first: if `userdel` fails (a process of the user's still runs), nothing
 else is removed, and the next `--purge` starts over. One that stopped
-after the account was gone finishes, since the record still names it. The hub keeps listing the runner until you
+after the account was gone finishes, since the record still names it;
+its directories are first checked against the uid in the record (owned
+by it, no link, not writable by group or others). The hub keeps listing the runner until you
 remove it in the dashboard.
 
 `maity runner unit` prints the systemd unit shipped in the package

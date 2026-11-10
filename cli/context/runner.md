@@ -138,6 +138,9 @@ only the runner's own process may be signalled.
   upgrade would end every agent mid-work.
 - `PrivateTmp` in the unit: with the agents outliving the service, the
   next start would replace their `/tmp` under them.
+- A `TMPDIR` under `/var/lib/maity-runner` instead of `/tmp` in
+  `ReadWritePaths`: tools that hardcode `/tmp` would fail, and in the
+  `agent_user` layout the agents' user cannot write there.
 
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on
 
@@ -1766,7 +1769,13 @@ of `maity runner unit`.
      disabled, so a refusal leaves the service as it was. `--purge` removes
      the account before the trees: a `userdel` that fails then leaves
      everything for the next `--purge`, and one that stopped after the
-     account was gone finishes on the record that names it.
+     account was gone finishes on the record that names it. The
+     directories then keep the gone account's uid, so they are checked
+     against the uid in that record, before anything changes: owned by
+     it, no link, and not writable by group or others, since nothing
+     sets their modes back on the way to removing them. A record without
+     a usable uid names no account, and its home is refused like any
+     other.
    - Rejected: the trees first, then the account. A failed `userdel` left a
      record without a configuration, and the next `--purge` refused until
      `--force`.
