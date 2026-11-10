@@ -1,0 +1,3 @@
+### Added
+
+- hub: a request can be addressed to one instance (`to: <member>#<id>`, docs/api.md §7): its `request_created` wakes that instance only and its team reads it, the request shows the address as written, and a replaced instance's address reaches its successor along the chain (a revoked one without a successor is accepted and wakes nobody). `request_answered` and `request_withdrawn` now wake the asking instance only, its team reads along; a human asker and an asker with no session stay `member:`, a hub notice still never reaches the agent in `asked_by`. A proposal's `Settlement.proposer` carries the asking instance's credential. Migration 0100 adds `request.to_instance`; the requests that exist read `NULL`.

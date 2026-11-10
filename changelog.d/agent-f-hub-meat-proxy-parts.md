@@ -1,0 +1,3 @@
+### Changed
+
+- hub: "I am a meat proxy" has two parts the person picks (docs/api.md §5.1, §5.2, §5.3): `PATCH /me` takes `meat_proxy_lead` and `meat_proxy_hands` next to `meat_proxy`, applied in that order (`meat_proxy` sets both, then each part given; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`), `meat_proxy` is derived and on while a part is, and an agent setting any of them is `forbidden` (`humans_only`). `GET /me` carries both parts and `meat_proxy_note` always; the resume packet (`me.owner`, `peers`) carries parts and note only while the mode is on, and the note holds the sentence of each part that is on. Migration 0103 turns a switch that was on into both parts on and drops the old column.

@@ -1,0 +1,3 @@
+### Changed
+
+- docs: follow-ups of 2026-10-30: an isolated agent's resume packet is the small one and starts no session (§6.2); its reason is trimmed before the length check; the events of an isolation stay readable after the lift; another owner's agent's `go` checks the change again (`409 asker_not_allowed`, `409 role_unknown`); an isolated agent is neither named nor counted on a public project page (§16.9); the handover's `after` without a session lies before the exchange and the CLI's handover heading (§5.2, §13); `maity messages` shows `<handle>#<instance>`, and §9.1's example carries `from_instance`.

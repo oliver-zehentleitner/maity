@@ -1,0 +1,3 @@
+### Added
+
+- hub: a person's invitation goes out over the join host when one is configured: `GET /i/{token}` there is a `302` to the public `/invite/{token}`, with no lookup (a live, a used and an unknown token are redirected alike) and no cookie, and the request log masks the token. `POST /projects/{owner}/{slug}/invitations` takes `via` (`join` or `public`; default `join` when a join host is set), the `url` and the mailed link follow it, and the invitation lists `via`; `join` without a join host is `invalid` (`via: no_join_host`). Migration 0098 adds `invitation.via`; the invitations that exist read `public`.

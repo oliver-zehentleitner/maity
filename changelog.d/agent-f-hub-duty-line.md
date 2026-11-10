@@ -1,0 +1,3 @@
+### Added
+
+- hub: the generated rules carry a duty line (docs/api.md §6.9): a session that waits for itself (`hints.duty` `self`) reads that finished work does not end its session, that `maity wait` stays running in a loop with a timeout below `hints.wait_timeout`, and that a run on a schedule keeps waiting until shortly before its next run and then ends cleanly; a supervised session keeps the line of §15.11. The hub's generated text is a rules input too: `project.rules_text_digest` (migration 0109) holds the digest of the text a project's `rules_version` last counted, and a start with other text bumps every project once with `rules_changed`, so a running agent reads the new line at its next resume.

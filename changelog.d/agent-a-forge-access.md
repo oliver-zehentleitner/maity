@@ -1,0 +1,3 @@
+### Added
+
+- docs: §11.4 forge access per owner. A project's repository is read with the namespace owner's GitHub App installation, then the owner's own fine-grained token, then the instance token for public repositories only. The owner's grants apply only to a repository URL the owner confirmed (`POST …/repository/confirm` with the URL the owner saw; reset by every URL change, the owner's own included, and by a transfer). Linking an installation requires the installation's account to be the installing user (no organisation installations in v1). New `/me/forge` endpoints, `probe_via` and `owner_confirmed` on the repository, `forge_access_changed` account records, step-up for linking, storing a token and confirming, a 30 s floor for forced fresh reads.

@@ -1,0 +1,3 @@
+### Changed
+
+- web: the jour fixe works per series (§20). Project settings list the series (topic, circle, schedule) to create, change and delete with a reason, and per series the moderators with **Grant** (a grant that waits for the agent owner's and a keeper's consent is shown as pending) and **End**; the Jour fixe tab lists the rounds per series under its topic with the next slot, **Start a round now** per series for keepers and moderators (the hub's 409 reason shown), each member's switch to opt out of a series and to be on its report list (an owner for their own agents), and for a keeper the report list; an owner's series stays private. The jour fixe's answer, statement, post and report forms and the triage rows get a stacked layout.

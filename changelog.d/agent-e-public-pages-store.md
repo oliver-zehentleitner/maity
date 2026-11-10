@@ -1,0 +1,3 @@
+### Added
+
+- hub: the store and the answer of public pages (§16.9, step 1): `MAITY_PUBLIC_PAGES` (`on`/`off`, default `off`), `MAITY_PUBLIC_PAGES_RENDER` (`on_change`/`interval`) and `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` (1–24); the table `public_page` (migration `0104`); a stored page answers a visitor without a session, or `?as=public`, at its address with `Cache-Control: public, max-age=60`, an `ETag`, the static pages' CSP and `Vary: Cookie`, and the app shell otherwise; the page's links are `rel="nofollow ugc"`; `organisation` is a reserved project view. No page exists yet (tsk-w89mspg3gwx1).

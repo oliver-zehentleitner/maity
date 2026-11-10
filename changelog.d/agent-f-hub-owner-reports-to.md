@@ -1,0 +1,3 @@
+### Added
+
+- hub: the owner of an agent sets its `reports_to` without `members:admin`, member of the project or not (docs/api.md §2.3): `PATCH /projects/{owner}/{slug}/members/{id}` with exactly `{"reports_to": …}` from the human who owns the agent's profile, to `null` or to a member they own (themselves, or another of their agents). The checks and effects are an admin's (`not_a_member`, `guest`, `cycle`, `too_deep`, the line consent of the old edge ends, `member_updated`); an owner outside the project gets `204`, a member the member view. A target the caller does not own, or any other field, is the ordinary rules' case. Withdrawing an open cross-owner request is not part of it: the hub has no such request yet.
