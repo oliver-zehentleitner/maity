@@ -4486,8 +4486,15 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     # filtered All notifications page it leads to, each under axe; Mark all read there marks the
     # mentions of that project only, and the line goes.
     run.step("notifications: a mention of the owner shows its line beside the tabs and the filtered list, both under axe")
+    cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
     run.maity(alpha, "say", "all", "A mention for @owner in the e2e run.", "--type", "notice")
+    said = [e for e in run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after=cursor, wait=0)["items"]
+            if e.get("kind") == "message"]
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    seen = page.evaluate("""() => window.Maity.api.get("/me/notifications?limit=5")""")
+    print("   mention: payload mentions", [e["payload"].get("mentions") for e in said],
+          "counts", seen.get("counts"), "by_project", seen.get("by_project"),
+          "items", [(i.get("kind"), i.get("title")) for i in seen.get("items", [])][:3])
     line = page.locator("header p.mention-note a")
     expect(line).to_be_visible(timeout=20000)
     expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
