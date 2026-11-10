@@ -3049,7 +3049,11 @@ What deletion does:
   removes it (§15.3); its unused runner enrollments (§15.2) and agent
   joins (§3.1) are revoked, placements it created that have not made
   their membership yet are closed (§15.6), and invitations it issued
-  that are still open are voided (§3.4), and it leaves the private
+  that are still open are voided (§3.4), with the requests of those by
+  handle; open invitations by handle to the account are voided with the
+  reason `invitee` (§3.4), one issued at the same moment included, since
+  the issue takes the account's lock before anything else and so either
+  commits first or waits and is refused; and it leaves the private
   lists of the restricted-text events (§6.4). Its open personal requests
   (§7) and the open cross-owner consents that name it on either side
   (§6.2) are withdrawn, and so are open invitations to an organisation
@@ -3656,8 +3660,8 @@ person, one project and one trust and role, it is used once, and it expires.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
-| `GET /projects/{owner}/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `POST /projects/{owner}/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` (an invitation by `handle` has none) |
+| `GET /projects/{owner}/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided, declined or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
 | `DELETE /projects/{owner}/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
 | `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
 | `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
@@ -3686,6 +3690,36 @@ person, one project and one trust and role, it is used once, and it expires.
   recipient's security-mail budget); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
+- `handle` is optional and excludes `address` (both: `invalid`,
+  `details.fields.handle: "with_address"`): a person's handle or one of
+  its live aliases (§6.24). Only an approved, active human qualifies;
+  anything else is `invalid` with `details.fields.handle`: `format`,
+  `unknown` (nobody has it, a deleted, pending or suspended account, a
+  deleted organisation, or an agent's handle, which is its owner's and
+  names nobody here, §6.24), `not_a_person` (a live organisation's
+  handle), `member` (already a member of the project) or `invited` (an
+  open invitation of this project already names this person), and
+  nothing is created. As for a contact (§6.29), the person need not show
+  the inviter anything: handles are public, so telling an active person
+  from every other name is no secret, and nothing tells a deleted,
+  pending or suspended account from a name that is nobody's. A handle
+  refused here (`format`, `unknown`, `not_a_person`, `member`,
+  `invited`) counts against the project's rate as an issued invitation
+  does (below); a body refused before any lookup (`with_address` and the
+  other field checks) does not. The invitation is bound to that account at
+  issue, and a rename keeps it. The issue takes the person's account
+  lock before the project's, as every write of a human does (§2.9): it
+  either commits before a deletion of that account, whose cleanup then
+  voids it, or waits for the deletion and is answered `unknown`. The hub
+  files a personal `consent` request to that person (§7),
+  in the inviter's name, answered in their inbox: `go` accepts as below,
+  `no` declines (`declined_at`), and the person's own withdrawal counts
+  as `no`. Such an invitation has no `url` and no page, and no mail goes
+  out for it beyond the person's notifications of the request (§18.1).
+  The answer carries `invitee: {handle, display_name}`, the person as
+  they are now; the item's `handle` is the account's handle at issue
+  (the current one an alias resolved to, not the alias), and the `GET`
+  list shows the bound account's current handle.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
@@ -3703,9 +3737,9 @@ person, one project and one trust and role, it is used once, and it expires.
 
 ```json
 { "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
-  "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
-  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "via": "join",
-  "url": "https://join.maity.team/i/9fK2…" }
+  "handle": null, "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "declined_at": null,
+  "via": "join", "url": "https://join.maity.team/i/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
@@ -3721,7 +3755,9 @@ with authority — the predicate of accept); `sign_in_only` otherwise — a visi
 the instance does not register, and the inviter sees the invitation
 stay open. It carries no token in the body and no handle of anyone. It
 is rate limited per source address as the join exchange is (§3.3, 10
-per minute); the answer is identical for every reader.
+per minute); the answer is identical for every reader. An invitation by
+`handle` has no page: its token was given to nobody, and the page and
+accept answer it with the uniform `not_found`.
 
 **Accepting.** `POST /invitations/{token}/accept` from a signed-in
 human session, one transaction serialised per project and person: the
@@ -3749,6 +3785,22 @@ approved; the page says so and the invitation waits. Accepting needs a
 session in good standing (§2.6.5): a session fresh from a mailbox link
 accepts nothing.
 
+**By handle.** The person's `go` on the request (`POST
+/requests/{id}/answer`, §7) accepts with the same checks, in the
+answer's transaction under the project's lock. A `project_closed`
+refusal leaves the request open with the invitation. A `go` that no
+longer applies withdraws the request: for an invitation no longer open
+(`409 invalid_transition`, `details.reason: invitation_stale`; an
+expired one stays `expired`), for a person who is a member already
+(`invalid`, `details.fields.request: "already_member"`, the invitation
+used up), and for an issuer without the authority (`forbidden`,
+`invitation_void`, the invitation voided as above). The hub withdraws
+the request when the invitation is revoked, expires (a minute pass),
+is voided — also with the reason `invitee` when the person's account
+is deleted (§2.9) — or is used up because the person became a member
+another way: an accepted invitation of the same project, or a seat an
+organisation's owner gets (§6.26).
+
 **Registration and invitations.** Under registration `closed` or
 `allowlist` (§2.7, §16.4), an address with an open address-bound
 invitation is **admitted** as if it were on the allowlist — provided
@@ -3771,14 +3823,19 @@ login and registration pages keep the invitation as `next` (§2.6.5) and
 return to it.
 
 **Events and audit.** `invitation_created`, `invitation_revoked`,
-`invitation_voided` and `invitation_used` go to the project's human
+`invitation_voided`, `invitation_used` and `invitation_declined` go to the project's human
 `members:admin` holders (`member:<id>` each), never wake an agent, and
-carry the invitation's id, trust, role and whether it is address-bound — never
-the address and never the token. The ticker (§17) announces a new human member as it
+carry the invitation's id, trust, role and whether it is address-bound
+(`address_bound`) or bound to a handle (`handle_bound`) — never
+the address, the handle or the token. The ticker (§17) announces a new human member as it
 announces every join.
 
 **Limits and secrecy.** Twenty invitations per project per hour
-(`rate_limited`), and the `GET /invitations/{token}` and accept calls
+(`rate_limited`; every request that passes the body's checks and the
+caller's authority counts, before the handle is looked at, so a refused
+handle costs one too; a body refused by those checks, `with_address`
+included, does not), ten invitations by handle to one person in 24 hours
+across the instance (`rate_limited` with `Retry-After`), and the `GET /invitations/{token}` and accept calls
 under the join exchange's per-source limit. An unknown, used, expired
 or revoked token is one uniform `not_found` on the page and on accept,
 so nothing tells a guesser whether a token ever existed; the named
