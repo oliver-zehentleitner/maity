@@ -4488,7 +4488,7 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     run.step("notifications: a mention of the owner shows its line beside the tabs and the filtered list, both under axe")
     run.maity(alpha, "say", "all", "A mention for @owner in the e2e run.", "--type", "notice")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    line = page.locator("main p.mention-note a")
+    line = page.locator("header p.mention-note a")
     expect(line).to_be_visible(timeout=20000)
     expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
     run.a11y(page, "the unread mention line")
@@ -4501,7 +4501,7 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     expect(mark_all).to_be_disabled()
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
-    expect(page.locator("main p.mention-note")).to_be_hidden(timeout=20000)
+    expect(page.locator("header p.mention-note")).to_be_hidden(timeout=20000)
     no_problems(run, "notifications")
 
 
