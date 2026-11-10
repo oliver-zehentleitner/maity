@@ -196,7 +196,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a second-factor or recovery code that is wrong or already used (§2.8) |
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
-| 408 | `request_timeout` | the body did not arrive within 120 seconds of the hub starting to read it (§1.7); the hub closes the connection (`Connection: close`) |
+| 408 | `request_timeout` | the body did not arrive within the time §1.7 gives it from the hub starting to read it (120 seconds; 30 minutes for a replacement's sealed transcript); the hub closes the connection (`Connection: close`) |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.instance`, `details.lease_until`, `details.expired` |
 | 409 | `asker_not_allowed` | the `go` on a change to another owner's agent when the asker is no longer active, is isolated, or may no longer make exactly this change (§6.2); the request stays open |
 | 409 | `role_unknown` | the `go` on such a change when the project role it names no longer exists (§6.2); the request stays open |
@@ -243,7 +243,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
 | 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
-| 409 | `replace_open` | a second replacement of a placement, or of its replacement, before the old placement has closed, or a `DELETE` of the old one while a replacement is open (§15.14); `details.placement` |
+| 409 | `replace_open` | a second replacement of a placement, or of its replacement, while a replacement of either is still open (until the old placement has closed after step 3, or the new one after an abort), or a `DELETE` of the old one while a replacement is open (§15.14); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
@@ -15286,9 +15286,9 @@ clone Z. It is the only thing the hub asks of a runner.
   hub still allows two clones of one agent with two credentials — two
   instances (§6.17) — when they are joined by hand (§10). The one
   exception is a replacement, which holds the old placement and its
-  replacement at once from its start until the old placement closes:
-  after step 3 on its terminal report, with `keep_old` after the kept
-  window (§15.14).
+  replacement at once from its start until one of them closes: the old
+  one after step 3 on its terminal report, with `keep_old` after the
+  kept window; the new one after an abort (§15.14).
 - **One placement per clone.** At most one active placement per
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
@@ -15345,7 +15345,7 @@ the hub or by a closed placement; they stay on the runner.
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
-| `POST /projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` until the old placement of a replacement of either has closed |
+| `POST /projects/{owner}/{slug}/placements/{id}/replace` | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB, which leaves the request of 64 KiB room for plain text (§1.7; JSON escaping can still push a body under it over that, which is then `payload_too_large`): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
@@ -16769,25 +16769,29 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
 
 - **Who.** As a creation (§15.6), the maintainer's answer
   (req-8kv8vz1xx60k): a human with `members:admin` who owns both the old
-  and the new placement's runner does it directly; an agent with `agents:propose`
+  and the new placement's runner does it directly; one who owns only one
+  of them gets `forbidden` (§15.6, "everyone else"). An agent with `agents:propose`
   proposes it under `policy.spawn_requests`. The consent request is
   titled `Replace <handle> on <old runner> with <new runner>` and its
   summary adds a `handover:` line.
-- **Two at once.** From the replacement's start until the old placement
+- **Two at once.** From the replacement's start until one of the two
   closes, the membership holds two active placements, the old and its
   replacement. After step 3 the old one closes on its terminal report
   (a `DELETE` of it closes it at once if its runner never reports,
-  §15.5); with `keep_old` (below) after the kept window. That is the one
+  §15.5); with `keep_old` (below) after the kept window. After an abort
+  (below) the new one closes and the old one runs on. That is the one
   exception to "one placement per membership" (§15.5). The replacement's
   pickup joins as a new instance (`new_instance`, §6.17) and does not
   count toward `max_instances` while the replacement is open (the
   maintainer's answer, req-5eprep6ndrjf). It does not count while the
   old instance is kept either, so the kept window cannot push the
   membership over its limit; that extension is this section's detail.
-  A second replacement of either is `replace_open` until the old
-  placement has closed, so the membership never holds more than two; a
-  `DELETE` of the old one is `replace_open` while the replacement is
-  open, before step 3.
+  A second replacement of either is `replace_open` until that closing
+  counterpart has closed (the old placement after step 3, the new one
+  after an abort), so the membership never holds more than two; once
+  an aborted replacement's new placement has closed, the old one can be
+  replaced again. A `DELETE` of the old one is `replace_open` while the
+  replacement is open, before step 3.
 - **Its own clone.** The one-placement-per-clone rule (§15.5) holds for
   a replacement too. On the same runner the body names another
   `workspace.clone` (`placement_exists` otherwise), because two instances
@@ -16887,7 +16891,10 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   instance's credential, if its pickup was redeemed, is revoked when it
   closes (`revoked_reason: replace_failed`, whatever the cause). A
   sealed transcript already uploaded is deleted. After a `failed`, the
-  owner's outage request (§15.7) names the new placement.
+  owner's outage request (§15.7) names the new placement. §15.7 withdraws
+  it when that placement closes, so the owner keeps it only as a
+  withdrawn notice; the closed placement, with `replace_failed`, is the
+  record of what happened, and the old one runs on.
 
 **The transcript between runners** (`handover: full`, two runners).
 The maintainer's decision: end-to-end encrypted through the hub, so
