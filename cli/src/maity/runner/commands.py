@@ -750,9 +750,11 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         f"user and {install.HOME} (state, workspaces), writes {install.CONFIG} and "
         f"{install.UNIT_PATH} with the path of this maity, pairs as {install.USER}, enables the "
         "service and runs `maity runner check`. Existing files are left as they are unless "
-        "--force. While the configuration still lacks [limits] or a [harness.<id>], the service "
-        "is enabled but not started, and what is missing is listed. Run again after a change: "
-        "steps already done are skipped, a runner already paired needs no code.",
+        "--force. While the configuration is not one serve would accept (no [limits] or "
+        "[harness.<id>] yet), the service is enabled but not started, and what is missing is "
+        "listed. Running it again is safe: it creates only what is missing and pairs only an "
+        "unpaired runner (no code needed then). As root it never follows a link in the service "
+        "user's directories or at a file it writes; --config must be an absolute path.",
         formatter_class=fmt,
     )
     r.add_argument("url", help="the pairing URL (https://<hub>/r/<token>)")
@@ -767,13 +769,17 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "uninstall",
         help="as root: stop and remove the runner's systemd service",
         description=f"Stops and disables the service, ends the agents it started (`stop-all`) "
-        f"and removes {install.UNIT_PATH}. With --purge also {install.HOME} (state, credential, "
-        f"workspaces with any unpushed work), the configuration and the {install.USER} user. "
+        f"and removes {install.UNIT_PATH}; when stopping fails, nothing is removed unless "
+        f"--force. With --purge also {install.HOME} (state, credential, workspaces with any "
+        f"unpushed work), the configuration and the {install.USER} user, if install made it. "
         "The hub keeps listing the runner until it is removed in the dashboard.",
         formatter_class=fmt,
     )
     r.add_argument("--config", help=f"configuration file (default {install.CONFIG})")
     r.add_argument("--purge", action="store_true", help="also remove state, workspaces and user")
+    r.add_argument(
+        "--force", action="store_true", help="go on when stopping the service or its agents fails"
+    )
     r.set_defaults(handler=_installer(install.cmd_uninstall))
 
     def runner_cmd(name: str, summary: str, description: str) -> argparse.ArgumentParser:

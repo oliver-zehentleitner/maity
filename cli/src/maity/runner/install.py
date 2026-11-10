@@ -41,6 +41,8 @@ UNIT_PATH = Path(f"/etc/systemd/system/{SERVICE}.service")
 UNIT = f"{SERVICE}.service"
 # What the shipped unit starts; install replaces it with the interpreter that runs this command.
 SHIPPED_EXEC = "ExecStart=/usr/local/bin/maity runner serve --config /etc/maity-runner/runner.toml"
+# The account's comment field marks it as install's: uninstall --purge removes no other.
+MARKER = "Maity runner (made by maity runner install)"
 
 
 class Refused(Exception):
@@ -52,6 +54,12 @@ class User:
     uid: int
     gid: int
     home: str
+    gecos: str
+
+    @property
+    def ours(self) -> bool:
+        """Made by install: its home and its marker."""
+        return self.home == str(HOME) and self.gecos == MARKER
 
 
 @dataclass
@@ -87,7 +95,7 @@ class Host:
             entry = pwd.getpwnam(name)
         except KeyError:
             return None
-        return User(entry.pw_uid, entry.pw_gid, entry.pw_dir)
+        return User(entry.pw_uid, entry.pw_gid, entry.pw_dir, entry.pw_gecos)
 
     def fchown(self, fd: int, uid: int, gid: int) -> None:
         os.fchown(fd, uid, gid)
@@ -154,12 +162,17 @@ def _config_path(args: argparse.Namespace) -> Path:
 
 def _root_dir(host: Host, absolute: Path) -> Path:
     """The directory a root-owned file goes into: made if missing (0755), and refused when it
-    is a link, not root's, or writable by others, who could swap the file after the write."""
+    is a link, not root's, or writable by others, who could swap the file after the write.
+    `/etc/maity-runner` is install's own and always 0755, whatever root's umask made it, so
+    the service user can read its configuration."""
     target = host.path(absolute)
     if not os.path.lexists(target):
         target.mkdir(parents=True)
-        target.chmod(0o755)  # whatever root's umask is
+        target.chmod(0o755)
     st = os.lstat(target)
+    if absolute == CONFIG.parent and stat.S_ISDIR(st.st_mode) and st.st_uid == host.root_uid():
+        target.chmod(0o755)
+        st = os.lstat(target)
     if not stat.S_ISDIR(st.st_mode) or st.st_uid != host.root_uid():
         raise Refused(f"{absolute} is not a directory of root's; nothing was written into it")
     if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
@@ -173,11 +186,15 @@ def _write(host: Host, absolute: Path, text: str, force: bool) -> None:
     directory = _root_dir(host, absolute.parent)
     target = directory / absolute.name
     if os.path.lexists(target):
-        if not stat.S_ISREG(os.lstat(target).st_mode):
+        st = os.lstat(target)
+        if not stat.S_ISREG(st.st_mode):
             raise Refused(f"{absolute} is a link or not a regular file; it was not touched")
-        if target.read_text(encoding="utf-8") == text:
+        same = target.read_text(encoding="utf-8") == text
+        if same and st.st_uid == host.root_uid() and stat.S_IMODE(st.st_mode) == 0o644:
             _say(f"ok     {absolute}")
             return
+        if same:
+            force = True  # install's own text with another owner or mode: put it right
         if not force:
             _say(f"kept   {absolute} (it differs; --force rewrites it)")
             return
@@ -224,7 +241,8 @@ def _user(host: Host) -> User:
         if os.path.lexists(host.path(HOME)):
             raise Refused(f"{HOME} exists, but the user {USER} does not; move it away first")
         argv = ["useradd", "--system", "--create-home", "--home-dir", str(HOME)]
-        if host.run([*argv, "--shell", "/usr/sbin/nologin", USER]) != 0:
+        argv += ["--comment", MARKER, "--shell", "/usr/sbin/nologin", USER]
+        if host.run(argv) != 0:
             raise Refused(f"could not create the system user {USER}")
         user = host.user(USER)
         if user is None:
@@ -232,8 +250,11 @@ def _user(host: Host) -> User:
         _say(f"made   user {USER}")
     else:
         _say(f"ok     user {USER}")
-    if user.home != str(HOME):
-        raise Refused(f"the user {USER} has the home {user.home}, not {HOME}; not changed")
+    if not user.ours:
+        raise Refused(
+            f"a user {USER} exists that install did not make (home {user.home}); "
+            "remove or rename it first, install does not take over an account"
+        )
     # The parent of HOME is root's; HOME and below are the service user's, so every step
     # down goes through the descriptor of the one above it.
     parent = os.open(host.path(HOME.parent), os.O_RDONLY | os.O_DIRECTORY)
@@ -298,6 +319,8 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
             f"{USER} cannot run {host.maity()[0]}: install maity where every user can run it "
             "(`sudo pipx install --global maity`), then run install again"
         )
+    if host.run(["runuser", "-u", USER, "--", "test", "-r", str(config_path)]) != 0:
+        raise Refused(f"{USER} cannot read {config_path}; let it traverse that directory")
     _write(host, UNIT_PATH, unit, args.force)
     if paired:
         _say(f"ok     already paired ({state_dir} holds a credential)")
@@ -327,21 +350,27 @@ def cmd_install(args: argparse.Namespace, host: Host | None = None) -> int:
     return host.run(_as_runner(host, ["runner", "check", "--config", str(config_path)]))
 
 
-def _remove(host: Host, absolute: Path, tree: bool) -> None:
-    """Removes a directory tree (`tree`) or a regular file; a link is removed itself, never
-    followed, and anything else is refused."""
+def _removable(host: Host, absolute: Path, tree: bool) -> None:
+    """A directory tree (`tree`) or a regular file, a link, or nothing; anything else is not
+    what install made."""
     target = host.path(absolute)
     if not os.path.lexists(target):
         return
     mode = os.lstat(target).st_mode
-    if stat.S_ISLNK(mode):
-        target.unlink()
-    elif tree and stat.S_ISDIR(mode):
+    if not (stat.S_ISLNK(mode) or (stat.S_ISDIR(mode) if tree else stat.S_ISREG(mode))):
+        raise Refused(f"{absolute} is not what install made; nothing was removed")
+
+
+def _remove(host: Host, absolute: Path, tree: bool) -> None:
+    """Removes what `_removable` allows; a link is removed itself, never followed."""
+    _removable(host, absolute, tree)
+    target = host.path(absolute)
+    if not os.path.lexists(target):
+        return
+    if stat.S_ISDIR(os.lstat(target).st_mode):
         shutil.rmtree(target)  # does not follow links below it
-    elif not tree and stat.S_ISREG(mode):
-        target.unlink()
     else:
-        raise Refused(f"{absolute} is not what install made; it was not removed")
+        target.unlink()
     _say(f"removed {absolute}")
 
 
@@ -353,13 +382,19 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
         raise Refused("uninstall removes a system service: run it with sudo")
     config_path = _config_path(args)
     user = host.user(USER)
-    ours = user is not None and user.home == str(HOME)
+    ours = user is not None and user.ours
     if args.purge and user is not None and not ours:
-        raise Refused(f"the user {USER} has the home {user.home}, not {HOME}: not install's")
+        raise Refused(f"the user {USER} was not made by install; --purge changes nothing")
+    if args.purge:
+        # Checked before anything changes: --purge removes only what install manages.
+        for path, tree in ((HOME, True), (_purged_config(config_path), config_path == CONFIG)):
+            _removable(host, path, tree)
     unit = host.path(UNIT_PATH)
     if os.path.lexists(unit):
-        host.run(["systemctl", "disable", "--now", SERVICE])
-        _say(f"stopped {SERVICE}")
+        if host.run(["systemctl", "disable", "--now", SERVICE]) != 0:
+            _halt(args, f"`systemctl disable --now {SERVICE}` failed")
+        else:
+            _say(f"stopped {SERVICE}")
     # The unit's KillMode=process leaves the agents running when the service stops; nothing
     # would supervise them once it is gone (cli/context/runner.md).
     if ours and os.path.lexists(host.path(config_path)):
@@ -373,29 +408,43 @@ def cmd_uninstall(args: argparse.Namespace, host: Host | None = None) -> int:
         else:
             stop = ["runner", "stop-all", "--config", str(config_path)]
             if host.run(_as_runner(host, stop)) != 0:
-                _say("could not stop every agent (above); `maity runner stop-all` ends them")
+                _halt(args, "`maity runner stop-all` could not stop every agent (above)")
+            else:
+                _say("stopped the agents")
+    failed = False
     if os.path.lexists(unit):
         _remove(host, UNIT_PATH, tree=False)
-        host.run(["systemctl", "daemon-reload"])
+        if host.run(["systemctl", "daemon-reload"]) != 0:
+            _say("`systemctl daemon-reload` failed; run it once more")
+            failed = True
     if not args.purge:
         _say(
             f"kept   {HOME} (state, credential, workspaces), {config_path} and user {USER}; "
             "--purge removes them"
         )
-        return 0
+        return 1 if failed else 0
     _remove(host, HOME, tree=True)
-    # The default configuration's directory is install's own; a file named by --config may
-    # sit next to others, so only the file goes.
-    if config_path == CONFIG:
-        _remove(host, CONFIG.parent, tree=True)
-    else:
-        _remove(host, config_path, tree=False)
+    _remove(host, _purged_config(config_path), tree=config_path == CONFIG)
     if ours:
         if host.run(["userdel", USER]) != 0:
             raise Refused(f"could not remove the user {USER}")
         _say(f"removed user {USER}")
     _say("the hub still lists this runner: remove it under Runners in the dashboard")
-    return 0
+    return 1 if failed else 0
+
+
+def _purged_config(config_path: Path) -> Path:
+    """The default configuration's directory is install's own; a file named by --config may
+    sit next to others, so only that file goes."""
+    return CONFIG.parent if config_path == CONFIG else config_path
+
+
+def _halt(args: argparse.Namespace, what: str) -> None:
+    """A stop that failed: removing the unit or the state now would leave agents running on
+    files that are gone. `--force` goes on anyway."""
+    if not args.force:
+        raise Refused(f"{what}; nothing was removed (--force removes it anyway)")
+    _say(f"{what}; going on (--force)")
 
 
 def _code(args: argparse.Namespace) -> str:

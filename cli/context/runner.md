@@ -1709,57 +1709,75 @@ is the way left to put a question to a person.
 `sudo maity runner install <pairing url> --code-file -` does the steps the
 unit's header lists:
 1. It checks for Linux, root, systemd, tmux and runuser.
-2. It creates the `maity-runner` system user and `/var/lib/maity-runner`
-   (state, workspaces; 0700, owned by that user).
-3. It writes `/etc/maity-runner/runner.toml` and the unit.
-4. It pairs as that user.
-5. It runs `systemctl daemon-reload` and `enable`.
-6. It runs `maity runner check`.
+2. It creates the `maity-runner` system user, marked as install's in its
+   comment field, and `/var/lib/maity-runner` (state, workspaces; 0700,
+   owned by that user).
+3. It writes `/etc/maity-runner/runner.toml` and checks the service user can
+   read it.
+4. It writes the unit.
+5. It pairs as that user.
+6. It runs `systemctl daemon-reload` and `enable`.
+7. It runs `maity runner check`.
 
-Files that already exist and differ are kept unless `--force`. A second run
-skips what is done, and a runner already paired needs no code.
+A second run is safe. It creates only what is missing, pairs only an
+unpaired runner, and keeps a file that differs unless `--force`.
 `uninstall` stops and disables the service, ends its agents and removes the
 unit. `--purge` also removes state, workspaces, the configuration and the
-user.
+account install made.
 
 1. **`ExecStart` names the interpreter of the `maity` that runs `install`**
    (`<python> -I -m maity runner serve …`), the way the agents' side already
-   starts it.
+   starts it. Every word is quoted for systemd: `%` and `$` are doubled, and
+   control characters are refused.
    - Rejected: keeping `/usr/local/bin/maity`. A pipx install lives
      elsewhere.
    - Rejected: looking `maity` up on PATH. `sudo` resets PATH to its
      secure path, so the lookup would find another copy, or none.
 2. **Before pairing, `install` checks that the service user can run that
-   interpreter.** A pipx install under a home the service user cannot
-   enter would otherwise only fail when the service starts. That would
-   come after the single-use code is spent.
-3. **A configuration still missing `[limits]` or a harness gets the service
-   enabled, not started, with the missing keys listed.** `serve` exits 78
-   on such a configuration, and the unit does not restart 78. A started
+   interpreter and read the configuration.** A pipx install under a home
+   the service user cannot enter would otherwise only fail when the service
+   starts, after the single-use code is spent. The same goes for a
+   configuration directory a restrictive umask made 0700.
+   `/etc/maity-runner` is install's own and is always set to 0755.
+3. **A configuration `serve` would refuse gets the service enabled, not
+   started, with the reasons listed.** That covers missing `[limits]` or a
+   harness, and a key this version does not support. `serve` exits 78 on
+   such a configuration, and the unit does not restart 78, so a started
    service would sit failed until someone restarted it by hand.
    - Rejected: refusing `install` until the configuration is complete. The
      person would then write the file `install` exists to write.
    - Rejected: guessing projects, repositories or a harness. Those are the
      operator's choices.
-4. **`uninstall` ends the agents (`stop-all`) after stopping the service.**
-   The unit's `KillMode=process` keeps agents running across a service
-   stop. Once the unit is gone, nothing would supervise or stop them.
+4. **`uninstall` ends the agents (`stop-all`) after stopping the service,
+   and removes nothing when either step fails unless `--force`.** The
+   unit's `KillMode=process` keeps agents running across a service stop.
+   Once the unit is gone nothing would supervise them, and once `--purge`
+   has removed the state their workspaces would be gone from under them.
    - Rejected: leaving them running. Agents would go on working with a
      credential whose runner is gone.
-
-5. **Root never follows a link where others can write.** The service user's
-   home, and in the `single` layout every agent, can write
-   `/var/lib/maity-runner`. Its directories are therefore opened with
-   `O_NOFOLLOW` from the parent's descriptor and owned and moded through
-   that descriptor. A link there is refused.
-   Files are written to a temporary file in a root-owned directory that
-   others cannot write, then renamed into place. A link or non-regular file
-   at the path is refused.
-   `--purge` removes a link itself, never what it points to.
-   `ExecStart` quotes each word for systemd and refuses control characters,
-   since an interpreter path is free text that becomes unit syntax.
+   - Rejected: warning and going on. A purge would then delete what running
+     agents still use.
+5. **Root never follows a link where others can write, and removes only
+   what it made.**
+   - The service user's home, and in the `single` layout every agent, can
+     write `/var/lib/maity-runner`. Its directories are opened with
+     `O_NOFOLLOW` from the parent's descriptor and owned and moded through
+     that descriptor; a link there is refused.
+   - Files are written to a temporary file in a root-owned directory that
+     others cannot write, then renamed into place. A link or non-regular
+     file at the path is refused.
+   - The account install makes carries a marker in its comment field.
+     `install` does not take over an unmarked `maity-runner` account, and
+     `--purge` deletes no account without the marker.
+   - `--purge` removes `/var/lib/maity-runner`, and either
+     `/etc/maity-runner` or only the file a `--config` names, never a
+     directory there. It checks all of this before it changes anything, and
+     removes a link itself, never what it points to.
    - Rejected: plain `chmod`/`chown`/`write_text` on paths. A link swapped
      in by the service user would hand root's files to it.
+   - Rejected: adopting any existing `maity-runner` account. An account of
+     the same name made for something else would be taken over, and later
+     deleted.
 
 Every call that touches the system goes through one `Host` seam, so the tests
 run without root or systemd.
