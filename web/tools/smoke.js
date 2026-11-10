@@ -1349,8 +1349,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !agRow("agt-a").querySelector(".member-takes-over"), "members: an agent that took over says from whom and where the hand-over is " + (takeOverP && text(takeOverP)));
   const agCRow = await agOpen("agt-c");
   expect(text(agCRow).includes("never resumed") && text(agCRow).includes("revoked") && text(agCRow).includes("replaced by a new clone"), "never resumed and revoked credentials");
+  // Each credential names its instance (tsk-s0jb9wkdp41j): <handle>#<id>, the #id a link to that instance's
+  // Sessions, an active one with its presence; a revoked one names its instance without a presence.
+  {
+    const credRow = (id) => agCRow.querySelectorAll(".credentials li").find((li) => li.querySelector("code") && li.querySelector("code").textContent === id);
+    const active = credRow("crd-c-0003"), gone = credRow("crd-c-0002");
+    const activeInst = active && active.querySelector(".credential-instance");
+    const goneInst = gone && gone.querySelector(".credential-instance");
+    expect(activeInst && text(activeInst) === " · agent-c#k3pa Online" && activeInst.querySelector(".dot.online")
+      && activeInst.querySelector("a.member-instance").getAttribute("href") === "#/maintainer/maity/team/agt-c/sessions/k3pa",
+      "credentials: an active one names its instance with its presence and links the #id to its Sessions " + (activeInst && JSON.stringify(text(activeInst))));
+    expect(goneInst && text(goneInst) === " · agent-c#q7rd" && !goneInst.querySelector(".credential-presence"),
+      "credentials: a revoked one names its instance, without a presence " + (goneInst && JSON.stringify(text(goneInst))));
+    // The revoke confirmation names the instance; declined, nothing is sent.
+    const credConfirm = win.confirm, credPost = win.Maity.api.post;
+    let asked = null, posted = 0;
+    win.confirm = (q) => { asked = q; return false; };
+    win.Maity.api.post = (p, b) => { if (p.includes("/revoke")) posted += 1; return credPost(p, b); };
+    btn(active, "Revoke").click(); for (let k = 0; k < 2; k++) await tick();
+    win.confirm = credConfirm; win.Maity.api.post = credPost;
+    expect(asked === "Revoke agent-c#k3pa (crd-c-0003)? Its session loses access at once." && posted === 0,
+      "credentials: the revoke confirmation names the instance; declined, nothing is revoked " + JSON.stringify(asked));
+  }
   expect(text(agCRow).includes("Areas") && text(agCRow).includes("Capabilities"), "areas and capabilities");
   expect(!text(agCRow).includes("The agent was told at once"), "an agent's own pause is a declaration, without that line");
+  // The member page's read-only list names each credential's instance the same way (tsk-s0jb9wkdp41j).
+  await go("#/maintainer/maity/team/agt-c/sessions"); for (let k = 0; k < 6; k++) await tick();
+  {
+    const credLis = main.querySelectorAll(".member-creds li");
+    const named = credLis.map((li) => li.querySelector(".credential-instance") ? text(li.querySelector(".credential-instance")) : null);
+    expect(credLis.length === 2 && named.includes(" · agent-c#k3pa Online") && named.includes(" · agent-c#q7rd"),
+      "member page: each credential names its instance, the active one with its presence " + JSON.stringify(named));
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 4; k++) await tick();
   const agB = await agOpen("agt-b");
   expect(text(agB.querySelector(".member-pause")).includes("A pause tells the agent at once and refuses it new work (claims, new cards)"),

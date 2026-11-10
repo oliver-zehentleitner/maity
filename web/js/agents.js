@@ -18,6 +18,31 @@ window.Maity = window.Maity || {};
     return M.t("agentparts.credential.last_used_via", { ago, via: c.last_used_via });
   }
 
+  // The instance a credential belongs to (§6.17, §10): <handle>#<id>, the #id a link to that
+  // instance's Sessions, and for an active one its presence as the member list reads it, so two
+  // instances of one agent are told apart before one of them is revoked (tsk-s0jb9wkdp41j).
+  const PRESENCES = {
+    online: () => M.t("members.presence.online"), away: () => M.t("members.presence.away"),
+    offline: () => M.t("members.presence.offline"), paused: () => M.t("members.presence.paused"),
+  };
+  function instanceOfCredential(m, c) {
+    return c.instance ? (m.instances || []).find((i) => i.id === c.instance) || null : null;
+  }
+  function credentialInstance(ctx, m, c) {
+    if (!c.instance) return null;
+    const inst = instanceOfCredential(m, c);
+    const ref = M.dom.memberRef(ctx, m.id, { instance: inst ? { instance: c.instance, harness: inst.harness, model: inst.model } : c.instance });
+    const presence = !c.revoked_at && inst && Object.prototype.hasOwnProperty.call(PRESENCES, inst.presence)
+      ? h("span", { class: "credential-presence" }, " ", h("span", { class: "dot " + inst.presence, "aria-hidden": "true" }), " ",
+        PRESENCES[inst.presence]())
+      : null;
+    return h("span", { class: "credential-instance" }, " · ", ref, presence);
+  }
+  // What the revoke confirmation names: the instance's address as people read it.
+  function addressOf(m, c) {
+    return (m.handle || m.display_name || m.id) + (c.instance ? "#" + c.instance : "");
+  }
+
   // revoked(): what follows a revocation; the whole view drawn anew without one.
   function credentials(ctx, m, list, revoked) {
     const box = h("div", { class: "credentials" }, h("h4", { class: "credentials-title" }, M.t("agentparts.credentials")));
@@ -31,7 +56,8 @@ window.Maity = window.Maity || {};
     append(box, h("ul", null, list.items.map((c) => h("li", { class: c.revoked_at ? "revoked" : "" },
       h("span", { class: "credential-text" },
         h("code", null, c.id),
-        " " + (c.client || "") + " · " + M.t("agentparts.credential.created", { time: formatTime(c.created_at) }),
+        credentialInstance(ctx, m, c),
+        " · " + (c.client || "") + " · " + M.t("agentparts.credential.created", { time: formatTime(c.created_at) }),
         c.revoked_at
           ? h("span", { class: "muted" }, " · ", c.revoked_reason
             ? M.tn("agentparts.credential.revoked_reason", { time: formatTime(c.revoked_at), who: M.dom.memberRef(ctx, c.revoked_by), reason: c.revoked_reason })
@@ -46,7 +72,7 @@ window.Maity = window.Maity || {};
             type: "button",
             class: "danger",
             onclick: async (e) => {
-              if (!window.confirm(M.t("agentparts.credential.revoke_confirm", { id: c.id, name: m.display_name }))) return;
+              if (!window.confirm(M.t("agentparts.credential.revoke_confirm", { id: c.id, address: addressOf(m, c) }))) return;
               e.target.disabled = true;
               status.busy(M.t("agentparts.credential.revoking"));
               try {
@@ -140,5 +166,5 @@ window.Maity = window.Maity || {};
     get effect() { return M.t("agentparts.pause.effect"); },
     get paused() { return M.t("agentparts.pause.paused"); },
   };
-  M.agentParts = { credentials, briefingControl, loadCredentials };
+  M.agentParts = { credentials, credentialInstance, briefingControl, loadCredentials };
 })(window.Maity);

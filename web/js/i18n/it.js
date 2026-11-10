@@ -133,7 +133,7 @@ window.MAITY_I18N["it"] = {
   "agentparts.credential.never_resumed": "nessun resume finora",
   "agentparts.credential.not_revoked": "Non revocata: {reason}",
   "agentparts.credential.revoke": "Revoca",
-  "agentparts.credential.revoke_confirm": "Revocare {id} di {name}? La sua sessione perde subito l'accesso.",
+  "agentparts.credential.revoke_confirm": "Revocare {address} ({id})? La sua sessione perde subito l'accesso.",
   "agentparts.credential.revoked": "revocata {time} da {who}",
   "agentparts.credential.revoked_reason": "revocata {time} da {who} ({reason})",
   "agentparts.credential.revoking": "Revoca in corso…",

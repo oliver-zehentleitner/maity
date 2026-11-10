@@ -127,7 +127,7 @@
   "agentparts.credential.never_resumed": "从未 resume",
   "agentparts.credential.not_revoked": "未撤销： {reason}",
   "agentparts.credential.revoke": "撤销",
-  "agentparts.credential.revoke_confirm": "撤销 {name} 的 {id}？其会话将立即失去访问权限。",
+  "agentparts.credential.revoke_confirm": "撤销 {address}（{id}）？其会话将立即失去访问权限。",
   "agentparts.credential.revoked": "{who} 于 {time} 撤销",
   "agentparts.credential.revoked_reason": "{who} 于 {time} 撤销（{reason}）",
   "agentparts.credential.revoking": "正在撤销…",

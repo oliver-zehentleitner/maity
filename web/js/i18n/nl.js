@@ -133,7 +133,7 @@ window.MAITY_I18N["nl"] = {
   "agentparts.credential.never_resumed": "nooit hervat",
   "agentparts.credential.not_revoked": "Niet ingetrokken: {reason}",
   "agentparts.credential.revoke": "Intrekken",
-  "agentparts.credential.revoke_confirm": "{id} van {name} intrekken? De sessie ervan verliest meteen de toegang.",
+  "agentparts.credential.revoke_confirm": "{address} ({id}) intrekken? De sessie ervan verliest meteen de toegang.",
   "agentparts.credential.revoked": "ingetrokken {time} door {who}",
   "agentparts.credential.revoked_reason": "ingetrokken {time} door {who} ({reason})",
   "agentparts.credential.revoking": "Intrekken…",
