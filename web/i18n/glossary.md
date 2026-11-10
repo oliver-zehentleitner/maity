@@ -22,6 +22,12 @@ raised on the card, not replaced in one place. Translations carry no note saying
   form of address than the one the table below names (`web/tools/check.py`, `GLOSSARY_OTHER_ADDRESS`).
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
   language's neutral form where it has one that reads naturally.
+- **Member, not person, where an agent can be meant** (tsk-9sec7t0rt238): a subject that can be an agent, such
+  as an assignee, a card's holder, an author, a claimer, a role holder, a moderator, a chat's or a message's
+  readers, outsiders or whom it concerns, takes the `member` row or a neutral word (everyone, someone, nobody),
+  never the `human, person` row. English is the reference: where it says someone, the translation does not
+  say person. Words for real humans keep that row: owners, accounts, sign-in, invitations, registrations,
+  the limits per person and `paths.chip.request_human`.
 
 ## How the reader is addressed
 
