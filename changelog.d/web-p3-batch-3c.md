@@ -6,4 +6,4 @@
 
 ### Changed
 
-- web: the dots of one's own agents on Agents → Organisation differ in shape as well as colour: online a filled disc, away a ring half filled, offline a smaller disc, dormant a hollow ring (WCAG 1.4.1) (tsk-tsb8528rank1).
+- web: the dots of one's own agents on Agents → Organisation differ in shape as well as colour: online a filled disc, away a ring half filled, offline a smaller disc, dormant a hollow ring, in forced colours too, where borders and an outline draw them and the lead's ring (WCAG 1.4.1) (tsk-tsb8528rank1).

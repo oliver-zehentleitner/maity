@@ -63,7 +63,10 @@ yours", never an id or a name. Its instances are dots in their presence's
 colour, the lead ringed. Each state also has a shape of its own, so that colour is never the only
 cue (WCAG 1.4.1; a review of #1485, nte-s2dqhn1n4bez; the coordinator chose these shapes, batch 3c of
 tsk-tsb8528rank1, 2026-11-10): online a filled disc, away a ring half filled, offline a smaller
-disc, dormant a hollow ring. The state stays in each dot's name and tooltip as well.
+disc, dormant a hollow ring. In forced colours, where the browser drops gradients, background
+colours and shadows, the same four shapes and the lead ring are drawn with borders, size and an
+outline alone, in the user's system colours (#1598 review). The state stays in each dot's name and
+tooltip as well.
 Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a

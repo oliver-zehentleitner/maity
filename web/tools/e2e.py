@@ -4699,19 +4699,27 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
           document.querySelector('ul.fleet-tree').before(box);
           return states.map((st) => { const a = document.createElement('a'); a.className = 'fleet-dot ' + st; box.appendChild(a);
             const b = getComputedStyle(a, '::before');
-            return [st, b.width, b.height, b.borderTopWidth, b.backgroundImage === 'none' ? 'none' : 'image', b.backgroundColor === 'rgba(0, 0, 0, 0)' ? 'clear' : 'filled'];
+            return [st, b.width, b.height, b.borderTopWidth, b.borderLeftWidth, b.backgroundImage === 'none' ? 'none' : 'image', b.backgroundColor === 'rgba(0, 0, 0, 0)' ? 'clear' : 'filled'];
           }); }"""
-        states = ["online", "away", "offline", "dormant"]
-        for scheme in ("light", "dark"):
-            page.set_viewport_size({"width": 390, "height": 844})
-            page.emulate_media(color_scheme=scheme)
-            page.reload()
-            expect(node(reviewer["id"])).to_be_visible()
-            shapes = page.evaluate(probe, states)
-            assert len({tuple(x[1:]) for x in shapes}) == len(states), f"two dot states differ in colour alone ({scheme}): {shapes}"
-            run.shot(page, f"agents-fleet-states-390-{scheme}")
-            page.evaluate("() => document.querySelectorAll('.fleet-probe').forEach((e) => e.remove())")
-        print(f"   fleet dots: four states, four shapes {shapes}")
+        states = ["online", "away", "offline", "dormant", "online lead"]
+        # Forced colours too (#1598 review): there the browser would drop a gradient, a background colour and a
+        # shadow, so the check runs with forced-colors active as well, and the lead keeps its ring.
+        for forced in ("none", "active"):
+            for scheme in ("light", "dark"):
+                page.set_viewport_size({"width": 390, "height": 844})
+                page.emulate_media(color_scheme=scheme, forced_colors=forced)
+                page.reload()
+                expect(node(reviewer["id"])).to_be_visible()
+                shapes = page.evaluate(probe, states)
+                plain = [x for x in shapes if x[0] != "online lead"]
+                assert len({tuple(x[1:]) for x in plain}) == len(plain), f"two dot states look alike ({scheme}, forced colours {forced}): {shapes}"
+                ring = page.evaluate("""() => { const b = getComputedStyle(document.querySelector('.fleet-probe .fleet-dot.lead'), '::before');
+                  return [b.boxShadow, b.outlineStyle]; }""")
+                assert ring[0] != "none" or ring[1] not in ("none", ""), f"the lead dot has no ring ({scheme}, forced colours {forced}): {ring}"
+                run.shot(page, f"agents-fleet-states-390-{scheme}" + ("-forced" if forced == "active" else ""))
+                page.evaluate("() => document.querySelectorAll('.fleet-probe').forEach((e) => e.remove())")
+                print(f"   fleet dots, {scheme}, forced colours {forced}: four shapes {plain}, lead ring kept")
+        page.emulate_media(forced_colors="none")
         # A stack of pictures overlaps whether a picture is generated or loaded (nte-b3pfhm2bp0vt (b)): every picture
         # after the first moves 10 px under the one before, mixed kinds included, so the stack keeps its width.
         overlap = page.evaluate("""() => {

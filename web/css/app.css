@@ -934,6 +934,19 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .fleet-dot.offline::before { width: 6px; height: 6px; }
 .fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
 .fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+/* In forced colours the browser drops a gradient, a background colour and a shadow, which made away
+   and dormant the same ring and the filled dots vanish (#1598 review). There each state is drawn with
+   borders, size and an outline alone, which forced colours keep in the user's own system colours:
+   online a disc filled by its border, away a ring with a thick left side, offline the smaller disc,
+   dormant the thin ring, and the lead an outline instead of the shadow ring. */
+@media (forced-colors: active) {
+  .fleet-dot::before { background: none; border: 5px solid CanvasText; }
+  .fleet-dot.away::before { border-width: 2px 2px 2px 5px; }
+  .fleet-dot.offline::before { border-width: 3px; }
+  .fleet-dot.dormant::before { border-width: 2px; }
+  .fleet-dot.lead::before { box-shadow: none; outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
 .fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
 .fleet-stub a { color: inherit; }
 .fleet-me { font-size: 1.02rem; }
