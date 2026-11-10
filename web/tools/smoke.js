@@ -9074,6 +9074,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
   await go("#/invite/%E0%A4%A"); for (let k = 0; k < 4; k++) await tick();
   expect(ivNoRef(), "invite: an invitation address with a broken escape still sets the no-referrer policy");
+  // parseRoute() decodes each segment, so an escaped first segment is an invitation as well (#1574 review): the policy
+  // stands before every request, the maintenance read included, with a valid token and with a broken one.
+  const ivEncAsked = [];
+  for (const addr of ["#/%69nvite/open-xxxxxxxxxxxxxxxx1", "#/%69nvite/%E0%A4%A"]) {
+    await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+    head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
+    // The drawing asks maintenance.fresh() first, which reads GET /maintenance unless a read is recent: the policy is
+    // taken at that call, so the case needs no shifted clock (which would leave the read stamped ahead for later cases).
+    const asked = [], ivFresh = win.Maity.maintenance.fresh;
+    const onInvite = () => win.Maity.route.current().path.startsWith("/%69nvite/");
+    win.Maity.maintenance.fresh = () => { if (onInvite()) asked.push("fresh=" + ivNoRef()); return ivFresh(); };
+    win.Maity.api.get = (p) => { if (onInvite()) asked.push(p + "=" + ivNoRef()); return ivRefGet(p); };
+    await go(addr); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.get = ivRefGet; win.Maity.maintenance.fresh = ivFresh;
+    ivEncAsked.push(asked.includes("fresh=true") && asked.every((a) => a.endsWith("=true")) ? "ok" : JSON.stringify(asked));
+  }
+  expect(ivEncAsked.every((r) => r === "ok"), "invite: an escaped first segment sets the no-referrer policy before any request, valid token or broken " + JSON.stringify(ivEncAsked));
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
   const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";

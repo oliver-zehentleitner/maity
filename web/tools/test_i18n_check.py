@@ -380,8 +380,9 @@ for rule in ("check_prefixes", "check_fail_sentences", "check_unfilled_placehold
     expect(rule in wired, "make check runs " + rule)
 
 # literal_keys reads the values' object literal by its top-level commas on the code without comments,
-# and an item with a comment in it is not read as a name (web roll-up 3, nte-h9ajmyghwg81): the literal
-# is skipped, never read as a property that is not there.
+# and a shorthand item with a comment beside its name is not read as a name (web roll-up 3,
+# nte-h9ajmyghwg81): the literal is skipped, never read as a property that is not there. A comment in
+# a named property's value leaves that name read (#1574 review).
 def keys_of(src):
     code, error = check.strip_js(src, [])
     assert not error, error
@@ -392,5 +393,7 @@ expect(keys_of("({ name, count: 2 })") == {"name", "count"}, "literal_keys reads
 expect(keys_of("({ /* reason */ name })") is None, "a comment before a shorthand name skips the literal")
 expect(keys_of("({ name /* reason: x */ })") is None, "a comment after a name, with a colon in it, skips the literal")
 expect(keys_of("({ a: 1, /* b, c */ d })") is None, "a comma inside a comment does not split the literal into names")
+expect(keys_of("({ name: /* reason */ 1 })") == {"name"} and keys_of("({ name: 1 /* reason */ })") == {"name"},
+       "a comment in a named property's value leaves the name read")
 
 raise SystemExit(1 if failures else 0)

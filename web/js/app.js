@@ -2160,10 +2160,13 @@ window.Maity = window.Maity || {};
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
-    // A raw prefix test on the path, as the hub's own header (shell.py): a token with a broken escape,
-    // which parseRoute() refuses, still gets the policy (web roll-up 3, nte-2e1kq5r85vaj).
-    const rawPath = M.route.current().path;
-    if (M.invite && rawPath.startsWith("/invite/") && rawPath.length > "/invite/".length) M.invite.noReferrer();
+    // The first segment is decoded on its own, as parseRoute() decodes it, so /%69nvite/<token> is an
+    // invitation here too (#1574 review); a token with a broken escape, which parseRoute() refuses
+    // as a whole, still gets the policy (web roll-up 3, nte-2e1kq5r85vaj).
+    const rawParts = M.route.current().path.split("/").filter(Boolean);
+    let firstWord = rawParts[0] || "";
+    try { firstWord = decodeURIComponent(firstWord); } catch { /* a broken first segment is no invitation */ }
+    if (M.invite && firstWord === "invite" && rawParts.length > 1) M.invite.noReferrer();
     await M.i18n.ready;
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page
