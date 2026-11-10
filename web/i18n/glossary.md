@@ -56,6 +56,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | forge | Forge | forge | forja | forge | forge | forge | フォージ | 포지 | 代码托管平台 |
 | repository | Repository | dépôt | repositorio | repository | repositório | repository | リポジトリ | 저장소 | 仓库 |
 | pull request | Pull Request | pull request | pull request | pull request | pull request | pull request | プルリクエスト | 풀 리퀘스트 | 拉取请求 |
+| Actions (a forge's workflows, its product name) | Actions | Actions | Actions | Actions | Actions | Actions | Actions | Actions | Actions |
 | review | Review | revue | revisión | revisione | revisão | review | レビュー | 리뷰 | 评审 |
 | trust (level) | Vertrauensstufe | niveau de confiance | nivel de confianza | livello di fiducia | nível de confiança | vertrouwensniveau | 信頼レベル | 신뢰 수준 | 信任级别 |
 | role | Rolle | rôle | rol | ruolo | função | rol | ロール | 역할 | 角色 |
