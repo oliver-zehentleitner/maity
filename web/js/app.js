@@ -1932,18 +1932,9 @@ window.Maity = window.Maity || {};
     const openNow = () => (where.scope === "all"
       ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
       : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
+    // Where the count is offered (the inbox), its list was read after the page's own counts read
+    // answered (render): the count starts there, and a later difference is a change.
     let seen = openNow();
-    // The page draws before its counts read answers (render, tsk-hyfqc0sp2bvc), so seen is at first
-    // what an earlier page read, or /me's open_requests before any read. The page's own read is
-    // where the count starts, not a change: it counts what the list drawn beside it shows, an
-    // earlier page's counts may not (e5zv at #1582). Where that read fails, the next round's is.
-    let based = false;
-    const baseline = () => {
-      if (based || !notified()) return false;
-      based = true;
-      seen = openNow();
-      return true;
-    };
     const countLine = h("div");
     const changeLine = h("div");
     const failLine = h("div");
@@ -1959,7 +1950,6 @@ window.Maity = window.Maity || {};
     async function counts() {
       await ctx.refreshCounts();
       clear(countLine);
-      if (baseline()) return;
       const now = openNow();
       if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
         // Nothing open on screen and nobody busy in the header (the State &
@@ -1980,13 +1970,8 @@ window.Maity = window.Maity || {};
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, M.t("watch.refresh_failed", { message: err.message })));
     const notifyFailed = (err) => append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: err.message })));
     if (notifyError) { notifyFailed(notifyError); notifyError = null; }
-    // The page's own counts read, said here when it answers: a failure in the notice, else the
-    // counts as the place the inbox count starts.
-    countsRead.then((err) => {
-      if (!live()) return;
-      if (err) notifyFailed(err);
-      else baseline();
-    });
+    // The page's own counts read, said here when it fails, also after the page was drawn.
+    countsRead.then((err) => { if (err && live()) notifyFailed(err); });
     // A hidden tab asks nothing; shown again, it reads what it missed.
     let missed = false;
     const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
@@ -2356,6 +2341,14 @@ window.Maity = window.Maity || {};
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
+    // The inbox reads its list after the page's own counts read answered, so that watch's count
+    // starts from counts that are no newer than the list: a request that comes between the two is
+    // in the list, or a change on the next round, never in neither (4hch at #1582). Its header
+    // draws before; every other page does not wait at all.
+    if (where.scope === "all" || where.route === "inbox") {
+      await countsRead;
+      if (seq !== renderSeq) return;
+    }
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:

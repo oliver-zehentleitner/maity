@@ -11737,13 +11737,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
     ? new Promise((resolve, reject) => { hbRelease = () => reject(new Error("held and lost")); }) : hbGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
-  expect(hbRelease && main.querySelector("section.view-inbox") && !text(main).includes("Could not read your notifications"),
-    "notifications: a held counts read that has not answered says nothing yet");
+  expect(hbRelease && !main.querySelector("section.view-inbox") && bellBtn() && !text(main).includes("Could not read your notifications"),
+    "notifications: the inbox's list waits for a held counts read, its header does not, and nothing is said yet");
   hbRelease(); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector("section.view-inbox") && text(main.querySelector(".notice")).includes("Could not read your notifications: held and lost"),
     "notifications: a held counts read that fails is said in the notice of the drawn page");
-  // No counts read yet, and the first answer comes after the inbox drew: that answer is where its count starts, not a
-  // change (§18.2's inbox counts personal requests, /me's open_requests does not).
+  // No counts read yet: the inbox's list waits for the first answer, which is where its count starts, not a change
+  // (§18.2's inbox counts personal requests, /me's open_requests does not).
   const hbCounts = win.Maity.notify.state.counts;
   win.Maity.notify.state.counts = null;
   const hbMore = (r) => {
@@ -11755,16 +11755,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hbBefore = main.querySelector("section.view-inbox");
   win.Maity.api.get = hbHold(hbMore);
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
-  expect(hbRelease && hbBefore && main.querySelector("section.view-inbox") && main.querySelector("section.view-inbox") !== hbBefore && !win.Maity.notify.state.counts,
-    "notifications: the inbox draws before any counts are read");
+  // The page before stays until the new one draws.
+  expect(hbRelease && hbBefore && main.querySelector("section.view-inbox") === hbBefore && !win.Maity.notify.state.counts,
+    "notifications: with no counts read yet, the inbox's list waits for the page's own read");
   hbRelease(); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector("section.view-inbox") && main.querySelector("section.view-inbox") !== hbBefore,
+    "notifications: the inbox draws once its counts read answered");
   // The next round reads the same counts: nothing changed since the first answer.
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0") ? hbGet(p).then(hbMore) : hbGet(p));
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector("section.view-inbox") && !text(main).includes("What waits for you changed"),
-    "notifications: the first counts after the inbox drew are where its count starts, no \"changed\" offer");
-  // Counts known from an earlier page, and a request came meanwhile: the inbox draws it from its own list, and its own
-  // counts read, answering later, is where its count starts too, not a change (e5zv at #1582).
+    "notifications: the counts the inbox waited for are where its count starts, no \"changed\" offer");
+  // Counts known from an earlier page, and a request came meanwhile: the inbox's own counts read, which its list
+  // waits for, is where its count starts, not the earlier page's (e5zv at #1582).
   win.Maity.api.get = hbGet;
   await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
   const hbKnown = !!win.Maity.notify.state.counts;
@@ -11780,7 +11783,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0") ? hbGet(p).then(hbTwo) : hbGet(p));
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(hbKnown && main.querySelector("section.view-inbox") && !text(main).includes("What waits for you changed"),
-    "notifications: with counts known from an earlier page, the inbox's own late counts are where its count starts, no \"changed\" offer");
+    "notifications: with counts known from an earlier page, the inbox's own counts are where its count starts, no \"changed\" offer");
+  // Requests that come after the page's counts read began and before it answers (4hch at #1582): the list, read after
+  // that answer, shows them, or a later round offers them; never neither.
+  win.Maity.api.get = hbGet;
+  await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const hbGetAll = win.Maity.api.getAll;
+  let hbArrived = false;
+  win.Maity.api.getAll = (p, ...rest) => hbGetAll(p, ...rest).then((r) => {
+    if (!hbArrived || p !== "/requests") return r;
+    const like = r.items.find((x) => x.status === "open" && !x.personal);
+    return like ? { ...r, items: r.items.concat([1, 2, 3].map((i) => ({ ...like, id: "req-arrival" + i, title: "Came meanwhile " + i }))) } : r;
+  });
+  const hbThree = (r) => ({ ...r, counts: { ...r.counts, inbox: (r.counts.inbox || 0) + 3 } });
+  win.Maity.notify.state.counts = null;
+  hbRelease = null;
+  win.Maity.api.get = hbHold(hbThree);
+  await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+  hbArrived = true;
+  hbRelease(); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0") ? hbGet(p).then(hbThree) : hbGet(p));
+  for (let n = 0; n < 2; n++) { await fireIntervals(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(hbRelease && main.querySelector("section.view-all") && (text(main).includes("Came meanwhile 1") || text(main).includes("What waits for you changed")),
+    "notifications: requests that come while the counts read is on its way are drawn or offered, never swallowed");
+  win.Maity.api.getAll = hbGetAll;
   // A page left before its held read answers: the answer reaches neither the next page's notice nor its header.
   hbRelease = null;
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
