@@ -119,18 +119,27 @@ def test_the_answer_is_exactly_the_event_lists_readable_set(
     other = flow.agent(make_client, owner)
     admin = other_human(make_client, migrated, "admin-h", "admin")
     member = other_human(make_client, migrated, "member-h")
+    # A human outside the room who owns an agent in it, and a participant added later (§8.9).
+    reader = other_human(make_client, migrated, "reader-h", "admin")
+    theirs = flow.agent(make_client, reader)
+    late = other_human(make_client, migrated, "late-h")
     say(owner, "all")
     say(owner, agent.id)
     say(owner, other.id)
     say(owner, "trust:admin")
     direct(owner, agent.id)
-    group = owner.post(CHATS, {"title": "room", "participants": [agent.id, member.id]})
+    group = owner.post(CHATS, {"title": "room", "participants": [agent.id, member.id, theirs.id]})
     assert group.status_code == 201, group.text
-    owner.post(f"{CHATS}/{group.json()['id']}/messages", {"body": "in the room"})
+    chat = group.json()["id"]
+    sent = owner.post(f"{CHATS}/{chat}/messages", {"body": "in the room"})
+    assert sent.status_code == 201, sent.text
+    in_room = sent.json()["seq"]
+    added = owner.post(f"{CHATS}/{chat}/participants", {"member_id": late.id})
+    assert added.status_code == 200, added.text
     redacted = say(owner, other.id, "gone")
     assert owner.post(f"{PROJECT}/events/{redacted}/redact", {"reason": "x"}).status_code == 200
     last = head(migrated)
-    for who in (owner, agent, other, admin, member):
+    for who in (owner, agent, other, admin, member, reader, late):
         for seq in range(1, last + 2):
             served = listed(who, seq)
             answer = one(who, seq)
@@ -141,6 +150,17 @@ def test_the_answer_is_exactly_the_event_lists_readable_set(
                 item = answer.json()
                 item.pop("conversation_id")
                 assert item == served, (who, seq)
+    # The owner of an agent participant reads the room's message along, and its chat (§9.2).
+    along = one(reader, in_room)
+    assert along.status_code == 200, along.text
+    assert along.json()["conversation_id"] == chat
+    # The later participant reads it in the chat's history, but the event list does not
+    # serve it to them: the answer of a seq nobody has.
+    history = late.get(f"{CHATS}/{chat}/messages?before={in_room + 1}")
+    assert history.status_code == 200, history.text
+    assert in_room in [m["seq"] for m in history.json()["items"]]
+    assert listed(late, in_room) is None
+    assert_as_missing(one(late, in_room), nowhere(late, migrated))
 
 
 # --- a hidden event answers as a missing one -----------------------------------------------
@@ -179,6 +199,8 @@ def test_a_non_member_gets_not_found_for_every_seq(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     seq = say(owner, "all", "for the members")
+    # The positive control: a member reads it, so the route answers this seq at all.
+    assert one(owner, seq).status_code == 200
     stranger = flow.human(make_client, migrated, "stranger")
     readable = one(stranger, seq)
     assert_as_missing(readable, one(stranger, head(migrated) + 1000))
@@ -258,7 +280,9 @@ def test_a_former_participant_reads_the_event_but_is_not_given_the_chat(
 
 @pytest.mark.parametrize("seq", ["0", "1000000", "9223372036854775807"])
 def test_zero_and_beyond_the_head_are_not_found(owner: flow.Human, seq: str) -> None:
-    say(owner, "all")
+    readable = say(owner, "all")
+    # The positive control: the route answers a readable seq, so the 404 below is its own.
+    assert one(owner, readable).status_code == 200
     answer = one(owner, seq)
     assert answer.status_code == 404 and answer.json()["error"]["details"] == {}
 
