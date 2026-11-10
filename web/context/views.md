@@ -4306,9 +4306,27 @@ While a tab is dragged, a 3 px upright line in the accent colour stands in the g
 **Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
 
 **Rejected alternatives:**
-- New project as an item of the tabs menu: that menu is about the tabs, not about creating.
+- New project as an item of the tabs menu: that menu is about the tabs, not about creating. Reversed by the owner on 2026-11-10: the item is there now, see 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef.
 - The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
 - An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
+
+## The tabs menu offers New project too, beside the projects; the "+" menu keeps its entry
+
+**Id:** 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project)
+**Revisit when:** the tabs menu gets items that are neither about the tabs nor about the projects in them, or the "+" menu loses its New project entry
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-10
+
+The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens. Like the "+" menu it is there for humans only. The "+" entry stays; the row of tabs still has no New project tab of its own.
+
+**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs.
+
+**Rejected alternatives:**
+- Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
+- Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
