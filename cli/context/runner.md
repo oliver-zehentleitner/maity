@@ -661,10 +661,12 @@ plain clone has not) is not started: it is reported `failed`,
 the runner's log, and the runner deletes nothing in it and does not try
 again. The sandbox's empty placeholders pass. A person runs git in a
 runner's clone only through `maity` or after the runner's check (the
-check of the next start, or `gc`'s), and then only git that reads: the
-check does not look inside `rebase-merge/`, `rebase-apply/` or
-`sequencer/`, which the agent may write, so a `rebase --continue` would
-run an `exec` line planted there. A session that runs on after the
+check of the next start; `gc --revoked` checks only a clone whose
+credential is revoked and that no placement uses), and then only git
+that reads: the check does not look inside `rebase-merge/`,
+`rebase-apply/` or `sequencer/`, which the agent may write, so a
+`rebase --continue` or `--skip` would run an `exec` line planted
+there. A session that runs on after the
 check can plant again, so the check covers the clone as it was then;
 otherwise the work is read from the pushed branch. A person works in a
 clone of their own; the runner page (`docs/runners.md`, "Working in an
