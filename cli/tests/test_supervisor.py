@@ -10,7 +10,7 @@ from typing import Any, cast
 
 import pytest
 
-from maity import __version__, hub, state
+from maity import __version__, hub, proc, state
 from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
@@ -500,6 +500,27 @@ def test_serve_logs_each_new_state_of_a_placement_once(
     assert not any("AAAA-BBBB-CCCC" in line or "/j/tok" in line for line in logs)
 
 
+def test_a_failed_clone_logs_why_and_reports_only_the_code(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, reports, _, logs = world
+
+    def fails(*args: Any, **kwargs: Any) -> None:
+        raise workspace.Refused("clone_failed", why="maity runs no git here: the clone is odd")
+
+    monkeypatch.setattr(workspace, "prepare", fails)
+    sup.update([placement(agent=NEW)])  # no clone yet: the start clones first
+    settle(sup)
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    assert "plc-0003: clone_failed: maity runs no git here: the clone is odd" in lines
+    assert "plc-0003: failed clone_failed (generation 1)" in lines
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.exit_code) == (
+        "failed", "clone_failed", None, None
+    )  # fmt: skip
+    assert "maity runs no git" not in repr(reports)
+
+
 def test_a_pickup_not_found_fails_the_join_without_a_detail(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -767,6 +788,61 @@ def test_a_failed_clone(tmp_path: Path, origin_repo: Path) -> None:
     with pytest.raises(workspace.Refused) as failed:
         workspace.prepare(cfg, place, str(tmp_path / "missing"), "agt-3", "plc-0003")
     assert failed.value.reason == "clone_failed" and failed.value.exit_code
+    # git's own last line, for the runner's log; the report keeps the codes.
+    assert failed.value.why and "missing" in failed.value.why
+
+
+def test_a_clone_without_git_says_why(
+    tmp_path: Path, origin_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    monkeypatch.setattr(proc, "program", lambda name: None)
+    with pytest.raises(workspace.Refused) as failed:
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    assert failed.value.reason == "clone_failed" and failed.value.exit_code is None
+    assert failed.value.why == "git is not installed"
+
+
+@pytest.mark.parametrize("source", ["stderr", "tool_error"])
+@pytest.mark.parametrize(
+    "url", ["https://user@mail:SECRET@host/o/r", "https://user:prefix@SECRET@host/o/r"]
+)
+def test_a_secret_in_what_the_clone_said_never_reaches_why(
+    tmp_path: Path, origin_repo: Path, monkeypatch: pytest.MonkeyPatch, source: str, url: str
+) -> None:
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if source == "tool_error":
+            raise proc.ToolError(f"cannot reach {url}")
+        return subprocess.CompletedProcess(command, 128, "", f"fatal: {url} not found\n")
+
+    monkeypatch.setattr(proc, "run", run)
+    with pytest.raises(workspace.Refused) as failed:
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    why = failed.value.why or ""
+    assert "SECRET" not in why and "https://host/o/r" in why
+
+
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        ("", None),
+        ("Cloning...\nfatal: could not read Username\n\n", "fatal: could not read Username"),
+        ("fatal: https://bob:s3cret@host/x/y not found", "fatal: https://host/x/y not found"),
+        # Up to the last @: a password may hold one, as may a user name.
+        ("fatal: https://user@mail:SECRET@host/o/r", "fatal: https://host/o/r"),
+        ("fatal: https://user:prefix@SECRET@host/o/r", "fatal: https://host/o/r"),
+        ("a\x1b[31mb", "a?[31mb"),
+        ("x" * 400, "x" * 300),
+    ],
+)
+def test_what_a_tool_said_is_one_masked_printable_line(text: str, line: str | None) -> None:
+    assert workspace.said(text) == line
 
 
 def test_hooks_and_fsmonitor_planted_in_a_clone_never_run(
