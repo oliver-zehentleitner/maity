@@ -7026,6 +7026,14 @@ available; `pr` is null and `pr_unknown_reason` says why). A report whose
 `pr_status` does not match `pr` is `invalid`, and so is a `pr.head` that is
 not 40 hex, like `head`: heads are compared whole, never as a prefix.
 
+**Two stacked pull requests on one card.** `maity report` sends a report
+for the second only after the first has merged (or closed): while the
+card's last report names the first and the forge has it open, a report
+from the second's branch is refused (exit 4, nothing sent), and a card
+that links the first (`kind: pr`, §6.13) refuses the second until it is
+linked as well. Report the first while it is open, and the second after
+the first's merge, from the second's branch (§13, `maity report`).
+
 Stored on the card as `report`:
 
 ```json
