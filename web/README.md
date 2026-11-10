@@ -44,7 +44,7 @@ sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. To their left, where the project has them,
 links in tabs of their own: its repository, with the forge's name and
 mark (GitHub and GitLab their own; Gitea and any other a branch mark),
-**Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
+**Actions** on GitHub and Gitea, **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
 links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
 member at `path: ""`); each only when its address is plain `https`. On a
