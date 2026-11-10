@@ -343,7 +343,7 @@ its own once the release is verified.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump approved by the team lead); `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
+**Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump and redoing the fold before the final MERGE-READY set by the team lead); the maintainer's answer to req-k3acfg3wva0g, 2026-11-10 (fold the changelog at every release); `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
 **Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
 **See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
 
@@ -354,8 +354,10 @@ through the same steps:
 
 1. A pull request raises `version` in `hub/pyproject.toml` to the next
    pre-release. It also raises `appVersion` in the Helm chart to match,
-   together with the chart's own `version`. That pull request is the last
-   merge before the deploy.
+   together with the chart's own `version`, and folds `changelog.d/` into
+   `CHANGELOG.md` with `tools/changelog.py release <version>` in a commit of
+   its own. That pull request is the last merge before the deploy, and the
+   fold is redone on the newest main right before its final MERGE-READY.
 2. ci passes on the push of that merge.
 3. The maintainer pushes `v<version>` on that commit, and nobody else
    pushes a `v*` tag. The tag builds the package and the image, gated as
@@ -375,9 +377,17 @@ stated.
   separately: the status quo until deploy 5. What maity.team runs then
   has no version a person could install.
 
-The changelog is not folded per deploy for now: the fragments in
-`changelog.d/` stay until the maintainer decides otherwise (req-k3acfg3wva0g,
-open). `v0.1.0a1` was tagged without folding them either.
+Every hub release folds the changelog (the maintainer, 2026-11-10,
+req-k3acfg3wva0g: the tidiest way). `v0.1.0a1` was tagged without a fold,
+so the fold for `0.1.0a2` takes in every fragment since the start. The
+fold has to be redone on the newest main because fragments of pull
+requests merged after it would otherwise stay in `changelog.d/` and miss
+the release they shipped in. The fold is a commit of its own, with the
+command in its message, so a reviewer can rerun the tool and compare.
+
+The fold had a rejected alternative: leaving the fragments unfolded, as
+at `v0.1.0a1`. The maintainer chose the fold as the tidier way, and no
+further reason was stated.
 
 ## The sdist carries the dashboard and the join page under `bundled/`
 

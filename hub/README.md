@@ -496,8 +496,14 @@ Every deploy of maity.team is a release, so what runs there can be installed
 under the same version. Per deploy:
 
 1. A pull request raises `version` in `pyproject.toml` to the next
-   pre-release (`0.1.0a2` after `0.1.0a1`). It is the last merge before the
-   deploy.
+   pre-release (`0.1.0a2` after `0.1.0a1`) and folds the changelog: in a
+   commit of its own, `python3 tools/changelog.py release <version>` from the
+   repository root, its output unchanged, with the command in the commit
+   message. It is the last merge before the deploy. A pull request merged
+   after the fold leaves new fragments behind, so right before the final
+   MERGE-READY the fold is redone on the newest main: merge main, undo the
+   fold (`git revert --no-commit <fold commit>`), run the same command again,
+   and commit both as one.
 2. ci passes on the push of that merge to main (`ci-ok`).
 3. The maintainer pushes the tag `v<version>` on that merge commit, and
    nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
