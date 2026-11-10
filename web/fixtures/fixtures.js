@@ -6342,6 +6342,7 @@ window.MAITY_FIXTURES = {
         "id": "prj-maity0000001",
         "name": "Maity",
         "open_requests": 7,
+        "public_page": "on",
         "role": "coder",
         "slug": "maity",
         "state": "build",
@@ -6352,6 +6353,7 @@ window.MAITY_FIXTURES = {
         "id": "prj-sample000001",
         "name": "Sample shop",
         "open_requests": 1,
+        "public_page": "off",
         "role": "coder",
         "slug": "sample",
         "state": "review",
@@ -7687,6 +7689,7 @@ window.MAITY_FIXTURES = {
       "steward_writes": "cards_only",
       "tag_authority": "human"
     },
+    "public_page": "off",
     "released_at": "2026-09-14T10:00:00Z",
     "repository": {
       "default_branch": "main",

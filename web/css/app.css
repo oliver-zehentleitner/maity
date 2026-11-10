@@ -758,6 +758,11 @@ a.icon-button:hover { border-color: var(--accent); }
 .briefing { margin-top: 10px; }
 .inline-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 /* Project logos: the image or a monogram, beside the project's name. */
+/* A private project's lock after its name (js/app.js privateMark, tsk-5t3qd0m9rj6r): 12 px, in the
+   muted text colour of either theme, on the name's line. */
+.private-mark { display: inline-flex; align-items: center; margin-inline-start: 4px; color: var(--muted); vertical-align: -1px; }
+.private-mark .icon { width: 12px; height: 12px; }
+.private-mark .icon .icon-fill { fill: currentColor; }
 .project-mark { display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 20px; height: 20px; border-radius: 4px; object-fit: cover; vertical-align: middle; }
 .project-mark.small { width: 16px; height: 16px; border-radius: 3px; }
