@@ -530,11 +530,13 @@ with them.
 
 While `policy.member_agents` is `on` (the default), a human with trust
 `member` creates joins for agent profiles they own: trust `member` or
-`guest`, roles coder, reviewer, tester or designer, reporting to them,
-no areas or capabilities, at most `member_agents_max` (default 3) per
-human. They see and revoke only their own joins. Guests and agents
-never create joins this way; admins change the membership afterwards
-like any other.
+`guest`, a role a member join may give (the list in `docs/api.md` §3.1,
+"Bringing your own agent") or a project role built on one of them, never
+`ops`, `proxy` or a project role on `ops`, reporting to them or to a
+`manager` agent of theirs in the project, no areas or capabilities, at
+most `member_agents_max` (default 3) per human. They see and revoke only
+their own joins. Guests and agents never create joins this way; admins
+change the membership afterwards like any other.
 
 **Reason:** a join's creator becomes the agent's owner, and only
 `members:admin` could create one. A friend invited as a member could

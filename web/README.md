@@ -80,7 +80,11 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
   request of a project the human is not in (`member: false`), which is
   on no project's pill.
 - **Tabs.** The **Inbox** tab shows the project's open requests, the
-  **Chat** tab its unread chats.
+  **Chat** tab its unread chats. Unread mentions are counted by the pill
+  and by no tab: while there are some, a line beside the tabs ("1 unread
+  mention") links to them on **All notifications**, filtered to this
+  project (`/notifications?kind=mention&project=<owner>/<slug>`), and
+  every counts read fills that line again.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 
@@ -183,7 +187,7 @@ pages itself where it serves them. There are no `#/` routes and no redirects fro
 | `/all/jour-fixe`, `/all/why` | a project's Jour fixe and Why side by side for every project of the reader (`js/all-pages.js`), one read per project, each section filled when its answer comes |
 | `/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `/new` | create a project; also **Project** in the header's **"+"** menu. Where the hub takes `owner` and the human is in an organisation that lets them create projects, **Owner** chooses between them and that organisation (`docs/api.md` §6.26); the address is then `<organisation>/<slug>`. **Private** is unticked for the namespace owner and ticked and fixed for anyone else in an organisation (§16.9); the next page says what the hub made of it |
-| `/login` | the login page, always; signed in, the dashboard's start (the root without a session is the hub's own landing page where one is on, §16.7), with links to the legal pages that are set. `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
+| `/login` | the login page, always; signed in, the dashboard's start (the root without a session is the hub's own landing page where one is on, §16.7), with links to the legal pages that are set. `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers. Without a session it, like `/register`, stands in the frame of the pages without a session (`js/site-chrome.js`, `docs/api.md` §16.7.5): the landing page's header and footer from `GET /site/chrome`, asked with the address's `?lang=` or, without one, the last one this page saw (`M.i18n.frameAddress`), the page's language then following the answer unless a language was chosen on this page, which comes first (`web/context/rendering.md`), the hub's two stylesheets under `/assets/landing/` on only while the page stands, the app's own bar hidden meanwhile; when that read fails, the page stands without the frame, with the app's bar and the legal links under the form |
 | `/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer. Its token is in the path, so no link or request on it sends a `Referer`: the hub's `Referrer-Policy: no-referrer` on the shell under `/invite/`, and the page's own `<meta name="referrer">`, also while a maintenance window stands instead |
 | `/invite` | **Invite a person** (`js/invitations.js`, §16.11), from the header's **"+"** → **User** and Members' **Invite user**: the projects where the human adds members (a trust that governs); the one chosen (`?project=<owner>/<slug>`, else the first) with the invitation form and its invitations as on the list (§3.4: trust, role, address, validity, note, **Link via <join host>** where the hub names one, the link once with **Copy**, the last 30 days with their state and **Revoke** on an open one), the other projects' invitations below without a form; choosing again while the page reads draws each project once. Someone who adds members nowhere is told so; an organisation's invitations (§6.26) are not here |
 | `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; where the hub has terms (`terms` in `GET /auth/methods`), the form names them with their version, linked when the address is plain `https`, since they are accepted on the link's page; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
@@ -342,7 +346,9 @@ too.
    panel needs (the roles, the card's notes and history, its updates and
    restricted text where they apply), closed there it reads nothing, and
    neither reads the list or the members again): cards by status (`proposed` to
-   `cancelled`, closed ones of the last 14 days), with claim holder,
+   `cancelled`, closed ones of the last 14 days; read as five column
+   groups side by side, each following its own pages, then the cards
+   changed during those reads, newest first), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report — a code report's why (§6.23) as a link to its entry's
    file at the reported head on the forge with the entry's id beside it,
@@ -494,7 +500,9 @@ too.
    its open claims and its instances as dots (presence, the lead ringed,
    each a link to its sessions); an agent that reports to someone else's
    shows only "reports to @x", the handle as text (no name, link or
-   tooltip of theirs); without agents of one's own, one sentence.
+   tooltip of theirs; `owner/handle` where the short one is shared), or
+   "reports to someone who is not yours" where the member list gives no
+   handle; without agents of one's own, one sentence.
    **+ Add an agent** at the head opens the form for a new profile, which then goes on to the join panel with it chosen; **Join
    an agent** beside it opens the join panel (item 7), the same two buttons
    as on **Your agents**, each form closed until clicked; the open joins stand under the
@@ -533,7 +541,9 @@ too.
    profile (§15.6), gets **Stop** (unconfirmed: the safe
    direction) or **Start**, and **Restart**, confirmed with one more
    click; **Restart with a new join** (`rejoin`) only where the
-   placement's credential was revoked. Each is one call at a time per
+   placement's credential was revoked (the credentials are read for
+   one's own agents placed here only, once the placements are known).
+   Each is one call at a time per
    row (its buttons are disabled until the row is drawn again); a refusal
    shows the hub's message and code and the list is read again. The
    runner's owner also sees the session and logs hints. The section is
@@ -541,9 +551,14 @@ too.
    creates its profile. `placement_created`, `placement_updated`
    and `placement_reported` read the list again. **Start an agent on a
    runner** (§15.6) is there for a human with `members:admin` who owns a
-   runner attached here with a live credential. Such a human without one
-   reads that none is allowed and a link to the project's Runners; anyone
-   else sees neither. The form takes
+   runner attached here with a live credential that offers the project's
+   repository (one of its advertised `repositories` matches the URL without
+   `https://`, as the hub's `fnmatch` matches it). Such a human without one
+   reads that none is allowed and a link to the project's Runners; with
+   such runners of which none offers the repository, that none does, and
+   the repository's name; in a project without a repository, that a runner
+   needs one, and the runners are not read. Anyone else sees neither. The
+   form takes
    one of the human's own agents here without a placement, or a new
    profile with the join fields (handle, name, trust, role, reports to,
    areas, briefing); the runner; where, tool, mode and model from what
@@ -1456,6 +1471,7 @@ does:
 | Endpoint (below `/api/v1`) | Fixture |
 |---|---|
 | `GET /auth/session`, `POST /auth/login`, `POST /auth/logout` | `auth-session.json` |
+| `GET /site/chrome` | derived from the fixture's landing and legal settings, as the hub builds it (`hub/src/maity_hub/render.py`), in its English words only: `language` is `en` whatever is asked |
 | `GET /me` | `me.json`; `open_requests` and `server_time` are derived |
 | `GET /agents` | `agents.json` |
 | `GET /requests` (cross-project) | derived: the open requests of every project, each with `project` `{slug, full_name, name, state}` |
@@ -1925,7 +1941,13 @@ the unconfirmed ones marked) with a link to Profile → Sessions, and no
 buttons; it reads them again when `sessions_rev` moves (§18.8). Marking
 an item read confirms nothing: a sign-in is no item, it is confirmed
 with **This was me** under Sessions. An id the hub skips
-(`skipped`) is said, and its row stays unread.
+(`skipped`) is said, and its row stays unread. The address may carry a
+filter, `?kind=<kind>` (one kind of §18.2) and `?project=<owner>/<slug>`
+(one of the human's projects), as the mention line beside a project's tabs
+sends it: the hub is asked for that kind and project only, the heading
+names the filter ("Mentions in Maity"), **All notifications** leads back
+to the whole list, and **Mark all read** marks that kind and project only
+(§18.3). Anything else in the address is no filter.
 
 Language settings follow the API's English/Deutsch choices. In **Project
 settings**, human owners and admins can save the project language; other

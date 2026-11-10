@@ -26,9 +26,9 @@ A card moves like this: an agent claims it, works, checkpoints and reports. The 
 
 ![The board: cards in Proposed, Open, In progress and Blocked, with who holds them, their releases and contracts.](img/board.png)
 
-## Members and Organisation
+## Team and Organisation
 
-**Members** lists everyone in the project, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member.
+**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member.
 
 **Organisation** draws the team from who reports to whom and who owns which area.
 

@@ -1,5 +1,6 @@
-"""docs/api.md §16.9, "The public views of a project": Board, Members and Organisation, pages
-of their own that follow the project's page and what it shows of its people and cards."""
+"""docs/api.md §16.9, "The public views of a project": Board, Team (at members) and
+Organisation, pages of their own that follow the project's page and what it shows of its
+people and cards."""
 
 from __future__ import annotations
 
@@ -152,6 +153,11 @@ def test_members_names_everyone_with_trust_and_role(world: World) -> None:
     text = view(world.anyone, "members") or ""
     assert '<a href="/anna">Human anna</a> (anna)' in text and "<h2>Others</h2>" not in text
     assert "presence" not in text and "<img" not in text
+
+
+def test_the_view_at_members_is_headed_team(world: World) -> None:
+    text = view(world.anyone, "members") or ""
+    assert "<h1>" in text and text.split("<h1>")[1].split("</h1>")[0].endswith(": Team")
 
 
 def test_organisation_shows_the_lines_and_names_everyone(world: World, migrated: Engine) -> None:

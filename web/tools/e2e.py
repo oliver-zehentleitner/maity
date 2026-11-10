@@ -877,7 +877,7 @@ def scenario(run: Run, page: Page) -> None:
     )
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
     agents = page.locator("main .members-agents")
     expect(agents).to_contain_text("@e2e-agent")
@@ -1133,7 +1133,7 @@ def scenario(run: Run, page: Page) -> None:
             ("inbox", "Inbox"),
             ("board", "Board"),
             ("overview", "Overview"),
-            ("members", "Members"),
+            ("members", "Team"),
             ("agents", "Agents"),
         )
         # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
@@ -1845,7 +1845,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     # The pause is in the agent's row on Members (tsk-7v2snhk002ak), once.
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     agents = page.locator("main .members-agents")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     form = agents.locator("form.member-pause")
@@ -1956,7 +1956,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
     run.shot(page, "review-absence")
     run.a11y(page, "header in review with absence")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/organisation$"))
     expect(page.locator("main .org-tree")).to_be_visible()
@@ -4299,12 +4299,45 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
 
 def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     """Agents → Start an agent on a runner (docs/api.md §15.6, tsk-dsp6htj4c686) against the hub:
-    the paired runner allowed here is offered, as the hub lists it; it has not reported what it can
-    do, so there is no tool to choose and nothing to send."""
-    run.step("placements: the paired runner allowed here is offered to start an agent on, no tool yet")
+    E2E Alpha has no repository, so no runner can start an agent in it and no form is offered
+    (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
+    the runner's with it among its repositories: the paired runner allowed here is offered; it has
+    not reported what it can do, so there is no tool to choose and nothing to send."""
+    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     section = page.locator("main section.placements")
+    expect(section.locator(".placement-new-none")).to_have_text(
+        "A runner starts an agent in a clone of the project's repository, and this project has none.")
     open_form = section.get_by_role("button", name="Start an agent on a runner", exact=True)
+    expect(open_form).to_have_count(0)
+    project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
+    runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
+
+    def with_repository(route) -> None:
+        body = route.fetch().json()
+        body["repository"] = {"url": "https://github.com/owner/e2e-alpha", "default_branch": "main", "required_check": None,
+                              "forge": "github", "probe_configured": False, "probe_via": None, "owner_confirmed": False, "confirmed_by": None}
+        route.fulfill(json=body)
+
+    def offering_it(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            item["runner"]["capabilities"] = {**(item["runner"].get("capabilities") or {}), "repositories": ["github.com/owner/*"]}
+        route.fulfill(json=body)
+
+    page.route(project_read, with_repository)
+    page.route(runners_read, offering_it)
+    try:
+        start_on_runner_open(run, page, name, section, open_form)
+    finally:
+        page.unroute(project_read, with_repository)
+        page.unroute(runners_read, offering_it)
+    no_problems(run, "start on a runner")
+
+
+def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:
+    """The form opened over the answers start_on_runner_form gives the project's and runners' reads."""
+    page.reload()
     expect(open_form).to_be_visible()
     open_form.click()
     form = section.locator("form.placement-new")
@@ -4334,7 +4367,6 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     form.get_by_role("button", name="Cancel", exact=True).click()
     expect(form).to_have_count(0)
     expect(open_form).to_be_focused()
-    no_problems(run, "start on a runner")
 
 
 def notifications_step(run: Run, page: Page) -> None:
@@ -4618,7 +4650,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     )
     agents_fleet_step(run, page, agent_id)
     join_reports_to_step(run, page, agent_id)
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
     expect(over).to_have_text(f"Takes over from @e2e-agent; the hand-over is in {card_id}.")
     expect(over.get_by_role("link", name=card_id)).to_have_attribute(
@@ -5981,7 +6013,7 @@ def members_step(run: Run, page: Page) -> None:
     """Members (docs/api.md §6.2): humans and agents; the owner changes an agent's role and back."""
     run.step("members: the owner and the agent in two tables; an agent's role changed and back")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
     # Two tables, humans first; the levels by trust are the Organisation tree's (the maintainer, 2026-11-01).
     table = page.locator("table.members")
@@ -6020,7 +6052,7 @@ def members_step(run: Run, page: Page) -> None:
     expect(head.locator(".member-pill", has_text="agent of")).to_have_count(1)
     expect(page.locator("nav.member-tabs a")).to_have_count(4)
     head.get_by_role("button", name="Actions for E2E Agent").click()
-    expect(head.get_by_role("menuitem", name="Manage on Members")).to_be_visible()
+    expect(head.get_by_role("menuitem", name="Manage on Team")).to_be_visible()
     page.keyboard.press("Escape")
     run.a11y(page, "member page")
     page.locator("nav.member-tabs").get_by_role("link", name="Sessions & credentials").click()
@@ -6060,7 +6092,7 @@ def members_step(run: Run, page: Page) -> None:
     run.shot(page, "organisation-paths")
     page.locator("main .org-faces").get_by_role("button", name="Tree", exact=True).click()
     expect(page.locator("main .org-tree")).to_be_visible()
-    view_tab(page, "Members").click()
+    view_tab(page, "Team").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.
     table.get_by_role("button", name="Manage Owner").click()
     owner_manage = page.locator("tr.member-manage")

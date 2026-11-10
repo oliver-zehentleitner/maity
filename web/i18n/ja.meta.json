@@ -9500,8 +9500,8 @@
     "text": "b46ecaf0046c54bc"
   },
   "memberpage.manage_members": {
-    "en": "c154013e996b1f4f",
-    "text": "b28fc47e77faeb0c"
+    "en": "51734b6448550f6b",
+    "text": "1b88d88fbdea4851"
   },
   "memberpage.paused": {
     "en": "d2f88d9c865e0709",
@@ -9734,6 +9734,10 @@
   "members.filter.mine_none": {
     "en": "2f7a76878d6dadc5",
     "text": "0da515d157fc3651"
+  },
+  "members.heading": {
+    "en": "6bbc51529519435c",
+    "text": "a3c68ede4010a059"
   },
   "members.hint": {
     "en": "2681cebe50567b43",
@@ -10180,8 +10184,8 @@
     "text": "27267550a9a12bb3"
   },
   "members.title": {
-    "en": "6bbc51529519435c",
-    "text": "a3c68ede4010a059"
+    "en": "015c33c4ec95d38f",
+    "text": "01666e349782ca93"
   },
   "members.unchanged": {
     "en": "47edb6b9c072e29c",
@@ -10892,8 +10896,8 @@
     "text": "d2c2600f28dcfd6c"
   },
   "names.transfer.none": {
-    "en": "651e56eac756dce2",
-    "text": "af25c9271b422f7d"
+    "en": "12233dc6d9546a70",
+    "text": "b7317443353bb073"
   },
   "names.transfer.org_option": {
     "en": "ce9e978f9e065c3b",
@@ -10964,8 +10968,8 @@
     "text": "f68c9108cdd19782"
   },
   "nav.members": {
-    "en": "6bbc51529519435c",
-    "text": "a3c68ede4010a059"
+    "en": "015c33c4ec95d38f",
+    "text": "01666e349782ca93"
   },
   "nav.members.changed": {
     "en": "77c54a93d0aed623",
@@ -12808,8 +12812,8 @@
     "text": "8f09cb6555459f1b"
   },
   "placements.new.hint": {
-    "en": "927287e43f0e965e",
-    "text": "2858762c24816cfc"
+    "en": "0f5300ecabf4f2b2",
+    "text": "e52c649a79751520"
   },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
@@ -12822,6 +12826,14 @@
   "placements.new.model_default": {
     "en": "40f3fd78cdcd6185",
     "text": "44940fa39f0e62f0"
+  },
+  "placements.new.no_repository": {
+    "en": "d3bdc52da501f2ad",
+    "text": "5c2ca56648dee75f"
+  },
+  "placements.new.no_runner_offers": {
+    "en": "3d2efb0a712bd63b",
+    "text": "5cf6ed21906072e2"
   },
   "placements.new.no_tool": {
     "en": "0e25eee1502a372a",
@@ -13772,8 +13784,8 @@
     "text": "c745f4d955475552"
   },
   "public_page.hint": {
-    "en": "ca3a69f28da1fd6f",
-    "text": "e1a3e2fffc0a549d"
+    "en": "421738fe1c909392",
+    "text": "c9fa3d79ed70d6e8"
   },
   "public_page.never": {
     "en": "a1a33c2eb82b3c58",
@@ -14913,7 +14925,7 @@
   },
   "restricted.widen.cards_unknown": {
     "en": "3389e4ae21776de4",
-    "text": "41ab4fbb21fbfbe4"
+    "text": "17eed68679f20d13"
   },
   "restricted.widen.future": {
     "en": "b58f1720b4091850",

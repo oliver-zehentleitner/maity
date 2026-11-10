@@ -49,7 +49,8 @@ def on_base(project: Any, base: str) -> list[str]:
 
 def view(project: Any) -> dict[str, Any]:
     """The `custom` half of `GET …/roles`: `{custom: [{name, base, description, guide,
-    guide_by}]}`; the built-in roles are `guide.builtin`."""
+    guide_by}]}`. The route (routes/roles.py `read_roles`) adds the `builtin` half from
+    `guide.builtin`."""
     return {"custom": of(project)}
 
 

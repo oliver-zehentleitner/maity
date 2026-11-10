@@ -696,13 +696,16 @@ learned are to be two fields of its membership, `expert_for` and
 `expert_sources`, and a merge that changes a declared source is to wake
 it through the ticker (not built: the agreed design, specified in §6.2
 and §17.3 with the pull request that builds it). It holds neither `tasks:write` nor
-`requests:ask`: it creates, claims and reports no card, posts no note
-and files no request. It answers the `decision`, `contract` and `info`
+`requests:ask`: it creates, claims and reports no card and files no
+request, and it posts no note unless its trust is `guest`, which comments
+with notes whatever its role (§2.3 "Guest"). It answers the `decision`, `contract` and `info`
 requests addressed to it, to one of its instances or to `role:expert`
 as every addressee does (§7), which needs no scope, and it posts
-messages. Like a guest it is never a card's target: `assign`,
+messages. Like a guest it is never a card's target: `assignee`,
 `assigned_to` and a claim's `holder` (§6.5) naming it are `invalid`
-(`details.fields.<field>: "expert"`), and area routing skips it. It may
+(`details.fields.<field>: "expert"`; for an expert with trust `guest`
+the guest check comes first and the code is `guest`), and area routing
+skips it. It may
 still be a contract's arbiter, and as arbiter it moves the contract's
 `state` (§6.8) without `tasks:write`: that `PATCH`, with `contract.state`
 alone, is the one edit of a card it makes, and every other `PATCH` of a
@@ -4005,7 +4008,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a4" },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a7" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
@@ -5553,8 +5556,10 @@ English otherwise, and the dashboard the browser's choice (`?lang=`, then
 for everyone who never set it, so it says nothing about what a person wants
 to read. Before sign-in
 it takes the landing page's own language: the `language` of `GET /site/chrome`
-(§16.7.5), read once per page with the address's `?lang=` as written (or none),
-which the hub chooses exactly as the landing page does. A choice made on the
+(§16.7.5), read once per page with the address's `?lang=` as written, or,
+where the address has none, the last `?lang=` (or pick) this page saw across
+its routes (a link to `/login` from `/register?lang=de`), or none, which the
+hub chooses exactly as the landing page does. A choice made on the
 page comes first and holds for the page; a reload with a `?lang=` the landing
 page has no page in follows the landing page, though the address still shows
 it, and the registration does not store that tag as `interface_language`. Without that read (a failed or late answer, the join host) the dashboard
@@ -6396,7 +6401,7 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
+| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side (`status=proposed`, `open`, `in_progress`, `blocked,review`, and `done,cancelled` with `closed_after` at its window), each with `limit=200`, following its own `next_cursor`, then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
 | `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
@@ -8144,13 +8149,13 @@ human's too:
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers (`details.fields.substitutes`: `guest`, `proxy`, `expert`; `role:expert` is `expert` too, and an expert a `role:` or `trust:` token reaches is skipped). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
 A `PATCH` names any of the three; a field not named keeps its value. The
 codes in `details.fields` are keyed `availability_policy.<field>`:
 `on_unavailable` `unknown`; `grace_minutes` `out_of_range`; `substitutes`
-`self`, `not_a_member`, `guest`, `proxy`, `expert`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
+`self`, `not_a_member`, `expert`, `unknown_role` (a `role:` that is no role, or a `trust:` other than `trust:admin`), or
 `required` (`substitute` with an empty list).
 
 Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`
@@ -11422,7 +11427,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a4" }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a7" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger

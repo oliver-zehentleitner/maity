@@ -86,12 +86,12 @@ Losing the guest is the safer failure, and an admin can re-invite them.
 **Source:** `docs/api.md` §2.3 ("The security teams", the table of roles) and the coordinator's order on the card tsk-g62vwd7bqztk
 **Revisit when:** a built-in role gets scopes no existing one has
 
-`scopes._ROLE_SCOPES` holds the eleven built-in roles with their scopes, `red-team` with the tester's,
+`scopes._ROLE_SCOPES` holds the twelve built-in roles with their scopes, `red-team` with the tester's,
 `blue-team` with the coder's and `purple-team` with the reviewer's. `ROLES`, `WORK_ROLES`,
 `MEMBER_RULE_ROLES` and `SENSITIVE_ROLES` are derived from it, and the role of an invitation is checked
 against `ROLES`, so a new role cannot be added to one list and forgotten in another (the invitation list had
 no `writer` and the join list no security team). `cards.NEEDS`, the built-in roles a card may be for, is
-derived too: `ROLES` without `proxy` and `manager`, which §6.4 leaves out. Where the hub resolves a built-in role by name (the
+derived too: `ROLES` without `proxy`, `manager` and `expert`, which §6.4 leaves out. Where the hub resolves a built-in role by name (the
 audience of a merge that wakes the done authority, the members whose change waits for a human's go),
 `scopes.counts_as` gives the role whose scopes a security team has; `cover.cover_order` resolves a
 `role:<role>` entry in `substitutes` the same way, so that a substitute is found among the holders of a

@@ -688,8 +688,12 @@ def create_request(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("requests:ask")
-        _validate(body, mine)
         mine = _locked(conn, mine)
+        # Again on the row read under the lock: a role change to expert that committed
+        # since the first read leaves no `requests:ask` (§2.3 "The expert"), and the
+        # checks that read the trust or the role (`urgent`, `action`) see the same row.
+        mine.require("requests:ask")
+        _validate(body, mine)
         on_behalf = None
         if body.on_behalf_of is not None and body.on_behalf_of != mine.principal_id:
             mine.require("requests:answer")
@@ -798,7 +802,16 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    return replace(mine, project=lock_project(conn, mine.project.id))
+    """The caller's membership with the project row and its own row as read under the
+    project lock, as `tasks._locked`: a role change takes the same lock, so a scope checked
+    on what this returns holds until the write commits (§2.3 "The expert")."""
+    project = lock_project(conn, mine.project.id)
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
+    ).first()
+    if row is None:  # the membership ended meanwhile
+        raise not_found()
+    return replace(mine, project=project, row=row)
 
 
 def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:

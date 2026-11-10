@@ -516,6 +516,10 @@ def test_an_older_generation_becomes_an_event_only(setup: Setup) -> None:
             {"state": "failed", "reason": "join_failed", "detail": "a" * 64 + "\n"},
             {"detail": "unknown"},
         ),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "a" * 65},
+            {"detail": "unknown"},
+        ),
         ({"state": "failed", "reason": "clone_failed", "detail": "made_up"}, {"detail": "unknown"}),
     ],
 )
