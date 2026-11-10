@@ -4,9 +4,10 @@ names only what stands at its head", §13)
 The cites are checked by `citecheck`; reviews still passed with prose that named tests, keys or
 files that were not there. This reads the message's text in the same clone and looks for four
 forms: a file and line, a name in a code span, an object hash, and a quotation from a file that
-the text ties to that file. A numeric ratio is not a file and line. A Keep-the-Why id has to be
-the full UUID at the head, and a cited test name has to be a test there. It catches names and
-quotes that are not there, not wrong claims.
+the text ties to that file. A numeric ratio is not a file and line. A Keep-the-Why id in the
+text, prose included, has to be the full UUID at the head. A cited test name, including
+`path::name`, has to be a test there. It catches names and quotes that are not there, not
+wrong claims.
 """
 
 from __future__ import annotations
@@ -30,18 +31,9 @@ _FILE_LINE = re.compile(
 _UUID_AT = re.compile(
     r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})(?![0-9A-Za-z])"
 )
-# A hyphenated id that is not 8-4-4-4-12. The last group may be 1–11 hex digits, so a cut
-# of five to eleven characters is refused too; a full last group of twelve is `_UUID_AT`.
-_UUID_SHORT = re.compile(
-    r"(?<![0-9A-Za-z])("
-    r"[0-9a-fA-F]{8}"
-    r"(?:"
-    r"(?:-[0-9a-fA-F]{1,4}){3}-[0-9a-fA-F]{1,11}"
-    r"|"
-    r"(?:-[0-9a-fA-F]{1,4}){1,3}"
-    r")"
-    r")(?![0-9A-Za-z-])"
-)
+# Eight hex digits, a hyphen, then more hyphenated hex groups. A full 8-4-4-4-12 is
+# `_UUID_AT`. Anything else is not a full id, except a token of digits only (`20261110-1530`).
+_UUID_SHORT = re.compile(r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}(?:-[0-9a-fA-F]+)+)(?![0-9A-Za-z-])")
 _TEST_NAME = re.compile(r"test_[A-Za-z0-9_]+")
 # Form 3: lowercase hex as a word bounded by anything but letters, digits, `_` and `-`.
 _HEX = re.compile(r"(?<![A-Za-z0-9_-])[0-9a-f]{7,40}(?![A-Za-z0-9_-])")
@@ -262,6 +254,16 @@ def _file_lines(repo: _Repo, head: str, text: str) -> list[str]:
 def _name(repo: _Repo, span: str) -> str | None:
     """Why the span names nothing at the head or on the default branch, or None.
     A test name is checked at the head only; the reason is then `not a test`."""
+    if "/" in span and "::" in span:
+        # `pkg/test_widget.py::test_real`, or `...::Class::test_real`. The path is the part
+        # before the first `::`; the test is the part after the last `::`, up to a `[`.
+        path = span.split("::", 1)[0]
+        name = span.rsplit("::", 1)[-1].split("[", 1)[0]
+        if not repo.has_path(path, prefix=False):
+            return "no such file or directory"
+        if repo.has_test(name):
+            return None
+        return "not a test"
     if "/" in span:
         path = span.split(":", 1)[0]
         if "*" in path:
@@ -401,8 +403,9 @@ def _quote_stands(repo: _Repo, revs: list[str], quote: str, path: str) -> bool:
 
 
 def _ids(repo: _Repo, text: str) -> list[str]:
-    """A Keep-the-Why id is the full UUID at the head. A hyphenated shorter form is refused,
-    even when an id at the head starts with it. Eight hex digits and no hyphen stay an object
+    """A Keep-the-Why id is the full UUID at the head. Any other hyphenated hex token that
+    starts with eight hex digits and contains a letter a–f is refused, a shortened middle
+    group included. Digits only are not an id. Eight hex digits and no hyphen stay an object
     hash (form 3), checked apart from this."""
     bad: list[str] = []
     full = list(_UUID_AT.finditer(text))
@@ -420,6 +423,8 @@ def _ids(repo: _Repo, text: str) -> list[str]:
         if any(start <= match.start() and match.end() <= end for start, end in covered):
             continue
         ident = match.group(1)
+        if _UUID_AT.fullmatch(ident) or re.search(r"[a-fA-F]", ident) is None:
+            continue
         key = ident.lower()
         if key in seen_short:
             continue

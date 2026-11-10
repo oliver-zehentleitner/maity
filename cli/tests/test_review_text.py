@@ -199,6 +199,42 @@ def test_a_truncated_last_group_is_not_a_full_id(clone: Path, tail: str) -> None
     assert found == [f"body: {short}: not a full id"], found
 
 
+def test_a_test_cited_with_a_path_checks_the_path_and_the_test(clone: Path) -> None:
+    head = _commit({**FILES, "pkg/tests/test_widget.py": "def test_real_widget():\n    return 1\n"})
+    good = "`pkg/tests/test_widget.py::test_real_widget`"
+    assert textcheck.check(clone, head, f"{good} covers it.").bad == []
+    missing = textcheck.check(
+        clone, head, "`pkg/tests/test_widget.py::test_missing` covers it."
+    ).bad
+    assert missing == [
+        "body: `pkg/tests/test_widget.py::test_missing`: not a test at the head"
+    ], missing
+    gone = textcheck.check(clone, head, "`pkg/tests/test_nope.py::test_real_widget` covers it.").bad
+    assert gone == [
+        "body: `pkg/tests/test_nope.py::test_real_widget`: no such file or directory at the head"
+    ], gone
+
+
+@pytest.mark.parametrize(
+    "short",
+    [
+        "c0ffee00-12-4abc-8def-0123456789ab",  # group 2
+        "c0ffee00-1234-4a-8def-0123456789ab",  # group 3
+        "c0ffee00-1234-4abc-8d-0123456789ab",  # group 4
+        "c0ffee00-1234-4abc-8def-0123456789abc",  # last group, 13 hex digits
+        "c0ffee00-12345",  # a group of five
+    ],
+)
+def test_a_shortened_middle_group_is_not_a_full_id(clone: Path, short: str) -> None:
+    head = _commit({**FILES, "context/sample.md": f"**Id:** {KTW_ID}\n"})
+    found = textcheck.check(clone, head, f"See {short} here.").bad
+    assert found == [f"body: {short}: not a full id"], found
+
+
+def test_a_numeric_date_is_not_an_id(clone: Path) -> None:
+    assert bad(clone, "Deploy 20261110-1530 ran.") == []
+
+
 def test_a_hex_word_needs_a_digit_to_be_a_hash(clone: Path) -> None:
     assert bad(clone, "the page was defaced, then acceded") == []
 
