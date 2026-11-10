@@ -989,3 +989,38 @@ instances an owner ever saw.
   quadratic in that history without an index of its own.
 - Choosing among sessions with an equal start by id alone: ids are random, so an ended
   session could stand for a live one after a resume within one tick.
+
+## A filtered page of the bell reads only the sources that can give an item of its kinds and projects
+
+**Id:** 950a792f-319e-4a64-b7af-8cc56b33a570
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-p8w1s1zwsx2y; prod timing 2026-11-10 08:11–08:16 UTC (three `GET /me/notifications` calls of about 2200 statements and 60–64 s each, 95 % database time, one 2.9 s after a load of /notifications; the query string is not logged); `tests/test_notifications.py` `test_a_filtered_page_costs_the_same_statements_for_more_items_it_does_not_list`, red on main
+**See:** notifications.md — 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6 — as of 2026-11-10
+**Revisit when:** a source gives an item of a kind it is not read for here (a chat that makes an `inbox` item, a record that makes a `mention`), or a filtered page is slow again
+
+A page fills from its sources chunk by chunk (`_paged`) until it holds as many items as
+`wanted`, the page's filters, accepts. With `kind=mention&project=…`, the link beside a
+project's tabs, `wanted` rejected nearly every row: the requests, the chats addressed to the
+human, the records, and every project but the one asked. Each source was read to the end of
+the 30-day window, a few statements per chunk.
+
+Now `derive_page` takes the filters as well (`kinds`, `projects`) and skips what can give none
+of them:
+- a project outside `projects`;
+- the plain chats (`_chats`), unless `chat` is asked: they give only `chat`;
+- the records, when only `chat` or `mention` is asked;
+- without `inbox`, the event scan reads only messages and mentions, since requests and the jour
+  fixe give only `inbox`.
+
+`wanted` still applies the filters to every item read, so the answer is the same; the pruning
+only leaves out sources whose items it would reject.
+
+**Reason:** the cost of a filtered page follows the items it lists, not the rows it rejects.
+Pruning by source keeps the exact kind decision in `_classify`; only the mapping of source to
+possible kinds is stated here, next to the sources.
+
+**Rejected alternatives:**
+- Stopping a source's scan after a few chunks: a page could miss an older item it should list.
+- Deciding the kind in SQL for every row: a second copy of `_classify`, as 38cf47f3 rejects.

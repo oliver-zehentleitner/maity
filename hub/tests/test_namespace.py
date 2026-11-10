@@ -68,7 +68,8 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
 
 
 @pytest.mark.parametrize(
-    "slug", ["tasks", "members", "forge", "logo", "keep-the-why", "transfer", "me", "repository"]
+    "slug",
+    ["tasks", "members", "team", "forge", "logo", "keep-the-why", "transfer", "me", "repository"],
 )
 def test_a_slug_is_never_a_route_word(owner: flow.Human, slug: str) -> None:
     refused = owner.post("/projects", {"slug": slug, "name": "X"})
