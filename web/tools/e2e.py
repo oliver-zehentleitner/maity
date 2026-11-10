@@ -1195,7 +1195,7 @@ def scenario(run: Run, page: Page) -> None:
         run.shot(page, f"phone-new{suffix}")
         if phone == 390:
             run.a11y(page, "create a project")
-            page.set_viewport_size({"width": phone, "height": tall})  # a11y ends at 1280x900; Runners is measured at phone width
+            page.set_viewport_size({"width": phone, "height": tall})  # Runners is measured at phone width (a11y keeps it too)
         # The Runners view: the pairing form and its long install line; reached from the gear menu.
         page.locator("header").get_by_role("button", name="Settings", exact=True).click()
         page.get_by_role("menuitem", name="Runners", exact=True).click()
@@ -1203,7 +1203,7 @@ def scenario(run: Run, page: Page) -> None:
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"/runners is {width[0]} px wide at {width[1]} px"
         run.shot(page, f"phone-runners{suffix}")
-    page.set_viewport_size({"width": 1280, "height": 900})  # where the a11y pass above left the steps below before 360 px was added
+    page.set_viewport_size({"width": 1280, "height": 900})  # back to the desktop for the steps below
     no_problems(run, "phone width")
 
     users_step(run, page)
@@ -1726,7 +1726,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
             assert grown >= reading * 1.5, f"hiding the composer left the history at {grown} px from {reading} px"
             run.shot(page, "phone-390-chat-composer-hidden")
             run.a11y(page, "chat, the composer hidden")
-            # The check ends at its last width: back to the phone, where the button is.
+            # At the phone, where the button is (a11y keeps the step's size; this says it here).
             page.set_viewport_size({"width": phone, "height": 780})
             compose.get_by_role("button", name="Write a message", exact=True).click()
             expect(page.locator("#chat-text")).to_be_focused()
@@ -3133,7 +3133,7 @@ def chat_phone_views(run: Run, browser) -> None:
                 if width == 390:
                     run.shot(page, f"chat-full-{scheme}")
                     run.a11y(page, f"chat full screen, {scheme} system theme")
-                    page.set_viewport_size({"width": width, "height": height})  # a11y ends at 1280x900
+                    page.set_viewport_size({"width": width, "height": height})  # this pass's size (a11y keeps it too)
                 page.keyboard.press("Escape")
                 expect(pane.get_by_role("button", name="Read in full screen", exact=True)).to_have_attribute("aria-pressed", "false")
                 expect(page.locator("html.chat-full")).to_have_count(0)
