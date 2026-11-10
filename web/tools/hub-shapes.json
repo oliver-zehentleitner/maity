@@ -947,6 +947,25 @@
    "next_cursor": "null"
   }
  },
+ "GET /projects/{project}/roles": {
+  "object": {
+   "builtin": {
+    "array": {
+     "object": {
+      "description": "string",
+      "guide": "string",
+      "name": "string",
+      "scopes": {
+       "array": "string"
+      }
+     }
+    }
+   },
+   "custom": {
+    "array": null
+   }
+  }
+ },
  "GET /projects/{project}/tasks": {
   "object": {
    "items": {
