@@ -6483,6 +6483,7 @@ window.MAITY_FIXTURES = {
         "kinds": {
           "chat": true,
           "inbox": true,
+          "invitation": true,
           "mention": true,
           "security": true
         }
@@ -6507,6 +6508,9 @@ window.MAITY_FIXTURES = {
           "inbox": {
             "mode": "immediate"
           },
+          "invitation": {
+            "mode": "immediate"
+          },
           "mention": {
             "content": false,
             "mode": "daily"
@@ -6527,7 +6531,8 @@ window.MAITY_FIXTURES = {
         "inbox",
         "chat",
         "mention",
-        "security"
+        "security",
+        "invitation"
       ],
       "mail_available": true,
       "not_listening": {

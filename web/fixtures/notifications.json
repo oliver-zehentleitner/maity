@@ -36,11 +36,11 @@
       "read": false, "redacted": false }
   ],
   "settings": {
-    "kinds": ["inbox", "chat", "mention", "security"],
+    "kinds": ["inbox", "chat", "mention", "security", "invitation"],
     "not_listening": { "mode": "inbox", "minutes": 60 },
     "browser": {
       "enabled": false,
-      "kinds": { "inbox": true, "chat": true, "mention": true, "security": true }
+      "kinds": { "inbox": true, "chat": true, "mention": true, "security": true, "invitation": true }
     },
     "email": {
       "language": "en",
@@ -51,7 +51,8 @@
         "inbox": { "mode": "immediate" },
         "chat": { "mode": "daily", "content": false },
         "mention": { "mode": "daily", "content": false },
-        "security": { "mode": "immediate" }
+        "security": { "mode": "immediate" },
+        "invitation": { "mode": "immediate" }
       },
       "sign_in_link": true, "daily_at": "08:00", "weekly_on": "mon", "quiet_hours": null,
       "hard_failures": 0, "disabled_at": null

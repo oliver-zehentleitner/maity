@@ -11602,6 +11602,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ivBox().querySelector("form.invite-form").dispatch("submit"); await tick();
   expect(ivPosts.length === ivBefore && text(ivBox()).includes("the note is longer than 1 KiB"), "invite: a note over 1 KiB in bytes is said before sending");
   byId("invite-note").value = "";
+  // By handle (§3.4, tsk-8xsrzjv7f0yr): the handle first, the address beside it labelled as an email address.
+  const ivLabels = ivBox().querySelector("form.invite-form").querySelectorAll("label").map((l) => l.getAttribute("for"));
+  expect(ivLabels.indexOf("invite-handle") >= 0 && ivLabels.indexOf("invite-handle") + 1 === ivLabels.indexOf("invite-address")
+    && text(ivBox().querySelector('label[for="invite-handle"]')) === "Handle" && text(ivBox().querySelector('label[for="invite-address"]')) === "Email address"
+    && /^handle-explain-\d+$/.test(byId("invite-handle").getAttribute("aria-describedby") || "")
+    && text(byId(byId("invite-handle").getAttribute("aria-describedby"))) === win.Maity.t("handles.explain.person"),
+    "invite: the handle field comes first with the person's handle explained, the address after it as Email address " + JSON.stringify(ivLabels));
+  // A handle set: the address and the join host's link step back, since a handle excludes both.
+  byId("invite-address").value = "ben@example.org"; byId("invite-handle").value = "@wolf"; byId("invite-handle").dispatch("input");
+  expect(byId("invite-address").disabled && byId("invite-via-join").disabled, "invite: a handle disables the address and the link choice");
+  const ivByHandle = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const ivSent = ivBox().querySelector(".invite-issued");
+  expect(ivPosts[ivByHandle] && JSON.stringify(ivPosts[ivByHandle][1]) === JSON.stringify({ trust: "member", role: "coder", ttl_seconds: 86400, handle: "wolf" })
+    && text(ivSent).includes("Invitation sent") && text(ivSent).includes("Wolfgang (@wolfgang)") && !byId("invite-url")
+    && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("for @wolfgang") && !text(ivBox().querySelectorAll("li.invite-item")[0]).includes("via ")
+    && byId("invite-handle").value === "" && !byId("invite-address").disabled && !byId("invite-via-join").disabled,
+    "invite: by handle, without @, address or via; no link, the person named, the list shows @handle, the form free again " + JSON.stringify(ivPosts[ivByHandle]));
+  // Each refusal of the hub in words, the handle field focused for another try.
+  const ivRefusals = [];
+  for (const [name, said] of [["wolfgang", "An open invitation names this person already."], ["maintainer", "This person is a member already."],
+    ["oz-team", "This handle is an organisation's, not a person's."], ["nobody-here", "No person has this handle."], ["Not A Handle", "That is not a handle."]]) {
+    byId("invite-handle").value = name; byId("invite-handle").dispatch("input");
+    ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    if (!text(ivBox()).includes(said)) ivRefusals.push(name);
+  }
+  expect(!ivRefusals.length, "invite: the hub's refusals of a handle in words " + JSON.stringify(ivRefusals));
+  byId("invite-handle").value = ""; byId("invite-handle").dispatch("input");
+  expect(win.Maity.invite.stateOf({ declined_at: "2026-11-10T10:00:00Z", expires_at: "2099-01-01T00:00:00Z" }) === "declined",
+    "invite: an invitation by handle the person said no to is declined");
   btn(ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-0003"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
   expect(ivDels[0] === "/projects/maintainer/maity/invitations/inv-0003" && ivItems().includes("inv-0003:revoked") && text(ivBox()).includes("Revoked; the link no longer works."),
     "invite: an open invitation revoked, said so");
@@ -12217,8 +12247,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
     && byId("notify-kind-chat").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
   const ksKinds = () => main.querySelectorAll("input").filter((i) => (i.getAttribute("id") || "").startsWith("notify-kind-")).map((i) => i.getAttribute("id").slice(12));
-  expect(JSON.stringify(ksKinds()) === JSON.stringify(["inbox", "chat", "mention", "security"]),
-    "notifications: the switches are the four kinds a human reacts to " + JSON.stringify(ksKinds()));
+  expect(JSON.stringify(ksKinds()) === JSON.stringify(["inbox", "chat", "mention", "security", "invitation"]),
+    "notifications: the switches are the five kinds a human reacts to " + JSON.stringify(ksKinds()));
   // Settings stored before 2026-10-26 may still name removed kinds (§18.4): no switch for them; a kind the hub does not list, none either.
   const ksGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me/notification-settings"
@@ -12251,6 +12281,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? nGet(p).then((a) => Object.assign(a, { next_after: headNow })) : nPoll(p));
   polls.length = 0;
   fresh.push(Object.assign({}, { id: "ntf-5004", seq: 5004, kind: "chat", at: "2026-10-22T15:03:00Z", project: { slug: "maity", full_name: "maintainer/maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "x".repeat(300) }));
+  // The invitation kind has its own browser switch (§18.4, tsk-8xsrzjv7f0yr).
+  expect(byId("notify-kind-invitation") && byId("notify-kind-invitation").checked && text(main.querySelector('label[for="notify-kind-invitation"]')).includes("Invitations to a project"),
+    "notifications: the kind invitation has its browser switch");
   byId("notify-kind-inbox").checked = false; byId("notify-kind-inbox").dispatch("change"); for (let k = 0; k < 8; k++) await tick();
   expect(polls.length >= 1 && /after=4300\.7&wait=55/.test(polls[0]), "notifications: a restart reads from the hub's head of now, nothing replayed");
   expect(shownNotes.length === 1 && shownNotes[0][1].body === "Maity", "notifications: one notification per new item, who and where, never a message's text");
@@ -12466,7 +12499,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const mmForm = () => main.querySelector("form.mail-modes-form");
     const mmSubmit = async () => { mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
     const mmLast = () => maPatches[maPatches.length - 1][1];
-    expect(mmForm() && ["inbox", "chat", "mention", "security"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate"
+    expect(mmForm() && ["inbox", "chat", "mention", "security", "invitation"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate,immediate"
+      && text(main.querySelector('label[for="mail-mode-invitation"]')) === "Invitations to a project" && !byId("mail-content-invitation")
       && byId("mail-mode-chat").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "immediate,hourly,daily,weekly,off"
       && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && !byId("mail-timezone")
       && text(main.querySelector(".mail-timezone-link")).startsWith("No time zone is set, so the digests and quiet hours follow UTC.")
