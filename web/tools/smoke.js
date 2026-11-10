@@ -33,9 +33,10 @@ class Node_ {
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text_(c) : c)); }
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
   insertBefore(c, ref) { c.parentNode = this; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); return c; }
-  // A field taken out of the document does not keep its caret in a browser (the e2e step at
-  // tools/e2e.py's note-edit redraw guards the restore in Chromium): a removed subtree's fields
-  // get the caret at the end, so a smoke case that needs the caret back needs the code that puts it back.
+  // A stress condition of the shim, not a browser's behaviour (Chromium keeps a detached field's
+  // selection when it is put back, #1581 review): a removed subtree's fields get the caret at the
+  // end, so a smoke case that keeps a caret across a redraw holds only with the code that restores
+  // it. The e2e step at tools/e2e.py's note-edit redraw checks the caret in Chromium itself.
   removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; dropSelection(c); return c; }
   replaceChild(c, old) { const i = this.childNodes.indexOf(old); if (i < 0) return old; if (c.parentNode) c.parentNode.removeChild(c); this.childNodes[i] = c; c.parentNode = this; old.parentNode = null; return old; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }

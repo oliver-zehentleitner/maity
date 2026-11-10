@@ -5806,12 +5806,15 @@ def handle_hints_step(run: Run, page: Page) -> None:
         expect(page.locator(".handle-editor input[type=text]").first).to_have_value(new)
         expect(page.locator(".handle-editor").first).to_contain_text(f"@{old}")
 
-    rename_owner("owner", long_owner)
-    page.goto(f"{run.base}/account/orgs")
-    page.locator("#org-new-handle").fill(org)
-    page.locator("#org-new-name").fill("E2E Hints Organisation")
-    page.get_by_role("button", name="Create the organisation", exact=True).click()
-    expect(page.locator("#org-handle")).to_have_value(org)
+    def restore_owner() -> None:
+        """Back to "owner" whatever happened since the rename began: the page says the handle now,
+        so a rename that went through before a failed check is undone too, and one that never
+        happened costs no rename."""
+        page.goto(f"{run.base}/account")
+        field = page.locator(".handle-editor input[type=text]").first
+        expect(field).to_be_visible()
+        if field.input_value() != "owner":
+            rename_owner(field.input_value(), "owner")
 
     def measured(where: str) -> list[dict]:
         hints = page.evaluate(HANDLE_HINTS)
@@ -5820,7 +5823,15 @@ def handle_hints_step(run: Run, page: Page) -> None:
             assert x["lines"] <= 2 and not x["wide"], f"{where}: {x}"
         return hints
 
+    # Everything from the rename on is inside the try, so a failure anywhere after it, its own
+    # check included, still ends with the owner's handle restored (#1581 review).
     try:
+        rename_owner("owner", long_owner)
+        page.goto(f"{run.base}/account/orgs")
+        page.locator("#org-new-handle").fill(org)
+        page.locator("#org-new-name").fill("E2E Hints Organisation")
+        page.get_by_role("button", name="Create the organisation", exact=True).click()
+        expect(page.locator("#org-handle")).to_have_value(org)
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             for width in (390, 360):
@@ -5864,9 +5875,12 @@ def handle_hints_step(run: Run, page: Page) -> None:
                 assert all(kinds.values()), f"handle hints at {at}: {kinds} from {sorted(fields)}"
                 print(f"   handle hints: 7 kinds, each at most two lines at {at}, the owner's handle of 31 characters")
     finally:
-        page.emulate_media(color_scheme="light")
-        page.set_viewport_size({"width": 1280, "height": 900})
-        rename_owner(long_owner, "owner")
+        # The handle first: a media or viewport reset that fails must not leave the owner renamed.
+        try:
+            restore_owner()
+        finally:
+            page.emulate_media(color_scheme="light")
+            page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "handle hints")
 
 

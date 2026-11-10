@@ -644,10 +644,11 @@ GLOSSARY_OTHER_ADDRESS = {
     ("ko", "해요체"): None,
     ("zh-Hans", "你"): None,
 }
-# French "ton" is also "tone" (le ton, un ton): the possessive ton/ta counts only right before a noun
-# the catalog itself writes after "votre", so a list kept here cannot go stale, and never after an
-# article, so "Le ton, la longueur" and "le ton compte" stay clean (nte-fvbb75pa1ym8). "tes" needs
-# no guard and is in the table above.
+# French "ton" is also "tone" (le ton, un ton): the possessive ton/ta counts only right before a word
+# the catalog itself writes after "votre" (a token rule, not a grammar: "votre nouvelle session"
+# teaches "nouvelle", and "ta nouvelle" is the informal address too), so a list kept here cannot go
+# stale; and never after an article, across any run of whitespace, so "Le ton, la longueur" and
+# "le ton compte" stay clean (nte-fvbb75pa1ym8). "tes" needs no guard and is in the table above.
 GLOSSARY_OTHER_POSSESSIVE = {
     ("fr", "vous"): (re.compile(r"\bvotre\s+([^\W\d_][\w'-]*)", re.I), ("ton", "ta")),
 }
@@ -686,9 +687,14 @@ def glossary_term(term):
     return re.compile(r"[ \-]".join(re.escape(word) for word in term.split()), re.I)
 
 
+GLOSSARY_ARTICLE_BEFORE = re.compile(r"\b(?:le|un|ce|du|au|cet|quel)\s+$", re.I)
+
+
 def glossary_possessive(lang, said, data):
-    """The other address's possessives before the nouns a language's catalog uses with its own
-    (GLOSSARY_OTHER_POSSESSIVE), or None."""
+    """A finder for the other address's possessives before the words a language's catalog writes
+    after its own (GLOSSARY_OTHER_POSSESSIVE): it gives the first such match not after an article,
+    or None; None in place of a finder when the language has no such rule or the catalog teaches
+    no word."""
     rule = GLOSSARY_OTHER_POSSESSIVE.get((lang, said))
     if not rule:
         return None
@@ -700,9 +706,14 @@ def glossary_possessive(lang, said, data):
                 nouns.update(m.group(1).lower() for m in learn.finditer(glossary_words(text)))
     if not nouns:
         return None
-    # A possessive never follows an article: "le ton compte" is the tone and the verb.
-    article = r"(?<!\ble\s)(?<!\bun\s)(?<!\bce\s)(?<!\bdu\s)(?<!\bau\s)(?<!\bcet\s)(?<!\bquel\s)"
-    return re.compile(article + r"\b(?:%s)\s+(?:%s)\b" % ("|".join(possessives), "|".join(sorted(map(re.escape, nouns)))), re.I)
+    pattern = re.compile(r"\b(?:%s)\s+(?:%s)\b" % ("|".join(possessives), "|".join(sorted(map(re.escape, nouns)))), re.I)
+
+    # A possessive never follows an article ("le ton compte" is the tone and the verb), whatever
+    # whitespace stands between them; a lookbehind cannot say "any run", so the text before is read.
+    def find(words):
+        return next((m for m in pattern.finditer(words) if not GLOSSARY_ARTICLE_BEFORE.search(words[: m.start()])), None)
+
+    return find
 
 
 def glossary_problems(lang, data, english, fixed, address):
@@ -723,7 +734,7 @@ def glossary_problems(lang, data, english, fixed, address):
             for term, pattern in terms:
                 if pattern.search(said) and not pattern.search(words):
                     problems.append("%s: %r is translated; glossary.md keeps it unchanged" % (key, term))
-            found = (other.search(words) if other else None) or (possessive.search(words) if possessive else None)
+            found = (other.search(words) if other else None) or (possessive(words) if possessive else None)
             if found:
                 problems.append("%s: %r is not the address glossary.md names (%s)" % (key, found.group(0), address[lang]))
     return sorted(set(problems))

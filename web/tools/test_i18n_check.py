@@ -187,7 +187,7 @@ expect(glossary("nl", "Tekens als [U+XXXX]", "Characters as [U+XXXX]") == [], "g
 expect(glossary("nl", "Wijzig uw wachtwoord.", "Change your password.") != [], "glossary: Dutch uw")
 expect(glossary("ko", "저장합니다", "Saved") == [], "glossary: Korean has no word check")
 expect(glossary("pt", "`tu`", "`tu`") == [], "glossary: code spans are not words")
-# French ton/ta (nte-fvbb75pa1ym8): the possessive only before a noun the catalog writes after "votre".
+# French ton/ta (nte-fvbb75pa1ym8): the possessive only before a word the catalog writes after "votre".
 FR_ADDRESS = dict(address, fr="vous")
 
 
@@ -203,6 +203,10 @@ expect(fr_glossary("Le ton, la longueur, ce que vous ne voulez jamais.") == [], 
 expect(fr_glossary("Gardez un ton calme dans votre compte.") == [], "glossary: French ton as tone before a word that is no catalog noun")
 expect(fr_glossary("Le ton compte autant que le texte.") == [] and fr_glossary("Un ton session, pas un autre.") == [],
        "glossary: French ton after an article is the tone, even before a catalog noun")
+expect(fr_glossary("Le  ton compte autant.") == [] and fr_glossary("Le\n ton compte autant.") == [] and fr_glossary("Le\tton compte.") == [],
+       "glossary: the article guard holds across any run of whitespace (#1581 review)")
+expect(any("'ton compte'" in p for p in fr_glossary("Le texte. Ouvrez ton compte.")),
+       "glossary: an article earlier in the text does not hide a later possessive")
 expect(check.glossary_problems("fr", {"k.t": "Ouvrez ton compte."}, {"k.t": "Open your account."}, fixed, FR_ADDRESS) == [],
        "glossary: a catalog without votre teaches no noun, and nothing is flagged")
 
