@@ -145,7 +145,7 @@ because the hub reads the parts concurrently, the head before the project and it
 read one after another, their server time would eat it. That concurrency is measured on
 PostgreSQL here; on MariaDB (a server with a pool and no lock at a transaction's start) a
 reviewer's local run on MariaDB 11.4.4 (review 111841 of #1656, not CI) saw three part
-bodies at once and the request take its slowest chain's time (0.84 s against at least
+bodies at once and the request take its slowest chain's time (0.89 s against at least
 2.0 s serial). On SQLite every transaction takes the one write lock at its start
 (`db._sqlite_begin_immediate`), so the parts' reads run one after another there, and the
 bundle saves the round trips and the repeated authentication only; the lock stays, since
