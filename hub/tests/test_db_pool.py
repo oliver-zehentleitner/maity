@@ -367,8 +367,8 @@ def test_a_postgres_session_is_utc_whatever_the_server_default(
 def test_a_used_up_pool_is_a_retryable_503_not_a_500(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Card tsk-p80cre8r9355: the pool's timeout is load, not a fault (§1.3); on every database,
-    SQLite included, where no real pool can be used up."""
+    """Card tsk-p80cre8r9355: the pool's timeout is load, not a fault (§1.3). The timeout is
+    raised by hand, so this runs on every backend, SQLite included."""
 
     def busy() -> None:
         raise PoolTimeout("QueuePool limit of size 1 overflow 0 reached, connection timed out")
