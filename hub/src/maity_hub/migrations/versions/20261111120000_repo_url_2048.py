@@ -9,7 +9,7 @@ The downgrade refuses while any stored URL is longer than the old column:
 shortening one would name a different repository.
 
 Revision ID: 20261111120000_repo_url_2048
-Revises: 20261109200000_invite_by_handle
+Revises: 20261111010000_expert_fields
 Create Date: 2026-11-11
 """
 
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261111120000_repo_url_2048"
-down_revision: str | None = "20261109200000_invite_by_handle"
+down_revision: str | None = "20261111010000_expert_fields"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
