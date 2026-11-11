@@ -12723,9 +12723,15 @@ the former participant unless it reads along as the owner of an agent
 participant (§9.2);
 the field never names a conversation its reader may not open. Where an
 event lives is then: its conversation when `conversation_id` is set,
-else its `subject` (a card, a request), else the project's messages
-(§8.8) for a message that is not a conversation's, else nowhere but
-the dashboard's page of the event (below).
+else the project's messages (§8.8) for a message that is not a
+conversation's, a card it is about (its `task_id`, the event's
+`subject`) included, else its `subject` (a card, a request), else
+nowhere but the dashboard's page of the event (below). A project message
+about a card lives in the messages, not on the card, because that is
+where its text is read: the card shows no list of the messages about it,
+and the listing names the card beside the message (`task_id`, §8.8). The
+owner decided so on 2026-11-11 (req-cxyyb2w01s8m, option o2, seq
+109453).
 
 ```json
 { "seq": 68216, "kind": "message", "at": "2026-11-04T09:12:40Z",
@@ -12818,7 +12824,9 @@ the text's project (§16.11), so it opens in a new tab, copies and
 reloads as any dashboard link. That page reads this route and opens the
 event where it lives (above) — the chat, the thread, the card, the
 request or the project's messages — scrolled to and highlighted, the
-address replaced by that place's; an event that lives nowhere else (no
+address replaced by that place's; a project message about a card opens
+in the project's messages at its `seq`, the card linked beside it, never
+on the card; an event that lives nowhere else (no
 conversation the reader may open, no subject, no message) is shown on
 the page itself. A `404` shows "not visible" there, the same for an
 event the reader may not see and one that does not exist; a participant

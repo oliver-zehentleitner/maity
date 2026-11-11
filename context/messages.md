@@ -685,3 +685,34 @@ in a new tab, copies and reloads.
   that resolve: a read per number per text, rejected for ids already
   (`web/context/rendering.md`, "Ids in text are linked by their shape
   alone").
+
+## A seq link to a project message about a card opens the project's messages at that seq, the card linked beside it
+
+**Id:** a96ea52b-30a4-4761-84ea-7423f3fca0b6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision of 2026-11-11, request req-cxyyb2w01s8m (option o2, seq 109453), card tsk-hpzs907e3xvx; contract `docs/api.md` §8.9 ("The answer", where an event lives, and "The dashboard's links"), 2026-11-11
+**See:** messages.md#one-event-is-read-by-its-seq-under-the-event-lists-rule-and-a-hidden-one-answers-as-a-missing-one — 90a7c56b-199c-496f-87da-a06dbe0c7a69 — as of 2026-11-11
+**Revisit when:** the card panel lists the messages about a card, or a project message can be about something other than a card
+
+Where an event lives (§8.9) is ordered: its conversation when the hub
+names one for the reader, else the project's messages for a message that
+is not a conversation's, a card it is about (`task_id`) included, else
+its subject (a card, a request), else only the dashboard's page of the
+event. Until 2026-11-11 the subject came before the messages, so a
+`seq` link to a notice about a card opened the card.
+
+**Reason:** a `seq` link stands for a message someone cites, and the
+reader wants its text. The card panel has no list of the messages about
+a card, so opening the card showed everything but the message clicked.
+The project's messages show the text at its `seq` and name the card
+beside it (`task_id`, §8.8), so the card stays one click away. The
+owner chose this (req-cxyyb2w01s8m, o2).
+
+**Rejected alternatives:**
+- The card first, as §8.9 said until then: the reader lands where the
+  message is not shown.
+- A list of a card's messages in the card panel, with the cited one
+  marked: a new part of the card view for the sake of a link, which the
+  owner did not choose; the entry is revisited if that list comes.
