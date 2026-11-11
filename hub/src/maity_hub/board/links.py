@@ -369,8 +369,8 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
 
     with engine.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-        if project.repository_url is None:
-            return 0
+        if project.repository_url is None or forge.kind_of(project.repository_url) != "github":
+            return 0  # a forge link is read only on GitHub (§6.13, §11)
         own = forge.repository_of(project.repository_url).lower()
         wanted = [r for r in due(conn, project_id) if (r.repository or "").lower() == own]
     fg = fg.for_project(project_id)  # the source that covers this project (§11.4)
