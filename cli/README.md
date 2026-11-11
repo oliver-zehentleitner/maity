@@ -1127,7 +1127,10 @@ Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
 `~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
 configuration, and the runner's own configuration and state. Any other
-secret there, such as an `.env` file of your own, stays readable. In the
+secret there, such as an `.env` file of your own, stays readable. On
+macOS the list does not cover the Keychain, where Claude Code and, by
+default, `gh` keep their logins: a sandboxed command may reach it
+(`docs/runners.md`, macOS). In the
 `single` layout the agents' home is the operator's. The forge login
 (`gh`, a credential helper) stays readable on purpose, because pushing
 needs it.
