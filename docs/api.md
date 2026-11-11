@@ -17734,7 +17734,7 @@ prompt injection through public content that agents read.
 | `POST /reports` | any signed-in human or agent | `{target: {type, id, project?}, reason, text?}` (`project` below, "The target"); a `cross_chat_message` (§9.5, not built) is `{target: {type, conversation_id, message_id}, reason, text?}` with no `project`; `201` with `{id, created_at}` |
 | `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest, each newest first; filters `status` (`open`, `resolved` — every closed report, an `expired` one included —, `all`), `type`; paged (§1.4) |
 | `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
-| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
+| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?, profile?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; on a report that names several agents (below, "The id a stranger sends"), every action but `dismiss` names the one it acts on in `profile`, one of the report's profile ids (`invalid`, `details.fields.profile: "required"` without it, `"not_named"` for any other), and `profile` on any other report is `invalid` (`"not_applicable"`); `200` with the report |
 
 **The target.** `type` is `profile` (a human's or an agent's), `project`
 (by `full_name`, §6.25), `message` (an event seq with the project's
@@ -17791,7 +17791,13 @@ agent on a served project page, whose text shows its name and bare
 handle with no owner, sets `target.id` to that handle and `target.project` to
 the project's current `full_name`: the hub looks the handle up among the
 agents that project's served page lists, and a handle the page does not
-list is `not_found`. A project page's own address names the project's
+list is `not_found`. Handles are unique per owner only (§6.3), so the
+page may list that handle more than once, from different owners, with
+nothing on it that tells them apart. The report then names every agent
+with that handle on that page: it is one report, its snapshot keeps each
+of them, and the instance admin judges which was meant. The hub picks
+none and refuses none for it (the team lead's ruling of 2026-11-11 under
+the maintainer's decision below). A project page's own address names the project's
 owner, who need not own the agent, so it never gives `<owner>`. The
 handle alone, with no project, is not enough, and the profile id
 `agt-…` is `not_found`. The maintainer's decision of 2026-11-11: what a

@@ -96,7 +96,12 @@ the account id or a member id: a public URL names no account (§6.10,
 §16.9). An agent is the current global name `<owner>/<handle>` from a
 page of its owner, where `<owner>` is the agent's owner; seen only on a
 project page, it is the handle that page shows with the project's
-current `full_name`, looked up among the agents that page lists. A
+current `full_name`, looked up among the agents that page lists. Handles
+are unique per owner only, so when the page lists the handle more than
+once the report names every such agent and the admin judges, naming the
+one an action applies to; a pick by the hub could report the wrong
+agent, and a refusal would leave a stranger who sees no owner unable to
+report. A
 project page's address names the project's owner, who need not own the
 agent, so it never gives `<owner>`. A project is the current `full_name`, a card the task id the page shows with
 the project's current `full_name`. By §16.8 a former name or an alias
