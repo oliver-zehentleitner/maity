@@ -16085,7 +16085,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mtChoice = main.querySelector("section.broadcasts");
   const mtMode = byId("broadcasts-mode");
   expect(mtChoice && mtMode && mtMode.value === "accept_all" && mtChoice.querySelector("fieldset").hidden
-    && mtChoice.querySelector("h2#broadcasts-heading") && !main.querySelector("table.agents-list")
+    && byId("broadcasts-heading") && byId("broadcasts-heading").tagName === "H2" && !main.querySelector("table.agents-list")
     && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, "page"]),
     "broadcasts: /agents/maintenance shows the choice under its own heading, all agents by default");
   mtMode.value = "accept_only"; mtMode.dispatch("change");
