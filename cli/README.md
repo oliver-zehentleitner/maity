@@ -946,6 +946,21 @@ and `maity` as any part of an argument (between `/`, `:`, `=` and the
 other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
 case or with a Windows extension. `maity` is the runner's own rule.
 
+For agents that open their pull requests themselves, grant gh's two pull
+request commands and its API host:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+allow = ["gh pr create", "gh pr create *", "gh pr view", "gh pr view *"]
+network = ["api.github.com"]
+```
+
+gh then uses the login of the agents' user and the clone's own remote.
+The runner always denies `--repo`, `-R` and `--hostname` on gh, so the
+agent cannot name another repository; the login itself reaches every
+repository its account may, and `gh pr view` given another repository's
+URL still reads it.
+
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
 repositories, capacity), holds the runner's one event long-poll and

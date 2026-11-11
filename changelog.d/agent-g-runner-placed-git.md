@@ -16,6 +16,10 @@
 - cli: the runner hides the placeholders Claude Code's sandbox puts into the
   work tree in the clone's `.git/info/exclude`, only for paths that are missing
   or an empty directory at the start.
+- cli: the runner denies gh's `--repo`, `-R` and `--hostname` in a placed
+  agent's session, so a repository grant of `gh pr create` and `gh pr view`
+  (with `api.github.com`) lets agents open pull requests on their own clone's
+  repository only.
 - cli: in a runner's placement, `maity` that cannot read the clone's credential
   (Claude Code's sandbox hides it from a pipe or a chained command) says to run
   maity alone instead of "has not joined a project", and the Claude Code start

@@ -64,6 +64,11 @@ GIT_DENIED = (
     "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
 )  # fmt: skip
+# gh, where a repository's grant allows it (`gh pr create`, `gh pr view`), acts on the clone's
+# own repository, which it reads from the clone's remote: never on another one named on the
+# command line. The token is the operator's and reaches every repository it may, so the
+# repository is pinned here (cli/context/runner.md).
+GH_DENIED = ("gh * --repo*", "gh * -R*", "gh * --hostname*")
 
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
@@ -253,7 +258,7 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in GIT_DENIED]
+    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED)]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -458,7 +463,8 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    bash.update({rule: "deny" for rule in GIT_DENIED})  # after the allows: the last match wins
+    # After the allows: the last match wins.
+    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
     # (agents commit through git; its config and hooks would turn a git call into anything).

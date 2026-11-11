@@ -486,7 +486,8 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
-    assert list(rules["bash"])[-1] in adapters.GIT_DENIED  # denies last: the last match wins
+    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+    assert list(rules["bash"])[-1] in denied  # denies last: the last match wins
     assert rules["read"] == {"*": "allow", f"{ctx.clone}/.git/maity/*": "deny"}
     assert rules["edit"] == {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     assert rules["webfetch"] == "deny" and rules["external_directory"] == "deny"
@@ -607,3 +608,20 @@ def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) 
     assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
     recorded = (ctx.clone / ".git" / "maity" / "git").read_text().strip()
     assert recorded == shutil.which("git") and os.path.isabs(recorded)
+
+
+def test_a_granted_gh_stays_on_the_clones_own_repository(tmp_path: Path) -> None:
+    """The maintainer let placed agents open pull requests themselves (2026-11-11): a grant of
+    `gh pr create` and `gh pr view` plus api.github.com. gh's token reaches every repository
+    the account may, so naming another one on the command line is denied."""
+    grant = config.RepositoryGrant(allow=("gh pr create", "gh pr create *", "gh pr view *"),
+                                   network=("api.github.com",))  # fmt: skip
+    ctx = context(tmp_path, sandbox=True, grant=grant, hosts=("github.com", "maity.team"))
+    settings = adapters.claude_settings(ctx)
+    assert {"Bash(gh pr create)", "Bash(gh pr create *)", "Bash(gh pr view *)"} <= set(
+        settings["permissions"]["allow"]
+    )
+    assert {f"Bash({rule})" for rule in adapters.GH_DENIED} <= set(settings["permissions"]["deny"])
+    assert "api.github.com" in settings["sandbox"]["network"]["allowedDomains"]
+    bash = adapters.opencode_config(context(tmp_path / "o", "opencode", grant=grant))["permission"]
+    assert all(bash["bash"][rule] == "deny" for rule in adapters.GH_DENIED)
