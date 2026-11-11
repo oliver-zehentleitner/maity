@@ -13,6 +13,7 @@ the test instead of passing unseen.
 from __future__ import annotations
 
 import ast
+import fnmatch
 import posixpath
 import re
 import subprocess
@@ -27,6 +28,9 @@ REPO = Path(__file__).resolve().parents[2]
 HUB = REPO / "hub"
 DOCKERFILE = REPO / "deploy" / "Dockerfile"
 IGNORE = REPO / "deploy" / "Dockerfile.dockerignore"
+
+# hatchling's license-files when pyproject names none (PEP 639), matched in the project's root.
+DEFAULT_LICENSE_FILES = ("LICEN[CS]E*", "COPYING*", "NOTICE*", "AUTHORS*")
 
 # Characters Docker's patternmatcher escapes because they mean something in a regular expression.
 SPECIAL = set(".+()|{}$")
@@ -90,38 +94,78 @@ def compile_pattern(pattern: str) -> Matcher:
     return lambda path: regex.fullmatch(path) is not None
 
 
+# strings.TrimSpace's white space: Unicode's, without U+001C to U+001F, which Python's
+# str.strip() also takes.
+GO_SPACE = "".join(
+    c for c in map(chr, range(0x3001)) if c.isspace() and c not in "\x1c\x1d\x1e\x1f"
+)
+
+
+def go_trim(text: str) -> str:
+    """strings.TrimSpace."""
+    return text.strip(GO_SPACE)
+
+
 def read_ignore(text: str) -> list[tuple[bool, Matcher]]:
-    """The patterns in order, (is an exception, matcher), read as moby's ignorefile does: a BOM
-    dropped, a `#` in the first column a comment, the rest trimmed, the path cleaned (`.` and `..`
-    resolved) and a leading `/` dropped. A lone `!` is refused, as Docker refuses it."""
+    """The patterns in order, (is an exception, matcher), read as moby's ignorefile and then
+    patternmatcher.New read them: lines split at LF with a CR before it dropped, a BOM dropped,
+    a `#` in the first column a comment, the line trimmed and cleaned (`.` and `..` resolved)
+    with a leading `/` dropped; then trimmed and cleaned once more with its `!`. A lone `!`
+    (also `!/`), a trailing backslash and an unclosed `[` are refused, as Docker refuses them."""
     patterns = []
-    for raw in text.removeprefix("﻿").splitlines():
+    for raw in text.removeprefix("\ufeff").split("\n"):
+        raw = raw.removesuffix("\r")
         if raw.startswith("#"):
             continue
-        line = raw.strip()
+        line = go_trim(raw)
         if not line:
             continue
         exception = line.startswith("!")
         if exception:
-            line = line[1:].strip()
-            if not line:
-                raise ValueError("a lone `!` is not a pattern")
+            line = go_trim(line[1:])
+        if line:
+            line = posixpath.normpath(line)
+            if len(line) > 1 and line.startswith("/"):
+                line = line[1:]
+        # patternmatcher.New: trimmed and cleaned again, `!` included.
+        line = go_trim(("!" if exception else "") + line)
+        if not line:
+            continue
         line = posixpath.normpath(line)
-        if len(line) > 1 and line.startswith("/"):
-            line = line.lstrip("/") or "/"
+        exception = line.startswith("!")
+        if exception:
+            if len(line) == 1:
+                raise ValueError("a lone `!` is not a pattern")
+            line = line[1:]
+        if re.search(r"\[(?![^\]]*\])", line):
+            raise ValueError(f"{line!r} has an unclosed `[`")
         patterns.append((exception, compile_pattern(line)))
     return patterns
 
 
 def excluded(path: str, patterns: list[tuple[bool, Matcher]]) -> bool:
-    """Docker's rule: every pattern is tried in order and the last one that matches the path,
-    or one of its parent directories, decides."""
+    """The rule BuildKit's context walker applies (fsutil with patternmatcher's
+    MatchesUsingParentResults): each directory on the way down, then the file, is matched
+    against the patterns in order; a pattern that matched a parent directory counts as matched
+    below it, but one that was not evaluated there (an exception while nothing was excluded, an
+    exclusion while something was) does not; the last pattern that matches decides."""
     parts = path.split("/")
-    parents = ["/".join(parts[: i + 1]) for i in range(len(parts) - 1)]
+    inherited = [False] * len(patterns)
     verdict = False
-    for exception, matches in patterns:
-        if matches(path) or any(matches(p) for p in parents):
-            verdict = not exception
+    for depth in range(len(parts)):
+        here = "/".join(parts[: depth + 1])
+        verdict = False
+        matched_here = [False] * len(patterns)
+        for i, (exception, matches) in enumerate(patterns):
+            hit = inherited[i]
+            if not hit:
+                if exception != verdict:
+                    continue
+                hit = matches(here)
+            matched_here[i] = hit
+            if hit:
+                verdict = not exception
+        inherited = matched_here
     return verdict
 
 
@@ -168,6 +212,10 @@ def build_inputs() -> list[str]:
     assert re.search(
         r"pip wheel\b.*\./hub\b", dockerfile
     ), "deploy/Dockerfile no longer builds the wheel from ./hub"
+    assert not tracked(["hub/hatch.toml"]), (
+        "hub/hatch.toml overlays tool.hatch, and this test reads only hub/pyproject.toml: "
+        "teach build_inputs() to read it"
+    )
     project = tomllib.loads((HUB / "pyproject.toml").read_text(encoding="utf-8"))
     unread = unread_keys(project)
     assert not unread, (
@@ -182,6 +230,13 @@ def build_inputs() -> list[str]:
             inputs.append(posixpath.normpath(f"hub/{value}"))
         elif isinstance(value, dict) and "file" in value:
             inputs.append(posixpath.normpath(f"hub/{value['file']}"))
+    if "license-files" not in project["project"]:
+        inputs += [
+            path
+            for path in tracked(["hub"])
+            if path.count("/") == 1
+            and any(fnmatch.fnmatchcase(path[4:], glob) for glob in DEFAULT_LICENSE_FILES)
+        ]
     hatch = project.get("tool", {}).get("hatch", {}).get("build", {})
     packages = hatch.get("targets", {}).get("wheel", {}).get("packages")
     assert packages, "hub/pyproject.toml names no wheel packages (tool.hatch.build.targets.wheel)"
@@ -272,6 +327,15 @@ def test_every_wheel_build_input_passes_the_image_allowlist() -> None:
         # The whole name must match: a newline after `.py` is not the end of the name.
         (["*", "!hub/*.py"], "hub/hatch_build.py", False),
         (["*", "!hub/*.py"], "hub/hatch_build.py\n", True),
+        # BuildKit's walker: a pattern skipped at a directory does not count as matched below it.
+        (["*", "!web", "**/.*", "!web"], "web/.keep", True),
+        (["*", "!**/app.js", "web"], "web/js/app.js", False),
+        # patternmatcher trims again after the leading `/` is gone.
+        (["*", "!hub/x", "/ hub/x"], "hub/x", True),
+        # Lines end at LF only, and Go's TrimSpace leaves U+001C to U+001F alone.
+        (["*\r!web"], "x", False),
+        (["*", "!web\x1c"], "web/js/app.js", True),
+        (["*", "!web\r"], "web/js/app.js", False),
     ],
 )
 def test_the_matcher_follows_dockers_rules(lines: list[str], path: str, out: bool) -> None:
@@ -284,7 +348,7 @@ def test_a_bom_is_dropped_as_docker_drops_it() -> None:
     assert excluded("hub/hatch_build.py", read_ignore("﻿*\n!hub/src\n")) is True
 
 
-@pytest.mark.parametrize("text", ["*\n!\n", "*\n!   \n", "*\nweb\\"])
+@pytest.mark.parametrize("text", ["*\n!\n", "*\n!   \n", "*\nweb\\", "*\n!/\n", "*\nweb/[ab\n"])
 def test_patterns_docker_refuses_are_refused(text: str) -> None:
     with pytest.raises(ValueError):
         read_ignore(text)
