@@ -17340,14 +17340,30 @@ report of the placement's current generation that changes `run` to
 run stays open until the placement's next accepted report that does not
 keep it open: `run: waiting`, or a `state` other than `running`
 (`rate_limited`, `exited`, `failed`, `stopped` and the rest), which
-carries no `run`; `open_run` is then `null`. A record is taken only when
+carries no `run`; `open_run` is then `null`. A report repeating `run:
+open` keeps the run and its time; a supervised `running` report without
+`run` (as after a runner's own restart, `adopted`) leaves `open_run` as
+it is, and a runner that lost the id reads it from the placement
+(`GET /runner/placements`). A record is taken only when
 its `run` is the placement's open run; any other record — one that
 arrives after its run ended, or names a run the hub never opened — is
 `conflict` (`details.reason: run_closed`). The check and the store are
-one step, so a run has at most one record. The runner sends a run's
-usage before it reports the run's end, and a record never lands on
-another run's cards. A record refused this way is lost from every
-total.
+one step, so a run has at most one record. The runner sends the report
+that ends a run only after its usage call has answered, or after it
+has given the call up following retries for at most 5 minutes; a record
+given up is lost. While it retries, the run stays open and silent, and
+the hub counts that silence as for any open run (§15.14). A record never lands on another run's cards, and a
+record refused as `run_closed` is lost from every total. A report of an
+older generation neither opens nor ends a run (§15.7): while the runner
+still runs the old generation, a run it opens then has no `open_run`
+and its record is lost.
+
+**When the hub starts keeping usage.** The hub release that builds this
+section opens a holding, from the moment of its migration, for every
+card an instance holds at that moment, so cards claimed earlier count
+for later runs. A run already open then has no `open_run` and its record
+is `run_closed`; the next change of `run` to `open` opens a run as
+above.
 
 **No price list in the hub.** The hub never turns tokens into money. A
 cost is shown only where the harness reported one, summed per currency;
@@ -17400,7 +17416,9 @@ any point counts.
 **Sums and retention.** The hub keeps the records and, per day (UTC, by
 `received_at`), running totals per project and instance (the agent's
 instance), and per card and instance; a card's, an agent's and a
-project's totals add those. A record older than 90 days is folded into
+project's totals add those. A record is folded 90 days after its `received_at`, once its run is
+no longer open (so a resend can never find it gone and count the run
+again), into
 those daily totals and deleted; the totals stay, still keyed by the
 agent's instance, so a deletion below finds them. The runs listed below
 are the records still kept.

@@ -393,7 +393,10 @@ round of review. Two hub times the runner cannot move bound the run
 instead, and the price is plain: a record that arrives after its run
 ended is lost. Hub time alone cannot tell which run a record belongs
 to once the next run has opened, so the hub names each run itself and
-the record echoes that name. A runner that sends a run twice with different numbers
+the record echoes that name. A run is one stretch between a change of
+`run` to `open` and the next report that ends it, and it takes one
+record; the hub can check both from the placement and the stored
+records. A runner that sends a run twice with different numbers
 has a bug, and a quiet `200` would hide its double counting. Two keys on
 one call would answer the same resend in two ways (the key's replay, the
 `run`'s `200` or `conflict`), and a key lives 24 hours while a runner
@@ -419,6 +422,18 @@ instance in place.
   the runner's own run id in it (the draft at 80cbcdd9): a record of an
   earlier run arriving during the next one would look like that run's
   own and count on its cards.
+- Moving the run's opening time on every report that carries `run`
+  `open`: each report is a whole snapshot and a busy run sends one a
+  minute, so the window would shrink to the last minute and drop the
+  card the run finished; only a change to `open` sets it.
+- Taking any number of records while one run is open, trusting the
+  runner's one record per run: a runner that restarts and computes the
+  run again under a new id would count it twice for the same cards; the
+  hub takes one record per open run.
+- Letting a report of an older generation open or end a run: the
+  runner's old process is about to be replaced, and an opening the
+  current generation never made would start a window for it; a run
+  opened then loses its record, which is rare and stated.
 - An id the runner chooses and sends with the opening report: it
   works, but leaves two ids for one run and a runner bug that reuses
   one; the hub's own id cannot repeat.
