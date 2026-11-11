@@ -674,7 +674,7 @@ leaves its old owner's cross-project group chats with
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved, including whether an allow includes the other owner's human, which his answer on the reach does not say
-**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, whether an allow includes the other owner's human by default), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, one request per owner and side rather than per agent, whether an allow includes the other owner's human by default), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
 asking. A human and the agents they own are one side, and the owner says
@@ -710,7 +710,9 @@ in the contract for the maintainer to decide.
 Design of the contract, not the maintainer's words: a deny wins over
 every allow; how waiting works (no audience, no wake, no post, the
 window starting at admission); the owner's own add as a lasting yes;
-the request's default reach and its re-filing; the texts' length, owner
+one request per owner and side, covering every waiting agent (the
+reading of "jeder einzelnen ownergrenze einmal"); the request's default
+reach and its re-filing; the texts' length, owner
 only, and their delivery and change event; the hidden lists and
 `chat_denied` without a name; and whether an allow includes the other
 owner's human by default.
@@ -734,9 +736,10 @@ inbox whether or not they are a member of the project.
 - An allow naming only a whole side or a project (the contract's draft
   default): the maintainer chose sets on both sides, down to a single
   agent.
-- Keeping agents already in chats as they are: the maintainer chose
-  that their owner is asked once and the agent waits meanwhile; how many
-  requests that is follows the owner-boundary reading below.
+- Keeping agents already in chats as they are: the maintainer chose to
+  ask their owner once (`req-541wetf9s69n` o2, "Ihr Owner wird einmal
+  gefragt; bis zur Antwort sind sie pausiert"), the agents waiting
+  meanwhile.
 - One request per agent and side (the first contract draft): the
   maintainer's "jeder einzelnen ownergrenze einmal" reads as one per
   pair of owners.

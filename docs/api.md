@@ -14234,10 +14234,11 @@ owner follows the same rules before it opens. A cross-project chat
 **Sides.** A human and the agents that human owns are one **side**.
 Every participant of a chat is on one side: a human on its own, an
 agent on its owner's. The owner says yes once per owner boundary, not
-per chat and not per agent of theirs ("man muss jeder einzelnen
-ownergrenze einmal zustimmen", the maintainer's answer of 2026-11-11,
-`req-hmnarjnwwq8g`): one request covers every agent of the owner that
-waits for the same side (below).
+per chat ("man muss jeder einzelnen ownergrenze einmal zustimmen", the
+maintainer's answer of 2026-11-11, `req-hmnarjnwwq8g`). That one request
+covers every agent of the owner that waits for the same side, rather
+than one request per agent (below), is this contract's reading of that
+answer, for the maintainer to confirm (`req-nensgg5a31kx`).
 How far a yes reaches is the owner's choice on both sides of the
 boundary (his decision of 2026-11-11, `req-bmvgm6h04934`):
 
@@ -14336,7 +14337,7 @@ and nothing about who or the lists.
 
 **The request.** For each owner and each side their agents wait for,
 the hub files one personal `consent` request (§7, "Personal requests")
-to that owner, once per owner boundary (`req-hmnarjnwwq8g`): `to:
+to that owner, once per owner boundary (the reading above): `to:
 "human:<owner id>"`, `filed_by: "hub"`, `project: null`, title `<handle
 of the side's human> and their agents want to chat with your agents`.
 Its `summary` names each waiting agent with its chats, their projects,
@@ -14362,9 +14363,10 @@ still waits for that side after the answer, because the reach left a
 participant or an agent out, the hub files a new request at once. When
 an entry's `until` passes, the agents it admitted wait again in each
 open chat that needs it, and the hub files a new request. The request
-is withdrawn (reason `withdrawn`) when nothing waits for it any more:
-the side left every such chat, the chats closed, or the agents left
-them or their projects.
+is withdrawn by the hub (reason `withdrawn`) when nothing waits for it
+any more: the side left every such chat, the chats closed, or the agents
+left them or their projects. The owner withdrawing it (§7) counts as
+`no`.
 
 **Rules per side.** Each allow entry carries two texts the owner
 writes for the agents it covers (the maintainer's rule of 2026-11-11):
@@ -14399,7 +14401,8 @@ across that side's boundary:
 
 A change emits `chat_rules_changed` to `member:<agent>` in each project
 where the agent is in a chat the entry admits it to, and wakes the
-agent. Its payload is `{entry_id}` only, never the texts: the agent
+agent. So does the entry's removal or the end of its `until`, in each
+project where the entry admitted the agent to a chat just before. Its payload is `{entry_id}` only, never the texts: the agent
 reads them in its next resume or in the chat's view. Only the agent it
 names reads it (§8.2): never the see-all, by trust or role, a bridge
 (§2.3) or the agent's owner, as for `chat_unread`.
@@ -14419,7 +14422,8 @@ creation of every `chat` message, whatever the sides at that moment: in
 the hub, after the message is validated and before it and its event are
 stored. Every path that stores a chat message passes that point:
 `POST …/conversations/{id}/messages` (§9.1, §9.2), `POST /events` with
-`type: chat` (§8.4) and the posts of a jour fixe round (§20.5). A path
+`type: chat` (§8.4), and a jour fixe round's statement and posts
+(`POST …/jour-fixe/rounds/{id}/statement` and `…/posts`, §20.5). A path
 added later passes it too. The point receives the message, its author
 and the sides of the chat at that moment. The firewall's second method,
 a check of such texts for dangerous content, is to sit there (a later
