@@ -397,15 +397,28 @@ def _still_carried(conn: Connection, reader: Caller) -> bool:
 
 
 def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
-    return JSONResponse(
-        {
-            "items": items,
-            "cursor": cursor,
-            "server_time": clock.rfc3339(clock.now()),
-            "superseded": superseded,
-            "cli_version": CLI_VERSION,
-        }
-    )
+    return JSONResponse(answer_body(items, cursor, superseded))
+
+
+def answer_body(items: list[dict[str, Any]], cursor: int, superseded: bool) -> dict[str, Any]:
+    return {
+        "items": items,
+        "cursor": cursor,
+        "server_time": clock.rfc3339(clock.now()),
+        "superseded": superseded,
+        "cli_version": CLI_VERSION,
+    }
+
+
+def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
+    """`?after=latest&wait=0` without `for` (§8.3): the head, no history, nothing
+    acknowledged; the `head` part of `GET /bootstrap` (§5.4). The same steps as
+    `read_events`' start for that query."""
+    mine = membership(conn, caller, slug)
+    mine.require("project:read")
+    after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+    not_listening.called(conn, caller.session_id)
+    return answer_body([], after, superseded=False)
 
 
 def _acknowledge(conn: Connection, caller: Caller, after: int) -> None:

@@ -53,6 +53,7 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
+from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project
@@ -975,9 +976,15 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 @router.get("/projects/{owner}/{slug}")
 def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        mine.require("project:read")
-        return JSONResponse(_view(conn, mine.project, request, mine))
+        return JSONResponse(project_body(conn, request, caller, slug))
+
+
+def project_body(conn: Connection, request: Request, caller: Caller, slug: str) -> dict[str, Any]:
+    """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
+    `GET /bootstrap` (§5.4)."""
+    mine = membership(conn, caller, slug)
+    mine.require("project:read")
+    return _view(conn, mine.project, request, mine)
 
 
 @router.patch("/projects/{owner}/{slug}")
