@@ -4401,6 +4401,25 @@ The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New
 - Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
 - Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
 
+## The tabs menu is drawn as the row's last tab, fixed at the end, and stays a menu button
+
+**Id:** dd8eaa01-7117-4ed2-94de-8eee9ee82e57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10, seq 105570: the "⋯" beside the project tabs should look like a tab; the proposal approved in seq 105578; seq 105588: it cannot be moved, it stays the last tab)
+**Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
+
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 40px)` on `.switcher` in a row with the menu), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+
+**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
+
+**Rejected alternatives:**
+- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab (seq 105588), and it would not be exactly when there are the most tabs.
+- A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
+- Leaving it as it was, a small button with a gap: it did not read as part of the row.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7
@@ -6046,3 +6065,38 @@ columns, the ones a reader works in, had long answered.
   changed card as well. Redrawing without moving the form (round 3) lost
   the draft: the form has no control in the redrawn part to carry it to.
 
+
+## A closed column draws the 50 cards closed last; Show more draws the rest
+
+**Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10
+**See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
+**Revisit when:** the closed window or the hub's board shape changes, or a full redraw of the board is measured over about 200 ms again
+
+The board still reads every card of the closed window (the entry above). The
+Done and Cancelled columns draw only the 50 cards closed last (by
+`closed_at`), in the column's own order, and a button below them shows how
+many more there are ("Show 11 more closed cards"). The column's count stays
+the whole number. The button draws that column whole for the rest of the
+board view, and the first card it added takes the focus, since the button is
+gone. A card the board is opened on (by its link, or coming back from it) is
+drawn wherever it stands, and a subtask folded under a parent with that
+parent, since it is found only under a drawn parent. A hub search's
+columns follow the same rule.
+
+**Reason:** every redraw of the board (a filter change, each keystroke of
+the board search, a card's update) drew every closed card: with 783 a full
+redraw took about 640 ms (2.7 s on a CPU four times slower), with 100 about
+100 ms (0.44 s). The closed cards are the ones a reader works in least; the
+newest are the ones looked for.
+
+**Rejected alternatives:**
+- A leaner card shape for the board's list, without the largest fields: a
+  contract change that saves bytes but not the drawing.
+- A shorter closed window by default: it hides closed cards from the read,
+  not only from the drawing, and changes what the board offers.
+- The first 50 in the column's order: that order is by rank and creation,
+  so it would show old closed cards and hide the ones just closed.

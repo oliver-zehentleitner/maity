@@ -6495,6 +6495,62 @@ def project_tabs_step(run: Run, page: Page) -> None:
     gap = page.evaluate("(() => { const t = Array.from(document.querySelectorAll('nav.switcher a')).pop().getBoundingClientRect();"
                         " const m = document.querySelector('.tabs-menu-box').getBoundingClientRect(); return [m.left - t.right, Math.abs(m.top - t.top) < t.height]; })()")
     assert 0 <= gap[0] <= 24 and gap[1], f"the tabs menu is not right after the tabs: {gap}"
+    # The tabs menu is drawn as the row's last tab (tsk-qa2r972wjsws): the tabs' height, top, pill and gap, light and
+    # dark, at 1280 and 390 px; still a menu button, not a tab; outside the tabs, so no drag or key moves it, and on a
+    # phone it keeps the row's right end while the tabs scroll.
+    like_tab = ("(() => { const ts = Array.from(document.querySelectorAll('nav.switcher a[data-project]')); const t = ts[ts.length - 1];"
+                " const b = document.querySelector('.tabs-menu-box .menu-button'); const r = (e) => e.getBoundingClientRect();"
+                " const s = (e) => { const c = getComputedStyle(e); return [c.borderTopLeftRadius, c.paddingTop, c.paddingLeft, c.fontSize,"
+                " c.borderTopColor, c.color]; };"
+                " return { same: JSON.stringify(s(t)) === JSON.stringify(s(b)), height: [r(t).height, r(b).height], top: [r(t).top, r(b).top],"
+                " right: r(b).right, vw: innerWidth, inTabs: !!b.closest('nav.switcher'), role: b.getAttribute('role'),"
+                " popup: b.getAttribute('aria-haspopup') }; })()")
+    size = page.viewport_size
+    try:
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            for width in (1280, 390):
+                page.set_viewport_size({"width": width, "height": 844})
+                page.evaluate("document.querySelector('nav.switcher').scrollLeft = 1e6")  # the row scrolled to its end
+                got = page.evaluate(like_tab)
+                assert got["same"] and abs(got["height"][0] - got["height"][1]) < 1 and abs(got["top"][0] - got["top"][1]) < 1, \
+                    f"the tabs menu does not look like a tab ({scheme}, {width}): {got}"
+                assert not got["inTabs"] and got["role"] is None and got["popup"] == "menu", f"the tabs menu is not a menu button outside the tabs: {got}"
+                assert got["right"] <= got["vw"], f"the tabs menu left the screen at {width} px: {got}"
+                if width == 390:
+                    run.shot(page, f"tabs-menu-tab-{scheme}-390")
+    finally:
+        page.emulate_media(color_scheme="light")
+        if size:
+            page.set_viewport_size(size)
+    run.shot(page, "tabs-menu-tab-light-1280")
+    # Many tabs on a wide screen: they scroll before the row wraps, so the menu stays on the tabs' line beside them
+    # instead of falling to a line of its own. Twenty copies of the last tab stand in for twenty more projects.
+    page.evaluate("(() => { const n = document.querySelector('nav.switcher'); const ts = n.querySelectorAll('a[data-project]'); const t = ts[ts.length - 1];"
+                  " for (let i = 0; i < 20; i++) { const c = t.cloneNode(true); c.classList.add('e2e-extra-tab'); c.removeAttribute('aria-current');"
+                  " n.appendChild(c); } })()")
+    try:
+        for width in (1280, 900, 601):
+            page.set_viewport_size({"width": width, "height": 844})
+            page.evaluate("document.querySelector('nav.switcher').scrollLeft = 1e6")
+            got = page.evaluate(like_tab)
+            assert abs(got["top"][0] - got["top"][1]) < 1 and got["right"] <= got["vw"], f"with many tabs the tabs menu left the tabs' line at {width} px: {got}"
+    finally:
+        page.evaluate("document.querySelectorAll('nav.switcher a.e2e-extra-tab').forEach((c) => c.remove())")
+        if size:
+            page.set_viewport_size(size)
+    # The keyboard as before: Enter and ArrowDown open it, Escape closes it and gives the focus back.
+    tabs_button = page.locator(".tabs-menu-box").get_by_role("button", name="Project tabs", exact=True)
+    tabs_button.focus()
+    page.keyboard.press("Enter")
+    expect(tabs_button).to_have_attribute("aria-expanded", "true")
+    page.keyboard.press("Escape")
+    expect(tabs_button).to_have_attribute("aria-expanded", "false")
+    expect(tabs_button).to_be_focused()
+    page.keyboard.press("ArrowDown")
+    expect(tabs_button).to_have_attribute("aria-expanded", "true")
+    page.keyboard.press("Escape")
+    expect(tabs_button).to_be_focused()
     # The tabs menu: one switch per project; switching one off closes its tab, the menu stays.
     menu = page.locator(".tabs-menu-box")
     menu.get_by_role("button", name="Project tabs", exact=True).click()
