@@ -5121,7 +5121,7 @@ window.MAITY_I18N["it"] = {
   "waiting.older": "Meno recenti",
   "waiting.read_failed": "Impossibile leggere le notifiche: {reason}",
   "waiting.removed": "Rimosso",
-  "waiting.sessions.manage": "Gestiscile in Profilo → Sessioni",
+  "waiting.sessions.manage": "Gestiscile in Sicurezza → Sessioni",
   "waiting.sessions.more": {
     "one": "e {count} altra",
     "other": "e altre {count}"

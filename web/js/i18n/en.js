@@ -5132,7 +5132,7 @@ window.MAITY_I18N["en"] = {
   "waiting.older": "Older",
   "waiting.read_failed": "Could not read notifications: {reason}",
   "waiting.removed": "Removed",
-  "waiting.sessions.manage": "Manage them in Profile → Sessions",
+  "waiting.sessions.manage": "Manage them in Security → Sessions",
   "waiting.sessions.more": {
     "one": "and {count} more",
     "other": "and {count} more"

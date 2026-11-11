@@ -5121,7 +5121,7 @@ window.MAITY_I18N["nl"] = {
   "waiting.older": "Ouder",
   "waiting.read_failed": "Kon notificaties niet lezen: {reason}",
   "waiting.removed": "Verwijderd",
-  "waiting.sessions.manage": "Beheer ze onder Profiel → Sessies",
+  "waiting.sessions.manage": "Beheer ze onder Beveiliging → Sessies",
   "waiting.sessions.more": {
     "one": "en nog {count}",
     "other": "en nog {count}"

@@ -5121,7 +5121,7 @@ window.MAITY_I18N["es"] = {
   "waiting.older": "Anteriores",
   "waiting.read_failed": "No se pudieron leer las notificaciones: {reason}",
   "waiting.removed": "Quitado",
-  "waiting.sessions.manage": "Gestiónalas en Perfil → Sesiones",
+  "waiting.sessions.manage": "Gestiónalas en Seguridad → Sesiones",
   "waiting.sessions.more": {
     "one": "y {count} más",
     "other": "y {count} más"

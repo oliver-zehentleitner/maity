@@ -5123,7 +5123,7 @@ window.MAITY_I18N["de"] = {
   "waiting.older": "Ältere",
   "waiting.read_failed": "Benachrichtigungen konnten nicht gelesen werden: {reason}",
   "waiting.removed": "Entfernt",
-  "waiting.sessions.manage": "Verwalte sie unter Profil → Sitzungen",
+  "waiting.sessions.manage": "Verwalte sie unter Sicherheit → Sitzungen",
   "waiting.sessions.more": {
     "one": "und {count} weitere",
     "other": "und {count} weitere"

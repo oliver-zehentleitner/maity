@@ -5089,7 +5089,7 @@
   "waiting.older": "Mais antigas",
   "waiting.read_failed": "Não foi possível ler as notificações: {reason}",
   "waiting.removed": "Removida",
-  "waiting.sessions.manage": "Gerencie-as em Perfil → Sessões",
+  "waiting.sessions.manage": "Gerencie-as em Segurança → Sessões",
   "waiting.sessions.more": {
     "one": "e mais {count}",
     "other": "e mais {count}"

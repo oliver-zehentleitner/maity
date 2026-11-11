@@ -4992,7 +4992,7 @@ window.MAITY_I18N["ko"] = {
   "waiting.older": "이전",
   "waiting.read_failed": "알림을 읽지 못했어요: {reason}",
   "waiting.removed": "제거됨",
-  "waiting.sessions.manage": "프로필 → 세션에서 관리하세요",
+  "waiting.sessions.manage": "보안 → 세션에서 관리하세요",
   "waiting.sessions.more": {
     "other": "외 {count}개"
   },

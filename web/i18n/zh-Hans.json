@@ -4960,7 +4960,7 @@
   "waiting.older": "更早",
   "waiting.read_failed": "无法读取通知：{reason}",
   "waiting.removed": "已移除",
-  "waiting.sessions.manage": "在“个人资料 → 会话”中管理",
+  "waiting.sessions.manage": "在“安全 → 会话”中管理",
   "waiting.sessions.more": {
     "other": "以及另外 {count} 个"
   },

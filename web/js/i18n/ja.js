@@ -4992,7 +4992,7 @@ window.MAITY_I18N["ja"] = {
   "waiting.older": "さらに前",
   "waiting.read_failed": "通知を読み取れませんでした: {reason}",
   "waiting.removed": "取り除かれました",
-  "waiting.sessions.manage": "「プロフィール → セッション」で管理できます",
+  "waiting.sessions.manage": "「セキュリティ → セッション」で管理できます",
   "waiting.sessions.more": {
     "other": "ほか {count} 件"
   },
