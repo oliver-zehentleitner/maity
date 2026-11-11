@@ -2754,7 +2754,8 @@ environment winning as there:
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional`, `required_admins` or `email` |
 
 - **`off`.** The second factor is out of the way entirely: no sign-in
-  step, no step-up (§2.8.4), no enrolment session, and the factor's own
+  step, no step-up (§2.8.4; a password reset still asks an enrolled
+  human for the TOTP code, §2.10), no enrolment session, and the factor's own
   calls answer `forbidden` with `details.reason: method_disabled` —
   `POST /auth/second-factor/verify` included, which nothing then needs.
   Second-factor and enrolment sessions open at the switch end at their
@@ -3122,9 +3123,11 @@ this route for someone else; that remains §16.1.
 the page, `email.password_reset`, the instance's `password_reset`, the
 budget `password_reset_max_per_hour` with its environment variable and
 counters, and the password generation come with tsk-tadt2vw7589n (hub)
-and tsk-yksxdpd2pk0m (web). Until then the hub refuses the new settings
-fields as unknown, and `password_reset` in `GET /auth/methods` stays
-`false` (`password_reset_missing: ["not_implemented"]`, §2.6.6).
+and tsk-yksxdpd2pk0m (web), and so do the fields that announce them:
+`password_reset` in `GET /auth/methods` (§2.6.1), and `password_reset`,
+`password_reset_available` and `password_reset_missing` in the sign-in
+settings (§2.6.6). Until then those responses do not carry them, and the
+hub refuses the new settings fields as unknown.
 
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
@@ -3143,7 +3146,7 @@ What the mailbox alone may do depends on the human's second factor:
   authenticator app (below).
 - **No second factor:** the mailbox is enough.
 
-Under the instance's `second_factor: off` (§2.8.8) a human's stored TOTP
+Under the instance's `second_factor: off` (§2.8.5) a human's stored TOTP
 enrolment still counts here: the reset asks for its code, though the
 sign-in does not. The reset is the stronger way in, and the setting
 turns the sign-in step off, not the proof an enrolled human gave; with
