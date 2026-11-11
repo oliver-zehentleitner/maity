@@ -5134,6 +5134,18 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/team")
     page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
+    # Each credential names its instance as <handle>#<id> (tsk-s0jb9wkdp41j), read here with the
+    # owner's session, so the agent's bearer use stays as the signing check below reads it.
+    listed = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    agent = next(m for m in listed if m["id"] == agent_id)
+    credentials = page.request.get(
+        f"{run.base}/api/v1/projects/owner/e2e-alpha/members/{agent_id}/credentials"
+    ).json()["items"]
+    active = [c for c in credentials if not c["revoked_at"]]
+    assert active and all(c.get("instance") for c in active), credentials
+    for c in active:
+        row = page.locator("main tr.member-manage .credentials li", has=page.locator("code", has_text=c["id"]))
+        expect(row.locator(".credential-instance")).to_contain_text(f"{agent['handle']}#{c['instance']}")
     # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
     # both, so at once), the hub's member views carry it on both sides, then End ends it. Read
     # with the owner's session: a CLI call would sign with the agent's credential and change
