@@ -1061,8 +1061,8 @@ cleanup removes sync paths the routes no longer use, the Docker base and every p
 support free-threaded Python, aiomysql falls behind PyMySQL's error numbers, or the loop-lag
 guard's reference stops tracking the runner's lag (a run red with the reference's lag alone), or
 an app loop's longest callback nears the CPU limit on a branch that moved no route onto the loop,
-the hub runs on free-threaded Python, or a C extension does work on a loop's thread outside the GIL
-that `time.thread_time` does not count
+the hub runs on free-threaded Python, or a C extension waits on a loop's thread while holding the
+GIL
 **See:** replicas.md — 4e24abd8-ab64-4844-897b-629bfa211f6d — as of 2026-11-10
 
 A serving hub has two engines on one database. The sync engine is the one it always had: the routes
@@ -1102,22 +1102,25 @@ What the bridge has to keep:
   50). That time leaves out the garbage collector's: a full collection runs in whichever thread
   allocates when it is due, about 90 ms locally, as often on a loop as on a request thread. Without
   it the hub's longest callback was about 3 ms in local runs, on main and on the branch that moves
-  authentication onto the loop (#1631) alike. Work that blocks without the CPU (a sleep, a lock)
-  shows only in the margin, the average and the backstop. The first guard (#1626) took a fixed 250
-  ms from local runs (69–129 ms) and was red on its first GitHub runs: on main 30d84d15 the owner's
-  loop 269 ms and the agent's 247 ms, on 448332b9 237 ms and 251 ms, the agent's app serving nothing
-  during the test (`threads_busy` 0). Its maximum measured the runner, not the hub. In two plain
-  local runs the reference was 75 and 78 ms late and the apps' loops at most 16 ms more; on the
-  runners the busy and the idle app's loop differed by 14–22 ms (the runs before the reference had
-  none). The first two runner runs with the reference (on its branch, deb88b2b): the reference 241
-  and 314 ms late, the apps' loops 259 and 251, 321 and 312 ms, at most 18 ms over it, on average
-  4–8 ms late. The margin of 150 ms keeps that noise out. Locally it fails a loop blocked once for
-  400 ms (366 ms against a reference of 89); on the runner, with the reference 241 and 314 ms late,
-  a single block shows only once its tick is about 390–460 ms late. The average catches a loop busy
-  in many slices, which the margin does not see: blocked in random slices of 30–120 ms, an app's
-  loop ran 35 ms late on average (the reference 1 ms) with its worst tick only 40 ms over the
-  reference's. A periodic block of equal slices does not show in the average: the tick takes its
-  next due time from when it ran, so it falls into the gaps.
+  authentication onto the loop (#1631) alike. Work that blocks without the CPU shows in the margin,
+  the average and the backstop when it lets go of the GIL (a sleep, a lock); a wait that holds the
+  GIL (a C call that blocks without releasing it) stops the reference too and shows only in the
+  backstop, or in the average when it repeats: a 400 ms `usleep` through `ctypes.PyDLL` on the
+  owner's loop passed locally (reference 360, owner 360, its longest callback 3.6 ms CPU). The first
+  guard (#1626) took a fixed 250 ms from local runs (69–129 ms) and was red on its first GitHub
+  runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on 448332b9 237 ms and 251
+  ms, the agent's app serving nothing during the test (`threads_busy` 0). Its maximum measured the
+  runner, not the hub. In two plain local runs the reference was 75 and 78 ms late and the apps'
+  loops at most 16 ms more; on the runners the busy and the idle app's loop differed by 14–22 ms
+  (the runs before the reference had none). The first two runner runs with the reference (on its
+  branch, deb88b2b): the reference 241 and 314 ms late, the apps' loops 259 and 251, 321 and 312 ms,
+  at most 18 ms over it, on average 4–8 ms late. The margin of 150 ms keeps that noise out. Locally
+  it fails a loop blocked once for 400 ms (366 ms against a reference of 89); on the runner, with
+  the reference 241 and 314 ms late, a single block shows only once its tick is about 390–460 ms
+  late. The average catches a loop busy in many slices, which the margin does not see: blocked in
+  random slices of 30–120 ms, an app's loop ran 35 ms late on average (the reference 1 ms) with its
+  worst tick only 40 ms over the reference's. A periodic block of equal slices does not show in the
+  average: the tick takes its next due time from when it ran, so it falls into the gaps.
 - **A cancellation stays a cancellation.** A statement cancelled in the driver invalidates the
   connection, and reading `conn.info` on it again inside the transaction raises
   `PendingRollbackError` in place of the `CancelledError` that must unwind the request.

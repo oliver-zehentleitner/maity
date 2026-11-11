@@ -228,4 +228,6 @@ def test_the_event_loop_stays_on_time_under_concurrent_requests(
         )
         assert app["loop_late_avg_ms"] <= LOOP_LATE_AVG_LIMIT_MS, (idle, seen)
         assert app["loop_late_max_ms"] <= LOOP_LATE_CEILING_MS, (idle, seen)
+    # A hook that never ran (another loop implementation, `Handle._run` renamed) would pass as 0.
+    assert all(thread in callback_cpu.longest for thread in loop_windows.threads), cpu
     assert max(cpu) <= LOOP_CALLBACK_CPU_LIMIT_MS, cpu
