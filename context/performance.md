@@ -143,8 +143,9 @@ server time was measured in-process against PostgreSQL when the hub route was wr
 saving holds only
 because the hub reads the parts concurrently, the head before the project and its members:
 read one after another, their server time would eat it. That concurrency is measured on
-PostgreSQL; on MariaDB it is expected (a server with a pool and no lock at a transaction's
-start) and not measured. On SQLite every transaction takes the one write lock at its start
+PostgreSQL here; on MariaDB (a server with a pool and no lock at a transaction's start) a
+review probe of #1656 saw three part bodies at once and the request take its slowest chain's
+time (0.84 s against at least 2.0 s serial). On SQLite every transaction takes the one write lock at its start
 (`db._sqlite_begin_immediate`), so the parts' reads run one after another there, and the
 bundle saves the round trips and the repeated authentication only; the lock stays, since
 it is what keeps SQLite's transactions from failing to upgrade to a write. The price of
