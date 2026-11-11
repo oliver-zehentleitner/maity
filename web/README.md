@@ -1944,7 +1944,7 @@ read**, always there and off while nothing it marks is unread, marking up
 to the head of the first page (§18.3); the page says that it leaves
 security alerts unread. Above the list, **Current sessions** shows the
 active sessions (newest first, five and "and N more", this session and
-the unconfirmed ones marked) with a link to Profile → Sessions, and no
+the unconfirmed ones marked) with a link to Security → Sessions, and no
 buttons; it reads them again when `sessions_rev` moves (§18.8). Marking
 an item read confirms nothing: a sign-in is no item, it is confirmed
 with **This was me** under Sessions. An id the hub skips

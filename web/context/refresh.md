@@ -238,7 +238,7 @@ rarely changes.
 **Rejected alternatives:** reading the sessions on every counts round: it works without
 `sessions_rev`, at one more request per round per tab. Keeping **This was me** in the
 box: the maintainer asked for a small field that shows, not one that acts; confirming
-stays in Profile → Sessions and on the banner.
+stays in Security → Sessions and on the banner.
 
 ## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
 
