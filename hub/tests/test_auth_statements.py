@@ -11,12 +11,13 @@ from collections import Counter
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, event, update
+from sqlalchemy import Engine, update
 
 from maity_hub import clock, instance_settings
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.statements import listening
 
 # A route whose own work reads neither the sessions nor the settings, and the human table
 # once: the project's owner by handle (namespace.resolve). Every other read counted is the
@@ -36,11 +37,8 @@ def _reads(engine: Engine, call: Any) -> Counter[str]:
         if found:
             seen[found.group(1)] += 1
 
-    event.listen(engine, "before_cursor_execute", count)
-    try:
+    with listening(engine, count):
         response = call()
-    finally:
-        event.remove(engine, "before_cursor_execute", count)
     assert response.status_code == 200, response.text
     return seen
 
@@ -93,10 +91,7 @@ def test_a_confirmation_committed_just_before_the_call_counts(
                 .values(confirmed_at=clock.now(), confirmed_by="ses-other")
             )
 
-    event.listen(migrated, "before_cursor_execute", confirm)
-    try:
+    with listening(migrated, confirm):
         answered = owner.get(NOTIFICATIONS)
-    finally:
-        event.remove(migrated, "before_cursor_execute", confirm)
     assert fired, "the call wrote no session"
     assert answered.status_code == 200, answered.text

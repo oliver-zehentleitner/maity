@@ -20,7 +20,9 @@ from maity_hub import db, events, timing, write_guard
 from maity_hub import tables as t
 from maity_hub.db import async_url, head_revision
 from maity_hub.errors import ApiError
+from tests import flow
 from tests.async_engine import on_async_engine
+from tests.conftest import ClientFactory
 
 
 @pytest.mark.parametrize(
@@ -313,3 +315,31 @@ def test_a_request_cancelled_during_a_statement_ends_as_a_cancellation(
     assert on_async_engine(migrated, work) == ("cancelled", 0)
     assert undone == [1]
     assert time.monotonic() - started < 60
+
+
+def test_a_call_authenticates_on_the_async_engine(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """PR 2: `deps._resolve` reads the session on the app's async engine (through `run_sync`),
+    not on the sync engine in a thread of the pool."""
+    owner = flow.human(make_client, migrated)
+    app: Any = owner.client.app
+    async_side: list[str] = []
+    sync_side: list[str] = []
+
+    def on(seen: list[str]) -> Any:
+        def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+            if "human_session" in statement:
+                seen.append(statement)
+
+        return heard
+
+    to_async, to_sync = on(async_side), on(sync_side)
+    event.listen(app.state.async_engine.sync_engine, "before_cursor_execute", to_async)
+    event.listen(app.state.engine, "before_cursor_execute", to_sync)
+    try:
+        assert owner.get("/me").status_code == 200
+    finally:
+        event.remove(app.state.async_engine.sync_engine, "before_cursor_execute", to_async)
+        event.remove(app.state.engine, "before_cursor_execute", to_sync)
+    assert async_side and not sync_side, (async_side, sync_side)

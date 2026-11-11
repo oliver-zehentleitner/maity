@@ -464,6 +464,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(overPrevented, "tabs: no drop target without a tab being dragged");
     // The tabs menu: one switch per project, the start set, nothing sent for a switch.
     const tabsButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
+    // The tabs menu is drawn as the row's last tab but is no tab (tsk-qa2r972wjsws): a menu button outside the tabs,
+    // so a drag or Alt+Shift+Arrow never moves it, with the tab-like class the stylesheet draws.
+    expect(!header.querySelector("nav.switcher").querySelector(".tabs-menu-box") && tabsButton().getAttribute("aria-haspopup") === "menu"
+      && !tabsButton().getAttribute("role") && /\btabs-menu\b/.test(tabsButton().getAttribute("class") || ""),
+      "tabs: the tabs menu is a menu button outside the tabs, drawn as their last tab");
     const tabsItems = () => header.querySelector(".tabs-menu-box").querySelectorAll(".menu-item");
     const patchesTabs = [];
     const realPatchTabs = M_.api.patch;
