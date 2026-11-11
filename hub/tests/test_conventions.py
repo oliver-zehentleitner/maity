@@ -13,7 +13,7 @@ from starlette.routing import Mount
 
 from maity_hub import body as body_reader
 from maity_hub import tables as t
-from tests import factory
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 SERVER_TIME = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
@@ -107,7 +107,7 @@ def test_a_body_to_an_api_path_nothing_serves_is_404_unread(make_client: ClientF
         "query_string": b"", "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
         "headers": [(b"host", b"hub.example"), (b"content-length", b"1000000000")],
     }  # fmt: skip
-    asyncio.run(client.app(scope, never_read, send))  # type: ignore[arg-type]
+    flow.drive(client, scope, never_read, send)
     assert sent[0]["status"] == 404
 
 
@@ -137,7 +137,7 @@ def test_a_body_that_does_not_arrive_in_time_is_request_timeout(
         "query_string": b"", "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
         "headers": [(b"host", b"hub.example"), (b"content-type", b"application/json")],
     }  # fmt: skip
-    asyncio.run(client.app(scope, slow, send))  # type: ignore[arg-type]
+    flow.drive(client, scope, slow, send)
     headers = dict(sent[0]["headers"])  # type: ignore[call-overload]
     assert (sent[0]["status"], headers[b"maity-error"]) == (408, b"request_timeout")
     assert headers[b"connection"] == b"close"
@@ -167,7 +167,7 @@ def test_a_steady_body_inside_the_deadline_is_read_whole(
         "query_string": b"", "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
         "headers": [(b"host", b"hub.example"), (b"content-type", b"application/json")],
     }  # fmt: skip
-    asyncio.run(client.app(scope, steady, send))  # type: ignore[arg-type]
+    flow.drive(client, scope, steady, send)
     headers = dict(sent[0]["headers"])  # type: ignore[call-overload]
     # The whole body reached the route: a wrong login, not a timeout.
     assert (sent[0]["status"], headers[b"maity-error"]) == (401, b"unauthenticated")

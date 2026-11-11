@@ -804,6 +804,11 @@ membership = Table(
     Column("subagents", Boolean, nullable=False, server_default=false()),
     Column("subagents_language", String(16)),
     Column("subagents_by", String(ID)),
+    # An expert's fields (§2.3 "The expert", §6.2): what it answers about, plain text of at
+    # most 120 characters, and the path prefixes it learned, at most 20; null for no text
+    # and no sources, and both null whenever the role is not `expert`.
+    Column("expert_for", String(480)),
+    Column("expert_sources", JSON_VALUE),
     Column("onboarded_at", UtcDateTime),
     # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
     # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
@@ -2699,7 +2704,8 @@ abuse_report = Table(
     _ref("account_id", "human.id", nullable=False, index=True),
     Column("target_type", String(16), nullable=False),  # profile, project, message, card
     Column("target_id", String(255), nullable=False),
-    Column("project_id", String(ID)),  # the target's project; null for a profile
+    Column("project_id", String(ID)),  # the target's project; for a profile, the project
+    # page it was reported from by its handle (§16.8), else null
     Column("reason", String(32), nullable=False),
     Column("text", Text),
     Column("snapshot", JSON_VALUE),
