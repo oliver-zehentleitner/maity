@@ -629,3 +629,52 @@ def test_a_merge_names_the_holding_instance_of_a_member_held_only_as_holder(
     [item] = items(owner)
     entry = next(r for r in item["payload"]["reasons"] if r["member_id"] == holder.id)
     assert entry["why"] == [f"card_holder:{card['id']}"] and entry["instances"] == [instance]
+
+
+# --- an expert's declared sources (§2.3 "The expert", §17.3) ----------------------------------
+
+
+def _expert(make_client: ClientFactory, owner: flow.Human, sources: list[str]) -> flow.Agent:
+    expert = flow.agent(make_client, owner, role="expert")
+    response = owner.patch(
+        f"/projects/maintainer/maity/members/{expert.id}", {"expert_sources": sources}
+    )
+    assert response.status_code == 200, response.text
+    return expert
+
+
+def test_a_merge_that_changes_a_declared_source_wakes_its_expert(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    make_client: ClientFactory,
+) -> None:
+    enable(owner, contract_files=[])
+    contract = _expert(make_client, owner, ["docs/api.md"])
+    context = _expert(make_client, owner, ["context/trust.md"])
+    merged(github, 31, [{"filename": "docs/api.md", "patch": ""}, {"filename": "hub/x.py"}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert reasons(item)[contract.id] == ["expert_source:docs/api.md"]
+    assert context.id not in reasons(item)
+    [entry] = [r for r in item["payload"]["reasons"] if r["member_id"] == contract.id]
+    assert entry["wake"] is True
+
+
+def test_a_merge_the_hub_cannot_see_in_full_reaches_every_expert_with_sources(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    make_client: ClientFactory,
+) -> None:
+    enable(owner, contract_files=[])
+    expert = _expert(make_client, owner, ["context/"])
+    without = flow.agent(make_client, owner, role="expert")
+    merged(github, 8, [{"filename": f"hub/f{n}.py", "patch": ""} for n in range(100)])
+    github.answers["/repos/acme/maity/pulls/8/files?per_page=100&page=2"] = None
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert reasons(item)[expert.id] == ["expert_source:*"]
+    assert without.id not in reasons(item)

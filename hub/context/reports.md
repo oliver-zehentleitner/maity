@@ -76,29 +76,89 @@ snapshot, or close the request with the report still open.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** inferred
-**Source:** `docs/api.md` §16.8 ("what they cannot read is `not_found`, exactly as a read would answer"); the implementation of the card; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29
-**Revisit when:** a further target becomes readable outside a membership (public profiles and pages, §16.9), or an owner outside a project reads a group chat along and should report from it
+**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see); the team lead's ruling of 2026-11-11 on a handle a project page lists twice (seq 110107; reopened in seq 110252 and 110253 after the reviews of #1407: the dashboard links each agent, and a report naming several agents has no single current name)
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
+**Revisit when:** `POST /reports` follows this read, or a message is shown on a public page (§16.9)
 
-A card, a message or a project is found through the reporter's
-membership (`access.membership`), as their reads are, and a message
-must pass `events.readable_by` with the redactions hidden. A profile is
-readable when the reporter is it, owns it, or shares an active project
-with it; an agent credential reaches its one project only. An agent may be
-named by its id or by its global name `<owner>/<handle>`. Anything else
-answers `not_found`, the same for a target that exists and one that does
-not.
+A stranger reports a target whose public page is served now, and only
+that. Served now means `MAITY_PUBLIC_PAGES` is `on` and the hub stores
+the page (§16.9). The page is where they see it, so the report is not
+narrower than the page: an agent with its own page, listed on its
+owner's served agents page (with or without a page of its own) or named
+on a served project page, a person whose page is served, a project whose page is
+served, and a card whose own page is served. A card with no stored page
+is members-only, and so is every message, because §16.9 shows no
+message. What the caller cannot read is `not_found`, the same for a
+target that exists and one that does not.
+
+The id is the one the page shows. A person is the current handle, never
+the account id or a member id: a public URL names no account (§6.10,
+§16.9). An agent is the current global name `<owner>/<handle>` from a
+page of its owner, where `<owner>` is the agent's owner; seen only on a
+project page, it is the handle that page shows with the project's
+current `full_name`, looked up among the agents that page lists. The
+dashboard's visitor view links each listed agent to its own page, so a
+reporter there has its global name; the handle form is for a reporter
+who has only the page's text. Handles are unique per owner only, so when
+the page lists the handle more than once the hub refuses it
+(`ambiguous_handle`) and the reporter reports from the agent's own page;
+a pick by the hub could report the wrong agent. A report names one
+agent. A
+project page's address names the project's owner, who need not own the
+agent, so it never gives `<owner>`. A project is the current `full_name`, a card the task id the page shows with
+the project's current `full_name`. By §16.8 a former name or an alias
+does not resolve, and `GET /me/reports` shows that current public name
+while the page is still served and a neutral word (`person`, `agent`,
+`project`, `card`) once it is not, so the list never keeps an old name or
+an alias.
+
+A caller who already reads the target inside a membership may still name
+a profile by the id that read uses. The hub stores a project and a
+profile by that id, so a rename does not reset the limits, and the
+admin's view shows the current `full_name`.
 
 Until 2026-10-30 an agent was also readable while a project's public
-swarm page showed it (`swarm_public: on`): strangers saw agents there, so
-that was where they reported them. The page and the flag went with
-contract #697 (§6.22), so today no page outside a project shows an agent
-and a stranger's report of one is `not_found`. A project's public page
-(§16.9) will show agents again; it brings the readability back with it
-(tsk-w89mspg3gwx1), and the global name is kept for that.
+swarm page showed it (`swarm_public: on`). The page and the flag went
+with contract #697 (§6.22). The public pages of §16.9 are what brings
+the stranger's report back, by the rule above (tsk-pqbjrr4a1n5a). The
+hub does not do this yet. `reports.target` still walks the membership
+reads, so `_profile` and `_project` admit no stranger for a served page,
+and a handle or a served card is not accepted. `_member` and
+`_agent_by_name` still resolve an alias, and `GET /me/reports` still
+shows the stored `{type, id}`. That gap is the implementation, the hub
+part of tsk-pqbjrr4a1n5a, not a second rule. This entry stays
+`needs-review` until it lands. The handle on a project page is a stand-in
+until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
+their agents under it) shows each agent with its owner where a project
+page lists it; that redesign may replace it.
 
-**Rejected alternative:** a lookup of the target by id, then a separate
-permission check: a different answer for an existing target the
-reporter may not read would tell them it exists.
+**Reason:** a report that refused a person, a project or a card the page
+already shows would be narrower than the page, and accepting an account
+id or an old name would publish an identifier the page and §16.9 keep
+out.
+
+**Rejected alternatives:**
+- A lookup of the target by id, then a separate permission check: a
+  different answer for an existing target the reporter may not read
+  would tell them it exists.
+- Leaving cards members-only while the card's page shows the title,
+  body and notes: the public text would have no report.
+- Treating every card as public, page or not: a stranger would learn
+  that a private card exists.
+- Reporting an agent from a project page only through its own page's
+  link (`agents[].page`): the dashboard links each listed agent, but the
+  static page shows only the name and the bare handle, and the
+  maintainer wants the handle as seen on the page to be enough.
+- One report naming every agent a duplicated handle lists, the admin
+  naming the one an action applies to (the first ruling): the reporter's
+  list then needs one current name for agents that may rename apart, and
+  the dashboard's link already names exactly one agent.
+- Taking `<owner>` from a project page's address: on `/alice/project`
+  Bob's agent would be named `alice/<handle>`, a wrong profile or
+  `not_found`.
+- Resolving an alias, as §6.24 does everywhere else: the answer would
+  confirm that the old name belongs to someone, which §16.9 refuses
+  even as a redirect.
 
 ## The limits count the stored reports, under the account's row lock
 
