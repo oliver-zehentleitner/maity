@@ -304,11 +304,12 @@ hub answers `invalid` with `details.fields.Idempotency-Key`. Exempt, because
 a repeat is harmless: `POST /join/{token}` and `POST /runners/pair/{token}`
 (unauthenticated), `POST /me/resume` (a repeat closes the session it opened
 and opens a new one), `POST /auth/*` (humans). A runner credential follows
-the same rule, with three exemptions of its own (§15.8):
+the same rule, with four exemptions of its own (§15.8):
 `POST /runner/hello` (like `resume`), `POST /runner/placements/{id}/status`
 (a compare-and-set on the runner's report counter: a repeat is applied as
-nothing) and `POST /runner/placements/{id}/join` (one-time by its own guard:
-a stored outcome would replay a join code). `PATCH /runner` carries a key. The key is unique per credential — a new
+nothing), `POST /runner/placements/{id}/join` (one-time by its own guard:
+a stored outcome would replay a join code) and `POST
+/runner/placements/{id}/usage` (the record's `run_id` is its key, §15.15). `PATCH /runner` carries a key. The key is unique per credential — a new
 session of the same credential replays the same key — and kept for
 24 hours:
 
@@ -15200,7 +15201,7 @@ chart or `all` audience. It serves every project it is attached to
 | Routes it may call | `/runner/*` (§15.8). The unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, `/languages`, the join page and both exchanges) are as for anyone |
 | Routes it may not call | every `/projects/*` route answers `not_found`, as for a project the caller is not a member of, so a runner sees no card, message, request or member by construction; every other authenticated route (`/me`, `/me/resume`, `/runners/*`, `/agents/*`, `/requests`, `/auth/*`, `GET`/`POST /projects`) answers `forbidden` without `details.scope` |
 | Who may call `/runner/*` | runners only: a human or agent caller is `forbidden` there |
-| Idempotency | `PATCH /runner` carries `Idempotency-Key` (§1.5); `hello`, `status` and `join` are exempt (§15.8) |
+| Idempotency | `PATCH /runner` carries `Idempotency-Key` (§1.5); `hello`, `status`, `join` and `usage` are exempt (§15.8) |
 | Presence | computed like a member's (§5.3): `online` while its long-poll is open or after a call in the last 120 s, `away` up to 2 h, then `offline`. Never stored, never an event |
 
 ### 15.2 Pairing
@@ -15923,7 +15924,7 @@ Runner credential, signed (§15.1).
 | PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
-| POST | `/runner/placements/{id}/usage` | `{run_id, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same numbers; supervised placements only; §15.15 |
+| POST | `/runner/placements/{id}/usage` | `{run_id, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same numbers; supervised placements only. No `Idempotency-Key`: the `run_id` is its key; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
 
 ```json
@@ -17275,7 +17276,8 @@ on 2026-11-11:
 - a run during which the instance holds several cards counts in full
   for each of them, marked as shared, and is never split
   (req-j9pyk9p5q3b9);
-- no model name reaches the hub (req-dqe2vaa5wkkg);
+- no model name in a usage record (req-dqe2vaa5wkkg); a placement's
+  `model` (§15.5) and a session's (§5) stay as they are;
 - card totals for the project's members, instance and agent totals for
   the agent's owner and the project's admins, nothing on a public page
   (req-272525w91jvf).
@@ -17293,8 +17295,8 @@ reasons a run ends, a number is read only once it has been verified on
 a real run of that harness and version; anything else is left out,
 never guessed. An interactive placement reports no usage: its runner
 reads no stream from it. Prompts, replies, tool calls, file contents,
-account names, keys, the login method, the model and the provider's
-request ids never leave the runner.
+account names, keys, the login method, the model the run used and the
+provider's request ids never leave the runner with a record.
 
 **The record.** `POST /runner/placements/{id}/usage`, runner credential
 (§15.8), one record per run, sent when the run has ended:
@@ -17310,12 +17312,21 @@ request ids never leave the runner.
   `interactive` is `invalid` (`details.reason: interactive`).
   A placement that is closed takes no record (`not_found`), so a runner
   sends the record before its terminal report.
-- **A repeated `run_id`.** The same `run_id` with the same numbers
-  answers `200` with the stored record and changes nothing, so a resend
-  after a lost answer is never an error. The same `run_id` with any
-  other number, timestamp or cost is `conflict` (`details.reason:
+- **A repeated `run_id`.** The call carries no `Idempotency-Key`
+  (§1.5): the `run_id` is its key, and the hub compares the body as it
+  was sent, before any clamping, so the same resend matches at any hub
+  time. The same `run_id` with the same body answers `200` with the
+  stored record and changes nothing, so a resend after a lost answer is
+  no error while the placement is open; once it has closed, the resend
+  is `not_found` like any record. The same `run_id` with any other
+  number, timestamp or cost is `conflict` (`details.reason:
   run_id_reused`, with the stored record in `details.record`): a runner
   that counts a run twice shows it instead of hiding it.
+- **A late record.** A record whose `ended_at`, as sent, lies more than
+  30 days before hub time is `invalid` (`details.reason: too_old`), a
+  first send as much as a repeat. Records are kept 90 days, so every
+  `run_id` the hub still accepts finds its stored record, and a resend
+  never counts a run a second time after its record was folded.
 - The record writes no event: one per run would fill the history. The
   totals are read on demand.
 
@@ -17347,7 +17358,8 @@ work at once.
 `ended_at`), running totals per card, per instance and per agent and
 project. A record older than 90 days is folded into those daily totals
 and deleted; the totals stay. The runs listed below are the records still
-kept.
+kept. The 30-day limit on a late record (above) keeps a deleted record's
+run from being counted again.
 
 **Reading it.** Every total has one shape:
 

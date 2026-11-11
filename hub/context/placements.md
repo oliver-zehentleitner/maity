@@ -351,7 +351,7 @@ child older than this writes no line, so the detail is `null` with it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); contract `docs/api.md` §15.15
+**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); the contract review of 2026-11-11 on #1650 (two retry protocols on one call, a replay after the records are deleted); contract `docs/api.md` §15.15
 **Revisit when:** the hub is asked for a price list, a budget or a limit; or a run's work can be tied to one card
 **See:** https://github.com/oliver-zehentleitner/maity — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
 
@@ -363,7 +363,11 @@ report with `done` or a release during the run would otherwise drop the
 card the run finished. A run during which the instance held two cards
 counts in full for each and is marked as shared; instance and agent totals
 count every run once. A repeated `run_id` with other numbers is refused
-(`conflict`, `run_id_reused`), not answered as a repeat. Card totals are
+(`conflict`, `run_id_reused`), not answered as a repeat. The `run_id` is
+the call's only key: it carries no `Idempotency-Key`, the hub compares
+the body as sent, and a record that ended more than 30 days ago is
+refused, so every `run_id` still accepted finds its record within the
+90 days it is kept. Card totals are
 for the project's members, instance and agent totals for the agent's
 owner and the project's human admins; no public page shows usage.
 
@@ -373,7 +377,9 @@ the hub. The runner cannot know which card a run worked on, and the hub
 can only see which cards were held; any split between two held cards
 would be a guess presented as a fact. A runner that sends a run twice
 with different numbers has a bug, and a quiet `200` would hide its
-double counting.
+double counting. Two keys on one call would answer the same resend in
+two ways (the key's replay, the `run_id`'s `200` or `conflict`), and a
+key lives 24 hours while a runner may resend later.
 
 **Rejected alternatives:**
 - A price table per model in the hub: pricing, and the model name the
@@ -385,5 +391,8 @@ double counting.
   did the work, so a card's total would miss the run that finished it.
 - Answering every repeated `run_id` with the stored record: a runner's
   double count would stay invisible.
+- Keeping every `run_id` after its record is folded, to recognise a late
+  resend: a table that only grows, for a resend the 30-day limit already
+  refuses.
 - Totals for everyone who can read the project, public pages included:
   spend is the owner's and the admins' business, not a visitor's.

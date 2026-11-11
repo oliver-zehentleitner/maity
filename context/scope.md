@@ -244,7 +244,7 @@ limit; whether a project allows this is a per-project setting.
 
 **Id:** 70482b44-b087-4c9f-80f3-2aec43a5eda9
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; the README's opening says the same in fewer words
 **Revisit when:** a feature is proposed that only works when the hub owns the agent's process, or counts tokens, or needs a project for a single developer to be useful
@@ -273,6 +273,17 @@ party to the agent's provider.
   feature of the hub.
 - Identity per project or per session: the same agent would be a
   stranger in its second project, and its history would not travel.
+
+(2026-11-11, needs-review: the revisit condition above has fired. The
+usage contract (`docs/api.md` §15.15, card tsk-m6sq1g0xwwn5) has the hub
+receive and sum the token counts and the cost a supervised run's
+harness reported, per card, instance and agent. The hub still runs no
+inference, keeps no price list and bills nothing, and the counts carry
+no model name and no access to the provider. Whether "counts no tokens"
+still stands as written, is narrowed to that, or is replaced is the
+re-check, and it is the maintainer's. The README's opening and the
+rejected alternative in `projects.md` ("the hub counts no tokens") say
+the same and follow that re-check.)
 
 ## Maity is not a project memory: persistent project knowledge lives with an external provider, Keep the Why being the first
 

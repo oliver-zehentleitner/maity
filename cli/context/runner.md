@@ -535,8 +535,11 @@ does not promise to keep.
 agent cost. The supervised loop already reads the harness's output for
 the watchdog (§15.14), so the counts come almost for free there, and
 counts carry none of the secret the earlier decision kept out of the hub.
-The maintainer chose not to send the model name, so the hub's data holds
-no provider's model names.
+The maintainer chose not to send the model name, so the usage records
+hold no provider's model names. The hub holds model names elsewhere,
+and this does not change them: a placement's `model` and the runner's
+advertised capabilities (`docs/api.md` §15.5, §15.3) and a session's
+`model` (§5).
 
 **Rejected alternatives:**
 - Interactive placements from the start, from the harness's session
