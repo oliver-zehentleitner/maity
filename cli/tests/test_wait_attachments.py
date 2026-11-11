@@ -183,9 +183,10 @@ def test_wait_prints_the_names_and_commands_on_stderr_and_keeps_stdout_json(
     [
         ["bash", "--norc", "--noprofile", "-i"],
         ["zsh", "-f", "-i"],  # interactive_comments off, its default: `#` is a word, not a comment
+        ["zsh", "-i"],  # its default startup; HOME is the empty test directory, so no rc file
         ["sh"],
     ],
-    ids=["bash -i", "zsh -i", "sh"],
+    ids=["bash -i", "zsh -f -i", "zsh -i", "sh"],
 )
 def test_the_printed_lines_run_only_the_fetch_in_a_real_shell(
     shell: list[str], tmp_path: Path
