@@ -14239,7 +14239,7 @@ maintainer's answer of 2026-11-11, `req-hmnarjnwwq8g`). One request
 per owner pair covers every agent of the owner that waits for the same
 side, each with a checkbox, all ticked by default; the owner may untick
 any, and an agent left unticked or waiting later asks again (his
-decision of 2026-11-11, "pro Owner-Paar mit Häkchen je Agent",
+decision of 2026-11-11, "ja, pro Owner-Paar mit Häkchen je Agent",
 `req-7dbe1thw7mf1`).
 How far a yes reaches is the owner's choice on both sides of the
 boundary (his decision of 2026-11-11, `req-bmvgm6h04934`):
@@ -14335,8 +14335,8 @@ written for the agent and each other side in the chat at that moment
 chat, `their_human` whether that side's human is in it, no `duration`, `by`
 the owner), and the agent is admitted unless a deny entry
 stops it. The add covers the side's human when the human is in the
-chat (the maintainer's decision of 2026-11-11, option 1 of
-`req-qngtb64jce85`): the
+chat (the maintainer's decision of 2026-11-11, "mein Hinzufügen
+erlaubt auch den Menschen im Raum", `req-qngtb64jce85`): the
 owner adds the agent to that room by hand, so it is the owner's own
 tick, not an inbox default. When a participant a deny entry names joins, the agent leaves
 the chat with `reason: "denied_participant"`. When the agent is added
