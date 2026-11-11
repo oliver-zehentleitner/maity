@@ -20,6 +20,7 @@ MAX_HOST = 253
 MAX_USERNAME = 254
 MAX_PASSWORD = 1024
 MAX_PER_HOUR = 1_000_000
+GRACE_MAX = 60  # minutes; `online_grace_minutes` (§16.2)
 SIGNING_KEY_MIN_BYTES = 32
 
 
@@ -51,6 +52,7 @@ class MailEnvironment:
     security_max_per_hour: int | None = None
     sign_in_max_per_hour: int | None = None
     registration_max_per_hour: int | None = None
+    online_grace_minutes: int | None = None
     signing_key: bytes | None = field(default=None, repr=False)
     # MAITY_SMTP_ALLOW_PLAINTEXT: insecure, for a test bench only (§16.2).
     allow_plaintext: bool = False
@@ -146,6 +148,7 @@ def parse(env: dict[str, str]) -> MailEnvironment:
         registration_max_per_hour=_number(
             env, "MAITY_MAIL_REGISTRATION_MAX_PER_HOUR", 1, MAX_PER_HOUR
         ),
+        online_grace_minutes=_number(env, "MAITY_MAIL_ONLINE_GRACE_MINUTES", 0, GRACE_MAX),
         signing_key=_signing_key(env),
         allow_plaintext=_flag(env, "MAITY_SMTP_ALLOW_PLAINTEXT"),
         ca_file=ca_file,

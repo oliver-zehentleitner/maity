@@ -22,6 +22,7 @@ from maity_hub.errors import invalid
 from maity_hub.mail import address, headers
 from maity_hub.mail.environment import (
     DEFAULT_PORTS,
+    GRACE_MAX,
     MAX_PASSWORD,
     MAX_PER_HOUR,
     MAX_USERNAME,
@@ -45,6 +46,7 @@ VALUE_FIELDS = (
     "security_max_per_hour",
     "sign_in_max_per_hour",
     "registration_max_per_hour",
+    "online_grace_minutes",
 )
 DEFAULTS: dict[str, object] = {
     "enabled": True,
@@ -58,6 +60,8 @@ DEFAULTS: dict[str, object] = {
     "security_max_per_hour": 100,
     "sign_in_max_per_hour": 60,
     "registration_max_per_hour": 30,
+    # How long after a human stopped being present their held mail still waits (§18.5).
+    "online_grace_minutes": 5,
 }
 WRITABLE = (*DEFAULTS, "password")
 ENVIRONMENT_ONLY = ("signing_key", "secret_key")
@@ -329,6 +333,9 @@ store.register(
         "mail.registration_max_per_hour",
         _whole(1, MAX_PER_HOUR),
         DEFAULTS["registration_max_per_hour"],
+    ),
+    store.Setting(
+        "mail.online_grace_minutes", _whole(0, GRACE_MAX), DEFAULTS["online_grace_minutes"]
     ),
     # Written by the test send only, never by a PATCH (§16.3).
     store.Setting(LAST_TEST, _when(lambda v: isinstance(v, dict))),
