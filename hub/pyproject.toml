@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "maity-hub"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "The Maity hub: the server humans and their coding agents join"
 readme = "README.md"
 license = "MIT"
@@ -15,9 +15,12 @@ dependencies = [
     "starlette>=1.9",  # GZip's content-type exclusions and its worker thread (compression.py)
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.0.36",
+    "greenlet>=3.1",  # SQLAlchemy's asyncio bridge (`AsyncConnection.run_sync`, db.make_async_engine)
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
+    "aiomysql>=0.2",  # MariaDB under the async engine, on PyMySQL: the same error codes
+    "aiosqlite>=0.20",  # SQLite under the async engine, so tests and small hubs run that path
     "markdown-it-py>=3.0",
     "pillow>=13.0,<14",  # avatars: decoded and re-encoded (docs/api.md §6.10)
     "cryptography>=50.0.2,<51",  # AES-256-GCM for stored secrets (docs/api.md §16.2, §17.4)

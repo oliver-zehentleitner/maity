@@ -302,6 +302,59 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         longpoll.registry.leave(waiter)
 
 
+SEQ_DIGITS = len(str(SEQ_MAX))
+
+
+def parse_seq(raw: str) -> int:
+    """One event's `seq` from the path, before anything is read (§8.9): `0` or ASCII digits
+    without a leading zero, at most 2⁶³ − 1. `068216` is invalid, not 68216."""
+    if (
+        not raw.isascii()
+        or not raw.isdigit()
+        or len(raw) > SEQ_DIGITS
+        or (len(raw) > 1 and raw[0] == "0")
+        or int(raw) > SEQ_MAX
+    ):
+        raise invalid({"seq": "not_a_seq"})
+    return int(raw)
+
+
+@router.get("/projects/{owner}/{slug}/events/{seq}")
+def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """One event by its `seq` (§8.9): exactly what `GET /events?after=<seq − 1>` would serve
+    this caller now, plus `conversation_id` for a caller who reads that conversation now. It
+    is the event list's own read, bounded to this one `seq`, so the rule is the list's and not
+    a copy of it (hub/context/events.md). Whoever may not read the event gets the `not_found`
+    of a `seq` nobody has. Reading acknowledges nothing, delivers nothing, wakes nobody and
+    does not count as listening (§5.3): it writes nothing.
+
+    A bridge reads for an agent with `Maity-For` only, which the caller already resolved
+    (§2.3). §8.9 gives this route the list's `Maity-For` rule and no `for` query, so a `for`
+    is refused rather than ignored: ignored, the bridge would get its own answer for the
+    agent's, a silent `404` or the bridge's view where it asked for the agent's."""
+    if "for" in request.query_params:  # before the seq: both come from the request alone
+        raise invalid({"for": "not_allowed"}, "this route reads no for; send Maity-For")
+    number = parse_seq(seq)
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)  # not a member here: `not_found`, as for any seq
+        mine.require("project:read")
+        rows, _, _ = events.read(
+            conn, mine.project.id, mine.row, mine.principal_id, number - 1, 1, until=number
+        )
+        if not rows:
+            raise not_found()
+        view = event_views(conn, rows, mine)[0]
+        from maity_hub.routes import conversations  # it imports this module
+
+        conversation = rows[0].conversation_id
+        view["conversation_id"] = (
+            conversation
+            if conversation is not None and conversations.reads_messages(conn, mine, conversation)
+            else None
+        )
+        return JSONResponse(view)
+
+
 def _reader(
     conn: Connection,
     caller: Caller,

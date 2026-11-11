@@ -222,9 +222,8 @@ def mail_body(
     The only URL is the signed link; the saved dashboard destination stays in state."""
     name = " ".join(display_name.split())
     browser, system = browser or "?", system or "?"
-    spaced = f"{code[:3]} {code[3:]}" if code else None
     words = catalog.section("sign_in", language)
-    alternative = words["mail_alternative"].format(code=spaced) if spaced else ""
+    alternative = words["mail_alternative"].format(code=code) if code else ""
     return words["mail"].format(
         name=name,
         link=link,

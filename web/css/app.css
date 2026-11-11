@@ -758,6 +758,11 @@ a.icon-button:hover { border-color: var(--accent); }
 .briefing { margin-top: 10px; }
 .inline-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 /* Project logos: the image or a monogram, beside the project's name. */
+/* A private project's lock after its name (js/app.js privateMark, tsk-5t3qd0m9rj6r): 12 px, in the
+   muted text colour of either theme, on the name's line. */
+.private-mark { display: inline-flex; align-items: center; margin-inline-start: 4px; color: var(--muted); vertical-align: -1px; }
+.private-mark .icon { width: 12px; height: 12px; }
+.private-mark .icon .icon-fill { fill: currentColor; }
 .project-mark { display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 20px; height: 20px; border-radius: 4px; object-fit: cover; vertical-align: middle; }
 .project-mark.small { width: 16px; height: 16px; border-radius: 3px; }
@@ -927,10 +932,26 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
 .fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+/* Each state differs in shape or size as well as colour (WCAG 1.4.1, nte-s2dqhn1n4bez): online a filled
+   disc, away a ring half filled, offline a smaller disc, dormant hollow; the lead keeps its ring. */
 .fleet-dot.online::before { background: var(--ok); }
-.fleet-dot.away::before { background: var(--warn); }
+.fleet-dot.away::before { background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); border: 2px solid var(--warn); }
+.fleet-dot.offline::before { width: 6px; height: 6px; }
 .fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
 .fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+/* In forced colours the browser drops a gradient, a background colour and a shadow, which made away
+   and dormant the same ring and the filled dots vanish (#1598 review). There each state is drawn with
+   borders, size and an outline alone, which forced colours keep in the user's own system colours:
+   online a disc filled by its border, away a ring with a thick left side, offline the smaller disc,
+   dormant the thin ring, and the lead an outline instead of the shadow ring. */
+@media (forced-colors: active) {
+  .fleet-dot::before { background: none; border: 5px solid CanvasText; }
+  .fleet-dot.away::before { border-width: 2px 2px 2px 5px; }
+  .fleet-dot.offline::before { border-width: 3px; }
+  .fleet-dot.dormant::before { border-width: 2px; }
+  .fleet-dot.lead::before { box-shadow: none; outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
 .fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
 .fleet-stub a { color: inherit; }
 .fleet-me { font-size: 1.02rem; }
@@ -1043,7 +1064,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }
 .avatars { grid-area: av; position: relative; display: flex; align-self: start; }
-.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img { margin-inline-start: -10px; }
+/* Every picture after the first overlaps, generated or loaded alike, so a stack keeps its width while
+   pictures load one by one (nte-b3pfhm2bp0vt (b)). */
+.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img,
+.avatars .avatar-svg + .avatar-img, .avatars .avatar-img + .avatar-svg { margin-inline-start: -10px; }
 .avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
@@ -1141,6 +1165,8 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    here so that selecting the number copies the number alone. */
 .msg-seq { font-variant-numeric: tabular-nums; }
 .msg-seq::before { content: "#"; }
+/* The message an event's link opened (js/event.js, docs/api.md §8.9), marked where it stands. */
+.msg.seq-target .msg-body, .pmsg.seq-target, .event-one.seq-target { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
 .msg-projects .project-mark.small, .conv-project .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }
@@ -1233,6 +1259,9 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 /* The series' settings at the top of the jour fixe view, folded until opened (js/jour-fixe-series.js). */
 .jf-series-settings { margin: 8px 0 16px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series-settings > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+/* A round's date link is a 24 px target, so the stacked rows do not crowd each other (WCAG 2.5.8,
+   nte-ynsymv950zq4). */
+.jf-rounds a { display: inline-block; min-height: 24px; line-height: 24px; }
 .jf-series-settings[open] > summary { margin-bottom: 8px; }
 .jf-series-block { margin: 12px 0; }
 .jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
@@ -1511,6 +1540,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 /* + Add an agent and Join an agent, the same at the head of /agents and of a project's Agents. */
 .agents-head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; }
 .agents-head-actions button { min-height: 40px; }
+/* The project's name in the hint may be one long word (63 characters): it wraps rather than widening
+   the page (nte-fk0fzcsma0e7). */
+.agents-project-hint { overflow-wrap: anywhere; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .agents-count { margin: -6px 0 12px; }
 .join-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }

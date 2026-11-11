@@ -341,6 +341,83 @@ window.Maity = window.Maity || {};
   // §6.1 "Restricted access", §6.4 "Restricted text": the set resolved on every call from the
   // stored setting and the project's members, as the hub resolves it; the texts live in this
   // tab only, never in storage.
+  // GET …/roles `builtin` (§2.3, docs/api.md): each built-in role as the hub's guide.builtin
+  // answers it, its description, its default guide and its own scopes (tsk-ztkn9cwxdz8z).
+  // A project role never changes a built-in role's guide, so the list is the same everywhere.
+  const BUILTIN_ROLES = [
+    {
+      name: "coder",
+      description: "claims cards, builds, checkpoints and reports, posts, asks",
+      guide: "You build: claim a card, work in your own branch and clone, checkpoint, report the pull request, and answer the review.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "reviewer",
+      description: "reviews: moves cards from `review` to `done`, prepares releases",
+      guide: "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes.",
+      scopes: ["project:read", "tasks:write", "tasks:review", "releases:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "tester",
+      description: "tests, files bug cards, moves `review` to `done` where the policy requires a test (§6.1 `done_authority`)",
+      guide: "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card.",
+      scopes: ["project:read", "tasks:write", "tasks:test", "requests:ask", "events:post"],
+    },
+    {
+      name: "designer",
+      description: "design passes; answers the requests addressed to `role:designer` (§7)",
+      guide: "You design: drafts and design passes, and the requests addressed to the designer.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "writer",
+      description: "content: the README, documentation, the website's words, release notes and announcements; answers the requests addressed to `role:writer` (§7)",
+      guide: "You write: the README, the documentation, the website's words, release notes and announcements, clear and true to what the project does, and the requests addressed to the writer.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "ops",
+      description: "merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker",
+      guide: "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker.",
+      scopes: ["project:read", "tasks:write", "releases:write", "requests:ask", "events:post", "ticker:post", "agents:propose"],
+    },
+    {
+      name: "proxy",
+      description: "the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below)",
+      guide: "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "manager",
+      description: "leads a line of members and is their interface to a human: hands out their cards, keeps them moving, carries their questions up (below)",
+      guide: "You lead the members who report to you: you hand out and take back their cards, set their areas and pause them, within your reach only; you carry their questions up to your own lead or your human, and decide nothing a human decides.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post", "line:lead"],
+    },
+    {
+      name: "red-team",
+      description: "attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below)",
+      guide: "You attack: look for weaknesses in the project, only against the targets the project's rules name (its own test or staging instance), never production or anyone else's systems; file each finding as a bug card with its severity, and keep its details within the security teams until it is fixed.",
+      scopes: ["project:read", "tasks:write", "tasks:test", "requests:ask", "events:post"],
+    },
+    {
+      name: "blue-team",
+      description: "defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team`",
+      guide: "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "purple-team",
+      description: "joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team`",
+      guide: "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work.",
+      scopes: ["project:read", "tasks:write", "tasks:review", "releases:write", "requests:ask", "events:post"],
+    },
+    {
+      name: "expert",
+      description: "learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources is to wake it (§17.3, not built; below)",
+      guide: "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change.",
+      scopes: ["project:read", "events:post"],
+    },
+  ];
   const RESTRICTED_MODES = ["nobody_except", "all_except"];
   const restrictedTexts = {};  // "<slug> <task id>" -> { task_id, text, version, updated_by, updated_at, history }
   function restrictedSet(slug) {
@@ -1289,9 +1366,10 @@ window.Maity = window.Maity || {};
   // events; owners and admins every event but a conversation's, which only
   // its audience reads. "_conversation" is the fixture's note of what the
   // hub stores and the event no longer shows once redacted; never served.
-  function readable(slug, e) {
-    const meId = me().member.id;
-    const mine = mineIn(slug);
+  // as: another reader's id, trust and role (the mock's ?as=, GET …/events/{seq}); the caller's otherwise.
+  function readable(slug, e, as) {
+    const meId = as ? as.id : me().member.id;
+    const mine = as || mineIn(slug);
     if (e.actor && e.actor.member_id === meId) return true;
     const named = (e.audience || []).some((t) => t === "all" || t === "member:" + meId || t === "role:" + mine.role || t === "trust:" + mine.trust);
     if (e._conversation) return (e.audience || []).includes("member:" + meId);
@@ -1482,23 +1560,48 @@ window.Maity = window.Maity || {};
   // those from account records record "acr-<n>"; a position is "a.b".
   // §18.1 since 2026-10-26: only what the human must react to.
   const KINDS = ["inbox", "chat", "mention", "security"];
+  // The kinds an item may have (§18.1): the counted ones and `invitation`, which counts in
+  // `inbox` as the open request it is and has no count of its own (§18.2).
+  const ITEM_KINDS = KINDS.concat(["invitation"]);
   function notificationCounts() {
     const counts = {};
     KINDS.forEach((k) => { counts[k] = 0; });
     const byProject = {};
     const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security").map((k) => ({ [k]: 0 }))));
     me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.full_name).inbox += n; });
+    // Every open personal request addressed to the human (§7, §18.2), member of its project or
+    // not, counts once in inbox and on its project's entry, member false when one is no member
+    // of it: the fixtures hold them in personal-requests.json, and /me never carries them. It
+    // counts while it is open, whether its item is read or not, since it falls when it is
+    // answered or withdrawn; the consent request of an invitation by handle is one of them
+    // (`invitation`). An item of a project one is no member of whose request the fixtures do
+    // not hold counts while it is unread. The projects' own requests come from /me (`openFor`).
+    const memberOf = (fullName) => me().projects.some((p) => p.full_name === fullName);
+    const personalCounted = new Set();
+    const personal = (fullName) => {
+      counts.inbox += 1;
+      if (!fullName) return;
+      of(fullName).inbox += 1;
+      if (!memberOf(fullName)) of(fullName).member = false;
+    };
+    personalRequests().forEach((r) => {
+      if (r.status !== "open" || (/^human:/.test(r.to || "") && r.to !== "human:" + me().member.id)) return;
+      personalCounted.add(r.id);
+      personal(r.project && r.project.full_name);
+    });
     fixtures()["notifications.json"].items.forEach((x) => {
       // A pending registration or a disabled address counts until the matter
       // is closed, read or not (§18.2).
       if (x.kind === "inbox" && x.open_matter) { counts.inbox += 1; return; }
-      if (x.read) return;
-      // A personal request of a project one is no member of (§7): counted
-      // in inbox, on an entry with member false; the rest come from /me.
-      if (x.kind === "inbox") {
-        if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false; }
+      if (x.kind === "inbox" || x.kind === "invitation") {
+        const id = x.target && x.target.type === "request" ? x.target.id : null;
+        if (id && personalRequests().some((r) => r.id === id)) return;
+        if (x.read || !x.project || x.project.member !== false || (id && personalCounted.has(id))) return;
+        if (id) personalCounted.add(id);
+        personal(x.project.full_name);
         return;
       }
+      if (x.read) return;
       counts[x.kind] += 1;
       if (x.project && x.kind !== "security") of(x.project.full_name)[x.kind] += 1;
     });
@@ -1780,6 +1883,7 @@ window.Maity = window.Maity || {};
       const ttl = body.ttl_seconds === undefined ? 86400 : body.ttl_seconds;
       if (!(ttl >= 60 && ttl <= 604800)) fields.ttl_seconds = "out_of_range";
       if (body.address !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address))) fields.address = "invalid";
+      if (body.handle !== undefined && body.address !== undefined) fields.handle = "with_address";
       if (body.note !== undefined && utf8Bytes(String(body.note)) > 1024) fields.note = "too_long";
       // §3.4 `via`: the join host's link by default where one is configured, else the public one.
       const joinUrl = fixtures()["auth-session.json"].join_url || null;
@@ -1788,12 +1892,28 @@ window.Maity = window.Maity || {};
       else if (via === "join" && !joinUrl) fields.via = "no_join_host";
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const list = invitationsOf(m[1]);
+      // §3.4 by handle: a person's handle or live alias (fixtures/people.json); an organisation's
+      // is not_a_person, any other name unknown; a member, or one an open invitation names, too.
+      let person = null;
+      if (body.handle !== undefined) {
+        const name = String(body.handle);
+        const refuse = (why) => fail(400, "invalid", "the request does not validate", path, { fields: { handle: why } });
+        if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(name)) refuse("format");
+        person = ((fixtures()["people.json"] || { items: [] }).items).find((x) => x.kind === "human" && (x.handle === name || (x.aliases || []).includes(name)))
+          || (me().member.handle === name ? me().member : null); // the caller is a person too, as GET /people says
+        if (!person) refuse(orgsData().items.some((o) => o.handle === name || (o.aliases || []).includes(name)) ? "not_a_person" : "unknown");
+        if (((fixtures()[m[1] + "/members.json"] || { items: [] }).items).some((x) => x.kind === "human" && x.handle === person.handle)) refuse("member");
+        if (list.some((x) => x.handle === person.handle && !x.used_at && !x.revoked_at && !x.voided_at && !x.declined_at && Date.parse(x.expires_at) > Date.now())) refuse("invited");
+      }
       const token = "fx" + String(list.length + 1).padStart(20, "0");
       const at = nowIso();
-      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null, note: body.note || null,
+      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null,
+        handle: person ? person.handle : null, note: body.note || null,
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
-        used_at: null, used_by: null, revoked_at: null, voided_at: null, via };
+        used_at: null, used_by: null, revoked_at: null, voided_at: null, declined_at: null, via };
       list.push(made);
+      // An invitation by handle has no link: the person answers the request in their inbox.
+      if (person) return Object.assign({}, made, { invitee: { handle: person.handle, display_name: person.display_name } });
       return Object.assign({}, made, { url: via === "join" ? joinUrl.replace(/\/+$/, "") + "/i/" + token
         : window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
     }],
@@ -1997,7 +2117,7 @@ window.Maity = window.Maity || {};
       const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
       (kinds || []).forEach((k) => {
-        if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
+        if (!ITEM_KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       });
       const projects = query.get("project") ? query.get("project").split(",") : null;
       const view = (x) => {
@@ -2040,8 +2160,8 @@ window.Maity = window.Maity || {};
       if ("include_security" in body && ("ids" in body || typeof body.include_security !== "boolean")) {
         fail(400, "invalid", "the request does not validate", path, { fields: { include_security: "invalid" } });
       }
-      // A kind outside the four, one removed earlier included, is unknown (§18.3).
-      if ("kind" in body && !KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
+      // A kind outside the five, one removed earlier included, is unknown (§18.3).
+      if ("kind" in body && !ITEM_KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       // up_to reaches a security item only with include_security; each one
       // only from a session allowed to, the rest named in `skipped`. Reading
       // one confirms nothing (§18.3).
@@ -3094,7 +3214,8 @@ window.Maity = window.Maity || {};
       data[body.slug + "/credentials.json"] = {};
       data[body.slug + "/conversations.json"] = {};
       if (url !== null) makeSetupCards(body.slug, setup, owner.id, url);
-      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", trust: "owner", role: "coder", open_requests: 0 });
+      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", trust: "owner", role: "coder", open_requests: 0,
+        public_page: created.public_page });
       return created;
     }],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => servedProject(m[1], project(m[1], path))],
@@ -3285,6 +3406,9 @@ window.Maity = window.Maity || {};
       if ("public_page" in body) {
         if (!["on", "off"].includes(body.public_page)) fail(400, "invalid", "the request does not validate", path, { fields: { public_page: "required" } });
         p.public_page = body.public_page;
+        // As the hub, /me's list carries the setting too (§5.1), for the tabs' lock.
+        const mine = me().projects.find((q) => q.full_name === p.full_name);
+        if (mine) mine.public_page = body.public_page;
       }
       if ("public_about" in body) {
         // Bytes, as the hub counts them.
@@ -3604,6 +3728,48 @@ window.Maity = window.Maity || {};
       const limit = Math.min(200, Number(query.get("limit") || 50));
       const items = log.filter((e) => e.seq > Number(after || 0) && readable(m[1], e)).slice(0, limit).map(served);
       return { items, cursor: items.length ? items[items.length - 1].seq : Math.max(head, Number(after || 0)), server_time: nowIso(), superseded: false };
+    }],
+    // §8.9: one event by its number, by GET /events' readable set (readable() above); a hidden
+    // one and a missing one are the same 404. The fixture keeps its chats' messages apart from
+    // the log (conversations.json, group-chats.json): one of them is served as the log would
+    // serve it to this reader, with conversation_id where the reader reads that chat now. A
+    // group chat's participant reads what came in its window (§9.2), so one added later gets
+    // the 404 for an earlier message, as from the hub.
+    ["GET", /^\/projects\/([^/]+)\/events\/([^/]+)$/, (m, body, path) => {
+      project(m[1], path);
+      if (!/^(0|[1-9][0-9]{0,18})$/.test(m[2]) || BigInt(m[2]) > BigInt("9223372036854775807")) fail(400, "invalid", "not a seq", path, { fields: { seq: "not_a_seq" } });
+      const seq = Number(m[2]);
+      const gone = () => fail(404, "not_found", "Not found", path);
+      // The reader: the mock's ?as= member where one is set (caller), else the signed-in one.
+      const who = caller(m[1], path).member;
+      const meId = who.id;
+      const members = file(m[1], "members.json", path).items;
+      const ownsAgent = (id) => members.some((a) => a.id === id && a.kind === "agent" && a.owner_id === meId);
+      const logged = eventsOf(m[1]).find((e) => e.seq === seq);
+      if (logged) {
+        if (!readable(m[1], logged, fixtureAs ? { id: meId, trust: who.trust, role: who.role } : null)) gone();
+        return Object.assign(served(logged), { conversation_id: logged._conversation && ownsAgent(logged._conversation) ? logged._conversation : null });
+      }
+      const asEvent = (x, conversation, audience) => ({ seq: x.seq, kind: "message", at: x.sent_at,
+        actor: { kind: "member", member_id: x.from, instance: x.from_instance || null }, subject: null, audience, redacted: !!x.redacted,
+        payload: x.redacted ? { redacted: true } : { type: "chat", to: x.to, body: x.body, conversation_id: conversation, mentions: x.mentions || [], attachments: x.attachments || [] },
+        conversation_id: conversation });
+      for (const c of Object.values(groupChats(m[1]))) {
+        const x = c.items.find((y) => y.seq === seq);
+        if (!x) continue;
+        // A participant reads its window; the owner of an agent participant reads along (groupItem's rule).
+        const participant = c.view.participants.some((p) => p.member_id === meId);
+        const along = c.view.participants.some((p) => p.kind === "agent" && p.owner_id === meId);
+        if (participant ? !windowOf(c, meId).includes(x) : !along) gone();
+        return asEvent(x, c.view.id, c.view.participants.map((p) => "member:" + p.member_id));
+      }
+      for (const [agentId, c] of Object.entries(file(m[1], "conversations.json", path))) {
+        const x = c.items.find((y) => y.seq === seq);
+        if (!x) continue;
+        if (!ownsAgent(agentId)) gone();
+        return asEvent(x, agentId, ["member:" + agentId, "member:" + meId]);
+      }
+      return gone();
     }],
     // §17.9: the ticker in its compact form, per reader, newest first, paged
     // by an opaque cursor bound to the filters; after= oldest first.
@@ -4754,7 +4920,7 @@ window.Maity = window.Maity || {};
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
-    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ custom: (project(m[1], path).roles || []).slice() })],
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);
       list.items.forEach((j) => {

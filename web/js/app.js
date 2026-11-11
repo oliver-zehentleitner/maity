@@ -44,6 +44,9 @@ window.Maity = window.Maity || {};
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
+    // One event by its number (js/event.js, §8.9), the target of a `seq 68216` link: it opens
+    // the event where it lives, so it has no tab of its own.
+    { route: "events", view: "event", get label() { return M.t("nav.event"); }, tab: false },
     // The account-level view is views.runners; this one is the project's,
     // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
@@ -1289,6 +1292,16 @@ window.Maity = window.Maity || {};
   }
   M.projectMark = projectMark;
 
+  // A private project (public_page "off", §16.9) carries a lock after its name wherever the name
+  // stands for the project (tsk-5t3qd0m9rj6r): not the picture alone, it says "Private" to a screen
+  // reader and explains itself on hover. A public project, the default, carries nothing.
+  function privateMark(p) {
+    if (!p || p.public_page !== "off") return null;
+    return h("span", { class: "private-mark", role: "img", "aria-label": M.t("new_project.private.label"),
+      title: M.t("new_project.created.private") }, M.icons.lock(12));
+  }
+  M.privateMark = privateMark;
+
   // The tab's icon: the project's logo where it has one, else the browser's default.
   function setFavicon(slug, view) {
     const url = slug && view && M.api.imageUrl(slug, "logo", view.logo);
@@ -1341,6 +1354,7 @@ window.Maity = window.Maity || {};
       },
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
+      privateMark(p),
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
       pill(p))));
     // Runners belong to the person, not to a project (the maintainer's
@@ -1448,7 +1462,7 @@ window.Maity = window.Maity || {};
         const at = current ? open.indexOf(current) : -1;
         return [
           ...open.concat(closed).map((p) => ({
-            label: p.name,
+            label: [p.name, privateMark(p)],
             checkbox: true,
             checked: open.includes(p),
             onSelect: () => {
@@ -1466,6 +1480,10 @@ window.Maity = window.Maity || {};
           { label: M.t("tabs.keep_at_start"), onSelect: () => {
             M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
           } },
+          // A new project here too, beside the projects, where one looks for it (the owner,
+          // 2026-11-10, tsk-c4dz5x6rb2h8); the "+" menu keeps its entry. Humans only, as there.
+          ctx.me.kind === "human" ? { separator: true } : null,
+          ctx.me.kind === "human" ? { label: M.t("view.new_project"), href: "/new", current: ctx.scope === "new" } : null,
         ].filter(Boolean);
       },
     });
@@ -1684,7 +1702,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "bar" },
         brandTitle(true),
         ctx.scope === "project"
-          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
+          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name, privateMark(ctx.project))]
           : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
             "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
@@ -1892,6 +1910,18 @@ window.Maity = window.Maity || {};
   // listeners and no events feed of its own. chatLink builds the links of
   // its chats, so that they stay in that view.
   M.withMembers = (ctx, members) => withMembers(ctx, members);
+  // A project's member list read once per page drawn (per ctx) for the views outside a project
+  // that need several projects' members: on All projects the Lead button (js/lead-chat.js) reads
+  // every project's members and the inbox (js/inbox.js) those of the projects its requests come
+  // from, so a project with requests was read twice before (tsk-f78z1dvbs26a). The next drawing
+  // has a ctx of its own and reads afresh.
+  const membersDrawn = new WeakMap();
+  M.membersOnce = (ctx, slug) => {
+    let bySlug = membersDrawn.get(ctx);
+    if (!bySlug) { bySlug = new Map(); membersDrawn.set(ctx, bySlug); }
+    if (!bySlug.has(slug)) bySlug.set(slug, M.api.getAll("/projects/" + M.api.projectPath(slug) + "/members"));
+    return bySlug.get(slug);
+  };
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError(M.t("error.not_member", { slug }), 404, "/me", "not_found");

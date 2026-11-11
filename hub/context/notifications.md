@@ -151,6 +151,72 @@ would raise a serialization failure even with an on-conflict clause.
 one can take. Evidence is inferred: the cost per event was measured locally; the incident
 log showed pool timeouts at a low request rate, with no lock wait found on these paths.
 
+## A held long-poll looks past the moved heads before it derives again
+
+**Id:** e98b2d42-4d1d-4cbe-89a8-4793db05205a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
+**See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
+**See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
+**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
+
+The stamp's project heads count every event kind that can make an item, and `message` is one
+of them. So every message agents send each other moved the stamp of every human in the
+project, and each such move derived the whole answer again although the
+held call answers only on an item past `after` or a changed `sessions_rev` (a session's record,
+§18.2). When the stamp moved in its heads alone (the
+same memberships, account records and read marks), the held long-poll now first reads one
+statement over the rows of every member project between the position seen and the new one,
+with `items.derive_page`'s own superset filters: a request's event only where its request may
+concern the human's membership, a message only where its text may mention the human or its
+audience names them in a chat, every other kind that makes items. With no such row, the new
+stamp becomes the seen one and the wait keeps holding; with one, the answer is derived as
+before. The position is the project's highest `seq` of any kind, which the held call keeps
+beside the stamp (`listing.held_stamp`); the mail pass stores the stamp alone, which card churn
+does not move. Any row in the range of a kind that is neither an item kind nor one of
+`listing.QUIET_KINDS` (an agent's work on cards, notes, sessions and probes) makes the move not
+quiet as well: the derive judges older rows with the relations of now (who holds a request,
+who covers whom, a membership's trust and role, a chat's participants), so a cover starting, a
+claim or a role changed can make an item of a row below the seen head, and the next derive
+finds it, as it did before the look whenever the next move of a head came. That holds across
+projects: a cover in a project whose head stands still is read when chatter moves another
+project's head, since every project's range is read once any head moved. The list names the
+kinds passed over, not the kinds that count, so a kind added later counts until it is listed.
+A row written before the wait (an agent's join) lies below the seen position and is not read
+again. A relation change with no later move of the stamp stays unseen until the deadline, as it
+was before: only a moved stamp starts a look, and the position stays where it was seen until
+then. Supersession, a session's end, the shutdown and the deadline are where they were.
+
+The look is safe on the same ground as the held events wait's: within one project `seq`
+follows commit order (`events.emit` inserts under `lock_project`), so no row below a visible
+position is still to commit, and the range read now is the whole of what moved it. For the
+rows below it, what may change their verdict is a relation, and its change is a row of a
+counted kind in a later range.
+
+**Reason:** the derivation's cost per held call came from wakes the human has no item in;
+the look costs one statement per such wake, and the positions one grouped read per pass, also
+in a pass whose stamp did not move; only a call with `wait` reads them.
+
+**Rejected alternatives:**
+- Narrowing the stamp's heads to the rows that may make an item: the filters read the payload
+  text, so the head would read the project's whole history on every look, where the range read
+  starts at the seen position. That bounds it in `seq`, not in rows: a long wait whose stamp
+  does not move collects every row written meanwhile into the next look's range.
+- Only the item kinds in the range, as the first version had it: a cover (`cover_started`,
+  not an item kind) made an older request the human's without being looked at, and the chatter
+  that followed held to the deadline where main derived at once (review of #1623).
+- Ranges only in the projects whose item head moved, as the second version had it: a cover in
+  a project whose head stood still went unread while chatter in another project held the call
+  to the deadline, where main derived at once (review of #1623).
+- The positions of every kind inside `listing.stamp`: the mail pass stores that stamp and
+  derives again whenever it moved, so an agent's card churn would make every mail pass derive.
+- The relations in the stamp (trust and role per membership, the requests the human covers):
+  the stamp would read every request's cover on each look, and each new relation would need
+  its own part; the list of kinds passed over fails safe for a kind nobody thought of.
+- Other alternatives were not weighed in this change.
+
 ## Deriving items reads each kind of lookup once per batch, not once per event
 
 **Id:** b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411
@@ -1024,3 +1090,39 @@ possible kinds is stated here, next to the sources.
 **Rejected alternatives:**
 - Stopping a source's scan after a few chunks: a page could miss an older item it should list.
 - Deciding the kind in SQL for every row: a second copy of `_classify`, as 38cf47f3 rejects.
+
+## An invitation by handle has a notification kind of its own, mailed at once by default
+
+**Id:** 11617fa3-6098-4383-b70d-b46115fe4356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4; the web part in the same change: the lead's decision in the change's review (2026-11-10); the settings page's rows: the card's web part (scope point 3)
+**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-10
+**Revisit when:** another personal request (an organisation's invitation) is to join the kind, or the kind defaults are decided again
+
+The consent request an invitation by handle files is an item of the kind `invitation`, not
+`inbox` (`items._personal_kind`, from the request's proposal kind). The kind has its own
+browser switch and mail mode, `immediate` by default, so the person may take invitations
+with the daily digest (`daily`) or keep them on the platform only (`off`) without touching
+the inbox's mail. The counts do not change: an open request counts in `inbox` whatever its
+item's kind, and the five keys stay.
+
+**Reason:** the maintainer wanted the invitation's mail switchable on its own and at once by
+default. The general rule of 2026-11-02, that a kind added later mails as a daily digest, is
+for informing kinds against filled mailboxes; an invitation waits for an answer and expires.
+
+The web learns the kind in the same change (the bell, the notifications page and its filter,
+the browser notifications): it drops an item of a kind it does not know, so a hub with the kind
+and a web without it would hide every invitation from the bell. Shipping the web part with the
+later Members change instead was rejected: it ties the two to one deploy. The settings page's
+rows for the kind, its browser switch and mail mode, came with that Members change; until it
+shipped, the kind's settings could be changed only through the API (§18.4).
+
+**Rejected alternatives:**
+- Leaving it under `inbox`: its mail could only be turned off with every other request's.
+- `daily` by default, as the rule for later kinds says: the invitation would often expire in a
+  digest before the person saw it.
+- A count of its own: the counts' five keys are a contract the dashboard's badges read; the
+  request is an open request like any other.
+- Moving an organisation's invitation into the kind too: not decided, left to a later card.

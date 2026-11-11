@@ -714,20 +714,50 @@ window.Maity = window.Maity || {};
       }
       return { paged, newest };
     };
-    const readList = async () => {
+    // shown(cards), where given, is called once the four open groups have answered, with their cards,
+    // before the closed group's pages (tsk-a5pxwgkgr73e): on the maintainer's project that group was
+    // 783 cards in four pages one after the other, about 0.9 s after the other groups had answered.
+    const readList = async (shown) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
-      const parts = await Promise.all(listPaths.map((path) => M.api.getAll(path)));
+      const groups = listPaths.map((path) => M.api.getAll(path));
+      // A closed group failing while the open ones are awaited is handled by Promise.all below.
+      groups.forEach((read) => read.catch(() => {}));
+      if (shown) {
+        const open = new Map();
+        (await Promise.all(groups.slice(0, LIST_GROUPS.length))).forEach((r) => r.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        shown([...open.values()]);
+      }
+      const parts = await Promise.all(groups);
       const cards = new Map();
       parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
-      let from = began;
-      for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
-        const { paged, newest } = await recentPass(cards, from);
-        if (!paged) return [...cards.values()];
-        from = newest;
+      // The groups have answered; a failure from here on is the read again of the cards changed
+      // meanwhile, said as such (recheck), not as a failed read of the closed cards.
+      try {
+        let from = began;
+        for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
+          const { paged, newest } = await recentPass(cards, from);
+          if (!paged) return [...cards.values()];
+          from = newest;
+        }
+        return (await M.api.getAll(windowPath)).items;
+      } catch (err) {
+        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { recheck: true });
       }
-      return (await M.api.getAll(windowPath)).items;
     };
-    let items = await readList();
+    // The first draw takes the open groups' cards; the closed columns say they are being read until
+    // the whole read is in (closedPending), or why it failed (closedError). Each read has a number
+    // (reads); an answer is drawn only when no later read's has been (applied), so a slow first read
+    // never replaces a reload's cards, and a failed reload leaves the first read to fill the columns.
+    let closedPending = true;
+    let closedError = null;
+    let reads = 1;
+    let applied = 0;
+    const apply = (read) => { if (read < applied) return false; applied = read; return true; };
+    let openShown;
+    const openRead = new Promise((resolve) => { openShown = resolve; });
+    const firstRead = readList((open) => openShown(open));
+    firstRead.catch(() => {});
+    let items = await Promise.race([openRead, firstRead]);
     let boardItems = items;
     let searchVersion = 0;
     let hubResults = false;
@@ -777,7 +807,13 @@ window.Maity = window.Maity || {};
     }
 
     async function reload(focusKey, inPanel) {
-      boardItems = await readList();
+      const read = ++reads;
+      const fresh = await readList();
+      if (!apply(read)) return;
+      boardItems = fresh;
+      closedPending = false;
+      closedError = null;
+      sayClosed();
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
@@ -945,9 +981,103 @@ window.Maity = window.Maity || {};
           }
         },
       },
-      h("h3", { class: "column-head" }, label, h("span", { class: "count" }, String(cards.length))),
-      cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+      h("h3", { class: "column-head" }, label, closedWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
+      closedWaiting(s) && !cards.length
+        ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
+        : cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+      if (closedWaiting(s) && !closedError) col.setAttribute("aria-busy", "true");
       return col;
+    }
+
+    // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
+    const closedWaiting = (s) => (closedPending || !!closedError) && !hubResults && (s === "done" || s === "cancelled");
+    const closedWords = () => (closedError
+      ? (closedError.recheck
+        ? M.t("board.closed.recheck_failed", { reason: closedError.message || String(closedError) })
+        : M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
+      : M.t("board.closed.loading"));
+    // What the closed read is doing, said once for a screen reader: the columns are drawn anew, so
+    // the live region stands outside them and keeps its place from pending to done or failed.
+    const closedStatus = h("p", { class: "visually-hidden", role: "status", "aria-live": "polite" });
+    const sayClosed = () => { closedStatus.textContent = closedPending || closedError ? closedWords() : ""; };
+    // The focused element in the columns, so that the next draw can find it again: its data-focus
+    // key, or its card and its place among that card's controls and links (a card's title link has
+    // no key). Returns what puts the focus back after the draw, or null when it was elsewhere.
+    const FOCUSABLE = "a, button, select, input, textarea";
+    // A control of the opened card's panel, by its data-focus key, its id, or its place among the
+    // panel's focusable elements.
+    const controlKey = (el, all) => el.getAttribute("data-focus") || el.getAttribute("id") || "#" + all.indexOf(el);
+    const controlIn = (root, key) => {
+      const all = Array.from(root.querySelectorAll(FOCUSABLE));
+      return all.find((e) => controlKey(e, all) === key) || null;
+    };
+    // The late draw, the one redraw no action of the reader starts, draws the panel's card part
+    // anew, since its subtask list and dependency lines read the closed cards that came with it
+    // (review of #1622). What the reader chose or typed in its controls and has not saved, each
+    // control's state against how it was drawn (panelDrawn), is carried onto the controls drawn
+    // anew, and an open New subtask form is moved into the new part as it is, its draft and the
+    // focus in it included, where the new part offers one.
+    let panelDrawn = null;
+    let panelPart = null;
+    const CONTROLS = "input, select, textarea";
+    const controlsOf = (root) => {
+      const all = Array.from(root.querySelectorAll(CONTROLS));
+      return all.map((e) => [controlKey(e, all), e]);
+    };
+    const choiceBox = (el) => el.getAttribute("type") === "checkbox" || el.getAttribute("type") === "radio";
+    const stateOf = (el) => (el.tagName === "SELECT" && el.multiple
+      ? Array.from(el.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value")).join("\n")
+      : choiceBox(el) ? String(!!el.checked) : String(el.value == null ? "" : el.value));
+    const setState = (el, state) => {
+      if (el.tagName === "SELECT" && el.multiple) {
+        const chosen = state.split("\n");
+        Array.from(el.querySelectorAll("option")).forEach((o) => { o.selected = chosen.includes(o.getAttribute("value")); });
+      } else if (choiceBox(el)) el.checked = state === "true";
+      else if (el.tagName !== "SELECT" || Array.from(el.querySelectorAll("option")).some((o) => o.getAttribute("value") === state)) el.value = state;
+    };
+    const drawnState = (part) => new Map(controlsOf(part).map(([k, e]) => [k, stateOf(e)]));
+    // The open New subtask form of a part (its button and box), found by the button's key.
+    const openEditor = (part, id) => {
+      const start = Array.from(part.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === "subtask:" + id);
+      return start ? { start, open: start.getAttribute("aria-expanded") === "true" } : null;
+    };
+    function showPanelPart(part, keepTyped, data) {
+      const typed = keepTyped && panelPart && panelDrawn
+        ? controlsOf(panelPart).filter(([k, e]) => panelDrawn.has(k) && panelDrawn.get(k) !== stateOf(e)).map(([k, e]) => [k, stateOf(e)])
+        : [];
+      const was = keepTyped && panelPart ? openEditor(panelPart, data.id) : null;
+      const spot = was && was.open ? openEditor(part, data.id) : null;
+      if (spot) spot.start.parentNode.parentNode.replaceChild(was.start.parentNode, spot.start.parentNode);
+      if (panelPart) panel.update(part);
+      panelPart = part;
+      panelDrawn = drawnState(part);
+      const fresh = new Map(controlsOf(part));
+      typed.forEach(([k, state]) => { if (fresh.has(k)) setState(fresh.get(k), state); });
+    }
+    function focusSpot() {
+      const at = document.activeElement;
+      if (at && panel && panel.el.contains(at)) {
+        const key = controlKey(at, Array.from(panel.el.querySelectorAll(FOCUSABLE)));
+        const opened = panel;
+        return () => {
+          if (panel !== opened) return;
+          const again = controlIn(panel.el, key);
+          if (again) again.focus(); else panel.focus();
+        };
+      }
+      if (!at || !columnsBox.contains(at)) return null;
+      const key = at.getAttribute("data-focus");
+      let article = at;
+      while (article && article !== columnsBox && !(article.tagName === "ARTICLE" && article.getAttribute("data-card"))) article = article.parentNode;
+      const id = article && article !== columnsBox ? article.getAttribute("data-card") : null;
+      const place = id ? Array.from(article.querySelectorAll(FOCUSABLE)).indexOf(at) : -1;
+      return () => {
+        if (key) { refocus(key); if (columnsBox.contains(document.activeElement)) return; }
+        const again = id ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === id) : null;
+        const target = again && place >= 0 ? Array.from(again.querySelectorAll(FOCUSABLE))[place] : null;
+        if (target) target.focus();
+        else status.el.focus();
+      };
     }
 
     let byId = {};
@@ -959,7 +1089,9 @@ window.Maity = window.Maity || {};
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
       panelCard = c;
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }),
+      const part = card(ctx, c, byId, manage, true);
+      panelPart = null;
+      panel = M.cardPanel.render(ctx, c, part, () => M.route.go(ctx.link("board"), { replace: true }),
         (updated) => {
           // Every copy, the list a search replaced included, which comes back when it ends; and the card
           // this panel was opened for, whichever panel is open by now.
@@ -967,6 +1099,7 @@ window.Maity = window.Maity || {};
           if (c.id === updated.id && c !== updated) Object.assign(c, updated);
           draw();
         });
+      showPanelPart(part, false, c);
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       // Closed, or another card opened, before the timer: the focus stays where that left it.
@@ -981,6 +1114,8 @@ window.Maity = window.Maity || {};
       boardBody.className = "board-body";
       panel = null;
       panelCard = null;
+      panelPart = null;
+      panelDrawn = null;
     }
 
     function shown(c) {
@@ -996,7 +1131,8 @@ window.Maity = window.Maity || {};
       return true;
     }
 
-    function draw() {
+    // keepTyped: the late draw, which keeps what the reader typed in the opened card's panel.
+    function draw(keepTyped) {
       areaOptions();
       needsOptions();
       byId = {};
@@ -1010,9 +1146,10 @@ window.Maity = window.Maity || {};
       columns = {};
       COLUMNS.forEach(([s]) => { columns[s] = standing.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
-      if (!items.length && !searchInput.value) {
+      if (!items.length && !searchInput.value && !closedPending && !closedError) {
         append(intro, h("p", { class: "first-hint" }, M.t("board.empty")));
-      } else if (!visible.length) {
+      } else if (!visible.length && !(closedWaiting("done") && inGroup(filter.column, "done"))) {
+        // No verdict while the closed cards the filter would show are still unknown.
         append(intro, h("p", { class: "muted" }, M.t("board.no_match")));
       }
       append(clear(columnsBox),
@@ -1022,7 +1159,10 @@ window.Maity = window.Maity || {};
             h("h3", { class: "column-head" }, M.t("board.column.unknown")),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
-      if (panel) panel.update(card(ctx, byId[panel.id] || panelCard, byId, manage, true));
+      if (panel) {
+        const data = byId[panel.id] || panelCard;
+        showPanelPart(card(ctx, data, byId, manage, true), !!keepTyped, data);
+      }
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         // A folded child: its parent unfolds, and the child's row is marked.
@@ -1066,9 +1206,13 @@ window.Maity = window.Maity || {};
       try {
         const result = await M.api.getAll(ctx.base + "/tasks?status=all&q=" + encodeURIComponent(query));
         if (version !== searchVersion) return;
+        // Outside the window by its closed_at, not by the loaded cards: while the closed group is
+        // still read, those are the open groups' alone (review of #1622).
         const loaded = new Set(boardItems.map((c) => c.id));
+        // closed_after is strict (§6, docs/api.md): a card closed at the cutoff is outside.
+        const inWindow = (c) => !!c.closed_at && Date.parse(c.closed_at) > Date.parse(since);
         items = result.items.map((c) => ({ ...c,
-          _searchClosed: !loaded.has(c.id) && ["done", "cancelled"].includes(c.status) }));
+          _searchClosed: ["done", "cancelled"].includes(c.status) && !loaded.has(c.id) && !inWindow(c) }));
         hubResults = true;
         searchStatus.textContent = M.t("board.search.found", { count: items.length });
         draw();
@@ -1156,8 +1300,45 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-area" }, M.t("board.filter.area")), areaSel,
         h("label", { for: "board-needs" }, M.t("cards.new.field.needs")), needsFilter,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
-      searchStatus, formBox, status.el, intro, wantedNote, boardBody);
+      searchStatus, formBox, status.el, intro, wantedNote, closedStatus, boardBody);
+    sayClosed();
     let markedCard = draw();
+    // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
+    // search filters it too; a hub search keeps its own results), and the focus put back on the
+    // element in the columns that had it (focusSpot), after a failed read too, where that element
+    // still stands in a column. One whose card is now folded under a parent that came with the closed
+    // cards, or is gone from the columns, hands the focus to the status line. A board left from a
+    // closed card finds that card only now, and its title takes the focus if nothing else took it
+    // meanwhile. A reload drawn meanwhile supersedes it.
+    const markedFirst = !!markedCard;
+    firstRead.then((all) => {
+      if (!apply(1)) return;
+      const at = document.activeElement;
+      const back = focusSpot();
+      boardItems = all;
+      closedPending = false;
+      sayClosed();
+      if (!hubResults) items = boardItems;
+      else {
+        // A hub search drawn meanwhile: a card it found that the board has now loaded is in the window.
+        const loaded = new Set(boardItems.map((c) => c.id));
+        items = items.map((c) => (c._searchClosed && loaded.has(c.id) ? { ...c, _searchClosed: false } : c));
+      }
+      const found = draw(true);
+      if (back) back();
+      else if (found && !markedFirst && returning && (!at || at === document.body)) {
+        const title = found.querySelector("a.card-open");
+        window.setTimeout(() => (title || found).focus(), 0);
+      }
+    }, (err) => {
+      if (applied > 1) return;
+      const back = focusSpot();
+      closedPending = false;
+      closedError = err;
+      sayClosed();
+      draw(true);
+      if (back) back();
+    });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {
       searchInput.value = kept.search;

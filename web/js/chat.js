@@ -360,7 +360,9 @@ window.Maity = window.Maity || {};
     const removed = isRemoved(msg);
     const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
       { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("team", id) : null), ctx }));
-    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
+    // The message an event's link opened the chat at stays marked (o.target, reveal() below).
+    const target = o.target && String(msg.seq) === o.target ? " seq-target" : "";
+    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + target, "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
         M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
@@ -462,11 +464,17 @@ window.Maity = window.Maity || {};
   // (main's padding, the product line of §16.13). Measuring from the
   // header's bottom left out what stands between (a banner, the toolbar's
   // margin) and everything below, so the page scrolled past the composer
-  // (tsk-j10w2hsm1h90). Measured again on a resize and when the page around
-  // it changes; the visual viewport shrinks with a phone's on-screen
-  // keyboard, 100dvh does not everywhere.
-  // The lines of history an open chat keeps in view however small the screen.
+  // (tsk-j10w2hsm1h90). When the fixed chrome plus a history floor would run
+  // past the window but the chrome plus HISTORY_MIN fits, the height stops at
+  // the window edge so the input stays on screen (tsk-df4tcq83pnf6); the
+  // product line may then sit just below the fold. Measured again on a
+  // resize and when the page around it changes; the visual viewport
+  // shrinks with a phone's on-screen keyboard, 100dvh does not everywhere.
+  // Preferred lines of history above the product line when the window has room.
   const HISTORY_LEAST = 60;
+  // The least history worth stopping at the window edge for: below it the
+  // input in view shows no message, so the page scrolls instead (tsk-df4tcq83pnf6).
+  const HISTORY_MIN = 24;
   // Full screen (the owner's request, tsk-fnch2yxp2kk1): the open chat covers the window, the
   // page around it hidden, to read on a phone. A button in the chat's heading row, as the list's
   // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
@@ -599,8 +607,36 @@ window.Maity = window.Maity || {};
         watched = parts;
       }
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
-      const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
-      const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
+      // Floor is the pane's non-history chrome only. A +HISTORY_LEAST floor that
+      // is taller than the window put the composer past the bottom edge on a
+      // short phone (tsk-df4tcq83pnf6); the page scrolled and the input was off
+      // screen. Keep the composer in the window when that chrome plus
+      // HISTORY_MIN fits.
+      const floor = Number.isFinite(fixed) ? fixed : 0;
+      const toFooter = Math.floor(height - (box.top + scrolled) - below);
+      const toWindow = Math.floor(height - (box.top + scrolled));
+      let px;
+      if (toFooter >= floor + HISTORY_LEAST) {
+        // History has room above the product line; the page need not scroll.
+        px = toFooter;
+      } else if (toWindow >= floor + HISTORY_LEAST) {
+        // Preferred history still fits in the window. Keep that floor and let
+        // the product line sit just below the fold rather than shrinking the
+        // message list (composer 3x / tall chrome with a banner).
+        px = Math.max(toFooter, floor + HISTORY_LEAST);
+      } else if (toWindow >= floor + HISTORY_MIN) {
+        // Fixed chrome fits, but not with HISTORY_LEAST: stop at the window
+        // edge so the input stays on screen; history may shrink below the
+        // preferred floor, not below HISTORY_MIN (short phone, tsk-df4tcq83pnf6).
+        px = toWindow;
+      } else {
+        // Fixed chrome with HISTORY_MIN taller than the window below the layout
+        // (a tall banner on a short phone, or a group's Manage chrome): keep a
+        // history floor so the composer is not clipped under the product line;
+        // the page may scroll.
+        px = Math.max(240, floor + HISTORY_LEAST, toFooter);
+      }
+      const value = Math.max(0, px) + "px";
       if (layout.style.getPropertyValue && layout.style.getPropertyValue("--chat-h") === value) return;
       layout.style.setProperty("--chat-h", value);
     };
@@ -663,10 +699,33 @@ window.Maity = window.Maity || {};
     };
   }
 
+  // The chat opened for one message (`#seq-<n>`, js/event.js, docs/api.md §8.9): older pages
+  // are read as Show earlier reads them, one at a time, until the message is drawn, then it is
+  // scrolled to; the timeline marks it (opts.target). At most REVEAL_PAGES pages, so a link to
+  // a message far back costs a known number of requests, as opening a chat does
+  // (tsk-r1adgwp0a5dr); past them, or for a seq above the chat's newest, the chat says it did
+  // not reach the message, and Show earlier goes on from where it stopped.
+  // more: { can() — an older page is there and the message would be in it, read() }.
+  const REVEAL_PAGES = 10;
+  async function reveal(messages, seq, more, follow) {
+    const find = () => Array.from(messages.querySelectorAll("li.msg")).find((li) => li.getAttribute("data-seq") === seq);
+    let li = find();
+    for (let n = 0; !li && n < REVEAL_PAGES && more.can(); n += 1) {
+      await more.read();
+      li = find();
+    }
+    if (!li) {
+      if (messages.parentNode) messages.parentNode.insertBefore(h("p", { class: "muted seq-missed", role: "status" }, M.t("event.not_reached", { seq })), messages);
+      return null;
+    }
+    follow.open(li);
+    return li;
+  }
+
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
   M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC };
+    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -737,7 +796,7 @@ window.Maity = window.Maity || {};
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
     // The human party deletes a file of the chat (§8.7), whoever sent it.
-    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true };
+    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true, target: M.route.seqTarget() };
     let draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // Everything loaded drawn again as one timeline (days, groups): after
@@ -1019,6 +1078,12 @@ window.Maity = window.Maity || {};
       follow.open(messages.querySelector(".new-line"));
       // On a phone the chat replaced the list: take the focus to its heading.
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+      if (drawOpts.target) {
+        reveal(messages, drawOpts.target, {
+          can: () => earlier !== null && (!loaded.length || Number(drawOpts.target) < loaded[0].seq),
+          read: older,
+        }, follow);
+      }
     }, 0);
   };
 })(window.Maity);

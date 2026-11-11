@@ -163,7 +163,7 @@ def test_mail_contains_only_the_signin_link_and_optional_code(
     assert body.count("https://") == 1
     assert link in body
     assert "Firefox" in body and "Linux" in body and "192.0.2.1" in body
-    assert ("012 345" in body) == (code is not None)
+    assert ("012345" in body) == (code is not None)
     assert "unsubscribe" not in body
 
 

@@ -96,15 +96,14 @@ def _body(
     browser claims, the link (not in a step-up's mail), the code, and what to do if it was not
     the human (§2.8.8)."""
     name = " ".join(name.split())
-    spaced = f"{code[:3]} {code[3:]}"
     where = ip or "?"
     claimed = f"{browser or '?'} / {system or '?'}"
     words = catalog.section("factor", language)
     by_password = method == "password"
     use = (
-        words["with_link"].format(link=link, code=spaced)
+        words["with_link"].format(link=link, code=code)
         if link
-        else words["without_link"].format(code=spaced)
+        else words["without_link"].format(code=code)
     )
     return words["mail"].format(
         name=name,
@@ -257,14 +256,13 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
         )
     )
     words = catalog.section("factor", preferences.text_language(conn, row.human_id))
-    spaced = f"{code[:3]} {code[3:]}"
     outbox.enqueue(
         conn,
         kind="sign_in",
         to=address.address,
         human_id=row.human_id,
         subject=words["confirm_subject"],
-        body=words["confirm_mail"].format(code=spaced),
+        body=words["confirm_mail"].format(code=code),
     )
 
 
