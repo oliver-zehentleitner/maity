@@ -6065,3 +6065,38 @@ columns, the ones a reader works in, had long answered.
   changed card as well. Redrawing without moving the form (round 3) lost
   the draft: the form has no control in the redrawn part to carry it to.
 
+
+## A closed column draws the 50 cards closed last; Show more draws the rest
+
+**Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10
+**See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
+**Revisit when:** the closed window or the hub's board shape changes, or a full redraw of the board is measured over about 200 ms again
+
+The board still reads every card of the closed window (the entry above). The
+Done and Cancelled columns draw only the 50 cards closed last (by
+`closed_at`), in the column's own order, and a button below them shows how
+many more there are ("Show 11 more closed cards"). The column's count stays
+the whole number. The button draws that column whole for the rest of the
+board view, and the first card it added takes the focus, since the button is
+gone. A card the board is opened on (by its link, or coming back from it) is
+drawn wherever it stands, and a subtask folded under a parent with that
+parent, since it is found only under a drawn parent. A hub search's
+columns follow the same rule.
+
+**Reason:** every redraw of the board (a filter change, each keystroke of
+the board search, a card's update) drew every closed card: with 783 a full
+redraw took about 640 ms (2.7 s on a CPU four times slower), with 100 about
+100 ms (0.44 s). The closed cards are the ones a reader works in least; the
+newest are the ones looked for.
+
+**Rejected alternatives:**
+- A leaner card shape for the board's list, without the largest fields: a
+  contract change that saves bytes but not the drawing.
+- A shorter closed window by default: it hides closed cards from the read,
+  not only from the drawing, and changes what the board offers.
+- The first 50 in the column's order: that order is by rank and creation,
+  so it would show old closed cards and hide the ones just closed.

@@ -453,6 +453,10 @@ window.MAITY_I18N["nl"] = {
   "board.closed.failed": "De gesloten kaarten konden niet worden gelezen: {reason}",
   "board.closed.loading": "De gesloten kaarten worden gelezen…",
   "board.closed.recheck_failed": "Kon niet controleren of de gesloten kaarten tijdens het lezen zijn gewijzigd: {reason}",
+  "board.closed.show_more": {
+    "one": "Nog {count} gesloten kaart tonen",
+    "other": "Nog {count} gesloten kaarten tonen"
+  },
   "board.column.other": "Overig",
   "board.column.unknown": "Onbekende status",
   "board.contract.arbiter_admins": "de admins",
