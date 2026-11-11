@@ -264,7 +264,9 @@ def test_a_cover_in_one_project_and_chatter_in_another_answers_at_once(
     one, two = flow.agent(make_client, owner), flow.agent(make_client, owner)
     three, four = flow.agent(make_client, owner, "other"), flow.agent(make_client, owner, "other")
     # A message in each project before the wait: its item head then stands past the agents'
-    # joins, so of the rows after the wait began only the cover is one the look does not pass.
+    # joins. This head's look reads from the position of any kind and needs none of it; they
+    # keep the test red for the right reason on a look from the item heads (a1f50690), where
+    # B's joins would make it derive anyway.
     _between(one, two, 1)
     _between(three, four, 1, other)
 
