@@ -2729,6 +2729,7 @@ window.MAITY_I18N["de"] = {
   "members.refused.areas_too_long": "Höchstens 50 Bereiche.",
   "members.refused.capabilities_too_long": "Höchstens 20 Fähigkeiten.",
   "members.refused.capabilities_unknown": "Eine Fähigkeit, die dieser Hub nicht kennt.",
+  "members.refused.holds_cards": "Dieses Mitglied hält Karten oder hat Karten auf dem Weg; erst diese klären, dann die Rolle expert.",
   "members.refused.humans_only": "Nur ein Mensch kann Besitzer sein.",
   "members.refused.humans_only_change": "nur ein Mensch darf diese Änderung vornehmen",
   "members.refused.last_owner": "Der letzte Besitzer des Projekts kann nicht herabgestuft oder entfernt werden.",

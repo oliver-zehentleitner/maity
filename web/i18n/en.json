@@ -5285,9 +5285,9 @@
   "members.expert.sources.label": "Sources",
   "members.expert.sources.hint": "Repository paths this member has learned, comma separated, at most 20; a merge that changes one wakes it.",
   "members.expert.sources.placeholder": "docs/api.md, context/",
-  "members.expert.save": "Save as expert",
-  "members.expert.saving": "Saving the expert's fields",
-  "members.expert.saved": "{name}'s fields as expert are saved.",
+  "members.expert.save": "Save expert fields",
+  "members.expert.saving": "Saving expert fields",
+  "members.expert.saved": "{name}'s expert fields are saved.",
   "members.expert.refused.expert_only": "This member no longer has the role expert; only then are there these fields.",
   "members.expert.refused.for_too_long": "\"Expert for\" takes at most 120 characters.",
   "members.expert.refused.sources_too_long": "At most 20 sources.",
@@ -5297,5 +5297,6 @@
   "role.expert.help": "answers questions about the sources its owner names, with the source; takes no cards, writes no code, does not review",
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "every expert",
-  "settings.onboarding.role.expert": "Role: every expert"
+  "settings.onboarding.role.expert": "Role: every expert",
+  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert."
 }

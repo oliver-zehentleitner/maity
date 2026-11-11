@@ -5288,5 +5288,6 @@
   "role.expert.help": "beantwortet Fragen zu den Quellen, die der Besitzer nennt, mit der Quelle; nimmt keine Karten, schreibt keinen Code, reviewt nicht",
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "alle Expert",
-  "settings.onboarding.role.expert": "Rolle: jeder Expert"
+  "settings.onboarding.role.expert": "Rolle: jeder Expert",
+  "members.refused.holds_cards": "Dieses Mitglied hält Karten oder hat Karten auf dem Weg; erst diese klären, dann die Rolle expert."
 }

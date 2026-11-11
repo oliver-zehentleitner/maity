@@ -11635,6 +11635,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (x.id === "agt-c") x.trust = "admin";
     if (x.id === "agt-r") x.trust = "guest";
   });
+  // Agent D gives up its card first: the role expert waits until it holds none (§2.3, holds_cards).
+  exAgF["maity/tasks.json"].items.forEach((t) => { if (t.assigned_to === "agt-d") t.assigned_to = null; if (t.claim && t.claim.holder === "agt-d") t.claim = null; });
   win.MAITY_FIXTURES = exAgF;
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
   const exAg = (id) => asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/" + id, { expert_for: "the contract" }));
@@ -13911,34 +13913,72 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An expert's fields (§6.2 "An expert's fields", tsk-cwtw22tta8y8): its owner sets them in a
   // form of their own, sent alone; the list shows what it answers about next to the role.
   expect(!main.querySelector("form.member-expert"), "expert: no expert form while the role is not expert");
+  // Agent B holds cards: the hub refuses the role expert until they are settled (§2.3, holds_cards).
   owRole().value = "expert";
   main.querySelector("form.owner-role").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  const exFor = () => byId("member-expert-for-agt-b"), exSources = () => byId("member-expert-sources-agt-b");
+  expect(text(main).includes("This member holds cards or has cards on the way to it") && !text(main).includes("Reload and try again")
+    && !main.querySelector("form.member-expert"),
+    "expert: a role change the hub refuses because the member holds cards says so, not 'reload' " + text(main).slice(0, 400));
+  await orPatch("/projects/maintainer/maity/members/agt-b", { role: "coder" });
+  // The Reviewer holds none: it becomes an expert.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
+  orManage("Reviewer").click(); for (let k = 0; k < 4; k++) await tick();
+  byId("owner-role-agt-r").value = "expert";
+  main.querySelector("form.owner-role").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const exFor = () => byId("member-expert-for-agt-r"), exSources = () => byId("member-expert-sources-agt-r");
+  const exSave = () => main.querySelector("form.member-expert").dispatch("submit");
+  const exPath = "/projects/maintainer/maity/members/agt-r";
   expect(exFor() && exSources() && exFor().value === "" && exSources().value === "",
     "expert: with the role expert its owner gets the two fields, empty");
   exFor().value = "  Maity contract,\n recorded reasons "; exSources().value = "docs/api.md, context/, ../up";
-  main.querySelector("form.member-expert").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  exSave(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(orPatches[orPatches.length - 1][1]) === JSON.stringify({ role: "expert" })
-    && exSources().getAttribute("aria-invalid") === "true" && text(byId("member-expert-sources-agt-b-error")).includes("repository path"),
+    && exSources().getAttribute("aria-invalid") === "true" && text(byId("member-expert-sources-agt-r-error")).includes("repository path"),
     "expert: a source that is no repository path is said at the field and nothing is sent");
   exSources().value = "docs/api.md, context/, docs/api.md";
-  main.querySelector("form.member-expert").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b",
+  exSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify([exPath,
     { expert_for: "Maity contract, recorded reasons", expert_sources: ["docs/api.md", "context/"] }]),
     "expert: the two fields are sent alone, whitespace folded and duplicates dropped " + JSON.stringify(orPatches[orPatches.length - 1]));
-  const exRow = () => main.querySelectorAll("tr.member").find((r) => r.getAttribute("data-member") === "agt-b");
+  const exRow = () => main.querySelectorAll("tr.member").find((r) => r.getAttribute("data-member") === "agt-r");
   expect(text(exRow()).includes("Expert for: Maity contract, recorded reasons") && exFor().value === "Maity contract, recorded reasons"
     && exSources().value === "docs/api.md, context/",
     "expert: the list names what it answers about next to its role; the form shows what the hub holds");
-  main.querySelector("form.member-expert").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(orPatches[orPatches.length - 1][1].expert_for && text(main).includes("Nothing changed."), "expert: an unchanged save sends nothing");
-  await go("#/maintainer/maity/team/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  const exSent = orPatches.length;
+  exSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(orPatches.length === exSent && text(main).includes("Nothing changed."), "expert: an unchanged save sends nothing");
+  await go("#/maintainer/maity/team/agt-r"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("Expert for: Maity contract, recorded reasons") && text(main).includes("sources docs/api.md, context/"),
     "expert: the member's page shows what it answers about and its sources");
-  await orPatch("/projects/maintainer/maity/members/agt-b", { role: "coder" });
-  const exHeld = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b");
-  expect(exHeld && exHeld.role === "coder" && exHeld.expert_for === null && exHeld.expert_sources.length === 0,
+  // Emptied in the form: sent as null and [] (§6.2), and the line is gone.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
+  orManage("Reviewer").click(); for (let k = 0; k < 4; k++) await tick();
+  exFor().value = "  "; exSources().value = "";
+  exSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify([exPath, { expert_for: null, expert_sources: [] }])
+    && !text(exRow()).includes("Expert for"),
+    "expert: emptied fields are sent as null and [], and the list drops the line " + JSON.stringify(orPatches[orPatches.length - 1]));
+  // The role changed elsewhere while the form was open: the hub's expert_only is said in words.
+  await orPatch(exPath, { role: "reviewer" });
+  exFor().value = "the contract";
+  exSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("no longer has the role expert"),
+    "expert: the hub's expert_only refusal is said in words " + text(main).slice(0, 400));
+  const exHeld = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-r");
+  expect(exHeld && exHeld.role === "reviewer" && exHeld.expert_for === null && exHeld.expert_sources.length === 0,
     "expert: a role change away from expert clears both fields");
+  // Who is offered the form (members.js expertPart): the agent's owner or members:admin, nobody else.
+  {
+    const exM = { id: "agt-x", kind: "agent", role: "expert", owner_id: "hum-owner", expert_for: null, expert_sources: [] };
+    const exParts = (me, canAdmin) => win.Maity.memberParts({ me, canAdmin, members: [], memberById: {} },
+      { status: win.Maity.statusLine(), keyed: (k, el) => el, edits: new Map(), open: new Set(), reload: async () => {}, redraw: () => {} });
+    const stranger = exParts({ id: "hum-other", kind: "human" }, false).expertPart(exM, "/x");
+    const owner = exParts({ id: "hum-owner", kind: "human" }, false).expertPart(exM, "/x");
+    const admin = exParts({ id: "hum-other", kind: "human" }, true).expertPart(exM, "/x");
+    const notExpert = exParts({ id: "hum-owner", kind: "human" }, true).expertPart(Object.assign({}, exM, { role: "coder" }), "/x");
+    expect(stranger === null && owner && admin && notExpert === null,
+      "expert: the form is offered to the agent's owner and to members:admin, not to another member, and only on an expert");
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
   orManage("Agent A").click(); for (let k = 0; k < 4; k++) await tick();
   expect(!byId("owner-role-agt-a") && text(main.querySelector(".owner-role-fixed")).includes("The project's admins change it"),

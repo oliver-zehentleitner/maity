@@ -107,6 +107,10 @@ window.Maity = window.Maity || {};
     if (err.code === "forbidden" && err.details && err.details.reason === "join_rule") {
       return { message: M.t("members.owner_role.refused_join_rule") };
     }
+    // §2.3 "The expert": the role expert waits until the member holds no card and none is on its way.
+    if (err.code === "conflict" && err.details && err.details.reason === "holds_cards") {
+      return { message: M.t("members.refused.holds_cards") };
+    }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
     const said = Object.entries(fields).map(([f, reason]) => (Object.hasOwn(REFUSALS, f + ":" + reason) ? REFUSALS[f + ":" + reason]()

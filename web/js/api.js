@@ -731,6 +731,15 @@ window.Maity = window.Maity || {};
   // give an agent of their own (§3.1: not ops, not proxy).
   const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // §2.3 "The expert" (routes/members.py): the role expert waits until the member holds no
+  // card and is assigned no open one; the fixture has no takeovers or covers to add.
+  function holdsCards(slug, target, body, path) {
+    if (body.role !== "expert" || target.role === "expert") return;
+    const items = (fixtures()[slug + "/tasks.json"] || { items: [] }).items;
+    if (items.some((t) => !["done", "cancelled"].includes(t.status) && (t.assigned_to === target.id || (t.claim && t.claim.holder === target.id)))) {
+      fail(409, "conflict", "the member holds cards or has cards on the way to it; settle them before the role is expert", path, { reason: "holds_cards" });
+    }
+  }
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
     if (who.kind !== "agent") return;
@@ -4735,6 +4744,7 @@ window.Maity = window.Maity || {};
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
           if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          holdsCards(m[1], target, body, path);
           if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
@@ -4784,6 +4794,7 @@ window.Maity = window.Maity || {};
         else if ((body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
       }
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      if ("role" in body) holdsCards(m[1], target, body, path);
       if (guarded(m[1], target)) {
         const consent = ("role" in body && body.role !== target.role) || ("trust" in body && body.trust !== target.trust)
           ? consentFor(m[1], who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
