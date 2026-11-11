@@ -2076,3 +2076,39 @@ do, and hid that the cause was the shape of its own command.
   allowed build or test command runs could then read it (ea36c196).
 - Rewriting the agent's command in a hook: hooks are switched off for
   placements (`--setting-sources user`), and the harness owns the command.
+
+## Placed agents open their pull requests with a granted gh, pinned to the clone's repository
+
+**Id:** 9f43804d-cfdc-4496-b07b-b01e65fc6410
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-mvywh1gykvpg (option o1), 2026-11-11, recorded on card tsk-3qb19f0r56zf: placed agents open their pull requests themselves, with `gh pr create` and `gh pr view` and api.github.com, scoped to the project's repository
+**Revisit when:** the runner gets a forge credential per placement or per repository, or gh adds another way to name a repository than `--repo`, `-R`, `GH_REPO` and the remote
+
+The runner's code adds no gh rule of its own. The operator grants it per
+repository in the runner's configuration (`allow` with `gh pr create` and
+`gh pr view`, `network` with `api.github.com`), which already applies to
+that repository's placements only. Every placed session denies gh's
+`--repo`, `-R` and `--hostname` (`adapters.GH_DENIED`), so gh works on
+the repository of the clone's remote. `GH_REPO` cannot be set, because a
+command with an assignment in front matches no allow rule.
+
+**Reason:** before this, an agent could push but not open its pull
+request, and the card's test needs it to. The forge login on the machine
+belongs to the account all agents push as, and it reaches every
+repository that account may. The command line is the only place left to
+pin the repository.
+
+**Rejected alternatives:**
+- A per-repository token: none exists on the machine, and arranging one is
+  the operator's business (open).
+- Granting all of `gh`, or api.github.com without a command: `gh api` and
+  any tool could then act on every repository the account reaches.
+- The runner or a person opening the pull request for the agent (the
+  fallback offered for the test): the maintainer chose that agents do it
+  themselves.
+
+**Known gap:** `gh pr view` with a URL of another repository still reads
+it. Reading is what the account may do anyway, and the deny rules do not
+parse URLs.
