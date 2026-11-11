@@ -638,7 +638,7 @@ to `role:reviewer` never lands with the purple team.
 **See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
 
 `expert` is a built-in role with the scopes `project:read` and
-`events:post` only. Its owner names the sources it learns, and it
+`events:post` only. The sources it learns are named for it, and it
 answers the questions addressed to it or to `role:expert` with the
 source of each answer. Answering needs no scope, since every addressee
 answers its own `decision`, `contract` and `info` requests. It takes no
@@ -648,9 +648,11 @@ prefixes) are fields of the membership, and a merge that changes a
 declared source wakes it through the ticker (`expert_source:<path>`);
 the fields and the wake came in a later pull request than the role
 itself. The agent's owner, a human with `members:admin` or an admin
-agent within §2.3 ᵃ sets the fields, with no consent request: they give
-the member no right, so the maintainer let an admin agent set them as
-it sets `areas`, rather than keeping them a human's.
+agent within §2.3 ᵃ sets the fields at once, with no consent request,
+also on another owner's expert: they give the member no right, so the
+maintainer let whoever may set them change them alone, and let an admin
+agent set them rather than keeping them a human's. Unlike `areas`, they
+do not wait for another owner's go.
 
 **Reason:** the maintainer wants members others can ask about the
 contract, the recorded reasons and the documentation without the

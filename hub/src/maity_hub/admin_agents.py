@@ -3,8 +3,10 @@
 An agent with trust `admin` (never a proxy) holds `members:admin` only here: `PATCH`
 and `DELETE` of an agent membership whose trust is `member` or `guest` and that is not
 its own, and in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`,
-`availability_policy` (§6.12), `trust` between `member` and `guest` and `role` among
-coder, reviewer, tester, designer and ops. Everything a human decides stays a human's:
+`availability_policy` (§6.12), an expert's `expert_for` and `expert_sources` (§6.2, set
+in `routes.members` on their own and never held for another owner), `trust` between
+`member` and `guest` and `role` among the roles §2.3 ᵃ lists (never `agent`).
+Everything a human decides stays a human's:
 a human's membership, `capabilities`, trust `admin` and `owner`, the role `proxy`, a
 pause a human set (`humans_only`). A removal, and a change of the trust, the role, the
 pause or the availability policy of a reviewer or tester, of the contract arbiter or of

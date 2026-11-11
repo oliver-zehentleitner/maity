@@ -5673,8 +5673,11 @@ an admin agent within §2.3 ᵃ (an agent member with trust `member` or
 `guest`, never itself), sets them on their own in a `PATCH` (`invalid`,
 `details.fields.<field>: "alone"`, when other fields come with them;
 `forbidden` with `scope: members:admin` for any other member), with no
-consent request: they give the member no right. The maintainer's
-decision of 2026-11-11: an admin agent sets them too. They exist only
+consent request: they give the member no right. They take effect at
+once, also on another owner's expert: they are not among the settings
+held for that owner ("Another owner's agent", below). The maintainer's
+decision of 2026-11-11 (req-408xjbpth5te): an admin agent sets them too,
+and whoever may set them changes them alone. They exist only
 while the role is `expert`: on any other member they are `invalid`
 (`expert_only`), and a role change away from `expert` clears both. A
 path that is no repository path is `invalid_path`. Every member view

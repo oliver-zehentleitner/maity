@@ -505,6 +505,48 @@ def test_who_sets_an_experts_fields(
     assert mixed.json()["error"]["details"]["fields"] == {"expert_for": "alone"}
 
 
+def test_an_admin_agent_sets_the_fields_only_within_its_bounds(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§2.3 ᵃ on this path: never a human, never itself, never a member with trust admin;
+    a proxy with trust admin is no admin agent; a guest expert is in bounds."""
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    admin_expert = flow.agent(make_client, owner, trust="admin", role="expert", areas=["docs/"])
+    proxy = flow.agent(make_client, owner, role="proxy")
+    guest_expert = flow.agent(make_client, owner, trust="guest", role="expert", areas=["docs/"])
+    members = owner.get(f"{PROJECT}/members").json()["items"]
+    [human] = [m for m in members if m["id"].startswith("hum-")]
+    peer = _fields(admin_agent, admin_expert.id, expert_for="x")
+    assert peer.status_code == 403, peer.text
+    assert peer.json()["error"]["details"] == {"scope": "members:admin"}
+    itself = _fields(admin_expert, admin_expert.id, expert_for="x")
+    assert itself.status_code == 403, itself.text
+    by_proxy = _fields(proxy, expert.id, expert_for="x")
+    assert by_proxy.status_code == 403, by_proxy.text
+    assert by_proxy.json()["error"]["details"] == {"scope": "members:admin"}
+    on_human = _fields(admin_agent, human["id"], expert_for="x")
+    assert on_human.status_code == 403, on_human.text
+    assert on_human.json()["error"]["details"]["reason"] == "humans_only"
+    guest = _fields(admin_agent, guest_expert.id, expert_sources=["docs/"])
+    assert guest.status_code == 200, guest.text
+
+
+def test_the_fields_of_another_owners_expert_change_at_once(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§6.2, the maintainer's decision req-408xjbpth5te: whoever may set the fields sets them
+    alone, also on another owner's expert, with no consent request (unlike `areas`)."""
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    friend = flow.human(make_client, migrated, "friend")
+    lent = factory.agent(migrated, project_id, friend.id, role="expert").agent_id
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    changed = _fields(admin_agent, lent, expert_sources=["docs/"])
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["expert_sources"] == ["docs/"]
+    assert _fields(owner, lent, expert_for="The API").status_code == 200
+
+
 @pytest.mark.parametrize(
     ("body", "field", "code"),
     [
