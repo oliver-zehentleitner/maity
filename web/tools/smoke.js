@@ -14536,10 +14536,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const projectDrawn = !!main.querySelector("section.view-board");
     expect(onProject[0] === "GET /bootstrap?project=maintainer/maity" && !singles(onProject).length && projectDrawn,
       "boot: a project view asks one GET /bootstrap?project=…, none of the six single reads, and draws " + JSON.stringify(onProject.slice(0, 8)));
+    // The window's part goes unused (the window was read a minute ago at most): it ends with the boot
+    // all the same, so a later read of the window asks its own route; /me and the members alike.
     A.length = 0;
-    await win.Maity.api.get("/me"); await win.Maity.api.get("/projects/maintainer/maity/members");
-    expect(JSON.stringify(A) === JSON.stringify(["GET /me", "GET /projects/maintainer/maity/members"]),
-      "boot: the parts end with the boot; a later read asks its own route " + JSON.stringify(A));
+    await win.Maity.api.get("/maintenance"); await win.Maity.api.get("/me"); await win.Maity.api.get("/projects/maintainer/maity/members");
+    expect(JSON.stringify(A) === JSON.stringify(["GET /maintenance", "GET /me", "GET /projects/maintainer/maity/members"]),
+      "boot: the parts end with the boot, an unused one too; a later read asks its own route " + JSON.stringify(A));
     A.length = 0;
     await go("#/all"); for (let k = 0; k < 10; k++) await tick();
     // Outside a project the bundle is the window, the session and /me; the inbox reads its projects itself.
