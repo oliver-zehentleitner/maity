@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import re
 from datetime import timedelta
@@ -18,7 +19,7 @@ from maity_hub.config import Settings
 from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences
 from maity_hub.routes import email_sign_in
-from tests import factory
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 KEY = base64.b64encode(b"s" * 32).decode()
@@ -188,8 +189,6 @@ def test_eligibility_is_rechecked_at_redemption(
 def test_response_sent_before_lookup(
     make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from fastapi.testclient import TestClient
-
     client, _ = setup(make_client, migrated)
     seen: list[str] = []
     real = email_sign_in.deliver
@@ -199,19 +198,34 @@ def test_response_sent_before_lookup(
         seen.append("lookup")
         real(*args)
 
-    async def wrapped(scope: Any, receive: Any, send: Any) -> None:
-        async def sent(message: Any) -> None:
-            if message["type"] == "http.response.body" and not message.get("more_body", False):
-                seen.append("response_sent")
-            await send(message)
+    body = json.dumps({"address": "ada@example.com"}).encode()
+    status: list[int] = []
 
-        await client.app(scope, receive, sent)
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": body, "more_body": False}
 
+    async def sent(message: Any) -> None:
+        if message["type"] == "http.response.start":
+            status.append(message["status"])
+        if message["type"] == "http.response.body" and not message.get("more_body", False):
+            seen.append("response_sent")
+
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": "/api/v1/auth/email-link", "raw_path": b"/api/v1/auth/email-link",
+        "root_path": "", "query_string": b"", "server": ("hub.example", 443),
+        "client": ("203.0.113.7", 50000),
+        "headers": [
+            (b"host", b"hub.example"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+    }  # fmt: skip
     monkeypatch.setattr(email_sign_in, "deliver", deliver)
-    response = TestClient(wrapped, base_url="https://hub.example").post(
-        "/api/v1/auth/email-link", json={"address": "ada@example.com"}
-    )
-    assert response.status_code == 202
+    # On the client's own loop, as its other requests (tests/flow.drive): the response is
+    # watched in `sent`, and the background lookup runs before the call returns.
+    flow.drive(client, scope, receive, sent)
+    assert status == [202]
     assert seen == ["response_sent", "lookup"]
     mail(migrated)
 
