@@ -17330,7 +17330,8 @@ provider's request ids never leave the runner with a record.
   lies more than 5 minutes after hub time is `invalid` (`details.reason:
   in_future`; 5 minutes is the clock skew allowed): a run that has ended
   cannot end later, and a time far ahead would never become `too_old`.
-  With `started_at` not after `ended_at`, every accepted record started
+  With `started_at` not after `ended_at`, neither time lies more than 5
+  minutes ahead, and every accepted record started
   between 30 days before and 5 minutes after its arrival; its record is
   kept 90 days, so once it is deleted the same body is `too_old`, and a
   run is never counted twice. Records are kept 90 days, so every
@@ -17368,7 +17369,10 @@ claim, takeover, cover, an `assign` that moves an expired claim to the
 assignee (§6.4), a rejoin with `replaces` (§6.5, §15.14), release, the
 removal of the holding member (§6.2), isolation, close and cancel. A
 claim that names no instance opens no holding until an instance holds
-it; a lease that runs out ends nothing, as it releases nothing. Retention: a holding is
+it; a lease that runs out ends nothing, as it releases nothing, and
+neither does a placement that closes: a revoked instance keeps its
+claims until a `replaces` join, a takeover or a human moves them
+(§6.17). Retention: a holding is
 kept while it is open and for 30 days after its own `until`, then
 deleted. No accepted run started more than 30 days before its arrival
 (above, "A late record"), so every holding a record can touch is still
