@@ -139,6 +139,20 @@ def test_the_stats_line_is_key_value_and_names_the_pool_of_a_server_database() -
     ]
 
 
+def test_the_stats_line_names_the_async_engines_pool_after_the_sync_one() -> None:
+    """Every call authenticates on the async engine (`deps._resolve`): its pool is the one a
+    burst of calls waits for first, so the line names it beside the sync engine's."""
+    engine = db.make_engine("postgresql+psycopg://u:p@localhost/h", 5, 3)
+    async_engine = db.make_async_engine("postgresql+psycopg://u:p@localhost/h", 2)
+    [line] = request_stats.lines(
+        request_stats.Window(), engine, 60, request_stats.LoadWindow(), async_engine.sync_engine
+    )
+    assert (
+        " pool_open=0 pool_checked_out=0 pool_max=8 "
+        "async_pool_open=0 async_pool_checked_out=0 async_pool_max=2 loop_late_avg_ms=0 "
+    ) in line
+
+
 def _engine() -> Engine:
     return db.make_engine("postgresql+psycopg://u:p@localhost/h", 5, 3)
 

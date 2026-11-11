@@ -1068,9 +1068,10 @@ connection driven through SQLAlchemy's greenlet bridge. About 1,900 functions th
 
 What the bridge has to keep:
 - **The cursor events.** They hang on `async_engine.sync_engine`, where SQLAlchemy runs them:
-  `write_guard` and `timing` install there (`create_app`), and the statement counts of the
-  tests (`tests/statements.py`) must hang there too once a route moves; none does yet. The
-  two hooks read a context variable the request sets; SQLAlchemy's greenlet runs in the
+  `write_guard` and `timing` install there (`create_app`). The statement counts of the tests
+  (`tests/statements.py`) listen on the `Engine` class for the call and count the async engines on
+  the test's database too, so a count includes the authentication without the test naming the
+  app's async engine. The two hooks read a context variable the request sets; SQLAlchemy's greenlet runs in the
   context of the task that awaits `run_sync`, so the request's human and tally reach them as the
   thread pool's copy of the context did. `hub/tests/test_async_engine.py` checks both.
 - **Nothing that blocks on the loop.** The body under `run_sync` runs on the event loop's thread.
@@ -1090,6 +1091,23 @@ What the bridge has to keep:
   where `PendingRollbackError` (a 500) took its place before.
 - **SQLite's connection setup.** The pragmas and `BEGIN IMMEDIATE` hang on the async engine's sync
   engine as on the sync one, so tests and single-server hubs run the same path as a server.
+
+**Authentication on the async engine (PR 2).** `deps._resolve` runs the authentication
+transaction (`authenticate`, the second-factor gate, the runner and project confinement, a
+bridge's `carry`, the pending account's confinement) through `run_sync`, and the session's end and
+a due revocation through the async engine too, with `retrying_async`. Every call thereby loses the
+authentication's thread hop. One hop before the route remains for every `/api/` call: the
+maintenance check in the middleware (`maintenance.window_now`, cached for a few seconds, in
+`run_in_threadpool`); it is a later PR's, as is the pre-check for a large body (`_precheck`).
+The audit of what that code does on the loop: statements on the authentication's own connection;
+SHA-256 and HMAC over a token or a signed request (`auth.caller`); the in-process nonce window's
+lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary lookup, a pruning pass
+over at most 10,000 entries); no password hash (scrypt runs in routes only: sign-in, registration,
+the account's settings), no mail, no forge call and no shared counter (`second_factor` counts a
+wrong code only in `verify`, a route). It writes no event and registers no `on_commit` step
+(`bridges.carry` included); it opens `engine.begin()`, not `events.transaction`, as before. On a server database the authentication takes one of the async
+engine's connections (`MAITY_DB_ASYNC_POOL_SIZE`, no overflow) for its few statements, so the
+`stats` line names that pool too (`async_pool_*`, `hub/context/serving.md`).
 
 **Reason:** the routes paid two thread hops (authentication, then the body) and competed for the
 thread pool's 40 threads, held long-polls and slow reads included. The bridge removes the hops for

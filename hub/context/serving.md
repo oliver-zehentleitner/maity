@@ -318,7 +318,9 @@ declared pattern is read, not the parameters, and a test holds it for an answere
 405. Once a minute
 `maity_hub.stats` logs `stats window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n>
 pool_checked_out=<n> pool_max=<n>` (`request_stats.Reporter`); the pool part is `pool=none` where
-the pool cannot be counted.
+the pool cannot be counted. The async engine's pool follows as `async_pool_open`,
+`async_pool_checked_out` and `async_pool_max` (`async_pool=none` on SQLite): every call
+authenticates on it (`deps._resolve`, tsk-v874y63b4z8p PR 2), so a burst waits there first.
 
 **Reason:** in the incident the pool was used up at a low request rate and nothing in the log said
 how long requests took or how many connections were out; the diagnosis worked from Traefik's log.
