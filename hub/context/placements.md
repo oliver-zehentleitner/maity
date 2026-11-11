@@ -365,8 +365,8 @@ counts in full for each and is marked as shared; instance and agent totals
 count every run once. A repeated `run_id` with other numbers is refused
 (`conflict`, `run_id_reused`), not answered as a repeat. The `run_id` is
 the call's only key: it carries no `Idempotency-Key`, the hub compares
-the body as sent, and a record that started more than 30 days ago is
-refused, so every `run_id` still accepted finds its record within the
+the body as sent, and a record that started more than 30 days ago, or ends more than
+5 minutes ahead of the hub, is refused, so every `run_id` still accepted finds its record within the
 90 days it is kept. The hub keeps a holding per card and instance
 (from, until) for this, since the card row keeps only its current claim,
 and takes the run's start as it saw the run open, not the runner's

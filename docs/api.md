@@ -17304,7 +17304,7 @@ provider's request ids never leave the runner with a record.
 | Field | Values | Meaning |
 |---|---|---|
 | `run_id` | the runner's id for the run, 1–64 printable ASCII characters | identifies the run within the placement |
-| `started_at`, `ended_at` | timestamps | clamped by the hub into [the placement's `created_at`, hub time], `started_at` not after `ended_at`, and `started_at` not before the run's start as the hub saw it (below, "Which cards a run counts for") |
+| `started_at`, `ended_at` | timestamps | `started_at` after `ended_at`, as sent, is `invalid`; clamped by the hub into [the placement's `created_at`, hub time], and `started_at` not before the run's start as the hub saw it (below, "Which cards a run counts for") |
 | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | integers from 0 to 10^12, or `null` | `null`: the harness did not report it |
 | `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string from 0 to 10^9 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
 
@@ -17326,7 +17326,14 @@ provider's request ids never leave the runner with a record.
   that counts a run twice shows it instead of hiding it.
 - **A late record.** A record whose `started_at`, as sent, lies more than
   30 days before hub time is `invalid` (`details.reason: too_old`), a
-  first send as much as a repeat. Records are kept 90 days, so every
+  first send as much as a repeat. A record whose `ended_at`, as sent,
+  lies more than 5 minutes after hub time is `invalid` (`details.reason:
+  in_future`; 5 minutes is the clock skew allowed): a run that has ended
+  cannot end later, and a time far ahead would never become `too_old`.
+  With `started_at` not after `ended_at`, every accepted record started
+  between 30 days before and 5 minutes after its arrival; its record is
+  kept 90 days, so once it is deleted the same body is `too_old`, and a
+  run is never counted twice. Records are kept 90 days, so every
   `run_id` the hub still accepts finds its stored record, and a resend
   never counts a run a second time after its record was folded.
 - The record writes no event: one per run would fill the history. The
@@ -17360,10 +17367,10 @@ cover, rejoin with `replaces` (§6.5, §15.14), release, isolation, close
 and cancel writes it: it opens a holding or ends one at that moment. A team claim
 opens none until an instance of the team calls (§6.5); a lease that
 runs out ends nothing, as it releases nothing. Retention: a holding is
-kept while it is open and for 30 days after its `until`, then deleted —
-for a card held by a placement's instance that is the placement's life
-plus 30 days. No accepted run started earlier than that (above, "A late
-record"), so every holding a record can touch is still there. A holding that touches [`started_at`, `ended_at`] at any point
+kept while it is open and for 30 days after its own `until`, then
+deleted. No accepted run started more than 30 days before its arrival
+(above, "A late record"), so every holding a record can touch is still
+there. A holding that touches [`started_at`, `ended_at`] at any point
 counts.
 
 **The run's start.** A runner could date `started_at` back and count one
