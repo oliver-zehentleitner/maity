@@ -14239,7 +14239,8 @@ maintainer's answer of 2026-11-11, `req-hmnarjnwwq8g`). One request
 per owner pair covers every agent of the owner that waits for the same
 side, each with a checkbox, all ticked by default; the owner may untick
 any, and an agent left unticked or waiting later asks again (his
-decision of 2026-11-11, `req-7dbe1thw7mf1`).
+decision of 2026-11-11, "pro Owner-Paar mit Häkchen je Agent",
+`req-7dbe1thw7mf1`).
 How far a yes reaches is the owner's choice on both sides of the
 boundary (his decision of 2026-11-11, `req-bmvgm6h04934`):
 
@@ -14255,8 +14256,8 @@ ausgewählten oder keinem"), and the rule of 2026-10-29 lets an entry
 name "a person, an agent or a whole project", so the human is a choice
 of its own and never implied by an agent. It is never set
 automatically: an inbox answer covers the agents only, and the owner
-ticks the human separately (his decision of 2026-11-11,
-`req-ssgyxfs5wdjw`). It defaults to `false`.
+ticks the human separately (his decision of 2026-11-11, "extra
+ankreuzen", `req-ssgyxfs5wdjw`). It defaults to `false`.
 
 Only human owners give a yes, each for their own agents. In a chat with
 agents of two owners, each owner's yes admits their own agent; neither
@@ -14334,7 +14335,8 @@ written for the agent and each other side in the chat at that moment
 chat, `their_human` whether that side's human is in it, no `duration`, `by`
 the owner), and the agent is admitted unless a deny entry
 stops it. The add covers the side's human when the human is in the
-chat (the maintainer's decision of 2026-11-11, `req-qngtb64jce85`): the
+chat (the maintainer's decision of 2026-11-11, option 1 of
+`req-qngtb64jce85`): the
 owner adds the agent to that room by hand, so it is the owner's own
 tick, not an inbox default. When a participant a deny entry names joins, the agent leaves
 the chat with `reason: "denied_participant"`. When the agent is added
@@ -14349,7 +14351,9 @@ to that owner, once per owner pair (`req-7dbe1thw7mf1`, above): `to:
 "human:<owner id>"`, `filed_by: "hub"`, `project: null`, title `<handle
 of the side's human> and their agents want to chat with your agents`.
 Its `summary` names each waiting agent with its chats, their projects,
-who added whom and which of that side's participants are in them; the
+who added whom and which of that side's participants are in them, and
+for each agent the chats where that side's human is a participant: in
+those, the agent is admitted only when the human is ticked too. The
 inbox shows a checkbox per waiting agent, all ticked, and one for that
 side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side joins it:
@@ -14363,12 +14367,16 @@ the hub updates its `summary` and files no second request. Its replies:
 | `block` | a deny entry `{agents: the waiting agents, owner_id: that side}`, and they leave those chats with `reason: "denied_participant"` |
 
 An allow reply writes one entry per ticked agent: the hub keeps each
-allow per agent (`req-7dbe1thw7mf1`). By default every agent waiting
-for that side at the time of the answer is ticked, and each entry
+allow per agent (`req-7dbe1thw7mf1`). The ticks are `chat_access.agents`
+in the answer: a list of ids of the request's waiting agents (`"all"`
+is `invalid` here), by default every agent waiting for that side at the
+time of the answer. The hub splits it into one entry per id, each with
+`agents: [that id]`. Each entry
 covers the agents of that side in its chats as `their_agents`, with
 `their_human: false`; the human is covered only when the owner ticks
 it (`chat_access.their_human: true`, `req-ssgyxfs5wdjw`). An unticked
-agent goes on waiting. The answer may set the reach and the rules beside the `reply_id`, on
+agent goes on waiting, and so does a ticked agent in a chat where that
+side's human sits while the human is not ticked. The answer may set the reach and the rules beside the `reply_id`, on
 this request only: `chat_access: {agents?, their_agents?, their_human?,
 allowed?, denied?}` in `POST /requests/{id}/answer` (§7). When an agent
 still waits for that side after the answer, because it was unticked or

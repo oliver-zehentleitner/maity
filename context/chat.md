@@ -712,7 +712,7 @@ in the contract for the maintainer to decide.
 Design of the contract, not the maintainer's words: a deny wins over
 every allow; how waiting works (no audience, no wake, no post, the
 window starting at admission); the owner's own add as a lasting yes;
-the request's default reach and its re-filing; the texts' length, owner
+the request's default reach and its re-filing; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
 only, and their delivery and change event; the hidden lists and
 `chat_denied` without a name.
 
