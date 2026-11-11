@@ -674,7 +674,7 @@ leaves its old owner's cross-project group chats with
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved, including that the owner's own add covers the human in the chat
-**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, `req-55469pjca13n`; whether the owner's own add covers the other owner's human in the chat), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, `req-55469pjca13n`; whether the owner's own add covers the other owner's human in the chat, `req-qngtb64jce85`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
 asking. A human and the agents they own are one side, and the owner says

@@ -14335,7 +14335,7 @@ chat, `their_human` whether that side's human is in it, no `duration`, `by`
 the owner), and the agent is admitted unless a deny entry
 stops it. That the add covers the side's human when the human is in the
 chat is this contract's reading of `req-ssgyxfs5wdjw`, for the
-maintainer to confirm: the owner adds the agent to that room by hand,
+maintainer to confirm (`req-qngtb64jce85`): the owner adds the agent to that room by hand,
 so it is the owner's own tick, not an inbox default. When a participant a deny entry names joins, the agent leaves
 the chat with `reason: "denied_participant"`. When the agent is added
 and a deny entry already names a participant or the project, the call
