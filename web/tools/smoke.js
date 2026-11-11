@@ -5035,6 +5035,98 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(clBusy && clTitleKept && clKeyKept,
       "board: the focus stays on a title link when the closed cards come in and on a keyed control when their read fails "
       + JSON.stringify([clBusy, clTitleKept, clKey, clKeyKept]));
+    // A card's status menu opened while the closed cards are read stays open across the late draw, the
+    // focused item with it, when they come in and when their read fails (tsk-wp8hsgvha3n6: the redraw
+    // rebuilt the card and dropped the open menu under a person's click, and under e2e's).
+    const clMenuCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0008");
+    const clMenuButton = () => clMenuCard().querySelector(".card-move .menu-button");
+    const clMenuItems = () => clMenuCard().querySelectorAll(".card-move .menu-item");
+    const clMenuKept = [];
+    for (const outcome of ["go", "fail"]) {
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+      const before = clMenuButton();
+      before.click(); await tick();
+      const opened = before.getAttribute("aria-expanded") === "true" && clMenuItems().length === 2;
+      clMenuItems()[1].focus();
+      clHeld[outcome](); for (let k = 0; k < 8; k++) await tick();
+      const after = clMenuButton();
+      const items = clMenuItems();
+      clMenuKept.push([outcome, opened, after !== before, after.getAttribute("aria-expanded") === "true",
+        !clMenuCard().querySelector(".card-move .menu").hidden, items.length === 2, document.activeElement === items[1]]);
+    }
+    expect(clMenuKept.every((r) => r.slice(1).every(Boolean)),
+      "board: a card's open status menu and its focused item outlive the late draw, the closed read in or failed " + JSON.stringify(clMenuKept));
+
+    // The presence refresh under the Silent filter redraws too, after the members changed: the assign menu
+    // opens again on the same member, found by name, not by place (an earlier member gone shifts the places),
+    // and closes onto its button when that member is gone; the old menu's listener for clicks elsewhere goes
+    // with each redraw (review of #1654).
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    // Every agent away, so that the cards they hold show under the Silent filter; the members read by the
+    // presence refresh, which then drops asDrop (by name) as a member who left.
+    const asDocAdd = document.addEventListener, asDocRemove = document.removeEventListener;
+    let asClicks = 0;
+    const asMembers = win.Maity.api.getAll;
+    let asDrop = null;
+    let asTwinOf = null;
+    // asTwinOf: a human who takes the same short handle as that member joins at the top of the list, so the
+    // member's words change (an agent's handle gets its owner) and the twin's match the old ones.
+    const asTwin = (items) => {
+      const of = asTwinOf && items.find((m) => m.display_name === asTwinOf);
+      return of ? [{ ...of, id: "hum-twin", kind: "human", display_name: "Twin of " + of.display_name, presence: "online" }, ...items] : items;
+    };
+    win.Maity.api.getAll = (p) => (/\/members$/.test(p)
+      ? asMembers(p).then((r) => ({ ...r, items: asTwin(r.items.filter((m) => m.display_name !== asDrop)
+        .map((m) => (m.kind === "agent" ? { ...m, presence: "offline" } : m))) })) : asMembers(p));
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    byId("board-silent").checked = true; byId("board-silent").dispatch("change"); await tick();
+    // A card the Silent filter shows that has an assign menu, whichever the fixtures make it.
+    const asId = (main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.querySelector(".card-assign .menu-button")) || { attrs: {} }).attrs["data-card"];
+    const asCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === asId);
+    const asButton = () => asCard().querySelector(".card-assign .menu-button");
+    const asItems = () => asCard().querySelectorAll(".card-assign .menu-item");
+    document.addEventListener = (t, f, o) => { if (t === "click") asClicks += 1; return asDocAdd(t, f, o); };
+    document.removeEventListener = (t, f, o) => { if (t === "click") asClicks -= 1; return asDocRemove(t, f, o); };
+    asButton().click(); await tick();
+    const asNames = asItems().map((b) => b.getAttribute("title"));
+    const asLabel = asItems()[1].textContent;
+    asItems()[1].focus();
+    asDrop = asNames[0];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asSame = [asNames.length >= 3, asButton().getAttribute("aria-expanded") === "true",
+      document.activeElement && document.activeElement.textContent === asLabel, asItems()[0].getAttribute("title") !== asNames[0], asClicks === 1];
+    // A member with the same short handle joins: the focus stays on the member it was on, by key, not on
+    // the twin whose words are now what the focused item said (review of #1654).
+    asTwinOf = asNames[1];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asTwinAt = document.activeElement;
+    const asKept = [asButton().getAttribute("aria-expanded") === "true", !!asTwinAt && asTwinAt.getAttribute("title") === asNames[1],
+      asItems().some((b) => b.getAttribute("data-key") === "member:hum-twin"), asClicks === 1];
+    // The other way round (4hch): the twin focused, then the twin leaves; the member it shared the handle
+    // with reads the twin's old words again, and the menu still closes onto its button instead of opening on it.
+    if (asButton().getAttribute("aria-expanded") !== "true") { asButton().click(); await tick(); }
+    const asTwinItem = asItems().find((b) => b.getAttribute("data-key") === "member:hum-twin");
+    if (asTwinItem) asTwinItem.focus();
+    const asTwinWords = asTwinItem ? asTwinItem.textContent : null;
+    asTwinOf = null;
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asTwinGone = [!!asTwinItem, asButton().getAttribute("aria-expanded") === "false", document.activeElement === asButton(),
+      asClicks === 0, asItems().length === 0 || !asItems().some((b) => b.textContent === asTwinWords && b.getAttribute("data-key") === "member:hum-twin")];
+    // The focused member leaves: the menu opened again on that member closes onto its button.
+    if (asButton().getAttribute("aria-expanded") !== "true") { asButton().click(); await tick(); }
+    const asBack = asItems().find((b) => b.getAttribute("title") === asNames[1]);
+    if (asBack) asBack.focus();
+    asDrop = asNames[1];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asGone = [asButton().getAttribute("aria-expanded") === "false", document.activeElement === asButton(), asClicks === 0];
+    win.Maity.api.getAll = asMembers;
+    document.addEventListener = asDocAdd; document.removeEventListener = asDocRemove;
+    byId("board-silent").checked = false; byId("board-silent").dispatch("change"); await tick();
+    expect(!!asId && asSame.every(Boolean) && asKept.every(Boolean) && asTwinGone.every(Boolean) && asGone.every(Boolean),
+      "board: under the Silent filter the assign menu opens again on the same member after an earlier one left and after a member took the same handle, closes when that member left, and leaves one listener "
+      + JSON.stringify([asId, asSame, asKept, asTwinGone, asGone]));
     clProto.focus = clFocus; document.activeElement = undefined;
 
     // The Closed filter gives no "No card matches" while the closed cards are still read.
