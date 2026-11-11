@@ -14238,7 +14238,8 @@ per chat ("man muss jeder einzelnen ownergrenze einmal zustimmen", the
 maintainer's answer of 2026-11-11, `req-hmnarjnwwq8g`). That one request
 covers every agent of the owner that waits for the same side, rather
 than one request per agent (below), is this contract's reading of that
-answer, for the maintainer to confirm (`req-nensgg5a31kx`).
+answer. It is open: the maintainer asked for a recommendation
+(`req-nensgg5a31kx`), and the question is pending as `req-7dbe1thw7mf1`.
 How far a yes reaches is the owner's choice on both sides of the
 boundary (his decision of 2026-11-11, `req-bmvgm6h04934`):
 
