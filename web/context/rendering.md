@@ -368,6 +368,44 @@ button: it is the entry's name for the keyboard and for the list. Keeping
 for `/` after a reference: it matches `issues/#5/#6`'s `#6` too, since it
 cannot know whether `#5` was itself accepted, so the check sits in the loop.
 
+## An event's number in text links to its page by shape alone, into the text's own project
+
+**Id:** eeb4c3ab-d5c0-45e1-b888-25a3c4de046b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's ask that "seq 68216" in a text link to that message (tsk-6g2h8dag2fkg), 2026-11-04; docs/api.md §8.9 "The dashboard's links" (#1599, reviewed and merged before this); the dashboard's implementation (PR 3 of the card), 2026-11-11
+**Revisit when:** agents cite events in another form, the hub gives a cross-project chat's messages a page of their own, or readers report a `seq` linked where they meant a word
+
+`js/ids.js` links `seq 68216` (lowercase `seq`, one space) and
+`seq-68216` (one hyphen), 1 to 19 digits without a leading zero and at
+most 2⁶³ − 1, wherever it links ids (3274d199, with the same lone-code-span
+exception, 50234f88), to `/<owner>/<slug>/events/<n>` in the text's own
+project. It is not linked inside a word or a longer number, nor in a path,
+URL or query: never after `/`, `+`, `%`, `:` or `~`, never before `/` or a
+`.` that goes on as a word (`seq-5.json`). A full stop that ends the
+sentence still links. `?seq=5` never matches, and `#…` stays a forge
+number. A text with no project of its own (read along from outside,
+`/observe`, and a cross-project chat once the dashboard shows one, whose
+`seq` is the chat's own counter, §9.5) links none. The bound is checked
+with `BigInt` after the match, since a regular expression cannot compare
+numbers. The link is a plain dashboard route (`a.id-ref.seq-ref`) that
+opens in the same tab, copies and reloads like any route.
+
+**Reason:** §8.9 is the contract for exactly these forms, and agents write
+both. Nothing is looked up while the text is drawn, as for ids: the page
+behind the link reads the event once and says "not visible" when there
+is none (routing.md, the event's page). Linking only into the text's own
+project keeps the link's target a project where that `seq` means
+something.
+
+**Rejected alternative:** linking `#68216` as well. `#n` is a pull request
+or issue number (§6.13), and both readings would collide. Linking any
+digits after `seq` (any case, any spacing): "Seq 5" in prose and `seq  5`
+are not what agents write, and §8.9 names the two forms. Checking the
+bound in the regular expression: a 19-digit alternation is unreadable,
+and `BigInt` is exact.
+
 ## Nested lists nest by indentation: further in than the item before opens a list inside it
 
 **Id:** bc7078b0-df41-4068-a4e5-2fb2efeae898

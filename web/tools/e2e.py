@@ -1135,6 +1135,7 @@ def scenario(run: Run, page: Page) -> None:
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
+    seq_links_step(run, page, alpha, beta, agent_id)
     attachments_step(run, page, agent_id)
     members_step(run, page)
     dormant_step(run, page)
@@ -1621,6 +1622,43 @@ def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:
     expect(page.locator(f'ol.messages li.msg[data-seq="{seq}"]')).to_contain_text("This message was removed")
     expect(page.locator(f'ol.messages li.msg[data-seq="{seq}"]').get_by_role("button", name="Quote this message")).to_have_count(0)
     no_problems(run, "direct removal")
+
+
+def seq_links_step(run: Run, page: Page, alpha: Path, beta: Path, agent_id: str) -> None:
+    """§8.9, tsk-6g2h8dag2fkg: `seq N` in a chat message links to the event's page, which opens the
+    event where it lives, scrolled to and marked; an event this project does not show is "not visible"."""
+    run.step("seq links: a seq in a chat message opens the project message it names, marked in Messages")
+    said = run.maity(alpha, "say", "all", "e2e: the notice a seq names", "--type", "notice")
+    target = re.search(r"\(seq (\d+)\)", said).group(1)
+    # An event of another project: it exists, and this project's route answers it as a missing one (§8.9).
+    other = run.maity(beta, "say", "all", "e2e: a notice of another project", "--type", "notice")
+    hidden = re.search(r"\(seq (\d+)\)", other).group(1)
+    run.maity(alpha, "say", "human", f"See seq {target}; seq-{hidden} is not ours.")
+    page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    cited = page.locator("ol.messages li.msg.in", has_text="is not ours").last
+    link = cited.locator("a.seq-ref", has_text=f"seq {target}")
+    expect(link).to_have_attribute("href", f"/owner/e2e-alpha/events/{target}")
+    run.a11y(page, "chat, a seq as a link")
+    link.click()
+    expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/messages#seq-{target}$"))
+    marked = page.locator(f'ol.project-messages li.pmsg.seq-target[data-seq="{target}"]')
+    expect(marked).to_contain_text("e2e: the notice a seq names")
+    expect(marked).to_be_in_viewport()
+    expect(page.locator("ol.project-messages li.pmsg.seq-target")).to_have_count(1)
+    run.shot(page, "seq-link-messages")
+    run.a11y(page, "messages, opened at a seq")
+    # The event's page replaced its own entry: back leaves the place for the chat.
+    page.go_back()
+    expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/chat/{agent_id}$"))
+    run.step("seq links: a seq that names an event this project does not show reads \"not visible\"")
+    page.locator("ol.messages li.msg.in", has_text="is not ours").last.locator("a.seq-ref", has_text=f"seq-{hidden}").click()
+    expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/events/{hidden}$"))
+    expect(page.locator("p.event-not-visible")).to_have_text(
+        "Not visible: there is no event with this number in this project, or you may not see it.")
+    run.a11y(page, "event page, not visible")
+    # The 404 asked for, the hub's one answer for hidden and missing.
+    run.problems = [p for p in run.problems if p != f"GET /api/v1/projects/owner/e2e-alpha/events/{hidden} answered 404"]
+    no_problems(run, "seq links")
 
 
 def group_chat_form_step(run: Run, page: Page) -> None:
