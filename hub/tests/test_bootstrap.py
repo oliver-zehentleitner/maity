@@ -85,11 +85,15 @@ def test_signed_out_gets_the_window_and_401s(
 
 
 def test_an_agent_gets_its_own_answers(
-    admin: flow.Human, make_client: ClientFactory, now: Clock  # noqa: F811
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, now: Clock  # noqa: F811
 ) -> None:
     flow.project(admin)
     agent = flow.agent(make_client, admin)
-    parts = same(agent.client, agent.auth)
+    now.set(now.at + timedelta(minutes=5))
+    seen = _traces(migrated, agent)
+    parts = bootstrap(agent.client, agent.auth).json()
+    assert _traces(migrated, agent) != seen  # one call's presence and last use (§2.4)
+    assert parts == singles(agent.client, agent.auth)
     assert [parts[p]["status"] for p in SINGLE] == [200, 403, 200, 200, 200, 200]
 
 
@@ -104,25 +108,43 @@ def test_an_isolated_agent_gets_its_me_and_the_isolation_refusals(
         f"/projects/{PROJECT}/members/{agent.id}/isolate", {"reason": "it did a thing"}
     )
     assert isolated.status_code == 200, isolated.text
-    seen = _last_seen(migrated, agent.credential_id)
+    now.set(now.at + timedelta(minutes=5))  # a write would carry a later time
+    seen = _traces(migrated, agent)
     parts = same(agent.client, agent.auth)
     assert [parts[p]["status"] for p in SINGLE] == [200, 403, 200, 403, 403, 403]
     assert parts["me"]["body"]["membership"]["isolated"]["reason"] == "it did a thing"
     assert {parts[p]["body"]["error"]["details"]["reason"] for p in list(SINGLE)[3:]} == {
         "isolated"
     }
-    assert _last_seen(migrated, agent.credential_id) == seen
+    assert _traces(migrated, agent) == seen
 
 
-def _last_seen(engine: Engine, credential_id: str) -> Any:
-    from sqlalchemy import select
+def _traces(engine: Engine, agent: flow.Agent) -> Any:
+    """What a call of the agent's credential writes (§2.4): its last use, the membership's
+    presence and its sessions. Isolating it released its claims (§6.2), so no lease is left
+    to renew."""
+    from sqlalchemy import func, select
 
     from maity_hub import tables as t
 
     with engine.connect() as conn:
-        return conn.execute(
-            select(t.credential.c.last_used_at).where(t.credential.c.id == credential_id)
-        ).scalar_one()
+        credential = conn.execute(
+            select(t.credential.c.last_used_at, t.credential.c.membership_id).where(
+                t.credential.c.id == agent.credential_id
+            )
+        ).one()
+        membership = credential.membership_id
+        return (
+            credential.last_used_at,
+            conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.id == membership)
+            ).scalar_one(),
+            conn.execute(
+                select(func.count(), func.max(t.agent_session.c.last_seen_at)).where(
+                    t.agent_session.c.credential_id == agent.credential_id
+                )
+            ).one(),
+        )
 
 
 def test_an_agent_outside_the_project_gets_404s(
