@@ -55,7 +55,9 @@ def _member(make_client: ClientFactory, engine: Engine, handle: str) -> flow.Hum
     human = flow.human(make_client, engine, handle)
     with engine.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
-    factory.membership(engine, project_id, "member", human_id=human.id)
+    # As every route that adds a human's membership does (projects, invitations): the member's
+    # calls within the minute after its sign-in write no presence (§2.4).
+    factory.membership(engine, project_id, "member", human_id=human.id, last_seen_at=clock.now())
     return human
 
 
