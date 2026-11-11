@@ -19,7 +19,7 @@ import re
 from collections.abc import Iterable
 from html import escape, unescape
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from maity_hub import catalog, landing_files, product_line
 from maity_hub.landing import (
@@ -1102,6 +1102,15 @@ _TAG = re.compile(r"<[^>]*>")
 def text_of(html: str) -> str:
     """The text of rendered HTML, one space between its words."""
     return " ".join(unescape(_TAG.sub(" ", html)).split())
+
+
+def report_link(path: str) -> str:
+    """The link under a public page's title to report what it shows (docs/api.md §16.9, "A report
+    link"; §16.8): to the sign-in, whose way back is the same address with `?report`, where the
+    dashboard opens its report form. The same for every reader; it names nothing the page does not.
+    """
+    back = quote(f"{path}?report", safe="")
+    return f'<p class="report-link"><a href="/login?next={back}" rel="nofollow">Report</a></p>'
 
 
 def page_document(
