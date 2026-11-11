@@ -141,7 +141,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error, btoa, atob };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -6560,9 +6560,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(convs().length === 6 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents and group chats, nothing open yet");
   // Unread first (the group chat with a mention, Agent A), then the newest; without messages last.
   const convOrder = () => convs().map((a) => a.querySelector(".conv-title").textContent + (a.classList.contains("unread") ? "*" : ""));
-  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
-    "chat: unread first, then the newest, the ones without messages after " + JSON.stringify(convOrder()));
-  // Pins (§9.3): a human pins a chat; the list is read again and keeps the hub's order (quiet pinned after the unread, before the rest).
+  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Reviewer", "Agent C", "Agent B"]),
+    "chat: unread first, then the newest, the ones without messages after, by id " + JSON.stringify(convOrder()));
+  // Pins (§9.3): a human pins a chat; the list is read again and keeps the hub's order (a quiet pin above every unpinned chat).
   {
     const pinBtn = (name) => conv(name).parentNode.querySelector("button.pin-toggle");
     const pinCalls = [];
@@ -6585,9 +6585,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "pins: each chat has a pin button beside its link, not pressed");
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
     expect(JSON.stringify(pinCalls) === JSON.stringify([["PUT", "/projects/maintainer/maity/conversations/agt-b/pin"]])
-      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent B", "Agent D", "Agent C", "Reviewer"])
+      && JSON.stringify(convOrder()) === JSON.stringify(["Agent B", "Release 0.2 go/no-go*", "Agent A*", "Agent D", "Reviewer", "Agent C"])
       && conv("Agent B").querySelector(".pin-mark") && text(conv("Agent B")).includes("pinned") && pinBtn("Agent B").getAttribute("aria-pressed") === "true",
-      "pins: a pinned quiet chat rises above the other quiet ones, never above unread ones, and shows its mark " + JSON.stringify(convOrder()));
+      "pins: a quiet pin stays above every unpinned chat, unread ones included, and shows its mark " + JSON.stringify(convOrder()));
+    // The fixture's cursor carries the band (scope bands=pinned-top): the page
+    // ends on the quiet pin, and the next page starts at the unpinned unread chat.
+    const bandFirst = await win.Maity.api.get("/projects/maintainer/maity/conversations?observed=true&limit=1");
+    const bandNext = await win.Maity.api.get("/projects/maintainer/maity/conversations?observed=true&limit=1&cursor=" + encodeURIComponent(bandFirst.next_cursor));
+    let bandOld = null;
+    try {
+      await win.Maity.api.get("/projects/maintainer/maity/conversations?observed=true&cursor=" + encodeURIComponent(btoa(JSON.stringify(["", "1\u001fagt-b", "bands=true&observed=true"])).replace(/=+$/g, "")));
+    } catch (err) { bandOld = err; }
+    expect(bandFirst.items.length === 1 && bandFirst.items[0].id === "agt-b" && bandFirst.items[0].pinned === true && !bandFirst.items[0].unread
+      && bandNext.items.length === 1 && bandNext.items[0].id === "cnv-0007" && bandNext.items[0].unread > 0 && bandNext.items[0].pinned === false
+      && bandOld && bandOld.status === 400 && bandOld.details && bandOld.details.fields && bandOld.details.fields.cursor === "invalid",
+      "pins: the cursor resumes in the next band, and a cursor from the earlier order is refused " + JSON.stringify([bandFirst.items.map((c) => c.id), bandNext.items.map((c) => c.id), bandOld && bandOld.status]));
     // The hub's refusal of a 21st pin, in words.
     win.Maity.api.put = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { pin: "too_many" } }));
     pinBtn("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
@@ -6598,7 +6610,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     pcToggle().click(); await tick();
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
     expect(pinCalls.slice(-1)[0][0] === "DELETE" && !conv("Agent B").querySelector(".pin-mark")
-      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
+      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Reviewer", "Agent C", "Agent B"]),
       "pins: unpinned, the chat goes back to its place");
     pcToggle().click(); await tick();  // back to the default for the cases after
     win.Maity.api.put = pnPut; win.Maity.api.del = pnDel;

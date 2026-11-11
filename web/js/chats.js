@@ -2,8 +2,8 @@
 // laid out as a project's Chat tab (js/chat.js): the list beside the open
 // conversation, on a phone the list its own screen. The list merges each
 // project's direct and group chats (docs/api.md §9.3, GET /me/conversations),
-// in the hub's order (four bands: pinned with unread, unpinned with unread,
-// quiet pinned, the rest), each with its project; a human pins one here too. A conversation opens
+// in the hub's order (four bands: pinned with unread, quietly pinned,
+// unpinned with unread, the rest), each with its project; a human pins one here too. A conversation opens
 // in place (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
 // context. Going from one chat to another changes the pane alone: the page, the
 // list and every project's context stay, and the pane being left stands dimmed until

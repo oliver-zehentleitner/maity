@@ -1478,11 +1478,71 @@ window.Maity = window.Maity || {};
     const holds = lead || hands;
     return Object.assign({}, x, { meat_proxy: holds, meat_proxy_lead: lead, meat_proxy_hands: hands, meat_proxy_chat: chosen }, holds ? { meat_proxy_note: meatNote(lead, hands) } : {});
   }
-  // Four bands, each by activity: pinned with unread, unpinned with unread,
-  // quiet pinned, the rest (an observer's null unread is none).
-  function banded(items, at) {
-    const band = (c) => (c.unread ? (c.pinned ? 0 : 1) : (c.pinned ? 2 : 3));
-    return items.sort((a, b) => band(a) - band(b) || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0));
+  // §9.3 "Pinned", the same bands as the hub's `_band`: pinned with unread,
+  // quietly pinned, unpinned with unread, the rest. An observer's null unread
+  // counts as none. `tie` orders one band's equal activity (id descending in
+  // one project; full name then id ascending across projects).
+  const BAND_ORDER = "pinned-top";
+  const bandOf = (c) => (c.pinned ? (c.unread ? 0 : 1) : (c.unread ? 2 : 3));
+  function banded(items, at, tie) {
+    const activity = (c) => at(c) || "";
+    return items.sort((a, b) => {
+      const byBand = bandOf(a) - bandOf(b);
+      if (byBand) return byBand;
+      const left = activity(a), right = activity(b);
+      if (left !== right) return left > right ? -1 : 1;
+      return tie(a, b);
+    });
+  }
+  // The cursor carries the band (§1.4). Its scope names this order
+  // (`bands=pinned-top`), so a cursor from the earlier order is refused.
+  const bandScope = (query, across) => "bands=" + BAND_ORDER + "&observed=" + (query.get("observed") === "true" ? "true" : "false") + (across ? "&me=true" : "");
+  const cursorText = (activity, position, scope) => btoa(JSON.stringify([activity, position, scope])).replace(/=+$/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  function cursorParts(text, scope, path) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(atob(String(text).replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (String(text).length % 4)) % 4)));
+    } catch (e) { parsed = null; }
+    const band = parsed && typeof parsed[1] === "string" ? Number(parsed[1].split("\u001f")[0]) : NaN;
+    if (!Array.isArray(parsed) || parsed.length !== 3 || parsed[2] !== scope || typeof parsed[0] !== "string" || ![0, 1, 2, 3].includes(band)) {
+      fail(400, "invalid", "not a cursor of this list", path, { fields: { cursor: "invalid" } });
+    }
+    return { activity: parsed[0], position: parsed[1], band };
+  }
+  function pageLimit(query, path) {
+    const raw = query.get("limit");
+    if (raw === null) return 50;
+    const limit = Number(raw);
+    if (!Number.isInteger(limit) || String(limit) !== raw || limit < 1 || limit > 200) fail(400, "invalid", "limit", path, { fields: { limit: "invalid" } });
+    return limit;
+  }
+  // One page of an already banded list. `comesAfter` is the hub's cut: later
+  // bands, then, in the same band, older activity, then the tie past the cursor.
+  function pageBands(items, query, path, scope, activity, positionOf, comesAfter) {
+    const limit = pageLimit(query, path);
+    const given = query.get("cursor");
+    const rest = given === null ? items : items.filter((c) => comesAfter(c, cursorParts(given, scope, path)));
+    const page = rest.slice(0, limit);
+    const last = page.length ? page[page.length - 1] : null;
+    return { items: page, next_cursor: last && rest.length > limit ? cursorText(activity(last) || "", positionOf(last), scope) : null };
+  }
+  const idDescending = (a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0);
+  const nameThenId = (a, b) => (a.project.full_name < b.project.full_name ? -1 : a.project.full_name > b.project.full_name ? 1 : idDescending(b, a));
+  function projectAfter(c, cursor, activity) {
+    const band = bandOf(c);
+    if (band !== cursor.band) return band > cursor.band;
+    const act = activity(c) || "";
+    if (act !== cursor.activity) return act < cursor.activity;
+    return c.id < cursor.position.split("\u001f")[1];
+  }
+  function acrossAfter(c, cursor, activity) {
+    const band = bandOf(c);
+    if (band !== cursor.band) return band > cursor.band;
+    const act = activity(c) || "";
+    if (act !== cursor.activity) return act < cursor.activity;
+    const parts = cursor.position.split("\u001f");
+    if (c.project.full_name !== parts[1]) return c.project.full_name > parts[1];
+    return c.id > parts[2];
   }
   // §9.3 for one project (m[1]: its fixture key), shared by the project's
   // route and the list across projects.
@@ -1532,7 +1592,7 @@ window.Maity = window.Maity || {};
     const at = (c) => c.last_message_at || c.created_at || "";
     const human = me().member.kind === "human";
     const items = direct.concat(groups).map((c) => Object.assign(c, { pinned: human && pinsOf().includes(m[1] + "/" + c.id) }));
-    return { items: banded(items, at), next_cursor: null };
+    return banded(items, at, idDescending);
   }
 
   // The view as the caller may see it, or null when it may not.
@@ -5135,18 +5195,27 @@ window.Maity = window.Maity || {};
       webhooks[m[1]] = {};
       return null;
     }],
-    // §9.3: the direct conversations and the group chats, newest first; with
-    // observed=true also the group chats read along as an agent's owner.
-    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => conversationList(m, path, query)],
-    // §9.3 across projects: every project the human is a member of, one list,
-    // newest activity first, then the project's full name, then the id; with
-    // the project on each item and the unread totals over all of them.
+    // §9.3: the direct conversations and the group chats, in the four bands,
+    // newest activity first inside each; with observed=true also the group
+    // chats read along as an agent's owner. The cursor carries the band.
+    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
+      const items = conversationList(m, path, query);
+      const activity = (c) => c.last_message_at || c.created_at || "";
+      return pageBands(items, query, path, bandScope(query, false), activity,
+        (c) => bandOf(c) + "\u001f" + c.id, (c, cursor) => projectAfter(c, cursor, activity));
+    }],
+    // §9.3 across projects: every project the human is a member of, one list
+    // in the same four bands, newest activity first inside each, then the
+    // project's full name, then the id; the project on each item and the
+    // unread totals over all of them, not only the page.
     ["GET", /^\/me\/conversations$/, (m, body, path, query) => {
-      const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
-      const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
+      const activity = (c) => c.last_message_at || c.created_at || c.joined_at || "";
+      const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).map((c) => Object.assign({}, c, {
         project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
-      banded(items, at);
-      return { items, next_cursor: null,
+      banded(items, activity, nameThenId);
+      const page = pageBands(items, query, path, bandScope(query, true), activity,
+        (c) => bandOf(c) + "\u001f" + c.project.full_name + "\u001f" + c.id, (c, cursor) => acrossAfter(c, cursor, activity));
+      return { items: page.items, next_cursor: page.next_cursor,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
     }],
     // §9.3 pins: human only, idempotent, at most 20 across projects.
