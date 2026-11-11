@@ -490,7 +490,8 @@ unverified (design §6.1).
 
 **Id:** 889e6702-afb6-429c-8e89-b5d7a1561992
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5f6c87ce-132d-4f7e-921d-d74741f369fe
 **Evidence:** confirmed
 **Source:** maintainer decision on the runner design's question 2, relayed 2026-10-22
 **Revisit when:** the hub is asked to hand out or meter model access, or operators want per-agent spend visible in the dashboard
@@ -509,6 +510,44 @@ project does not need.
 **Rejected alternative:** model keys managed by the hub and handed to
 runners per placement: a secret store in the hub, and a second place for
 a key to leak from.
+
+## Model access stays the operator's; a run's usage counts reach the hub
+
+**Id:** 5f6c87ce-132d-4f7e-921d-d74741f369fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card tsk-m6sq1g0xwwn5 (tokens and cost per card, per instance and per agent) and his answers of 2026-11-11 (req-6f69nz9gdqq8, req-dqe2vaa5wkkg, req-272525w91jvf); contract `docs/api.md` §15.15
+**Revisit when:** the hub is asked to price usage, hand out model access or bill; or interactive placements are to report usage
+**See:** runner.md#model-access-is-the-operators-to-arrange — 889e6702-afb6-429c-8e89-b5d7a1561992 — as of 2026-11-11
+
+How agents pay for their model is still up to the operator, and nothing
+about model **access** reaches the hub: no key, no account, no login
+method. What does reach it now is a supervised run's usage **counts**:
+input, output and prompt-cache tokens, and the cost figure the harness
+computed itself, sent by the runner when a run's work ends and before it
+reports the run's end (a later record is lost). The model name, the
+prompts, replies, tool calls and the provider's request ids never leave
+the runner. Interactive placements report nothing for now: the runner
+reads no stream from them, and the harness's session log is a format it
+does not promise to keep.
+
+**Reason:** the maintainer wants to see what a card, an instance and an
+agent cost. The supervised loop already reads the harness's output for
+the watchdog (§15.14), so the counts come almost for free there, and
+counts carry none of the secret the earlier decision kept out of the hub.
+The maintainer chose not to send the model name, so the usage records
+hold no provider's model names. The hub holds model names elsewhere,
+and this does not change them: a placement's `model` and the runner's
+advertised capabilities (`docs/api.md` §15.5, §15.3) and a session's
+`model` (§5).
+
+**Rejected alternatives:**
+- Interactive placements from the start, from the harness's session
+  log: the format can change with any harness release, and a wrong read
+  would show wrong numbers.
+- The model name per run: it would help compare costs but puts a
+  provider's model names into the hub's data.
 
 ## Default session modes: Claude Code attachable, Codex woken by events
 
