@@ -14,3 +14,7 @@
   `origin`) instead of refusing it.
 - cli: the runner hides the empty placeholders Claude Code's sandbox puts into
   the work tree in the clone's `.git/info/exclude`.
+- cli: in a runner's placement, `maity` that cannot read the clone's credential
+  (Claude Code's sandbox hides it from a pipe or a chained command) says to run
+  maity alone instead of "has not joined a project", and the Claude Code start
+  prompt says so too.

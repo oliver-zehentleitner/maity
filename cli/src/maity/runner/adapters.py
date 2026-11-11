@@ -38,6 +38,12 @@ GIT_PROMPT = (
     "origin/<default branch>` and push it with `git push origin <branch>`; never `push -u`, "
     "`--set-upstream`, `--track` or `branch -m`. `maity report` needs no upstream."
 )
+# Claude Code's sandbox hides the clone's credential; only a command that is a `maity` call
+# alone matches `excludedCommands` and runs outside it (cli/context/runner.md).
+CLAUDE_MAITY_PROMPT = (
+    " Run every `maity` command alone: in a pipe or chained with `;`, `&&` or `||` it runs "
+    "inside the sandbox and cannot read this clone's credential."
+)
 # Supervised runs end with the turn: the loop starts the next one on the next event.
 SUPERVISED_PROMPT = (
     START_PROMPT + " Handle what is waiting for you, checkpoint what you hold, then end your "
@@ -314,14 +320,14 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
-        return Launch([*base, START_PROMPT + GIT_PROMPT], env)
+        return Launch([*base, START_PROMPT + GIT_PROMPT + CLAUDE_MAITY_PROMPT], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).
     quiet = {**env, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
     return _supervised(
         ctx,
-        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT],
-        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT, "--continue"],
+        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT + CLAUDE_MAITY_PROMPT],
+        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT + CLAUDE_MAITY_PROMPT, "--continue"],
         quiet,
     )
 

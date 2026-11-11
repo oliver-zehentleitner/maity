@@ -27,6 +27,7 @@ from typing import IO, Any, NoReturn, TypeGuard
 from maity import (
     __version__,
     citecheck,
+    clonecheck,
     environment,
     gitfacts,
     hub,
@@ -172,6 +173,13 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
     return path
 
 
+SANDBOXED_CALL = (
+    "this session cannot read the clone's credential: a runner placed it, and its sandbox "
+    "hides the credential from every command but a `maity` call of its own; run maity alone, "
+    "not in a pipe or chained with `;`, `&&` or `||`"
+)
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
@@ -185,6 +193,10 @@ class Session:
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
         if not state.has_credential(self.dir):
+            if os.environ.get(clonecheck.PLACEMENT_ENV):
+                # Under the runner the clone has joined; Claude Code's sandbox hides its
+                # credential, and only a `maity` call of its own runs outside the sandbox.
+                raise state.StateError(SANDBOXED_CALL)
             raise state.StateError(
                 "this clone has not joined a project; run `maity join <url> --code <code>`"
             )

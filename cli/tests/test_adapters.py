@@ -16,6 +16,8 @@ from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
+CLAUDE_START = adapters.START_PROMPT + adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
+CLAUDE_SUPERVISED = adapters.SUPERVISED_PROMPT + adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
@@ -36,7 +38,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     argv = launch.argv
     assert argv[0] == "/usr/bin/claude"
-    assert argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT
+    assert argv[-1] == CLAUDE_START
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -61,7 +63,7 @@ def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_
     and Claude Code exited 1 at once (2.1.319, the first runner test)."""
     ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
     argv = adapters.launch(ctx).argv
-    assert argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT and "--model" not in argv
+    assert argv[-1] == CLAUDE_START and "--model" not in argv
     assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
@@ -177,7 +179,7 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT + adapters.GIT_PROMPT]
+    assert spec["first"][-2:] == ["-p", CLAUDE_SUPERVISED]
     assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
