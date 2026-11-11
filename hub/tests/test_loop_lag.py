@@ -9,15 +9,16 @@ the `stats` reporter does not drain, so no tick of the run is lost to a report, 
 the test (the owner's, the agent's) are each checked.
 
 The reference is a bare event loop in a thread of its own, the same tick and nothing else on it:
-what it is late is the machine's share (CPU and the GIL taken by the request threads and the
-database), which on a shared CI runner reached 247 ms on a loop that served nothing. An app's loop
-fails the guard when its worst tick runs more than `LOOP_LATE_MARGIN_MS` later than the
-reference's worst tick, or when its average is above `LOOP_LATE_AVG_LIMIT_MS`. The reference
+what it is late is the machine's and the process's share (CPU and the GIL taken by the request
+threads and the database, the garbage collector), which on a shared CI runner reached 247 ms on a
+loop that served nothing. An app's loop fails the guard when its worst tick runs more than
+`LOOP_LATE_MARGIN_MS` later than the reference's worst tick, when its average is above
+`LOOP_LATE_AVG_LIMIT_MS`, or when its worst tick is above `LOOP_LATE_CEILING_MS`. The reference
 shares the GIL, so a computation that holds it on an app's loop delays the reference as much and
-passes the margin: one callback on an app's loop may also spend at most
-`LOOP_CALLBACK_CPU_LIMIT_MS` of the loop thread's CPU time, the garbage collector's left out. The
-test prints every window's fields and each app loop's longest callback, the numbers each PR of the
-series names before and after.
+passes the margin (hub/context/persistence.md, 66f0bcf9): one callback on an app's loop may also
+spend at most `LOOP_CALLBACK_CPU_LIMIT_MS` of the loop thread's CPU time, the garbage collector's
+left out. The test prints every window's fields and each app loop's longest callback, the numbers
+each PR of the series names before and after.
 
 A `load` test: PostgreSQL in CI's `hub-load` job (`pytest -m load`), not the ordinary suite."""
 
@@ -60,6 +61,9 @@ LOOP_LATE_AVG_LIMIT_MS = int(os.environ.get("MAITY_LOOP_LATE_AVG_LIMIT_MS", "20"
 # itself put on the loop, at most this much in one callback (`MAITY_LOOP_CALLBACK_CPU_LIMIT_MS`;
 # about 3 ms in local runs).
 LOOP_CALLBACK_CPU_LIMIT_MS = int(os.environ.get("MAITY_LOOP_CALLBACK_CPU_LIMIT_MS", "50"))
+# And whatever the reference says, an app's worst tick at most this late
+# (`MAITY_LOOP_LATE_CEILING_MS`): the backstop for a block the reference shared.
+LOOP_LATE_CEILING_MS = int(os.environ.get("MAITY_LOOP_LATE_CEILING_MS", "1000"))
 THREADS = 16
 ROUNDS = int(os.environ.get("MAITY_LOOP_ROUNDS", "20"))
 
@@ -96,14 +100,27 @@ def loop_windows(monkeypatch: pytest.MonkeyPatch) -> AppLoops:
     return loops
 
 
+class CallbackCpu:
+    """Per event loop thread: the longest callback in CPU milliseconds, the garbage collector's
+    time left out, and that collector time summed over its callbacks."""
+
+    def __init__(self) -> None:
+        self.longest: dict[int, float] = {}
+        self.collected: dict[int, float] = {}
+
+    def clear(self) -> None:
+        self.longest.clear()
+        self.collected.clear()
+
+
 @pytest.fixture
-def callback_cpu(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[int, float]]:
+def callback_cpu(monkeypatch: pytest.MonkeyPatch) -> Iterator[CallbackCpu]:
     """The longest callback, in its thread's CPU milliseconds, each event loop thread ran while
     the test runs (every task step and timer is a `Handle`), less the garbage collector's time in
     it: a collection is the process's, run by whichever thread allocates when it is due (about
     90 ms locally for a full one, on any loop or request thread alike), not work the hub put on
     the loop."""
-    longest: dict[int, float] = {}
+    cpu = CallbackCpu()
     collecting: dict[int, float] = {}  # a thread's collection running: its CPU time at the start
     collected: dict[int, float] = {}  # a thread's CPU seconds in collections, summed
     real = asyncio.events.Handle._run
@@ -122,12 +139,14 @@ def callback_cpu(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[int, float]]:
         try:
             real(handle)
         finally:
-            spent = time.thread_time() - started - (collected.get(thread, 0.0) - before)
-            longest[thread] = max(longest.get(thread, 0.0), spent * 1000)
+            in_collections = (collected.get(thread, 0.0) - before) * 1000
+            spent = (time.thread_time() - started) * 1000 - in_collections
+            cpu.longest[thread] = max(cpu.longest.get(thread, 0.0), spent)
+            cpu.collected[thread] = cpu.collected.get(thread, 0.0) + in_collections
 
     monkeypatch.setattr(asyncio.events.Handle, "_run", timed)
     gc.callbacks.append(collector)
-    yield longest
+    yield cpu
     gc.callbacks.remove(collector)
 
 
@@ -156,7 +175,7 @@ def reference() -> Iterator[request_stats.LoadWindow]:
 
 def test_the_event_loop_stays_on_time_under_concurrent_requests(
     reference: request_stats.LoadWindow,
-    callback_cpu: dict[int, float],
+    callback_cpu: CallbackCpu,
     loop_windows: AppLoops,
     make_client: ClientFactory,
     owner: flow.Human,  # noqa: F811
@@ -193,10 +212,12 @@ def test_the_event_loop_stays_on_time_under_concurrent_requests(
         caller.join(timeout=600)
     idle = fields(reference.fields())
     seen = [fields(window.fields()) for window in loop_windows.windows]
-    cpu = [round(callback_cpu.get(thread, 0.0), 1) for thread in loop_windows.threads]
+    cpu = [round(callback_cpu.longest.get(thread, 0.0), 1) for thread in loop_windows.threads]
+    collected = [round(callback_cpu.collected.get(thread, 0.0)) for thread in loop_windows.threads]
     print(
         f"\nloop-lag guard ({THREADS} threads × {ROUNDS} rounds), the idle reference: {idle}, "
-        f"one window per app: {seen}, each app loop's longest callback in CPU ms: {cpu}"
+        f"one window per app: {seen}, each app loop's longest callback in CPU ms: {cpu}, "
+        f"the garbage collector's CPU ms left out of each loop's callbacks: {collected}"
     )
     assert failures == []
     for app in seen:
@@ -205,4 +226,5 @@ def test_the_event_loop_stays_on_time_under_concurrent_requests(
             seen,
         )
         assert app["loop_late_avg_ms"] <= LOOP_LATE_AVG_LIMIT_MS, (idle, seen)
+        assert app["loop_late_max_ms"] <= LOOP_LATE_CEILING_MS, (idle, seen)
     assert max(cpu) <= LOOP_CALLBACK_CPU_LIMIT_MS, cpu

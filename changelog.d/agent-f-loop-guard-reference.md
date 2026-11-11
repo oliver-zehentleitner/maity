@@ -7,4 +7,5 @@
   20 ms on average (`MAITY_LOOP_LATE_MARGIN_MS`, `MAITY_LOOP_LATE_AVG_LIMIT_MS`), or when one
   callback on it spends more than 50 ms of the loop thread's CPU time, the garbage collector's
   left out (`MAITY_LOOP_CALLBACK_CPU_LIMIT_MS`): a computation holding the GIL delays the idle
-  loop as much and passed the margin. The job prints the windows of a passing run too.
+  loop as much and passed the margin. A backstop fails any worst tick over 1000 ms
+  (`MAITY_LOOP_LATE_CEILING_MS`). The job prints the windows of a passing run too.
