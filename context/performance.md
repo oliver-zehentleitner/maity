@@ -50,7 +50,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
-| 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | with the owner |
+| 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | decided, tsk-x4z69ff785y6 (below) |
 | 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
@@ -111,3 +111,36 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
   where the slow pages are, and there it would have to stay off.
 - Durations only, no count: a duration leaks the same, only noisier, and it loses the N+1
   signal.
+
+## One boot read bundles the single routes' answers, each with its own status
+
+**Id:** b77c193d-6561-4f9a-8af6-7e072780b49e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision of 2026-11-11 on measure 10 of the list above; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
+**Revisit when:** a part needs a field or a right its single route does not give, or the dashboard's cold start no longer reads these routes one after another
+
+`GET /bootstrap` gives the dashboard's first reads (the maintenance window, the session,
+`GET /me`, and for a project view the project, its members and the event head) in one
+round trip. Each part is `{status, body}`: what the single route answers the same caller,
+errors included. The route needs no sign-in, and only what the hub decides before any
+route (a cross-site cookie request, a route limit) answers the whole request. Every single
+route stays.
+
+**Reason:** on a cold start these five to eight calls ran one after another at 140–260 ms
+each; the answers themselves were already fast, so only fewer round trips save time. A part
+built by the single route's own code for the same caller has one place to get each field
+wrong, and a test can compare each part with its route. Per-part statuses keep the pages
+that are drawn before or without a full session (signed out, the second-factor step, a
+pending account, a running maintenance window) on the same call: each of them needs the
+window and the session even when the rest is refused.
+
+**Rejected alternatives:**
+- A shape of its own that picks fields from each source, as the project overview (§6.11)
+  does for counts: the overview repeats no shape that has a home elsewhere so that a view's
+  restricted fields have one place to get wrong; a picked copy of the member view would be
+  a second place.
+- One status for the whole answer, failing as soon as one part fails: a signed-out reader
+  or a second-factor session would then lose the maintenance window and the session, which
+  are the parts its page is drawn from.
