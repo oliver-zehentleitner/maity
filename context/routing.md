@@ -105,3 +105,33 @@ segment, so the path costs nothing.
 - Keeping the invitation form on each Members page: the maintainer asked
   for one place.
 
+## "Where they run" is a project tab of its own at `placements`, the noun the contract uses, not the tab's words
+
+**Id:** b32bb82c-acdb-4e91-aa2a-4c257a6cc6b3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat (2026-11-11, card tsk-3s3eb6bsp15n: the section becomes a tab between Agents and Organisation); the coordinator's choice of the word the same day; contract `docs/api.md` §16.11, §15.6
+**See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-11
+**Revisit when:** the tab is renamed to something a path can say, or a second view of placements needs the word
+
+"Where they run", the list of where the project's agents run (§15.6:
+the wanted and reported state, Stop, Restart, Logs, the start on a
+runner), moves from the bottom of the Agents page to a project tab of
+its own between Agents and Organisation, at `/<owner>/<slug>/placements`.
+Every member who reads the project sees it, as they saw the section;
+the actions on it stay as §15.6 grants them. `placements` joins the
+project views of §16.11, so no project slug may take it (`PROJECT_VIEWS`).
+
+**Reason:** the Team view moved to `team` so that the path says what
+the tab says (§16.11, 2026-11-10). "Where they run" is no path word, so
+that rule cannot be met word for word here. `placements` is the noun the
+contract (§15.6, `/projects/{owner}/{slug}/placements`), the CLI
+(`maity placement …`) and the code (`js/placements.js`, the `placement_*`
+events) already use for this list, so an address read from the API, a
+log or the CLI names the same thing.
+
+**Rejected alternatives:**
+- `running`, closer to the tab's words: one letter from the project view
+  `runners` (the machines), which a link or a log would confuse.
+- Keeping the section on the Agents page: the maintainer asked for a tab.
