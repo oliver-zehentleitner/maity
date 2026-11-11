@@ -2,7 +2,8 @@
 // the page a `seq 68216` in a text links to (js/ids.js). It reads the event once and opens it
 // where it lives, the address replaced by that place's with `#seq-<n>` after it: the chat it
 // was said in (direct or group) when the hub names its conversation, else the card or the
-// request it is about, else the project's messages for a message; the place then shows it
+// request it is about, else the project's messages for a message whose type says it is one
+// (a chat's tombstone with no conversation and no type is not); the place then shows it
 // marked (js/chat.js reveal, js/messages.js). An event that lives nowhere the reader may open
 // is shown here. A 404 says "not visible", the same words for an event the reader may not see
 // and one that does not exist, as the hub's answer is the same (§8.9): the page never tells
@@ -21,13 +22,17 @@ window.Maity = window.Maity || {};
 
   // Where the event lives (§8.9 "The answer"): its conversation when the hub names one for
   // this reader, else its subject (a card, a request), else the project's messages for a
-  // message that is not a chat's; null for none of them.
+  // message whose type says it is a project message; null for none of them. A missing type
+  // says nothing: a chat's tombstone the reader can no longer open in its chat comes with no
+  // conversation and no type, and Messages, which lists no chat message, would not reach it.
+  // Such a tombstone is drawn on the event's page.
   function placeOf(ctx, e) {
     if (e.conversation_id) return ctx.link("chat", e.conversation_id);
     const s = e.subject;
     if (s && s.type === "task" && s.id) return ctx.link("tasks", s.id);
     if (s && s.type === "request" && s.id) return ctx.link("inbox", s.id);
-    if (e.kind === "message" && e.payload && e.payload.type !== "chat") return ctx.link("messages");
+    const type = e.payload && e.payload.type;
+    if (e.kind === "message" && typeof type === "string" && type && type !== "chat") return ctx.link("messages");
     return null;
   }
 

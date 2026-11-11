@@ -6,7 +6,10 @@
   request or issue number, and a code span of one seq form alone links as
   code. The page reads `GET …/events/{seq}` and opens the event where it
   lives: its chat (direct or group), else the card or request it is about,
-  else Messages, scrolled to and marked, a chat or Messages reading at most
-  ten older pages for it. An event with no such place is shown on the page.
+  else Messages for a message whose type says it is a project message,
+  scrolled to and marked, a chat or Messages reading at most ten older
+  pages for it. An event with no such place, such as a removed message
+  whose tombstone has no type and no conversation for the reader, is shown
+  on the page.
   A hidden event and a missing one both show "not visible"
   (tsk-6g2h8dag2fkg).

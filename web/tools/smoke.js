@@ -11153,10 +11153,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const evReads = [];
   const evGet = win.Maity.api.get;
   win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); return evGet(p, ...r); };
-  await evAt(6001);
-  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001" && main.querySelector("section.view-messages")
-    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6001"]),
+  await evAt(6013);
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6013" && evMarked() === "6013" && main.querySelector("section.view-messages")
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6013"]),
     "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads));
+  // 6001 was removed above: its tombstone has no type, as a chat's has, so nothing says it is a project message
+  // (review of #1629). It is drawn on its page, removed, rather than guessed into Messages.
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/events/6001" && main.querySelector("article.event-one p.msg-redacted"),
+    "event: a removed project message's tombstone (no type) is drawn on its page, not guessed into Messages " + win.location.hash);
   await evAt(6005);
   expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6005" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004"),
     "event: a message about a card opens that card (its subject) " + win.location.hash);
@@ -11187,6 +11192,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/maintainer/maity/events/7001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7001"
     && text(main.querySelector("article.event-one .badge")) === "member_joined",
     "event: an event that lives nowhere else is drawn on its page");
+  // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
+  // (the chat is no longer the reader's) and a tombstone payload with no type. Nothing says it is a project message,
+  // so it is drawn on its page, not sent to Messages, which lists no chat message and would say "not reached".
+  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7002"
+    ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
+      payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
+    : evGet(p, ...r));
+  await evAt(7002);
+  expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
+    && main.querySelector("article.event-one p.msg-redacted"),
+    "event: a chat's tombstone the reader can no longer open in its chat (no conversation, no type) stays drawn on its page, not sent to Messages " + win.location.hash);
   win.Maity.api.get = evGet;
   await go("#/maintainer/maity/inbox");
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).

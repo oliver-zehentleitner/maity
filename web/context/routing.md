@@ -285,7 +285,7 @@ The page's link to `/explore` is a page load, as every link there is
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11
+**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11; its review (a chat's tombstone without a conversation), 2026-11-11
 **Revisit when:** the hub serves a chat's messages around a given `seq` (then a chat can open at it in one read), the card panel lists the messages about a card, or readers report links that stop short of an old message
 
 `/<owner>/<slug>/events/<seq>` (`js/event.js`, no tab) reads
@@ -293,10 +293,16 @@ The page's link to `/explore` is a page load, as every link there is
 entry of its own, by where the event lives (§8.9), in that order: its chat
 (`chat/<conversation_id>`, direct or group) when the hub names a
 conversation for this reader, else its subject's card (`tasks/<id>`) or
-request (`inbox/<id>`), else Messages for a message that is not a chat's.
+request (`inbox/<id>`), else Messages for a message whose `payload.type`
+names a type and not `chat`. A missing type names nothing: a chat's
+tombstone that a former participant still reads but can no longer open in
+its chat comes with `conversation_id: null` and a payload without a type.
+A removed project message's tombstone looks the same (§8.9 gives it no
+other mark), so it too is drawn on the event's page, as removed, and not
+marked in Messages: the price of never guessing a project message.
 `#seq-<n>` follows the place's address (a place on the page,
-`M.route.seqTarget()`). An event with none of these places is drawn on the
-page itself. The place marks the message (`.seq-target`) and scrolls to
+`M.route.seqTarget()`). An event with none of these places, that tombstone
+among them, is drawn on the page itself. The place marks the message (`.seq-target`) and scrolls to
 it. A direct or group chat reads older pages one at a time, as Show
 earlier does, only while the message could still be in them, and at most
 ten (`REVEAL_PAGES`, `js/chat.js` `reveal`). Messages does the same with
@@ -328,7 +334,11 @@ event on its own page: it loses the context the card asks for. An
 unbounded search: a link to the first message of a long chat would read
 the whole history. Messages before the subject, so that a notice about a
 card shows its text: §8.9 orders the subject first. A change of that order
-is a change to the contract, and the card's owner decides it.
+is a change to the contract, and the card's owner decides it. Reading
+a missing type as a project message (the Messages listing's own filter
+judges only unredacted events, which carry their type): a chat's tombstone without a
+conversation went to Messages, which lists no chat message, and the event
+the hub had just served ended as "not reached" (review of #1629).
 
 ## `/explore` and `/for/<slug>` are the hub's pages: a click on a link to them is a page load, and they stay routes
 
