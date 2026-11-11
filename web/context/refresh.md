@@ -381,3 +381,32 @@ Redrawing on any difference in /me or the members: the counts and
 presence move all the time, so nearly every switch would be drawn twice.
 Keeping until the next read without a time limit: a membership changed
 by someone else would stand until something else read /me.
+
+## A tab's presence for the mail hold: a timer a minute after its last call, only against a hub
+
+**Id:** 4c11cdf5-5f3f-4e9a-a6cd-cba0496e5aa9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 (`POST /me/presence`), §18.5; the hub's decision in hub/context/notifications.md (59e31f20-6e15-4827-866d-ec17444e7efb); web/js/presence.js, web/js/app.js
+**Revisit when:** the dashboard gets a live connection that every tab holds, or the hub's two minutes or ten calls a minute change
+
+`js/presence.js` sends `POST /me/presence` from a human's dashboard while the tab is visible
+and had pointer, key, wheel, scroll or focus input within ten minutes: at once when it starts or
+becomes present again, then a minute after its last call. It starts after `/me` for a human whose
+account does not wait for approval, and only in API mode; a sign-out and an ended session stop
+it. A hidden or idle tab sends nothing and keeps no timer. A tab shown again within the minute of
+its last call waits for that minute instead of calling again.
+
+**Reason:** the hub counts a session present for two minutes after a write and writes at most
+once a minute, so a call a minute after the last always lands before the two minutes run out;
+a fixed 60-second interval started at load would not, after a hidden spell, keep that distance
+to the last call. Waiting out the minute keeps a tab switched back and forth from spending the
+ten calls a minute the hub allows; the hub would write nothing for that call. Fixture mode has no hub
+that holds mail.
+
+**Rejected alternative:** the dashboard's 60-second `/me` read as the signal: it runs while the
+tab is visible whether or not anyone uses it, and it writes `last_seen_at` (§2.4), which
+presence must not. `setInterval` like the other refresh rounds: see Reason. Sending only while
+`hold_while_online` is on: the tab would read the settings first, and with the switch off the
+hub holds nothing anyway.
