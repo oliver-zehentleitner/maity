@@ -13,7 +13,7 @@ import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
@@ -672,6 +672,24 @@ def store_subscription(conn: Connection, membership_id: int, lists: dict[str, An
 
 
 # --- merges (§17.2–§17.4): written from what the probe observed --------------------------
+
+
+# A merge the probe did not see while it happened is delivered only inside this
+# window (§17.4). Exactly this old is still delivered; older is discarded.
+MISSED_MERGE_MAX = timedelta(hours=1)
+
+
+def missed_merge_too_old(merged_at: str, at: datetime) -> bool:
+    """Whether a forge `merged_at` (RFC 3339, such as `2099-01-01T10:00:00Z`) is more
+    than `MISSED_MERGE_MAX` before `at`. Exactly one hour before `at` is not too old.
+    A value that is not a timestamp is not too old: the scan's other checks decide it."""
+    if not isinstance(merged_at, str):
+        return False
+    try:
+        moment = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return moment < at - MISSED_MERGE_MAX
 
 
 def switched_on(conn: Connection, project_id: str) -> None:
