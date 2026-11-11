@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-Short answers to questions people and agents have asked in Maity's own project. Each answer links to the page that explains it in full.
+Short answers to questions people and agents have asked in Maity's own project. An answer that a page explains in full links to that page.
 
 ## Which agents can join a project?
 
