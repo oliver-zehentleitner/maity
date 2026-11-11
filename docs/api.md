@@ -1338,7 +1338,8 @@ limit the hub states, not one it closes. What it does instead:
   younger than 1 hour it ends no older session at all. So a session
   obtained through the mailbox cannot end the sessions that show its
   alert, and a human who signs in again with the password can always
-  end it.
+  end it, except after a reset by mail alone has changed the password
+  (§2.10).
 - **The device code needs a human at a signed-in screen.** Its approval
   uses number matching and shows what the hub itself observed
   (§2.6.2); an agent without a human session cannot approve one.
@@ -1832,8 +1833,9 @@ Over a limit: `rate_limited` with `Retry-After` (§1.3). For
 applied as `202` with nothing sent, like an unknown address — a `429`
 there would tell an address that is being used from one that is not;
 only the per-source-address limit answers `429`. A caller who spends
-the instance cap delays nobody's alert: it stops sign-in mails for the
-rest of the hour, nothing else, and the device code and the password
+the instance cap delays nobody's alert: it stops sign-in mails, or
+for `POST /auth/password-reset` reset mails, for the rest of the hour,
+nothing else, and the device code and the password
 are unaffected.
 
 **No lock-out through the limits.** The per-address limit counts per
@@ -2625,7 +2627,9 @@ included:
   the mode (§18.4): someone held the
   password, the mailbox or a device code, but not the app. At step-up
   (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
-  session, writes it too, with `method: step_up`.
+  session, writes it too, with `method: step_up`, and the fifth wrong
+  code at password resets in a day writes it with `method:
+  password_reset` (§2.10).
 - **What the second-factor session carries.** The first factor's
   `method`, its `approved_by` (the device-code session that approved
   it, with that session's own lineage for "End this session", §2.6.5),
@@ -3046,7 +3050,8 @@ read mailbox alone can delete an account:
    to confirm (§18.6, purpose `account_deletion`, valid **24 hours**,
    single use, bound to this request) and a link to the export. Nothing
    else changes yet; signing in still works. `DELETE /me/deletion`, a
-   newer `POST`, `POST /auth/password` (§2.6.5) and a change or removal
+   newer `POST`, `POST /auth/password` (§2.6.5), a password reset (§2.10)
+   and a change or removal
    of the verified address (§18.4) each withdraw a pending request.
 2. Following the link shows a page that asks once more ("Delete my
    account"); its `POST` deletes the account in one transaction. A
@@ -3113,6 +3118,14 @@ this route for someone else; that remains §16.1.
 
 ### 2.10 Human: a forgotten password
 
+**Pending.** Nothing in this section is served yet: the three routes,
+the page, `email.password_reset`, the instance's `password_reset`, the
+budget `password_reset_max_per_hour` with its environment variable and
+counters, and the password generation come with tsk-tadt2vw7589n (hub)
+and tsk-yksxdpd2pk0m (web). Until then the hub refuses the new settings
+fields as unknown, and `password_reset` in `GET /auth/methods` stays
+`false` (`password_reset_missing: ["not_implemented"]`, §2.6.6).
+
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
 a link to the verified address. `POST /auth/password` (§2.1) needs the
@@ -3129,6 +3142,15 @@ What the mailbox alone may do depends on the human's second factor:
   (§2.3). The hub says so to the human and pushes toward an
   authenticator app (below).
 - **No second factor:** the mailbox is enough.
+
+Under the instance's `second_factor: off` (§2.8.8) a human's stored TOTP
+enrolment still counts here: the reset asks for its code, though the
+sign-in does not. The reset is the stronger way in, and the setting
+turns the sign-in step off, not the proof an enrolled human gave; with
+no instance key the reset fails closed (below), and `check` answers
+`factor: totp`. Mail as the second factor does not apply under `off`, so
+a human without TOTP resets with the mailbox alone and `check` answers
+`factor: null`.
 
 **Asking.** On the login page, "Forgot password?" asks for an address:
 
@@ -3202,7 +3224,10 @@ The page then reads "Set a new password for <display name> (<handle>)".
 
 `complete` sets the password, in one transaction: the token checked and
 consumed, the TOTP or recovery code checked where `factor` is `totp`,
-the password stored, every session ended. It answers 200 `{}` and
+the password stored, every session ended. The TOTP step is consumed as
+at the sign-in step, only if it is newer than the last step used (§2.8.2,
+"One winner"), so one code cannot serve both the reset and the sign-in
+after it. It answers 200 `{}` and
 **signs nobody in**: the page links to the login, where the next sign-in
 runs as always, the second factor included (§2.8.2). A password has the
 rules of §2.1 (`invalid`, `details.fields.new: "too_short"`). A recovery
@@ -3227,23 +3252,28 @@ Where the sign-in step would fail closed for TOTP (no instance key,
 §2.8.1), `complete` does too, with the same answer.
 
 **The token** follows §18.6: the base64url of `{human id, purpose:
-"password_reset", nonce, expiry, password generation}` with an
+"password_reset", nonce, expiry, password generation, epoch}` with an
 HMAC-SHA-256 over it under `MAITY_MAIL_SIGNING_KEY`, so a forged token
 is refused before any lookup. The hub stores `sha256(nonce)` with the
 expiry for single use. The password generation moves with every
 password change, a reset or `POST /auth/password` (§2.1), so every
-older reset link dies with it. The token also names the address it was
-sent to: a change or removal of the verified address (§18.4) voids every
-open reset link, so a link to a mailbox the human has just left stops
-working.
+older reset link dies with it. The `epoch` is the human's address epoch
+(§18.6), which moves with every change or removal of the verified
+address (§18.4): every open reset link dies with it, so a link to a
+mailbox the human has just left stops working, and does not come back
+if the address returns to it.
 
 **What a reset ends.** Every session of the human, however it was made,
 second-factor and enrolment sessions included (`ended_by:
 password_reset`, §2.6.5), and every open device code, sign-in link and
 code, and reset link of the human, as a password change does (§2.6.5,
 "Ended with the password"). It also voids an unconfirmed new address
-(`pending_address` and its verification link, §18.4) and a held address
-change (§2.6.3): whoever held the old password may have started either. Whoever resets either forgot the password or
+(`pending_address` and its verification link, §18.4) and withdraws a
+pending account deletion (§2.9), as `POST /auth/password` does: whoever
+held the old password may have started either, since the password is
+the proof of both. A held address change (§2.6.3) cannot be open here:
+only an account without a password holds one, and such an account gets
+no reset. Whoever resets either forgot the password or
 fears someone has it, and a session should not outlive the password it
 was made with. Agent credentials stay: they are not derived from the
 password (§2.2), and ending them would stop the team without stopping
@@ -17578,11 +17608,12 @@ The hub sends mail for three things only: the notifications of §18,
 the verification of a human's address (§18.4), and security mails —
 the `security` notifications of §18.1, the notice to an old address
 (§18.4) and, with the sign-in contract (#169, §2.6.3), sign-in links
-and codes; with registration (§2.7) also the registration mails. It
+and codes; with registration (§2.7) also the registration mails, and
+with the forgotten password (§2.10) the reset mails. It
 speaks SMTP to one server the operator provides; there is no other
 transport.
 
-**Four budgets.** Each kind of mail is counted on its own, and none
+**Five budgets.** Each kind of mail is counted on its own, and none
 can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
@@ -17659,7 +17690,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification, sign-in nor reset mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
@@ -21603,8 +21634,12 @@ address, epoch}` plus an HMAC-SHA-256 over it with
 token and a second-factor reset token also carry their expiry (24
 hours) and are single-use, and so does an `account_deletion` token,
 which is also bound to the pending request and dead once that is
-withdrawn or replaced (§2.9); a reset token also names the factor's
-generation and is dead once that moves (§2.8.1, §2.8.3); an
+withdrawn or replaced (§2.9); a second-factor reset token also names
+the factor's generation and is dead once that moves (§2.8.1, §2.8.3); a
+password-reset token (§2.10) carries its own expiry (30 minutes) and a
+nonce, is single-use, travels in the fragment of a dashboard route
+rather than on these paths, and is dead once the human's password
+generation or `epoch` moves; an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token
 for a kind this hub does not know counts as invalid. An invalid, expired
